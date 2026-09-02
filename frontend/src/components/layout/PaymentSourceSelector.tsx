@@ -41,22 +41,7 @@ interface NetworkSourceCardProps {
 // new rail's home so the page content matches the picked context immediately, rather than
 // waiting on the async redirect in _app (which is skipped while the chain query refetches).
 /** Small pill that tells the two rails apart inside the selector. */
-function RailBadge({
-  rail,
-  paymentSourceType,
-  className,
-}: {
-  rail: 'cardano' | 'x402';
-  paymentSourceType?: PaymentSourceType;
-  className?: string;
-}) {
-  const label =
-    rail === 'x402'
-      ? 'EVM'
-      : paymentSourceType
-        ? `Cardano ${getPaymentSourceTypeShortLabel(paymentSourceType)}`
-        : 'Cardano';
-
+function RailBadge({ rail, className }: { rail: 'cardano' | 'x402'; className?: string }) {
   return (
     <Badge
       variant="outline"
@@ -68,7 +53,7 @@ function RailBadge({
         className,
       )}
     >
-      {label}
+      {rail === 'x402' ? 'EVM' : 'Cardano'}
     </Badge>
   );
 }
@@ -179,7 +164,10 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
         ? selectedChain.displayName
         : 'Set up x402'
       : selectedPaymentSource
-        ? shortenAddress(selectedPaymentSource.smartContractAddress, 8)
+        ? `${getPaymentSourceTypeShortLabel(selectedPaymentSource.paymentSourceType)} ${shortenAddress(
+            selectedPaymentSource.smartContractAddress,
+            8,
+          )}`
         : 'Select source';
 
   const collapsedSourceLabel =
@@ -207,52 +195,91 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   // dropdown and reach "Manage payment sources" (and from there, setup).
   const hasAnySelectable = hasSources || hasEvmChains || showSetupCta;
 
-  const networkButtonClass = (target: 'Preprod' | 'Mainnet') =>
-    cn(
-      'font-medium hover:scale-[1.03] transition-all duration-300',
-      collapsed ? 'px-2' : 'flex-1 truncate',
-      network === target
-        ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
-        : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-1">
+        <div className="grid grid-cols-2 p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md gap-0.5">
+          <Button
+            variant="ghost"
+            size="sm2"
+            className={cn(
+              'px-2 font-medium hover:scale-[1.03] transition-all duration-300',
+              network === 'Preprod'
+                ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
+                : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
+            )}
+            onClick={() => onNetworkChange('Preprod')}
+          >
+            P
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm2"
+            className={cn(
+              'px-2 font-medium hover:scale-[1.03] transition-all duration-300',
+              network === 'Mainnet'
+                ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
+                : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
+            )}
+            onClick={() => onNetworkChange('Mainnet')}
+          >
+            M
+          </Button>
+        </div>
+        {hasAnySelectable && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className={cn(
+                  'h-10 w-10 p-0 justify-center relative sidebar-active-indicator',
+                  isOnPaymentSourcesPage && 'is-active',
+                )}
+                title={collapsedSourceLabel}
+                aria-label={collapsedSourceLabel}
+              >
+                {activeRail === 'x402' ? (
+                  <Coins className="h-4 w-4" />
+                ) : (
+                  <FileInput className="h-4 w-4" />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            {dropdown}
+          </DropdownMenu>
+        )}
+      </div>
     );
-
-  const sourceIcon =
-    activeRail === 'x402' ? (
-      <Coins className="h-4 w-4 shrink-0" />
-    ) : (
-      <FileInput className="h-4 w-4 shrink-0" />
-    );
+  }
 
   return (
-    <div
-      className={cn(
-        'flex w-full flex-col',
-        collapsed ? 'gap-1' : 'gap-1.5 rounded-lg bg-[#F4F4F5] p-1.5 pb-1 dark:bg-secondary',
-      )}
-    >
-      <div
-        className={cn(
-          'grid grid-cols-2 rounded-md',
-          collapsed ? 'gap-0.5 bg-[#F4F4F5] p-1 dark:bg-secondary' : 'mx-0.5 gap-1',
-        )}
-      >
+    <div className="flex flex-col gap-1.5 rounded-lg bg-[#F4F4F5] p-1.5 pb-1 dark:bg-secondary">
+      <div className="grid grid-cols-2 gap-1 mx-0.5">
         <Button
           variant="ghost"
           size="sm2"
-          className={networkButtonClass('Preprod')}
+          className={cn(
+            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate',
+            network === 'Preprod'
+              ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
+              : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
+          )}
           onClick={() => onNetworkChange('Preprod')}
         >
-          <span className={cn(collapsed ? 'inline' : 'sr-only')}>P</span>
-          <span className={cn(collapsed ? 'sr-only' : 'truncate')}>Preprod</span>
+          Preprod
         </Button>
         <Button
           variant="ghost"
           size="sm2"
-          className={networkButtonClass('Mainnet')}
+          className={cn(
+            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate',
+            network === 'Mainnet'
+              ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
+              : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
+          )}
           onClick={() => onNetworkChange('Mainnet')}
         >
-          <span className={cn(collapsed ? 'inline' : 'sr-only')}>M</span>
-          <span className={cn(collapsed ? 'sr-only' : 'truncate')}>Mainnet</span>
+          Mainnet
         </Button>
       </div>
       {hasAnySelectable && (
@@ -261,55 +288,49 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             <button
               type="button"
               className={cn(
-                'flex items-center rounded-md relative sidebar-active-indicator transition-colors duration-150',
-                collapsed
-                  ? 'mx-auto h-10 w-10 shrink-0 justify-center'
-                  : cn(
-                      'h-10 w-full min-w-0 gap-3 px-3',
-                      'border border-transparent hover:border-border/60',
-                      'hover:bg-[#00000008] dark:hover:bg-[#ffffff08]',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                      'text-left cursor-pointer',
-                    ),
+                'flex items-center gap-2 w-full rounded-md px-3 py-2 min-h-9',
+                'border border-transparent hover:border-border/60',
+                'hover:bg-[#00000008] dark:hover:bg-[#ffffff08]',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                'transition-colors duration-150 text-left cursor-pointer',
+                'relative sidebar-active-indicator',
                 isOnPaymentSourcesPage && 'is-active',
               )}
-              title={collapsed ? collapsedSourceLabel : undefined}
               aria-label={collapsedSourceLabel}
             >
-              {sourceIcon}
-              {!collapsed && (
-                <>
-                  <div className="min-w-0 flex-1 overflow-hidden">
-                    <div className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Payment source
-                    </div>
-                    <div
-                      className={cn(
-                        'truncate text-xs',
-                        activeRail !== 'x402' && selectedPaymentSource && 'font-mono',
-                      )}
-                    >
-                      {triggerLabel}
-                    </div>
-                  </div>
-                  <RailBadge
-                    rail={activeRail}
-                    paymentSourceType={
-                      activeRail === 'cardano'
-                        ? selectedPaymentSource?.paymentSourceType
-                        : undefined
-                    }
-                    className="shrink-0"
-                  />
-                  <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </>
+              {activeRail === 'x402' ? (
+                <Coins className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <FileInput className="h-3.5 w-3.5 shrink-0" />
               )}
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Payment source
+                </div>
+                <div
+                  className={cn(
+                    'text-xs truncate',
+                    activeRail !== 'x402' && selectedPaymentSource && 'font-mono',
+                  )}
+                >
+                  {triggerLabel}
+                </div>
+              </div>
+              <RailBadge rail={activeRail} />
+              <ChevronsUpDown className="h-3 w-3 shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
           {dropdown}
         </DropdownMenu>
       )}
     </div>
+  );
+}
+
+function selectedSourceItemClass(isSelected: boolean) {
+  return cn(
+    'cursor-pointer flex items-start gap-2 rounded-md py-2',
+    isSelected && 'bg-accent text-accent-foreground',
   );
 }
 
@@ -372,40 +393,45 @@ function SourceDropdown({
       className="w-72 p-1"
     >
       <DropdownSectionLabel>Cardano</DropdownSectionLabel>
-      {networkSources.length === 0 && (
-        <div className="px-2 py-2 text-xs text-muted-foreground">No sources on this network</div>
-      )}
-      {networkSources.map((source) => {
-        const isSelected = activeRail === 'cardano' && source.id === selectedPaymentSourceId;
-        const sourceWalletCount =
-          (source.PurchasingWalletsCount ?? 0) + (source.SellingWalletsCount ?? 0);
-        return (
-          <DropdownMenuItem
-            key={source.id}
-            className="cursor-pointer flex items-start gap-2 rounded-md py-2"
-            onSelect={() => onSelectCardano(source.id)}
-          >
-            <Check
-              className={cn(
-                'mt-0.5 h-4 w-4 shrink-0 transition-opacity duration-150',
-                isSelected ? 'opacity-100' : 'opacity-0',
-              )}
-            />
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <PaymentSourceTypeBadge paymentSourceType={source.paymentSourceType} showDefault />
-                <span className="truncate font-mono text-xs text-muted-foreground">
-                  {shortenAddress(source.smartContractAddress, 8)}
+      <div className="flex flex-col gap-1">
+        {networkSources.length === 0 && (
+          <div className="px-2 py-2 text-xs text-muted-foreground">No sources on this network</div>
+        )}
+        {networkSources.map((source) => {
+          const isSelected = activeRail === 'cardano' && source.id === selectedPaymentSourceId;
+          const sourceWalletCount =
+            (source.PurchasingWalletsCount ?? 0) + (source.SellingWalletsCount ?? 0);
+          return (
+            <DropdownMenuItem
+              key={source.id}
+              className={selectedSourceItemClass(isSelected)}
+              onSelect={() => onSelectCardano(source.id)}
+            >
+              <Check
+                className={cn(
+                  'mt-0.5 h-4 w-4 shrink-0 transition-opacity duration-150',
+                  isSelected ? 'opacity-100 text-primary' : 'opacity-0',
+                )}
+              />
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <PaymentSourceTypeBadge
+                    paymentSourceType={source.paymentSourceType}
+                    showDefault
+                  />
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {shortenAddress(source.smartContractAddress, 8)}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {sourceWalletCount} {sourceWalletCount === 1 ? 'wallet' : 'wallets'} ·{' '}
+                  {(source.feeRatePermille / 10).toFixed(1)}% fee
                 </span>
               </div>
-              <span className="text-xs text-muted-foreground">
-                {sourceWalletCount} {sourceWalletCount === 1 ? 'wallet' : 'wallets'} ·{' '}
-                {(source.feeRatePermille / 10).toFixed(1)}% fee
-              </span>
-            </div>
-          </DropdownMenuItem>
-        );
-      })}
+            </DropdownMenuItem>
+          );
+        })}
+      </div>
 
       {/* The chain projection is read-level, so every session that has EVM chains
           in its key limit sees the rail here. */}
@@ -426,44 +452,46 @@ function SourceDropdown({
         <>
           <DropdownMenuSeparator className="my-1" />
           <DropdownSectionLabel trailing={<RailBadge rail="x402" />}>x402</DropdownSectionLabel>
-          {/* Only fully configured chains are selectable payment sources. Chains still
-              missing a facilitator or RPC aren't listed individually; they collapse into a
-              single "set up" entry below so the picker only ever offers a ready rail. */}
-          {usableEvmChains.map((chain) => {
-            const isSelected = activeRail === 'x402' && chain.id === selectedX402ChainId;
-            return (
-              <DropdownMenuItem
-                key={chain.id}
-                className="cursor-pointer flex items-start gap-2 rounded-md py-2"
-                onSelect={() => onSelectEvm(chain.id)}
-              >
-                <Check
-                  className={cn(
-                    'mt-0.5 h-4 w-4 shrink-0 transition-opacity duration-150',
-                    isSelected ? 'opacity-100' : 'opacity-0',
-                  )}
-                />
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
-                    <span className="truncate text-sm font-medium">{chain.displayName}</span>
+          <div className="flex flex-col gap-1">
+            {/* Only fully configured chains are selectable payment sources. Chains still
+                missing a facilitator or RPC aren't listed individually; they collapse into a
+                single "set up" entry below so the picker only ever offers a ready rail. */}
+            {usableEvmChains.map((chain) => {
+              const isSelected = activeRail === 'x402' && chain.id === selectedX402ChainId;
+              return (
+                <DropdownMenuItem
+                  key={chain.id}
+                  className={selectedSourceItemClass(isSelected)}
+                  onSelect={() => onSelectEvm(chain.id)}
+                >
+                  <Check
+                    className={cn(
+                      'mt-0.5 h-4 w-4 shrink-0 transition-opacity duration-150',
+                      isSelected ? 'opacity-100 text-primary' : 'opacity-0',
+                    )}
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
+                      <span className="truncate text-sm font-medium">{chain.displayName}</span>
+                    </div>
+                    <span className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</span>
                   </div>
-                  <span className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</span>
-                </div>
+                </DropdownMenuItem>
+              );
+            })}
+            {capabilities.canAdmin && hasUnconfiguredChains && (
+              <DropdownMenuItem
+                className="cursor-pointer flex items-center gap-2 rounded-md"
+                onSelect={() => router.push('/x402-setup')}
+              >
+                <Coins className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="text-sm">
+                  {usableEvmChains.length === 0 ? 'Set up x402 (EVM)' : 'Set up another chain'}
+                </span>
               </DropdownMenuItem>
-            );
-          })}
-          {capabilities.canAdmin && hasUnconfiguredChains && (
-            <DropdownMenuItem
-              className="cursor-pointer flex items-center gap-2"
-              onSelect={() => router.push('/x402-setup')}
-            >
-              <Coins className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="text-sm">
-                {usableEvmChains.length === 0 ? 'Set up x402 (EVM)' : 'Set up another chain'}
-              </span>
-            </DropdownMenuItem>
-          )}
+            )}
+          </div>
         </>
       )}
 
