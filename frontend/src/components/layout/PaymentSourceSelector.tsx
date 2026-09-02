@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import { FileInput, ChevronsUpDown, Settings, Check, Coins } from 'lucide-react';
 import { cn, shortenAddress } from '@/lib/utils';
@@ -41,7 +41,22 @@ interface NetworkSourceCardProps {
 // new rail's home so the page content matches the picked context immediately, rather than
 // waiting on the async redirect in _app (which is skipped while the chain query refetches).
 /** Small pill that tells the two rails apart inside the selector. */
-function RailBadge({ rail, className }: { rail: 'cardano' | 'x402'; className?: string }) {
+function RailBadge({
+  rail,
+  paymentSourceType,
+  className,
+}: {
+  rail: 'cardano' | 'x402';
+  paymentSourceType?: PaymentSourceType;
+  className?: string;
+}) {
+  const label =
+    rail === 'x402'
+      ? 'EVM'
+      : paymentSourceType
+        ? `Cardano ${getPaymentSourceTypeShortLabel(paymentSourceType)}`
+        : 'Cardano';
+
   return (
     <Badge
       variant="outline"
@@ -53,7 +68,7 @@ function RailBadge({ rail, className }: { rail: 'cardano' | 'x402'; className?: 
         className,
       )}
     >
-      {rail === 'x402' ? 'EVM' : 'Cardano'}
+      {label}
     </Badge>
   );
 }
@@ -164,10 +179,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
         ? selectedChain.displayName
         : 'Set up x402'
       : selectedPaymentSource
-        ? `${getPaymentSourceTypeShortLabel(selectedPaymentSource.paymentSourceType)} ${shortenAddress(
-            selectedPaymentSource.smartContractAddress,
-            8,
-          )}`
+        ? shortenAddress(selectedPaymentSource.smartContractAddress, 8)
         : 'Select source';
 
   const collapsedSourceLabel =
@@ -195,91 +207,52 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   // dropdown and reach "Manage payment sources" (and from there, setup).
   const hasAnySelectable = hasSources || hasEvmChains || showSetupCta;
 
-  if (collapsed) {
-    return (
-      <div className="flex flex-col items-center gap-1">
-        <div className="grid grid-cols-2 p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md gap-0.5">
-          <Button
-            variant="ghost"
-            size="sm2"
-            className={cn(
-              'px-2 font-medium hover:scale-[1.03] transition-all duration-300',
-              network === 'Preprod'
-                ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
-                : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
-            )}
-            onClick={() => onNetworkChange('Preprod')}
-          >
-            P
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm2"
-            className={cn(
-              'px-2 font-medium hover:scale-[1.03] transition-all duration-300',
-              network === 'Mainnet'
-                ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
-                : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
-            )}
-            onClick={() => onNetworkChange('Mainnet')}
-          >
-            M
-          </Button>
-        </div>
-        {hasAnySelectable && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className={cn(
-                  'h-10 w-10 p-0 justify-center relative sidebar-active-indicator',
-                  isOnPaymentSourcesPage && 'is-active',
-                )}
-                title={collapsedSourceLabel}
-                aria-label={collapsedSourceLabel}
-              >
-                {activeRail === 'x402' ? (
-                  <Coins className="h-4 w-4" />
-                ) : (
-                  <FileInput className="h-4 w-4" />
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            {dropdown}
-          </DropdownMenu>
-        )}
-      </div>
+  const networkButtonClass = (target: 'Preprod' | 'Mainnet') =>
+    cn(
+      'font-medium hover:scale-[1.03] transition-all duration-300',
+      collapsed ? 'px-2' : 'flex-1 truncate',
+      network === target
+        ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
+        : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
     );
-  }
+
+  const sourceIcon =
+    activeRail === 'x402' ? (
+      <Coins className="h-4 w-4 shrink-0" />
+    ) : (
+      <FileInput className="h-4 w-4 shrink-0" />
+    );
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg bg-[#F4F4F5] p-1.5 pb-1 dark:bg-secondary">
-      <div className="grid grid-cols-2 gap-1 mx-0.5">
+    <div
+      className={cn(
+        'flex w-full flex-col',
+        collapsed ? 'gap-1' : 'gap-1.5 rounded-lg bg-[#F4F4F5] p-1.5 pb-1 dark:bg-secondary',
+      )}
+    >
+      <div
+        className={cn(
+          'grid grid-cols-2 rounded-md',
+          collapsed ? 'gap-0.5 bg-[#F4F4F5] p-1 dark:bg-secondary' : 'mx-0.5 gap-1',
+        )}
+      >
         <Button
           variant="ghost"
           size="sm2"
-          className={cn(
-            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate',
-            network === 'Preprod'
-              ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
-              : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
-          )}
+          className={networkButtonClass('Preprod')}
           onClick={() => onNetworkChange('Preprod')}
         >
-          Preprod
+          <span className={cn(collapsed ? 'inline' : 'sr-only')}>P</span>
+          <span className={cn(collapsed ? 'sr-only' : 'truncate')}>Preprod</span>
         </Button>
         <Button
           variant="ghost"
           size="sm2"
-          className={cn(
-            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate',
-            network === 'Mainnet'
-              ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
-              : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
-          )}
+          className={networkButtonClass('Mainnet')}
           onClick={() => onNetworkChange('Mainnet')}
         >
-          Mainnet
+          <span className={cn(collapsed ? 'inline' : 'sr-only')}>M</span>
+          <span className={cn(collapsed ? 'sr-only' : 'truncate')}>Mainnet</span>
         </Button>
       </div>
       {hasAnySelectable && (
@@ -288,42 +261,71 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             <button
               type="button"
               className={cn(
-                'flex items-center gap-2 w-full rounded-md px-3 py-2 min-h-9',
-                'border border-transparent hover:border-border/60',
-                'hover:bg-[#00000008] dark:hover:bg-[#ffffff08]',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                'transition-colors duration-150 text-left cursor-pointer',
-                'relative sidebar-active-indicator',
+                'flex items-center rounded-md relative sidebar-active-indicator transition-colors duration-150',
+                collapsed
+                  ? 'mx-auto h-10 w-10 shrink-0 justify-center'
+                  : cn(
+                      'h-10 w-full min-w-0 gap-3 px-3',
+                      'border border-transparent hover:border-border/60',
+                      'hover:bg-[#00000008] dark:hover:bg-[#ffffff08]',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                      'text-left cursor-pointer',
+                    ),
                 isOnPaymentSourcesPage && 'is-active',
               )}
+              title={collapsed ? collapsedSourceLabel : undefined}
               aria-label={collapsedSourceLabel}
             >
-              {activeRail === 'x402' ? (
-                <Coins className="h-3.5 w-3.5 shrink-0" />
-              ) : (
-                <FileInput className="h-3.5 w-3.5 shrink-0" />
+              {sourceIcon}
+              {!collapsed && (
+                <>
+                  <div className="min-w-0 flex-1 overflow-hidden">
+                    <div className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Payment source
+                    </div>
+                    <div
+                      className={cn(
+                        'truncate text-xs',
+                        activeRail !== 'x402' && selectedPaymentSource && 'font-mono',
+                      )}
+                    >
+                      {triggerLabel}
+                    </div>
+                  </div>
+                  <RailBadge
+                    rail={activeRail}
+                    paymentSourceType={
+                      activeRail === 'cardano'
+                        ? selectedPaymentSource?.paymentSourceType
+                        : undefined
+                    }
+                    className="shrink-0"
+                  />
+                  <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </>
               )}
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Payment source
-                </div>
-                <div
-                  className={cn(
-                    'text-xs truncate',
-                    activeRail !== 'x402' && selectedPaymentSource && 'font-mono',
-                  )}
-                >
-                  {triggerLabel}
-                </div>
-              </div>
-              <RailBadge rail={activeRail} />
-              <ChevronsUpDown className="h-3 w-3 shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
           {dropdown}
         </DropdownMenu>
       )}
     </div>
+  );
+}
+
+/** Section title inside the payment-source picker (not duplicated with rail badges). */
+function DropdownSectionLabel({
+  children,
+  trailing,
+}: {
+  children: ReactNode;
+  trailing?: ReactNode;
+}) {
+  return (
+    <DropdownMenuLabel className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      {children}
+      {trailing}
+    </DropdownMenuLabel>
   );
 }
 
@@ -367,14 +369,11 @@ function SourceDropdown({
       sideOffset={12}
       alignOffset={-74}
       collisionPadding={{ top: 8 }}
-      className="w-72"
+      className="w-72 p-1"
     >
-      <DropdownMenuLabel className="flex items-center gap-2">
-        Cardano
-        <RailBadge rail="cardano" />
-      </DropdownMenuLabel>
+      <DropdownSectionLabel>Cardano</DropdownSectionLabel>
       {networkSources.length === 0 && (
-        <div className="px-2 py-1.5 text-xs text-muted-foreground">No Cardano sources</div>
+        <div className="px-2 py-2 text-xs text-muted-foreground">No sources on this network</div>
       )}
       {networkSources.map((source) => {
         const isSelected = activeRail === 'cardano' && source.id === selectedPaymentSourceId;
@@ -383,22 +382,22 @@ function SourceDropdown({
         return (
           <DropdownMenuItem
             key={source.id}
-            className="cursor-pointer flex items-center gap-2"
+            className="cursor-pointer flex items-start gap-2 rounded-md py-2"
             onSelect={() => onSelectCardano(source.id)}
           >
             <Check
               className={cn(
-                'h-4 w-4 shrink-0 transition-opacity duration-150',
+                'mt-0.5 h-4 w-4 shrink-0 transition-opacity duration-150',
                 isSelected ? 'opacity-100' : 'opacity-0',
               )}
             />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <PaymentSourceTypeBadge paymentSourceType={source.paymentSourceType} showDefault />
+                <span className="truncate font-mono text-xs text-muted-foreground">
+                  {shortenAddress(source.smartContractAddress, 8)}
+                </span>
               </div>
-              <span className="font-mono text-sm break-all">
-                {shortenAddress(source.smartContractAddress, 8)}
-              </span>
               <span className="text-xs text-muted-foreground">
                 {sourceWalletCount} {sourceWalletCount === 1 ? 'wallet' : 'wallets'} ·{' '}
                 {(source.feeRatePermille / 10).toFixed(1)}% fee
@@ -414,12 +413,9 @@ function SourceDropdown({
         !capabilities.canAdmin &&
         !hasEvmChainLimit(capabilities.chainIdLimit) && (
           <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="flex items-center gap-2">
-              x402
-              <RailBadge rail="x402" />
-            </DropdownMenuLabel>
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            <DropdownMenuSeparator className="my-1" />
+            <DropdownSectionLabel trailing={<RailBadge rail="x402" />}>x402</DropdownSectionLabel>
+            <div className="px-2 py-2 text-xs text-muted-foreground">
               This API key has no EVM chains in its chain limit, so none can be shown. An admin can
               add them to the key.
             </div>
@@ -428,11 +424,8 @@ function SourceDropdown({
 
       {evmChains.length > 0 && (
         <>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="flex items-center gap-2">
-            x402
-            <RailBadge rail="x402" />
-          </DropdownMenuLabel>
+          <DropdownMenuSeparator className="my-1" />
+          <DropdownSectionLabel trailing={<RailBadge rail="x402" />}>x402</DropdownSectionLabel>
           {/* Only fully configured chains are selectable payment sources. Chains still
               missing a facilitator or RPC aren't listed individually; they collapse into a
               single "set up" entry below so the picker only ever offers a ready rail. */}
@@ -441,19 +434,19 @@ function SourceDropdown({
             return (
               <DropdownMenuItem
                 key={chain.id}
-                className="cursor-pointer flex items-center gap-2"
+                className="cursor-pointer flex items-start gap-2 rounded-md py-2"
                 onSelect={() => onSelectEvm(chain.id)}
               >
                 <Check
                   className={cn(
-                    'h-4 w-4 shrink-0 transition-opacity duration-150',
+                    'mt-0.5 h-4 w-4 shrink-0 transition-opacity duration-150',
                     isSelected ? 'opacity-100' : 'opacity-0',
                   )}
                 />
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div className="flex min-w-0 items-center gap-2">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
-                    <span className="truncate text-sm">{chain.displayName}</span>
+                    <span className="truncate text-sm font-medium">{chain.displayName}</span>
                   </div>
                   <span className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</span>
                 </div>
@@ -476,12 +469,9 @@ function SourceDropdown({
 
       {capabilities.canAdmin && (
         <>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-            Management
-          </DropdownMenuLabel>
+          <DropdownMenuSeparator className="my-1" />
           <DropdownMenuItem
-            className={cn('cursor-pointer', isOnPaymentSourcesPage && 'bg-accent')}
+            className={cn('cursor-pointer rounded-md', isOnPaymentSourcesPage && 'bg-accent')}
             onSelect={() => router.push('/payment-sources')}
           >
             <Settings className="h-4 w-4 mr-2" />
