@@ -14,6 +14,8 @@ import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import { tableActionsCellClass, tableActionsHeadClass } from '@/components/ui/table-actions-column';
 import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
 import { Search, Plus } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
@@ -58,6 +60,23 @@ function matchesPermissionTab(apiKey: ApiKey, tab: string): boolean {
 
 function isRedactedApiKeyToken(token: string): boolean {
   return token.startsWith('*****');
+}
+
+/**
+ * Whether a listed key is the one this session is signed in with.
+ *
+ * GET /api-key never returns a plaintext token: it masks it as
+ * `'*****' + token.slice(-4)` (src/routes/api/api-key/index.ts). Comparing that
+ * mask to the session's plaintext key is therefore always false, which silently
+ * disabled the "cannot delete the key you are signed in with" guard and let an
+ * operator lock themselves out of the dashboard in one click. Mask the session key
+ * the same way instead. Two keys sharing a last-four collide and both get guarded,
+ * which is the safe direction to be wrong in.
+ */
+function isSessionApiKey(listedToken: string, sessionApiKey: string | null): boolean {
+  if (!sessionApiKey) return false;
+  if (listedToken === sessionApiKey) return true;
+  return listedToken === `*****${sessionApiKey.slice(-4)}`;
 }
 
 export default function ApiKeys() {
@@ -135,15 +154,16 @@ export default function ApiKeys() {
     loadMore();
   };
 
-  const handleSelectKey = (token: string) => {
-    setSelectedKeys((prev) =>
-      prev.includes(token) ? prev.filter((k) => k !== token) : [...prev, token],
-    );
+  // Select by id, not by token. The listed token is a mask, so every key ending in the
+  // same four characters shared one selection entry: ticking one ticked them all, and a
+  // bulk action would have hit every collider.
+  const handleSelectKey = (id: string) => {
+    setSelectedKeys((prev) => (prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id]));
   };
 
   const handleSelectAll = () => {
     setSelectedKeys(
-      selectedKeys.length === filteredApiKeys.length ? [] : filteredApiKeys.map((key) => key.token),
+      selectedKeys.length === filteredApiKeys.length ? [] : filteredApiKeys.map((key) => key.id),
     );
   };
 
@@ -229,7 +249,7 @@ export default function ApiKeys() {
             </div>
           </div>
 
-          <div className="border rounded-lg overflow-x-auto">
+          <HorizontalScrollArea className="border rounded-lg">
             <table className="w-full">
               <thead>
                 <tr className="border-b">
@@ -246,7 +266,7 @@ export default function ApiKeys() {
                   <th className="p-4 text-left text-sm font-medium">Networks</th>
                   <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="w-12 p-4"></th>
+                  <th className={tableActionsHeadClass}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -259,18 +279,24 @@ export default function ApiKeys() {
                     </td>
                   </tr>
                 ) : (
-                  filteredApiKeys.map((key, index) => (
-                    <tr key={index} className="border-b" onClick={() => {}}>
+                  filteredApiKeys.map((key) => (
+                    <tr key={key.id} className="border-b" onClick={() => {}}>
                       <td className="p-4">
                         <Checkbox
-                          checked={selectedKeys.includes(key.token)}
-                          onCheckedChange={() => handleSelectKey(key.token)}
+                          aria-label={`Select key ${key.token}`}
+                          checked={selectedKeys.includes(key.id)}
+                          onCheckedChange={() => handleSelectKey(key.id)}
                         />
                       </td>
                       <td className="p-4 truncate">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm text-muted-foreground">
-                            {shortenAddress(key.token)}
+                            {/* A masked token is already short; running it through
+                                shortenAddress elided the only four characters that
+                                identify it. */}
+                            {isRedactedApiKeyToken(key.token)
+                              ? key.token
+                              : shortenAddress(key.token)}
                           </span>
                           {!isRedactedApiKeyToken(key.token) && <CopyButton value={key.token} />}
                         </div>
@@ -312,7 +338,7 @@ export default function ApiKeys() {
                           {key.status}
                         </span>
                       </td>
-                      <td className="p-4">
+                      <td className={tableActionsCellClass}>
                         <Select
                           onValueChange={(value) => {
                             if (value === 'update') {
@@ -329,11 +355,13 @@ export default function ApiKeys() {
                           <SelectContent>
                             <SelectItem value="update">Update</SelectItem>
                             <SelectItem
-                              disabled={key.token === apiKey}
+                              disabled={isSessionApiKey(key.token, apiKey)}
                               value="delete"
                               className="text-red-600"
                             >
-                              {key.token === apiKey ? 'Cannot delete current API key' : 'Delete'}
+                              {isSessionApiKey(key.token, apiKey)
+                                ? 'Cannot delete current API key'
+                                : 'Delete'}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -343,7 +371,7 @@ export default function ApiKeys() {
                 )}
               </tbody>
             </table>
-          </div>
+          </HorizontalScrollArea>
 
           <div className="flex flex-col gap-4 items-center">
             {!isLoading && (

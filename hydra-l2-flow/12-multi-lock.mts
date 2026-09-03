@@ -25,7 +25,11 @@ const _origWarn = logger.warn.bind(logger);
 	return _origWarn(msg, meta);
 };
 
-const HEAD_NODE_IDENTIFIER = process.env.HEAD_IDENTIFIER ?? '33f8e10a2a5e1f6e2276cf279eb4bc2f4a9e7442de5b7fb943a4ff67';
+// Undefined means: keep whatever sync-head-row.mts pinned. This used to default
+// to a hardcoded head id from 2026-08-28, which silently clobbered the live head
+// on every fresh run — the exact failure sync-head-row.mts exists to prevent, so
+// each flow died at lock with 'frame head id did not match the pinned head'.
+const HEAD_NODE_IDENTIFIER = process.env.HEAD_IDENTIFIER;
 const LOCK_LOVELACE = process.env.LOCK_LOVELACE ?? '3500000';
 const N = Number(process.env.N ?? 2);
 const hex = (n: number) => randomBytes(n).toString('hex');
@@ -42,7 +46,7 @@ async function main() {
 	const sellerWallet = head.HydraRelation.RemoteWallet;
 	const apiKey = await prisma.apiKey.findFirstOrThrow();
 
-	await prisma.hydraHead.update({ where: { id: head.id }, data: { status: HydraHeadStatus.Open, isEnabled: true, headIdentifier: HEAD_NODE_IDENTIFIER, openedAt: new Date() } });
+	await prisma.hydraHead.update({ where: { id: head.id }, data: { status: HydraHeadStatus.Open, isEnabled: true, ...(HEAD_NODE_IDENTIFIER ? { headIdentifier: HEAD_NODE_IDENTIFIER } : {}), openedAt: new Date() } });
 	const cm = getHydraConnectionManager();
 	await cm.connect({ id: head.id, LocalParticipant: { walletId: head.LocalParticipant!.walletId, nodeHttpUrl: head.LocalParticipant!.nodeHttpUrl, nodeUrl: head.LocalParticipant!.nodeUrl } });
 	await new Promise((r) => setTimeout(r, 800));

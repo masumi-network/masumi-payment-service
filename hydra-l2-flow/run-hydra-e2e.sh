@@ -776,7 +776,25 @@ settle_target_lovelace(){
   local lovelace; lovelace="$(curl -s "https://cardano-preprod.blockfrost.io/api/v0/addresses/$addr/utxos/$unit" -H "project_id: $KEY" \
     | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const u=JSON.parse(d)[0];console.log(u.amount.find(a=>a.unit==='lovelace').quantity)}catch{}})")"
   [ -n "$lovelace" ] || return 0
-  echo $(( lovelace - ${HEAD_ADA_OVERHEAD:-2517040} ))
+  # Read headAdaOverhead from the head datum, never a constant. Close enforces
+  # `headLovelace - snapshotUtxoLovelace == storedOverhead` exactly (H65), and the
+  # stored value depends on the datum size — a shorter contestation period encodes
+  # smaller and lowers it. On 2026-08-31 the hardcoded 2517040 was 8620 above the
+  # real 2508420, so this function under-reported the target, burn-phantom burned
+  # the 8620 "surplus", and a head that was closeable at snapshot 323 was
+  # permanently un-closeable at 324. Constant is only a last-resort fallback.
+  local stored
+  stored="$(curl -s --max-time 10 "$NODE1/head" | node -e "
+let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
+  try{
+    const ints=[];(function w(o){ if(o&&typeof o==='object'){ if('int' in o) ints.push(Number(o.int)); for(const v of Object.values(o)) w(v);} })(JSON.parse(d));
+    // min-UTxO sized: rules out party counts, periods and slot numbers.
+    const c=ints.filter(n=>n>1000000&&n<10000000);
+    console.log(c.length?Math.max(...c):'');
+  }catch(e){console.log('')}
+})" 2>/dev/null)"
+  case "$stored" in (''|*[!0-9]*) stored="${HEAD_ADA_OVERHEAD:-2517040}" ;; esac
+  echo $(( lovelace - stored ))
 }
 
 # Neutralize a deposit re-apply phantom before Close: a node restart could

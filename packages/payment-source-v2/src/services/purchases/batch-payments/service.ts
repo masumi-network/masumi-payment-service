@@ -31,7 +31,7 @@ import {
 	createTxWindow,
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
-import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
+import { isDefinitiveNodeRejection, isStaleInputRejection } from '@masumi/payment-core/submit-error-classifier';
 import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
@@ -1420,10 +1420,16 @@ export async function batchLatestPaymentEntriesV2() {
 								// failure — the tx was never broadcast and a later tick can succeed.
 								// Revert those to FundsLockingRequested so the scheduler re-batches
 								// them instead of parking a whole batch in WaitingForManualAction for
-								// an operator. Node rejections and non-transient build errors still go
-								// to manual action.
+								// an operator. Other node rejections and non-transient build errors
+								// still go to manual action.
+								//
+								// A node rejection for an input the ledger no longer holds is the
+								// same kind of non-failure: the wallet funded an earlier batch and
+								// the UTxO snapshot this build used was stale. Nothing was
+								// broadcast, and the next tick rebuilds from a fresh snapshot.
 								const isRetryableTransient =
-									outcome.status === 'pre-submit-failed' && isTransientPreSubmitError(outcome.error);
+									(outcome.status === 'pre-submit-failed' && isTransientPreSubmitError(outcome.error)) ||
+									(outcome.status === 'submit-rejected' && isStaleInputRejection(outcome.error));
 								const errNote =
 									outcome.status === 'submit-rejected'
 										? 'Batching payments rejected by node: ' + interpretBlockchainError(outcome.error)

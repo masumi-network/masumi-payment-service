@@ -245,7 +245,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   }
 
   return (
-    <div className="rounded-lg bg-[#F4F4F5] dark:bg-secondary p-1.5 flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5 rounded-lg bg-[#F4F4F5] p-1.5 pb-1 dark:bg-secondary">
       <div className="grid grid-cols-2 gap-1 mx-0.5">
         <Button
           variant="ghost"

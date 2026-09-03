@@ -7,14 +7,18 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
-import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import {
+  parseAgentStatus,
+  getAgentStatusBadgeVariant,
+  getAgentStatusHelperText,
+  getAgentIdentifierPlaceholder,
+} from '@/lib/agent-status';
 import { getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
 
-import { Separator } from '@/components/ui/separator';
-import { Link2, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
+import { Link2, Pencil, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { RegisterAIAgentDialog } from './RegisterAIAgentDialog';
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -33,20 +37,8 @@ import { AgentX402Options } from './AgentX402Options';
 import { AgentCardanoSources } from './AgentCardanoSources';
 import { AgentVerifications } from './AgentVerifications';
 import { parseLegacyAgentPricing } from '@/lib/registry-pricing';
-import {
-  hasExampleOutputs,
-  hasMeaningfulAuthor,
-  hasMeaningfulCapability,
-  hasMeaningfulLegal,
-  shouldShowAdditionalDetailsSection,
-} from '@/lib/agent-metadata-visibility';
-import {
-  MetadataField,
-  MetadataFields,
-  MetadataLinkValue,
-  MetadataPlainValue,
-  formatMetadataLinkLabel,
-} from './agent-metadata-fields';
+import { AgentAdditionalDetails } from './AgentAdditionalDetails';
+import { canEditAgentMetadata } from '@/lib/can-edit-agent-metadata';
 
 // The list page decorates agents with their relation to the active payment
 // source ('payment' = registered elsewhere, merely accepts payment here).
@@ -94,6 +86,7 @@ export function AIAgentDetailsDialog({
   // then open the mint dialog prefilled from this agent.
   const [isReRegisterConfirmOpen, setIsReRegisterConfirmOpen] = useState(false);
   const [isReRegisterOpen, setIsReRegisterOpen] = useState(false);
+  const [isUpdateOpen, setIsUpdateOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -120,26 +113,21 @@ export function AIAgentDetailsDialog({
     () => parseLegacyAgentPricing(agent?.AgentPricing),
     [agent?.AgentPricing],
   );
-  const showAdditionalDetails = useMemo(
-    () => (agent ? shouldShowAdditionalDetailsSection(agent) : false),
-    [agent],
-  );
-  const showAuthor = useMemo(() => hasMeaningfulAuthor(agent?.Author), [agent?.Author]);
-  const showLegal = useMemo(() => hasMeaningfulLegal(agent?.Legal), [agent?.Legal]);
-  const showCapability = useMemo(
-    () => hasMeaningfulCapability(agent?.Capability),
-    [agent?.Capability],
-  );
-  const showExampleOutputs = useMemo(
-    () => hasExampleOutputs(agent?.ExampleOutputs),
-    [agent?.ExampleOutputs],
-  );
 
   // Manage actions (deregister/verify) only apply to agents registered on the
   // active payment source; agents shown because they merely accept payment
   // here ('payment' relation) are managed from their home source — mirrors the
   // row-action gating on pages/ai-agents.tsx.
   const isManagedOnActiveSource = agent?.relation !== 'payment';
+  const activePaymentSource = useMemo(
+    () => currentNetworkPaymentSources.find((ps) => ps.id === selectedPaymentSourceId),
+    [currentNetworkPaymentSources, selectedPaymentSourceId],
+  );
+  const showEditMetadata = canEditAgentMetadata({
+    relation: agent?.relation,
+    canPay: capabilities.canPay,
+    selectedPaymentSource: activePaymentSource,
+  });
   // Deregistering is pay-authenticated; hard-deleting the DB row is admin-only.
   const canDeleteOrDeregister = isDbDeletableAgentState(agent?.state)
     ? capabilities.canAdmin
@@ -157,6 +145,7 @@ export function AIAgentDetailsDialog({
       // Never carry a half-open re-register flow from one agent into the next.
       setIsReRegisterConfirmOpen(false);
       setIsReRegisterOpen(false);
+      setIsUpdateOpen(false);
     }
   }, [agentId, initialTab]);
 
@@ -260,7 +249,8 @@ export function AIAgentDetailsDialog({
           !isDeleteDialogOpen &&
           !isPurchaseDialogOpen &&
           !isReRegisterConfirmOpen &&
-          !isReRegisterOpen
+          !isReRegisterOpen &&
+          !isUpdateOpen
         }
         onOpenChange={onClose}
       >
@@ -289,6 +279,11 @@ export function AIAgentDetailsDialog({
                     </Badge>
                   </div>
                 </div>
+                {getAgentStatusHelperText(agent.state) && (
+                  <p className="text-xs text-muted-foreground mt-2 pr-6">
+                    {getAgentStatusHelperText(agent.state)}
+                  </p>
+                )}
               </DialogHeader>
 
               <Tabs
@@ -424,155 +419,7 @@ export function AIAgentDetailsDialog({
 
                     <AgentVerifications verifications={agent.verifications} />
 
-                    {showAdditionalDetails ? (
-                      <div className="flex items-center gap-4 pt-2">
-                        <Separator className="flex-1" />
-                        <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                          Additional Details
-                        </h3>
-                        <Separator className="flex-1" />
-                      </div>
-                    ) : null}
-
-                    {/* Author and Legal */}
-                    {showAuthor || showLegal ? (
-                      <div
-                        className={cn(
-                          'grid grid-cols-1 gap-4',
-                          showAuthor && showLegal && 'md:grid-cols-2',
-                        )}
-                      >
-                        {showAuthor ? (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="text-sm font-medium">Author</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <MetadataFields>
-                                {agent.Author.name ? (
-                                  <MetadataField label="Name">
-                                    <MetadataPlainValue>{agent.Author.name}</MetadataPlainValue>
-                                  </MetadataField>
-                                ) : null}
-                                {agent.Author.contactEmail ? (
-                                  <MetadataField label="Email">
-                                    <MetadataLinkValue
-                                      href={`mailto:${agent.Author.contactEmail}`}
-                                      label={agent.Author.contactEmail}
-                                      showExternalIcon={false}
-                                    />
-                                  </MetadataField>
-                                ) : null}
-                                {agent.Author.organization ? (
-                                  <MetadataField label="Organization">
-                                    <MetadataPlainValue>
-                                      {agent.Author.organization}
-                                    </MetadataPlainValue>
-                                  </MetadataField>
-                                ) : null}
-                                {agent.Author.contactOther ? (
-                                  <MetadataField label="Website">
-                                    <MetadataLinkValue
-                                      href={agent.Author.contactOther}
-                                      label={formatMetadataLinkLabel(agent.Author.contactOther)}
-                                    />
-                                  </MetadataField>
-                                ) : null}
-                              </MetadataFields>
-                            </CardContent>
-                          </Card>
-                        ) : null}
-                        {showLegal ? (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="text-sm font-medium">Legal</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <MetadataFields>
-                                {agent.Legal?.terms ? (
-                                  <MetadataField label="Terms of use">
-                                    <MetadataLinkValue
-                                      href={agent.Legal.terms}
-                                      label={formatMetadataLinkLabel(agent.Legal.terms)}
-                                    />
-                                  </MetadataField>
-                                ) : null}
-                                {agent.Legal?.privacyPolicy ? (
-                                  <MetadataField label="Privacy policy">
-                                    <MetadataLinkValue
-                                      href={agent.Legal.privacyPolicy}
-                                      label={formatMetadataLinkLabel(agent.Legal.privacyPolicy)}
-                                    />
-                                  </MetadataField>
-                                ) : null}
-                                {agent.Legal?.other ? (
-                                  <MetadataField label="Support">
-                                    <MetadataLinkValue
-                                      href={agent.Legal.other}
-                                      label={formatMetadataLinkLabel(agent.Legal.other)}
-                                    />
-                                  </MetadataField>
-                                ) : null}
-                              </MetadataFields>
-                            </CardContent>
-                          </Card>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {/* Capability */}
-                    {showCapability ? (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Capability</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex justify-between text-sm py-2 px-3 bg-muted/40 border rounded-md">
-                            <span className="text-muted-foreground">Model</span>
-                            <span>
-                              {agent.Capability.name} (v
-                              {agent.Capability.version})
-                            </span>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ) : null}
-
-                    {/* Example Outputs */}
-                    {showExampleOutputs ? (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Example Outputs</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            {agent.ExampleOutputs.map((output, index) => (
-                              <div
-                                key={index}
-                                className="text-sm py-2 px-3 bg-muted/40 border rounded-md"
-                              >
-                                <div className="flex justify-between items-center gap-3">
-                                  <div className="min-w-0">
-                                    <p className="font-medium truncate">{output.name}</p>
-                                    <p className="text-xs text-muted-foreground truncate">
-                                      {output.mimeType}
-                                    </p>
-                                  </div>
-                                  <a
-                                    href={output.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline flex items-center gap-1 shrink-0"
-                                  >
-                                    View <Link2 className="h-3 w-3" />
-                                  </a>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ) : null}
+                    <AgentAdditionalDetails agent={agent} />
 
                     {/* Wallet Information */}
                     <Card>
@@ -598,7 +445,9 @@ export function AIAgentDetailsDialog({
                                   <CopyButton value={agent.agentIdentifier} />
                                 </>
                               ) : (
-                                <span className="text-muted-foreground">—</span>
+                                <span className="text-muted-foreground">
+                                  {getAgentIdentifierPlaceholder(agent.state)}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -702,6 +551,17 @@ export function AIAgentDetailsDialog({
               </div>
 
               <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
+                {showEditMetadata && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsUpdateOpen(true)}
+                    title="Update agent metadata (V2)"
+                    aria-label="Update agent metadata (V2)"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
                 {canReRegister && capabilities.canPay && (
                   <Button variant="outline" onClick={() => setIsReRegisterConfirmOpen(true)}>
                     <RotateCcw className="h-4 w-4" />
@@ -788,6 +648,18 @@ export function AIAgentDetailsDialog({
         onClose={() => setIsReRegisterOpen(false)}
         onSuccess={() => {
           setIsReRegisterOpen(false);
+          onClose();
+          onSuccess?.();
+        }}
+      />
+      <RegisterAIAgentDialog
+        open={isUpdateOpen && !!agent}
+        editingAgent={agent}
+        editingAgentSmartContractAddress={activePaymentSource?.smartContractAddress}
+        elevatedChildStack={elevatedStack}
+        onClose={() => setIsUpdateOpen(false)}
+        onSuccess={() => {
+          setIsUpdateOpen(false);
           onClose();
           onSuccess?.();
         }}
