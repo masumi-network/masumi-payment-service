@@ -32,14 +32,15 @@ git clone https://github.com/masumi-network/masumi-payment-service.git
 cd masumi-payment-service
 pnpm install                    # installs deps + generates the Prisma client
 
-cp .env.example .env            # then fill in DATABASE_URL, ENCRYPTION_KEY,
-                                # BLOCKFROST_API_KEY_PREPROD, ... (see docs/configuration.md)
+cp .env.example .env            # then fill in required seed variables (see below)
 
 pnpm run prisma:migrate:dev     # apply database migrations
 
-# Required before seeding Preprod payment sources (minimum for a new install):
-#   DATABASE_URL, ENCRYPTION_KEY, BLOCKFROST_API_KEY_PREPROD
-# Recommended: ADMIN_KEY (a secure value; the seed falls back to a public default if unset)
+# Required before `pnpm run prisma:seed` (Preprod payment sources):
+#   DATABASE_URL
+#   ENCRYPTION_KEY
+#   BLOCKFROST_API_KEY_PREPROD
+# Recommended: ADMIN_KEY (secure value; seed falls back to a public default if unset)
 pnpm run prisma:seed            # seed initial data (admin key, payment source)
 
 pnpm run dev                    # start the API server on http://localhost:3001
