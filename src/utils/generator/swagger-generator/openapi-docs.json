@@ -8348,7 +8348,9 @@
                                     },
                                     "walletAddress": {
                                         "type": "string",
+                                        "minLength": 58,
                                         "maxLength": 250,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "Cardano address of the admin wallet signing the request"
                                     },
                                     "validUntil": {
@@ -15414,7 +15416,9 @@
                                     },
                                     "walletAddress": {
                                         "type": "string",
+                                        "minLength": 58,
                                         "maxLength": 500,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "The wallet address that signed the message"
                                     },
                                     "validUntil": {
@@ -26993,6 +26997,7 @@
                                     "recipientWalletAddress": {
                                         "type": "string",
                                         "maxLength": 250,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "Optional managed hot wallet address on the same payment source that should receive the minted inbox registry NFT. If omitted, the minting wallet receives it."
                                     },
                                     "sendFundingLovelace": {
