@@ -107,6 +107,7 @@ export const registerInboxAgentSchemaInput = z.object({
 	recipientWalletAddress: z
 		.string()
 		.max(250)
+		.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'recipientWalletAddress must be a bech32 Cardano address')
 		.optional()
 		.describe(
 			'Optional managed hot wallet address on the same payment source that should receive the minted inbox registry NFT. If omitted, the minting wallet receives it.',
