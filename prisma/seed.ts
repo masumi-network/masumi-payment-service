@@ -304,8 +304,17 @@ export const seed = async (prisma: PrismaClient) => {
 		}
 		const latestTxHash = await queryLatestTxHash(blockfrostApiKeyPreprod, smartContractAddress, 'preprod');
 
-		if (shouldSkipV1) {
-			console.log('V1 preprod seeding skipped (per-type gating).');
+
+		const v1PreprodAddressExists =
+			(await prisma.paymentSource.count({
+				where: { network: Network.Preprod, smartContractAddress },
+			})) > 0;
+		if (shouldSkipV1 || v1PreprodAddressExists) {
+			console.log(
+				v1PreprodAddressExists
+					? 'V1 preprod seeding skipped (already seeded at this address).'
+					: 'V1 preprod seeding skipped (per-type gating).',
+			);
 		} else if (!seedV1Legacy) {
 			console.log('V1 preprod seeding skipped (Web3CardanoV2 is the default; set SEED_V1_LEGACY=true for legacy V1).');
 		} else
@@ -446,8 +455,16 @@ export const seed = async (prisma: PrismaClient) => {
 		// V2 is the default payment source for new installations. When
 		// SEED_V1_LEGACY=true, V2 requires distinct PURCHASE/SELLING_WALLET_V2_*
 		// mnemonics so HotWallet vkeys do not collide with the V1 source.
-		if (shouldSkipV2) {
-			console.log('V2 preprod seeding skipped (per-type gating).');
+		const v2PreprodAddressExists =
+			(await prisma.paymentSource.count({
+				where: { network: Network.Preprod, smartContractAddress: DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_V2_PREPROD },
+			})) > 0;
+		if (shouldSkipV2 || v2PreprodAddressExists) {
+			console.log(
+				v2PreprodAddressExists
+					? 'V2 preprod seeding skipped (already seeded at this address).'
+					: 'V2 preprod seeding skipped (per-type gating).',
+			);
 		} else if (seedV1Legacy && !hasDistinctV2PreprodMnemonics) {
 			console.log(
 				'V2 preprod seeding skipped in legacy mode: set PURCHASE_WALLET_V2_PREPROD_MNEMONIC and ' +
@@ -610,8 +627,16 @@ export const seed = async (prisma: PrismaClient) => {
 			);
 		}
 		const latestTxHash = await queryLatestTxHash(blockfrostApiKeyMainnet, smartContractAddress, 'mainnet');
-		if (shouldSkipV1) {
-			console.log('V1 mainnet seeding skipped (per-type gating).');
+		const v1MainnetAddressExists =
+			(await prisma.paymentSource.count({
+				where: { network: Network.Mainnet, smartContractAddress },
+			})) > 0;
+		if (shouldSkipV1 || v1MainnetAddressExists) {
+			console.log(
+				v1MainnetAddressExists
+					? 'V1 mainnet seeding skipped (already seeded at this address).'
+					: 'V1 mainnet seeding skipped (per-type gating).',
+			);
 		} else if (!seedV1Legacy) {
 			console.log('V1 mainnet seeding skipped (Web3CardanoV2 is the default; set SEED_V1_LEGACY=true for legacy V1).');
 		} else
@@ -712,8 +737,16 @@ export const seed = async (prisma: PrismaClient) => {
 				throw error;
 			}
 
-		if (shouldSkipV2) {
-			console.log('V2 mainnet seeding skipped (per-type gating).');
+		const v2MainnetAddressExists =
+			(await prisma.paymentSource.count({
+				where: { network: Network.Mainnet, smartContractAddress: DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_V2_MAINNET },
+			})) > 0;
+		if (shouldSkipV2 || v2MainnetAddressExists) {
+			console.log(
+				v2MainnetAddressExists
+					? 'V2 mainnet seeding skipped (already seeded at this address).'
+					: 'V2 mainnet seeding skipped (per-type gating).',
+			);
 		} else if (seedV1Legacy && !hasDistinctV2MainnetMnemonics) {
 			console.log(
 				'V2 mainnet seeding skipped in legacy mode: set PURCHASE_WALLET_V2_MAINNET_MNEMONIC and ' +
