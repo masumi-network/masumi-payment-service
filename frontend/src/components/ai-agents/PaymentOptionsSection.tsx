@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Trash2, Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import {
   Controller,
   type Control,
@@ -20,7 +20,8 @@ import {
 } from 'react-hook-form';
 import type { X402AvailableNetwork, X402Wallet } from '@/lib/api/generated';
 import { formatFundUnit } from '@/lib/utils';
-import { getPriceAmountAriaLabel, getPriceAmountLabel } from '@/lib/agent-registration-price-label';
+import { getPriceAmountAriaLabel } from '@/lib/agent-registration-price-label';
+import { FixedMasumiPriceRow } from './FixedMasumiPriceRow';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 import type { X402OptionDraft } from '@/lib/x402-registration';
 import {
@@ -421,11 +422,11 @@ function LegacyMasumiPricingFields({
             const selectedUnit = watch(`prices.${index}.unit`) || defaultPriceUnit;
             const displayUnit = formatFundUnit(selectedUnit, network);
             return (
-              <div
+              <FixedMasumiPriceRow
                 key={priceField.id}
-                className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
-              >
-                <div className="min-w-0 flex-1">
+                displayUnit={displayUnit}
+                priceIndex={index}
+                coinSelect={
                   <Controller
                     control={control}
                     name={`prices.${index}.unit` as const}
@@ -445,9 +446,8 @@ function LegacyMasumiPricingFields({
                       </Select>
                     )}
                   />
-                </div>
-                <div className="min-w-0 flex-1 space-y-1">
-                  <label className="text-xs font-medium">{getPriceAmountLabel(displayUnit)}</label>
+                }
+                amountInput={
                   <Input
                     type="number"
                     inputMode="decimal"
@@ -459,25 +459,16 @@ function LegacyMasumiPricingFields({
                     min="0"
                     step="0.000001"
                   />
-                  {errors.prices && Array.isArray(errors.prices) && errors.prices[index]?.amount ? (
+                }
+                amountError={
+                  errors.prices && Array.isArray(errors.prices) && errors.prices[index]?.amount ? (
                     <p className="mt-1 text-xs text-destructive">
                       {errors.prices[index]?.amount?.message}
                     </p>
-                  ) : null}
-                </div>
-                {index > 0 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
-                    aria-label={`Remove Masumi price ${index + 1}`}
-                    onClick={() => removePrice(index)}
-                  >
-                    <Trash2 />
-                  </Button>
-                ) : null}
-              </div>
+                  ) : null
+                }
+                onRemove={index > 0 ? () => removePrice(index) : undefined}
+              />
             );
           })}
           {errors.prices && typeof errors.prices.message === 'string' ? (

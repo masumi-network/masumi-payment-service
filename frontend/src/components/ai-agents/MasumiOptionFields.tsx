@@ -8,9 +8,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Trash2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { formatFundUnit } from '@/lib/utils';
-import { getPriceAmountAriaLabel, getPriceAmountLabel } from '@/lib/agent-registration-price-label';
+import { getPriceAmountAriaLabel } from '@/lib/agent-registration-price-label';
+import { FixedMasumiPriceRow } from './FixedMasumiPriceRow';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 import type {
   MasumiOptionDraft,
@@ -107,11 +108,11 @@ export function MasumiOptionFields({
           {option.prices.map((price, priceIndex) => {
             const displayUnit = formatFundUnit(price.unit, network);
             return (
-              <div
+              <FixedMasumiPriceRow
                 key={`${option.id}-${priceIndex}`}
-                className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
-              >
-                <div className="min-w-0 flex-1">
+                displayUnit={displayUnit}
+                priceIndex={priceIndex}
+                coinSelect={
                   <Select
                     value={price.unit}
                     onValueChange={(unit: MasumiOptionDraft['prices'][number]['unit']) =>
@@ -135,9 +136,8 @@ export function MasumiOptionFields({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="min-w-0 flex-1 space-y-1">
-                  <label className="text-xs font-medium">{getPriceAmountLabel(displayUnit)}</label>
+                }
+                amountInput={
                   <Input
                     type="number"
                     inputMode="decimal"
@@ -158,25 +158,17 @@ export function MasumiOptionFields({
                     min="0"
                     step="0.000001"
                   />
-                </div>
-                {option.prices.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
-                    aria-label={`Remove Masumi price ${priceIndex + 1}`}
-                    onClick={() =>
-                      onChange({
-                        ...option,
-                        prices: option.prices.filter((_, index) => index !== priceIndex),
-                      })
-                    }
-                  >
-                    <Trash2 />
-                  </Button>
-                ) : null}
-              </div>
+                }
+                onRemove={
+                  option.prices.length > 1
+                    ? () =>
+                        onChange({
+                          ...option,
+                          prices: option.prices.filter((_, index) => index !== priceIndex),
+                        })
+                    : undefined
+                }
+              />
             );
           })}
         </div>
