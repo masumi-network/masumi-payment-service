@@ -24,6 +24,7 @@ import { toast } from 'react-toastify';
 import { shortenAddress, cn } from '@/lib/utils';
 import Head from 'next/head';
 import { PaymentSourceTableSkeleton } from '@/components/skeletons/PaymentSourceTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
   tableActionsHeadCompactClass,
@@ -399,7 +400,7 @@ export default function PaymentSourcesPage() {
               </Badge>
             </div>
 
-            <div className="rounded-lg border overflow-x-auto">
+            <HorizontalScrollArea className="rounded-lg border">
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
@@ -424,7 +425,9 @@ export default function PaymentSourcesPage() {
                     <th scope="col" className="p-4 text-left text-sm font-medium">
                       Wallets
                     </th>
-                    <th scope="col" className={tableActionsHeadCompactClass}></th>
+                    <th scope="col" className={tableActionsHeadCompactClass}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -453,7 +456,7 @@ export default function PaymentSourcesPage() {
                       <tr
                         key={source.id}
                         className={cn(
-                          'border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 animate-fade-in opacity-0',
+                          'group border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 animate-fade-in opacity-0',
                           selectedPaymentSourceId === source.id &&
                             'bg-green-50 dark:bg-green-950/20',
                         )}
@@ -571,7 +574,7 @@ export default function PaymentSourcesPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
 
             <X402SourcesSection network={network} searchQuery={searchQuery} />
           </div>

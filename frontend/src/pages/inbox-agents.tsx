@@ -18,6 +18,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Tabs } from '@/components/ui/tabs';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
   tableActionsHeadCompactClass,
@@ -308,7 +309,7 @@ export default function InboxAgentsPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border overflow-x-auto">
+            <HorizontalScrollArea className="rounded-lg border">
               <table
                 className={cn(
                   'w-full transition-opacity duration-150',
@@ -338,7 +339,7 @@ export default function InboxAgentsPage() {
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Status
                     </th>
-                    <th className={tableActionsHeadCompactClass}></th>
+                    <th className={tableActionsHeadCompactClass}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -384,7 +385,7 @@ export default function InboxAgentsPage() {
                         <tr
                           key={agent.id}
                           className={cn(
-                            'border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
+                            'group border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
                             agent.state === 'DeregistrationConfirmed'
                               ? 'animate-fade-in-to-muted'
                               : 'animate-fade-in',
@@ -532,7 +533,7 @@ export default function InboxAgentsPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
 
             <div className="flex flex-col gap-4 items-center">
               {!((isLoading || isSourceResolving) && !inboxAgents.length) && (

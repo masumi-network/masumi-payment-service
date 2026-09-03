@@ -15,6 +15,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs } from '@/components/ui/tabs';
 import { WebhookDialog } from '@/components/webhooks/WebhookDialog';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellWideClass,
   tableActionsHeadWideClass,
@@ -263,7 +264,7 @@ export default function WebhooksPage() {
     }
 
     return (
-      <div className="rounded-lg border overflow-x-auto">
+      <HorizontalScrollArea className="rounded-lg border">
         <table className="w-full min-w-[1080px]">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
@@ -294,10 +295,7 @@ export default function WebhooksPage() {
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Updated
               </th>
-              <th
-                scope="col"
-                className={`${tableActionsHeadWideClass} text-sm font-medium text-muted-foreground`}
-              >
+              <th scope="col" className={tableActionsHeadWideClass}>
                 Actions
               </th>
             </tr>
@@ -380,7 +378,7 @@ export default function WebhooksPage() {
             })}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
     );
   };
 

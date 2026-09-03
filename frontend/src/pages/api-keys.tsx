@@ -14,6 +14,8 @@ import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import { tableActionsCellClass, tableActionsHeadClass } from '@/components/ui/table-actions-column';
 import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
 import { Search, Plus } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
@@ -229,7 +231,7 @@ export default function ApiKeys() {
             </div>
           </div>
 
-          <div className="border rounded-lg overflow-x-auto">
+          <HorizontalScrollArea className="border rounded-lg">
             <table className="w-full">
               <thead>
                 <tr className="border-b">
@@ -246,7 +248,7 @@ export default function ApiKeys() {
                   <th className="p-4 text-left text-sm font-medium">Networks</th>
                   <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="w-12 p-4"></th>
+                  <th className={tableActionsHeadClass}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -312,7 +314,7 @@ export default function ApiKeys() {
                           {key.status}
                         </span>
                       </td>
-                      <td className="p-4">
+                      <td className={tableActionsCellClass}>
                         <Select
                           onValueChange={(value) => {
                             if (value === 'update') {
@@ -343,7 +345,7 @@ export default function ApiKeys() {
                 )}
               </tbody>
             </table>
-          </div>
+          </HorizontalScrollArea>
 
           <div className="flex flex-col gap-4 items-center">
             {!isLoading && (

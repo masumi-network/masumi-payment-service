@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { MonthPicker } from '@/components/ui/month-picker';
 import { useInvoices, type InvoiceSummary } from '@/lib/hooks/useInvoices';
 import { useUninvoicedPayments, type UninvoicedPayment } from '@/lib/hooks/useUninvoicedPayments';
@@ -317,7 +318,7 @@ export default function Invoices() {
                   {invoicesErrorMessage}
                 </div>
               )}
-              <div className="border rounded-lg overflow-x-auto">
+              <HorizontalScrollArea className="border rounded-lg">
                 <table className="w-full">
                   <thead className="bg-muted/30 dark:bg-muted/15">
                     <tr className="border-b">
@@ -382,7 +383,7 @@ export default function Invoices() {
                         <tr
                           key={invoice.id}
                           className={cn(
-                            'border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                            'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
                             'cursor-pointer hover:bg-muted/50',
                           )}
                           style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
@@ -423,7 +424,7 @@ export default function Invoices() {
                     )}
                   </tbody>
                 </table>
-              </div>
+              </HorizontalScrollArea>
 
               <div className="flex flex-col gap-4 items-center">
                 {!isLoadingInvoices && (
