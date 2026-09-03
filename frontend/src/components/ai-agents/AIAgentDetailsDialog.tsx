@@ -7,7 +7,12 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
-import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import {
+  parseAgentStatus,
+  getAgentStatusBadgeVariant,
+  getAgentStatusHelperText,
+  getAgentIdentifierPlaceholder,
+} from '@/lib/agent-status';
 import { getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
@@ -274,6 +279,11 @@ export function AIAgentDetailsDialog({
                     </Badge>
                   </div>
                 </div>
+                {getAgentStatusHelperText(agent.state) && (
+                  <p className="text-xs text-muted-foreground mt-2 pr-6">
+                    {getAgentStatusHelperText(agent.state)}
+                  </p>
+                )}
               </DialogHeader>
 
               <Tabs
@@ -599,7 +609,9 @@ export function AIAgentDetailsDialog({
                                   <CopyButton value={agent.agentIdentifier} />
                                 </>
                               ) : (
-                                <span className="text-muted-foreground">—</span>
+                                <span className="text-muted-foreground">
+                                  {getAgentIdentifierPlaceholder(agent.state)}
+                                </span>
                               )}
                             </div>
                           </div>
