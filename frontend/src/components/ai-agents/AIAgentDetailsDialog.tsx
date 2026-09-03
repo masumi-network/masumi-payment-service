@@ -14,7 +14,7 @@ import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/regis
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
 
 import { Separator } from '@/components/ui/separator';
-import { Link2, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
+import { Link2, Pencil, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { RegisterAIAgentDialog } from './RegisterAIAgentDialog';
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -33,6 +33,7 @@ import { AgentX402Options } from './AgentX402Options';
 import { AgentCardanoSources } from './AgentCardanoSources';
 import { AgentVerifications } from './AgentVerifications';
 import { parseLegacyAgentPricing } from '@/lib/registry-pricing';
+import { canEditAgentMetadata } from '@/lib/can-edit-agent-metadata';
 
 // The list page decorates agents with their relation to the active payment
 // source ('payment' = registered elsewhere, merely accepts payment here).
@@ -80,6 +81,7 @@ export function AIAgentDetailsDialog({
   // then open the mint dialog prefilled from this agent.
   const [isReRegisterConfirmOpen, setIsReRegisterConfirmOpen] = useState(false);
   const [isReRegisterOpen, setIsReRegisterOpen] = useState(false);
+  const [isUpdateOpen, setIsUpdateOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -112,6 +114,15 @@ export function AIAgentDetailsDialog({
   // here ('payment' relation) are managed from their home source — mirrors the
   // row-action gating on pages/ai-agents.tsx.
   const isManagedOnActiveSource = agent?.relation !== 'payment';
+  const activePaymentSource = useMemo(
+    () => currentNetworkPaymentSources.find((ps) => ps.id === selectedPaymentSourceId),
+    [currentNetworkPaymentSources, selectedPaymentSourceId],
+  );
+  const showEditMetadata = canEditAgentMetadata({
+    relation: agent?.relation,
+    canPay: capabilities.canPay,
+    selectedPaymentSource: activePaymentSource,
+  });
   // Deregistering is pay-authenticated; hard-deleting the DB row is admin-only.
   const canDeleteOrDeregister = isDbDeletableAgentState(agent?.state)
     ? capabilities.canAdmin
@@ -129,6 +140,7 @@ export function AIAgentDetailsDialog({
       // Never carry a half-open re-register flow from one agent into the next.
       setIsReRegisterConfirmOpen(false);
       setIsReRegisterOpen(false);
+      setIsUpdateOpen(false);
     }
   }, [agentId, initialTab]);
 
@@ -232,7 +244,8 @@ export function AIAgentDetailsDialog({
           !isDeleteDialogOpen &&
           !isPurchaseDialogOpen &&
           !isReRegisterConfirmOpen &&
-          !isReRegisterOpen
+          !isReRegisterOpen &&
+          !isUpdateOpen
         }
         onOpenChange={onClose}
       >
@@ -690,6 +703,17 @@ export function AIAgentDetailsDialog({
               </div>
 
               <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
+                {showEditMetadata && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsUpdateOpen(true)}
+                    title="Update agent metadata (V2)"
+                    aria-label="Update agent metadata (V2)"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
                 {canReRegister && capabilities.canPay && (
                   <Button variant="outline" onClick={() => setIsReRegisterConfirmOpen(true)}>
                     <RotateCcw className="h-4 w-4" />
@@ -776,6 +800,18 @@ export function AIAgentDetailsDialog({
         onClose={() => setIsReRegisterOpen(false)}
         onSuccess={() => {
           setIsReRegisterOpen(false);
+          onClose();
+          onSuccess?.();
+        }}
+      />
+      <RegisterAIAgentDialog
+        open={isUpdateOpen && !!agent}
+        editingAgent={agent}
+        editingAgentSmartContractAddress={activePaymentSource?.smartContractAddress}
+        elevatedChildStack={elevatedStack}
+        onClose={() => setIsUpdateOpen(false)}
+        onSuccess={() => {
+          setIsUpdateOpen(false);
           onClose();
           onSuccess?.();
         }}

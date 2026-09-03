@@ -42,6 +42,7 @@ import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntr
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { canEditAgentMetadata } from '@/lib/can-edit-agent-metadata';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { AGENT_TYPE_LABELS, getAgentTypeLabel } from '@/lib/agent-type';
@@ -803,23 +804,24 @@ export default function AIAgentsPage() {
                                 >
                                   <ExternalLink className="h-4 w-4" />
                                 </Button>
-                                {agent.relation !== 'payment' &&
-                                  capabilities.canPay &&
-                                  selectedPaymentSource &&
-                                  isV2PaymentSource(selectedPaymentSource) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateClick(agent);
-                                      }}
-                                      className="text-primary hover:text-primary hover:bg-primary/10"
-                                      title="Update agent metadata (V2)"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                  )}
+                                {canEditAgentMetadata({
+                                  relation: agent.relation,
+                                  canPay: capabilities.canPay,
+                                  selectedPaymentSource,
+                                }) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateClick(agent);
+                                    }}
+                                    className="text-primary hover:text-primary hover:bg-primary/10"
+                                    title="Update agent metadata (V2)"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 {agent.relation !== 'payment' &&
                                   (agent.state === 'RegistrationFailed' ||
                                   agent.state === 'DeregistrationConfirmed'
