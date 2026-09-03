@@ -70,12 +70,19 @@ export const getAPIKeySchemaOutput = z.object({
 });
 
 export const addAPIKeySchemaInput = z.object({
+	// Optional, NOT defaulted. A default is applied whenever the field is absent, and
+	// combined with the admin guard in the route that made the documented admin create
+	// call impossible: POST /api-key {permission: 'Admin'} was filled in as
+	// usageLimited: true and then rejected with 400 'Admin API keys cannot have usage
+	// limits' for a flag the caller never sent. The route applies the non-admin default
+	// itself, so an omitted field still means "usage limited" for everyone else.
 	usageLimited: z
 		.string()
-		.default('true')
-		.transform((s) => (s.toLowerCase() == 'true' ? true : false))
+		.optional()
+		.transform((s) => (s == null ? undefined : s.toLowerCase() == 'true'))
 		.describe(
-			'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend',
+			'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend. ' +
+				'Omitted defaults to true for non-admin keys; admin keys are never usage limited.',
 		),
 	UsageCredits: z
 		.array(
@@ -84,9 +91,10 @@ export const addAPIKeySchemaInput = z.object({
 					.string()
 					.max(150)
 					.describe(
-						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). ' +
+						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); ' +
+							'"lovelace" is accepted and stored as the empty string. ' +
 							'For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), ' +
-							'e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.',
+							'e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.',
 					),
 				amount: z
 					.string()
@@ -173,9 +181,10 @@ export const updateAPIKeySchemaInput = z.object({
 					.string()
 					.max(150)
 					.describe(
-						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). ' +
+						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); ' +
+							'"lovelace" is accepted and stored as the empty string. ' +
 							'For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), ' +
-							'e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.',
+							'e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.',
 					),
 				amount: z
 					.string()
@@ -187,8 +196,17 @@ export const updateAPIKeySchemaInput = z.object({
 		.max(25)
 		.optional()
 		.describe('The amount of credits to add or remove from the API key. Only relevant if usageLimited is true. '),
-	usageLimited: z.boolean().default(true).optional().describe('Whether the API key is usage limited'),
-	status: z.nativeEnum(ApiKeyStatus).default(ApiKeyStatus.Active).optional().describe('The status of the API key'),
+	// No `.default(...)` on a PATCH field. Zod applies a default when the key is
+	// ABSENT, so `.default(true).optional()` turned every partial update that did
+	// not mention usageLimited into "cap this key", and the update dialog never
+	// sends the field. A key with no RemainingUsageCredits rows then failed every
+	// purchase with `Credit unit not found`, which surfaces as a bare 400
+	// 'Insufficient funds'. The same shape on `status` silently re-activated a
+	// Revoked key on any unrelated edit, and the defaulted `true` made the admin
+	// guard below reject the plain promotion call PATCH {id, canAdmin: true}.
+	// Omitted must mean unchanged, like every other field on this schema.
+	usageLimited: z.boolean().optional().describe('Whether the API key is usage limited. Omit to leave it unchanged.'),
+	status: z.nativeEnum(ApiKeyStatus).optional().describe('The status of the API key. Omit to leave it unchanged.'),
 	NetworkLimit: z
 		.array(z.nativeEnum(Network))
 		.max(3)

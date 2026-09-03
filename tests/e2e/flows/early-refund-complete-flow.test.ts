@@ -28,8 +28,16 @@ import {
 	authorizeRefund,
 } from '../helperFunctions';
 import { describeEachOrSkip } from '../utils/describeForCases';
+import { pickAgentForSlot } from '../utils/agentSlots';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
+
+// Flow files run concurrently (see `maxWorkers` in jest.e2e.config.ts). Each
+// one claims its own agent slot so that a payment source seeded with several
+// selling wallets gives every flow its own wallet, instead of all three
+// queueing behind one. With a single seeded wallet every slot resolves to the
+// same agent, which is the behaviour these flows had when they ran serially.
+const AGENT_SLOT = 2;
 
 // V2 is intentionally NOT covered by this single-item flow test. V2's
 // equivalent action surface is exercised by
@@ -67,10 +75,7 @@ describeEachOrSkip(
 			throw new Error('Test API client not initialized.');
 		}
 
-		const agent = global.testAgents?.[sourceType];
-		if (!agent) {
-			throw new Error(`No registered agent for ${sourceType}. globalSetup may have skipped this source type.`);
-		}
+		const agent = pickAgentForSlot(sourceType, AGENT_SLOT);
 
 		global.testConfig.paymentSourceType = sourceType;
 		global.testAgent = agent;
