@@ -1,5 +1,6 @@
 /** Sticky trailing column so row actions stay visible during horizontal scroll. */
-const tableActionsSticky = 'sticky right-0 z-10';
+// Pin actions only when the table container is at least 32rem wide.
+const tableActionsSticky = '@lg/table-scroll:sticky right-0 z-10';
 
 const tableActionsGradientDefault =
   'bg-[linear-gradient(to_right,transparent_0%,hsl(var(--background)/0.85)_14%,hsl(var(--background))_32%,hsl(var(--background))_100%)]';
@@ -13,10 +14,7 @@ const tableActionsGradientHover =
 const tableActionsHeadTypography =
   'text-right text-sm font-medium text-muted-foreground whitespace-nowrap';
 
-/** Fade zone passes clicks through; action controls stay interactive. */
-const tableActionsCellInteraction = 'pointer-events-none [&>*]:pointer-events-auto';
-
-const tableActionsCellShared = `${tableActionsSticky} ${tableActionsGradientDefault} ${tableActionsGradientHover} transition-[background] duration-150 ${tableActionsCellInteraction}`;
+const tableActionsCellShared = `${tableActionsSticky} ${tableActionsGradientDefault} ${tableActionsGradientHover} transition-[background] duration-150`;
 
 export const tableActionsHeadClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-48 min-w-48 p-4 pr-4 ${tableActionsHeadTypography}`;
 
@@ -31,6 +29,6 @@ export const tableActionsCellCompactLowBalanceHoverClass =
 
 export const tableActionsHeadWideClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-64 min-w-64 p-4 pr-4 ${tableActionsHeadTypography}`;
 
-export const tableActionsCellWideClass = `${tableActionsCellShared} w-64 min-w-64 p-4 pr-4`;
+export const tableActionsCellWideClass = `${tableActionsCellShared} w-64 min-w-64 p-4 pr-4 text-right`;
 
-export const tableActionsCellWideDestructiveClass = `${tableActionsSticky} ${tableActionsGradientDestructive} ${tableActionsGradientHover} transition-[background] duration-150 ${tableActionsCellInteraction} w-64 min-w-64 p-4 pr-4`;
+export const tableActionsCellWideDestructiveClass = `${tableActionsSticky} ${tableActionsGradientDestructive} ${tableActionsGradientHover} transition-[background] duration-150 w-64 min-w-64 p-4 pr-4`;

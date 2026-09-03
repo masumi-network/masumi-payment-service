@@ -832,9 +832,9 @@ export default function AIAgentsPage() {
                                         e.stopPropagation();
                                         handleDeleteClick(agent);
                                       }}
-                                      className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                      className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
                                     >
-                                      <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                      <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
                                     </Button>
                                   )}
                               </div>

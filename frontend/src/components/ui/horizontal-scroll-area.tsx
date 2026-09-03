@@ -1,20 +1,24 @@
-import type { ComponentProps } from 'react';
+import type { ComponentPropsWithoutRef } from 'react';
 
 import { useDragToScroll } from '@/lib/hooks/useDragToScroll';
 import { cn } from '@/lib/utils';
 
-export function HorizontalScrollArea({ className, children, ...props }: ComponentProps<'div'>) {
+export function HorizontalScrollArea({
+  className,
+  children,
+  ...props
+}: ComponentPropsWithoutRef<'div'>) {
   const { ref, isScrollable, isDragging } = useDragToScroll();
 
   return (
     <div
+      {...props}
       ref={ref}
       className={cn(
-        'overflow-x-auto',
+        '@container/table-scroll overflow-x-auto',
         isScrollable && (isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'),
         className,
       )}
-      {...props}
     >
       {children}
     </div>

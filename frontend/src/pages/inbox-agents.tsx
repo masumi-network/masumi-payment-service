@@ -505,14 +505,14 @@ export default function InboxAgentsPage() {
                                     event.stopPropagation();
                                     handleDeleteClick(agent);
                                   }}
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
                                   title={
                                     agent.state === 'RegistrationConfirmed'
                                       ? 'Deregister inbox agent'
                                       : 'Delete inbox agent'
                                   }
                                 >
-                                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
                                 </Button>
                               ) : agent.state === 'RegistrationInitiated' ||
                                 agent.state === 'DeregistrationInitiated' ? (
