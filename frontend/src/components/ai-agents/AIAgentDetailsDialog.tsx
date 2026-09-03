@@ -40,6 +40,13 @@ import {
   hasMeaningfulLegal,
   shouldShowAdditionalDetailsSection,
 } from '@/lib/agent-metadata-visibility';
+import {
+  MetadataField,
+  MetadataFields,
+  MetadataLinkValue,
+  MetadataPlainValue,
+  formatMetadataLinkLabel,
+} from './agent-metadata-fields';
 
 // The list page decorates agents with their relation to the active payment
 // source ('payment' = registered elsewhere, merely accepts payment here).
@@ -429,58 +436,49 @@ export function AIAgentDetailsDialog({
 
                     {/* Author and Legal */}
                     {showAuthor || showLegal ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div
+                        className={cn(
+                          'grid grid-cols-1 gap-4',
+                          showAuthor && showLegal && 'md:grid-cols-2',
+                        )}
+                      >
                         {showAuthor ? (
                           <Card>
                             <CardHeader>
                               <CardTitle className="text-sm font-medium">Author</CardTitle>
                             </CardHeader>
                             <CardContent>
-                              <div className="space-y-3 text-sm">
+                              <MetadataFields>
                                 {agent.Author.name ? (
-                                  <div className="flex justify-between gap-3">
-                                    <span className="text-muted-foreground shrink-0">Name</span>
-                                    <span className="text-right break-words">
-                                      {agent.Author.name}
-                                    </span>
-                                  </div>
+                                  <MetadataField label="Name">
+                                    <MetadataPlainValue>{agent.Author.name}</MetadataPlainValue>
+                                  </MetadataField>
                                 ) : null}
                                 {agent.Author.contactEmail ? (
-                                  <div className="flex justify-between gap-3">
-                                    <span className="text-muted-foreground shrink-0">Email</span>
-                                    <a
+                                  <MetadataField label="Email">
+                                    <MetadataLinkValue
                                       href={`mailto:${agent.Author.contactEmail}`}
-                                      className="text-primary hover:underline text-right break-all"
-                                    >
-                                      {agent.Author.contactEmail}
-                                    </a>
-                                  </div>
+                                      label={agent.Author.contactEmail}
+                                      showExternalIcon={false}
+                                    />
+                                  </MetadataField>
                                 ) : null}
                                 {agent.Author.organization ? (
-                                  <div className="flex justify-between gap-3">
-                                    <span className="text-muted-foreground shrink-0">
-                                      Organization
-                                    </span>
-                                    <span className="text-right break-words">
+                                  <MetadataField label="Organization">
+                                    <MetadataPlainValue>
                                       {agent.Author.organization}
-                                    </span>
-                                  </div>
+                                    </MetadataPlainValue>
+                                  </MetadataField>
                                 ) : null}
                                 {agent.Author.contactOther ? (
-                                  <div className="flex justify-between gap-3">
-                                    <span className="text-muted-foreground shrink-0">Website</span>
-                                    <a
+                                  <MetadataField label="Website">
+                                    <MetadataLinkValue
                                       href={agent.Author.contactOther}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary hover:underline flex items-center gap-1 text-right break-all"
-                                    >
-                                      {agent.Author.contactOther}{' '}
-                                      <Link2 className="h-3 w-3 shrink-0" />
-                                    </a>
-                                  </div>
+                                      label={formatMetadataLinkLabel(agent.Author.contactOther)}
+                                    />
+                                  </MetadataField>
                                 ) : null}
-                              </div>
+                              </MetadataFields>
                             </CardContent>
                           </Card>
                         ) : null}
@@ -490,51 +488,32 @@ export function AIAgentDetailsDialog({
                               <CardTitle className="text-sm font-medium">Legal</CardTitle>
                             </CardHeader>
                             <CardContent>
-                              <div className="space-y-3 text-sm">
+                              <MetadataFields>
                                 {agent.Legal?.terms ? (
-                                  <div className="flex justify-between gap-3">
-                                    <span className="text-muted-foreground shrink-0">
-                                      Terms of Use
-                                    </span>
-                                    <a
+                                  <MetadataField label="Terms of use">
+                                    <MetadataLinkValue
                                       href={agent.Legal.terms}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary hover:underline flex items-center gap-1"
-                                    >
-                                      View Link <Link2 className="h-3 w-3 shrink-0" />
-                                    </a>
-                                  </div>
+                                      label={formatMetadataLinkLabel(agent.Legal.terms)}
+                                    />
+                                  </MetadataField>
                                 ) : null}
                                 {agent.Legal?.privacyPolicy ? (
-                                  <div className="flex justify-between gap-3">
-                                    <span className="text-muted-foreground shrink-0">
-                                      Privacy Policy
-                                    </span>
-                                    <a
+                                  <MetadataField label="Privacy policy">
+                                    <MetadataLinkValue
                                       href={agent.Legal.privacyPolicy}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary hover:underline flex items-center gap-1"
-                                    >
-                                      View Link <Link2 className="h-3 w-3 shrink-0" />
-                                    </a>
-                                  </div>
+                                      label={formatMetadataLinkLabel(agent.Legal.privacyPolicy)}
+                                    />
+                                  </MetadataField>
                                 ) : null}
                                 {agent.Legal?.other ? (
-                                  <div className="flex justify-between gap-3">
-                                    <span className="text-muted-foreground shrink-0">Support</span>
-                                    <a
+                                  <MetadataField label="Support">
+                                    <MetadataLinkValue
                                       href={agent.Legal.other}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary hover:underline flex items-center gap-1"
-                                    >
-                                      View Link <Link2 className="h-3 w-3 shrink-0" />
-                                    </a>
-                                  </div>
+                                      label={formatMetadataLinkLabel(agent.Legal.other)}
+                                    />
+                                  </MetadataField>
                                 ) : null}
-                              </div>
+                              </MetadataFields>
                             </CardContent>
                           </Card>
                         ) : null}
