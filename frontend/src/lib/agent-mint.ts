@@ -5,7 +5,7 @@ export function minMintBalanceAda(): number {
   return MIN_MINT_BALANCE_LOVELACE / 1_000_000;
 }
 
-/** Mirrors the register dialog wallet picker: balances at or below the threshold are ineligible. */
+/** Mirrors the register dialog: balances at or below the threshold cannot mint until topped up. */
 export function hasSufficientMintBalance(balanceLovelace: number): boolean {
   return balanceLovelace > MIN_MINT_BALANCE_LOVELACE;
 }

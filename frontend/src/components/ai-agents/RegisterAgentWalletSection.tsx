@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/select';
 import { Controller, type Control, type FieldErrors, type UseFormRegister } from 'react-hook-form';
 import type { WalletListItem } from '@/lib/api/generated';
-import { cn, formatAssetAmount, formatFundUnit, shortenAddress } from '@/lib/utils';
+import { formatAssetAmount, formatFundUnit, shortenAddress } from '@/lib/utils';
 import { hasSufficientMintBalance, minMintBalanceAda } from '@/lib/agent-mint';
 import type { AgentFormValues } from './register-agent-schema';
 import type { NetworkType } from '@/lib/contexts/AppContext';
@@ -92,11 +92,7 @@ export function RegisterAgentWalletSection({
                     const eligible = hasSufficientMintBalance(wallet.balance);
                     const balanceLabel = formatAssetAmount(wallet.balance, 'lovelace', network);
                     return (
-                      <SelectItem
-                        disabled={!eligible}
-                        key={wallet.wallet.id}
-                        value={wallet.wallet.walletVkey}
-                      >
+                      <SelectItem key={wallet.wallet.id} value={wallet.wallet.walletVkey}>
                         {wallet.wallet.note
                           ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
                           : shortenAddress(wallet.wallet.walletAddress)}{' '}
@@ -112,15 +108,8 @@ export function RegisterAgentWalletSection({
           {errors.selectedWallet && (
             <p className="text-sm text-destructive">{errors.selectedWallet.message}</p>
           )}
-          {selectedMintWallet && (
-            <div
-              className={cn(
-                'rounded-lg border px-3 py-2 text-sm flex flex-wrap items-center justify-between gap-2',
-                hasSufficientMintBalance(selectedMintWallet.balance)
-                  ? 'border-green-200 bg-green-50/60 dark:border-green-900/50 dark:bg-green-950/20'
-                  : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20',
-              )}
-            >
+          {selectedMintWallet && !hasSufficientMintBalance(selectedMintWallet.balance) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm flex flex-wrap items-center justify-between gap-2 dark:border-amber-900/50 dark:bg-amber-950/20">
               <div>
                 <p>
                   <span className="font-medium">
@@ -135,9 +124,7 @@ export function RegisterAgentWalletSection({
               <Button
                 type="button"
                 size="sm"
-                variant={
-                  hasSufficientMintBalance(selectedMintWallet.balance) ? 'outline' : 'default'
-                }
+                variant="default"
                 className="gap-1"
                 onClick={() => onTopUp(selectedMintWallet.wallet.walletAddress)}
               >

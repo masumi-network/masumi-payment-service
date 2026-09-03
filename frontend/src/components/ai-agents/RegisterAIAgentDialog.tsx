@@ -728,7 +728,8 @@ export function RegisterAIAgentDialog({
         onSuccess={() => {
           void refetchWallets();
         }}
-        isChild
+        isChild={!!elevatedChildStack}
+        elevatedChildStack={!elevatedChildStack}
         elevatedGrandchildStack={elevatedChildStack}
       />
     </Dialog>
