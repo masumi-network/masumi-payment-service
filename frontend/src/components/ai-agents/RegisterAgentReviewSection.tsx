@@ -34,17 +34,18 @@ function SummaryRow({ label, value, detail }: { label: string; value: string; de
 }
 
 function hasAdditionalDetails(values: AgentFormValues): boolean {
+  const exampleOutputs = values.exampleOutputs ?? [];
   return Boolean(
-    values.authorName.trim() ||
-    values.authorEmail.trim() ||
-    values.organization.trim() ||
-    values.contactOther.trim() ||
-    values.termsOfUseUrl.trim() ||
-    values.privacyPolicyUrl.trim() ||
-    values.otherUrl.trim() ||
-    values.capabilityName.trim() ||
-    values.capabilityVersion.trim() ||
-    values.exampleOutputs.some(
+    values.authorName?.trim() ||
+    values.authorEmail?.trim() ||
+    values.organization?.trim() ||
+    values.contactOther?.trim() ||
+    values.termsOfUseUrl?.trim() ||
+    values.privacyPolicyUrl?.trim() ||
+    values.otherUrl?.trim() ||
+    values.capabilityName?.trim() ||
+    values.capabilityVersion?.trim() ||
+    exampleOutputs.some(
       (example) => example.name.trim() || example.url.trim() || example.mimeType.trim(),
     ),
   );
@@ -153,35 +154,39 @@ export function RegisterAgentReviewSection({
 
       {hasAdditionalDetails(values) ? (
         <ReviewSection title="Additional details">
-          {values.authorName.trim() ? (
+          {values.authorName?.trim() ? (
             <SummaryRow label="Author" value={values.authorName} />
           ) : null}
-          {values.authorEmail.trim() ? (
+          {values.authorEmail?.trim() ? (
             <SummaryRow label="Author email" value={values.authorEmail} />
           ) : null}
-          {values.organization.trim() ? (
+          {values.organization?.trim() ? (
             <SummaryRow label="Organization" value={values.organization} />
           ) : null}
-          {values.contactOther.trim() ? (
+          {values.contactOther?.trim() ? (
             <SummaryRow label="Contact" value={values.contactOther} />
           ) : null}
-          {values.termsOfUseUrl.trim() ? (
+          {values.termsOfUseUrl?.trim() ? (
             <SummaryRow label="Terms of use" value={values.termsOfUseUrl} />
           ) : null}
-          {values.privacyPolicyUrl.trim() ? (
+          {values.privacyPolicyUrl?.trim() ? (
             <SummaryRow label="Privacy policy" value={values.privacyPolicyUrl} />
           ) : null}
-          {values.otherUrl.trim() ? <SummaryRow label="Other URL" value={values.otherUrl} /> : null}
-          {values.capabilityName.trim() || values.capabilityVersion.trim() ? (
+          {values.otherUrl?.trim() ? (
+            <SummaryRow label="Other URL" value={values.otherUrl} />
+          ) : null}
+          {values.capabilityName?.trim() || values.capabilityVersion?.trim() ? (
             <SummaryRow
               label="Capability"
               value={[values.capabilityName, values.capabilityVersion].filter(Boolean).join(' · ')}
             />
           ) : null}
-          {values.exampleOutputs.some((example) => example.name.trim() || example.url.trim()) ? (
+          {(values.exampleOutputs ?? []).some(
+            (example) => example.name.trim() || example.url.trim(),
+          ) ? (
             <SummaryRow
               label="Example outputs"
-              value={`${values.exampleOutputs.filter((example) => example.name.trim() || example.url.trim()).length} configured`}
+              value={`${(values.exampleOutputs ?? []).filter((example) => example.name.trim() || example.url.trim()).length} configured`}
             />
           ) : null}
         </ReviewSection>
