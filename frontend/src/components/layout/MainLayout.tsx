@@ -45,6 +45,7 @@ import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { buildMainNavigation } from '@/components/layout/main-navigation';
 import { railHomePath, setupPath } from '@/lib/x402-navigation';
+import { MASUMI_DOCUMENTATION_URL, MASUMI_PRESS_URL, MASUMI_SUPPORT_URL } from '@/lib/masumi-links';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -520,12 +521,12 @@ export function MainLayout({ children }: MainLayoutProps) {
               )}
             >
               <Link
-                href="https://www.masumi.network/about"
+                href={MASUMI_PRESS_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="truncate hover:text-foreground transition-colors"
               >
-                About
+                Press
               </Link>
               <span className="mx-2 text-muted-foreground/40">|</span>
               <Link
@@ -535,15 +536,6 @@ export function MainLayout({ children }: MainLayoutProps) {
                 className="truncate hover:text-foreground transition-colors"
               >
                 Privacy
-              </Link>
-              <span className="mx-2 text-muted-foreground/40">|</span>
-              <Link
-                href="https://www.masumi.network/product-releases"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate hover:text-foreground transition-colors"
-              >
-                Changelog
               </Link>
             </div>
             <Button
@@ -584,7 +576,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <div className="flex items-center gap-4">
                 <Button variant="outline" size="sm" asChild>
                   <Link
-                    href="https://www.masumi.network/dev/masumi"
+                    href={MASUMI_DOCUMENTATION_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2"
@@ -595,7 +587,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 </Button>
                 <Button variant="outline" size="sm" asChild>
                   <Link
-                    href="https://www.masumi.network/contact"
+                    href={MASUMI_SUPPORT_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2"

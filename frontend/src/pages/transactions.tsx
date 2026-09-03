@@ -8,6 +8,11 @@ import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
+} from '@/components/ui/table-actions-column';
 import { MoreHorizontal, FlaskConical } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
@@ -469,7 +474,7 @@ export default function Transactions() {
             </div>
           )}
 
-          <div className="border rounded-lg overflow-x-auto">
+          <HorizontalScrollArea className="border rounded-lg">
             <table
               className={cn(
                 'w-full transition-opacity duration-150',
@@ -513,7 +518,7 @@ export default function Transactions() {
                     Unlock Time
                   </th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Date</th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pr-8"></th>
+                  <th className={tableActionsHeadCompactClass}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -553,7 +558,7 @@ export default function Transactions() {
                     <tr
                       key={transaction.id}
                       className={cn(
-                        'border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                        'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
                         transaction.NextAction?.errorType
                           ? 'bg-destructive/10 border-l-2 border-l-destructive'
                           : '',
@@ -668,7 +673,7 @@ export default function Transactions() {
                           : '—'}
                       </td>
                       <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
-                      <td className="p-4 pr-8">
+                      <td className={tableActionsCellCompactClass}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -683,7 +688,7 @@ export default function Transactions() {
                 )}
               </tbody>
             </table>
-          </div>
+          </HorizontalScrollArea>
 
           <div className="flex flex-col gap-4 items-center">
             {!isInitialLoading && (

@@ -25,6 +25,7 @@ import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { capabilitiesFromApiKeyStatus, isAdminOnlyPath, isPayOnlyPath } from '@/lib/permissions';
 import { hasLegacyOnlyPaymentSources, isV2PaymentSource } from '@/lib/payment-source-type';
+import { MASUMI_DOCUMENTATION_URL } from '@/lib/masumi-links';
 import {
   deniedPathFallback,
   isSetupPath,
@@ -471,7 +472,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
             The admin interface is designed for desktop. On a narrow screen some tables and dialogs
             may be hard to use.{' '}
             <Link
-              href="https://docs.masumi.io"
+              href={MASUMI_DOCUMENTATION_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="underline underline-offset-2"
