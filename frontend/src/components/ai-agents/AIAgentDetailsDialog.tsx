@@ -18,7 +18,6 @@ import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
 
-import { Separator } from '@/components/ui/separator';
 import { Link2, Pencil, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { RegisterAIAgentDialog } from './RegisterAIAgentDialog';
@@ -38,6 +37,7 @@ import { AgentX402Options } from './AgentX402Options';
 import { AgentCardanoSources } from './AgentCardanoSources';
 import { AgentVerifications } from './AgentVerifications';
 import { parseLegacyAgentPricing } from '@/lib/registry-pricing';
+import { AgentAdditionalDetails } from './AgentAdditionalDetails';
 import { canEditAgentMetadata } from '@/lib/can-edit-agent-metadata';
 
 // The list page decorates agents with their relation to the active payment
@@ -419,171 +419,7 @@ export function AIAgentDetailsDialog({
 
                     <AgentVerifications verifications={agent.verifications} />
 
-                    <div className="flex items-center gap-4 pt-2">
-                      <Separator className="flex-1" />
-                      <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                        Additional Details
-                      </h3>
-                      <Separator className="flex-1" />
-                    </div>
-
-                    {/* Author and Legal */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Author</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3 text-sm">
-                            <div className="flex justify-between gap-3">
-                              <span className="text-muted-foreground shrink-0">Name</span>
-                              <span className="text-right break-words">{agent.Author.name}</span>
-                            </div>
-                            {agent.Author.contactEmail && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Email</span>
-                                <a
-                                  href={`mailto:${agent.Author.contactEmail}`}
-                                  className="text-primary hover:underline text-right break-all"
-                                >
-                                  {agent.Author.contactEmail}
-                                </a>
-                              </div>
-                            )}
-                            {agent.Author.organization && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Organization</span>
-                                <span className="text-right break-words">
-                                  {agent.Author.organization}
-                                </span>
-                              </div>
-                            )}
-                            {agent.Author.contactOther && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Website</span>
-                                <a
-                                  href={agent.Author.contactOther}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1 text-right break-all"
-                                >
-                                  {agent.Author.contactOther} <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Legal</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3 text-sm">
-                            {agent.Legal?.terms && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Terms of Use</span>
-                                <a
-                                  href={agent.Legal.terms}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {agent.Legal?.privacyPolicy && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">
-                                  Privacy Policy
-                                </span>
-                                <a
-                                  href={agent.Legal.privacyPolicy}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {agent.Legal?.other && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Support</span>
-                                <a
-                                  href={agent.Legal.other}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {(!agent.Legal || Object.values(agent.Legal).every((v) => !v)) && (
-                              <span className="text-muted-foreground">
-                                No legal information provided.
-                              </span>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Capability */}
-                    {agent.Capability && (agent.Capability.name || agent.Capability.version) && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Capability</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex justify-between text-sm py-2 px-3 bg-muted/40 border rounded-md">
-                            <span className="text-muted-foreground">Model</span>
-                            <span>
-                              {agent.Capability.name} (v
-                              {agent.Capability.version})
-                            </span>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Example Outputs */}
-                    {agent.ExampleOutputs && agent.ExampleOutputs.length > 0 && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Example Outputs</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            {agent.ExampleOutputs.map((output, index) => (
-                              <div
-                                key={index}
-                                className="text-sm py-2 px-3 bg-muted/40 border rounded-md"
-                              >
-                                <div className="flex justify-between items-center gap-3">
-                                  <div className="min-w-0">
-                                    <p className="font-medium truncate">{output.name}</p>
-                                    <p className="text-xs text-muted-foreground truncate">
-                                      {output.mimeType}
-                                    </p>
-                                  </div>
-                                  <a
-                                    href={output.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline flex items-center gap-1 shrink-0"
-                                  >
-                                    View <Link2 className="h-3 w-3" />
-                                  </a>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
+                    <AgentAdditionalDetails agent={agent} />
 
                     {/* Wallet Information */}
                     <Card>
