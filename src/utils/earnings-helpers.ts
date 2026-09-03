@@ -21,6 +21,33 @@ export function parseDateRange(
 	return { periodStart, periodEnd };
 }
 
+/** Page size for the income/spending aggregation queries below. */
+export const EARNINGS_QUERY_BATCH_SIZE = 1000;
+
+/**
+ * Fetches rows via cursor pagination and hands each page to `processBatch`
+ * instead of returning the whole result set. Callers with an unbounded
+ * date range (the income/spending default) could otherwise pull an entire
+ * table's history into memory in one `findMany`; this bounds peak memory to
+ * one page regardless of total row count. Requires `orderBy` to end in a
+ * unique tiebreaker (these callers already sort by `id` last) so the cursor
+ * position is stable across pages.
+ */
+export async function fetchAndProcessInBatches<T extends { id: string }>(
+	fetchBatch: (cursorId: string | undefined) => Promise<T[]>,
+	batchSize: number,
+	processBatch: (rows: T[]) => void,
+): Promise<void> {
+	let cursorId: string | undefined;
+	for (;;) {
+		const batch = await fetchBatch(cursorId);
+		if (batch.length === 0) break;
+		processBatch(batch);
+		if (batch.length < batchSize) break;
+		cursorId = batch[batch.length - 1].id;
+	}
+}
+
 export function filterByAgentIdentifier<T extends { blockchainIdentifier: string }>(
 	transactions: T[],
 	agentIdentifier: string | null,
