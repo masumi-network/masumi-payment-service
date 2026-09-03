@@ -13,14 +13,8 @@ import {
 import { REPORT_METRIC_LABELS } from '@/lib/transaction-report/report-labels';
 import { shortenAddress } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   paginateReportRows,
   resetReportTablePageState,
@@ -233,8 +227,8 @@ export function FinancialWalletTable({
 
   return (
     <>
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
+      <HorizontalScrollArea className="rounded-lg border">
+        <table className="w-full caption-bottom text-sm">
           <TableHeader>
             <TableRow>
               <TableHead scope="col">Wallet</TableHead>
@@ -343,8 +337,8 @@ export function FinancialWalletTable({
               })
             )}
           </TableBody>
-        </Table>
-      </div>
+        </table>
+      </HorizontalScrollArea>
       <p className="mt-2 text-xs text-muted-foreground">
         A wallet that both sells and buys gets one row per side. Payment counts are per row, so they
         do not add up to the total above.

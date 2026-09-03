@@ -17,6 +17,8 @@ import { toast } from 'react-toastify';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import { tableActionsCellClass, tableActionsHeadClass } from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
@@ -521,7 +523,7 @@ export default function AIAgentsPage() {
               </div>
             )}
 
-            <div className="rounded-lg border overflow-x-auto">
+            <HorizontalScrollArea className="rounded-lg border">
               <table
                 className={cn(
                   'w-full transition-opacity duration-150',
@@ -578,7 +580,9 @@ export default function AIAgentsPage() {
                     >
                       Status
                     </th>
-                    <th scope="col" className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className={tableActionsHeadClass}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -618,7 +622,7 @@ export default function AIAgentsPage() {
                         <tr
                           key={agent.id}
                           className={cn(
-                            'border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
+                            'group border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
                             agent.state === 'DeregistrationConfirmed'
                               ? 'animate-fade-in-to-muted'
                               : 'animate-fade-in',
@@ -767,7 +771,7 @@ export default function AIAgentsPage() {
                               {parseAgentStatus(agent.state)}
                             </Badge>
                           </td>
-                          <td className="p-4 pr-8">
+                          <td className={tableActionsCellClass}>
                             {isDeregisterableAgentState(agent.state) ? (
                               <div className="flex items-center gap-1">
                                 {/* Manage actions (verify/update/delete) only apply to agents
@@ -794,7 +798,7 @@ export default function AIAgentsPage() {
                                     e.stopPropagation();
                                     openAgentDetails(agent, { initialTab: 'Earnings' });
                                   }}
-                                  className="text-white hover:text-gray-200 hover:bg-gray-600"
+                                  className="text-primary hover:text-primary hover:bg-primary/10"
                                   title="View Details & Earnings"
                                 >
                                   <ExternalLink className="h-4 w-4" />
@@ -828,9 +832,9 @@ export default function AIAgentsPage() {
                                         e.stopPropagation();
                                         handleDeleteClick(agent);
                                       }}
-                                      className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                      className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
                                     >
-                                      <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                      <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
                                     </Button>
                                   )}
                               </div>
@@ -854,7 +858,7 @@ export default function AIAgentsPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
 
             <div className="flex flex-col gap-4 items-center">
               {!(isLoading && !agents.length) && (
