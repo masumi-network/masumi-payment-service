@@ -243,6 +243,9 @@ if (checkFundTransferConfirmationInterval < 5)
 const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
 const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
 
+
+const maxConcurrentRequests = parseNumberEnv('MAX_CONCURRENT_REQUESTS', process.env.MAX_CONCURRENT_REQUESTS, '200', 1);
+
 export const CONFIG = {
 	PORT: process.env.PORT ?? '3001',
 	DATABASE_URL: process.env.DATABASE_URL,
@@ -270,6 +273,7 @@ export const CONFIG = {
 	WEBHOOK_DELIVERY_INTERVAL: webhookDeliveryInterval,
 	CHECK_HYDRA_TX_INTERVAL: checkHydraTxInterval,
 	WEBHOOK_CLEANUP_INTERVAL: webhookCleanupInterval,
+	MAX_CONCURRENT_REQUESTS: maxConcurrentRequests,
 	// OpenTelemetry configuration
 	OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? 'masumi-payment-service',
 	OTEL_SERVICE_VERSION: process.env.OTEL_SERVICE_VERSION ?? '0.1.0',
