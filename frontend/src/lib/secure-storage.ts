@@ -1,4 +1,3 @@
-
 const DB_NAME = 'masumi-secure-storage';
 const STORE_NAME = 'keys';
 const KEY_ID = 'api-key-encryption-key';
@@ -98,7 +97,6 @@ export async function encryptForStorage(plaintext: string): Promise<string> {
   const key = await getOrCreateKey();
   return encryptWithKey(key, plaintext);
 }
-
 
 export async function decryptFromStorage(stored: string): Promise<string | null> {
   try {
