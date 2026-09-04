@@ -24,6 +24,7 @@ describe('Hydra Host transport security', () => {
 				JSON.stringify({
 					hydraVersion: '0.20.0',
 					network: 'Preprod',
+					exchangeUrl: 'https://exchange.example.com:8444/exchange',
 					nodeSlots: { used: 0, capacity: 2 },
 				}),
 				{ status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -33,7 +34,28 @@ describe('Hydra Host transport security', () => {
 
 		await expect(
 			fetchHostCapabilities('http://10.0.0.8:4000', 'admin-token', { allowInsecureHttp: true }),
-		).resolves.toMatchObject({ hydraVersion: '0.20.0' });
+		).resolves.toMatchObject({
+			hydraVersion: '0.20.0',
+			exchangeUrl: 'https://exchange.example.com:8444/exchange',
+		});
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('rejects an insecure public Exchange Plane URL reported by the Host', async () => {
+		global.fetch = jest.fn<() => Promise<Response>>().mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					hydraVersion: '0.20.0',
+					network: 'Preprod',
+					exchangeUrl: 'http://exchange.example.com:8444/exchange',
+					nodeSlots: { used: 0, capacity: 2 },
+				}),
+				{ status: 200, headers: { 'Content-Type': 'application/json' } },
+			),
+		) as unknown as typeof fetch;
+
+		await expect(
+			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
+		).resolves.toMatchObject({ exchangeUrl: null });
 	});
 });

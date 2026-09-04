@@ -119,6 +119,8 @@ docker create --name hydra-host \
   -v /mnt/hydra_data:/data \
   -v /srv/hydra/blockfrost.txt:/run/secrets/blockfrost.txt:ro \
   -e HYDRA_HOST_PUBLIC_HOST=hydra1.example.com \
+  -e HYDRA_HOST_PUBLIC_EXCHANGE_URL=https://hydra-exchange.example.com:8444/exchange \
+  -e HYDRA_HOST_EXCHANGE_TRUST_PROXY=true \
   -e HYDRA_HOST_NETWORK=preprod \
   -e HYDRA_HOST_ADMIN_TOKEN="$HYDRA_HOST_ADMIN_TOKEN" \
   -e HYDRA_HOST_USER_TOKEN="$HYDRA_HOST_USER_TOKEN" \
@@ -203,8 +205,8 @@ that head actually peers with.
 
 | Port        | Plane                                          | Exposed                                                                                                                            |
 | ----------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `8443`      | Control. Your payment service talks to this.   | Yes, bearer-token gated. Restrict by source.                                                                                       |
-| `8444`      | Exchange. Where counterparties redeem invites. | Yes. See below.                                                                                                                    |
+| `8443`      | Control. Your payment service talks to this.   | Through the restricted Control Plane load balancer.                                                                                |
+| `8444`      | Exchange. Where counterparties redeem invites. | Through the public TLS Exchange Plane load balancer.                                                                               |
 | `5001-5032` | Peer. One per head, etcd raft.                 | Yes, per-head source allow-list.                                                                                                   |
 | `4001-4032` | `hydra-node` API                               | **Never.** Unauthenticated, can close a head. Pinned to loopback in code.                                                          |
 | `6001-6032` | Prometheus                                     | **Never.** `hydra-node` has no `--monitoring-host`, so it cannot be bound to loopback. Keep `HYDRA_HOST_MONITORING_ENABLED=false`. |
@@ -214,14 +216,15 @@ loopback only. It never crosses the network.
 
 ### DigitalOcean cloud firewall
 
-| Type    | Protocol | Ports     | Sources                                                                   |
-| ------- | -------- | --------- | ------------------------------------------------------------------------- |
-| Inbound | TCP      | 8443      | Your load balancer, or your payment service's address. Never `0.0.0.0/0`. |
-| Inbound | TCP      | 8444      | `0.0.0.0/0`                                                               |
-| Inbound | TCP      | 5001-5032 | Counterparty addresses only                                               |
-| Inbound | TCP      | 22        | Your own administrative range                                             |
+| Type    | Protocol | Ports     | Sources                                          |
+| ------- | -------- | --------- | ------------------------------------------------ |
+| Inbound | TCP      | 8443      | Control Plane load balancer. Never `0.0.0.0/0`.  |
+| Inbound | TCP      | 8444      | Exchange Plane load balancer. Never `0.0.0.0/0`. |
+| Inbound | TCP      | 5001-5032 | Counterparty addresses only                      |
+| Inbound | TCP      | 22        | Your own administrative range                    |
 
-The exchange plane on 8444 is open on purpose. It is unauthenticated by design,
+The Exchange Plane load balancer on 8444 is open on purpose. The droplet port
+accepts traffic only from that load balancer. The plane is unauthenticated by design,
 because the invite nonce is the credential: redemption requires a nonce this Host
 issued, unspent and unexpired. Bodies are capped at 64KB, concurrency at 16, and
 requests at 120 per minute. Nothing on that plane can provision, delete,
@@ -296,8 +299,34 @@ including `/etc/nftables.d/hydra-peer.nft` from `/etc/nftables.conf` and enablin
 ## 5. TLS and the load balancer
 
 The container serves plain HTTP and honours `X-Forwarded-Proto` for logging
-only. The token, not the transport, is what authenticates. Terminate TLS outside:
-a managed load balancer in front of `8443`.
+only. Terminate TLS outside the container for both HTTP planes.
+
+Use two regional load balancers because their public access rules differ:
+
+| Load balancer  | Public rule  | Backend rule | Access                                   |
+| -------------- | ------------ | ------------ | ---------------------------------------- |
+| Control Plane  | HTTPS `443`  | HTTP `8443`  | Allow only the payment service addresses |
+| Exchange Plane | HTTPS `8444` | HTTP `8444`  | Public                                   |
+
+Set `HYDRA_HOST_PUBLIC_EXCHANGE_URL` to the Exchange Plane URL, including
+`/exchange`. The Host reports this URL through its authenticated capabilities
+response. The payment service puts that exact URL in signed invites. It no
+longer derives the public Exchange Plane address from the private Control Plane
+address.
+
+Set `HYDRA_HOST_EXCHANGE_TRUST_PROXY=true` only when the cloud firewall permits
+the Exchange Plane load balancer to reach backend port `8444`. DigitalOcean adds
+the client address to `X-Forwarded-For`. The Host uses the last address when it
+is a valid IP. It ignores this header when the setting is false.
+
+VERIFIED on 2026-09-04: DigitalOcean regional load balancers support several
+port and protocol rules, and HTTP forwarding adds `X-Forwarded-For`. See the
+[forwarding-rule reference](https://docs.digitalocean.com/reference/doctl/reference/compute/load-balancer/add-forwarding-rules/)
+and [load-balancer feature reference](https://docs.digitalocean.com/products/networking/load-balancers/details/features/).
+
+Do not put both planes behind one public load balancer. A load balancer firewall
+applies to the load balancer, not to one forwarding rule. Making its Exchange
+Plane rule public would also make the Control Plane listener public.
 
 Keeping ACME state out of the image means the container has exactly one thing
 needing durable storage.

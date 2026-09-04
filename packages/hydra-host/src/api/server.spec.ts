@@ -25,6 +25,7 @@ const env: EnvSource = {
 	get: (key) =>
 		({
 			HYDRA_HOST_PUBLIC_HOST: 'hydra1.example.com',
+			HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'https://exchange.hydra1.example.com:8444/exchange',
 			HYDRA_HOST_ADMIN_TOKEN: ADMIN,
 			HYDRA_HOST_USER_TOKEN: USER,
 			HYDRA_HOST_PEER_PORT_COUNT: '4',
@@ -100,6 +101,15 @@ describe('control plane auth', () => {
 
 	it('accepts an admin route with the admin token', async () => {
 		expect((await call('GET', '/v1/nodes', { token: ADMIN })).status).toBe(200);
+	});
+
+	it('reports the configured public Exchange Plane URL to an admin', async () => {
+		const response = await call('GET', '/v1/capabilities', { token: ADMIN });
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			exchangeUrl: 'https://exchange.hydra1.example.com:8444/exchange',
+		});
 	});
 
 	it('404s an unknown path without revealing whether a token would help', async () => {
