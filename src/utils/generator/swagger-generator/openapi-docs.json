@@ -10397,7 +10397,8 @@
                                             "properties": {
                                                 "amount": {
                                                     "type": "string",
-                                                    "maxLength": 25,
+                                                    "maxLength": 19,
+                                                    "pattern": "^\\d+$",
                                                     "description": "Amount of the asset in smallest unit (e.g., lovelace for ADA)"
                                                 },
                                                 "unit": {
@@ -16920,7 +16921,8 @@
                                             "properties": {
                                                 "amount": {
                                                     "type": "string",
-                                                    "maxLength": 25,
+                                                    "maxLength": 19,
+                                                    "pattern": "^\\d+$",
                                                     "description": "Amount of the asset in smallest unit (e.g., lovelace for ADA)"
                                                 },
                                                 "unit": {

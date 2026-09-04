@@ -2,6 +2,8 @@ import { Network, PaymentSourceType, PricingType } from '@prisma/client';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
+	POSTGRES_BIGINT_MAX,
+	atomicAmountSchema,
 	getSupportedPaymentSourceCanonicalKey,
 	isCardanoAddressForNetwork,
 	isCardanoPubKeyAddressForNetwork,
@@ -370,5 +372,29 @@ describe('payment-source address and pricing validation', () => {
 		expect(migrationSql).toContain(`CASE WHEN "id" LIKE 'legacy-cardano-source-%' THEN 0 ELSE 1 END`);
 		expect(cardanoBackfill).toBeLessThan(sourcePricingClone);
 		expect(sourcePricingClone).toBeLessThan(v2TopLevelPricingDelete);
+	});
+});
+
+describe('atomicAmountSchema', () => {
+	it('accepts a valid positive digit string', () => {
+		expect(atomicAmountSchema.safeParse('12345').success).toBe(true);
+	});
+
+	it('accepts the largest amount that fits in a Postgres bigint', () => {
+		expect(atomicAmountSchema.safeParse(POSTGRES_BIGINT_MAX.toString()).success).toBe(true);
+	});
+
+	it.each([
+		['non-numeric strings', 'abc'],
+		['decimal amounts', '12.5'],
+		['negative amounts', '-5'],
+		['empty strings', ''],
+		['zero', '0'],
+		['hex-prefixed strings', '0x10'],
+		['whitespace-padded digits', ' 5 '],
+		['amounts exceeding the Postgres bigint range', (POSTGRES_BIGINT_MAX + 1n).toString()],
+		['amounts longer than 19 digits', '1'.repeat(20)],
+	])('rejects %s (%s) instead of letting BigInt() throw an uncaught error', (_label, value) => {
+		expect(atomicAmountSchema.safeParse(value).success).toBe(false);
 	});
 });
