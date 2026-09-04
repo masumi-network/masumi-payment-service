@@ -62,6 +62,8 @@ Two arm64 cases, and they are not the same problem:
 ### 1. Fetch `hydra-node`
 
 ```bash
+(
+set -e
 HYDRA_VERSION=2.3.0
 HYDRA_SHA256=a9074d0b69cc7104ccad672c942da7c0c695b4dbdff5002fd503904fe24ad528
 curl --proto '=https' --tlsv1.2 -fsSL -o hydra.zip \
@@ -70,6 +72,7 @@ printf '%s  %s\n' "$HYDRA_SHA256" hydra.zip | shasum -a 256 -c -
 unzip -j hydra.zip -d .bin
 chmod +x .bin/hydra-node
 .bin/hydra-node --version
+)
 ```
 
 The checksum above is the SHA-256 digest reported by the official Hydra 2.3.0

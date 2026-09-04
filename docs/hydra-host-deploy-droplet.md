@@ -120,7 +120,7 @@ docker create --name hydra-host \
   -v /srv/hydra/blockfrost.txt:/run/secrets/blockfrost.txt:ro \
   -e HYDRA_HOST_PUBLIC_HOST=hydra1.example.com \
   -e HYDRA_HOST_PUBLIC_EXCHANGE_URL=https://hydra-exchange.example.com:8444/exchange \
-  -e HYDRA_HOST_EXCHANGE_TRUST_PROXY=true \
+  -e HYDRA_HOST_EXCHANGE_TRUST_PROXY=false \
   -e HYDRA_HOST_NETWORK=preprod \
   -e HYDRA_HOST_ADMIN_TOKEN="$HYDRA_HOST_ADMIN_TOKEN" \
   -e HYDRA_HOST_USER_TOKEN="$HYDRA_HOST_USER_TOKEN" \
@@ -314,8 +314,11 @@ response. The payment service puts that exact URL in signed invites. It no
 longer derives the public Exchange Plane address from the private Control Plane
 address.
 
-Set `HYDRA_HOST_EXCHANGE_TRUST_PROXY=true` only when the cloud firewall permits
-the Exchange Plane load balancer to reach backend port `8444`. DigitalOcean adds
+Keep `HYDRA_HOST_EXCHANGE_TRUST_PROXY=false` during initial setup.
+Before enabling it, configure the load balancer and restrict backend port `8444`
+to that load balancer in the cloud firewall. Confirm that direct access is blocked.
+Then set `HYDRA_HOST_EXCHANGE_TRUST_PROXY=true` in the container configuration.
+DigitalOcean adds
 the client address to `X-Forwarded-For`. The Host uses the last address when it
 is a valid IP. It ignores this header when the setting is false.
 
