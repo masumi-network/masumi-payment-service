@@ -176,6 +176,12 @@ jest.unstable_mockModule('@masumi/payment-core/encryption', () => ({
 	encrypt: jest.fn((value: string) => `encrypted:${value}`),
 }));
 
+
+jest.unstable_mockModule('@masumi/payment-core/ssrf-guard', () => ({
+	isPrivateIpLiteral: jest.fn(() => false),
+	isPrivateOrUnresolvableHostname: jest.fn(async () => false),
+}));
+
 jest.unstable_mockModule('@x402/core/client', () => ({
 	x402Client: X402ClientMock,
 }));

@@ -17,6 +17,14 @@ jest.unstable_mockModule('viem', () => ({
 	http: jest.fn(),
 }));
 
+
+const mockIsPrivateIpLiteral = jest.fn(() => false);
+const mockIsPrivateOrUnresolvableHostname = jest.fn(async () => false);
+jest.unstable_mockModule('@masumi/payment-core/ssrf-guard', () => ({
+	isPrivateIpLiteral: mockIsPrivateIpLiteral,
+	isPrivateOrUnresolvableHostname: mockIsPrivateOrUnresolvableHostname,
+}));
+
 const { REMOTE_FACILITATOR_REQUEST_TIMEOUT_MS, RemoteHTTPFacilitatorClient } = await import('./remote-facilitator');
 
 const paymentRequirements: PaymentRequirements = {
@@ -42,6 +50,8 @@ describe('remote HTTP facilitator', () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch;
 		jest.useRealTimers();
+		mockIsPrivateIpLiteral.mockReturnValue(false);
+		mockIsPrivateOrUnresolvableHostname.mockResolvedValue(false);
 	});
 
 	it('requires HTTPS before a request can be constructed', () => {
