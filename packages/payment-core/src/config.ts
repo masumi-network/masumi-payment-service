@@ -243,7 +243,6 @@ if (checkFundTransferConfirmationInterval < 5)
 const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
 const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
 
-
 const maxConcurrentRequests = parseNumberEnv('MAX_CONCURRENT_REQUESTS', process.env.MAX_CONCURRENT_REQUESTS, '200', 1);
 
 export const CONFIG = {

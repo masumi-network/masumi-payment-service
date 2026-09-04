@@ -12,7 +12,6 @@ export type ConcurrencyLimitOptions = {
 const DEFAULT_RESPONSE_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_RETRY_AFTER_SECONDS = 1;
 
-
 export function createConcurrencyLimitMiddleware({
 	limit,
 	responseTimeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS,
