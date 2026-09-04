@@ -350,8 +350,22 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8443/v1/capabilities
 # 401 means healthy
 ```
 
-Point a load-balancer health check at `8443` with the same expectation, or at TCP
-connect if your load balancer cannot assert a status code.
+Configure a separate TCP health check on each load balancer:
+
+| Load balancer  | Health protocol | Backend port |
+| -------------- | --------------- | ------------ |
+| Control Plane  | TCP             | `8443`       |
+| Exchange Plane | TCP             | `8444`       |
+
+These ports match the forwarding rules and firewall sources above. The Exchange
+Plane load balancer cannot probe `8443` through those firewall rules.
+TCP checks confirm that a listener accepts connections. They do not test
+authentication, TLS, or head readiness. Keep the local `401` probe as a manual check.
+
+VERIFIED on 2026-09-05: DigitalOcean HTTP health checks accept status codes
+`200` through `399`, so the `401` probe cannot serve as an HTTP health check.
+TCP health checks require a successful TCP handshake. See the
+[health-check reference](https://docs.digitalocean.com/products/networking/load-balancers/how-to/manage/#health-checks).
 
 ## 7. One Host per volume
 
