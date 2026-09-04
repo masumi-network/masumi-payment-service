@@ -14,6 +14,8 @@ import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source'
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { logger } from '@masumi/payment-core/logger';
+import { createRateLimiter } from '@/utils/middleware/rate-limit';
 import {
 	getWalletListSchemaInput,
 	getWalletListSchemaOutput,
@@ -127,6 +129,9 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 	},
 });
 
+
+const walletSecretRevealRateLimiter = createRateLimiter({ maxRequests: 5, windowMs: 5 * 60_000 });
+
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getWalletSchemaInput,
@@ -211,6 +216,13 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 			};
 
 			if (input.includeSecret == true) {
+				const rateLimit = walletSecretRevealRateLimiter.consume(ctx.id);
+				if (!rateLimit.allowed) {
+					throw createHttpError(429, 'Too many wallet secret reveals; try again later.');
+				}
+
+				logger.warn(`Wallet secret disclosed for ${walletTypeLabel} wallet ${result.id} (admin key ${ctx.id})`);
+
 				return {
 					...base,
 					Secret: {

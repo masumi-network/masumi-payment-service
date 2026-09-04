@@ -64,8 +64,39 @@ const prepareRateLimitUpdate = (
 	};
 };
 
+export type RateLimitConsumeResult = { allowed: true } | { allowed: false; retryAfterSeconds: number };
+
+
+export const createRateLimiter = ({ maxRequests, windowMs }: RateLimitOptions) => {
+	const bucket = createRateLimitBucket();
+
+	return {
+		consume(key: string): RateLimitConsumeResult {
+			const now = Date.now();
+
+			if (bucket.size > 2048) {
+				cleanupExpiredEntries(bucket, now);
+			}
+
+			const update = prepareRateLimitUpdate(bucket, key, now, maxRequests, windowMs);
+			if (update.blockedUntil != null) {
+				return {
+					allowed: false,
+					retryAfterSeconds: Math.max(1, Math.ceil((update.blockedUntil - now) / 1000)),
+				};
+			}
+
+			if (update.nextCounter != null) {
+				bucket.set(key, update.nextCounter);
+			}
+
+			return { allowed: true };
+		},
+	};
+};
+
 export const createAuthenticatedRateLimitMiddleware = ({ maxRequests, windowMs }: RateLimitOptions) => {
-	const apiKeyBucket = createRateLimitBucket();
+	const limiter = createRateLimiter({ maxRequests, windowMs });
 
 	return new Middleware<AuthContext, AuthContext, string, typeof rateLimitInputSchema>({
 		input: rateLimitInputSchema,
@@ -74,23 +105,10 @@ export const createAuthenticatedRateLimitMiddleware = ({ maxRequests, windowMs }
 				return ctx;
 			}
 
-			const now = Date.now();
-
-			if (apiKeyBucket.size > 2048) {
-				cleanupExpiredEntries(apiKeyBucket, now);
-			}
-
-			const apiKeyUpdate = prepareRateLimitUpdate(apiKeyBucket, ctx.id, now, maxRequests, windowMs);
-			const blockedUntil = apiKeyUpdate.blockedUntil ?? 0;
-
-			if (blockedUntil > 0) {
-				const retryAfterSeconds = Math.max(1, Math.ceil((blockedUntil - now) / 1000));
-				response.setHeader('Retry-After', String(retryAfterSeconds));
+			const result = limiter.consume(ctx.id);
+			if (!result.allowed) {
+				response.setHeader('Retry-After', String(result.retryAfterSeconds));
 				throw createHttpError(429, 'Too many requests');
-			}
-
-			if (apiKeyUpdate.nextCounter != null) {
-				apiKeyBucket.set(ctx.id, apiKeyUpdate.nextCounter);
 			}
 
 			return ctx;
