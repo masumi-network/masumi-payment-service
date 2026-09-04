@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import { FileInput, ChevronsUpDown, Settings, Check, Coins } from 'lucide-react';
 import { cn, shortenAddress } from '@/lib/utils';
@@ -170,6 +170,13 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
           )}`
         : 'Select source';
 
+  const collapsedSourceLabel =
+    activeRail === 'x402'
+      ? 'Switch x402 (EVM) payment chain'
+      : capabilities.canAdmin
+        ? 'Switch or manage payment sources'
+        : 'Switch payment source';
+
   const dropdown = (
     <SourceDropdown
       networkSources={networkSources}
@@ -228,7 +235,8 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
                   'h-10 w-10 p-0 justify-center relative sidebar-active-indicator',
                   isOnPaymentSourcesPage && 'is-active',
                 )}
-                title={activeRail === 'x402' ? 'x402 (EVM) chain' : 'Payment Source'}
+                title={collapsedSourceLabel}
+                aria-label={collapsedSourceLabel}
               >
                 {activeRail === 'x402' ? (
                   <Coins className="h-4 w-4" />
@@ -278,13 +286,17 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
+              type="button"
               className={cn(
-                'flex items-center gap-2 w-full rounded-md px-3 h-7',
+                'flex items-center gap-2 w-full rounded-md px-3 py-2 min-h-9',
+                'border border-transparent hover:border-border/60',
                 'hover:bg-[#00000008] dark:hover:bg-[#ffffff08]',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 'transition-colors duration-150 text-left cursor-pointer',
                 'relative sidebar-active-indicator',
                 isOnPaymentSourcesPage && 'is-active',
               )}
+              aria-label={collapsedSourceLabel}
             >
               {activeRail === 'x402' ? (
                 <Coins className="h-3.5 w-3.5 shrink-0" />
@@ -292,6 +304,9 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
                 <FileInput className="h-3.5 w-3.5 shrink-0" />
               )}
               <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Payment source
+                </div>
                 <div
                   className={cn(
                     'text-xs truncate',
@@ -309,6 +324,29 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
         </DropdownMenu>
       )}
     </div>
+  );
+}
+
+function selectedSourceItemClass(isSelected: boolean) {
+  return cn(
+    'cursor-pointer flex items-start gap-2 rounded-md py-2',
+    isSelected && 'bg-accent text-accent-foreground',
+  );
+}
+
+/** Section title inside the payment-source picker (not duplicated with rail badges). */
+function DropdownSectionLabel({
+  children,
+  trailing,
+}: {
+  children: ReactNode;
+  trailing?: ReactNode;
+}) {
+  return (
+    <DropdownMenuLabel className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      {children}
+      {trailing}
+    </DropdownMenuLabel>
   );
 }
 
@@ -346,45 +384,54 @@ function SourceDropdown({
   const hasUnconfiguredChains = evmChains.some((chain) => !isX402ChainUsable(chain));
 
   return (
-    <DropdownMenuContent side="right" align="center" className="w-72">
-      <DropdownMenuLabel className="flex items-center gap-2">
-        Cardano
-        <RailBadge rail="cardano" />
-      </DropdownMenuLabel>
-      {networkSources.length === 0 && (
-        <div className="px-2 py-1.5 text-xs text-muted-foreground">No Cardano sources</div>
-      )}
-      {networkSources.map((source) => {
-        const isSelected = activeRail === 'cardano' && source.id === selectedPaymentSourceId;
-        const sourceWalletCount =
-          (source.PurchasingWalletsCount ?? 0) + (source.SellingWalletsCount ?? 0);
-        return (
-          <DropdownMenuItem
-            key={source.id}
-            className="cursor-pointer flex items-center gap-2"
-            onSelect={() => onSelectCardano(source.id)}
-          >
-            <Check
-              className={cn(
-                'h-4 w-4 shrink-0 transition-opacity duration-150',
-                isSelected ? 'opacity-100' : 'opacity-0',
-              )}
-            />
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <PaymentSourceTypeBadge paymentSourceType={source.paymentSourceType} showDefault />
+    <DropdownMenuContent
+      side="right"
+      align="start"
+      sideOffset={12}
+      alignOffset={-74}
+      collisionPadding={{ top: 8 }}
+      className="w-72 p-1"
+    >
+      <DropdownSectionLabel>Cardano</DropdownSectionLabel>
+      <div className="flex flex-col gap-1">
+        {networkSources.length === 0 && (
+          <div className="px-2 py-2 text-xs text-muted-foreground">No sources on this network</div>
+        )}
+        {networkSources.map((source) => {
+          const isSelected = activeRail === 'cardano' && source.id === selectedPaymentSourceId;
+          const sourceWalletCount =
+            (source.PurchasingWalletsCount ?? 0) + (source.SellingWalletsCount ?? 0);
+          return (
+            <DropdownMenuItem
+              key={source.id}
+              className={selectedSourceItemClass(isSelected)}
+              onSelect={() => onSelectCardano(source.id)}
+            >
+              <Check
+                className={cn(
+                  'mt-0.5 h-4 w-4 shrink-0 transition-opacity duration-150',
+                  isSelected ? 'opacity-100 text-primary' : 'opacity-0',
+                )}
+              />
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <PaymentSourceTypeBadge
+                    paymentSourceType={source.paymentSourceType}
+                    showDefault
+                  />
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {shortenAddress(source.smartContractAddress, 8)}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {sourceWalletCount} {sourceWalletCount === 1 ? 'wallet' : 'wallets'} ·{' '}
+                  {(source.feeRatePermille / 10).toFixed(1)}% fee
+                </span>
               </div>
-              <span className="font-mono text-sm break-all">
-                {shortenAddress(source.smartContractAddress, 8)}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {sourceWalletCount} {sourceWalletCount === 1 ? 'wallet' : 'wallets'} ·{' '}
-                {(source.feeRatePermille / 10).toFixed(1)}% fee
-              </span>
-            </div>
-          </DropdownMenuItem>
-        );
-      })}
+            </DropdownMenuItem>
+          );
+        })}
+      </div>
 
       {/* The chain projection is read-level, so every session that has EVM chains
           in its key limit sees the rail here. */}
@@ -392,12 +439,9 @@ function SourceDropdown({
         !capabilities.canAdmin &&
         !hasEvmChainLimit(capabilities.chainIdLimit) && (
           <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="flex items-center gap-2">
-              x402
-              <RailBadge rail="x402" />
-            </DropdownMenuLabel>
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            <DropdownMenuSeparator className="my-1" />
+            <DropdownSectionLabel trailing={<RailBadge rail="x402" />}>x402</DropdownSectionLabel>
+            <div className="px-2 py-2 text-xs text-muted-foreground">
               This API key has no EVM chains in its chain limit, so none can be shown. An admin can
               add them to the key.
             </div>
@@ -406,57 +450,56 @@ function SourceDropdown({
 
       {evmChains.length > 0 && (
         <>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="flex items-center gap-2">
-            x402
-            <RailBadge rail="x402" />
-          </DropdownMenuLabel>
-          {/* Only fully configured chains are selectable payment sources. Chains still
-              missing a facilitator or RPC aren't listed individually; they collapse into a
-              single "set up" entry below so the picker only ever offers a ready rail. */}
-          {usableEvmChains.map((chain) => {
-            const isSelected = activeRail === 'x402' && chain.id === selectedX402ChainId;
-            return (
-              <DropdownMenuItem
-                key={chain.id}
-                className="cursor-pointer flex items-center gap-2"
-                onSelect={() => onSelectEvm(chain.id)}
-              >
-                <Check
-                  className={cn(
-                    'h-4 w-4 shrink-0 transition-opacity duration-150',
-                    isSelected ? 'opacity-100' : 'opacity-0',
-                  )}
-                />
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
-                    <span className="truncate text-sm">{chain.displayName}</span>
+          <DropdownMenuSeparator className="my-1" />
+          <DropdownSectionLabel trailing={<RailBadge rail="x402" />}>x402</DropdownSectionLabel>
+          <div className="flex flex-col gap-1">
+            {/* Only fully configured chains are selectable payment sources. Chains still
+                missing a facilitator or RPC aren't listed individually; they collapse into a
+                single "set up" entry below so the picker only ever offers a ready rail. */}
+            {usableEvmChains.map((chain) => {
+              const isSelected = activeRail === 'x402' && chain.id === selectedX402ChainId;
+              return (
+                <DropdownMenuItem
+                  key={chain.id}
+                  className={selectedSourceItemClass(isSelected)}
+                  onSelect={() => onSelectEvm(chain.id)}
+                >
+                  <Check
+                    className={cn(
+                      'mt-0.5 h-4 w-4 shrink-0 transition-opacity duration-150',
+                      isSelected ? 'opacity-100 text-primary' : 'opacity-0',
+                    )}
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
+                      <span className="truncate text-sm font-medium">{chain.displayName}</span>
+                    </div>
+                    <span className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</span>
                   </div>
-                  <span className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</span>
-                </div>
+                </DropdownMenuItem>
+              );
+            })}
+            {capabilities.canAdmin && hasUnconfiguredChains && (
+              <DropdownMenuItem
+                className="cursor-pointer flex items-center gap-2 rounded-md"
+                onSelect={() => router.push('/x402-setup')}
+              >
+                <Coins className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="text-sm">
+                  {usableEvmChains.length === 0 ? 'Set up x402 (EVM)' : 'Set up another chain'}
+                </span>
               </DropdownMenuItem>
-            );
-          })}
-          {capabilities.canAdmin && hasUnconfiguredChains && (
-            <DropdownMenuItem
-              className="cursor-pointer flex items-center gap-2"
-              onSelect={() => router.push('/x402-setup')}
-            >
-              <Coins className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="text-sm">
-                {usableEvmChains.length === 0 ? 'Set up x402 (EVM)' : 'Set up another chain'}
-              </span>
-            </DropdownMenuItem>
-          )}
+            )}
+          </div>
         </>
       )}
 
       {capabilities.canAdmin && (
         <>
-          <DropdownMenuSeparator />
+          <DropdownMenuSeparator className="my-1" />
           <DropdownMenuItem
-            className={cn('cursor-pointer', isOnPaymentSourcesPage && 'bg-accent')}
+            className={cn('cursor-pointer rounded-md', isOnPaymentSourcesPage && 'bg-accent')}
             onSelect={() => router.push('/payment-sources')}
           >
             <Settings className="h-4 w-4 mr-2" />
