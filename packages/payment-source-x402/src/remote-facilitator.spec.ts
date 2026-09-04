@@ -17,7 +17,6 @@ jest.unstable_mockModule('viem', () => ({
 	http: jest.fn(),
 }));
 
-
 const mockIsPrivateIpLiteral = jest.fn(() => false);
 const mockIsPrivateOrUnresolvableHostname = jest.fn(async () => false);
 jest.unstable_mockModule('@masumi/payment-core/ssrf-guard', () => ({

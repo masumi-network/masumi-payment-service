@@ -1,7 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 
-
 export type IpFamily = 4 | 6;
 
 export type ResolvedAddress = {
@@ -60,7 +59,6 @@ const isLocalhostName = (hostname: string): boolean => hostname === 'localhost' 
 export const isBlockedIpAddress = (address: string, family: IpFamily): boolean =>
 	blockedAddressList.check(address, family === 4 ? 'ipv4' : 'ipv6');
 
-
 export const isPrivateIpLiteral = (hostname: string): boolean => {
 	const host = stripHostnameBrackets(hostname).toLowerCase();
 	if (isLocalhostName(host)) return true;
@@ -89,7 +87,6 @@ export const resolveHostnameAddresses = async (hostname: string): Promise<Resolv
 
 	return resolvedAddresses;
 };
-
 
 export const isPrivateOrUnresolvableHostname = async (hostname: string): Promise<boolean> => {
 	const host = stripHostnameBrackets(hostname).toLowerCase();
