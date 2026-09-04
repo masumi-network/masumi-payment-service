@@ -129,7 +129,6 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 	},
 });
 
-
 const walletSecretRevealRateLimiter = createRateLimiter({ maxRequests: 5, windowMs: 5 * 60_000 });
 
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({

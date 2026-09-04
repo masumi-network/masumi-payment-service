@@ -66,7 +66,6 @@ const prepareRateLimitUpdate = (
 
 export type RateLimitConsumeResult = { allowed: true } | { allowed: false; retryAfterSeconds: number };
 
-
 export const createRateLimiter = ({ maxRequests, windowMs }: RateLimitOptions) => {
 	const bucket = createRateLimitBucket();
 
