@@ -120,6 +120,18 @@ export const seed = async (prisma: PrismaClient) => {
 	if (shouldSkipV2) {
 		console.log('V2 PaymentSource(s) already present, skipping V2 seeding (SEED_ONLY_IF_EMPTY=true)');
 	}
+	const preprodValidation = validatePreprodSeedPrerequisites({
+		DATABASE_URL: process.env.DATABASE_URL,
+		ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
+		BLOCKFROST_API_KEY_PREPROD: process.env.BLOCKFROST_API_KEY_PREPROD,
+	});
+	if (!preprodValidation.ok) {
+		throw new Error(formatMissingEnvError(preprodValidation.missing));
+	}
+
+	const blockfrostApiKeyPreprod = process.env.BLOCKFROST_API_KEY_PREPROD!.trim();
+	const encryptionKey = process.env.ENCRYPTION_KEY!.trim();
+
 	let adminKey = process.env.ADMIN_KEY;
 	let usedDefaultAdminKey = false;
 
@@ -255,18 +267,6 @@ export const seed = async (prisma: PrismaClient) => {
 	}
 	const collectionWalletV2MainnetAddress =
 		process.env.COLLECTION_WALLET_V2_MAINNET_ADDRESS ?? collectionWalletMainnetAddress;
-
-	const preprodValidation = validatePreprodSeedPrerequisites({
-		DATABASE_URL: process.env.DATABASE_URL,
-		ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
-		BLOCKFROST_API_KEY_PREPROD: process.env.BLOCKFROST_API_KEY_PREPROD,
-	});
-	if (!preprodValidation.ok) {
-		throw new Error(formatMissingEnvError(preprodValidation.missing));
-	}
-
-	const blockfrostApiKeyPreprod = process.env.BLOCKFROST_API_KEY_PREPROD!.trim();
-	const encryptionKey = process.env.ENCRYPTION_KEY!.trim();
 
 	const adminWallet1AddressPreprod = DEFAULTS.ADMIN_WALLET1_PREPROD;
 	const adminWallet2AddressPreprod = DEFAULTS.ADMIN_WALLET2_PREPROD;
