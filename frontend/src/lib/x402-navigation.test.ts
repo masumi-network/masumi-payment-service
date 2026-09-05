@@ -48,6 +48,23 @@ test('direct x402 routes restore the rail only after available chains load', () 
   assert.equal(shouldRestoreX402Rail('/wallets', false, 1), false);
 });
 
+test('an explicit switch off the EVM rail is not undone by the deep-link restore', () => {
+  // Picking a Cardano source while standing on /x402/wallets leaves the rail on
+  // 'cardano' with the pathname still pointing at the EVM page for one render. Without
+  // this guard the restore fired, put the rail back on x402, and the pending navigation
+  // to '/' was then bounced on to /x402/dashboard, so the switch looked like it did
+  // nothing. `isRouteChanging` cannot cover this: Next emits routeChangeStart only after
+  // an await inside router.push, so it is still false when the effects flush.
+  assert.equal(shouldRestoreX402Rail('/x402/wallets', false, 1, false, true), false);
+  assert.equal(shouldRestoreX402Rail('/x402/dashboard', false, 1, false, true), false);
+});
+
+test('a deep link to an EVM page still restores the rail', () => {
+  // The case the restore exists for: the session arrives already on the Cardano rail,
+  // with no switch behind it, so the sidebar has to follow the page.
+  assert.equal(shouldRestoreX402Rail('/x402/wallets', false, 1, false, false), true);
+});
+
 test('x402 permission fallback, home, and setup paths keep rail context', () => {
   assert.equal(isX402RailPath('/x402-setup'), true);
   assert.equal(deniedPathFallback('/x402/chains', '/developers'), '/x402/dashboard');

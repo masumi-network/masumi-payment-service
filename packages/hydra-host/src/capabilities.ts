@@ -41,6 +41,8 @@ export type Capabilities = {
 	 * counterparty as a 404 for a nonce that was never theirs.
 	 */
 	exchangePort: number;
+	/** Public URL reported verbatim from validated Host configuration. */
+	exchangeUrl: string;
 };
 
 export type CapabilitiesDeps = {
@@ -48,6 +50,7 @@ export type CapabilitiesDeps = {
 	ledgerProtocolParametersFile: string;
 	network: string;
 	exchangePort: number;
+	exchangeUrl: string;
 	slots: () => { used: number; capacity: number };
 	exec?: (file: string, args: string[]) => Promise<{ stdout: string }>;
 };
@@ -100,6 +103,7 @@ export async function readCapabilities(deps: CapabilitiesDeps): Promise<Capabili
 		ledgerParamsHash,
 		network: deps.network,
 		exchangePort: deps.exchangePort,
+		exchangeUrl: deps.exchangeUrl,
 		nodeSlots: deps.slots(),
 	};
 }

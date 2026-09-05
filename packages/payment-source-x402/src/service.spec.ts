@@ -176,6 +176,11 @@ jest.unstable_mockModule('@masumi/payment-core/encryption', () => ({
 	encrypt: jest.fn((value: string) => `encrypted:${value}`),
 }));
 
+jest.unstable_mockModule('@masumi/payment-core/ssrf-guard', () => ({
+	isPrivateIpLiteral: jest.fn(() => false),
+	isPrivateOrUnresolvableHostname: jest.fn(async () => false),
+}));
+
 jest.unstable_mockModule('@x402/core/client', () => ({
 	x402Client: X402ClientMock,
 }));
@@ -1525,23 +1530,27 @@ describe('x402 service helpers', () => {
 			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
 		});
 
-		it('does not enforce the cap for a usage-limited key with no EVM credit rows at all', async () => {
-			// Grandfathering: usageLimited predates EVM credits. A pre-existing key with
-			// only Cardano-format credits must keep paying on x402 after the deploy
-			// instead of being hard-stopped by a unit format it has never heard of.
+		it('rejects with 402 for a usage-limited key with no EVM credit rows at all', async () => {
+			// This case used to be grandfathered through uncapped, because usageLimited
+			// predates EVM credits and once meant 'Cardano-limited'. It inverted the
+			// flag: a key the operator had marked limited spent x402 against the whole
+			// wallet balance. The answer now matches the case above, so it no longer
+			// depends on what the key happens to hold for OTHER chains.
 			mockUnitValueFindMany.mockResolvedValue([]);
 			mockUnitValueCount.mockResolvedValue(0);
 
-			await service.createX402Payment({
-				apiKeyId: 'api-key-1',
-				caip2NetworkLimit: [source.network],
-				evmWalletId: 'wallet-1',
-				paymentRequired,
-				usageLimited: true,
-			});
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 402 });
 
 			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
-			expect(mockCreatePaymentPayload).toHaveBeenCalled();
+			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
 		});
 
 		it('rejects with 402 when usage credits cannot cover the payment', async () => {

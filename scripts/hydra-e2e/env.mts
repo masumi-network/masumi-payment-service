@@ -150,6 +150,7 @@ export function hostEnv(spec: HostSpec): NodeJS.ProcessEnv {
 		HYDRA_HOST_PORT: String(spec.controlPort),
 		HYDRA_HOST_EXCHANGE_PORT: String(spec.exchangePort),
 		HYDRA_HOST_PUBLIC_HOST: PUBLIC_HOST,
+		HYDRA_HOST_PUBLIC_EXCHANGE_URL: `http://127.0.0.1:${spec.exchangePort}/exchange`,
 		HYDRA_HOST_NETWORK: 'preprod',
 		HYDRA_HOST_ADMIN_TOKEN: spec.adminToken,
 		HYDRA_HOST_USER_TOKEN: spec.userToken,

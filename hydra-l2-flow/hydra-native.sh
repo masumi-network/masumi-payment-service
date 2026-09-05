@@ -51,6 +51,10 @@ DEMO="${DEMO:-${HYDRA_DEMO_DIR:-$( \
   done )}}"
 
 HYDRA_VERSION="${HYDRA_VERSION:-2.3.0}"
+HYDRA_RELEASE_SHA256="${HYDRA_RELEASE_SHA256:-}"
+if [ -z "$HYDRA_RELEASE_SHA256" ] && [ "$HYDRA_VERSION" = '2.3.0' ]; then
+  HYDRA_RELEASE_SHA256='a9074d0b69cc7104ccad672c942da7c0c695b4dbdff5002fd503904fe24ad528'
+fi
 # Only used for the HYDRA_BIN_TAG path below (testing an unreleased commit):
 # hydra-node CI publishes those as workflow artifacts, not release assets.
 HYDRA_BIN_RUN_ID="${HYDRA_BIN_RUN_ID:-27418396480}"
@@ -115,9 +119,15 @@ ensure_bin(){
   else
     # Tagged releases from 2.3.0 onward publish aarch64-darwin binaries as a
     # release zip (2.2.0 and earlier had no release assets at all).
+    [ -n "$HYDRA_RELEASE_SHA256" ] || {
+      c_red "HYDRA_RELEASE_SHA256 is required for Hydra ${HYDRA_VERSION}"
+      exit 1
+    }
     c_blu "Downloading native hydra-aarch64-darwin-${HYDRA_VERSION}.zip (release asset, ~176 MiB)…"
     gh release download "$HYDRA_VERSION" --repo cardano-scaling/hydra \
       --pattern "hydra-aarch64-darwin-${HYDRA_VERSION}.zip" --dir "$tmp" || { c_red "download failed"; exit 1; }
+    printf '%s  %s\n' "$HYDRA_RELEASE_SHA256" "$tmp/hydra-aarch64-darwin-${HYDRA_VERSION}.zip" \
+      | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
     (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
   fi
   [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }

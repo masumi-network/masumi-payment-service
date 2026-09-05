@@ -1,6 +1,7 @@
 import createHttpError from 'http-errors';
 import { Prisma, X402CounterpartyRole, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { isPrivateIpLiteral, isPrivateOrUnresolvableHostname } from '@masumi/payment-core/ssrf-guard';
 import { defineChain, http } from 'viem';
 
 export type HexAddress = `0x${string}`;
@@ -37,42 +38,7 @@ export function assertValidPrivateKey(value: string): asserts value is PrivateKe
 	}
 }
 
-function isPrivateIpv4(ip: string): boolean {
-	const parts = ip.split('.').map((part) => Number(part));
-	if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
-		return true; // malformed → treat as unsafe
-	}
-	const [a, b] = parts;
-	if (a === 0 || a === 127) return true; // this-host / loopback
-	if (a === 10) return true; // private
-	if (a === 172 && b >= 16 && b <= 31) return true; // private
-	if (a === 192 && b === 168) return true; // private
-	if (a === 169 && b === 254) return true; // link-local incl. cloud metadata (169.254.169.254)
-	if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-	return false;
-}
-
-function isPrivateHost(hostname: string): boolean {
-	const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-	if (host === 'localhost' || host.endsWith('.localhost')) return true;
-	if (host.includes(':')) {
-		// IPv6: loopback (::1, ::), unique-local (fc00::/7 → fc/fd), link-local (fe80::/10
-		// spans fe80–febf, i.e. the fe8/fe9/fea/feb hextet prefixes)
-		if (host === '::1' || host === '::') return true;
-		if (host.startsWith('fc') || host.startsWith('fd') || /^fe[89ab]/.test(host)) return true;
-		const mapped = /::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(host);
-		if (mapped != null) return isPrivateIpv4(mapped[1]);
-		return false;
-	}
-	if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return isPrivateIpv4(host);
-	return false;
-}
-
-// SSRF guard for admin-configured RPC endpoints: reject non-http(s) schemes and hosts
-// that are literal private/loopback/link-local addresses (e.g. the cloud metadata IP).
-// This checks the hostname/literal IP only and does not resolve DNS, so it is a
-// mitigation rather than a complete SSRF defense.
-function assertSafeHttpUrl(value: string, label: string, requireHttps: boolean): void {
+function parseHttpUrl(value: string, label: string, requireHttps: boolean): URL {
 	let url: URL;
 	try {
 		url = new URL(value);
@@ -82,26 +48,55 @@ function assertSafeHttpUrl(value: string, label: string, requireHttps: boolean):
 	if (requireHttps ? url.protocol !== 'https:' : url.protocol !== 'http:' && url.protocol !== 'https:') {
 		throw createHttpError(400, `${label} must use ${requireHttps ? 'https' : 'http or https'}`);
 	}
-	if (isPrivateHost(url.hostname)) {
+	return url;
+}
+
+// Fast, synchronous pre-check: rejects a literal private/loopback/link-local IP (or
+// bracketed IPv6 literal, including an IPv4-mapped one like [::ffff:127.0.0.1]) with
+// no DNS lookup. Safe to call from a constructor. Does NOT catch a hostname whose DNS
+// record points at an internal address — that requires resolving it, which only the
+// Resolved variants below do. Keep both: this one is the only option where a caller
+// cannot await (see RemoteHTTPFacilitatorClient's constructor).
+function assertSafeHttpUrlLiteral(value: string, label: string, requireHttps: boolean): void {
+	const url = parseHttpUrl(value, label, requireHttps);
+	if (isPrivateIpLiteral(url.hostname)) {
 		throw createHttpError(400, `${label} must not target a private, loopback or link-local address`);
 	}
 }
 
+// The strong check: resolves DNS (or accepts a literal IP) and rejects if any resolved
+// address is private/loopback/link-local/reserved, or if the hostname cannot be
+// resolved at all. Use this everywhere a caller can await.
+async function assertSafeHttpUrlResolved(value: string, label: string, requireHttps: boolean): Promise<void> {
+	const url = parseHttpUrl(value, label, requireHttps);
+	if (await isPrivateOrUnresolvableHostname(url.hostname)) {
+		throw createHttpError(400, `${label} must not resolve to a private, loopback or link-local address`);
+	}
+}
+
 export function assertSafeRpcUrl(rpcUrl: string): void {
-	assertSafeHttpUrl(rpcUrl, 'x402 network rpcUrl', false);
+	assertSafeHttpUrlLiteral(rpcUrl, 'x402 network rpcUrl', false);
+}
+
+export async function assertSafeRpcUrlResolved(rpcUrl: string): Promise<void> {
+	await assertSafeHttpUrlResolved(rpcUrl, 'x402 network rpcUrl', false);
 }
 
 // Remote facilitator calls carry a payment authorization and can also carry an encrypted-at-rest
 // Authorization header. Unlike an RPC URL, plaintext HTTP is never acceptable for that material.
 // Keep the literal-host SSRF guard as defense in depth at both persistence and use time.
 export function assertSafeFacilitatorUrl(facilitatorUrl: string): void {
-	assertSafeHttpUrl(facilitatorUrl, 'x402 network facilitatorUrl', true);
+	assertSafeHttpUrlLiteral(facilitatorUrl, 'x402 network facilitatorUrl', true);
+}
+
+export async function assertSafeFacilitatorUrlResolved(facilitatorUrl: string): Promise<void> {
+	await assertSafeHttpUrlResolved(facilitatorUrl, 'x402 network facilitatorUrl', true);
 }
 
 // Build a viem HTTP transport with an SSRF check and a request timeout, so a slow or
 // hostile admin-configured RPC cannot hang a request indefinitely.
-export function safeHttpTransport(rpcUrl: string) {
-	assertSafeRpcUrl(rpcUrl);
+export async function safeHttpTransport(rpcUrl: string) {
+	await assertSafeRpcUrlResolved(rpcUrl);
 	return http(rpcUrl, { timeout: RPC_REQUEST_TIMEOUT_MS });
 }
 

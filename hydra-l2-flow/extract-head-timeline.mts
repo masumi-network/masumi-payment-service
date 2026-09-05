@@ -1,0 +1,205 @@
+/**
+ * Extract a timestamped timeline of a Hydra head's life from the node's own
+ * event store (`<persistence>/<party>/hydra.db`).
+ *
+ * This is the audit trail behind the benchmark numbers: it is the node's
+ * authoritative record, not our test harness's view. Every row carries a
+ * microsecond UTC timestamp written by hydra-node itself.
+ *
+ * Emits:
+ *   - a LIFECYCLE section: head state transitions (Init/Open/Close/Fanout …)
+ *   - a THROUGHPUT section: transactions applied to the local UTxO set, bucketed
+ *     per second, so the TPS claim can be cross-checked against the node's own
+ *     record. Applied is not confirmed: see the NOTE at that query.
+ *   - a TOTALS section: event counts by type
+ *
+ * Run:
+ *   pnpm exec tsx hydra-l2-flow/extract-head-timeline.mts \
+ *     [persistenceDir] [--json out.json]
+ *   default persistenceDir: hydra-l2-flow/preprod/persistence/purchasing
+ */
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+
+const args = process.argv.slice(2);
+const jsonFlagIndex = args.indexOf('--json');
+const jsonOut = jsonFlagIndex >= 0 ? args[jsonFlagIndex + 1] : undefined;
+const positional = args.filter(
+	(a, i) => !a.startsWith('--') && !(jsonFlagIndex >= 0 && i === jsonFlagIndex + 1),
+);
+const PERSIST =
+	positional[0] ?? join(process.cwd(), 'hydra-l2-flow', 'preprod', 'persistence', 'purchasing');
+const DB = join(PERSIST, 'hydra.db');
+
+/** Head-lifecycle events, in the order they occur. Everything else is traffic. */
+const LIFECYCLE = new Set([
+	'HeadInitialized',
+	'HeadOpened',
+	'HeadIsInitializing',
+	'HeadIsOpen',
+	'HeadIsClosed',
+	'HeadIsContested',
+	'HeadIsFinalized',
+	'HeadIsAborted',
+	'CommitRecorded',
+	'CommitApproved',
+	'CommitFinalized',
+	'DepositRecorded',
+	'DepositActivated',
+	'DepositExpired',
+	'ChainRolledBack',
+	'TxInvalid',
+]);
+
+/**
+ * One consistent snapshot per run, reused by every query and removed at exit.
+ * Snapshotting is required: the live DB has a hot WAL and must never be written
+ * to, and the file is >100 MB so re-reading it per query would be slow.
+ *
+ * `.backup` goes through SQLite's backup API rather than copying db, -wal and
+ * -shm as three separate files. That copy is not atomic. If the node checkpoints
+ * between the db copy and the WAL copy, the WAL is reset with a new salt, SQLite
+ * ignores it, and the read silently returns a state that never existed. Measured
+ * on a synthetic store holding 3000 rows: the three-file copy reported 2673, the
+ * backup reported 3000. This file is the audit trail behind the benchmark, so a
+ * silent under-count is the one failure it must not have.
+ */
+let dbCopy: string | undefined;
+function snapshotDb(): string {
+	if (dbCopy) return dbCopy;
+	const dir = mkdtempSync(join(tmpdir(), 'hydra-timeline-'));
+	const copy = join(dir, 'hydra.db');
+	try {
+		execFileSync('sqlite3', [DB, `.backup ${JSON.stringify(copy)}`], { stdio: 'pipe' });
+	} catch (err) {
+		const detail = (err as { stderr?: Buffer }).stderr?.toString().trim() || String(err);
+		throw new Error(`sqlite3 .backup of ${DB} failed: ${detail}`);
+	}
+	dbCopy = copy;
+	process.on('exit', () => {
+		try {
+			rmSync(dir, { recursive: true, force: true });
+		} catch {
+			/* best effort */
+		}
+	});
+	return copy;
+}
+
+function sqlite(query: string): string {
+	return execFileSync('sqlite3', [snapshotDb(), query], {
+		encoding: 'utf-8',
+		maxBuffer: 512 * 1024 * 1024,
+	});
+}
+
+function main() {
+	if (!existsSync(DB)) {
+		console.error(`no event store at ${DB}`);
+		process.exit(2);
+	}
+	console.log(`# Hydra head timeline — ${DB}\n`);
+
+	const total = sqlite('SELECT count(*) FROM events;').trim();
+	const span = sqlite(
+		"SELECT min(json_extract(event_data,'$.time')) || '|' || max(json_extract(event_data,'$.time')) FROM events;",
+	).trim();
+	const [first, last] = span.split('|');
+	console.log(`events: ${total}`);
+	console.log(`first:  ${first}`);
+	console.log(`last:   ${last}\n`);
+
+	// ── lifecycle ───────────────────────────────────────────────────────────
+	console.log('## Head lifecycle (node-recorded, UTC)\n');
+	const rows = sqlite(
+		"SELECT json_extract(event_data,'$.time') || '|' || json_extract(event_data,'$.stateChanged.tag') " +
+			'FROM events ORDER BY event_id;',
+	)
+		.split('\n')
+		.filter(Boolean);
+	let shown = 0;
+	for (const row of rows) {
+		const [time, tag] = row.split('|');
+		if (!tag || !LIFECYCLE.has(tag)) continue;
+		console.log(`  ${time}  ${tag}`);
+		shown += 1;
+	}
+	if (shown === 0) console.log('  (no lifecycle events — head may still be mid-run)');
+
+	// ── throughput, from the node's own per-transaction records ─────────────
+	// NOTE: the persisted SnapshotConfirmed event carries only signatures (its
+	// `snapshot` field is null on disk), so transactions-applied is the usable
+	// per-tx signal in the event store. Our harness's events.ndjson holds the
+	// authoritative per-tx sent/valid/confirmed timings; this cross-checks the
+	// aggregate rate against the node's own independent record.
+	console.log('\n## Transactions applied per second (node-recorded, busiest 15)\n');
+	const perSec = sqlite(
+		"SELECT substr(json_extract(event_data,'$.time'),1,19) AS sec, count(*) AS txs " +
+			"FROM events WHERE json_extract(event_data,'$.stateChanged.tag')='TransactionAppliedToLocalUTxO' " +
+			'GROUP BY sec ORDER BY txs DESC LIMIT 15;',
+	)
+		.split('\n')
+		.filter(Boolean);
+	if (perSec.length === 0) {
+		console.log('  (no transactions recorded)');
+	} else {
+		console.log('  UTC second → transactions applied in it:');
+		for (const row of perSec) {
+			const [sec, txs] = row.split('|');
+			console.log(`    ${sec}Z  ${String(txs).padStart(5)} tx/s`);
+		}
+		const peak = Number(perSec[0].split('|')[1]);
+		console.log(`\n  peak observed: ${peak} tx/s (node's own record)`);
+	}
+
+	// ── totals ──────────────────────────────────────────────────────────────
+	console.log('\n## Event totals by type\n');
+	const totals = sqlite(
+		"SELECT json_extract(event_data,'$.stateChanged.tag') AS tag, count(*) AS n " +
+			'FROM events GROUP BY tag ORDER BY n DESC;',
+	)
+		.split('\n')
+		.filter(Boolean);
+	for (const row of totals) {
+		const [tag, n] = row.split('|');
+		console.log(`  ${String(n).padStart(7)}  ${tag}`);
+	}
+
+	if (jsonOut) {
+		writeFileSync(
+			jsonOut,
+			JSON.stringify(
+				{
+					source: DB,
+					events: Number(total),
+					firstEvent: first,
+					lastEvent: last,
+					lifecycle: rows
+						.map((r) => r.split('|'))
+						.filter(([, tag]) => LIFECYCLE.has(tag))
+						.map(([time, tag]) => ({ time, tag })),
+					// appliedTxs, not confirmedTxs: this counts TransactionAppliedToLocalUTxO,
+					// which the node records on receipt, before the snapshot is multi-signed.
+					// SnapshotConfirmed is the confirmation signal, counted in eventTotals.
+					busiestSeconds: perSec.map((r) => {
+						const [sec, txs] = r.split('|');
+						return { second: `${sec}Z`, appliedTxs: Number(txs) };
+					}),
+					eventTotals: Object.fromEntries(
+						totals.map((r) => {
+							const [tag, n] = r.split('|');
+							return [tag, Number(n)];
+						}),
+					),
+				},
+				null,
+				2,
+			),
+		);
+		console.log(`\nJSON written to ${jsonOut}`);
+	}
+}
+
+main();

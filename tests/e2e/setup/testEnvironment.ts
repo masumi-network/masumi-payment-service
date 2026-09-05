@@ -41,7 +41,7 @@ beforeAll(async () => {
 	// been parameterized yet still has a sensible agent to fall back on. The
 	// `describe.each` blocks overwrite this per iteration with the matching type.
 	const fallbackAgent =
-		state.agents[PaymentSourceType.Web3CardanoV1] ?? state.agents[PaymentSourceType.Web3CardanoV2] ?? undefined;
+		state.agents[PaymentSourceType.Web3CardanoV1]?.[0] ?? state.agents[PaymentSourceType.Web3CardanoV2]?.[0];
 	if (fallbackAgent) {
 		global.testAgent = fallbackAgent;
 	}

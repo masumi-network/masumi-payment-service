@@ -4,7 +4,7 @@ import type { Server } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createExchangePlane, OVERFLOW_SOURCE, rateLimitKey } from './exchange-server.js';
+import { createExchangePlane, exchangeRequestSource, OVERFLOW_SOURCE, rateLimitKey } from './exchange-server.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 
 // The keys are the real shape a `.vk` envelope carries — `5820` and 32 bytes —
@@ -26,6 +26,21 @@ let dataDir: string;
 let onRedeemed: jest.Mock<(nonce: string, hostNodeId: string) => Promise<void>>;
 
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+describe('Exchange Plane request source', () => {
+	it('ignores forwarded addresses unless the proxy is trusted', () => {
+		expect(exchangeRequestSource('10.0.0.2', '198.51.100.4', false)).toBe('10.0.0.2');
+	});
+
+	it('uses the address appended by the trusted proxy', () => {
+		expect(exchangeRequestSource('10.0.0.2', '203.0.113.9, 198.51.100.4', true)).toBe('198.51.100.4');
+		expect(exchangeRequestSource('10.0.0.2', '2001:db8::7', true)).toBe('2001:db8::7');
+	});
+
+	it('falls back to the socket address for a malformed forwarded address', () => {
+		expect(exchangeRequestSource('10.0.0.2', 'attacker-controlled', true)).toBe('10.0.0.2');
+	});
+});
 
 /** Poll until the value is set, for work the handler does after answering. */
 async function eventually<T>(read: () => Promise<T | null>, timeoutMs = 2_000): Promise<T | null> {

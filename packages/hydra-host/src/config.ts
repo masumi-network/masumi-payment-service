@@ -14,6 +14,10 @@ export type HostConfig = {
 	dataDir: string;
 	hydraNodeBin: string;
 	listenPort: number;
+	/** Public, TLS-backed URL that counterparties use to redeem invites. */
+	publicExchangeUrl: string;
+	/** Trust the last X-Forwarded-For value from the Exchange Plane proxy. */
+	exchangeTrustProxy: boolean;
 	/**
 	 * Port for the counterparty-facing Exchange Plane.
 	 *
@@ -130,6 +134,27 @@ function integer(env: EnvSource, key: string, fallback: number): number {
 
 const HOSTNAME_PATTERN = /^[A-Za-z0-9._-]+$/;
 
+function publicExchangeUrl(env: EnvSource): string {
+	const raw = required(env, 'HYDRA_HOST_PUBLIC_EXCHANGE_URL');
+	let parsed: URL;
+	try {
+		parsed = new URL(raw);
+	} catch {
+		throw new ConfigError('HYDRA_HOST_PUBLIC_EXCHANGE_URL must be an absolute URL');
+	}
+	if (parsed.username.length > 0 || parsed.password.length > 0 || parsed.search.length > 0 || parsed.hash.length > 0) {
+		throw new ConfigError('HYDRA_HOST_PUBLIC_EXCHANGE_URL must not contain credentials, a query, or a fragment');
+	}
+	if (parsed.pathname.replace(/\/+$/, '') !== '/exchange') {
+		throw new ConfigError('HYDRA_HOST_PUBLIC_EXCHANGE_URL must end with /exchange');
+	}
+	const isLoopback = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
+	if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback)) {
+		throw new ConfigError('HYDRA_HOST_PUBLIC_EXCHANGE_URL must use HTTPS unless it points to loopback');
+	}
+	return parsed.toString().replace(/\/+$/, '');
+}
+
 export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 	const publicHost = required(env, 'HYDRA_HOST_PUBLIC_HOST');
 	if (!HOSTNAME_PATTERN.test(publicHost)) {
@@ -187,6 +212,8 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		hydraNodeBin: optional(env, 'HYDRA_NODE_BIN', '/usr/local/bin/hydra-node'),
 		listenPort: tcpPort(env, 'HYDRA_HOST_PORT', 8443),
 		exchangePort: tcpPort(env, 'HYDRA_HOST_EXCHANGE_PORT', 8444),
+		publicExchangeUrl: publicExchangeUrl(env),
+		exchangeTrustProxy: optional(env, 'HYDRA_HOST_EXCHANGE_TRUST_PROXY', 'false') === 'true',
 		publicHost,
 		network,
 		blockfrostProjectFile: optional(env, 'BLOCKFROST_PROJECT_FILE', '/run/secrets/blockfrost.txt'),

@@ -83,6 +83,74 @@ pnpm run test:e2e:v1
 pnpm run test:e2e:v2
 ```
 
+## Parallel flows
+
+Flow files run concurrently. `maxWorkers` in `jest.e2e.config.ts` defaults to 3,
+one per V1 flow file. Nothing in the suite shares state across files: Jest gives
+each test file its own module registry and its own `global`, and worker
+processes inherit `process.env`, so the agents that `globalSetup` registered
+still reach them.
+
+Set `E2E_MAX_WORKERS=1` to run the files one after another. Do that when you are
+debugging a stuck run: a worker buffers its console output until its test file
+finishes, so live progress is hidden while a long on-chain wait is in flight.
+
+Concurrent flows also make the API server slower to answer. `POST /payment` and
+`POST /purchase` are CPU-heavy and share one event loop with the schedulers, so
+three at once stretch a ~5s call past 20s. Raise `TEST_TIMEOUT_API` (CI uses
+`120000`) instead of accepting the 30s default, or requests abort mid-flow.
+
+### One selling wallet per flow (optional)
+
+What still serializes is on chain. V1 takes one request per hot wallet per
+scheduler tick and keeps the wallet locked until the transaction confirms, so
+concurrent flows that share a wallet pipeline instead of overlapping.
+
+`globalSetup` registers `E2E_AGENTS_PER_SOURCE` agents per payment source, each
+bound to its own selling hot wallet, and each flow file claims an agent slot
+(`AGENT_SLOT` in the file, resolved by `pickAgentForSlot`). The default is 1:
+one agent shared by every flow, which is how the flows behaved when they ran one
+at a time.
+
+To give the three V1 flows a wallet each, seed two more selling wallets and
+raise the count:
+
+```bash
+# seed step
+SELLING_WALLET_PREPROD_MNEMONIC_2="24 words ..."
+SELLING_WALLET_PREPROD_MNEMONIC_3="24 words ..."
+
+# test step
+E2E_AGENTS_PER_SOURCE=3
+```
+
+The seed reads `SELLING_WALLET_PREPROD_MNEMONIC_2`, `_3` and so on, stopping at
+the first gap, and never brews a replacement. Every extra mnemonic must be a
+distinct and **funded** Preprod wallet: an unfunded wallet is still picked by the
+scheduler and stalls the flow that owns it. Asking for more agents than there
+are wallets logs a warning and falls back to sharing.
+
+The wallets are created while the payment source is seeded. A database that
+already holds the V1 source skips seeding under `SEED_ONLY_IF_EMPTY=true`, so a
+mnemonic added later needs a fresh database. CI creates one per run.
+
+Buyer-side actions (request-refund, cancel-refund) still queue. They run on the
+purchasing wallet, and the V1 batch builder fills the first eligible purchasing
+wallet before it uses a second one, so extra purchasing wallets do not spread
+them. Pinning a purchase to a wallet needs a wallet-scoped API key per flow.
+
+### Purchasing wallet funding
+
+Concurrent flows lock funds together, in one batched transaction from one
+purchasing wallet, so that wallet needs `maxWorkers` locks' worth at once rather
+than one lock at a time. `globalSetup` checks this before any on-chain work and
+fails with the required amount and the observed balances. The check exists
+because the batch builder parks requests it cannot fund in
+`WaitingForManualAction` with `InsufficientFunds`, and that state never retries.
+
+The floor scales with `maxWorkers`, so a single-file debugging run still asks for
+the full amount. Set `E2E_MAX_WORKERS=1` to lower it.
+
 ## 🏗️ Test Architecture
 
 ```

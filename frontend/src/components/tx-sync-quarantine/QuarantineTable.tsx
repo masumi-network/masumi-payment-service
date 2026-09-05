@@ -4,6 +4,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellWideClass,
+  tableActionsCellWideDestructiveClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import type { QuarantineEntry } from '@/lib/hooks/useTxSyncQuarantine';
@@ -104,7 +110,7 @@ export function QuarantineTable({
     });
 
   return (
-    <div className="border rounded-lg overflow-x-auto">
+    <HorizontalScrollArea className="border rounded-lg">
       <table className={cn('w-full transition-opacity duration-150', isLoading && 'opacity-70')}>
         <thead className="bg-muted/30 dark:bg-muted/15">
           <tr className="border-b">
@@ -118,9 +124,7 @@ export function QuarantineTable({
             <th className="p-4 text-left text-sm font-medium text-muted-foreground">Next Retry</th>
             <th className="p-4 text-left text-sm font-medium text-muted-foreground">Age</th>
             <th className="p-4 text-left text-sm font-medium text-muted-foreground">Network</th>
-            <th className="p-4 pr-8 text-right text-sm font-medium text-muted-foreground">
-              Actions
-            </th>
+            <th className={tableActionsHeadWideClass}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -139,7 +143,7 @@ export function QuarantineTable({
                 <tr
                   key={entry.id}
                   className={cn(
-                    'border-b animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                    'group border-b animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 hover:bg-muted/50',
                     entry.needsOperator && 'bg-destructive/10 border-l-2 border-l-destructive',
                   )}
                   style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
@@ -178,7 +182,13 @@ export function QuarantineTable({
                     {nowMs === 0 ? '—' : formatElapsed(new Date(entry.createdAt).getTime(), nowMs)}
                   </td>
                   <td className="p-4 text-sm">{entry.PaymentSource.network}</td>
-                  <td className="p-4 pr-8">
+                  <td
+                    className={
+                      entry.needsOperator
+                        ? tableActionsCellWideDestructiveClass
+                        : tableActionsCellWideClass
+                    }
+                  >
                     <div className="flex justify-end gap-2">
                       <Button
                         variant="secondary"
@@ -258,6 +268,6 @@ export function QuarantineTable({
           )}
         </tbody>
       </table>
-    </div>
+    </HorizontalScrollArea>
   );
 }

@@ -43,6 +43,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { WelcomeBanner } from '@/components/ui/welcome-banner';
 import { isWalletFundStepComplete } from '@/components/ui/welcome-banner-fund-step';
 import { SetupV2Banner } from '@/components/setup/SetupV2Banner';
@@ -466,7 +467,7 @@ export default function Overview() {
                       {walletsSectionLoading ? (
                         <WalletListSkeleton rows={2} />
                       ) : (
-                        <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto overflow-x-auto w-full">
+                        <HorizontalScrollArea className="animate-content-reveal mb-4 max-h-125 overflow-y-auto w-full">
                           <table className="w-full">
                             <thead className="sticky top-0 bg-muted/30 dark:bg-muted/15 z-10">
                               <tr className="text-sm text-muted-foreground border-b">
@@ -606,7 +607,7 @@ export default function Overview() {
                               )}
                             </tbody>
                           </table>
-                        </div>
+                        </HorizontalScrollArea>
                       )}
                     </div>
 

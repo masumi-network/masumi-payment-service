@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { Spinner } from '@/components/ui/spinner';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -185,7 +186,7 @@ export function PaymentsTab() {
         <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
       </div>
 
-      <div className="border rounded-lg overflow-x-auto">
+      <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
@@ -253,7 +254,7 @@ export function PaymentsTab() {
             )}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
 
       {hasMore && (
         <div className="flex justify-center">

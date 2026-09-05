@@ -9,6 +9,11 @@ import { Ticket } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellWideClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
 import { CopyButton } from '@/components/ui/copy-button';
 import { cn, shortenAddress } from '@/lib/utils';
 import type { HydraHead, HydraInvite } from '@/lib/hooks/useHydraHeads';
@@ -89,7 +94,7 @@ export function HydraHeadTable({
   }
 
   return (
-    <div className="rounded-lg border overflow-x-auto">
+    <HorizontalScrollArea className="rounded-lg border">
       <table className="w-full min-w-[720px]">
         <thead className="bg-muted/30 dark:bg-muted/15">
           <tr className="border-b">
@@ -108,8 +113,8 @@ export function HydraHeadTable({
             <th scope="col" className="p-4 text-left text-sm font-medium">
               Activity
             </th>
-            <th scope="col" className="p-4 pr-6 text-right text-sm font-medium">
-              Action
+            <th scope="col" className={tableActionsHeadWideClass}>
+              Actions
             </th>
           </tr>
         </thead>
@@ -142,7 +147,7 @@ export function HydraHeadTable({
                 Its node and peer port are reserved. It becomes a head when the counterparty redeems
                 it, or expires {formatDate(invite.expiresAt)}.
               </td>
-              <td className="p-4 pr-6 text-right">
+              <td className={tableActionsCellWideClass}>
                 <Button type="button" variant="ghost" size="sm" onClick={onManageInvites}>
                   Manage
                 </Button>
@@ -159,7 +164,7 @@ export function HydraHeadTable({
                 role="button"
                 tabIndex={0}
                 aria-label={`Open details for Hydra head ${head.headIdentifier ?? head.id}`}
-                className="group border-b last:border-0 align-top animate-fade-in opacity-0 cursor-pointer transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                className="group border-b last:border-0 align-top animate-fade-in opacity-0 cursor-pointer transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                 style={{ animationDelay: `${Math.min(index, 9) * 35}ms` }}
                 onClick={() => onOpenHead(head)}
                 onKeyDown={(event) => {
@@ -254,7 +259,7 @@ export function HydraHeadTable({
                     )}
                   </div>
                 </td>
-                <td className="p-4 pr-6">
+                <td className={tableActionsCellWideClass}>
                   <div
                     className="flex justify-end"
                     onClick={(event) => event.stopPropagation()}
@@ -272,6 +277,6 @@ export function HydraHeadTable({
           })}
         </tbody>
       </table>
-    </div>
+    </HorizontalScrollArea>
   );
 }

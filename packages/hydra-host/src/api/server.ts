@@ -329,6 +329,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 					ledgerProtocolParametersFile: config.ledgerProtocolParametersFile,
 					network: config.network,
 					exchangePort: config.exchangePort,
+					exchangeUrl: config.publicExchangeUrl,
 					slots: () => ({ used: ports.used, capacity: config.ports.capacity }),
 				});
 				send(response, 200, capabilities);

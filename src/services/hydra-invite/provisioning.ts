@@ -156,8 +156,8 @@ export function assertContestationPeriodAllowed(network: Network, contestationPe
 export type ReservedNode = {
 	hostId: string;
 	hostBaseUrl: string;
-	/** Where this Host redeems invites. From the Host itself, never assumed. */
-	hostExchangePort: number | null;
+	/** Public redemption URL reported by this Host. */
+	hostExchangeUrl: string | null;
 	allowInsecureHttp: boolean;
 	adminToken: string;
 	nodeId: string;
@@ -321,9 +321,7 @@ export async function reserveNodeForExchange(
 	return {
 		hostId: host.id,
 		hostBaseUrl: host.baseUrl,
-		// Read from the capabilities probe above when the row had none, so the
-		// very first invite on a freshly connected Host is already correct.
-		hostExchangePort: host.exchangePort ?? capabilities.exchangePort,
+		hostExchangeUrl: capabilities.exchangeUrl,
 		allowInsecureHttp: host.allowInsecureHttp,
 		adminToken: host.adminToken,
 		nodeId: provisioned.nodeId,
