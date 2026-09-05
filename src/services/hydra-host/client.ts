@@ -32,6 +32,8 @@ export type HostCapabilities = {
 	network: string;
 	/** Where this Host serves its Exchange Plane. Null on a Host that predates reporting it. */
 	exchangePort: number | null;
+	/** Public, TLS-backed Exchange Plane URL. */
+	exchangeUrl: string | null;
 	nodeSlots: { used: number; capacity: number };
 	probeError: string | null;
 };
@@ -134,6 +136,31 @@ function requireString(value: unknown, field: string): string {
 	return found;
 }
 
+function validatedPublicExchangeUrl(value: string | undefined): string | null {
+	if (value === undefined) {
+		return null;
+	}
+	let parsed: URL;
+	try {
+		parsed = new URL(value);
+	} catch {
+		return null;
+	}
+	const isLoopback = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
+	const hasAllowedTransport = parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLoopback);
+	if (
+		!hasAllowedTransport ||
+		parsed.username.length > 0 ||
+		parsed.password.length > 0 ||
+		parsed.search.length > 0 ||
+		parsed.hash.length > 0 ||
+		parsed.pathname.replace(/\/+$/, '') !== '/exchange'
+	) {
+		return null;
+	}
+	return value;
+}
+
 export async function fetchHostCapabilities(
 	baseUrl: string,
 	adminToken: string,
@@ -154,6 +181,7 @@ export async function fetchHostCapabilities(
 		network: getOwnString(body, 'network') ?? '',
 		exchangePort:
 			typeof getOwnValue(body, 'exchangePort') === 'number' ? (getOwnValue(body, 'exchangePort') as number) : null,
+		exchangeUrl: validatedPublicExchangeUrl(getOwnString(body, 'exchangeUrl')),
 		nodeSlots: {
 			used: typeof used === 'number' ? used : 0,
 			capacity: typeof capacity === 'number' ? capacity : 0,

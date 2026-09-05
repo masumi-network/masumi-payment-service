@@ -9,6 +9,5 @@ cd "$REPO"
 [ -f .env.hydra-demo ] || { echo "missing .env.hydra-demo"; exit 1; }
 set -a; # shellcheck disable=SC1091
 source .env.hydra-demo; set +a
-echo "payment node → DB $DATABASE_URL"
 echo "hydra local $HYDRA_NODE_URL  remote $HYDRA_REMOTE_NODE_URL"
 exec pnpm dev

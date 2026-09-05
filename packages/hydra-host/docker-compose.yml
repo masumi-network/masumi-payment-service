@@ -4,7 +4,7 @@
 # production run the image under whatever you already operate, carrying over the
 # volume, the stop grace period and the healthcheck below.
 #
-# The port mapping is the security boundary. The secure default binds only the
+# The port mapping is the security boundary. The base file binds the
 # authenticated control plane and single-purpose exchange plane to loopback:
 #
 #   8443        control plane      published, bearer-token gated
@@ -34,11 +34,11 @@ services:
     restart: unless-stopped
 
     ports:
-      - '8443:8443'
+      - '127.0.0.1:8443:8443'
       # The exchange plane. A counterparty redeems an invite by posting to this
       # port on the issuer's Host, so a Host that does not publish it can issue
       # invites nobody can accept.
-      - '8444:8444'
+      - '127.0.0.1:8444:8444'
       # The peer plane is deliberately NOT published here. Every head needs its
       # own port and a head whose port is unpublished cannot reach its peer, so
       # publishing it is required — but it is unauthenticated etcd raft, and the
@@ -54,6 +54,10 @@ services:
       # becomes each node's advertise identity, so it must be resolvable from
       # outside and must not change for a head's lifetime.
       HYDRA_HOST_PUBLIC_HOST: ${HYDRA_HOST_PUBLIC_HOST:?set to this host's public name}
+      # Local default only. Production must set the TLS URL exposed by its
+      # dedicated Exchange Plane load balancer.
+      HYDRA_HOST_PUBLIC_EXCHANGE_URL: ${HYDRA_HOST_PUBLIC_EXCHANGE_URL:-http://127.0.0.1:8444/exchange}
+      HYDRA_HOST_EXCHANGE_TRUST_PROXY: ${HYDRA_HOST_EXCHANGE_TRUST_PROXY:-false}
       HYDRA_HOST_NETWORK: ${HYDRA_HOST_NETWORK:-preprod}
 
       # Two tiers, both at least 32 characters. Admin covers fleet operations;
