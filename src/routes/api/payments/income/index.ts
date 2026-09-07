@@ -6,6 +6,8 @@ import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import {
 	parseDateRange,
 	filterByAgentIdentifier,
+	fetchAndProcessInBatches,
+	EARNINGS_QUERY_BATCH_SIZE,
 	Fund,
 	addToAllFundsMaps,
 	mapDailyFundsOutput,
@@ -17,6 +19,11 @@ import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
+import { createEarningsRateLimitMiddleware, earningsConcurrencyMiddleware } from '@/utils/earnings-request-control';
+
+const paymentIncomeEndpointFactory = readAuthenticatedEndpointFactory
+	.addMiddleware(createEarningsRateLimitMiddleware())
+	.addMiddleware(earningsConcurrencyMiddleware);
 
 export const postPaymentIncomeSchemaInput = z.object({
 	agentIdentifier: z
@@ -146,7 +153,7 @@ function getMonthNumberLocal(date: Date, timeZone: string): string {
 	return sp.format('{YYYY}-{MM}');
 }
 
-export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
+export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 	method: 'post',
 	input: postPaymentIncomeSchemaInput,
 	output: postPaymentIncomeSchemaOutput,
@@ -157,38 +164,31 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 
 			const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
 
-			const allPayments = await prisma.paymentRequest.findMany({
-				where: {
-					payByTime: {
-						gte: periodStart.getTime(),
-						lte: periodEnd.getTime(),
-					},
-					onChainState: { not: null },
-					PaymentSource: {
-						network: input.network,
-						paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
-						deletedAt: null,
-					},
-					...buildWalletScopeFilter(ctx.walletScopeIds),
-				},
-				orderBy: [
-					{
-						payByTime: 'asc',
-					},
-					{
-						id: 'asc',
-					},
-				],
-				include: {
-					RequestedFunds: true,
-					WithdrawnForBuyer: true,
-					WithdrawnForSeller: true,
-					PaymentSource: true,
-				},
-			});
+			// Denormalized column mirroring decodeBlockchainIdentifier(...).agentIdentifier
+			// (see PaymentRequest.agentIdentifier in schema.prisma). Pre-filtering on it
+			// lets the DB exclude confirmed non-matches; rows not yet backfilled
+			// (agentIdentifierSyncedAt: null) are still fetched so the JS-side
+			// filterByAgentIdentifier below can decode them as a fallback.
+			const agentIdentifierFilter = input.agentIdentifier
+				? { OR: [{ agentIdentifier: input.agentIdentifier }, { agentIdentifierSyncedAt: null }] }
+				: {};
 
-			const allPaymentsFiltered = filterByAgentIdentifier(allPayments, input.agentIdentifier);
+			const where = {
+				payByTime: {
+					gte: periodStart.getTime(),
+					lte: periodEnd.getTime(),
+				},
+				onChainState: { not: null },
+				PaymentSource: {
+					network: input.network,
+					paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
+					deletedAt: null,
+				},
+				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...agentIdentifierFilter,
+			};
 
+			let totalTransactions = 0;
 			const totalRefundedMap: Fund = {
 				units: new Map<string, bigint>(),
 				blockchainFees: 0n,
@@ -210,72 +210,96 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 			const monthlyIncomeMap = new Map<string, Fund>();
 			const monthlyPendingMap = new Map<string, Fund>();
 
-			for (const payment of allPaymentsFiltered) {
-				//get the day number in the local time zone of the user
-				const dayDateLocal = getDayNumberLocal(new Date(Number(payment.payByTime)), input.timeZone ?? 'Etc/UTC');
-				const monthDateLocal = getMonthNumberLocal(new Date(Number(payment.payByTime)), input.timeZone ?? 'Etc/UTC');
+			await fetchAndProcessInBatches(
+				(cursorId) =>
+					prisma.paymentRequest.findMany({
+						where,
+						orderBy: [{ payByTime: 'asc' }, { id: 'asc' }],
+						include: {
+							RequestedFunds: true,
+							WithdrawnForBuyer: true,
+							WithdrawnForSeller: true,
+							PaymentSource: true,
+						},
+						take: EARNINGS_QUERY_BATCH_SIZE,
+						...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+					}),
+				EARNINGS_QUERY_BATCH_SIZE,
+				(batch) => {
+					const filteredBatch = filterByAgentIdentifier(batch, input.agentIdentifier);
+					totalTransactions += filteredBatch.length;
 
-				if (payment.onChainState === OnChainState.Withdrawn) {
-					addToAllFundsMaps(
-						totalIncomeMap,
-						dayIncomeMap,
-						monthlyIncomeMap,
-						dayDateLocal,
-						monthDateLocal,
-						payment.RequestedFunds,
-						payment.totalSellerCardanoFees,
-					);
-				} else if (payment.onChainState === OnChainState.RefundWithdrawn) {
-					addToAllFundsMaps(
-						totalRefundedMap,
-						dayRefundedMap,
-						monthlyRefundedMap,
-						dayDateLocal,
-						monthDateLocal,
-						payment.RequestedFunds,
-						payment.totalSellerCardanoFees,
-					);
-				} else if (payment.onChainState === OnChainState.DisputedWithdrawn) {
-					if (payment.WithdrawnForSeller.length > 0) {
-						addToAllFundsMaps(
-							totalIncomeMap,
-							dayIncomeMap,
-							monthlyIncomeMap,
-							dayDateLocal,
-							monthDateLocal,
-							payment.WithdrawnForSeller,
-							payment.totalSellerCardanoFees,
+					for (const payment of filteredBatch) {
+						//get the day number in the local time zone of the user
+						const dayDateLocal = getDayNumberLocal(new Date(Number(payment.payByTime)), input.timeZone ?? 'Etc/UTC');
+						const monthDateLocal = getMonthNumberLocal(
+							new Date(Number(payment.payByTime)),
+							input.timeZone ?? 'Etc/UTC',
 						);
+
+						if (payment.onChainState === OnChainState.Withdrawn) {
+							addToAllFundsMaps(
+								totalIncomeMap,
+								dayIncomeMap,
+								monthlyIncomeMap,
+								dayDateLocal,
+								monthDateLocal,
+								payment.RequestedFunds,
+								payment.totalSellerCardanoFees,
+							);
+						} else if (payment.onChainState === OnChainState.RefundWithdrawn) {
+							addToAllFundsMaps(
+								totalRefundedMap,
+								dayRefundedMap,
+								monthlyRefundedMap,
+								dayDateLocal,
+								monthDateLocal,
+								payment.RequestedFunds,
+								payment.totalSellerCardanoFees,
+							);
+						} else if (payment.onChainState === OnChainState.DisputedWithdrawn) {
+							if (payment.WithdrawnForSeller.length > 0) {
+								addToAllFundsMaps(
+									totalIncomeMap,
+									dayIncomeMap,
+									monthlyIncomeMap,
+									dayDateLocal,
+									monthDateLocal,
+									payment.WithdrawnForSeller,
+									payment.totalSellerCardanoFees,
+								);
+							}
+							if (payment.WithdrawnForBuyer.length > 0) {
+								addToAllFundsMaps(
+									totalRefundedMap,
+									dayRefundedMap,
+									monthlyRefundedMap,
+									dayDateLocal,
+									monthDateLocal,
+									payment.WithdrawnForBuyer,
+									payment.WithdrawnForSeller.length === 0 ? payment.totalSellerCardanoFees : 0n,
+								);
+							}
+						} else if (payment.onChainState !== OnChainState.FundsOrDatumInvalid) {
+							addToAllFundsMaps(
+								totalPendingMap,
+								dayPendingMap,
+								monthlyPendingMap,
+								dayDateLocal,
+								monthDateLocal,
+								payment.RequestedFunds,
+								payment.totalSellerCardanoFees,
+							);
+						}
 					}
-					if (payment.WithdrawnForBuyer.length > 0) {
-						addToAllFundsMaps(
-							totalRefundedMap,
-							dayRefundedMap,
-							monthlyRefundedMap,
-							dayDateLocal,
-							monthDateLocal,
-							payment.WithdrawnForBuyer,
-							payment.WithdrawnForSeller.length === 0 ? payment.totalSellerCardanoFees : 0n,
-						);
-					}
-				} else if (payment.onChainState !== OnChainState.FundsOrDatumInvalid) {
-					addToAllFundsMaps(
-						totalPendingMap,
-						dayPendingMap,
-						monthlyPendingMap,
-						dayDateLocal,
-						monthDateLocal,
-						payment.RequestedFunds,
-						payment.totalSellerCardanoFees,
-					);
-				}
-			}
+				},
+			);
 
 			return {
 				agentIdentifier: input.agentIdentifier,
 				periodStart,
 				periodEnd,
-				totalTransactions: allPaymentsFiltered.length,
+				totalTransactions,
 				TotalIncome: mapTotalFundsOutput(totalIncomeMap),
 				TotalRefunded: mapTotalFundsOutput(totalRefundedMap),
 				TotalPending: mapTotalFundsOutput(totalPendingMap),
