@@ -17,6 +17,7 @@ import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
+import { earningsConcurrencyLimitMiddleware } from '@/utils/earnings-request-control';
 
 export const postPaymentIncomeSchemaInput = z.object({
 	agentIdentifier: z
@@ -146,7 +147,11 @@ function getMonthNumberLocal(date: Date, timeZone: string): string {
 	return sp.format('{YYYY}-{MM}');
 }
 
-export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
+const paymentIncomeEndpointFactory = readAuthenticatedEndpointFactory.addExpressMiddleware(
+	earningsConcurrencyLimitMiddleware,
+);
+
+export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 	method: 'post',
 	input: postPaymentIncomeSchemaInput,
 	output: postPaymentIncomeSchemaOutput,
