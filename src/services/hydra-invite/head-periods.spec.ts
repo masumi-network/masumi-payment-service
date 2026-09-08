@@ -159,7 +159,7 @@ describe('periods a redeemed invite opens its head with', () => {
 		unsyncedPeriodSeconds: 1800,
 	};
 
-	it('takes activation from the ISSUER\'s deposit period, not the local default', () => {
+	it("takes activation from the ISSUER's deposit period, not the local default", () => {
 		expect(periodsFromInvite(issuerOverrode).depositActivationSeconds).toBe(300);
 		expect(periodsFromInvite(issuerOverrode).depositActivationSeconds).not.toBe(
 			defaultPeriodsFor(Network.Preprod).depositActivationSeconds,
@@ -173,7 +173,7 @@ describe('periods a redeemed invite opens its head with', () => {
 		}
 	});
 
-	it('carries the issuer\'s other periods through untouched', () => {
+	it("carries the issuer's other periods through untouched", () => {
 		const periods = periodsFromInvite(issuerOverrode);
 		expect(periods.contestationPeriodSeconds).toBe(issuerOverrode.contestationPeriodSeconds);
 		expect(periods.depositPeriodSeconds).toBe(issuerOverrode.depositPeriodSeconds);
