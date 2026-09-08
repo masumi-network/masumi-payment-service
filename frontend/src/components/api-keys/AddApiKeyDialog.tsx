@@ -290,7 +290,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     const isReadOnly = !data.canPay && !data.canAdmin;
-    const defaultCredits = [
+    const readOnlyDefaultCredits = [
       {
         unit: 'lovelace',
         amount: '1000000000', // 1000 ADA
@@ -321,7 +321,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             ? undefined
             : data.evmChains,
         UsageCredits: isReadOnly
-          ? defaultCredits
+          ? readOnlyDefaultCredits
           : data.usageLimited
             ? [
                 ...(data.credits.lovelace
@@ -560,6 +560,16 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   <p className="text-xs text-muted-foreground">Admin keys are not usage limited</p>
                 )}
               </div>
+
+              {isReadOnly && (
+                <div className="rounded-md border border-muted bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Read-only keys are always usage-limited. They receive a default allowance of
+                    1000 ADA for read operations. This limit is applied automatically and cannot be
+                    changed here.
+                  </p>
+                </div>
+              )}
 
               {usageLimited && !isReadOnly && (
                 <>
