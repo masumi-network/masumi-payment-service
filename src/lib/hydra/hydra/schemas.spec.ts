@@ -176,6 +176,20 @@ describe('snapshotConfirmedMessageSchema', () => {
 			}),
 		).toThrow();
 	});
+
+	it('parses and lowercases an uppercase-hex depositTxId', () => {
+		const base = makeSnapshotConfirmed([]);
+		const result = snapshotConfirmedMessageSchema.parse({
+			...base,
+			snapshot: { ...base.snapshot, depositTxId: 'AB'.repeat(32) },
+		});
+		expect(result.snapshot.depositTxId).toBe('ab'.repeat(32));
+	});
+
+	it('leaves depositTxId undefined when absent', () => {
+		const result = snapshotConfirmedMessageSchema.parse(makeSnapshotConfirmed([]));
+		expect(result.snapshot.depositTxId).toBeUndefined();
+	});
 });
 
 describe('headClockMessageSchema', () => {

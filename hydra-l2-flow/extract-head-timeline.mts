@@ -95,11 +95,38 @@ function sqlite(query: string): string {
 	});
 }
 
+/**
+ * Refuse a CBOR event store instead of reporting an empty timeline from it.
+ *
+ * hydra-node 2.4 migrated `events.event_data` from JSON to a CBOR BLOB, encoded
+ * positionally under Haskell constructor names. Every `json_extract` below then
+ * returns NULL, so this script still exits 0 and prints a well-formed timeline
+ * with no lifecycle rows and a throughput of zero — which is far worse than an
+ * error, because that output is pasted into benchmark evidence as the node's
+ * "authoritative record".
+ *
+ * The probe is the same shape the queries rely on, so it fails exactly when they
+ * would silently produce nothing.
+ */
+function assertJsonEventStore(): void {
+	const probe = sqlite("SELECT count(*) FROM events WHERE json_valid(cast(event_data as text));").trim();
+	if (probe !== '0') return;
+	const rows = sqlite('SELECT count(*) FROM events;').trim();
+	console.error(
+		`event store at ${DB} holds ${rows} events, none of them JSON — this is a hydra-node 2.4+ CBOR store.\n` +
+			'This script reads the store with json_extract and would print an empty timeline rather than fail,\n' +
+			'so it stops here instead. Porting it to the node\u2019s JSON log (which still carries stateChanges and\n' +
+			'the per-transaction records) is tracked as follow-up work; see sync-head-row.mts for that approach.',
+	);
+	process.exit(3);
+}
+
 function main() {
 	if (!existsSync(DB)) {
 		console.error(`no event store at ${DB}`);
 		process.exit(2);
 	}
+	assertJsonEventStore();
 	console.log(`# Hydra head timeline — ${DB}\n`);
 
 	const total = sqlite('SELECT count(*) FROM events;').trim();

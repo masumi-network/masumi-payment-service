@@ -37,6 +37,7 @@ import {
 	MIN_UNSYNCED_PERIOD_SECONDS,
 	assertContestationPeriodAllowed,
 	defaultPeriodsFor,
+	periodsFromInvite,
 	reserveNodeForExchange,
 	type HeadPeriods,
 } from './provisioning';
@@ -159,7 +160,15 @@ export async function mintHeadInvite(input: {
 	// it means a new head.
 	const periods = input.periods ?? {
 		...defaultPeriodsFor(wallet.network),
-		...(input.depositPeriodSeconds != null ? { depositPeriodSeconds: input.depositPeriodSeconds } : {}),
+		// depositActivationSeconds rides along with an explicit depositPeriodSeconds
+		// override, not just the default: every comment on HeadPeriods asserts
+		// activation == depositPeriod, and leaving activation at the network
+		// default while a caller overrode DP would break that invariant for any
+		// head opened through this public knob (see the invite route's
+		// depositPeriodSeconds input).
+		...(input.depositPeriodSeconds != null
+			? { depositPeriodSeconds: input.depositPeriodSeconds, depositActivationSeconds: input.depositPeriodSeconds }
+			: {}),
 		...(input.contestationPeriodSeconds != null ? { contestationPeriodSeconds: input.contestationPeriodSeconds } : {}),
 		...(input.unsyncedPeriodSeconds != null ? { unsyncedPeriodSeconds: input.unsyncedPeriodSeconds } : {}),
 	};
@@ -212,7 +221,17 @@ export async function mintHeadInvite(input: {
 		cardanoVerificationKey: node.cardanoVerificationKey,
 		advertise: node.advertise,
 		exchangeUrl,
-		...periods,
+		// Explicit, not `...periods`: `periods` also carries `depositActivationSeconds`
+		// (hydra-node 2.4's LOCAL-only `--deposit-activation`, see `HeadPeriods`),
+		// which must never enter the signed invite payload — it is not one of the
+		// on-chain-checked `HeadParameters`, so signing it would misrepresent it as
+		// something the counterparty needs to agree to. `HydraHeadInvitePayloadInput`
+		// has no such field at all, so listing keys here (matching this file's own
+		// `buildHydraHeadInvitePayload` convention) is what keeps a field added to
+		// `HeadPeriods` from silently slipping into the exchange.
+		contestationPeriodSeconds: periods.contestationPeriodSeconds,
+		depositPeriodSeconds: periods.depositPeriodSeconds,
+		unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
 		ledgerParamsHash: node.ledgerParamsHash,
 	};
 	const signature = await signHydraHeadInvite(payload, {
@@ -259,7 +278,14 @@ export async function mintHeadInvite(input: {
 			issuerExchangeUrl: exchangeUrl,
 			issuerSignature: signature.signature,
 			issuerSignerKey: signature.key,
-			...periods,
+			// Explicit for the same reason as the signed payload above: `periods`
+			// also carries the LOCAL-only `depositActivationSeconds`, and
+			// `HydraHeadInvite` has no column for it (no migration for this field —
+			// see `HeadPeriods`). A blind `...periods` here would make Prisma throw
+			// "Unknown argument" the moment this ran against the real schema.
+			contestationPeriodSeconds: periods.contestationPeriodSeconds,
+			depositPeriodSeconds: periods.depositPeriodSeconds,
+			unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
 			ledgerParamsHash: node.ledgerParamsHash,
 		},
 	});
@@ -377,11 +403,7 @@ export async function redeemHeadInvite(input: {
 		throw createHttpError(409, 'the invite ledger protocol parameters do not match this service');
 	}
 
-	const periods: HeadPeriods = {
-		contestationPeriodSeconds: payload.contestationPeriodSeconds,
-		depositPeriodSeconds: payload.depositPeriodSeconds,
-		unsyncedPeriodSeconds: payload.unsyncedPeriodSeconds,
-	};
+	const periods: HeadPeriods = periodsFromInvite(payload);
 	// The issuer's periods, judged against our own network's floor before a node
 	// is reserved for them. An invite that cannot become a head on mainnet must
 	// not cost this side a node and its fuel to discover that.
@@ -522,7 +544,12 @@ export async function redeemHeadInvite(input: {
 			redeemerExchangeUrl: exchangeUrl,
 			redeemerSignature: redemptionSignature.signature,
 			redeemerSignerKey: redemptionSignature.key,
-			...periods,
+			// Explicit, not `...periods`: see the matching comment on the issuer
+			// side. `periods` here also carries the LOCAL-only
+			// `depositActivationSeconds`, which `HydraHeadInvite` has no column for.
+			contestationPeriodSeconds: periods.contestationPeriodSeconds,
+			depositPeriodSeconds: periods.depositPeriodSeconds,
+			unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
 			ledgerParamsHash: payload.ledgerParamsHash,
 			HydraHead: { connect: { id: head.hydraHeadId } },
 		},

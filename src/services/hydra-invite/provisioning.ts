@@ -32,6 +32,28 @@ export type HeadPeriods = {
 	contestationPeriodSeconds: number;
 	depositPeriodSeconds: number;
 	unsyncedPeriodSeconds: number;
+	/**
+	 * hydra-node 2.4's `--deposit-activation`: how long a deposit must age before
+	 * the head will take it.
+	 *
+	 * LOCAL, not consensus — verified against `hydra-node/src/Hydra/Chain/Direct/*`
+	 * at tag 2.4.1: `HeadParameters` (the on-chain-checked pair) carries only
+	 * `{contestationPeriod, depositPeriod, parties}`, and `onIdleChainInitTx`
+	 * checks `depositPeriod` equality against the InitTx but has no equivalent
+	 * check for `depositActivation`. It therefore does NOT belong in the signed
+	 * invite payload or on `HydraHeadInvite` — see `orchestrator.ts`'s explicit
+	 * (non-spread) payload/DB field lists, which exist specifically to keep this
+	 * field from leaking into either. Both sides still agree on it in practice
+	 * because both derive it from the same network default, here.
+	 *
+	 * Set equal to `depositPeriodSeconds`: hydra-node 2.4.1 derives
+	 * usable-from as `deposit + depositActivation` and absorb-by as
+	 * `deposit + depositActivation + depositPeriod` (2.3.0 used `deposit + DP`
+	 * and `deposit + 2·DP`). Activation == DP reproduces 2.3.0's proven
+	 * schedule exactly; upstream's own default (3600s) would silently push a
+	 * preprod deposit's usable-from from +10 min to +60 min.
+	 */
+	depositActivationSeconds: number;
 };
 
 /**
@@ -107,10 +129,12 @@ export const DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS = 1800;
 export function defaultPeriodsFor(network: Network): HeadPeriods {
 	const isMainnet = network === Network.Mainnet;
 	const contestationPeriodSeconds = isMainnet ? 5 * 24 * 3600 : 12 * 3600;
+	const depositPeriodSeconds = isMainnet ? 1200 : 600;
 	return {
 		contestationPeriodSeconds,
-		depositPeriodSeconds: isMainnet ? 1200 : 600,
+		depositPeriodSeconds,
 		unsyncedPeriodSeconds: defaultUnsyncedPeriodFor(contestationPeriodSeconds),
+		depositActivationSeconds: depositPeriodSeconds,
 	};
 }
 
@@ -125,6 +149,37 @@ export function defaultUnsyncedPeriodFor(contestationPeriodSeconds: number): num
 
 /** For the callers that have no network in hand yet. */
 export const DEFAULT_PERIODS: HeadPeriods = defaultPeriodsFor(Network.Preprod);
+
+/**
+ * The periods a redeemed invite opens its head with.
+ *
+ * Every value comes from the issuer's signed payload EXCEPT the activation,
+ * which the invite deliberately never carries: it is a per-node local setting
+ * (see `HeadPeriods`), so there is nothing to exchange or sign for it.
+ *
+ * It is derived from the ISSUER'S deposit period rather than from this side's
+ * network default, and that distinction is the whole point of this function.
+ * The default is only correct when the issuer also used the default. An issuer
+ * who set `depositPeriodSeconds` explicitly — public API, min 300 — would
+ * otherwise leave the redeemer pairing the issuer's period against the
+ * redeemer's activation. Each node evaluates a deposit's absorb window
+ * `[created + activation, deadline - depositPeriod]` against its OWN local
+ * activation, so the two windows would stop overlapping and no deposit could be
+ * co-signed. Silently: both sides' `usableFrom`/`absorbBy` derive from the
+ * deadline and would still look normal.
+ */
+export function periodsFromInvite(payload: {
+	contestationPeriodSeconds: number;
+	depositPeriodSeconds: number;
+	unsyncedPeriodSeconds: number;
+}): HeadPeriods {
+	return {
+		contestationPeriodSeconds: payload.contestationPeriodSeconds,
+		depositPeriodSeconds: payload.depositPeriodSeconds,
+		unsyncedPeriodSeconds: payload.unsyncedPeriodSeconds,
+		depositActivationSeconds: payload.depositPeriodSeconds,
+	};
+}
 
 /**
  * The shortest dispute window a mainnet head may be created with.

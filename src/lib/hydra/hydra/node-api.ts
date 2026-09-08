@@ -26,8 +26,9 @@ export type HydraRawCostModels = {
 };
 
 /**
- * The head's last observed L1 chain time, from the API websocket's
- * `Tick`/`SyncedStatusReport` broadcasts. This is the clock the head's ledger
+ * The head's last observed L1 chain time, from the API websocket's `Tick`
+ * broadcasts (2.3-era Blockfrost builds also sent `SyncedStatusReport`, which
+ * Hydra 2.4 removed). This is the clock the head's ledger
  * checks tx validity intervals against — it can lag wall-clock time by many
  * minutes (Blockfrost-backed chain followers drift), so L2 validity windows
  * must anchor to it, not to `Date.now()`. `receivedAtMs` lets consumers judge
@@ -51,6 +52,8 @@ export interface IHydraNode {
 	fetchRawCostModels(): Promise<HydraRawCostModels>;
 	newTx(transaction: HydraTransaction): Promise<string>;
 	isTxConfirmed(txHash: string): boolean;
+	/** Whether the node says it is caught up with its chain; `undefined` until it has said. */
+	isChainSynced(): boolean | undefined;
 	getConfirmedTransaction?(txHash: string): HydraConfirmedTransaction | null;
 	getConfirmedTransactions?(): HydraConfirmedTransaction[];
 	getConfirmedTransactionsForReconciliation?(): HydraConfirmedTransaction[];

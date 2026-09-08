@@ -14,56 +14,72 @@
 #     restart policy cannot do. Whether the CONTAINER restarts is the
 #     orchestrator's call: see docs/hydra-host-deploy-droplet.md.
 
-ARG HYDRA_VERSION=2.3.0
-ARG HYDRA_SHA256=89e84b5005154a6275ee171e432db38084777a5d3d02aa72d3562d827f76a456
-# Must match the etcd that hydra-node ships internally, confirmed by running the
-# binary's own extracted copy: `etcd Version: 3.5.25`. Using --use-system-etcd
-# with a mismatched build risks subtle raft incompatibilities.
+ARG HYDRA_VERSION=2.4.1
+# History: at 2.3.0, hydra-node published exactly two static builds
+# (x86_64-linux, aarch64-darwin) as GitHub Release zips, and the official
+# ghcr image was a linux/amd64-only manifest. Building this image for arm64
+# meant running the amd64 binary under Docker Desktop's emulation, where it
+# died with SIGILL (exit 132, "Illegal instruction") the moment it touched
+# its crypto path — `--version` worked, `--hydra-script-catalogue` did not.
+#
+# 2.4.0 changed both of those facts. Release zips stopped being published
+# entirely (`gh release view 2.4.1 --repo cardano-scaling/hydra --json
+# assets` -> `[]`, and the same for 2.4.0), and an official linux/arm64
+# ghcr manifest was added instead — verified running natively on Apple
+# Silicon with no SIGILL and no emulation shim needed
+# (docs/hydra-2.4.1-release-evidence.md, Part 2). So hydra-node now comes
+# from that multi-arch image rather than a downloaded zip, pinned by digest
+# below for supply-chain integrity — the digest IS the integrity pin, so
+# there is no separate HYDRA_SHA256 to check the way 2.3.0 needed one for
+# its zip. This image builds for both `linux/amd64` and `linux/arm64`:
+# `docker build --platform linux/amd64,linux/arm64 ...`.
+#
+# Pin the multi-arch INDEX (manifest-list) digest, not a single-platform
+# manifest digest: buildx resolves the right per-platform manifest out of an
+# index digest for whichever --platform it is building, but a per-arch
+# digest would pin one architecture regardless of --platform.
+ARG HYDRA_IMAGE_DIGEST=sha256:608ae9b336209a18d7f3c42f7ca2d73c51dcb1b90732e533dd3b8017485fa98a
+# Must match the etcd that hydra-node ships internally, confirmed by scanning
+# the binary for its embedded go.etcd.io module versions: `v3.5.25`
+# (unchanged from 2.3.0 — see docs/hydra-2.4.1-release-evidence.md). Using
+# --use-system-etcd with a mismatched build risks subtle raft
+# incompatibilities. Declared here (before the first FROM) rather than next
+# to where it's consumed in the `binaries` stage below: a Dockerfile ARG's
+# default only survives into a later stage's bare `ARG NAME` redeclare if the
+# default was set before the file's first FROM — set anywhere else, the
+# redeclare silently picks up an empty string instead.
 ARG ETCD_VERSION=3.5.25
-ARG ETCD_SHA256=168af82b59772e1811a9af7b358d42f5c6df44e0d9767afb006ecf12c4bbd607
+ARG ETCD_SHA256_AMD64=168af82b59772e1811a9af7b358d42f5c6df44e0d9767afb006ecf12c4bbd607
+ARG ETCD_SHA256_ARM64=419dce0b679df31cc45201ef2449b7a6a48e9d241af01741957c9ac86a35badc
+FROM ghcr.io/cardano-scaling/hydra-node@${HYDRA_IMAGE_DIGEST} AS hydra-upstream
 
 # ---------------------------------------------------------------------------
-# Fetch the pinned hydra-node and etcd binaries.
+# Fetch the pinned etcd binary.
 # ---------------------------------------------------------------------------
 FROM debian:bookworm-slim@sha256:63a496b5d3b99214b39f5ed70eb71a61e590a77979c79cbee4faf991f8c0783e AS binaries
-ARG HYDRA_VERSION
-ARG HYDRA_SHA256
 ARG ETCD_VERSION
-ARG ETCD_SHA256
+ARG ETCD_SHA256_AMD64
+ARG ETCD_SHA256_ARM64
 ARG TARGETARCH
 
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates curl unzip tar \
+	&& apt-get install -y --no-install-recommends ca-certificates curl tar \
 	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /out
 
-# hydra-node publishes exactly two static builds: x86_64-linux and
-# aarch64-darwin. There is NO linux/arm64 release, so this image is
-# linux/amd64 only — build it with `--platform linux/amd64`.
-#
-# Note for local testing on an arm64 Mac: the image builds and the control
-# plane runs, but hydra-node dies with SIGILL (exit 132, "Illegal instruction")
-# the moment it touches its crypto path under Docker Desktop's emulation —
-# `--version` succeeds, `--hydra-script-catalogue` does not. Observed directly,
-# and it is why hydra-l2-flow runs the binary natively on Darwin. Anything that
-# spawns a real node must be tested on amd64 hardware.
 RUN set -eux; \
 	case "${TARGETARCH}" in \
-		amd64) HYDRA_ASSET="hydra-x86_64-linux-${HYDRA_VERSION}.zip"; ETCD_ARCH="amd64" ;; \
-		*) echo "hydra-node publishes no linux/${TARGETARCH} build; this image is linux/amd64 only" >&2; exit 1 ;; \
+		amd64) ETCD_SHA256="${ETCD_SHA256_AMD64}" ;; \
+		arm64) ETCD_SHA256="${ETCD_SHA256_ARM64}" ;; \
+		*) echo "no pinned etcd checksum for linux/${TARGETARCH}" >&2; exit 1 ;; \
 	esac; \
-	curl --proto '=https' --tlsv1.2 -fsSL -o hydra.zip \
-		"https://github.com/cardano-scaling/hydra/releases/download/${HYDRA_VERSION}/${HYDRA_ASSET}"; \
-	echo "${HYDRA_SHA256}  hydra.zip" | sha256sum -c -; \
-	unzip -j hydra.zip -d /out; \
 	curl --proto '=https' --tlsv1.2 -fsSL -o etcd.tar.gz \
-		"https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}.tar.gz"; \
+		"https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-${TARGETARCH}.tar.gz"; \
 	echo "${ETCD_SHA256}  etcd.tar.gz" | sha256sum -c -; \
 	tar -xzf etcd.tar.gz --strip-components=1 \
-		-C /out "etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}/etcd"; \
-	chmod +x /out/hydra-node /out/etcd; \
-	/out/hydra-node --version; \
+		-C /out "etcd-v${ETCD_VERSION}-linux-${TARGETARCH}/etcd"; \
+	chmod +x /out/etcd; \
 	/out/etcd --version
 
 # ---------------------------------------------------------------------------
@@ -84,6 +100,77 @@ COPY tsconfig.json ./
 RUN pnpm --filter @masumi/hydra-host run build
 
 # ---------------------------------------------------------------------------
+# hydra-node's binary and (arch-conditionally) its nix store closure.
+# ---------------------------------------------------------------------------
+# hydra-node's build differs by arch, and so does what has to be copied for
+# it to run — verified directly, not assumed, by extracting both real
+# per-arch binaries and checking them with `file`/`objdump -p`:
+#
+#   amd64 (hydra-node-x86_64-unknown-linux-musl): fully STATIC — `file`
+#     reports "statically linked", `objdump -p` shows no PT_INTERP segment
+#     and zero NEEDED entries. Confirmed by running the extracted binary
+#     alone in a bare debian:bookworm-slim container with no /nix anywhere
+#     on the filesystem — it just runs. This is the same static build
+#     2.3.0 shipped; nothing about how it's copied needs to change.
+#   arm64 (hydra-node, no arch suffix in its derivation name): dynamically
+#     linked against its own nix store closure — `objdump -p` shows a real
+#     PT_INTERP plus 15 NEEDED entries (glibc, libsodium-vrf, blst, gmp, and
+#     others, all under /nix/store). Copying just this ELF out, the way the
+#     amd64 one can be, does not run: proven directly, the extracted binary
+#     fails with a bare "not found" — not "cannot execute", not a linker
+#     error — which is exactly the ENOENT a shell reports when a binary's
+#     own interpreter path doesn't exist. The whole store (272 MiB,
+#     measured) has to come along.
+#
+# `hydra-bin` below resolves the binary's path once (identical on both
+# arches — only the derivation hash and suffix differ) and branches only on
+# how to expose it: a plain copy for amd64, a symlink for arm64. Note the
+# arm64 symlink does NOT survive as a symlink — BuildKit's COPY dereferences
+# it into the runtime stage, so /usr/local/bin/hydra-node lands as a regular
+# file and that image carries the binary twice (once in /nix/store, once
+# here). Verified, and harmless: the dereferenced ELF still resolves its
+# libraries from the closure copied below, which is why it runs. The store
+# copy itself is isolated into `hydra-closure`, built two ways from an empty
+# `scratch` base so the ${TARGETARCH} that doesn't need it pays nothing
+# (copying "/" out of an untouched `scratch` stage copies 0 bytes) — this is
+# the fix for a real amd64 correctness/size issue: an earlier version of
+# this Dockerfile copied the whole store unconditionally on both arches,
+# which put 272 MiB of nix-store content the amd64 build never touches
+# (its binary needs none of it) into the primary production image. Measured
+# net effect on an exported image, via `docker save`, comparing this fix
+# against that earlier version with everything else held constant: ~12.6 MB
+# smaller on amd64 — noticeably less than raw `du -sh /nix/store` (140.9
+# MiB) would suggest, since most of that raw content compresses well in a
+# layer and doesn't translate 1:1 into exported bytes. Report the exact
+# figures measured for a given build rather than assuming this one.
+# ponytail: arm64's copy is still the whole store rather than a computed
+# minimal closure; revisit with `nix-store --export`/`nix copy --to` if 272
+# MiB (uncompressed, on disk) becomes a real constraint.
+FROM hydra-upstream AS hydra-bin
+ARG TARGETARCH
+RUN set -eux; \
+	candidates="$(find /nix/store -maxdepth 3 -type f -path '*/bin/hydra-node' ! -path '*-exe-*')"; \
+	count="$(printf '%s\n' "${candidates}" | sed '/^$/d' | wc -l)"; \
+	if [ "${count}" -ne 1 ]; then \
+		echo "expected exactly one hydra-node binary under /nix/store, found ${count}:" >&2; \
+		printf '%s\n' "${candidates}" >&2; \
+		exit 1; \
+	fi; \
+	case "${TARGETARCH}" in \
+		amd64) cp "${candidates}" /hydra-node; chmod +x /hydra-node ;; \
+		arm64) ln -s "${candidates}" /hydra-node ;; \
+		*) echo "no hydra-node packaging rule for linux/${TARGETARCH}" >&2; exit 1 ;; \
+	esac; \
+	/hydra-node --version
+
+FROM scratch AS hydra-closure-amd64
+FROM scratch AS hydra-closure-arm64
+COPY --from=hydra-upstream /nix /nix
+
+ARG TARGETARCH
+FROM hydra-closure-${TARGETARCH} AS hydra-closure
+
+# ---------------------------------------------------------------------------
 # Runtime.
 # ---------------------------------------------------------------------------
 FROM node:24-bookworm-slim@sha256:a09aabc645e86e81e23dab78e0c0f2eaa233cab4277c7188232181a1a8bd5d39 AS runtime
@@ -94,9 +181,11 @@ RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 
+COPY --from=hydra-closure / /
+COPY --from=hydra-bin /hydra-node /usr/local/bin/hydra-node
+
 # etcd must be on PATH for --use-system-etcd, which keeps hydra-node from
 # re-extracting its embedded copy into the persistence volume on every boot.
-COPY --from=binaries /out/hydra-node /usr/local/bin/hydra-node
 COPY --from=binaries /out/etcd /usr/local/bin/etcd
 COPY --from=control-plane /build/packages/hydra-host/dist /app/dist
 COPY --from=control-plane /build/node_modules /app/node_modules
@@ -114,6 +203,8 @@ ENV NODE_ENV=production \
 
 # Run unprivileged: the supervisor and every hydra-node it spawns write keys and
 # persistence into /data, and there is no reason for any of that to be uid 0.
+# (The /nix/store tree stays root-owned and world-readable — 555, verified —
+# so the unprivileged user below can still execute hydra-node through it.)
 RUN groupadd --system --gid 10001 hydra \
 	&& useradd --system --uid 10001 --gid hydra --home-dir /app --shell /usr/sbin/nologin hydra \
 	&& mkdir -p /data \

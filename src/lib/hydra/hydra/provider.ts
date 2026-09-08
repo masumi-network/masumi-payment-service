@@ -170,6 +170,23 @@ export class HydraProvider implements IFetcher, ISubmitter {
 			cborHex,
 		};
 		const txHash = await this._node.newTx(transaction);
+		// `newTx` resolves on `TxValid`, which is only THIS node's local ledger
+		// accepting the body. It is not the head's answer. A peer can refuse the
+		// same body — observed live 2026-09-07: node 2's Blockfrost clock sat 44
+		// slots behind node 1's, the window's `invalidBefore` was in node 2's
+		// future, it answered OutsideValidityIntervalUTxO and never signed — and
+		// then no snapshot is proposed and the tx quietly never exists. No frame
+		// reports that to the submitter; the only visible symptom was the service
+		// having already advanced its DB on the `TxValid`, leaving the request
+		// pointing at a tx no node held and its next step deferring forever.
+		//
+		// The head's answer is the confirmed snapshot. Wait for it. On timeout
+		// `awaitTx` throws `HydraTransportAmbiguousError`, which the reservation
+		// layer already classifies as ambiguous: the reservation stays Pending
+		// and is reverted by recovery once the body is past its validity upper
+		// bound and can never land — the request then simply retries, instead of
+		// being finalized against a phantom.
+		await this._node.awaitTx(txHash);
 		return txHash;
 	}
 

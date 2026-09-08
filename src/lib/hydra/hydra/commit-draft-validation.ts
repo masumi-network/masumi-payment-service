@@ -12,7 +12,7 @@ import type { SlotConfig, UTxO } from '@meshsdk/core';
 import { HydraTransactionType, type HydraTransaction } from './types';
 
 /** Script hash from the Hydra script catalogue bundled with this deployment. */
-export const DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH = 'c78e8c9205721eb3ef4410f3db9c6169fa6db497c24641d29c20529c';
+export const DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH = 'eafae2c32f99ab347c7bb15961e0e84c74305f9088c1a7b8abf88e7f';
 
 const MAX_COMMIT_DRAFT_BYTES = 64 * 1024;
 const DEFAULT_MAX_FEE_LOVELACE = 10_000_000n;
@@ -380,6 +380,23 @@ function assertNoUnexpectedBodyFeatures(body: ReturnType<Transaction['body']>): 
 	}
 }
 
+/**
+ * hydra-node 2.4 caps a deposit transaction's own validity window at
+ * `min(maxGraceTime, depositPeriod / 2)`, where `maxGraceTime` is a fixed 200s
+ * (`HTTPServer.hs`). At our deployed deposit periods that cap is 200s on
+ * preprod and mainnet (DP 600s/1200s ⇒ DP/2 is 300s/600s, both above the 200s
+ * ceiling) and 60s on the local devnet harness (DP 120s ⇒ DP/2 = 60s).
+ *
+ * The `DEADLINE_CLOCK_SKEW_MS` bound below (±5 min = ±300s) already covers
+ * every one of those: it was sized as a clock-skew allowance on OUR OWN
+ * node's draft, not as an echo of the node's own cap, so it does not need to
+ * shrink to track 2.4's tighter window. Do not add a second, tighter
+ * `<= min(200s, DP/2)` assertion here — it would defend against nothing (the
+ * node that drafted this already enforced its own cap before returning it,
+ * and the real guard is the deadline-precedence check just below) while
+ * risking a false rejection of a legitimate draft whenever this service's and
+ * the node's clocks disagree by more than the new, narrower margin.
+ */
 function validateCommitValidityUpperBound(
 	ttlValue: string,
 	depositDeadlineMs: number,

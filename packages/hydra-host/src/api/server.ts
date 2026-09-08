@@ -386,6 +386,8 @@ export function createControlPlane(deps: ServerDeps): Server {
 				const body = await readBody(request);
 				const idempotencyKey =
 					(typeof request.headers['idempotency-key'] === 'string' ? request.headers['idempotency-key'] : '') || '';
+				// Resolved once, because the activation below defaults from it.
+				const requestDepositPeriodSeconds = numberOr(body, 'depositPeriodSeconds', config.defaultDepositPeriodSeconds);
 				const result = await provisionNode(
 					{
 						idempotencyKey,
@@ -395,8 +397,21 @@ export function createControlPlane(deps: ServerDeps): Server {
 							'contestationPeriodSeconds',
 							config.defaultContestationPeriodSeconds,
 						),
-						depositPeriodSeconds: numberOr(body, 'depositPeriodSeconds', config.defaultDepositPeriodSeconds),
+						depositPeriodSeconds: requestDepositPeriodSeconds,
 						unsyncedPeriodSeconds: numberOr(body, 'unsyncedPeriodSeconds', config.defaultUnsyncedPeriodSeconds),
+						// Falls back to the period THIS request asked for, not to this
+						// Host's own default period. An older payment-service build omits
+						// the field entirely, and defaulting from our own config would pair
+						// our activation against their period — e.g. a mainnet node
+						// provisioned with depositPeriod 1200 would run activation 300,
+						// cutting the maturity wait 4x. That wait is what rules out an L1
+						// rollback before funds count on L2, and nothing would report it.
+						// An explicit HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS still wins.
+						depositActivationSeconds: numberOr(
+							body,
+							'depositActivationSeconds',
+							config.depositActivationSecondsOverride ?? requestDepositPeriodSeconds,
+						),
 					},
 					provision,
 				);

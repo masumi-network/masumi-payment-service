@@ -65,7 +65,13 @@ function referenceMap(entries: Entry[]): Map<string, string> {
 }
 
 /** A snapshot's canonical set is utxo together with both pending partitions. */
-function snapshot(number: number, utxo: Entry[], commit: Entry[], decommit: Entry[]): VerifiedHydraSnapshot {
+function snapshot(
+	number: number,
+	utxo: Entry[],
+	commit: Entry[],
+	decommit: Entry[],
+	depositTxId: string | null = null,
+): VerifiedHydraSnapshot {
 	const outputs = referenceMap([...utxo, ...commit, ...decommit]);
 	return {
 		headId: 'head',
@@ -75,8 +81,14 @@ function snapshot(number: number, utxo: Entry[], commit: Entry[], decommit: Entr
 		outputMultiset: multiset(outputs.values()),
 		committedOutputs: referenceMap(commit),
 		decommitOutputs: referenceMap(decommit),
+		depositTxId,
 	};
 }
+
+// Hydra 2.4: the deposit tx id a snapshot's pending commit came from. Two
+// distinct ids, named for what they stand for below.
+const DEPOSIT_D = 'd'.repeat(64);
+const DEPOSIT_D2 = 'e'.repeat(64);
 
 const A = at('a', output(10_000_000));
 const B = at('b', output(7_000_000));
@@ -132,6 +144,53 @@ describe('signed-state transition shapes', () => {
 		],
 		['value vanishes with nothing declaring it', snapshot(1, [A, B], [], []), snapshot(2, [A], [], []), false],
 		['non-consecutive snapshot numbers', snapshot(1, [A], [], []), snapshot(3, [A], [], []), false],
+		// Hydra 2.4: `depositTxId` names the on-chain deposit `utxoToCommit` came
+		// from. Attaching it to the already-accepted absorb/recover shapes must
+		// not change their outcome — the txid tightens what the check refuses, it
+		// does not open a new pathway to acceptance. These two are presence
+		// REGRESSION guards, not new deposit-lifecycle coverage: the shapes
+		// themselves are already covered above (`commit pending -> absorbed`,
+		// `DEPOSIT RECOVERED`); what's new here is only that the field is set.
+		[
+			'deposit txid present (regression guard): commit pending -> absorbed still accepted',
+			snapshot(1, [A], [C], [], DEPOSIT_D),
+			snapshot(2, [A, C], [], []),
+			true,
+		],
+		[
+			'deposit txid present (regression guard): DEPOSIT RECOVERED still accepted',
+			snapshot(1, [A], [C], [], DEPOSIT_D),
+			snapshot(2, [A], [], []),
+			true,
+		],
+		// The same ghost-output negative as above (a value-colliding output that
+		// was never declared as pending), now with depositTxId values attached (D
+		// on `previous`, a different D2 on `current`). Nothing in the transition
+		// check reads depositTxId as evidence for an output — this is refused by
+		// the pre-existing per-reference conservation accounting alone, exactly as
+		// it is without the field. This case is a regression guard: it would still
+		// fail with `depositTxId` deleted from both snapshots, proving the field's
+		// mere presence does not loosen what that accounting refuses.
+		[
+			'deposit txid: a differently-attributed ghost output is still refused',
+			snapshot(1, [A], [C], [], DEPOSIT_D),
+			snapshot(2, [A, C_GHOST], [C], [], DEPOSIT_D2),
+			false,
+		],
+		// The inverse of the case above, and ACCEPTED on purpose: a depositTxId
+		// with no pending commit is a shape upstream does not rule out — it models
+		// `utxoToCommit` and `depositTxId` as independent `Maybe`s — and refusing
+		// it would change no acceptance decision (with no committed outputs there
+		// are no commit allowances to derive) while giving one unmodelled frame the
+		// power to reject a head's history permanently, since replay restarts from
+		// the beginning on every reconnect. ADR 0012's whole doctrine is that the
+		// check is neither widened nor tightened without a recorded fixture.
+		[
+			'deposit txid present with no pending commit is accepted, not refused as unmodelled',
+			snapshot(1, [A], [], []),
+			snapshot(2, [A], [], [], DEPOSIT_D),
+			true,
+		],
 	];
 
 	it.each(cases.map(([name, previous, current, expected]) => [name, previous, current, expected] as const))(

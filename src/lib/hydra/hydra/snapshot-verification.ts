@@ -64,6 +64,8 @@ export type HydraSnapshotVerificationFrame = {
 		utxo: SnapshotUtxo;
 		utxoToCommit: SnapshotUtxo | null;
 		utxoToDecommit: SnapshotUtxo | null;
+		/** Hydra 2.4: the deposit this snapshot approves; bound into the signature. */
+		depositTxId?: string | null;
 	};
 };
 
@@ -93,6 +95,15 @@ export type VerifiedHydraSnapshot = {
 	committedOutputs: Map<string, string>;
 	/** This snapshot's pending decommits (`utxoToDecommit`), keyed like `outputs`. */
 	decommitOutputs: Map<string, string>;
+	/**
+	 * Hydra 2.4: the on-chain deposit this snapshot's `committedOutputs` came
+	 * from, or `null`/`undefined` for a snapshot that declares none (including
+	 * every Hydra 2.3 snapshot, which never carried the field at all). Used only
+	 * to tighten the transition check's existing reference-keyed commit
+	 * allowances — it is a consistency assertion on top of them, not a
+	 * separate pathway to acceptance.
+	 */
+	depositTxId?: string | null;
 };
 
 export type VerifiedHydraFanoutReference = {
@@ -407,13 +418,27 @@ export function hydraSnapshotSignableBytes(frame: HydraSnapshotVerificationFrame
 	if (totalOutputCount > MAX_HYDRA_SNAPSHOT_OUTPUTS) {
 		throw new HydraProtocolError(`Hydra snapshot exceeded the ${MAX_HYDRA_SNAPSHOT_OUTPUTS}-output KZG limit`);
 	}
+	const depositTxId = snapshot.depositTxId ?? null;
+	if (depositTxId !== null && !/^[0-9a-f]{64}$/i.test(depositTxId)) {
+		throw new HydraProtocolError('Hydra snapshot depositTxId is not a 32-byte hex transaction id');
+	}
+	// Hydra 2.4 (Hydra/Tx/Snapshot.hs commitOutputsHash): an outer sha256 over
+	// hashUTxO(utxoToCommit) ‖ depositTxIdBytes — applied even with no deposit.
+	const commitSlot = createHash('sha256')
+		.update(
+			Buffer.concat([
+				hashPendingUtxo(snapshot.utxoToCommit),
+				depositTxId ? Buffer.from(depositTxId, 'hex') : Buffer.alloc(0),
+			]),
+		)
+		.digest();
 	return Buffer.concat([
 		cborBytes(Buffer.from(snapshot.headId, 'hex')),
 		cborUnsigned(snapshot.version),
 		cborUnsigned(snapshot.number),
 		cborBytes(Buffer.from(snapshot.accumulator, 'hex')),
 		cborBytes(hashPendingUtxo(snapshot.utxoToDecommit)),
-		cborBytes(hashPendingUtxo(snapshot.utxoToCommit)),
+		cborBytes(commitSlot),
 	]);
 }
 
@@ -589,6 +614,7 @@ export function verifyHydraSnapshot(
 		outputMultiset: outputMultiset(outputs.values()),
 		committedOutputs: partitionOutputReferences(frame.snapshot.utxoToCommit),
 		decommitOutputs: partitionOutputReferences(frame.snapshot.utxoToDecommit),
+		depositTxId: frame.snapshot.depositTxId ?? null,
 	};
 }
 
@@ -625,6 +651,38 @@ export function doesHydraTransactionTransitionReachSnapshot(
 	transactions: readonly HydraTransaction[],
 ): boolean {
 	if (previous.headId !== current.headId || current.number !== previous.number + 1) return false;
+	// Hydra 2.4: `depositTxId` names the on-chain deposit `committedOutputs`
+	// came from. Nothing here refuses on it, and that is deliberate in BOTH
+	// directions.
+	//
+	// An earlier revision of this upgrade refused the shape "depositTxId set
+	// with no pending commit". That was removed: upstream models `utxoToCommit`
+	// and `depositTxId` as INDEPENDENT `Maybe`s (see the signable
+	// representation, which defends each separately with `fromMaybe mempty` and
+	// `foldMap`), so the combination is not proven impossible, and no recorded
+	// 2.4.1 history exists to prove it never occurs. Refusing it changed no
+	// acceptance decision either — with no committed outputs there are no
+	// commit allowances to derive, so the per-reference conservation accounting
+	// below evaluates identically — while adding a way for one unmodelled frame
+	// to reject a head's history permanently, since replay restarts from the
+	// beginning on every reconnect.
+	//
+	// Nothing here refuses a committed
+	// output reference that stays pending across snapshots while being
+	// re-attributed to a DIFFERENT depositTxId. `depositTxId` is verified — it
+	// is bound into the signature (see hydraSnapshotSignableBytes) and cannot
+	// be forged independently of the multiSignature — but it is deliberately
+	// not load-bearing for attribution: this service already attributes
+	// escrows by OUTPUT REFERENCE, not by deposit id, so re-attribution buys
+	// no additional security here. ADR 0012 records that an over-tight
+	// transition check has twice taken a live head offline — no verified
+	// session, no head clock, every L2 operation failing closed while the head
+	// still reports Open — for a cost far higher than the low value a
+	// re-attribution refusal would add. The recorded 2.4.1 preprod history
+	// (recorded-head-history-2.4.1.json: two increments, one decommit, a full
+	// lifecycle) shows no re-attribution, but one head is not proof it never
+	// legitimately occurs; revisit only with more recordings, never by tightening
+	// against a single one.
 	try {
 		const createdOutputs = new Map<string, string>();
 		const spentReferences = new Set<string>();

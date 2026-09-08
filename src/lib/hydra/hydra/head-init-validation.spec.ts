@@ -15,6 +15,7 @@ import {
 	DEFAULT_HYDRA_HEAD_SCRIPT_HASH,
 	HYDRA_HEAD_V2_ASSET_NAME_HEX,
 	HydraHeadInitObservationError,
+	LEGACY_HYDRA_HEAD_SCRIPT_HASHES,
 	resolveHydraInitChainAnchor,
 	verifyHydraHeadInitOnChain,
 	type HydraHeadChainObserver,
@@ -27,13 +28,15 @@ const REMOTE_KEY = '22'.repeat(32);
 const LOCAL_PARTICIPANT = '55'.repeat(28);
 const REMOTE_PARTICIPANT = '66'.repeat(28);
 const CONTESTATION_SECONDS = 86_400n;
+const DEPOSIT_SECONDS = 300n;
 const STATE_TOKEN = `${HEAD_ID}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
-const HEAD_ADDRESS = EnterpriseAddress.new(
-	0,
-	Credential.from_scripthash(ScriptHash.from_hex(DEFAULT_HYDRA_HEAD_SCRIPT_HASH)),
-)
-	.to_address()
-	.to_bech32();
+function headAddressForScriptHash(scriptHash: string): string {
+	return EnterpriseAddress.new(0, Credential.from_scripthash(ScriptHash.from_hex(scriptHash)))
+		.to_address()
+		.to_bech32();
+}
+
+const HEAD_ADDRESS = headAddressForScriptHash(DEFAULT_HYDRA_HEAD_SCRIPT_HASH);
 
 function constructor(alternative: number, fields: PlutusData[]): PlutusData {
 	const values = PlutusList.new();
@@ -47,23 +50,44 @@ function list(items: PlutusData[]): PlutusData {
 	return PlutusData.new_list(values);
 }
 
-function openDatum(options?: { headId?: string; parties?: string[]; periodMs?: bigint; version?: bigint }): string {
-	return constructor(0, [
+/**
+ * The head's Open datum. Defaults to hydra-node 2.4's eight-field layout, which
+ * carries the deposit period on chain right after the contestation period
+ * (`Hydra.Contract.HeadState.OpenDatum` at tag 2.4.1). `legacy: true` emits
+ * 2.3.0's seven-field layout, which has no deposit period at all.
+ */
+function openDatum(options?: {
+	headId?: string;
+	parties?: string[];
+	periodMs?: bigint;
+	depositPeriodMs?: bigint;
+	version?: bigint;
+	legacy?: boolean;
+}): string {
+	const fields = [
 		constructor(0, [
-			constructor(0, [
-				constructor(0, [PlutusData.new_bytes(Buffer.from('33'.repeat(32), 'hex'))]),
-				PlutusData.new_integer(CardanoBigInt.from_str('0')),
-			]),
-			PlutusData.new_bytes(Buffer.from(options?.headId ?? HEAD_ID, 'hex')),
-			list((options?.parties ?? [LOCAL_KEY, REMOTE_KEY]).map((key) => PlutusData.new_bytes(Buffer.from(key, 'hex')))),
-			constructor(0, [
-				PlutusData.new_integer(CardanoBigInt.from_str((options?.periodMs ?? CONTESTATION_SECONDS * 1000n).toString())),
-			]),
-			PlutusData.new_integer(CardanoBigInt.from_str((options?.version ?? 0n).toString())),
-			PlutusData.new_bytes(Buffer.from('44'.repeat(32), 'hex')),
-			PlutusData.new_integer(CardanoBigInt.from_str('5000000')),
+			constructor(0, [PlutusData.new_bytes(Buffer.from('33'.repeat(32), 'hex'))]),
+			PlutusData.new_integer(CardanoBigInt.from_str('0')),
 		]),
-	]).to_hex();
+		PlutusData.new_bytes(Buffer.from(options?.headId ?? HEAD_ID, 'hex')),
+		list((options?.parties ?? [LOCAL_KEY, REMOTE_KEY]).map((key) => PlutusData.new_bytes(Buffer.from(key, 'hex')))),
+		constructor(0, [
+			PlutusData.new_integer(CardanoBigInt.from_str((options?.periodMs ?? CONTESTATION_SECONDS * 1000n).toString())),
+		]),
+		...(options?.legacy
+			? []
+			: [
+					constructor(0, [
+						PlutusData.new_integer(
+							CardanoBigInt.from_str((options?.depositPeriodMs ?? DEPOSIT_SECONDS * 1000n).toString()),
+						),
+					]),
+				]),
+		PlutusData.new_integer(CardanoBigInt.from_str((options?.version ?? 0n).toString())),
+		PlutusData.new_bytes(Buffer.from('44'.repeat(32), 'hex')),
+		PlutusData.new_integer(CardanoBigInt.from_str('5000000')),
+	];
+	return constructor(0, [constructor(0, fields)]).to_hex();
 }
 
 function observer(datum = openDatum(), address = HEAD_ADDRESS): HydraHeadChainObserver {
@@ -98,7 +122,7 @@ describe('verifyHydraHeadInitOnChain', () => {
 				expectedParticipantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
 				contestationPeriodSeconds: CONTESTATION_SECONDS,
 			}),
-		).resolves.toEqual({ initTxHash: INIT_TX_HASH });
+		).resolves.toEqual({ initTxHash: INIT_TX_HASH, depositPeriodMilliseconds: DEPOSIT_SECONDS * 1000n });
 		expect(chain.assetsTransactions).toHaveBeenCalledWith(STATE_TOKEN, { page: 1, order: 'asc', count: 1 });
 	});
 
@@ -173,7 +197,7 @@ describe('verifyHydraHeadInitOnChain', () => {
 				expectedParticipantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
 				contestationPeriodSeconds: CONTESTATION_SECONDS,
 			}),
-		).resolves.toEqual({ initTxHash: INIT_TX_HASH });
+		).resolves.toEqual({ initTxHash: INIT_TX_HASH, depositPeriodMilliseconds: DEPOSIT_SECONDS * 1000n });
 	});
 
 	it('rejects a state token sent to a non-head script', async () => {
@@ -186,6 +210,84 @@ describe('verifyHydraHeadInitOnChain', () => {
 		await expect(
 			verifyHydraHeadInitOnChain({
 				observer: observer(openDatum(), attackerAddress),
+				headId: HEAD_ID,
+				expectedVerificationKeys: [LOCAL_KEY, REMOTE_KEY],
+				expectedParticipantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				contestationPeriodSeconds: CONTESTATION_SECONDS,
+			}),
+		).rejects.toThrow('exactly one official head output');
+	});
+
+	it('accepts a legacy 2.3.0 head script hash after the current pin moves on', async () => {
+		const legacyHash = LEGACY_HYDRA_HEAD_SCRIPT_HASHES[0];
+		if (!legacyHash) throw new Error('no legacy head script hash configured');
+		expect(legacyHash).not.toBe(DEFAULT_HYDRA_HEAD_SCRIPT_HASH);
+		await expect(
+			verifyHydraHeadInitOnChain({
+				observer: observer(openDatum({ legacy: true }), headAddressForScriptHash(legacyHash)),
+				headId: HEAD_ID,
+				expectedVerificationKeys: [LOCAL_KEY, REMOTE_KEY],
+				expectedParticipantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				contestationPeriodSeconds: CONTESTATION_SECONDS,
+			}),
+		).resolves.toEqual({ initTxHash: INIT_TX_HASH, depositPeriodMilliseconds: null });
+	});
+
+	// hydra-node 2.4 moved the deposit period on chain: OpenDatum gained a
+	// `depositPeriod` field between the contestation period and the version
+	// (Hydra.Contract.HeadState at tag 2.4.1), so a 2.4 head's datum has eight
+	// fields where 2.3's had seven. Which layout to expect follows from which
+	// script produced the output — a script cannot mint the other version's shape.
+	describe('the on-chain deposit period (hydra-node 2.4 Open datum)', () => {
+		const verify = (
+			datum: string,
+			scriptHash = DEFAULT_HYDRA_HEAD_SCRIPT_HASH,
+			extra: { depositPeriodSeconds?: bigint } = {},
+		) =>
+			verifyHydraHeadInitOnChain({
+				observer: observer(datum, headAddressForScriptHash(scriptHash)),
+				headId: HEAD_ID,
+				expectedVerificationKeys: [LOCAL_KEY, REMOTE_KEY],
+				expectedParticipantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				contestationPeriodSeconds: CONTESTATION_SECONDS,
+				...extra,
+			});
+
+		it('accepts the eight-field layout on the current head script and reports the period', async () => {
+			await expect(verify(openDatum())).resolves.toEqual({
+				initTxHash: INIT_TX_HASH,
+				depositPeriodMilliseconds: DEPOSIT_SECONDS * 1000n,
+			});
+		});
+
+		it('rejects the seven-field 2.3 layout on the current head script', async () => {
+			await expect(verify(openDatum({ legacy: true }))).rejects.toThrow('Open datum');
+		});
+
+		it('rejects the eight-field layout on a legacy 2.3 head script', async () => {
+			const legacyHash = LEGACY_HYDRA_HEAD_SCRIPT_HASHES[0]!;
+			await expect(verify(openDatum(), legacyHash)).rejects.toThrow('Open datum');
+		});
+
+		it('rejects an on-chain deposit period that differs from the one this head was configured with', async () => {
+			await expect(verify(openDatum(), DEFAULT_HYDRA_HEAD_SCRIPT_HASH, { depositPeriodSeconds: 600n })).rejects.toThrow(
+				'deposit period',
+			);
+			await expect(
+				verify(openDatum(), DEFAULT_HYDRA_HEAD_SCRIPT_HASH, { depositPeriodSeconds: DEPOSIT_SECONDS }),
+			).resolves.toMatchObject({ depositPeriodMilliseconds: DEPOSIT_SECONDS * 1000n });
+		});
+
+		it('rejects a non-positive on-chain deposit period', async () => {
+			await expect(verify(openDatum({ depositPeriodMs: 0n }))).rejects.toThrow('deposit period');
+		});
+	});
+
+	it('rejects a head script hash outside the known current+legacy set', async () => {
+		const foreignHash = 'ff'.repeat(28);
+		await expect(
+			verifyHydraHeadInitOnChain({
+				observer: observer(openDatum(), headAddressForScriptHash(foreignHash)),
 				headId: HEAD_ID,
 				expectedVerificationKeys: [LOCAL_KEY, REMOTE_KEY],
 				expectedParticipantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],

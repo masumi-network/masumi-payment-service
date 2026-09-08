@@ -618,8 +618,10 @@ export class Supervisor {
 			peerCardanoVerificationKeyFiles: starting.peers.map((_, i) => path.join(peersDir, `${i}-cardano.vk`)),
 			ledgerProtocolParametersFile: this.config.ledgerProtocolParametersFile,
 			blockfrostProjectFile: this.config.blockfrostProjectFile,
+			hydraScriptsTxIds: this.config.hydraScriptsTxIds,
 			contestationPeriodSeconds: starting.contestationPeriodSeconds,
 			depositPeriodSeconds: starting.depositPeriodSeconds,
+			depositActivationSeconds: starting.depositActivationSeconds,
 			unsyncedPeriodSeconds: starting.unsyncedPeriodSeconds,
 			useSystemEtcd: this.config.useSystemEtcd,
 		});

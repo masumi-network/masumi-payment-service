@@ -5,8 +5,27 @@ import { hydraVerificationKeyRawHex } from './keys';
 /** Hydra 2.3 `HydraHeadV2` state-token asset name. */
 export const HYDRA_HEAD_V2_ASSET_NAME_HEX = '4879647261486561645632';
 
-/** `vHead` hash from the Hydra 2.3 script catalogue used by this deployment. */
-export const DEFAULT_HYDRA_HEAD_SCRIPT_HASH = '2b91a7e666575a2465b8c7f6a7f960d5870cf13694a67f3215e014c5';
+/** `vHead` hash from the Hydra script catalogue used by this deployment. */
+export const DEFAULT_HYDRA_HEAD_SCRIPT_HASH = '1d511733200df551c8cd8cddb3160ed39087af815638be37a1b80ffd';
+
+/**
+ * Script hashes of head versions this deployment has EVER opened a real head
+ * against. `resolveHydraHeadScriptHash` stays single-valued for paths that
+ * CREATE things (Init, deposits, commits) because every new head is opened
+ * against the current pin. But the same constant is also used to RE-OBSERVE
+ * heads that already exist on chain (InitTx re-verification, fanout
+ * re-verification) — those must keep accepting whatever hash was current when
+ * the head they are checking was actually opened. See
+ * `knownHydraHeadScriptHashes`.
+ */
+export const LEGACY_HYDRA_HEAD_SCRIPT_HASHES: readonly string[] = [
+	'2b91a7e666575a2465b8c7f6a7f960d5870cf13694a67f3215e014c5', // hydra-node 2.3.0 vHead
+];
+
+/** Every head script hash an observation path must still accept: the current pin plus every legacy one. */
+export function knownHydraHeadScriptHashes(configuredHash?: string): ReadonlySet<string> {
+	return new Set([resolveHydraHeadScriptHash(configuredHash), ...LEGACY_HYDRA_HEAD_SCRIPT_HASHES]);
+}
 
 type HydraHeadChainOutput = {
 	address: string;
@@ -78,12 +97,22 @@ export async function verifyHydraHeadInitOnChain(options: {
 	expectedVerificationKeys: readonly string[];
 	expectedParticipantVkeys: readonly string[];
 	contestationPeriodSeconds: bigint;
+	/**
+	 * The deposit period this head was configured with. hydra-node 2.4 records
+	 * it on chain in the Open datum; when a caller knows the value, the two must
+	 * agree. Callers that do not (a head recorded before the service kept it)
+	 * still get the on-chain figure back in the result.
+	 */
+	depositPeriodSeconds?: bigint;
 	headScriptHash?: string;
 	/** Bounds the complete independent observer pass; underlying requests may finish later. */
 	observerTimeoutMs?: number;
-}): Promise<{ initTxHash: string }> {
+}): Promise<{ initTxHash: string; depositPeriodMilliseconds: bigint | null }> {
 	const headId = normalizeHex(options.headId, 56, 'Hydra head id');
-	const headScriptHash = resolveHydraHeadScriptHash(options.headScriptHash);
+	// Observation, not creation: this re-verifies a head that may have opened
+	// under an earlier hydra-node script pin, so any known (current or legacy)
+	// head script hash is accepted rather than only today's default.
+	const acceptedHeadScriptHashes = knownHydraHeadScriptHashes(options.headScriptHash);
 	if (options.expectedVerificationKeys.length !== 2) {
 		fail('Hydra on-chain verification requires exactly two configured parties');
 	}
@@ -147,7 +176,7 @@ export async function verifyHydraHeadInitOnChain(options: {
 		const stateTokenQuantity = output.amount
 			.filter(({ unit }) => unit.toLowerCase() === stateToken)
 			.reduce((sum, { quantity }) => sum + parseQuantity(quantity), 0n);
-		return stateTokenQuantity === 1n && paymentScriptHash(output.address) === headScriptHash;
+		return stateTokenQuantity === 1n && acceptedHeadScriptHashes.has(paymentScriptHash(output.address) ?? '');
 	});
 	if (matchingOutputs.length !== 1) {
 		fail('Hydra InitTx did not contain exactly one official head output with its state token');
@@ -162,13 +191,19 @@ export async function verifyHydraHeadInitOnChain(options: {
 	} catch {
 		fail('Hydra InitTx head output contained invalid inline datum CBOR');
 	}
-	validateOpenDatum({
+	// A script can only mint its own version's datum shape, so the layout to
+	// expect follows from which head script this output sits at.
+	const matchedScriptHash = paymentScriptHash(matchingOutputs[0].address) ?? '';
+	const depositPeriodMilliseconds = validateOpenDatum({
 		datum,
 		headId,
 		expectedParties,
 		contestationPeriodMilliseconds: options.contestationPeriodSeconds * 1000n,
+		layout: LEGACY_HYDRA_HEAD_SCRIPT_HASHES.includes(matchedScriptHash) ? 'hydra-2.3' : 'hydra-2.4',
+		expectedDepositPeriodMilliseconds:
+			options.depositPeriodSeconds === undefined ? undefined : options.depositPeriodSeconds * 1000n,
 	});
-	return { initTxHash };
+	return { initTxHash, depositPeriodMilliseconds };
 }
 
 /** Minimal L1 surface needed to resolve the chain-replay anchor of an InitTx. */
@@ -247,14 +282,32 @@ function validateHeadTokens(
 	}
 }
 
+/**
+ * `Hydra.Contract.HeadState.OpenDatum`, read verbatim from the tagged source:
+ *
+ *   2.3.0  headSeed, headId, parties, contestationPeriod,                version, accumulatorHash, headAdaOverhead   (7)
+ *   2.4.1  headSeed, headId, parties, contestationPeriod, depositPeriod, version, accumulatorHash, headAdaOverhead   (8)
+ *
+ * 2.4 made the deposit period an on-chain parameter fixed at Init, and it sits
+ * between the contestation period and the version, shifting everything after
+ * it by one. Both `ContestationPeriod` and `DepositPeriod` are newtypes over
+ * milliseconds encoded as `Constr 0 [Integer]`.
+ */
+type HydraOpenDatumLayout = 'hydra-2.3' | 'hydra-2.4';
+
 function validateOpenDatum(options: {
 	datum: PlutusData;
 	headId: string;
 	expectedParties: string[];
 	contestationPeriodMilliseconds: bigint;
-}): void {
+	layout: HydraOpenDatumLayout;
+	expectedDepositPeriodMilliseconds?: bigint;
+}): bigint | null {
+	const isHydra24 = options.layout === 'hydra-2.4';
 	const stateFields = expectConstructor(options.datum, 0n, 1, 'Hydra head state');
-	const openFields = expectConstructor(stateFields.get(0), 0n, 7, 'Hydra Open datum');
+	const openFields = expectConstructor(stateFields.get(0), 0n, isHydra24 ? 8 : 7, 'Hydra Open datum');
+	// Field indices after the contestation period depend on the layout.
+	const at = { version: isHydra24 ? 5 : 4, accumulatorHash: isHydra24 ? 6 : 5, adaOverhead: isHydra24 ? 7 : 6 };
 	if (expectBytes(openFields.get(1), 28, 'Hydra Open head id').toString('hex') !== options.headId) {
 		fail('Hydra Open datum head id did not match the indexed state token');
 	}
@@ -280,13 +333,28 @@ function validateOpenDatum(options: {
 	if (expectInteger(periodFields.get(0), 'Hydra contestation period') !== options.contestationPeriodMilliseconds) {
 		fail('Hydra on-chain contestation period did not match the configured head');
 	}
-	if (expectInteger(openFields.get(4), 'Hydra Open snapshot version') !== 0n) {
+	let depositPeriodMilliseconds: bigint | null = null;
+	if (isHydra24) {
+		const depositFields = expectConstructor(openFields.get(4), 0n, 1, 'Hydra deposit period');
+		depositPeriodMilliseconds = expectInteger(depositFields.get(0), 'Hydra deposit period');
+		if (depositPeriodMilliseconds <= 0n) {
+			fail('Hydra on-chain deposit period was not positive');
+		}
+		if (
+			options.expectedDepositPeriodMilliseconds !== undefined &&
+			depositPeriodMilliseconds !== options.expectedDepositPeriodMilliseconds
+		) {
+			fail('Hydra on-chain deposit period did not match the configured head');
+		}
+	}
+	if (expectInteger(openFields.get(at.version), 'Hydra Open snapshot version') !== 0n) {
 		fail('Hydra InitTx head output was not the initial Open state');
 	}
-	expectBytes(openFields.get(5), 32, 'Hydra Open accumulator hash');
-	if (expectInteger(openFields.get(6), 'Hydra Open ADA overhead') < 0n) {
+	expectBytes(openFields.get(at.accumulatorHash), 32, 'Hydra Open accumulator hash');
+	if (expectInteger(openFields.get(at.adaOverhead), 'Hydra Open ADA overhead') < 0n) {
 		fail('Hydra Open ADA overhead was negative');
 	}
+	return depositPeriodMilliseconds;
 }
 
 function paymentScriptHash(addressText: string): string | null {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # hydra-native.sh — run Hydra hydra-nodes NATIVELY on Apple Silicon (pinned to
-# HYDRA_VERSION, default 2.3.0).
+# HYDRA_VERSION, default 2.4.1).
 #
 # WHY: Hydra 2.2.0 added a Rust BLS accumulator (Partial Fanout). The published
 # linux/amd64 docker images run under Docker Desktop's Rosetta emulation on
@@ -38,7 +38,7 @@
 # tag) without disturbing the pinned binary:
 #   HYDRA_BIN_TAG=master-6e2754c \
 #   HYDRA_BIN_RUN_ID=28878987397 \
-#   HYDRA_BIN_ARTIFACT=hydra-aarch64-darwin-2.3.0-46-g6e2754c5a \
+#   HYDRA_BIN_ARTIFACT=hydra-aarch64-darwin-2.4.1-46-g6e2754c5a \
 #     ./hydra-native.sh bin
 #   # then pass the same three env vars to `up`/`restart`/etc. to run against it.
 #
@@ -50,7 +50,14 @@ DEMO="${DEMO:-${HYDRA_DEMO_DIR:-$( \
     [ -d "$d" ] && { (cd "$d" && pwd); break; }; \
   done )}}"
 
-HYDRA_VERSION="${HYDRA_VERSION:-2.3.0}"
+HYDRA_VERSION="${HYDRA_VERSION:-2.4.1}"
+# Preprod only. Comma-separated tx ids of a self-published Hydra script set;
+# when set, nodes get --hydra-scripts-tx-id INSTEAD of --network preprod (the
+# two are alternatives). Needed on 2.4.1: upstream's preprod publication has
+# empty-asset-name tokens on its change output and the 2.4.1 Blockfrost client
+# dies on them (AssetNameMissing) — see docs/hydra-2.4.1-upgrade-runbook.md.
+# Publish with: hydra-node publish-scripts --blockfrost <file> --cardano-signing-key <sk>
+HYDRA_SCRIPTS_TX_IDS="${HYDRA_SCRIPTS_TX_IDS:-}"
 # Only used for the HYDRA_BIN_TAG path below (testing an unreleased commit):
 # hydra-node CI publishes those as workflow artifacts, not release assets.
 HYDRA_BIN_RUN_ID="${HYDRA_BIN_RUN_ID:-27418396480}"
@@ -101,6 +108,18 @@ assert_persistence_rotation_disabled(){
 mkdir -p "$STATE" "$BIN_DIR"
 
 # ── native binary ────────────────────────────────────────────────────────────
+
+# Resolve the commit a release tag points at, for the CI-artifact fallback
+# below. Hydra's release tags are annotated, so the ref's object is a tag
+# object one hop away from the actual commit; fall back to the ref's own sha
+# if that second hop fails (a lightweight tag, or an API shape change).
+resolve_tag_commit(){
+  local tag="$1" ref_sha commit_sha
+  ref_sha="$(gh api "repos/cardano-scaling/hydra/git/refs/tags/${tag}" --jq '.object.sha' 2>/dev/null)" || return 1
+  commit_sha="$(gh api "repos/cardano-scaling/hydra/git/tags/${ref_sha}" --jq '.object.sha' 2>/dev/null)"
+  echo "${commit_sha:-$ref_sha}"
+}
+
 ensure_bin(){
   if [ -x "$NATIVE_BIN" ]; then
     repair_dylibs
@@ -113,12 +132,36 @@ ensure_bin(){
     gh run download "$HYDRA_BIN_RUN_ID" --repo cardano-scaling/hydra \
       --name "$HYDRA_BIN_ARTIFACT" --dir "$tmp" || { c_red "download failed"; exit 1; }
   else
-    # Tagged releases from 2.3.0 onward publish aarch64-darwin binaries as a
-    # release zip (2.2.0 and earlier had no release assets at all).
-    c_blu "Downloading native hydra-aarch64-darwin-${HYDRA_VERSION}.zip (release asset, ~176 MiB)…"
-    gh release download "$HYDRA_VERSION" --repo cardano-scaling/hydra \
-      --pattern "hydra-aarch64-darwin-${HYDRA_VERSION}.zip" --dir "$tmp" || { c_red "download failed"; exit 1; }
-    (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
+    # Tagged releases published a release-zip asset through 2.3.0. 2.4.0 and
+    # 2.4.1 publish none at all (`gh release view <tag> --repo
+    # cardano-scaling/hydra --json assets` returns `[]` for both, verified
+    # for 2.4.1 — see docs/hydra-2.4.1-release-evidence.md). Try the release
+    # asset first regardless, since upstream could resume attaching one to a
+    # future tag, and only fall back to a CI artifact — the same mechanism
+    # HYDRA_BIN_TAG uses above — when there genuinely is none: resolve the
+    # commit the tag points at, and pull the aarch64-darwin artifact from
+    # that commit's own "Binaries" workflow run (for 2.4.1, commit
+    # 099f5dd775d8640047d0074edef294c1b39a600d, run 33660882209 — verified,
+    # see docs/hydra-2.4.1-release-evidence.md).
+    c_blu "Checking for a hydra-aarch64-darwin-${HYDRA_VERSION}.zip release asset…"
+    if gh release download "$HYDRA_VERSION" --repo cardano-scaling/hydra \
+      --pattern "hydra-aarch64-darwin-${HYDRA_VERSION}.zip" --dir "$tmp" 2>/dev/null; then
+      c_grn "  release asset path: found one — downloading (~176 MiB)…"
+      (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
+    else
+      c_blu "  release asset path: none published for ${HYDRA_VERSION} — falling back to the tag's CI artifact"
+      local commit_sha run_id artifact="hydra-aarch64-darwin-${HYDRA_VERSION}"
+      commit_sha="$(resolve_tag_commit "$HYDRA_VERSION")"
+      [ -n "$commit_sha" ] || { c_red "could not resolve the commit tag $HYDRA_VERSION points at"; exit 1; }
+      run_id="$(gh run list --repo cardano-scaling/hydra --commit "$commit_sha" \
+        --workflow Binaries --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
+      # jq prints the literal string "null" for `.[0]` on an empty array,
+      # which is non-empty and would otherwise sail through `[ -n ... ]`.
+      [ -n "$run_id" ] && [ "$run_id" != "null" ] || { c_red "no Binaries CI run found for commit $commit_sha"; exit 1; }
+      c_blu "  CI-artifact path: downloading $artifact from run $run_id (commit ${commit_sha:0:12}, ~176 MiB)…"
+      gh run download "$run_id" --repo cardano-scaling/hydra \
+        --name "$artifact" --dir "$tmp" || { c_red "download failed"; exit 1; }
+    fi
   fi
   [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
   install -m 0755 "$tmp/hydra-node" "$NATIVE_BIN"
@@ -219,6 +262,13 @@ publish(){
 start_node(){
   local idx="$1" sk="$2" vk1="$3" vk2="$4" csk="$5" cvk1="$6" cvk2="$7" persist="$8"
   local api=$((4000 + idx)) p2p=$((5000 + idx)) mon=$((6000 + idx))
+  # Same etcd-inode guard as start_node_preprod: hydra-node re-extracts its
+  # embedded etcd over the SAME inode on every boot, and on Apple Silicon
+  # exec-ing a rewritten Mach-O while the previous etcd is still winding down
+  # gets SIGKILLed by the kernel's code-signature cache. Observed on a devnet
+  # restart 2026-09-07 as `Sub-process etcd exited with: ExitFailure (-9)`,
+  # which takes the API down with it. Deleting first forces a fresh inode.
+  rm -f "$persist/bin/etcd"
   local peers=()
   for j in 1 2 3; do [ "$j" != "$idx" ] && peers+=( --peer "127.0.0.1:$((5000 + j))" ); done
   (
@@ -239,8 +289,13 @@ start_node(){
       --persistence-dir "$persist" \
       --contestation-period "${CONTESTATION_PERIOD:-3s}" \
       --deposit-period "${DEPOSIT_PERIOD:-120s}" \
+      --deposit-activation "${DEPOSIT_ACTIVATION:-${DEPOSIT_PERIOD:-120s}}" \
       >"$STATE/node$idx.log" 2>&1 < /dev/null &
     echo $! > "$STATE/node$idx.pid"
+    # Which chain these nodes serve. Without it a reader can only see THAT a
+    # native node is up, not which network it belongs to — and run-hydra-e2e's
+    # preflight then has to assume preprod and refuse every devnet run.
+    printf '%s\n' "$NETWORK" > "$STATE/network"
   )
 }
 
@@ -260,26 +315,47 @@ start_node_preprod(){
   rm -f "$persist/bin/etcd"
   local other_vk; other_vk="$([ "$idx" = 1 ] && echo selling-hydra.vk || echo purchasing-hydra.vk)"
   local other_cvk; other_cvk="$([ "$idx" = 1 ] && echo selling-cardano.vk || echo purchasing-cardano.vk)"
+  # --network and --hydra-scripts-tx-id are alternatives to hydra-node; emit
+  # exactly one. An array, not ${VAR:-...}: that operator yields the VALUE when
+  # set, which would leak the tx ids in as a stray positional argument.
+  local -a script_source
+  if [ -n "$HYDRA_SCRIPTS_TX_IDS" ]; then
+    script_source=(--hydra-scripts-tx-id "$HYDRA_SCRIPTS_TX_IDS")
+  else
+    # Say so loudly. On 2.4.1 this fallback cannot start: --network preprod
+    # resolves upstream's published scripts, whose change output carries
+    # empty-asset-name tokens that the 2.4.1 Blockfrost client refuses to
+    # decode. The node dies with `BlockfrostClientError AssetNameMissing`
+    # seconds after logging initialUTxO — a message that names neither the
+    # scripts nor this variable, so an unset var reads as a chain-data problem
+    # and sends you hunting through wallet and script UTxOs. Cost a settle run
+    # on 2026-09-07.
+    c_red "  HYDRA_SCRIPTS_TX_IDS is unset — falling back to --network preprod."
+    c_red "  On 2.4.1 that fallback dies with 'BlockfrostClientError AssetNameMissing'."
+    c_red "  Set it to a self-published script set (see docs/hydra-2.4.1-upgrade-runbook.md)."
+    script_source=(--network preprod)
+  fi
   ( "$NATIVE_BIN" \
       --node-id "$idx" \
       --api-host 127.0.0.1 --api-port "$api" \
       --listen "127.0.0.1:$p2p" --monitoring-port "$mon" \
       --peer "127.0.0.1:$((5000 + other))" \
-      --network preprod \
+      "${script_source[@]}" \
       --hydra-signing-key "$PREPROD_DIR/$party-hydra.sk" \
       --hydra-verification-key "$PREPROD_DIR/$other_vk" \
       --cardano-signing-key "$PREPROD_DIR/$party-cardano.sk" \
       --cardano-verification-key "$PREPROD_DIR/$other_cvk" \
       --ledger-protocol-parameters "$PREPROD_DIR/protocol-parameters.json" \
       --blockfrost "$PREPROD_DIR/blockfrost.txt" \
-      --blockfrost-query-timeout "${BLOCKFROST_QUERY_TIMEOUT:-10}" \
       --persistence-dir "$persist" \
       --contestation-period "${CONTESTATION_PERIOD:-220s}" \
       --deposit-period "${DEPOSIT_PERIOD:-300s}" \
+      --deposit-activation "${DEPOSIT_ACTIVATION:-${DEPOSIT_PERIOD:-300s}}" \
       --unsynced-period "${UNSYNCED_PERIOD:-1800s}" \
       ${START_CHAIN_FROM:+--start-chain-from "${START_CHAIN_FROM//\//.}"} \
       >>"$STATE/node$idx.log" 2>&1 ) &
   echo $! > "$STATE/node$idx.pid"
+  printf '%s\n' "$NETWORK" > "$STATE/network"
 }
 
 nodes_up(){
@@ -347,6 +423,7 @@ nodes_down(){
   local max=3; [ "$NETWORK" = preprod ] && max=2
   for i in $(seq 1 $max); do
     if [ -f "$STATE/node$i.pid" ]; then kill "$(cat "$STATE/node$i.pid")" 2>/dev/null; rm -f "$STATE/node$i.pid"; fi
+    rm -f "$STATE/network"
   done
   pkill -f "$NATIVE_BIN --node-id" 2>/dev/null
 }
@@ -360,6 +437,14 @@ nodes_down(){
 # latency (~17s/min measured) and can NEVER recover — but a node restart re-runs
 # the catch-up loop and collapses drift to ~0 in a minute or two. These commands
 # expose that as an operational lever: restart → wait-sync → act.
+#
+# 2.4.1 CAVEAT: the ~17s/min figure and the "can NEVER recover" claim were both
+# measured on 2.3.0. Hydra 2.4 reworked the Blockfrost backend to poll verifiable
+# conditions instead of sleeping fixed delays, so the steady-state loop may now
+# behave differently. Re-measure with `hydra-native.sh drift` (the optional arg is
+# the NODE INDEX, not a duration) on a live 2.4.1
+# node before relying on either number; the restart lever below is harmless
+# either way.
 
 # node_drift <logfile> → seconds between now and the node's latest Tick chainTime
 # (its observed L1 time). Prints 999999 when no Tick is found (e.g. right after

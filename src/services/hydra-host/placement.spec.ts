@@ -14,7 +14,7 @@ function host(overrides: Partial<PlaceableHost> = {}): PlaceableHost {
 
 function capabilities(overrides: Partial<HostCapabilities> = {}): HostCapabilities {
 	return {
-		hydraVersion: '2.3.0',
+		hydraVersion: '2.4.1',
 		scriptCatalogueHash: 'catalogue-hash',
 		ledgerParamsHash: 'sha256:abc',
 		network: 'preprod',
@@ -65,7 +65,7 @@ describe('selectPlacementHost', () => {
 describe('assertHostCompatible', () => {
 	const expected = {
 		network: 'preprod',
-		hydraVersion: '2.3.0',
+		hydraVersion: '2.4.1',
 		scriptCatalogueHash: 'catalogue-hash',
 		ledgerParamsHash: 'sha256:abc',
 	};
@@ -83,7 +83,7 @@ describe('assertHostCompatible', () => {
 	});
 
 	it('refuses a different Hydra release', () => {
-		expect(() => assertHostCompatible(capabilities({ hydraVersion: '2.4.0' }), expected)).toThrow(/expects 2.3.0/);
+		expect(() => assertHostCompatible(capabilities({ hydraVersion: '2.4.0' }), expected)).toThrow(/expects 2.4.1/);
 	});
 
 	it('refuses a different script catalogue', () => {
@@ -102,8 +102,8 @@ describe('assertHostCompatible', () => {
 	});
 
 	it('reports the observed version, and that official builds carry a git sha', () => {
-		expect(() => assertHostCompatible(capabilities({ hydraVersion: '2.3.0-abc123' }), expected)).toThrow(
-			/2\.3\.0-abc123.*git sha/s,
+		expect(() => assertHostCompatible(capabilities({ hydraVersion: '2.4.1-abc123' }), expected)).toThrow(
+			/2\.4\.1-abc123.*git sha/s,
 		);
 	});
 

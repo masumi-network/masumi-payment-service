@@ -61,10 +61,21 @@ export const listTopupsOutput = z.object({
 			/**
 			 * When the deposit may be sent back, from the deposit's own datum.
 			 *
-			 * The head writes this as `deposit + 3·depositPeriod` and will not
-			 * release the funds before it, so it is the moment recovery becomes
-			 * possible — NOT the last moment the head might still take the deposit,
-			 * which is `absorbBy` below and a whole period earlier.
+			 * hydra-node 2.4.1 (`HTTPServer.hs`) writes this as
+			 * `deposit + depositActivation + 2·depositPeriod` — 2.3 wrote
+			 * `deposit + 3·depositPeriod`, i.e. the same formula with
+			 * `depositActivation` fixed at one `depositPeriod`. This service
+			 * enforces `depositActivation == depositPeriod` for every head it
+			 * opens — the network default in `defaultPeriodsFor` and the
+			 * `depositPeriodSeconds` override in `mintHeadInvite` both carry
+			 * `depositActivationSeconds` along with them (`hydra-invite/
+			 * provisioning.ts`, `hydra-invite/orchestrator.ts`) — so the two
+			 * formulas land on the identical instant on this deployment; a
+			 * deployment that let the two diverge would see this deadline move.
+			 * The head will not release the funds before this deadline, so it is
+			 * the moment recovery becomes possible — NOT the last moment the head
+			 * might still take the deposit, which is `absorbBy` below and a whole
+			 * period earlier.
 			 *
 			 * Null until the node has observed the deposit and said so. It is set
 			 * from the drafting node's chain time, so there is nothing to derive it
@@ -78,18 +89,31 @@ export const listTopupsOutput = z.object({
 			 * When the head can first take this deposit.
 			 *
 			 * A deposit confirming on chain is not the same as the head holding it:
-			 * a node ignores a deposit until it is older than the deposit period,
-			 * so between those two moments the money is on chain, spoken for, and
-			 * unusable. Reporting only "Confirmed" made that gap look like success.
+			 * a node ignores a deposit until it matures, which 2.4.1 defines as
+			 * `deadline − 2·depositPeriod` (== `deposit + depositActivation`; see
+			 * `deadline` above) — algebraically identical to 2.3's
+			 * `deadline − 2·depositPeriod` derivation for ANY value of
+			 * `depositActivation`, since both formulas put the deadline exactly
+			 * `2·depositPeriod` after maturity. `shiftPeriods(deadline, -2, DP)`
+			 * below is therefore unchanged by the 2.4.1 upgrade — this comment
+			 * exists so the next reader does not "fix" an offset that never broke.
+			 * Reporting only "Confirmed" made the maturity gap look like success:
+			 * the money is on chain, spoken for, and unusable until this passes.
 			 */
 			usableFrom: z.string().nullable(),
 			/**
 			 * The last moment the head will still absorb this deposit.
 			 *
 			 * A node refuses a deposit that has less than one deposit period left
-			 * before its deadline, so the window to be folded in closes a period
-			 * before the deadline does — and the gap between the two is dead time
-			 * in which the deposit can neither be taken nor recovered.
+			 * before its deadline, i.e. `deadline − depositPeriod` — again the same
+			 * offset from the deadline under both 2.3 and 2.4.1, so
+			 * `shiftPeriods(deadline, -1, DP)` below needs no change either.
+			 *
+			 * `usableFrom → absorbBy` is the window the head may take it in. The
+			 * dead time is AFTER this, between `absorbBy` and `deadline`: the head
+			 * will no longer absorb, and the node will not build a recover
+			 * transaction until the deadline passes (`hydra-topup/recover.ts`), so
+			 * the deposit can be neither taken nor sent back.
 			 */
 			absorbBy: z.string().nullable(),
 			/**
@@ -188,11 +212,20 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 				// transaction's validity TTL, as this once did, read about half an
 				// hour early and made healthy deposits look expired.
 				deadline: row.nodeDeadline?.toISOString() ?? null,
-				// The node writes the deadline as `deposit + 3·DP` and will not take
-				// the deposit before `deposit + DP`, which is two periods before it.
+				// hydra-node 2.4.1 writes the deadline as
+				// `deposit + depositActivation + 2·DP` (2.3: `deposit + 3·DP`) and
+				// will not take the deposit before it matures, at `deposit +
+				// depositActivation` = `deadline − 2·DP` for either formula — this
+				// offset is UNCHANGED by the 2.4.1 upgrade, not a value that needs
+				// updating for it: `deadline − 2·DP` derives maturity for ANY
+				// activation value, algebraically, because both formulas put the
+				// deadline exactly `2·DP` after maturity. Do not "fix" this offset
+				// if depositActivation ever stops equalling DP.
 				usableFrom: shiftPeriods(row.nodeDeadline, -2, depositPeriodSeconds),
 				// And refuses one with less than a period left, which closes the
-				// window a period before the deadline rather than at it.
+				// window a period before the deadline rather than at it. Also
+				// unchanged by 2.4.1: `deadline − DP` is the absorb-by cutoff under
+				// both formulas.
 				absorbBy: shiftPeriods(row.nodeDeadline, -1, depositPeriodSeconds),
 				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
 				recoveryRequestedAt: row.recoveryRequestedAt?.toISOString() ?? null,

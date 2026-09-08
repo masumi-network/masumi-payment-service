@@ -31,7 +31,7 @@ import {
 	txInvalidMessageSchema,
 	txValidMessageSchema,
 } from './schemas';
-import { describeDecommitInvalidReason, describePostTxError } from './post-tx-error';
+import { describeDecommitInvalidReason, describePostTxError, postTxErrorTag } from './post-tx-error';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import type { DecommitDistributedValue, DecommitSettledData, DepositRecordedData, StatusChangeData } from './types';
 
@@ -151,7 +151,7 @@ export async function handleHttpResponse(response: Response): Promise<unknown> {
 		if (response.ok === false) throw createHttpResponseError(response);
 		throw new HydraProtocolError('Hydra HTTP response was not valid JSON', { cause: error });
 	}
-	if (response.ok === false) throw createHttpResponseError(response);
+	if (response.ok === false) throw createHttpResponseError(response, responseBody);
 	return responseBody;
 }
 
@@ -191,10 +191,22 @@ export async function readBoundedHttpResponse(response: Response): Promise<strin
 	return responseText;
 }
 
-export function createHttpResponseError(response: Response): Error {
+/**
+ * `body` is the already-parsed JSON response, when there was one to parse (the
+ * malformed-body call site has none). A hydra-node HTTP refusal — 2.4.1's
+ * `POST /commit` DepositTooLarge included — carries its reason as `{tag: ...}`,
+ * the same shape `postTxError` uses over the websocket. Reusing `postTxErrorTag`
+ * here means a caller's `.message` names that reason instead of just the HTTP
+ * status: without it every 4xx read as identically "Hydra HTTP request failed
+ * with 400 Bad Request", and that generic text is what ends up recorded against
+ * a failed top-up.
+ */
+export function createHttpResponseError(response: Response, body?: unknown): Error {
 	const status = [response.status, response.statusText].filter(Boolean).join(' ');
 	const statusSuffix = status ? ` with ${status}` : '';
-	return new HydraHttpResponseError(`Hydra HTTP request failed${statusSuffix}`, response.status);
+	const reasonTag = postTxErrorTag(body);
+	const reasonSuffix = reasonTag !== null ? ` (${reasonTag})` : '';
+	return new HydraHttpResponseError(`Hydra HTTP request failed${statusSuffix}${reasonSuffix}`, response.status);
 }
 
 type WsResponseOutcome =

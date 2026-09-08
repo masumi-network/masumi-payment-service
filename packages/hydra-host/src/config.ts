@@ -26,6 +26,11 @@ export type HostConfig = {
 	publicHost: string;
 	network: 'preprod' | 'mainnet';
 	blockfrostProjectFile: string;
+	/**
+	 * Self-published Hydra script transaction ids, or empty to use upstream's
+	 * pre-published set via `--network`. See `HydraNodeLaunchSpec.hydraScriptsTxIds`.
+	 */
+	hydraScriptsTxIds: string[];
 	ledgerProtocolParametersFile: string;
 	adminToken: string;
 	userToken: string;
@@ -35,6 +40,19 @@ export type HostConfig = {
 	defaultContestationPeriodSeconds: number;
 	defaultDepositPeriodSeconds: number;
 	defaultUnsyncedPeriodSeconds: number;
+	/** Fallback for a provision request that omits `depositActivationSeconds`. */
+	defaultDepositActivationSeconds: number;
+	/**
+	 * Set only when an operator configured one explicitly.
+	 *
+	 * `undefined` is the signal that this Host has no opinion, which lets a
+	 * provisioning request fall back to the deposit period IT asked for rather
+	 * than to this Host's own default period. Those differ whenever an older
+	 * payment-service build omits the field, and pairing our period against
+	 * their request is exactly how the activation == depositPeriod invariant
+	 * breaks silently.
+	 */
+	depositActivationSecondsOverride: number | undefined;
 	/** How long a provisioned-but-unacknowledged node survives before the reaper removes it. */
 	escrowTtlSeconds: number;
 	drainTimeoutMs: number;
@@ -66,6 +84,27 @@ export class ConfigError extends Error {
 export type EnvSource = { get(key: string): string | undefined };
 
 export const processEnv: EnvSource = { get: (key) => process.env[key] };
+
+/**
+ * Comma-separated transaction ids, validated here so a typo fails the Host at
+ * boot with the key named, instead of every node it later spawns dying with
+ * hydra-node's own parse error. Empty or unset means "use --network".
+ */
+function txIdList(env: EnvSource, key: string): string[] {
+	const raw = env.get(key)?.trim();
+	if (!raw) {
+		return [];
+	}
+	const ids = raw.split(',').map((id) => id.trim().toLowerCase());
+	for (const id of ids) {
+		if (!/^[0-9a-f]{64}$/.test(id)) {
+			throw new ConfigError(
+				`${key} must be comma-separated 64-character hex transaction ids, received ${JSON.stringify(id)}`,
+			);
+		}
+	}
+	return ids;
+}
 
 function required(env: EnvSource, key: string): string {
 	const value = env.get(key)?.trim();
@@ -168,6 +207,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 	validatePortLayout(ports);
 
 	const defaultUnsyncedPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS', 1800);
+	const defaultDepositPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', 300);
 	// An override, not a default. Thresholds are derived per node from that
 	// node's own unsynced period, because that is the value they have to stay
 	// below and it is per node — a host-wide default that suits an 1800s node
@@ -190,6 +230,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		publicHost,
 		network,
 		blockfrostProjectFile: optional(env, 'BLOCKFROST_PROJECT_FILE', '/run/secrets/blockfrost.txt'),
+		hydraScriptsTxIds: txIdList(env, 'HYDRA_HOST_SCRIPTS_TX_IDS'),
 		ledgerProtocolParametersFile: optional(env, 'HYDRA_HOST_LEDGER_PARAMS_FILE', `/opt/hydra/params/${network}.json`),
 		adminToken,
 		userToken,
@@ -203,8 +244,22 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		// "failed to stay up after 5 attempts", while the reason it could never
 		// start only ever reached the log.
 		defaultContestationPeriodSeconds: positiveInteger(env, 'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS', 220),
-		defaultDepositPeriodSeconds: positiveInteger(env, 'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', 300),
+		defaultDepositPeriodSeconds,
 		defaultUnsyncedPeriodSeconds,
+		// Defaults to the deposit period itself, not a fixed number: every comment
+		// in this upgrade asserts activation == depositPeriod (it reproduces
+		// 2.3.0's proven timing exactly), and a Host serving an older
+		// payment-service build that omits this field entirely must not silently
+		// break that invariant by pairing a hardcoded activation against whatever
+		// deposit period THAT request actually asked for.
+		defaultDepositActivationSeconds: positiveInteger(
+			env,
+			'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS',
+			defaultDepositPeriodSeconds,
+		),
+		depositActivationSecondsOverride: env.get('HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS')?.trim()
+			? positiveInteger(env, 'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS', defaultDepositPeriodSeconds)
+			: undefined,
 		escrowTtlSeconds: positiveInteger(env, 'HYDRA_HOST_ESCROW_TTL_SECONDS', 3600),
 		drainTimeoutMs: positiveInteger(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),
 		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',

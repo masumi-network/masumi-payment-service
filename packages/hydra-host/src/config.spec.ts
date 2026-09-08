@@ -23,6 +23,19 @@ describe('loadHostConfig', () => {
 		expect(config.network).toBe('preprod');
 		expect(config.ports.capacity).toBe(32);
 		expect(config.listenPort).toBe(8443);
+		expect(config.hydraScriptsTxIds).toEqual([]);
+	});
+
+	it('parses HYDRA_HOST_SCRIPTS_TX_IDS as a trimmed, lowercased list', () => {
+		const a = 'b88df0c62f9734f0a6dba0faa7636ed51699cbe21706ce4a9736684daf418d67';
+		const b = '40AB074125B4734939CD45A00B2CFE1B20D679B2A1C52D6472ACA193F637A2BC';
+		const config = loadHostConfig(env({ HYDRA_HOST_SCRIPTS_TX_IDS: ` ${a} , ${b} ` }));
+		expect(config.hydraScriptsTxIds).toEqual([a, b.toLowerCase()]);
+	});
+
+	it('rejects a malformed HYDRA_HOST_SCRIPTS_TX_IDS at startup, not at first node launch', () => {
+		expect(() => loadHostConfig(env({ HYDRA_HOST_SCRIPTS_TX_IDS: 'deadbeef' }))).toThrow(ConfigError);
+		expect(() => loadHostConfig(env({ HYDRA_HOST_SCRIPTS_TX_IDS: ',' }))).toThrow(ConfigError);
 	});
 
 	it('requires the public host, since it becomes every node advertise address', () => {
@@ -102,9 +115,25 @@ describe('numbers that must be above zero', () => {
 		'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS',
 		'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS',
 		'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS',
+		'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS',
 	])('refuses %s of zero', (key) => {
 		expect(() => loadHostConfig(env({ [key]: '0' }))).toThrow(ConfigError);
 		expect(() => loadHostConfig(env({ [key]: '-1' }))).toThrow(ConfigError);
+	});
+
+	// Defaults to the deposit-period default itself, not a fixed number: every
+	// comment in this upgrade asserts activation == depositPeriod, and a Host
+	// serving an older payment-service build that omits BOTH fields entirely
+	// must not silently break that invariant by pairing a hardcoded activation
+	// (say, 600) against a differently-configured deposit-period default.
+	it('defaults deposit activation to the deposit-period default, not a fixed number', () => {
+		expect(loadHostConfig(env()).defaultDepositActivationSeconds).toBe(
+			loadHostConfig(env()).defaultDepositPeriodSeconds,
+		);
+		expect(loadHostConfig(env()).defaultDepositActivationSeconds).toBe(300);
+
+		const custom = env({ HYDRA_HOST_DEPOSIT_PERIOD_SECONDS: '654' });
+		expect(loadHostConfig(custom).defaultDepositActivationSeconds).toBe(654);
 	});
 
 	// A port of zero binds an ephemeral one while `/v1/capabilities` still

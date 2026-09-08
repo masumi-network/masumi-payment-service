@@ -2,6 +2,7 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import type { Protocol, UTxO } from '@meshsdk/core';
 import { POLICY_ID_LENGTH } from '@meshsdk/core';
 
+import { HydraTransportAmbiguousError } from './errors';
 import type { IHydraNode } from './node';
 import { HydraProvider } from './provider';
 import { HydraHeadStatus } from '@/generated/prisma/client';
@@ -253,6 +254,39 @@ describe('HydraProvider', () => {
 			);
 			expect(isSubmissionAllowed).toHaveBeenCalledTimes(1);
 			expect(node.newTx).not.toHaveBeenCalled();
+		});
+
+		/**
+		 * `TxValid` is one node's local ledger saying yes. It is not the head's
+		 * answer: a peer can refuse the same body (seen live 2026-09-07 — node 2's
+		 * clock sat 44 slots behind node 1's, so the window's `invalidBefore` was
+		 * in node 2's future and it answered OutsideValidityIntervalUTxO) and then
+		 * no snapshot is ever proposed. Nothing tells the submitter. The tx just
+		 * never appears, while the service has already advanced its DB on the
+		 * `TxValid` and left the request pointing at a tx no node holds.
+		 *
+		 * So `submitTx` does not return until the tx is in a confirmed snapshot —
+		 * the head's answer, not one node's — and a confirmation timeout is the
+		 * transport-ambiguous error, which the reservation layer already holds
+		 * for reconciliation instead of finalizing.
+		 */
+		it('does not resolve on TxValid alone: waits for the tx to reach a confirmed snapshot', async () => {
+			await provider.submitTx('deadbeef');
+			expect(node.awaitTx).toHaveBeenCalledTimes(1);
+			expect(node.awaitTx).toHaveBeenCalledWith('confirmedTxHash');
+			// Confirmation is awaited after submission, never before it.
+			const newTxOrder = node.newTx.mock.invocationCallOrder[0];
+			const awaitTxOrder = node.awaitTx.mock.invocationCallOrder[0];
+			expect(awaitTxOrder).toBeGreaterThan(newTxOrder);
+		});
+
+		it('surfaces a confirmation timeout as transport-ambiguous rather than success', async () => {
+			node.awaitTx.mockRejectedValueOnce(
+				new HydraTransportAmbiguousError('Hydra transaction confirmedTxHash was not confirmed within 30000ms'),
+			);
+			await expect(provider.submitTx('deadbeef')).rejects.toThrow(HydraTransportAmbiguousError);
+			// The bytes were handed over; this must never read as "not dispatched".
+			expect(node.newTx).toHaveBeenCalledTimes(1);
 		});
 	});
 

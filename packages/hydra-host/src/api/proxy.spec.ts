@@ -59,6 +59,7 @@ function record(overrides: Partial<NodeRecord>): NodeRecord {
 		peers: [],
 		contestationPeriodSeconds: 220,
 		depositPeriodSeconds: 300,
+		depositActivationSeconds: 300,
 		unsyncedPeriodSeconds: 1800,
 		hydraVerificationKey: '5820aa',
 		cardanoVerificationKey: '5820bb',
