@@ -57,6 +57,7 @@ import { WalletExportSection } from '@/components/wallets/sections/WalletExportS
 import { CollectionAddressSection } from '@/components/wallets/sections/CollectionAddressSection';
 import { FundTransfersSection } from '@/components/wallets/sections/FundTransfersSection';
 import { useCollectionAddressEditor } from '@/components/wallets/useCollectionAddressEditor';
+import { RECOVERY_PHRASE_DOWNLOAD_CONFIRM_DESCRIPTION } from '@/lib/wallet-recovery-download';
 
 // Re-exported for the many call sites that import these types from this module.
 export type { TokenBalance, WalletWithBalance } from '@/components/wallets/wallet-details-utils';
@@ -93,6 +94,7 @@ export function WalletDetailsDialog({
   );
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [confirmMnemonicDownloadOpen, setConfirmMnemonicDownloadOpen] = useState(false);
   const [swapTransactions, setSwapTransactions] = useState<SwapTx[]>([]);
   const [swapTxLoading, setSwapTxLoading] = useState(false);
   const [swapTxCursor, setSwapTxCursor] = useState<string | undefined>(undefined);
@@ -400,7 +402,7 @@ export function WalletDetailsDialog({
     }
   };
 
-  const handleDownload = () => {
+  const performMnemonicDownload = () => {
     if (!wallet || !exportedMnemonic) return;
     const data = {
       walletAddress: wallet.walletAddress,
@@ -417,6 +419,7 @@ export function WalletDetailsDialog({
     a.download = `wallet-export-${wallet.walletAddress}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    setConfirmMnemonicDownloadOpen(false);
   };
 
   const handleDialogClose = useCallback(() => {
@@ -640,7 +643,7 @@ export function WalletDetailsDialog({
                 exportedMnemonic={exportedMnemonic}
                 onClose={() => setExportedMnemonic(null)}
                 onCopyMnemonic={handleCopyMnemonic}
-                onDownload={handleDownload}
+                onDownload={() => setConfirmMnemonicDownloadOpen(true)}
               />
             )}
 
@@ -661,6 +664,16 @@ export function WalletDetailsDialog({
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmMnemonicDownloadOpen}
+        onClose={() => setConfirmMnemonicDownloadOpen(false)}
+        elevatedGrandchildStack={elevatedChildStack}
+        title="Download recovery phrase file?"
+        description={RECOVERY_PHRASE_DOWNLOAD_CONFIRM_DESCRIPTION}
+        onConfirm={performMnemonicDownload}
+        confirmLabel="Download"
+      />
 
       <ConfirmDialog
         open={!!rules.pendingDeleteRule}
