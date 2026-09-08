@@ -57,13 +57,12 @@ const webhookFormSchema = z
     Events: z.array(z.enum(WEBHOOK_EVENTS)).min(1, 'Select at least one event'),
   })
   .superRefine((value, ctx) => {
-    if (value.format === 'EXTENDED' && !value.authToken.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Auth token is required for extended webhooks',
-        path: ['authToken'],
-      });
-    } else if (value.format === 'EXTENDED' && value.authToken.trim().length < 10) {
+    const token = value.authToken.trim();
+    if (value.format !== 'EXTENDED') return;
+
+    if (!token) return;
+
+    if (token.length < 10) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Auth token must be at least 10 characters',
@@ -71,6 +70,21 @@ const webhookFormSchema = z
       });
     }
   });
+
+function createWebhookFormSchema(mode: 'create' | 'edit') {
+  return webhookFormSchema.superRefine((value, ctx) => {
+    if (value.format !== 'EXTENDED') return;
+    if (mode === 'edit') return;
+
+    if (!value.authToken.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Auth token is required for extended webhooks',
+        path: ['authToken'],
+      });
+    }
+  });
+}
 
 type WebhookFormValues = z.infer<typeof webhookFormSchema>;
 
@@ -155,7 +169,7 @@ export function WebhookDialog({
     reset,
     setValue,
   } = useForm<WebhookFormValues>({
-    resolver: zodResolver(webhookFormSchema),
+    resolver: zodResolver(createWebhookFormSchema(mode)),
     defaultValues: getDefaultValues(webhook, availableEvents),
   });
 
@@ -217,11 +231,13 @@ export function WebhookDialog({
   };
 
   const submit = async (values: WebhookFormValues) => {
+    const trimmedToken = values.authToken.trim();
     const payload = {
       name: values.name.trim() || undefined,
       format: values.format,
       url: values.url.trim(),
-      authToken: values.format === 'EXTENDED' ? values.authToken.trim() : undefined,
+      authToken:
+        values.format === 'EXTENDED' && trimmedToken.length > 0 ? trimmedToken : undefined,
       Events: values.Events,
     };
 
@@ -332,13 +348,14 @@ export function WebhookDialog({
               <Input
                 id="webhook-auth-token"
                 type="password"
-                placeholder="shared-secret"
+                placeholder={mode === 'edit' ? 'Leave blank to keep existing token' : 'shared-secret'}
                 {...register('authToken')}
                 disabled={isSubmitting}
               />
               <p className="text-xs text-muted-foreground">
-                Masumi will send this value as a Bearer token so your endpoint can verify the
-                request.
+                {mode === 'edit'
+                  ? 'Leave blank to keep the current token. Enter a new value only when replacing it.'
+                  : 'Masumi will send this value as a Bearer token so your endpoint can verify the request.'}
               </p>
               {errors.authToken && (
                 <p className="text-xs text-destructive">{errors.authToken.message}</p>

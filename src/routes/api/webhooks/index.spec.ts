@@ -396,7 +396,38 @@ describe('webhook endpoints', () => {
 		});
 	});
 
-	it('rejects patching without authToken when format is EXTENDED', async () => {
+	it('allows patching extended webhooks without authToken to preserve the existing secret', async () => {
+		mockFindWebhookById.mockResolvedValue({
+			id: 'webhook-3',
+			url: 'https://example.com/old',
+			format: WebhookFormat.EXTENDED,
+			authToken: 'old-secret',
+			events: ['PAYMENT_ON_ERROR'],
+			name: 'Webhook',
+			isActive: true,
+			createdAt: new Date('2026-04-08T12:00:00.000Z'),
+			updatedAt: new Date('2026-04-08T12:05:00.000Z'),
+			paymentSourceId: 'payment-source-1',
+			createdByApiKeyId: 'api-key-1',
+			PaymentSource: {
+				id: 'payment-source-1',
+				network: Network.Preprod,
+				deletedAt: null,
+			},
+		});
+		mockUpdateWebhook.mockResolvedValue({
+			id: 'webhook-3',
+			url: 'https://example.com/new',
+			format: WebhookFormat.EXTENDED,
+			authToken: 'old-secret',
+			events: ['PAYMENT_ON_ERROR'],
+			name: 'Webhook updated',
+			isActive: true,
+			createdAt: new Date('2026-04-08T12:00:00.000Z'),
+			updatedAt: new Date('2026-04-08T12:10:00.000Z'),
+			paymentSourceId: 'payment-source-1',
+		});
+
 		const { responseMock } = await testEndpoint({
 			endpoint: patchWebhookPatch,
 			requestProps: {
@@ -412,8 +443,17 @@ describe('webhook endpoints', () => {
 			},
 		});
 
-		expect(responseMock.statusCode).toBe(400);
-		expect(mockUpdateWebhook).not.toHaveBeenCalled();
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockUpdateWebhook).toHaveBeenCalledWith({
+			where: { id: 'webhook-3' },
+			data: {
+				url: 'enc:https://example.com/new',
+				urlHash: 'hash:https://example.com/new',
+				format: WebhookFormat.EXTENDED,
+				events: ['PAYMENT_ON_ERROR'],
+				name: 'Webhook updated',
+			},
+		});
 	});
 
 	it('allows provider webhook patches without authToken', async () => {

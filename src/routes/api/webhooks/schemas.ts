@@ -47,17 +47,17 @@ export const patchWebhookSchemaInput = z
 			.max(200)
 			.optional()
 			.nullable()
-			.describe('Authentication token for extended webhook requests. Required when format is EXTENDED'),
+			.describe('Authentication token for extended webhook requests. Omit to keep the existing token.'),
 		format: z.nativeEnum(WebhookFormat).describe('Webhook delivery format'),
 		Events: z.array(z.nativeEnum(WebhookEventType)).min(1).max(10).describe('Array of event types to subscribe to'),
 		name: z.string().max(100).optional().nullable().describe('Human-readable name for the webhook'),
 	})
 	.superRefine((value, ctx) => {
-		if (value.format === WebhookFormat.EXTENDED && value.authToken == null) {
+		if (value.format === WebhookFormat.EXTENDED && value.authToken != null && value.authToken.length < 10) {
 			ctx.addIssue({
 				code: 'custom',
 				path: ['authToken'],
-				message: 'authToken is required when format is EXTENDED',
+				message: 'authToken must be at least 10 characters when provided',
 			});
 		}
 	});

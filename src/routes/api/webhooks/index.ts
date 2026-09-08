@@ -207,7 +207,11 @@ export const patchWebhookPatch = webhookMutationEndpointFactory.build({
 			data: {
 				url: encryptWebhookUrl(input.url),
 				urlHash,
-				authToken: input.format === WebhookFormat.EXTENDED ? encryptWebhookAuthToken(input.authToken) : null,
+				...(input.format === WebhookFormat.EXTENDED
+					? input.authToken != null
+						? { authToken: encryptWebhookAuthToken(input.authToken) }
+						: {}
+					: { authToken: null }),
 				format: input.format,
 				events: input.Events,
 				name: input.name ?? null,
