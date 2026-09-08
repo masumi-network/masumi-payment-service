@@ -19,6 +19,7 @@ function capabilities(overrides: Partial<HostCapabilities> = {}): HostCapabiliti
 		ledgerParamsHash: 'sha256:abc',
 		network: 'preprod',
 		exchangePort: 8444,
+		exchangeUrl: 'https://exchange.hydra1.example.com:8444/exchange',
 		nodeSlots: { used: 1, capacity: 32 },
 		probeError: null,
 		...overrides,
@@ -111,6 +112,10 @@ describe('assertHostCompatible', () => {
 		expect(() => assertHostCompatible(capabilities({ scriptCatalogueHash: null }), expected)).toThrow(
 			/reports no script catalogue/,
 		);
+	});
+
+	it('refuses a Host that cannot publish a separate Exchange Plane URL', () => {
+		expect(() => assertHostCompatible(capabilities({ exchangeUrl: null }), expected)).toThrow(/public exchange URL/);
 	});
 
 	it('refuses a host reporting no ledger params at all', () => {

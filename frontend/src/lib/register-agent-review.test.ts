@@ -21,6 +21,22 @@ test('register review labels vary by dialog mode', () => {
     'Continue',
   );
   assert.equal(
+    getRegisterAgentReviewStepButtonLabel({
+      isUpdateMode: false,
+      isReRegisterMode: false,
+      isLoadingWallets: true,
+    }),
+    'Loading wallets...',
+  );
+  assert.equal(
+    getRegisterAgentReviewStepButtonLabel({
+      isUpdateMode: true,
+      isReRegisterMode: false,
+      isLoadingWallets: true,
+    }),
+    'Continue',
+  );
+  assert.equal(
     getRegisterAgentReviewTitle({ isUpdateMode: true, isReRegisterMode: false }),
     'Review update',
   );

@@ -51,6 +51,16 @@ DEMO="${DEMO:-${HYDRA_DEMO_DIR:-$( \
   done )}}"
 
 HYDRA_VERSION="${HYDRA_VERSION:-2.4.1}"
+# sha256 of the release zip, verified in ensure_bin whenever a release asset is
+# actually downloaded. Kept from dev, but no longer *required*: dev could demand
+# it because every tag through 2.3.0 published a zip. 2.4.0 and 2.4.1 publish no
+# release assets at all, so ensure_bin falls back to the tag's CI artifact, for
+# which upstream publishes no checksum to pin. The 2.3.0 value stays pinned so
+# HYDRA_VERSION=2.3.0 still verifies exactly as it did on dev.
+HYDRA_RELEASE_SHA256="${HYDRA_RELEASE_SHA256:-}"
+if [ -z "$HYDRA_RELEASE_SHA256" ] && [ "$HYDRA_VERSION" = '2.3.0' ]; then
+  HYDRA_RELEASE_SHA256='a9074d0b69cc7104ccad672c942da7c0c695b4dbdff5002fd503904fe24ad528'
+fi
 # Preprod only. Comma-separated tx ids of a self-published Hydra script set;
 # when set, nodes get --hydra-scripts-tx-id INSTEAD of --network preprod (the
 # two are alternatives). Needed on 2.4.1: upstream's preprod publication has
@@ -147,6 +157,15 @@ ensure_bin(){
     if gh release download "$HYDRA_VERSION" --repo cardano-scaling/hydra \
       --pattern "hydra-aarch64-darwin-${HYDRA_VERSION}.zip" --dir "$tmp" 2>/dev/null; then
       c_grn "  release asset path: found one — downloading (~176 MiB)…"
+      # Verify it when we have a pinned digest (dev's supply-chain check, kept).
+      # Only the release-asset branch can be checked this way: the CI-artifact
+      # fallback below has no upstream-published checksum to compare against.
+      if [ -n "$HYDRA_RELEASE_SHA256" ]; then
+        printf '%s  %s\n' "$HYDRA_RELEASE_SHA256" "$tmp/hydra-aarch64-darwin-${HYDRA_VERSION}.zip" \
+          | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
+      else
+        c_blu "  no HYDRA_RELEASE_SHA256 pinned for ${HYDRA_VERSION} — skipping checksum verification"
+      fi
       (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
     else
       c_blu "  release asset path: none published for ${HYDRA_VERSION} — falling back to the tag's CI artifact"

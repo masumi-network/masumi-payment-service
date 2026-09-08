@@ -65,6 +65,7 @@ block-storage volume, the systemd unit, the firewall, and backups end to end.
 cd packages/hydra-host
 HYDRA_HOST_IMAGE=hydra-host:local \
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
+HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
 HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
@@ -100,6 +101,11 @@ a head. `HYDRA_HOST_PUBLIC_HOST` is a bare hostname or IP with no scheme, port
 or path; the Host refuses to start otherwise, because that value becomes each
 node's advertise identity and must not change for a head's lifetime.
 
+`HYDRA_HOST_PUBLIC_EXCHANGE_URL` is the full URL that signed invites give to
+counterparties. It must end in `/exchange`. It must use HTTPS unless it points
+to loopback. Set `HYDRA_HOST_EXCHANGE_TRUST_PROXY=true` only when a trusted
+HTTP proxy is the only network path to port `8444`.
+
 The ports are the security boundary. Five ranges exist and only three may leave
 the machine:
 
@@ -113,6 +119,9 @@ the machine:
 
 The API range is additionally bound to `127.0.0.1` inside the container, so it
 stays shut even if someone switches to host networking.
+
+The base Compose file also binds the Control Plane and Exchange Plane to
+`127.0.0.1`. Public access requires an explicit deployment configuration.
 
 **The peer plane cannot authenticate its callers**, which is why the base
 compose file does not publish it. It still has to be reachable, because a head

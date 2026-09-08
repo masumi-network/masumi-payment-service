@@ -62,13 +62,22 @@ Two arm64 cases, and they are not the same problem:
 ### 1. Fetch `hydra-node`
 
 ```bash
+(
+set -e
 HYDRA_VERSION=2.3.0
-curl -fsSL -o hydra.zip \
+HYDRA_SHA256=a9074d0b69cc7104ccad672c942da7c0c695b4dbdff5002fd503904fe24ad528
+curl --proto '=https' --tlsv1.2 -fsSL -o hydra.zip \
   "https://github.com/cardano-scaling/hydra/releases/download/${HYDRA_VERSION}/hydra-aarch64-darwin-${HYDRA_VERSION}.zip"
+printf '%s  %s\n' "$HYDRA_SHA256" hydra.zip | shasum -a 256 -c -
 unzip -j hydra.zip -d .bin
 chmod +x .bin/hydra-node
 .bin/hydra-node --version
+)
 ```
+
+The checksum above is the SHA-256 digest reported by the official Hydra 2.3.0
+release API on 2026-09-04. Review and replace both the version and digest
+together when upgrading.
 
 Both sides of a head must run the same version, so pin it rather than tracking
 latest.
@@ -77,6 +86,7 @@ latest.
 
 ```bash
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
+HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
 HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
@@ -87,6 +97,9 @@ HYDRA_HOST_LEDGER_PARAMS_FILE="$PWD/packages/hydra-host/params/preprod.json" \
 HYDRA_HOST_USE_SYSTEM_ETCD=false \
 pnpm exec tsx packages/hydra-host/src/index.ts
 ```
+
+The loopback Exchange Plane URL is for a local native run. A reachable Host
+must use its public HTTPS Exchange Plane URL.
 
 Four of those differ from the container and are worth understanding:
 

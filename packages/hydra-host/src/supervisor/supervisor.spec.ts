@@ -32,6 +32,7 @@ const env: EnvSource = {
 	get: (key) =>
 		({
 			HYDRA_HOST_PUBLIC_HOST: 'hydra1.example.com',
+			HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'https://exchange.hydra1.example.com:8444/exchange',
 			HYDRA_HOST_ADMIN_TOKEN: 'a'.repeat(40),
 			HYDRA_HOST_USER_TOKEN: 'u'.repeat(40),
 			HYDRA_HOST_PEER_PORT_COUNT: '4',
