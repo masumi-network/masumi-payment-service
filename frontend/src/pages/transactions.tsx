@@ -41,6 +41,7 @@ import { buildTransactionReportViewDefaults } from '@/components/transactions/do
 import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
+import { canUseTestPaymentTools } from '@/lib/testing/test-payment-tools';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -66,6 +67,7 @@ const getHydraHeadId = (transaction: Transaction) =>
 
 export default function Transactions() {
   const { apiClient, selectedPaymentSourceId, network, capabilities } = useAppContext();
+  const testPaymentsAllowed = capabilities.canPay && canUseTestPaymentTools(network);
   const resync = useResync();
 
   const [activeTab, setActiveTab] = useState('All');
@@ -397,7 +399,7 @@ export default function Transactions() {
               {/* Developers > Testing creates real payments/purchases via
                   pay-authenticated endpoints, and the tab is hidden for
                   read-only keys, so this shortcut would dead-end. */}
-              {capabilities.canPay && (
+              {testPaymentsAllowed && (
                 <Link href="/developers">
                   <Button className="flex items-center gap-2 btn-hover-lift">
                     <FlaskConical className="h-4 w-4" />
@@ -540,7 +542,7 @@ export default function Transactions() {
                             : 'Transactions will appear here once payments are made.'
                         }
                         action={
-                          !searchQuery && capabilities.canPay ? (
+                          !searchQuery && testPaymentsAllowed ? (
                             <Link
                               href="/developers"
                               className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"

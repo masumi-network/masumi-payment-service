@@ -11,6 +11,8 @@ import { GetStaticProps } from 'next';
 import { MockPaymentDialog, MockPurchaseDialog, FullCycleDialog } from '@/components/testing';
 import { InputSchemaValidator } from '@/components/developers/InputSchemaValidator';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { canUseTestPaymentTools } from '@/lib/testing/test-payment-tools';
+import { AlertTriangle } from 'lucide-react';
 
 export const getStaticProps: GetStaticProps = async () => {
   return {
@@ -26,7 +28,8 @@ const PAY_ONLY_TABS = ['Testing'];
 const TABS = [{ name: 'Testing' }, { name: 'Schema Validator' }, { name: 'OpenAPI' }];
 
 export default function Developers() {
-  const { capabilities } = useAppContext();
+  const { capabilities, network } = useAppContext();
+  const testPaymentsAllowed = capabilities.canPay && canUseTestPaymentTools(network);
   const tabs = capabilities.canPay ? TABS : TABS.filter((tab) => !PAY_ONLY_TABS.includes(tab.name));
   const [activeTab, setActiveTab] = useState(tabs[0].name);
   const [isIframeLoaded, setIsIframeLoaded] = useState(false);
@@ -86,11 +89,21 @@ export default function Developers() {
 
             {activeTab === 'Testing' && capabilities.canPay && (
               <div className="space-y-6 animate-fade-in-up opacity-0">
+                {!testPaymentsAllowed && (
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <p>
+                      Test payment tools are only available on Preprod. Switch the network selector
+                      to Preprod to create test payments or purchases.
+                    </p>
+                  </div>
+                )}
                 <div className="grid gap-4 md:grid-cols-3">
                   <button
                     type="button"
-                    onClick={() => setPaymentDialogOpen(true)}
-                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0"
+                    onClick={() => testPaymentsAllowed && setPaymentDialogOpen(true)}
+                    disabled={!testPaymentsAllowed}
+                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:shadow-none"
                     style={{ animationDelay: '0ms' }}
                   >
                     <div className="flex items-center gap-3 mb-3">
@@ -106,8 +119,9 @@ export default function Developers() {
 
                   <button
                     type="button"
-                    onClick={() => setPurchaseDialogOpen(true)}
-                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0"
+                    onClick={() => testPaymentsAllowed && setPurchaseDialogOpen(true)}
+                    disabled={!testPaymentsAllowed}
+                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:shadow-none"
                     style={{ animationDelay: '75ms' }}
                   >
                     <div className="flex items-center gap-3 mb-3">
@@ -123,8 +137,9 @@ export default function Developers() {
 
                   <button
                     type="button"
-                    onClick={() => setFullCycleDialogOpen(true)}
-                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0"
+                    onClick={() => testPaymentsAllowed && setFullCycleDialogOpen(true)}
+                    disabled={!testPaymentsAllowed}
+                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:shadow-none"
                     style={{ animationDelay: '150ms' }}
                   >
                     <div className="flex items-center gap-3 mb-3">
@@ -179,17 +194,17 @@ export default function Developers() {
       </MainLayout>
 
       <MockPaymentDialog
-        open={capabilities.canPay && isPaymentDialogOpen}
+        open={testPaymentsAllowed && isPaymentDialogOpen}
         onClose={() => setPaymentDialogOpen(false)}
       />
 
       <MockPurchaseDialog
-        open={capabilities.canPay && isPurchaseDialogOpen}
+        open={testPaymentsAllowed && isPurchaseDialogOpen}
         onClose={() => setPurchaseDialogOpen(false)}
       />
 
       <FullCycleDialog
-        open={capabilities.canPay && isFullCycleDialogOpen}
+        open={testPaymentsAllowed && isFullCycleDialogOpen}
         onClose={() => setFullCycleDialogOpen(false)}
       />
     </>
