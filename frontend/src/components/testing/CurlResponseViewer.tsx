@@ -9,9 +9,22 @@ interface CurlResponseViewerProps {
   curlCommand?: string;
   response?: object | null;
   error?: string | null;
+  responseStatus?: number | null;
 }
 
-export function CurlResponseViewer({ curlCommand, response, error }: CurlResponseViewerProps) {
+function formatResponseStatusBadge(status: number): string {
+  if (status >= 200 && status < 300) {
+    return `${status} OK`;
+  }
+  return String(status);
+}
+
+export function CurlResponseViewer({
+  curlCommand,
+  response,
+  error,
+  responseStatus,
+}: CurlResponseViewerProps) {
   const [curlExpanded, setCurlExpanded] = useState(false);
 
   const hasCurl = curlCommand && curlCommand.length > 0;
@@ -68,13 +81,13 @@ export function CurlResponseViewer({ curlCommand, response, error }: CurlRespons
               <span className="text-xs font-medium text-muted-foreground">Response</span>
               {hasError ? (
                 <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                  Error
+                  {responseStatus != null ? formatResponseStatusBadge(responseStatus) : 'Error'}
                 </Badge>
-              ) : (
+              ) : responseStatus != null ? (
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                  200 OK
+                  {formatResponseStatusBadge(responseStatus)}
                 </Badge>
-              )}
+              ) : null}
             </div>
             {hasResponse && !hasError && <CopyButton value={JSON.stringify(response, null, 2)} />}
           </div>

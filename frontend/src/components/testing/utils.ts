@@ -2,6 +2,9 @@ import LZString from 'lz-string';
 import stringify from 'canonical-json';
 import { getOwnPlainObject, getOwnString, getOwnValue, isObject } from '@/lib/object-properties';
 
+export const CURL_API_KEY_PLACEHOLDER = '<your-api-key>';
+const CURL_BASE_URL_PLACEHOLDER = '<payment-api-base-url>';
+
 type CanonicalJsonPrimitive = string | number | boolean | null;
 export type CanonicalJsonValue =
   | CanonicalJsonPrimitive
@@ -85,13 +88,25 @@ export function calculateDefaultTimes() {
   return { payByTime, submitResultTime, unlockTime, externalDisputeUnlockTime };
 }
 
-// Get proper base URL with fallback
-function getBaseUrl(baseUrl: string): string {
-  // Check if baseUrl is valid (not empty and starts with http)
+// Get proper base URL for curl examples shown in the UI.
+function resolveCurlBaseUrl(baseUrl: string): string {
   if (baseUrl && baseUrl.startsWith('http')) {
     return baseUrl;
   }
-  return 'http://localhost:3001';
+  const configured = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL;
+  if (configured && configured.startsWith('http')) {
+    return configured;
+  }
+  return CURL_BASE_URL_PLACEHOLDER;
+}
+
+/** HTTP status from a generated-client result (success or axios error). */
+export function getClientResponseStatus(result: unknown): number | undefined {
+  if (!isObject(result)) return undefined;
+  const response = getOwnValue(result, 'response');
+  if (!isObject(response)) return undefined;
+  const status = getOwnValue(response, 'status');
+  return typeof status === 'number' ? status : undefined;
 }
 
 // Escape a value for embedding inside single quotes in a POSIX shell command:
@@ -100,21 +115,20 @@ function escapeShellSingleQuotes(value: string): string {
   return value.replace(/'/g, "'\\''");
 }
 
-// Generate curl command for payment
-// Note: Payment API accepts dates as ISO strings
-export function generatePaymentCurl(baseUrl: string, apiKey: string, body: object): string {
-  const url = getBaseUrl(baseUrl);
+// Generate curl command for payment (display/copy only; never embeds a live API key).
+export function generatePaymentCurl(baseUrl: string, body: object): string {
+  const url = resolveCurlBaseUrl(baseUrl);
   return `curl -X POST "${url}/api/v1/payment/" \\
   -H "Content-Type: application/json" \\
-  -H "token: ${apiKey}" \\
+  -H "token: ${CURL_API_KEY_PLACEHOLDER}" \\
   -d '${escapeShellSingleQuotes(JSON.stringify(body, null, 2))}'`;
 }
 
-export function generatePurchaseCurl(baseUrl: string, apiKey: string, body: object): string {
-  const url = getBaseUrl(baseUrl);
+export function generatePurchaseCurl(baseUrl: string, body: object): string {
+  const url = resolveCurlBaseUrl(baseUrl);
   return `curl -X POST "${url}/api/v1/purchase/" \\
   -H "Content-Type: application/json" \\
-  -H "token: ${apiKey}" \\
+  -H "token: ${CURL_API_KEY_PLACEHOLDER}" \\
   -d '${escapeShellSingleQuotes(JSON.stringify(body, null, 2))}'`;
 }
 

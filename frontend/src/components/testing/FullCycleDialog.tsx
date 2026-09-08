@@ -21,6 +21,7 @@ import {
   generatePaymentCurl,
   generatePurchaseCurl,
   extractErrorMessage,
+  getClientResponseStatus,
 } from './utils';
 import {
   PaymentFormFields,
@@ -40,7 +41,7 @@ interface FullCycleDialogProps {
 }
 
 export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
-  const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
   const resync = useResync();
   const {
     agents,
@@ -64,6 +65,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [paymentResponseStatus, setPaymentResponseStatus] = useState<number | null>(null);
+  const [purchaseResponseStatus, setPurchaseResponseStatus] = useState<number | null>(null);
 
   const {
     register,
@@ -104,6 +107,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       setPurchaseResponse(null);
       setPaymentError(null);
       setPurchaseError(null);
+      setPaymentResponseStatus(null);
+      setPurchaseResponseStatus(null);
       setPaymentCurl('');
       setPurchaseCurl('');
     }
@@ -152,7 +157,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePurchaseCurl(baseUrl, apiKey || '', requestBody);
+        const curl = generatePurchaseCurl(baseUrl, requestBody);
         setPurchaseCurl(curl);
 
         const result = await postPurchase({
@@ -161,8 +166,11 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         });
 
         if (result.error) {
+          setPurchaseResponseStatus(getClientResponseStatus(result) ?? null);
           throw new Error(extractErrorMessage(result.error, 'Purchase creation failed'));
         }
+
+        setPurchaseResponseStatus(getClientResponseStatus(result) ?? 200);
 
         if (result.data?.data) {
           setPurchaseResponse(result.data.data);
@@ -181,7 +189,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPurchase(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents, resync],
+    [apiClient, network, paidAgents, resync],
   );
 
   const onSubmitPayment = useCallback(
@@ -243,7 +251,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePaymentCurl(baseUrl, apiKey || '', requestBody);
+        const curl = generatePaymentCurl(baseUrl, requestBody);
         setPaymentCurl(curl);
 
         const result = await postPayment({
@@ -252,8 +260,11 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         });
 
         if (result.error) {
+          setPaymentResponseStatus(getClientResponseStatus(result) ?? null);
           throw new Error(extractErrorMessage(result.error, 'Payment creation failed'));
         }
+
+        setPaymentResponseStatus(getClientResponseStatus(result) ?? 200);
 
         if (result.data?.data) {
           const payment = result.data.data;
@@ -273,7 +284,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPayment(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents, createPurchaseAutomatically, resync],
+    [apiClient, network, paidAgents, createPurchaseAutomatically, resync],
   );
 
   const handleClose = () => {
@@ -284,6 +295,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     setPurchaseResponse(null);
     setPaymentError(null);
     setPurchaseError(null);
+    setPaymentResponseStatus(null);
+    setPurchaseResponseStatus(null);
     setPaymentCurl('');
     setPurchaseCurl('');
     onClose();
@@ -393,6 +406,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
                   curlCommand={paymentCurl}
                   response={paymentResponse}
                   error={paymentError}
+                  responseStatus={paymentResponseStatus}
                 />
               </div>
 
@@ -415,6 +429,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
                     curlCommand={purchaseCurl}
                     response={purchaseResponse}
                     error={purchaseError}
+                    responseStatus={purchaseResponseStatus}
                   />
                 </div>
               )}

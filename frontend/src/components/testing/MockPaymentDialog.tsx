@@ -15,6 +15,7 @@ import {
   calculateDefaultTimes,
   generatePaymentCurl,
   extractErrorMessage,
+  getClientResponseStatus,
 } from './utils';
 import {
   PaymentFormFields,
@@ -31,7 +32,7 @@ interface MockPaymentDialogProps {
 }
 
 export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
-  const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
   const resync = useResync();
   const {
     agents,
@@ -44,6 +45,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [curlCommand, setCurlCommand] = useState<string>('');
   const [response, setResponse] = useState<PostPaymentResponse['data'] | null>(null);
+  const [responseStatus, setResponseStatus] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -81,6 +83,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
       setValue('paymentOptionId', '');
       setValue('identifierFromPurchaser', generateRandomHex(16));
       setResponse(null);
+      setResponseStatus(null);
       setError(null);
       setCurlCommand('');
     }
@@ -141,7 +144,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePaymentCurl(baseUrl, apiKey || '', requestBody);
+        const curl = generatePaymentCurl(baseUrl, requestBody);
         setCurlCommand(curl);
 
         const result = await postPayment({
@@ -150,8 +153,11 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         });
 
         if (result.error) {
+          setResponseStatus(getClientResponseStatus(result) ?? null);
           throw new Error(extractErrorMessage(result.error, 'Payment creation failed'));
         }
+
+        setResponseStatus(getClientResponseStatus(result) ?? 200);
 
         if (result.data?.data) {
           setResponse(result.data.data);
@@ -170,13 +176,14 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         setIsLoading(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents, resync],
+    [apiClient, network, paidAgents, resync],
   );
 
   const handleClose = () => {
     reset();
     resetInputData(false);
     setResponse(null);
+    setResponseStatus(null);
     setError(null);
     setCurlCommand('');
     onClose();
@@ -233,7 +240,12 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         </div>
 
         <div className="shrink-0">
-          <CurlResponseViewer curlCommand={curlCommand} response={response} error={error} />
+          <CurlResponseViewer
+            curlCommand={curlCommand}
+            response={response}
+            error={error}
+            responseStatus={responseStatus}
+          />
         </div>
       </DialogContent>
     </Dialog>
