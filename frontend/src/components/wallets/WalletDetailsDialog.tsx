@@ -475,7 +475,10 @@ export function WalletDetailsDialog({
           size="md"
           variant={isChild ? 'slide-from-right' : 'default'}
           isPushedBack={
-            !!selectedWalletForTopup || !!selectedWalletForSwap || !!rules.pendingDeleteRule
+            !!selectedWalletForTopup ||
+            !!selectedWalletForSwap ||
+            !!rules.pendingDeleteRule ||
+            confirmMnemonicDownloadOpen
           }
           hideOverlay={isChild}
           onBack={isChild ? handleDialogClose : undefined}
@@ -668,6 +671,7 @@ export function WalletDetailsDialog({
       <ConfirmDialog
         open={confirmMnemonicDownloadOpen}
         onClose={() => setConfirmMnemonicDownloadOpen(false)}
+        elevatedChildStack={!elevatedChildStack}
         elevatedGrandchildStack={elevatedChildStack}
         title="Download recovery phrase file?"
         description={RECOVERY_PHRASE_DOWNLOAD_CONFIRM_DESCRIPTION}

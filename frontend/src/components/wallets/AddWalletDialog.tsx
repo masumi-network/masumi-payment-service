@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Eye, EyeOff } from 'lucide-react';
+import { Download, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { patchPaymentSourceExtended, postWallet } from '@/lib/api/generated';
@@ -48,6 +48,8 @@ import {
   sortPaymentSourcesByPreference,
 } from '@/lib/payment-source-type';
 import { invalidateTransactionReportFacets } from '@/lib/queries/transaction-report-cache';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { RECOVERY_PHRASE_DOWNLOAD_CONFIRM_DESCRIPTION } from '@/lib/wallet-recovery-download';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -83,11 +85,14 @@ export function AddWalletDialog({ open, onClose, onSuccess, defaultType }: AddWa
   const [paymentSourceId, setPaymentSourceId] = useState<string | null>(null);
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
 
+  const [confirmMnemonicDownloadOpen, setConfirmMnemonicDownloadOpen] = useState(false);
+
   const {
     register,
     handleSubmit,
     setValue,
     reset,
+    watch,
     formState: { errors },
   } = useForm<WalletFormValues>({
     resolver: zodResolver(walletSchema),
@@ -129,6 +134,7 @@ export function AddWalletDialog({ open, onClose, onSuccess, defaultType }: AddWa
       setError('');
       setIsPreparing(false);
       setPaymentSourceId(null);
+      setConfirmMnemonicDownloadOpen(false);
     }
   }, [defaultPaymentSource?.id, open, reset, defaultType]);
 
@@ -265,156 +271,196 @@ export function AddWalletDialog({ open, onClose, onSuccess, defaultType }: AddWa
   };
 
   const walletTypeLabel = getWalletTypeLabel(type).toLowerCase();
+  const mnemonic = watch('mnemonic').trim();
+
+  const performMnemonicDownload = () => {
+    if (!mnemonic) return;
+    const blob = new Blob([mnemonic], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${walletTypeLabel.replace(/\s+/g, '-')}-wallet-seed.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setConfirmMnemonicDownloadOpen(false);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle>Add wallet</DialogTitle>
-          <DialogDescription>
-            Create a {walletTypeLabel} wallet for {network}. The required setup changes with the
-            wallet&apos;s role.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent size="lg" isPushedBack={confirmMnemonicDownloadOpen}>
+          <DialogHeader>
+            <DialogTitle>Add wallet</DialogTitle>
+            <DialogDescription>
+              Create a {walletTypeLabel} wallet for {network}. The required setup changes with the
+              wallet&apos;s role.
+            </DialogDescription>
+          </DialogHeader>
 
-        <WalletTypeSelector value={type} onChange={setType} disabled={isLoading} />
+          <WalletTypeSelector value={type} onChange={setType} disabled={isLoading} />
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Payment source</label>
-          <Select
-            value={paymentSourceId ?? ''}
-            onValueChange={setPaymentSourceId}
-            disabled={isLoading || sortedPaymentSources.length === 0}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select payment source" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {sortedPaymentSources.map((paymentSource) => (
-                  <SelectItem key={paymentSource.id} value={paymentSource.id}>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <PaymentSourceTypeBadge
-                        paymentSourceType={paymentSource.paymentSourceType}
-                        showDefault
-                      />
-                      <span className="truncate">
-                        {shortenAddress(paymentSource.smartContractAddress, 8)}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            {selectedPaymentSource
-              ? `This wallet belongs to ${getPaymentSourceTypeLabel(selectedPaymentSource.paymentSourceType)} on ${network}.`
-              : 'Create a payment source before adding wallets.'}
-          </p>
-        </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Payment source</label>
+            <Select
+              value={paymentSourceId ?? ''}
+              onValueChange={setPaymentSourceId}
+              disabled={isLoading || sortedPaymentSources.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select payment source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {sortedPaymentSources.map((paymentSource) => (
+                    <SelectItem key={paymentSource.id} value={paymentSource.id}>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <PaymentSourceTypeBadge
+                          paymentSourceType={paymentSource.paymentSourceType}
+                          showDefault
+                        />
+                        <span className="truncate">
+                          {shortenAddress(paymentSource.smartContractAddress, 8)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {selectedPaymentSource
+                ? `This wallet belongs to ${getPaymentSourceTypeLabel(selectedPaymentSource.paymentSourceType)} on ${network}.`
+                : 'Create a payment source before adding wallets.'}
+            </p>
+          </div>
 
-        {error && (
-          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
-        )}
+          {error && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+          )}
 
-        {type === 'Funding' ? (
-          <FundWalletSetupForm
-            onSubmit={handleCreateFundWallet}
-            isSubmitting={createFundWallet.isPending}
-            network={network}
-            onCancel={onClose}
-            showDescription={false}
-            submitLabel="Add funding wallet"
-          />
-        ) : (
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
+          {type === 'Funding' ? (
+            <FundWalletSetupForm
+              onSubmit={handleCreateFundWallet}
+              isSubmitting={createFundWallet.isPending}
+              network={network}
+              onCancel={onClose}
+              showDescription={false}
+              submitLabel="Add funding wallet"
+            />
+          ) : (
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">
+                    Mnemonic Phrase <span className="text-destructive">*</span>
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateMnemonic}
+                    disabled={isGenerating}
+                    className="h-8"
+                  >
+                    {isGenerating ? <Spinner size={16} /> : 'Generate'}
+                  </Button>
+                </div>
+                <div className="relative">
+                  <Textarea
+                    {...register('mnemonic')}
+                    placeholder="Enter your mnemonic phrase"
+                    required
+                    className="min-h-[100px] font-mono pr-10"
+                    spellCheck={false}
+                    autoComplete="off"
+                    style={
+                      showMnemonic
+                        ? undefined
+                        : ({
+                            WebkitTextSecurity: 'disc',
+                            textSecurity: 'disc',
+                          } as React.CSSProperties)
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowMnemonic((v) => !v)}
+                    className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                    aria-label={showMnemonic ? 'Hide mnemonic' : 'Show mnemonic'}
+                    tabIndex={-1}
+                  >
+                    {showMnemonic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {errors.mnemonic && (
+                  <p className="text-xs text-destructive mt-1">{errors.mnemonic.message}</p>
+                )}
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={!mnemonic || isLoading}
+                    onClick={() => setConfirmMnemonicDownloadOpen(true)}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download seed phrase
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  Mnemonic Phrase <span className="text-destructive">*</span>
+                  Note <span className="text-destructive">*</span>
                 </label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleGenerateMnemonic}
-                  disabled={isGenerating}
-                  className="h-8"
-                >
-                  {isGenerating ? <Spinner size={16} /> : 'Generate'}
+                <Input
+                  {...register('note')}
+                  placeholder="Enter a note to identify this wallet"
+                  required
+                />
+                {errors.note && (
+                  <p className="text-xs text-destructive mt-1">{errors.note.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection Address{' '}
+                </label>
+                <Input
+                  {...register('collectionAddress')}
+                  placeholder={`Enter the address where ${type === 'Purchasing' ? 'refunds' : 'revenue'} will be sent`}
+                />
+                {errors.collectionAddress && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.collectionAddress.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isLoading}>
+                  {isLoading ? 'Adding...' : 'Add Wallet'}
                 </Button>
               </div>
-              <div className="relative">
-                <Textarea
-                  {...register('mnemonic')}
-                  placeholder="Enter your mnemonic phrase"
-                  required
-                  className="min-h-[100px] font-mono pr-10"
-                  spellCheck={false}
-                  autoComplete="off"
-                  style={
-                    showMnemonic
-                      ? undefined
-                      : ({
-                          WebkitTextSecurity: 'disc',
-                          textSecurity: 'disc',
-                        } as React.CSSProperties)
-                  }
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowMnemonic((v) => !v)}
-                  className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-                  aria-label={showMnemonic ? 'Hide mnemonic' : 'Show mnemonic'}
-                  tabIndex={-1}
-                >
-                  {showMnemonic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              {errors.mnemonic && (
-                <p className="text-xs text-destructive mt-1">{errors.mnemonic.message}</p>
-              )}
-            </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Note <span className="text-destructive">*</span>
-              </label>
-              <Input
-                {...register('note')}
-                placeholder="Enter a note to identify this wallet"
-                required
-              />
-              {errors.note && (
-                <p className="text-xs text-destructive mt-1">{errors.note.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection Address{' '}
-              </label>
-              <Input
-                {...register('collectionAddress')}
-                placeholder={`Enter the address where ${type === 'Purchasing' ? 'refunds' : 'revenue'} will be sent`}
-              />
-              {errors.collectionAddress && (
-                <p className="text-xs text-destructive mt-1">{errors.collectionAddress.message}</p>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? 'Adding...' : 'Add Wallet'}
-              </Button>
-            </div>
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
+      <ConfirmDialog
+        open={confirmMnemonicDownloadOpen}
+        onClose={() => setConfirmMnemonicDownloadOpen(false)}
+        elevatedChildStack
+        title="Download recovery phrase file?"
+        description={RECOVERY_PHRASE_DOWNLOAD_CONFIRM_DESCRIPTION}
+        onConfirm={performMnemonicDownload}
+        confirmLabel="Download"
+      />
+    </>
   );
 }
