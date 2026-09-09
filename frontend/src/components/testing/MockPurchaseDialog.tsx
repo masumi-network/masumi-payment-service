@@ -26,7 +26,12 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '@/components/ui/spinner';
 import { CurlResponseViewer } from './CurlResponseViewer';
-import { generatePurchaseCurl, decodeBlockchainIdentifier, extractErrorMessage, getClientResponseStatus } from './utils';
+import {
+  generatePurchaseCurl,
+  decodeBlockchainIdentifier,
+  extractErrorMessage,
+  getClientResponseStatus,
+} from './utils';
 import { Search, ClipboardPaste, Wallet } from 'lucide-react';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { useWallets } from '@/lib/queries/useWallets';

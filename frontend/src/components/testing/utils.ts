@@ -88,7 +88,9 @@ export function calculateDefaultTimes() {
   return { payByTime, submitResultTime, unlockTime, externalDisputeUnlockTime };
 }
 
-// Get proper base URL for curl examples shown in the UI.
+const CURL_API_V1_SUFFIX = '/api/v1';
+
+// Root URL for curl examples shown in the UI (may already include /api/v1).
 function resolveCurlBaseUrl(baseUrl: string): string {
   if (baseUrl && baseUrl.startsWith('http')) {
     return baseUrl;
@@ -98,6 +100,15 @@ function resolveCurlBaseUrl(baseUrl: string): string {
     return configured;
   }
   return CURL_BASE_URL_PLACEHOLDER;
+}
+
+function buildCurlEndpointUrl(baseUrl: string, resource: 'payment' | 'purchase'): string {
+  const root = resolveCurlBaseUrl(baseUrl).replace(/\/+$/, '');
+  const resourcePath = `/${resource}/`;
+  if (root.endsWith(CURL_API_V1_SUFFIX)) {
+    return `${root}${resourcePath}`;
+  }
+  return `${root}${CURL_API_V1_SUFFIX}${resourcePath}`;
 }
 
 /** HTTP status from a generated-client result (success or axios error). */
@@ -117,16 +128,16 @@ function escapeShellSingleQuotes(value: string): string {
 
 // Generate curl command for payment (display/copy only; never embeds a live API key).
 export function generatePaymentCurl(baseUrl: string, body: object): string {
-  const url = resolveCurlBaseUrl(baseUrl);
-  return `curl -X POST "${url}/api/v1/payment/" \\
+  const url = buildCurlEndpointUrl(baseUrl, 'payment');
+  return `curl -X POST "${url}" \\
   -H "Content-Type: application/json" \\
   -H "token: ${CURL_API_KEY_PLACEHOLDER}" \\
   -d '${escapeShellSingleQuotes(JSON.stringify(body, null, 2))}'`;
 }
 
 export function generatePurchaseCurl(baseUrl: string, body: object): string {
-  const url = resolveCurlBaseUrl(baseUrl);
-  return `curl -X POST "${url}/api/v1/purchase/" \\
+  const url = buildCurlEndpointUrl(baseUrl, 'purchase');
+  return `curl -X POST "${url}" \\
   -H "Content-Type: application/json" \\
   -H "token: ${CURL_API_KEY_PLACEHOLDER}" \\
   -d '${escapeShellSingleQuotes(JSON.stringify(body, null, 2))}'`;
