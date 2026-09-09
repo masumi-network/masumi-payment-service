@@ -12,6 +12,7 @@ import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetad
 import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV2 } from '@masumi/payment-source-v2/services/registry-inbox/metadata';
 import { PaymentSourceType } from '@/generated/prisma/client';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 
 export const queryInboxAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full inbox agent identifier (policy ID + asset name in hex)'),
@@ -44,7 +45,14 @@ export const queryInboxAgentByIdentifierSchemaOutput = z
 	})
 	.openapi('InboxAgentIdentifierMetadata');
 
-export const queryInboxAgentByIdentifierGet = readAuthenticatedEndpointFactory.build({
+const inboxAgentIdentifierEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 60,
+		windowMs: 60_000,
+	}),
+);
+
+export const queryInboxAgentByIdentifierGet = inboxAgentIdentifierEndpointFactory.build({
 	method: 'get',
 	input: queryInboxAgentByIdentifierSchemaInput,
 	output: queryInboxAgentByIdentifierSchemaOutput,
