@@ -18,6 +18,7 @@ import {
 	supportedPaymentSourcesSchema,
 } from '@/types/payment-source';
 import { parseVerificationsFromMetadata, verificationMetadataSchema, verificationsSchema } from '@/types/verification';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 
 export const metadataSchema = z.object({
 	name: z
@@ -316,7 +317,15 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 		.describe('List of agent assets registered to this wallet'),
 });
 
-export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
+
+const agentFromWalletEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 15,
+		windowMs: 60_000,
+	}),
+);
+
+export const queryAgentFromWalletGet = agentFromWalletEndpointFactory.build({
 	method: 'get',
 	input: queryAgentFromWalletSchemaInput,
 	output: queryAgentFromWalletSchemaOutput,

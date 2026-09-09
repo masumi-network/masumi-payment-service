@@ -12,6 +12,7 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV1 } from '@masumi/payment-source-v1/services/registry-inbox/metadata';
 import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV2 } from '@masumi/payment-source-v2/services/registry-inbox/metadata';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 
 export const queryInboxAgentFromWalletSchemaInput = z.object({
 	walletVkey: z.string().max(250).describe('The payment key of the wallet to be queried'),
@@ -55,7 +56,15 @@ export const queryInboxAgentFromWalletSchemaOutput = z.object({
 		.describe('List of inbox agent assets registered to this wallet'),
 });
 
-export const queryInboxAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
+
+const inboxAgentFromWalletEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 15,
+		windowMs: 60_000,
+	}),
+);
+
+export const queryInboxAgentFromWalletGet = inboxAgentFromWalletEndpointFactory.build({
 	method: 'get',
 	input: queryInboxAgentFromWalletSchemaInput,
 	output: queryInboxAgentFromWalletSchemaOutput,
