@@ -114,10 +114,16 @@ function buildCurlEndpointUrl(baseUrl: string, resource: 'payment' | 'purchase')
 /** HTTP status from a generated-client result (success or axios error). */
 export function getClientResponseStatus(result: unknown): number | undefined {
   if (!isObject(result)) return undefined;
+
+  // Success: hey-api spreads AxiosResponse onto the result.
+  const topLevelStatus = getOwnValue(result, 'status');
+  if (typeof topLevelStatus === 'number') return topLevelStatus;
+
+  // Error: axios error shape stores status on nested response.
   const response = getOwnValue(result, 'response');
   if (!isObject(response)) return undefined;
-  const status = getOwnValue(response, 'status');
-  return typeof status === 'number' ? status : undefined;
+  const nestedStatus = getOwnValue(response, 'status');
+  return typeof nestedStatus === 'number' ? nestedStatus : undefined;
 }
 
 // Escape a value for embedding inside single quotes in a POSIX shell command:

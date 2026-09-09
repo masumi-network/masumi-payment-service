@@ -94,6 +94,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
       try {
         setIsLoading(true);
         setError(null);
+        setResponseStatus(null);
 
         const times = calculateDefaultTimes();
         const selectedAgent = paidAgents.find((option) => option.optionId === data.paymentOptionId);

@@ -417,6 +417,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       try {
         setIsLoading(true);
         setError(null);
+        setResponseStatus(null);
 
         const requestBody = {
           blockchainIdentifier: data.blockchainIdentifier,

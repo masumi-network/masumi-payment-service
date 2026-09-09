@@ -119,6 +119,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       try {
         setIsLoadingPurchase(true);
         setPurchaseError(null);
+        setPurchaseResponseStatus(null);
         setStep(2);
 
         // Always pass amounts — backend validates Fixed matches, Dynamic requires them
@@ -197,6 +198,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       try {
         setIsLoadingPayment(true);
         setPaymentError(null);
+        setPaymentResponseStatus(null);
 
         const times = calculateDefaultTimes();
         const selectedAgent = paidAgents.find((option) => option.optionId === data.paymentOptionId);
