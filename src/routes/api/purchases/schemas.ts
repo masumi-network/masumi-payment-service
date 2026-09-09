@@ -9,7 +9,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
-import { atomicAmountSchema, isCardanoAddressForNetwork } from '@/types/payment-source';
+import { atomicAmountSchema, isCardanoAddressForNetwork, unixTimeMsStringSchema } from '@/types/payment-source';
 import { agentIdentifierFilterSchema, searchQuerySchema } from '@/routes/api/shared/transaction-query-params';
 import { FORCE_LAYER_API_VALUES } from '@/utils/logic/force-layer';
 
@@ -329,12 +329,18 @@ export const createPurchaseInitSchemaInput = z
 			.max(7)
 			.optional()
 			.describe('The amounts to be paid for the purchase'),
-		unlockTime: z.string().describe('The time after which the purchase will be unlocked. In unix time (number)'),
-		externalDisputeUnlockTime: z
-			.string()
-			.describe('The time after which the purchase will be unlocked for external dispute. In unix time (number)'),
-		submitResultTime: z.string().describe('The time by which the result has to be submitted. In unix time (number)'),
-		payByTime: z.string().describe('The time after which the purchase has to be submitted to the smart contract'),
+		unlockTime: unixTimeMsStringSchema.describe(
+			'The time after which the purchase will be unlocked. In unix time (number)',
+		),
+		externalDisputeUnlockTime: unixTimeMsStringSchema.describe(
+			'The time after which the purchase will be unlocked for external dispute. In unix time (number)',
+		),
+		submitResultTime: unixTimeMsStringSchema.describe(
+			'The time by which the result has to be submitted. In unix time (number)',
+		),
+		payByTime: unixTimeMsStringSchema.describe(
+			'The time after which the purchase has to be submitted to the smart contract',
+		),
 		metadata: z.string().optional().describe('Metadata to be stored with the purchase request'),
 		buyerReturnAddress: z
 			.string()
