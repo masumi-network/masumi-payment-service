@@ -51,7 +51,6 @@ export const atomicAmountSchema = z
 	}, `Atomic amount must be between 1 and ${POSTGRES_BIGINT_MAX.toString()}`)
 	.describe('Atomic token amount');
 
-
 export const unixTimeMsStringSchema = z
 	.string()
 	// int64 max is 19 digits; bound the string before BigInt parsing.
