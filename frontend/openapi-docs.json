@@ -26198,7 +26198,7 @@
                                         "nullable": true,
                                         "minLength": 10,
                                         "maxLength": 200,
-                                        "description": "Authentication token for extended webhook requests. Required when format is EXTENDED"
+                                        "description": "Authentication token for extended webhook requests. Omit to keep the existing token."
                                     },
                                     "format": {
                                         "type": "string",

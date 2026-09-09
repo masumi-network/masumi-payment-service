@@ -11292,7 +11292,7 @@ export type PatchWebhooksData = {
          */
         url: string;
         /**
-         * Authentication token for extended webhook requests. Required when format is EXTENDED
+         * Authentication token for extended webhook requests. Omit to keep the existing token.
          */
         authToken?: string | null;
         /**

@@ -236,8 +236,7 @@ export function WebhookDialog({
       name: values.name.trim() || undefined,
       format: values.format,
       url: values.url.trim(),
-      authToken:
-        values.format === 'EXTENDED' && trimmedToken.length > 0 ? trimmedToken : undefined,
+      authToken: values.format === 'EXTENDED' && trimmedToken.length > 0 ? trimmedToken : undefined,
       Events: values.Events,
     };
 
@@ -348,7 +347,9 @@ export function WebhookDialog({
               <Input
                 id="webhook-auth-token"
                 type="password"
-                placeholder={mode === 'edit' ? 'Leave blank to keep existing token' : 'shared-secret'}
+                placeholder={
+                  mode === 'edit' ? 'Leave blank to keep existing token' : 'shared-secret'
+                }
                 {...register('authToken')}
                 disabled={isSubmitting}
               />
