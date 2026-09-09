@@ -12,7 +12,18 @@ import { MockPaymentDialog, MockPurchaseDialog, FullCycleDialog } from '@/compon
 import { InputSchemaValidator } from '@/components/developers/InputSchemaValidator';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { canUseTestPaymentTools } from '@/lib/testing/test-payment-tools';
+import { cn } from '@/lib/utils';
 import { AlertTriangle } from 'lucide-react';
+
+function testToolCardClassName(allowed: boolean) {
+  return cn(
+    'group border rounded-lg p-6 text-left transition-all duration-200',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+    allowed
+      ? 'animate-fade-in-up opacity-0 hover:shadow-md hover:border-primary/30 active:scale-[0.98] cursor-pointer'
+      : 'cursor-not-allowed opacity-45 bg-muted/30 border-muted/70 saturate-50 hover:shadow-none',
+  );
+}
 
 export const getStaticProps: GetStaticProps = async () => {
   return {
@@ -103,8 +114,9 @@ export default function Developers() {
                     type="button"
                     onClick={() => testPaymentsAllowed && setPaymentDialogOpen(true)}
                     disabled={!testPaymentsAllowed}
-                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:shadow-none"
-                    style={{ animationDelay: '0ms' }}
+                    aria-disabled={!testPaymentsAllowed}
+                    className={testToolCardClassName(testPaymentsAllowed)}
+                    style={testPaymentsAllowed ? { animationDelay: '0ms' } : undefined}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
@@ -121,8 +133,9 @@ export default function Developers() {
                     type="button"
                     onClick={() => testPaymentsAllowed && setPurchaseDialogOpen(true)}
                     disabled={!testPaymentsAllowed}
-                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:shadow-none"
-                    style={{ animationDelay: '75ms' }}
+                    aria-disabled={!testPaymentsAllowed}
+                    className={testToolCardClassName(testPaymentsAllowed)}
+                    style={testPaymentsAllowed ? { animationDelay: '75ms' } : undefined}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
@@ -139,8 +152,9 @@ export default function Developers() {
                     type="button"
                     onClick={() => testPaymentsAllowed && setFullCycleDialogOpen(true)}
                     disabled={!testPaymentsAllowed}
-                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0 disabled:opacity-50 disabled:pointer-events-none disabled:hover:shadow-none"
-                    style={{ animationDelay: '150ms' }}
+                    aria-disabled={!testPaymentsAllowed}
+                    className={testToolCardClassName(testPaymentsAllowed)}
+                    style={testPaymentsAllowed ? { animationDelay: '150ms' } : undefined}
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
