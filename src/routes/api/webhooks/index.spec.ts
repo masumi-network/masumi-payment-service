@@ -456,6 +456,45 @@ describe('webhook endpoints', () => {
 		});
 	});
 
+	it('rejects switching a provider webhook to EXTENDED without authToken', async () => {
+		mockFindWebhookById.mockResolvedValue({
+			id: 'webhook-4',
+			url: 'https://hooks.slack.com/services/old',
+			format: WebhookFormat.SLACK,
+			authToken: null,
+			events: ['PAYMENT_ON_ERROR'],
+			name: 'Slack Webhook',
+			isActive: true,
+			createdAt: new Date('2026-04-08T12:00:00.000Z'),
+			updatedAt: new Date('2026-04-08T12:05:00.000Z'),
+			paymentSourceId: 'payment-source-1',
+			createdByApiKeyId: 'api-key-1',
+			PaymentSource: {
+				id: 'payment-source-1',
+				network: Network.Preprod,
+				deletedAt: null,
+			},
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: patchWebhookPatch,
+			requestProps: {
+				method: 'PATCH',
+				headers: { token: 'valid' },
+				body: {
+					webhookId: 'webhook-4',
+					url: 'https://example.com/extended',
+					format: WebhookFormat.EXTENDED,
+					Events: ['PAYMENT_ON_ERROR'],
+					name: 'Slack Webhook',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockUpdateWebhook).not.toHaveBeenCalled();
+	});
+
 	it('allows provider webhook patches without authToken', async () => {
 		mockFindWebhookById.mockResolvedValue({
 			id: 'webhook-4',

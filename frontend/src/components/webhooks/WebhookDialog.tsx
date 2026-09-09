@@ -71,12 +71,19 @@ const webhookFormSchema = z
     }
   });
 
-function createWebhookFormSchema(mode: 'create' | 'edit') {
+function createWebhookFormSchema(options: {
+  mode: 'create' | 'edit';
+  originalFormat?: WebhookFormat;
+}) {
   return webhookFormSchema.superRefine((value, ctx) => {
     if (value.format !== 'EXTENDED') return;
-    if (mode === 'edit') return;
 
-    if (!value.authToken.trim()) {
+    const token = value.authToken.trim();
+    const mayKeepExistingToken = options.mode === 'edit' && options.originalFormat === 'EXTENDED';
+
+    if (mayKeepExistingToken && !token) return;
+
+    if (!token) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Auth token is required for extended webhooks',
@@ -169,9 +176,11 @@ export function WebhookDialog({
     reset,
     setValue,
   } = useForm<WebhookFormValues>({
-    resolver: zodResolver(createWebhookFormSchema(mode)),
+    resolver: zodResolver(createWebhookFormSchema({ mode, originalFormat: webhook?.format })),
     defaultValues: getDefaultValues(webhook, availableEvents),
   });
+
+  const mayKeepExistingExtendedToken = mode === 'edit' && webhook?.format === 'EXTENDED';
 
   useEffect(() => {
     if (open) {
@@ -348,13 +357,15 @@ export function WebhookDialog({
                 id="webhook-auth-token"
                 type="password"
                 placeholder={
-                  mode === 'edit' ? 'Leave blank to keep existing token' : 'shared-secret'
+                  mayKeepExistingExtendedToken
+                    ? 'Leave blank to keep existing token'
+                    : 'shared-secret'
                 }
                 {...register('authToken')}
                 disabled={isSubmitting}
               />
               <p className="text-xs text-muted-foreground">
-                {mode === 'edit'
+                {mayKeepExistingExtendedToken
                   ? 'Leave blank to keep the current token. Enter a new value only when replacing it.'
                   : 'Masumi will send this value as a Bearer token so your endpoint can verify the request.'}
               </p>

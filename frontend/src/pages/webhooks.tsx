@@ -511,6 +511,7 @@ export default function WebhooksPage() {
           />
 
           <WebhookDialog
+            key={webhookToEdit?.id ?? 'edit-closed'}
             open={!!webhookToEdit}
             mode="edit"
             paymentSourceId={selectedPaymentSourceId}

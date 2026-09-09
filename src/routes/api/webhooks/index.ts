@@ -202,6 +202,16 @@ export const patchWebhookPatch = webhookMutationEndpointFactory.build({
 			throw createHttpError(409, 'Webhook URL already registered for this payment source');
 		}
 
+		const canPreserveExtendedAuthToken =
+			input.format === WebhookFormat.EXTENDED &&
+			input.authToken == null &&
+			webhook.format === WebhookFormat.EXTENDED &&
+			webhook.authToken != null;
+
+		if (input.format === WebhookFormat.EXTENDED && input.authToken == null && !canPreserveExtendedAuthToken) {
+			throw createHttpError(400, 'authToken is required when format is EXTENDED');
+		}
+
 		const updatedWebhook = await prisma.webhookEndpoint.update({
 			where: { id: input.webhookId },
 			data: {
