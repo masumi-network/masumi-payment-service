@@ -45,7 +45,6 @@ export const queryInboxAgentByIdentifierSchemaOutput = z
 	})
 	.openapi('InboxAgentIdentifierMetadata');
 
-
 const inboxAgentIdentifierEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
 	createAuthenticatedRateLimitMiddleware({
 		maxRequests: 60,

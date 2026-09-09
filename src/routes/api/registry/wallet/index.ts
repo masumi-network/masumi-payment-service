@@ -317,7 +317,6 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 		.describe('List of agent assets registered to this wallet'),
 });
 
-
 const agentFromWalletEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
 	createAuthenticatedRateLimitMiddleware({
 		maxRequests: 15,

@@ -56,7 +56,6 @@ export const queryInboxAgentFromWalletSchemaOutput = z.object({
 		.describe('List of inbox agent assets registered to this wallet'),
 });
 
-
 const inboxAgentFromWalletEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
 	createAuthenticatedRateLimitMiddleware({
 		maxRequests: 15,

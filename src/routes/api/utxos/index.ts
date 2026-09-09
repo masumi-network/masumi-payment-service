@@ -57,7 +57,6 @@ export const getUTXOSchemaOutput = z.object({
 	Utxos: z.array(utxoOutputSchema).describe('List of UTXOs for the specified address'),
 });
 
-
 const utxoEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
 	createAuthenticatedRateLimitMiddleware({
 		maxRequests: 150,

@@ -160,7 +160,6 @@ export const queryAgentByIdentifierSchemaOutput = z
 	})
 	.openapi('AgentIdentifierMetadata');
 
-
 const agentIdentifierEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
 	createAuthenticatedRateLimitMiddleware({
 		maxRequests: 60,

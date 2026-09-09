@@ -32,7 +32,6 @@ export const getBalanceSchemaOutput = z.object({
 	Balance: z.array(balanceAmountSchema).describe('Complete confirmed address balance aggregated across all UTXOs'),
 });
 
-
 const balanceEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
 	createAuthenticatedRateLimitMiddleware({
 		maxRequests: 120,
