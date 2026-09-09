@@ -117,7 +117,7 @@ export const deleteWalletLowBalance = <ThrowOnError extends boolean = false>(opt
 });
 
 /**
- * List wallet low-balance rules. (read access required)
+ * List wallet low-balance rules. (admin access required)
  *
  * Lists low-balance monitoring rules for wallets
  */
