@@ -9,7 +9,7 @@ import { CONSTANTS } from '@masumi/payment-core/config';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
-export const postVerifyDataRevealSchemaInput = z.object({
+export const postVerifyDataRevealSchemaInput = z.strictObject({
 	signature: z.string().max(7500).describe('Cryptographic signature from the admin wallet'),
 	key: z.string().max(2500).describe('Public key used to create the signature'),
 	walletAddress: z.string().max(250).describe('Cardano address of the admin wallet signing the request'),

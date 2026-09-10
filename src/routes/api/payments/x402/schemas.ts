@@ -1,7 +1,7 @@
 import { z } from '@masumi/payment-core/zod';
 import { Network } from '@/generated/prisma/client';
 
-export const buildX402TxSchemaInput = z.object({
+export const buildX402TxSchemaInput = z.strictObject({
 	network: z.nativeEnum(Network).describe('The Cardano network'),
 	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchainIdentifier from the PaymentRequest'),
 	buyerAddress: z

@@ -1,9 +1,12 @@
 import type { AuthContext } from '@masumi/payment-core/auth';
-import { z } from '@masumi/payment-core/zod';
 import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
 
-const reportControlInputSchema = z.object({});
+// No `input` schema: express-zod-api intersects every middleware's input schema with
+// the endpoint's, and an empty *loose* object silently defeats the endpoint's
+// strictness, letting unknown body fields through. These middlewares read nothing
+// from the input, so declaring no schema is both accurate and keeps endpoint
+// strictness intact.
 export const REPORT_CONCURRENCY_LIMIT = 4;
 export const REPORT_RESPONSE_TIMEOUT_MS = 5 * 60_000;
 let activeReportRequests = 0;
@@ -16,13 +19,7 @@ export type ReportConcurrencyContext = {
 	runReportOperation: <T>(operation: (trackPendingWork: (work: Promise<unknown>) => void) => Promise<T>) => Promise<T>;
 };
 
-export const reportAbortMiddleware = new Middleware<
-	AuthContext,
-	ReportRequestContext,
-	string,
-	typeof reportControlInputSchema
->({
-	input: reportControlInputSchema,
+export const reportAbortMiddleware = new Middleware<AuthContext, ReportRequestContext, string>({
 	handler: async ({ request, response }) => {
 		const controller = new AbortController();
 		const abortRequest = () => controller.abort();
@@ -48,10 +45,8 @@ export const reportAbortMiddleware = new Middleware<
 export const reportConcurrencyMiddleware = new Middleware<
 	AuthContext & ReportRequestContext,
 	ReportConcurrencyContext,
-	string,
-	typeof reportControlInputSchema
+	string
 >({
-	input: reportControlInputSchema,
 	handler: async ({ response }) => {
 		if (activeReportRequests >= REPORT_CONCURRENCY_LIMIT) {
 			response.setHeader('Retry-After', '1');
@@ -146,13 +141,7 @@ export const reportConcurrencyMiddleware = new Middleware<
 	},
 });
 
-export const privateReportResponseMiddleware = new Middleware<
-	AuthContext,
-	AuthContext,
-	string,
-	typeof reportControlInputSchema
->({
-	input: reportControlInputSchema,
+export const privateReportResponseMiddleware = new Middleware<AuthContext, AuthContext, string>({
 	handler: async ({ ctx, response }) => {
 		response.setHeader('Cache-Control', 'private, no-store');
 		response.vary('token');

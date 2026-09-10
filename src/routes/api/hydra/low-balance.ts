@@ -47,7 +47,7 @@ export const listHydraLowBalanceRulesSchemaOutput = z.object({
 	rules: z.array(hydraLowBalanceRuleSchema),
 });
 
-export const setHydraLowBalanceRuleSchemaInput = z.object({
+export const setHydraLowBalanceRuleSchemaInput = z.strictObject({
 	hydraLocalParticipantId: z.string().describe('Local participant whose in-head balance to monitor'),
 	assetUnit: z.string().describe('"lovelace" or a policyId+assetName hex unit'),
 	thresholdAmount: amountString.describe('Alert when the in-head balance falls below this'),
@@ -62,7 +62,7 @@ export const setHydraLowBalanceRuleSchemaOutput = z.object({
 	rule: hydraLowBalanceRuleSchema,
 });
 
-export const deleteHydraLowBalanceRuleSchemaInput = z.object({
+export const deleteHydraLowBalanceRuleSchemaInput = z.strictObject({
 	id: z.string().describe('Low-balance rule id'),
 });
 

@@ -10,7 +10,7 @@ import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
-export const postPurchaseRequestSchemaInput = z.object({
+export const postPurchaseRequestSchemaInput = z.strictObject({
 	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier to resolve'),
 	network: z.nativeEnum(Network).describe('The network the purchases were made on'),
 	filterSmartContractAddress: z

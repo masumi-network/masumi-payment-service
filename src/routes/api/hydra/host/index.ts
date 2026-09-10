@@ -64,7 +64,7 @@ export const listHydraHostsGet = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const registerHydraHostSchemaInput = z.object({
+export const registerHydraHostSchemaInput = z.strictObject({
 	name: z.string().min(1).max(120).describe('Operator-facing label'),
 	network: z.nativeEnum(Network),
 	baseUrl: z.string().max(250).describe('Control-plane URL, e.g. https://hydra1.example.com. HTTPS is recommended.'),
@@ -100,7 +100,7 @@ export const registerHydraHostPost = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const updateHydraHostSchemaInput = z.object({
+export const updateHydraHostSchemaInput = z.strictObject({
 	id: z.string(),
 	name: z.string().min(1).max(120).optional(),
 	status: z
@@ -122,7 +122,7 @@ export const updateHydraHostPatch = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const deleteHydraHostSchemaInput = z.object({ id: z.string() });
+export const deleteHydraHostSchemaInput = z.strictObject({ id: z.string() });
 export const deleteHydraHostSchemaOutput = z.object({ id: z.string() });
 
 export const deleteHydraHostDelete = adminAuthenticatedEndpointFactory.build({
@@ -136,7 +136,7 @@ export const deleteHydraHostDelete = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const checkHydraHostSchemaInput = z.object({ id: z.string() });
+export const checkHydraHostSchemaInput = z.strictObject({ id: z.string() });
 
 /**
  * Probe the Host and record what it reports. A failed probe marks the Host

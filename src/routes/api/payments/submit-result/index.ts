@@ -11,7 +11,7 @@ import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
-export const submitPaymentResultSchemaInput = z.object({
+export const submitPaymentResultSchemaInput = z.strictObject({
 	network: z.nativeEnum(Network).describe('The network the payment was received on'),
 	submitResultHash: z
 		.string()

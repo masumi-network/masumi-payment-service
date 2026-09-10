@@ -44,7 +44,7 @@ export const getFundDistributionSchemaOutput = z
 	})
 	.openapi('FundDistributionList');
 
-export const triggerFundDistributionSchemaInput = z.object({});
+export const triggerFundDistributionSchemaInput = z.strictObject({});
 
 export const triggerFundDistributionSchemaOutput = z
 	.object({
