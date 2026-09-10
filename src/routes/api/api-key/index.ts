@@ -238,7 +238,6 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 
 		const hasExplicitFlags = input.canRead !== undefined || input.canPay !== undefined || input.canAdmin !== undefined;
 
-	
 		if (hasExplicitFlags && input.permission !== undefined) {
 			const legacyFlags = flagsFromLegacyPermission(input.permission as LegacyPermission);
 			const requested = {
