@@ -159,6 +159,7 @@ export default function InboxAgentsPage() {
       if (agent.SmartContractWallet.walletAddress.toLowerCase().includes(query)) return true;
       if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state.toLowerCase().includes(query)) return true;
+      if (parseInboxAgentStatus(agent.state).toLowerCase().includes(query)) return true;
       return false;
     });
   }, [debouncedSearchQuery, inboxAgents, isPlaceholderData, searchQuery]);
