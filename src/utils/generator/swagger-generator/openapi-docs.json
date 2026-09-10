@@ -8643,8 +8643,7 @@
                                             "ReadAndPay",
                                             "Admin"
                                         ],
-                                        "default": "Read",
-                                        "description": "[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version."
+                                        "description": "[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected."
                                     },
                                     "canRead": {
                                         "type": "boolean",
