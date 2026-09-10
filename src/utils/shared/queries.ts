@@ -1,4 +1,4 @@
-import { OnChainState, TransactionLayer } from '@prisma/client';
+import { HotWalletType, OnChainState, TransactionLayer } from '@prisma/client';
 
 /** Largest value a Postgres `bigint` column can hold. */
 const MAX_INT8 = 9223372036854775807n;
@@ -266,6 +266,37 @@ export function buildTransactionSearchFilter(
 						},
 					]
 				: []),
+		],
+	};
+}
+
+const HOT_WALLET_TYPE_SEARCH_LABELS: Record<HotWalletType, readonly string[]> = {
+	[HotWalletType.Selling]: ['selling'],
+	[HotWalletType.Purchasing]: ['purchasing', 'buying'],
+	[HotWalletType.Funding]: ['funding'],
+};
+
+
+export function buildMatchingHotWalletTypes(searchLower: string | undefined): HotWalletType[] | undefined {
+	if (!searchLower) return undefined;
+	const matched = Object.values(HotWalletType).filter((type) =>
+		HOT_WALLET_TYPE_SEARCH_LABELS[type].some((label) => label.includes(searchLower)),
+	);
+	return matched.length > 0 ? matched : undefined;
+}
+
+export function buildHotWalletSearchFilter(searchLower: string | undefined) {
+	if (!searchLower) return {};
+	const needle = escapeLikePattern(searchLower);
+	const matchingTypes = buildMatchingHotWalletTypes(searchLower);
+	return {
+		OR: [
+			{ walletAddress: { contains: needle, mode: 'insensitive' as const } },
+			{ collectionAddress: { contains: needle, mode: 'insensitive' as const } },
+			{ note: { contains: needle, mode: 'insensitive' as const } },
+			{ walletVkey: { contains: needle, mode: 'insensitive' as const } },
+			{ id: { contains: needle, mode: 'insensitive' as const } },
+			...(matchingTypes ? [{ type: { in: matchingTypes } }] : []),
 		],
 	};
 }

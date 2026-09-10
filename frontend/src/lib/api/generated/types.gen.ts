@@ -3580,6 +3580,7 @@ export type GetWalletListData = {
          * Filter to wallets with this Cardano address
          */
         walletAddress?: string;
+        searchQuery?: string;
     };
     url: '/wallet/list';
 };
