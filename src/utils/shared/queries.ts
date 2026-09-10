@@ -276,7 +276,6 @@ const HOT_WALLET_TYPE_SEARCH_LABELS: Record<HotWalletType, readonly string[]> = 
 	[HotWalletType.Funding]: ['funding'],
 };
 
-
 export function buildMatchingHotWalletTypes(searchLower: string | undefined): HotWalletType[] | undefined {
 	if (!searchLower) return undefined;
 	const matched = Object.values(HotWalletType).filter((type) =>
