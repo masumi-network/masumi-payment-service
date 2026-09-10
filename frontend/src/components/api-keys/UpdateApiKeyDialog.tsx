@@ -191,6 +191,23 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     },
   });
 
+  useEffect(() => {
+    if (!open) return;
+    setShowToken(false);
+    setCustomCreditOptions([]);
+    reset({
+      newToken: '',
+      status: apiKey.status,
+      usageLimited: apiKey.usageLimited,
+      credits: initialCreditRows,
+      walletScopeEnabled: apiKey.walletScopeEnabled,
+      walletScopeIds: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
+      x402WalletScopeEnabled: apiKey.x402WalletScopeEnabled,
+      x402WalletScopeIds: apiKey.X402WalletScopes.map((ws) => ws.evmWalletId),
+      evmChains: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
+    });
+  }, [apiKey.id, initialCreditRows, open, apiKey, reset]);
+
   const walletScopeEnabled = useWatch({
     control,
     name: 'walletScopeEnabled',
