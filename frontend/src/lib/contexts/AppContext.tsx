@@ -8,7 +8,6 @@ import {
   useMemo,
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { getRailReadiness } from '@/lib/api/generated';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
@@ -39,7 +38,6 @@ export const AppContext = createContext<
       setCapabilities: (capabilities: ApiKeyCapabilities) => void;
       network: NetworkType;
       setNetwork: (network: NetworkType) => void;
-      showError: (error: { code?: number; message: string; details?: unknown }) => void;
       apiClient: Client;
       setApiClient: React.Dispatch<React.SetStateAction<Client>>;
       selectedPaymentSourceId: string | null;
@@ -55,11 +53,6 @@ export const AppContext = createContext<
 >(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [error, setError] = useState<{
-    code?: number;
-    message: string;
-    details?: unknown;
-  } | null>(null);
   const [apiClient, setApiClient] = useState(
     createClient({
       baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
@@ -300,10 +293,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     previousSelectedPaymentSourceIdRef.current = selectedPaymentSourceId;
   }, [selectedPaymentSourceId, queryClient]);
 
-  const showError = useCallback((error: { code?: number; message: string; details?: unknown }) => {
-    setError(error);
-  }, []);
-
   // Stable identity: _app.tsx's init effect depends on this function, and an
   // inline definition re-triggered the full health/auth startup sequence on
   // every provider re-render. The ref (kept in sync below) lets the callback
@@ -354,8 +343,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSetupWizardStep(0);
     setActiveRail('cardano');
     setSelectedX402ChainId(null);
-    setError(null);
-
     // Clear all localStorage items
     localStorage.removeItem('payment_api_key');
     localStorage.removeItem('selectedPaymentSourceId');
@@ -387,7 +374,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setCapabilities,
       network,
       setNetwork: setNetworkWithReset,
-      showError,
       apiClient,
       setApiClient,
       selectedPaymentSourceId,
@@ -411,7 +397,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       capabilities,
       network,
       setNetworkWithReset,
-      showError,
       apiClient,
       selectedPaymentSourceId,
       setSelectedPaymentSourceIdAndPersist,
@@ -424,10 +409,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <AppContext.Provider value={contextValue}>
-      {children}
-      <ErrorDialog open={!!error} onClose={() => setError(null)} error={error || { message: '' }} />
-    </AppContext.Provider>
+    <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>
   );
 }
 
