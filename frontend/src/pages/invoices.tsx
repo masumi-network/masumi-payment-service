@@ -235,7 +235,7 @@ export default function Invoices() {
     setSelectedInvoice(null);
 
     // Let the details dialog finish closing before opening the next one.
-    window.setTimeout(() => setShowGenerateDialog(true), 0);
+    queueMicrotask(() => setShowGenerateDialog(true));
   }, []);
 
   const openGenerateFromGroup = useCallback(
