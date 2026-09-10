@@ -46,7 +46,7 @@ export async function handleApiCall<T>(
 
     // Check for API errors (response.error pattern)
     if (response && typeof response === 'object' && 'error' in response && response.error) {
-      console.error('API Error:', response.error);
+      console.error('API Error:', extractApiErrorMessage(response.error, 'API call failed'));
 
       if (options.onError) {
         options.onError(response.error);
@@ -67,7 +67,7 @@ export async function handleApiCall<T>(
     return response;
   } catch (error) {
     // Handle unexpected errors (network, etc.)
-    console.error('Unexpected error:', error);
+    console.error('Unexpected error:', extractApiErrorMessage(error, 'Unexpected error'));
 
     if (options.onError) {
       options.onError(error);
