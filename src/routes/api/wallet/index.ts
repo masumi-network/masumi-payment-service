@@ -4,7 +4,7 @@ import {
 	AuthContext,
 	checkIsAllowedNetworkOrThrowUnauthorized,
 } from '@masumi/payment-core/auth';
-import { cursorPaginationArgs } from '@/utils/shared/queries';
+import { buildHotWalletSearchFilter, cursorPaginationArgs, normalizeSearchQuery } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
@@ -88,6 +88,7 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 				...(input.paymentSourceId != null ? { paymentSourceId: input.paymentSourceId } : {}),
 				...(input.walletVkey != null ? { walletVkey: input.walletVkey } : {}),
 				...(input.walletAddress != null ? { walletAddress: input.walletAddress } : {}),
+				...buildHotWalletSearchFilter(normalizeSearchQuery(input.searchQuery)),
 				PaymentSource: {
 					network: { in: ctx.networkLimit },
 					deletedAt: null,

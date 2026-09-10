@@ -7415,8 +7415,8 @@
         },
         "/wallet/list": {
             "get": {
-                "description": "Lists hot wallets across payment sources with cursor-based pagination",
-                "summary": "List hot wallets, optionally filtered by payment source and type. (read access required)",
+                "description": "Lists hot wallets across payment sources with cursor-based pagination. searchQuery applies before pagination, so a wallet beyond the first page is still found.",
+                "summary": "List hot wallets, optionally filtered or searched by payment source, type and free text. (read access required)",
                 "tags": [
                     "wallet"
                 ],
@@ -7496,6 +7496,17 @@
                         "required": false,
                         "description": "Filter to wallets with this Cardano address",
                         "name": "walletAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 500,
+                            "description": "Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name (\"Purchasing\") or the label the admin UI renders (\"Buying\"). \"%\" and \"_\" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND."
+                        },
+                        "required": false,
+                        "description": "Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name (\"Purchasing\") or the label the admin UI renders (\"Buying\"). \"%\" and \"_\" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND.",
+                        "name": "searchQuery",
                         "in": "query"
                     }
                 ],
