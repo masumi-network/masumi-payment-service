@@ -547,7 +547,7 @@ export async function assertNodeReadyForDeposit(localParticipantId: string): Pro
 	}
 }
 
-export const updateHeadSchemaInput = z.object({
+export const updateHeadSchemaInput = z.strictObject({
 	id: z.string().min(1).describe('ID of the HydraHead to update'),
 	isEnabled: z.boolean().describe('Whether the head should be enabled'),
 });

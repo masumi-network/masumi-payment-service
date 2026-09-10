@@ -13,7 +13,7 @@ import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 
-export const topupInput = z.object({
+export const topupInput = z.strictObject({
 	headId: z.string().describe('The Hydra head to top up'),
 	assetFilter: z
 		.enum(['all', 'ada-only'])
@@ -104,7 +104,7 @@ export const listTopupsOutput = z.object({
 	),
 });
 
-export const recoverTopupInput = z.object({
+export const recoverTopupInput = z.strictObject({
 	topupId: z.string().min(1).describe('The deposit to recover'),
 });
 

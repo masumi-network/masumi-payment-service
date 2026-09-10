@@ -68,7 +68,7 @@ export const listHeadErrorsGet = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: clear a head's recorded errors ---
 
-export const clearHeadErrorsSchemaInput = z.object({
+export const clearHeadErrorsSchemaInput = z.strictObject({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
 });
 

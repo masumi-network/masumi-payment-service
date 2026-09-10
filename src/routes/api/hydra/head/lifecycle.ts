@@ -50,7 +50,7 @@ import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/
 
 // --- Lifecycle: POST init ---
 
-export const lifecycleInput = z.object({
+export const lifecycleInput = z.strictObject({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
 });
 
@@ -225,7 +225,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 
 // --- Lifecycle: POST commit (local participant only) ---
 
-export const commitInput = z.object({
+export const commitInput = z.strictObject({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
 	lovelace: z
 		.string()

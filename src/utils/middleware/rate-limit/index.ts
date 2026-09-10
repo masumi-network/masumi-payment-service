@@ -1,7 +1,6 @@
 import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
 import type { AuthContext } from '@masumi/payment-core/auth-middleware';
-import { z } from '@masumi/payment-core/zod';
 
 type RateLimitCounter = {
 	count: number;
@@ -17,8 +16,6 @@ type RateLimitOptions = {
 	maxRequests: number;
 	windowMs: number;
 };
-
-const rateLimitInputSchema = z.object({});
 
 const createRateLimitBucket = () => new Map<string, RateLimitCounter>();
 
@@ -97,8 +94,7 @@ export const createRateLimiter = ({ maxRequests, windowMs }: RateLimitOptions) =
 export const createAuthenticatedRateLimitMiddleware = ({ maxRequests, windowMs }: RateLimitOptions) => {
 	const limiter = createRateLimiter({ maxRequests, windowMs });
 
-	return new Middleware<AuthContext, AuthContext, string, typeof rateLimitInputSchema>({
-		input: rateLimitInputSchema,
+	return new Middleware<AuthContext, AuthContext, string>({
 		handler: async ({ ctx, response }) => {
 			if (ctx.canAdmin) {
 				return ctx;

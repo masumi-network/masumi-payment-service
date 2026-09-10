@@ -2,7 +2,7 @@ import { Network, WebhookEventType, WebhookFormat } from '@/generated/prisma/cli
 import { z } from '@masumi/payment-core/zod';
 
 export const registerWebhookSchemaInput = z
-	.object({
+	.strictObject({
 		url: z
 			.string()
 			.url()
@@ -34,7 +34,7 @@ export const registerWebhookSchemaInput = z
 	});
 
 export const patchWebhookSchemaInput = z
-	.object({
+	.strictObject({
 		webhookId: z.string().describe('The ID of the webhook to update'),
 		url: z
 			.string()
@@ -116,11 +116,11 @@ export const patchWebhookSchemaOutput = z.object({
 	paymentSourceId: z.string().nullable(),
 });
 
-export const deleteWebhookSchemaInput = z.object({
+export const deleteWebhookSchemaInput = z.strictObject({
 	webhookId: z.string().describe('The ID of the webhook to delete'),
 });
 
-export const testWebhookSchemaInput = z.object({
+export const testWebhookSchemaInput = z.strictObject({
 	webhookId: z.string().describe('The ID of the webhook to send a test delivery to'),
 });
 

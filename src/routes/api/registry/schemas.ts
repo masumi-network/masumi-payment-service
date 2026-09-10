@@ -228,7 +228,7 @@ export const queryRegistryCountSchemaOutput = z.object({
 	total: z.number().describe('Total number of AI agents'),
 });
 
-export const registerAgentSchemaInput = z.object({
+export const registerAgentSchemaInput = z.strictObject({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
 	type: z
 		.nativeEnum(RegistryEntryType)
@@ -402,7 +402,7 @@ export function getRegistryEndpointError(input: {
 
 export const registerAgentSchemaOutput = registryRequestOutputSchema;
 
-export const deleteAgentRegistrationSchemaInput = z.object({
+export const deleteAgentRegistrationSchemaInput = z.strictObject({
 	id: z.string().cuid().describe('The database ID of the agent registration record to be deleted.'),
 });
 

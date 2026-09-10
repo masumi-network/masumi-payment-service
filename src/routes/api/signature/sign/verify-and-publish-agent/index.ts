@@ -9,7 +9,7 @@ import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import stringify from 'canonical-json';
 import { z } from '@masumi/payment-core/zod';
 
-export const postVerifyAndPublishAgentSignatureSchemaInput = z.object({
+export const postVerifyAndPublishAgentSignatureSchemaInput = z.strictObject({
 	publicKey: z.string().min(1).max(1000).describe('The public key to sign for publishing the agent'),
 	agentIdentifier: z.string().min(57).max(250).describe('Full agent identifier (policy ID + asset name in hex)'),
 	action: z.enum(['VerifyAndPublishAgent']).describe('The action to perform for agent publish verification'),

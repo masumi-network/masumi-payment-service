@@ -147,7 +147,7 @@ export const queryInviteGet = adminAuthenticatedEndpointFactory.build({
 
 // --- POST: mint an invite ---
 
-export const createInviteSchemaInput = z.object({
+export const createInviteSchemaInput = z.strictObject({
 	hotWalletId: z.string().min(1).describe('Wallet that will identify us on the resulting head'),
 	ttlHours: z.coerce
 		.number()
@@ -252,7 +252,7 @@ export const createInvitePost = adminAuthenticatedEndpointFactory.build({
 
 // --- POST: inspect an invite before committing to it ---
 
-export const previewInviteSchemaInput = z.object({
+export const previewInviteSchemaInput = z.strictObject({
 	code: z.string().min(1).describe('An invite code received from a counterparty'),
 });
 
@@ -366,7 +366,7 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 
 // --- POST: redeem an invite ---
 
-export const redeemInviteSchemaInput = z.object({
+export const redeemInviteSchemaInput = z.strictObject({
 	code: z.string().min(1),
 	hotWalletId: z.string().min(1).describe('Wallet that will identify us on the resulting head'),
 	autoFund: z
@@ -411,7 +411,7 @@ export const redeemInvitePost = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: revoke an unredeemed invite ---
 
-export const deleteInviteSchemaInput = z.object({ id: z.string().min(1) });
+export const deleteInviteSchemaInput = z.strictObject({ id: z.string().min(1) });
 export const deleteInviteSchemaOutput = z.object({ id: z.string(), status: z.nativeEnum(HydraInviteStatus) });
 
 /**

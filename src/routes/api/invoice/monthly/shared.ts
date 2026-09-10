@@ -52,7 +52,9 @@ function storedPdfToBase64(storedPdf: unknown): string | null {
 	return Buffer.from(storedPdf).toString('base64');
 }
 
-export const invoiceGenerationBaseSchema = z.object({
+// Strict so a misspelled field is a 400 rather than a silently dropped one. Both
+// derivatives inherit it: the .refine() below and the .extend() in schemas.ts.
+export const invoiceGenerationBaseSchema = z.strictObject({
 	buyerWalletVkey: z.string().min(1).max(1000).describe('The buyer wallet vkey to aggregate the month for'),
 	sellerWalletVkey: z
 		.string()
