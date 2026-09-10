@@ -39,6 +39,7 @@ import {
 import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
 import type { ApiKey, PostApiKeyData } from '@/lib/api/generated';
 import { walletScopeProblem } from '@/components/api-keys/wallet-scope.helpers';
+import { MASUMI_API_KEY_PERMISSIONS_DOCS_URL } from '@/lib/masumi-links';
 
 interface AddApiKeyDialogProps {
   open: boolean;
@@ -566,7 +567,16 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   <p className="text-xs text-muted-foreground">
                     Read-only keys are always usage-limited. They receive a default allowance of
                     1000 ADA for read operations. This limit is applied automatically and cannot be
-                    changed here.
+                    changed here.{' '}
+                    <a
+                      href={MASUMI_API_KEY_PERMISSIONS_DOCS_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline underline-offset-4 hover:text-primary/80"
+                    >
+                      Learn more about API key permissions
+                    </a>
+                    .
                   </p>
                 </div>
               )}
