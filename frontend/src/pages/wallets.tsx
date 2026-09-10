@@ -57,6 +57,7 @@ import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
@@ -70,6 +71,7 @@ export default function WalletsPage() {
   const [searchQuery, setSearchQuery] = useState(
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isFundWalletDialogOpen, setIsFundWalletDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
@@ -89,7 +91,7 @@ export default function WalletsPage() {
     hasMore,
     loadMore,
     refetch: refetchWalletsQuery,
-  } = usePaginatedWallets(activeWalletType);
+  } = usePaginatedWallets(activeWalletType, debouncedSearchQuery || undefined);
 
   // State-based previous value tracking for router query initialization
   // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
@@ -157,29 +159,31 @@ export default function WalletsPage() {
     }
   }, [router.isReady, router.query.action, router, capabilities.canAdmin]);
 
+  const isSearchPending =
+    searchQuery !== debouncedSearchQuery || (isFetchingWallets && allWallets.length > 0);
+
+  // Client-side filter for instant feedback while server results are pending.
   const filteredWallets = useMemo(() => {
-    let filtered = [...allWallets];
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((wallet) => {
-        const matchAddress =
-          wallet.walletAddress?.toLowerCase().includes(query) ||
-          wallet.collectionAddress?.toLowerCase().includes(query) ||
-          false;
-        const matchNote = wallet.note?.toLowerCase().includes(query) || false;
-        const matchType = wallet.type?.toLowerCase().includes(query) || false;
-        const matchBalance = wallet.balance
-          ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
-          : false;
-        const matchUsdcxBalance = wallet.usdcxBalance?.includes(query) || false;
-
-        return matchAddress || matchNote || matchType || matchBalance || matchUsdcxBalance;
-      });
+    const query = searchQuery.toLowerCase().trim();
+    if (!query || query === debouncedSearchQuery.toLowerCase().trim()) {
+      return allWallets;
     }
 
-    return filtered;
-  }, [allWallets, searchQuery]);
+    return allWallets.filter((wallet) => {
+      const matchAddress =
+        wallet.walletAddress?.toLowerCase().includes(query) ||
+        wallet.collectionAddress?.toLowerCase().includes(query) ||
+        false;
+      const matchNote = wallet.note?.toLowerCase().includes(query) || false;
+      const matchType = wallet.type?.toLowerCase().includes(query) || false;
+      const matchBalance = wallet.balance
+        ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
+        : false;
+      const matchUsdcxBalance = wallet.usdcxBalance?.includes(query) || false;
+
+      return matchAddress || matchNote || matchType || matchBalance || matchUsdcxBalance;
+    });
+  }, [allWallets, debouncedSearchQuery, searchQuery]);
 
   // Open for every session: the dialog renders the read-visible fields and
   // omits the admin-only sections rather than erroring.
@@ -248,6 +252,7 @@ export default function WalletsPage() {
                 onChange={setSearchQuery}
                 placeholder="Search by address, note, type, or balance..."
                 className="max-w-xs"
+                isLoading={isSearchPending && !!searchQuery}
               />
             </div>
           </div>

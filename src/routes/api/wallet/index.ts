@@ -4,7 +4,7 @@ import {
 	AuthContext,
 	checkIsAllowedNetworkOrThrowUnauthorized,
 } from '@masumi/payment-core/auth';
-import { cursorPaginationArgs } from '@/utils/shared/queries';
+import { cursorPaginationArgs, normalizeSearchQuery } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
@@ -79,6 +79,10 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 							? input.walletType
 							: { in: [HotWalletType.Selling, HotWalletType.Purchasing] },
 				};
+		const searchLower = normalizeSearchQuery(input.searchQuery);
+		const matchingTypes = searchLower
+			? Object.values(HotWalletType).filter((walletType) => walletType.toLowerCase().includes(searchLower))
+			: undefined;
 		const wallets = await prisma.hotWallet.findMany({
 			orderBy: { createdAt: 'desc' },
 			...cursorPaginationArgs(input.cursorId, input.take),
@@ -88,6 +92,19 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 				...(input.paymentSourceId != null ? { paymentSourceId: input.paymentSourceId } : {}),
 				...(input.walletVkey != null ? { walletVkey: input.walletVkey } : {}),
 				...(input.walletAddress != null ? { walletAddress: input.walletAddress } : {}),
+				...(searchLower
+					? {
+							OR: [
+								{ walletAddress: { contains: searchLower, mode: 'insensitive' as const } },
+								{ collectionAddress: { contains: searchLower, mode: 'insensitive' as const } },
+								{ walletVkey: { contains: searchLower, mode: 'insensitive' as const } },
+								{ note: { contains: searchLower, mode: 'insensitive' as const } },
+								...(matchingTypes != null && matchingTypes.length > 0
+									? [{ type: { in: matchingTypes } }]
+									: []),
+							],
+						}
+					: {}),
 				PaymentSource: {
 					network: { in: ctx.networkLimit },
 					deletedAt: null,

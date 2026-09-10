@@ -359,12 +359,13 @@ export function usePaymentSourceWalletList(args: {
  * this does NOT eagerly load every wallet, so it must not be used where an
  * aggregate over all wallets is required (e.g. dashboard totals).
  */
-export function usePaginatedWallets(walletType?: HotWalletType) {
+export function usePaginatedWallets(walletType?: HotWalletType, searchQuery?: string) {
   const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const network = selectedPaymentSource?.network;
+  const normalizedSearch = searchQuery?.trim() || undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ['wallets-paginated', selectedPaymentSourceId, walletType],
+    queryKey: ['wallets-paginated', selectedPaymentSourceId, walletType, normalizedSearch],
     queryFn: async ({ pageParam }) => {
       if (!selectedPaymentSourceId || !network) {
         return {
@@ -383,6 +384,7 @@ export function usePaginatedWallets(walletType?: HotWalletType) {
               cursorId: pageParam ?? undefined,
               paymentSourceId: selectedPaymentSourceId,
               walletType,
+              searchQuery: normalizedSearch,
             },
           }),
         { errorMessage: 'Failed to load wallets' },
