@@ -48,7 +48,7 @@ function matchesPermissionTab(apiKey: ApiKey, tab: string): boolean {
   switch (tab) {
     case 'Read':
       return apiKey.canRead && !apiKey.canPay && !apiKey.canAdmin;
-    case 'ReadAndPay':
+    case 'Read and Pay':
       return apiKey.canPay && !apiKey.canAdmin;
     case 'Admin':
       return apiKey.canAdmin;
@@ -104,7 +104,7 @@ export default function ApiKeys() {
   const tabs = [
     { name: 'All', count: null },
     { name: 'Read', count: null },
-    { name: 'ReadAndPay', count: null },
+    { name: 'Read and Pay', count: null },
     { name: 'Admin', count: null },
   ];
 
