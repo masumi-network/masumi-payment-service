@@ -246,7 +246,6 @@ export function AIAgentDetailsDialog({
         open={
           !!agent &&
           !isDeleteDialogOpen &&
-          !isPurchaseDialogOpen &&
           !isReRegisterConfirmOpen &&
           !isReRegisterOpen &&
           !isUpdateOpen
