@@ -53,10 +53,7 @@ pinned by index digest
 (VERIFIED, `docker buildx imagetools inspect ghcr.io/cardano-scaling/hydra-node:2.4.1`
 reports that digest for the tag). Follow
 [hydra-host-deploy-droplet.md §9](hydra-host-deploy-droplet.md) for the
-container swap. Two Host environment variables belong to this upgrade
-(`HYDRA_HOST_PUBLIC_EXCHANGE_URL` and `HYDRA_HOST_EXCHANGE_TRUST_PROXY` also
-arrive with the same PR, but they serve the invite exchange plane, not the
-node version):
+container swap. Two Host environment variables belong to this upgrade:
 
 | Variable                                | Set it?                                                                                                                                                                                                                                                                           |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -91,7 +88,8 @@ needs no change. An `.env` that pinned the 2.3.0 values must update. A stale
 `HYDRA_HEAD_SCRIPT_HASH` makes every new head fail on-chain verification with
 `Hydra InitTx did not contain exactly one official head output with its state token`
 (VERIFIED, `src/lib/hydra/hydra/head-init-validation.ts`). A stale
-`HYDRA_DEPOSIT_SCRIPT_HASH` fails later, at the first top-up, with
+`HYDRA_DEPOSIT_SCRIPT_HASH` fails later, at the first deposit into a head
+(the initial commit or a top-up), with
 `transaction must contain exactly one output at the trusted Hydra deposit script`
 (VERIFIED, `src/lib/hydra/hydra/commit-draft-validation.ts`).
 
@@ -124,8 +122,6 @@ match upstream's file.
   refused the body, and a timeout is not such a report, so an operator must
   reconcile it (VERIFIED,
   `packages/payment-source-v2/src/services/hydra-reconcile/l2-reservation-recovery.ts`).
-  The comment on `submitTx` in `src/lib/hydra/hydra/provider.ts` says recovery
-  reverts it by itself; that comment overstates what recovery does.
 - `Init` waits for a node that reports `CatchingUp` to report `NodeSynced`
   before it sends, for up to 180 s, because a parked `Init` on a node that is
   behind was seen to never run.
