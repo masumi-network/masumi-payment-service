@@ -354,7 +354,7 @@ export function InboxAgentDetailsDialog({
                           <div className="font-medium mb-1">Fees</div>
                           <div className="text-muted-foreground">
                             {agent.CurrentTransaction.fees
-                              ? formatLovelaceToAda(agent.CurrentTransaction.fees)
+                              ? formatLovelaceAsAda(agent.CurrentTransaction.fees, '—')
                               : '—'}
                           </div>
                         </div>
