@@ -31,7 +31,6 @@ import { TransactionHistorySection } from './TransactionHistorySection';
 import { TransactionErrorSection } from './TransactionErrorSection';
 import { RequestRepairDialog } from './RequestRepairDialog';
 import {
-  formatOnChainState,
   formatRequestedAction,
   formatStatus,
   getLatestTxHash,
@@ -483,20 +482,6 @@ export default function TransactionDetailsDialog({
             )}
 
             <div className="space-y-2">
-              <h4 className="font-semibold">Onchain state</h4>
-              <div className="rounded-md border p-4 bg-muted/10">
-                <p className="text-sm font-medium">
-                  {formatOnChainState(transaction.onChainState)}
-                </p>
-                {transaction.NextAction?.requestedAction && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Next action: {formatRequestedAction(transaction.NextAction.requestedAction)}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
               <h4 className="font-semibold">Transaction Details</h4>
               <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
                 <div>
@@ -509,6 +494,11 @@ export default function TransactionDetailsDialog({
                   >
                     {formatStatus(transaction.onChainState)}
                   </p>
+                  {transaction.NextAction?.requestedAction && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Next action: {formatRequestedAction(transaction.NextAction.requestedAction)}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -593,10 +583,6 @@ export default function TransactionDetailsDialog({
             <div className="space-y-2">
               <h4 className="font-semibold">Time Information</h4>
               <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
-                <div>
-                  <h5 className="text-sm font-medium mb-1">Created</h5>
-                  <p className="text-sm">{formatDateTime(transaction.createdAt)}</p>
-                </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Last Updated</h5>
                   <p className="text-sm">{formatDateTime(transaction.updatedAt)}</p>
