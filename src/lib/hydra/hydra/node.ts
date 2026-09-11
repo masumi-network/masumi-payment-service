@@ -82,6 +82,19 @@ export class HydraNode extends EventEmitter {
 	static readonly INIT_SYNC_WAIT_MS = 180_000;
 	private static readonly INIT_SYNC_POLL_MS = 250;
 	static readonly COMMAND_RESPONSE_TIMEOUT_MS = 30_000;
+	/**
+	 * How long a submission waits for the HEAD to confirm a body this node has
+	 * already called `TxValid` (see `HydraProvider.submitTx`).
+	 *
+	 * Named rather than inherited from the command timeout: it is the same 30s
+	 * today, but it is not the same thing to size — it covers the peer signing
+	 * and a snapshot forming, not a request/response round trip. Exceeding it is
+	 * not a failure but `HydraTransportAmbiguousError`: the reservation stays
+	 * Pending and recovery settles it once the body is past its validity upper
+	 * bound. Raising it holds the wallet lease open longer; lowering it sends
+	 * bodies to reconciliation that would have confirmed on their own.
+	 */
+	static readonly SUBMIT_CONFIRMATION_TIMEOUT_MS = 30_000;
 	static readonly CONNECTION_TIMEOUT_MS = 10_000;
 	static readonly HTTP_TIMEOUT_MS = 30_000;
 	static readonly LIFECYCLE_RESPONSE_TIMEOUT_MS = 300_000;
@@ -646,9 +659,12 @@ export class HydraNode extends EventEmitter {
 		this._connectionsStarted = false;
 	}
 
-	async awaitTx(txHash: string, checkInterval: number = 1000) {
+	async awaitTx(txHash: string, checkInterval: number = 1000, timeoutMs: number = this._commandTimeoutMs) {
 		if (!Number.isSafeInteger(checkInterval) || checkInterval <= 0) {
 			throw new HydraProtocolError('Hydra confirmation polling interval must be a positive safe integer');
+		}
+		if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+			throw new HydraProtocolError('Hydra confirmation timeout must be a positive safe integer');
 		}
 		if (this._ledger.hasConfirmed(txHash)) return true;
 		return await awaitHydraTxConfirmation({
@@ -656,7 +672,7 @@ export class HydraNode extends EventEmitter {
 			hasConfirmed: (hash) => this._ledger.hasConfirmed(hash),
 			txHash,
 			checkIntervalMs: checkInterval,
-			timeoutMs: this._commandTimeoutMs,
+			timeoutMs,
 		});
 	}
 

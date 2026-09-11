@@ -3,6 +3,7 @@ import type { Protocol, UTxO } from '@meshsdk/core';
 import { POLICY_ID_LENGTH } from '@meshsdk/core';
 
 import { HydraTransportAmbiguousError } from './errors';
+import { HydraNode } from './node';
 import type { IHydraNode } from './node';
 import { HydraProvider } from './provider';
 import { HydraHeadStatus } from '@/generated/prisma/client';
@@ -273,7 +274,13 @@ describe('HydraProvider', () => {
 		it('does not resolve on TxValid alone: waits for the tx to reach a confirmed snapshot', async () => {
 			await provider.submitTx('deadbeef');
 			expect(node.awaitTx).toHaveBeenCalledTimes(1);
-			expect(node.awaitTx).toHaveBeenCalledWith('confirmedTxHash');
+			// On the submission budget, not the command timeout it would inherit
+			// from an omitted argument.
+			expect(node.awaitTx).toHaveBeenCalledWith(
+				'confirmedTxHash',
+				undefined,
+				HydraNode.SUBMIT_CONFIRMATION_TIMEOUT_MS,
+			);
 			// Confirmation is awaited after submission, never before it.
 			const newTxOrder = node.newTx.mock.invocationCallOrder[0];
 			const awaitTxOrder = node.awaitTx.mock.invocationCallOrder[0];

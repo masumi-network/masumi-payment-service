@@ -58,7 +58,8 @@ export interface IHydraNode {
 	getConfirmedTransactions?(): HydraConfirmedTransaction[];
 	getConfirmedTransactionsForReconciliation?(): HydraConfirmedTransaction[];
 	markConfirmedTransactionReconciled?(txHash: string): void;
-	awaitTx(txHash: string, checkInterval?: number): Promise<boolean>;
+	/** `timeoutMs` defaults to the command timeout; submission passes its own. */
+	awaitTx(txHash: string, checkInterval?: number, timeoutMs?: number): Promise<boolean>;
 	close(): Promise<unknown>;
 	fanout(): Promise<unknown>;
 

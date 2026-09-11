@@ -12,6 +12,7 @@ import type {
 import { POLICY_ID_LENGTH } from '@meshsdk/core';
 import type { IFetcher, ISubmitter } from '@meshsdk/core';
 
+import { HydraNode } from './node';
 import type { HydraHeadClock, HydraRawCostModels, IHydraNode } from './node';
 import { HydraTransactionType } from './types';
 import type { HydraTransaction } from './types';
@@ -187,7 +188,12 @@ export class HydraProvider implements IFetcher, ISubmitter {
 		// the head reported that it refused the body (`l2RejectedByHeadAt`); a
 		// timeout is not such a report, so the reservation waits for explicit
 		// reconciliation instead of being finalized against a phantom.
-		await this._node.awaitTx(txHash);
+		//
+		// On its own budget, not the command timeout it used to inherit by
+		// omission: what is being waited on here is a peer signing and a snapshot
+		// forming, not a request/response round trip. See
+		// `HydraNode.SUBMIT_CONFIRMATION_TIMEOUT_MS`.
+		await this._node.awaitTx(txHash, undefined, HydraNode.SUBMIT_CONFIRMATION_TIMEOUT_MS);
 		return txHash;
 	}
 
