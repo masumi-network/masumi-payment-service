@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useDialogResetOnOpen } from '@/lib/hooks/useDialogResetOnOpen';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   postPayment,
@@ -94,8 +95,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     watch,
   );
 
-  useEffect(() => {
-    if (open) {
+  useDialogResetOnOpen(
+    open,
+    () => {
       resetInputData();
       setValue('paymentOptionId', '');
       setValue('identifierFromPurchaser', generateRandomHex(16));
@@ -106,8 +108,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       setPurchaseError(null);
       setPaymentCurl('');
       setPurchaseCurl('');
-    }
-  }, [open, selectedPaymentSource?.id, setValue, resetInputData]);
+    },
+    [selectedPaymentSource?.id, setValue, resetInputData],
+  );
 
   const createPurchaseAutomatically = useCallback(
     async (payment: PostPaymentResponse['data'], originalFormData: PaymentFormValues) => {

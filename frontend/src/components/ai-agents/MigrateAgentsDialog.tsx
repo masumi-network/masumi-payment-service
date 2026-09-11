@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDialogResetOnOpen } from '@/lib/hooks/useDialogResetOnOpen';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { toast } from 'react-toastify';
@@ -382,13 +383,11 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   // re-render when toggled.
   const hasPendingV1ListInvalidationRef = useRef(false);
 
-  useEffect(() => {
-    if (open) {
-      setResults({});
-      setIsDone(false);
-      setIsMigrating(false);
-    }
-  }, [open]);
+  useDialogResetOnOpen(open, () => {
+    setResults({});
+    setIsDone(false);
+    setIsMigrating(false);
+  });
 
   const handleClose = useCallback(() => {
     if (hasPendingV1ListInvalidationRef.current) {
