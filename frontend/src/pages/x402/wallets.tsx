@@ -23,7 +23,7 @@ export default function X402WalletsPage() {
                 ? 'Managed EVM wallets for the x402 payment rail. Keys are encrypted at rest.'
                 : 'EVM wallets for chains your key can access.'}{' '}
               <a
-                href={MASUMI_DEV_HUB_URL}
+                href="https://www.masumi.network/dev/masumi"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"
