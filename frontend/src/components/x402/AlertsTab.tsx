@@ -246,7 +246,7 @@ export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
                   </td>
                   <td className="p-4 text-right font-mono text-sm text-muted-foreground">
                     {rule.lastKnownAmount != null
-                      ? formatRuleAmount(rule.lastKnownAmount, rule.asset)
+                      ? formatRuleAmount(rule.lastKnownAmount, rule.asset, rule.caip2Network)
                       : '—'}
                   </td>
                   <td className="p-4">
