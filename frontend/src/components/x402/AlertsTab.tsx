@@ -36,6 +36,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402LowBalanceRules, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import { formatX402WalletType } from '@/lib/display-labels';
 import { cn, formatX402Amount, groupDigits, shortenAddress } from '@/lib/utils';
 import { walletsForNetworks } from '@/lib/x402-rail';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
@@ -449,7 +450,7 @@ function AlertDialog({
                           <span className="ml-2 text-muted-foreground">
                             {networks.find((network) => network.id === wallet.networkId)
                               ?.displayName ?? wallet.caip2Network}{' '}
-                            · {wallet.type}
+                            · {formatX402WalletType(wallet.type)}
                           </span>
                         </SelectItem>
                       ))}
