@@ -52,14 +52,22 @@ DEMO="${DEMO:-${HYDRA_DEMO_DIR:-$( \
 
 HYDRA_VERSION="${HYDRA_VERSION:-2.4.1}"
 # sha256 of the release zip, verified in ensure_bin whenever a release asset is
-# actually downloaded. Kept from dev, but no longer *required*: dev could demand
-# it because every tag through 2.3.0 published a zip. 2.4.0 and 2.4.1 publish no
-# release assets at all, so ensure_bin falls back to the tag's CI artifact, for
-# which upstream publishes no checksum to pin. The 2.3.0 value stays pinned so
-# HYDRA_VERSION=2.3.0 still verifies exactly as it did on dev.
+# actually downloaded. Required on that path: every tag through 2.3.0 published
+# a zip, and the 2.3.0 value stays pinned so HYDRA_VERSION=2.3.0 verifies
+# exactly as it did on dev. 2.4.0 and 2.4.1 publish no release assets at all,
+# so ensure_bin falls back to the tag's CI artifact and checks the extracted
+# hydra-node binary against HYDRA_BINARY_SHA256 instead. Upstream publishes no
+# checksum for CI artifacts; the 2.4.1 value below was measured from the
+# aarch64-darwin artifact of Binaries run 33660882209 (commit 099f5dd7, the
+# commit tag 2.4.1 points at) on 2026-09-11. Re-pin it when HYDRA_VERSION
+# moves: download once, `shasum -a 256 hydra-node`, and set the value here.
 HYDRA_RELEASE_SHA256="${HYDRA_RELEASE_SHA256:-}"
 if [ -z "$HYDRA_RELEASE_SHA256" ] && [ "$HYDRA_VERSION" = '2.3.0' ]; then
   HYDRA_RELEASE_SHA256='a9074d0b69cc7104ccad672c942da7c0c695b4dbdff5002fd503904fe24ad528'
+fi
+HYDRA_BINARY_SHA256="${HYDRA_BINARY_SHA256:-}"
+if [ -z "$HYDRA_BINARY_SHA256" ] && [ "$HYDRA_VERSION" = '2.4.1' ]; then
+  HYDRA_BINARY_SHA256='aed4edcc451cf691eb1ece6e80fb5953f432652d928a36ed4141da5dd09db087'
 fi
 # Preprod only. Comma-separated tx ids of a self-published Hydra script set;
 # when set, nodes get --hydra-scripts-tx-id INSTEAD of --network preprod (the
@@ -145,27 +153,26 @@ ensure_bin(){
     # Tagged releases published a release-zip asset through 2.3.0. 2.4.0 and
     # 2.4.1 publish none at all (`gh release view <tag> --repo
     # cardano-scaling/hydra --json assets` returns `[]` for both, verified
-    # for 2.4.1 — see docs/hydra-2.4.1-release-evidence.md). Try the release
+    # for 2.4.1 — see docs/hydra-2.4.1-upgrade-runbook.md). Try the release
     # asset first regardless, since upstream could resume attaching one to a
     # future tag, and only fall back to a CI artifact — the same mechanism
     # HYDRA_BIN_TAG uses above — when there genuinely is none: resolve the
     # commit the tag points at, and pull the aarch64-darwin artifact from
     # that commit's own "Binaries" workflow run (for 2.4.1, commit
     # 099f5dd775d8640047d0074edef294c1b39a600d, run 33660882209 — verified,
-    # see docs/hydra-2.4.1-release-evidence.md).
+    # see docs/hydra-2.4.1-upgrade-runbook.md).
     c_blu "Checking for a hydra-aarch64-darwin-${HYDRA_VERSION}.zip release asset…"
     if gh release download "$HYDRA_VERSION" --repo cardano-scaling/hydra \
       --pattern "hydra-aarch64-darwin-${HYDRA_VERSION}.zip" --dir "$tmp" 2>/dev/null; then
       c_grn "  release asset path: found one — downloading (~176 MiB)…"
-      # Verify it when we have a pinned digest (dev's supply-chain check, kept).
-      # Only the release-asset branch can be checked this way: the CI-artifact
-      # fallback below has no upstream-published checksum to compare against.
-      if [ -n "$HYDRA_RELEASE_SHA256" ]; then
-        printf '%s  %s\n' "$HYDRA_RELEASE_SHA256" "$tmp/hydra-aarch64-darwin-${HYDRA_VERSION}.zip" \
-          | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
-      else
-        c_blu "  no HYDRA_RELEASE_SHA256 pinned for ${HYDRA_VERSION} — skipping checksum verification"
-      fi
+      # Dev's supply-chain check, kept as a hard requirement: a zip with no
+      # pinned digest is not installed.
+      [ -n "$HYDRA_RELEASE_SHA256" ] || {
+        c_red "HYDRA_RELEASE_SHA256 is required for the ${HYDRA_VERSION} release zip"
+        exit 1
+      }
+      printf '%s  %s\n' "$HYDRA_RELEASE_SHA256" "$tmp/hydra-aarch64-darwin-${HYDRA_VERSION}.zip" \
+        | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
       (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
     else
       c_blu "  release asset path: none published for ${HYDRA_VERSION} — falling back to the tag's CI artifact"
@@ -180,6 +187,15 @@ ensure_bin(){
       c_blu "  CI-artifact path: downloading $artifact from run $run_id (commit ${commit_sha:0:12}, ~176 MiB)…"
       gh run download "$run_id" --repo cardano-scaling/hydra \
         --name "$artifact" --dir "$tmp" || { c_red "download failed"; exit 1; }
+      # No upstream checksum exists for a CI artifact, so the extracted binary
+      # itself is pinned (see HYDRA_BINARY_SHA256 at the top of this file).
+      [ -n "$HYDRA_BINARY_SHA256" ] || {
+        c_red "HYDRA_BINARY_SHA256 is required for the ${HYDRA_VERSION} CI artifact (no release zip to verify)"
+        exit 1
+      }
+      [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
+      printf '%s  %s\n' "$HYDRA_BINARY_SHA256" "$tmp/hydra-node" \
+        | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
     fi
   fi
   [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
