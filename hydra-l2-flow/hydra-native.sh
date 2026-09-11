@@ -184,15 +184,16 @@ ensure_bin(){
       # jq prints the literal string "null" for `.[0]` on an empty array,
       # which is non-empty and would otherwise sail through `[ -n ... ]`.
       [ -n "$run_id" ] && [ "$run_id" != "null" ] || { c_red "no Binaries CI run found for commit $commit_sha"; exit 1; }
-      c_blu "  CI-artifact path: downloading $artifact from run $run_id (commit ${commit_sha:0:12}, ~176 MiB)…"
-      gh run download "$run_id" --repo cardano-scaling/hydra \
-        --name "$artifact" --dir "$tmp" || { c_red "download failed"; exit 1; }
       # No upstream checksum exists for a CI artifact, so the extracted binary
       # itself is pinned (see HYDRA_BINARY_SHA256 at the top of this file).
+      # Checked before the 176 MiB download, so a missing pin fails at once.
       [ -n "$HYDRA_BINARY_SHA256" ] || {
         c_red "HYDRA_BINARY_SHA256 is required for the ${HYDRA_VERSION} CI artifact (no release zip to verify)"
         exit 1
       }
+      c_blu "  CI-artifact path: downloading $artifact from run $run_id (commit ${commit_sha:0:12}, ~176 MiB)…"
+      gh run download "$run_id" --repo cardano-scaling/hydra \
+        --name "$artifact" --dir "$tmp" || { c_red "download failed"; exit 1; }
       [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
       printf '%s  %s\n' "$HYDRA_BINARY_SHA256" "$tmp/hydra-node" \
         | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
