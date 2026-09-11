@@ -61,26 +61,33 @@ Two arm64 cases, and they are not the same problem:
 
 ### 1. Fetch `hydra-node`
 
+2.4.0 and 2.4.1 publish no release assets at all, so there is no zip to
+download and no upstream checksum to check one against. The binary comes from
+the aarch64-darwin artifact of the tag's own Binaries CI run instead. The fetch
+script handles both cases, so use it rather than hand-rolling a `curl`:
+
 ```bash
-(
-set -e
-HYDRA_VERSION=2.3.0
-HYDRA_SHA256=a9074d0b69cc7104ccad672c942da7c0c695b4dbdff5002fd503904fe24ad528
-curl --proto '=https' --tlsv1.2 -fsSL -o hydra.zip \
-  "https://github.com/cardano-scaling/hydra/releases/download/${HYDRA_VERSION}/hydra-aarch64-darwin-${HYDRA_VERSION}.zip"
-printf '%s  %s\n' "$HYDRA_SHA256" hydra.zip | shasum -a 256 -c -
-unzip -j hydra.zip -d .bin
-chmod +x .bin/hydra-node
-.bin/hydra-node --version
-)
+HYDRA_VERSION=2.4.1 ./hydra-l2-flow/hydra-native.sh bin
 ```
 
-The checksum above is the SHA-256 digest reported by the official Hydra 2.3.0
-release API on 2026-09-04. Review and replace both the version and digest
-together when upgrading.
+The script tries the release asset first, in case upstream resumes attaching
+one, and checks it against `HYDRA_RELEASE_SHA256`. When there is none it falls
+back to the CI artifact and checks the extracted binary against
+`HYDRA_BINARY_SHA256`, which is pinned in the script for 2.4.1. Upstream
+publishes no digest for a CI artifact, so that value was measured locally.
+Re-pin it when you move `HYDRA_VERSION`.
+
+The binary lands at `hydra-l2-flow/.bin/hydra-node`. Confirm it before you go
+further:
+
+```bash
+./hydra-l2-flow/.bin/hydra-node --version
+```
 
 Both sides of a head must run the same version, so pin it rather than tracking
-latest.
+latest. An upgrade from 2.3.0 has prerequisites that you cannot meet
+afterwards. See
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md).
 
 ### 2. Start the Host
 
@@ -90,7 +97,7 @@ HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
 HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
-HYDRA_NODE_BIN="$PWD/.bin/hydra-node" \
+HYDRA_NODE_BIN="$PWD/hydra-l2-flow/.bin/hydra-node" \
 HYDRA_HOST_DATA_DIR="$PWD/.hydra-data" \
 BLOCKFROST_PROJECT_FILE="$PWD/blockfrost.txt" \
 HYDRA_HOST_LEDGER_PARAMS_FILE="$PWD/packages/hydra-host/params/preprod.json" \
