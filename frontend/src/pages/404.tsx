@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Home, Search } from 'lucide-react';
 import Link from 'next/link';
 import MasumiLogo from '@/components/MasumiLogo';
+import { MASUMI_DEV_HUB_URL } from '@/lib/masumi-links';
 
 export default function NotFound() {
   return (

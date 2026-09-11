@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
+import { MASUMI_PAYMENTS_DOCS_URL } from '@/lib/masumi-links';
 import { cn, formatAssetAmount } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -372,7 +373,7 @@ export default function Transactions() {
               <p className="text-sm text-muted-foreground">
                 View and manage your transaction history.{' '}
                 <a
-                  href="https://www.masumi.network/dev/masumi/core-concepts/agent-to-agent-payments"
+                  href={MASUMI_PAYMENTS_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

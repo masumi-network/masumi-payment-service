@@ -8,6 +8,7 @@ import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
 
+import { MASUMI_AGENTS_DOCS_URL } from '@/lib/masumi-links';
 import { cn, formatAssetAmount, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
@@ -445,7 +446,7 @@ export default function AIAgentsPage() {
               <p className="text-sm text-muted-foreground">
                 Manage your AI agents and their configurations.{' '}
                 <a
-                  href="https://www.masumi.network/dev/masumi/core-concepts/agentic-service"
+                  href={MASUMI_AGENTS_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

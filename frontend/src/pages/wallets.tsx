@@ -32,6 +32,7 @@ import {
   type HotWalletType,
 } from '@/lib/wallet-type';
 
+import { MASUMI_WALLETS_DOCS_URL } from '@/lib/masumi-links';
 import { formatSixDecimalAmount, shortenAddress, cn } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
@@ -204,7 +205,7 @@ export default function WalletsPage() {
               <p className="text-sm text-muted-foreground">
                 Manage buying, selling, and funding wallets.{' '}
                 <Link
-                  href="https://www.masumi.network/dev/masumi/core-concepts/wallets"
+                  href={MASUMI_WALLETS_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

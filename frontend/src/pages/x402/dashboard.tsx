@@ -28,6 +28,7 @@ import {
   useX402DashboardRecentPayments,
   useX402Wallets,
 } from '@/lib/hooks/useX402';
+import { MASUMI_DEV_HUB_URL } from '@/lib/masumi-links';
 import { formatX402Amount, groupDigits, shortenAddress } from '@/lib/utils';
 
 const STATUS_VARIANT: Record<X402PaymentAttempt['status'], BadgeProps['variant']> = {
@@ -88,7 +89,7 @@ export default function X402DashboardPage() {
               <p className="max-w-2xl text-sm text-muted-foreground">
                 Overview of x402 wallets, balances, and transactions.{' '}
                 <a
-                  href="https://www.masumi.network/dev/masumi"
+                  href={MASUMI_DEV_HUB_URL}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"
