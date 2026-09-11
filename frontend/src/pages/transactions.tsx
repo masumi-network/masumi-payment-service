@@ -26,7 +26,7 @@ import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
+import { filterTransactionsClientSide } from '@/lib/client-search/transaction-search';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
@@ -208,49 +208,7 @@ export default function Transactions() {
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return filteredTransactions;
 
-    const amountRange = parseAmountSearchRange(query);
-    // Mirror backend looksLikeHash (HASH_QUERY_MIN_LENGTH): the hash columns and
-    // the head ID are only searched for a hex query of 5+ characters.
-    const isHashQuery = query.length >= 5 && /^[0-9a-f]+$/.test(query);
-    // Mirror backend buildMatchingLayers: exact match plus the 'hydra' alias.
-    const matchingLayer =
-      query === 'hydra' ? 'L2' : query === 'l1' || query === 'l2' ? query.toUpperCase() : null;
-
-    // Mirror backend buildMatchingStates
-    const matchingStates = ON_CHAIN_STATES.filter(
-      (s) => s.toLowerCase().includes(query) || formatStatus(s).toLowerCase().includes(query),
-    );
-
-    return filteredTransactions.filter((tx) => {
-      if (tx.id?.toLowerCase().includes(query)) return true;
-      if (tx.blockchainIdentifier?.toLowerCase() === query) return true;
-      if (isHashQuery) {
-        if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
-        if (tx.TransactionHistory?.some((h) => h.txHash?.toLowerCase().includes(query)))
-          return true;
-        if (tx.inputHash?.toLowerCase().includes(query)) return true;
-        if (tx.resultHash?.toLowerCase().includes(query)) return true;
-        if (tx.CurrentTransaction?.hydraHeadId?.toLowerCase().includes(query)) return true;
-      }
-      if (matchingLayer && tx.CurrentTransaction?.layer === matchingLayer) return true;
-      if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
-        return true;
-      if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
-      if (tx.agentName?.toLowerCase().includes(query)) return true;
-      if (amountRange) {
-        const funds =
-          tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
-        if (
-          funds?.some((f) => {
-            const amt = parseAmountToBigInt(f.amount);
-            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
-          })
-        )
-          return true;
-      }
-      return false;
-    });
+    return filterTransactionsClientSide(filteredTransactions, searchQuery);
   }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
   const refreshTransactions = useCallback(() => {

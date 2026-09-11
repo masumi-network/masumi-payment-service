@@ -37,7 +37,7 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
+import { filterAgentsClientSide } from '@/lib/client-search/agent-search';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
@@ -153,32 +153,7 @@ export default function AIAgentsPage() {
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return byType(agents);
 
-    const amountRange = parseAmountSearchRange(query);
-
-    return byType(
-      agents.filter((agent) => {
-        const pricing = getPrimaryCardanoPricing(agent);
-        if (agent.name?.toLowerCase().includes(query)) return true;
-        if (agent.description?.toLowerCase().includes(query)) return true;
-        // Backend uses hasSome (exact match against tag array), not partial
-        if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
-        if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-        if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-        if (agent.state?.toLowerCase().includes(query)) return true;
-        if (pricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
-        if (pricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
-        if (
-          amountRange &&
-          pricing?.pricingType === 'Fixed' &&
-          pricing.Pricing.some((p) => {
-            const amt = parseAmountToBigInt(p.amount);
-            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
-          })
-        )
-          return true;
-        return false;
-      }),
-    );
+    return byType(filterAgentsClientSide(agents, searchQuery));
   }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData, typeFilter]);
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
