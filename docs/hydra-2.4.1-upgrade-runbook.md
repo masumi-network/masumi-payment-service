@@ -24,8 +24,12 @@ Upstream's 2.4.0 release note says to close and fan out any open head before
 upgrading, because an upgraded node can no longer interact with it and
 snapshots signed by earlier versions fail verification (REPORTED). This
 service has the same limit: its own snapshot verification now uses the 2.4
-signature payload, and a 2.3-signed history no longer verifies (VERIFIED,
-`src/lib/hydra/hydra/snapshot-verification.spec.ts`). A head that is still
+signature payload, which hashes the commit slot differently even when no
+deposit is pending, so a 2.3-signed history cannot verify under it (INFERRED
+from `hydraSnapshotSignableBytes` in
+`src/lib/hydra/hydra/snapshot-verification.ts`; the spec file records that its
+former 2.3-signed vector had to be retired for this reason, but no test feeds a
+2.3 signature to the verifier). A head that is still
 open at upgrade time goes offline with its funds inside, and no 2.4.1 node can
 close it.
 
@@ -49,7 +53,10 @@ pinned by index digest
 (VERIFIED, `docker buildx imagetools inspect ghcr.io/cardano-scaling/hydra-node:2.4.1`
 reports that digest for the tag). Follow
 [hydra-host-deploy-droplet.md §9](hydra-host-deploy-droplet.md) for the
-container swap. Two new environment variables exist on the Host:
+container swap. Two Host environment variables belong to this upgrade
+(`HYDRA_HOST_PUBLIC_EXCHANGE_URL` and `HYDRA_HOST_EXCHANGE_TRUST_PROXY` also
+arrive with the same PR, but they serve the invite exchange plane, not the
+node version):
 
 | Variable                                | Set it?                                                                                                                                                                                                                                                                           |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,9 +87,13 @@ head do this on their own service.
 | `HYDRA_DEPOSIT_SCRIPT_HASH`            | `eafae2c32f99ab347c7bb15961e0e84c74305f9088c1a7b8abf88e7f`                                                                                                                                                  |
 
 The two script hashes are the code defaults, so an `.env` that never set them
-needs no change. An `.env` that pinned the 2.3.0 values must update, or every
-new head fails on-chain verification with
-`Hydra InitTx did not contain exactly one official head output with its state token`.
+needs no change. An `.env` that pinned the 2.3.0 values must update. A stale
+`HYDRA_HEAD_SCRIPT_HASH` makes every new head fail on-chain verification with
+`Hydra InitTx did not contain exactly one official head output with its state token`
+(VERIFIED, `src/lib/hydra/hydra/head-init-validation.ts`). A stale
+`HYDRA_DEPOSIT_SCRIPT_HASH` fails later, at the first top-up, with
+`transaction must contain exactly one output at the trusted Hydra deposit script`
+(VERIFIED, `src/lib/hydra/hydra/commit-draft-validation.ts`).
 
 Note on the script hashes: upstream's
 `hydra-chain-observer/script-hashes.json` at tag 2.4.1 lists these two values
@@ -108,8 +119,13 @@ match upstream's file.
 - An L2 submission returns after the head confirms the snapshot, not after the
   local node accepts the body. A peer that refuses the body used to leave the
   service pointing at a transaction that never existed. The wait has the usual
-  30 s command timeout; on timeout the reservation stays pending and recovery
-  reverts it once the body can no longer land.
+  30 s command timeout. On timeout the reservation stays held: recovery
+  releases a reservation on its own only when the head reported that it
+  refused the body, and a timeout is not such a report, so an operator must
+  reconcile it (VERIFIED,
+  `packages/payment-source-v2/src/services/hydra-reconcile/l2-reservation-recovery.ts`).
+  The comment on `submitTx` in `src/lib/hydra/hydra/provider.ts` says recovery
+  reverts it by itself; that comment overstates what recovery does.
 - `Init` waits for a node that reports `CatchingUp` to report `NodeSynced`
   before it sends, for up to 180 s, because a parked `Init` on a node that is
   behind was seen to never run.
@@ -147,5 +163,6 @@ match upstream's file.
 
 - `HYDRA_SCRIPTS_TX_IDS`, the self-published preprod script set, for the same
   Blockfrost reason as the Host.
-- `HYDRA_BINARY_SHA256`, pinned in the script for 2.4.1. The script refuses to
-  install a binary it cannot verify.
+- `HYDRA_BINARY_SHA256`, pinned in the script for 2.4.1. On its default path
+  the script refuses to install a binary it cannot verify. The `HYDRA_BIN_TAG`
+  path, for testing an unreleased commit, still installs without a checksum.
