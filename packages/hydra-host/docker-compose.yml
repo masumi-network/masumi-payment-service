@@ -71,11 +71,13 @@ services:
       BLOCKFROST_PROJECT_FILE: /run/secrets/blockfrost.txt
 
       # Transaction ids of a Hydra script set published with
-      # `hydra-node publish-scripts`, comma separated. Required on preprod:
-      # hydra-node 2.4.1 cannot read upstream's own preprod publication through
-      # Blockfrost, so with this unset every node dies seconds after boot with
-      # `BlockfrostClientError AssetNameMissing`. That message names neither the
-      # scripts nor this variable. See docs/hydra-2.4.1-upgrade-runbook.md.
+      # `hydra-node publish-scripts`, comma separated. Empty means `--network`,
+      # which resolves upstream's own pre-published scripts. Set it on preprod:
+      # upstream's preprod publication is REPORTED to be unreadable through the
+      # 2.4.1 Blockfrost client, which dies on it with
+      # `BlockfrostClientError AssetNameMissing` seconds after boot, naming
+      # neither the scripts nor this variable. That cost a settle run on
+      # 2026-09-07. See docs/hydra-2.4.1-upgrade-runbook.md.
       HYDRA_HOST_SCRIPTS_TX_IDS: ${HYDRA_HOST_SCRIPTS_TX_IDS:-}
 
       HYDRA_HOST_PEER_PORT_START: '5001'

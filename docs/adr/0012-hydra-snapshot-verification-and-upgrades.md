@@ -118,7 +118,7 @@ Do this **before** rolling a new node version to anything that holds funds.
 
 ## When the signable bytes change: settle first
 
-2.4.1 is the first upgrade to hit this. Hydra 2.4 hashes the commit partition a
+2.4.1 is the first upgrade this service has hit it on. Hydra 2.4 hashes the commit partition a
 second time, together with the id of the deposit it came from, so the bytes a
 party signs are not the 2.3 bytes (`src/lib/hydra/hydra/snapshot-signable.ts`).
 
