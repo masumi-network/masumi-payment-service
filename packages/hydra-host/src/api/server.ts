@@ -389,6 +389,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 					(typeof request.headers['idempotency-key'] === 'string' ? request.headers['idempotency-key'] : '') || '';
 				// Resolved once, because the activation below defaults from it.
 				const requestDepositPeriodSeconds = numberOr(body, 'depositPeriodSeconds', config.defaultDepositPeriodSeconds);
+				// Read before the override is consulted, so a malformed body still 400s.
+				// Folding this into the `??` below would skip validation entirely once an
+				// operator set the override, and a negative or non-numeric activation
+				// would be answered 201 instead of rejected.
+				const requestDepositActivationSeconds = numberOr(body, 'depositActivationSeconds', requestDepositPeriodSeconds);
 				const result = await provisionNode(
 					{
 						idempotencyKey,
@@ -416,9 +421,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 						// with depositPeriod 1200 would run activation 300, cutting the
 						// maturity wait 4x. That wait is what rules out an L1 rollback
 						// before funds count on L2, and nothing would report it.
-						depositActivationSeconds:
-							config.depositActivationSecondsOverride ??
-							numberOr(body, 'depositActivationSeconds', requestDepositPeriodSeconds),
+						depositActivationSeconds: config.depositActivationSecondsOverride ?? requestDepositActivationSeconds,
 					},
 					provision,
 				);

@@ -429,4 +429,21 @@ describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 		expect(record?.depositActivationSeconds).toBe(777);
 		expect(record?.depositPeriodSeconds).toBe(900);
 	});
+
+	// Winning over the request must not mean skipping it. Reading the override
+	// first would discard the body unread, so a caller sending a malformed
+	// activation would be answered 201 and never learn its request was wrong.
+	it('still rejects a malformed activation in the body', async () => {
+		const response = await fetch(`${overrideBaseUrl}/v1/nodes`, {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${ADMIN}`,
+				'content-type': 'application/json',
+				'idempotency-key': 'idem-override-invalid',
+			},
+			body: JSON.stringify({ depositPeriodSeconds: 900, depositActivationSeconds: -5 }),
+		});
+
+		expect(response.status).toBe(400);
+	});
 });
