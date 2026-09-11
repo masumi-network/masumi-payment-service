@@ -409,7 +409,10 @@ What a snapshot does and does not cover:
 ## 9. Upgrades
 
 Both sides of a head must run the same `hydra-node` version, so an upgrade is a
-coordinated change, not a rolling one.
+coordinated change, not a rolling one. Close and fan out every open head
+first: an upgraded node cannot use a head opened by the previous version. The
+2.3.0 to 2.4.1 move has its own steps in
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md).
 
 ```bash
 systemctl stop hydra-host                          # drains, up to 250s

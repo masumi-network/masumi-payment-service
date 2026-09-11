@@ -27,7 +27,7 @@ ARG HYDRA_VERSION=2.4.1
 # assets` -> `[]`, and the same for 2.4.0), and an official linux/arm64
 # ghcr manifest was added instead — verified running natively on Apple
 # Silicon with no SIGILL and no emulation shim needed
-# (docs/hydra-2.4.1-release-evidence.md, Part 2). So hydra-node now comes
+# (docs/hydra-2.4.1-upgrade-runbook.md, release evidence). So hydra-node now comes
 # from that multi-arch image rather than a downloaded zip, pinned by digest
 # below for supply-chain integrity — the digest IS the integrity pin, so
 # there is no separate HYDRA_SHA256 to check the way 2.3.0 needed one for
@@ -41,7 +41,7 @@ ARG HYDRA_VERSION=2.4.1
 ARG HYDRA_IMAGE_DIGEST=sha256:608ae9b336209a18d7f3c42f7ca2d73c51dcb1b90732e533dd3b8017485fa98a
 # Must match the etcd that hydra-node ships internally, confirmed by scanning
 # the binary for its embedded go.etcd.io module versions: `v3.5.25`
-# (unchanged from 2.3.0 — see docs/hydra-2.4.1-release-evidence.md). Using
+# (unchanged from 2.3.0 — see docs/hydra-2.4.1-upgrade-runbook.md). Using
 # --use-system-etcd with a mismatched build risks subtle raft
 # incompatibilities. Declared here (before the first FROM) rather than next
 # to where it's consumed in the `binaries` stage below: a Dockerfile ARG's
