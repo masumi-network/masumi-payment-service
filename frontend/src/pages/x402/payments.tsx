@@ -3,22 +3,9 @@ import { ExternalLink } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { PaymentsTab } from '@/components/x402/PaymentsTab';
-import { X402SetupGuide } from '@/components/x402/X402SetupGuide';
-import { useAppContext } from '@/lib/contexts/AppContext';
-import { hasEvmChainLimit } from '@/lib/permissions';
-import { useX402NetworksForSession } from '@/lib/hooks/useX402';
+import { X402AdminPageExtras } from '@/components/x402/X402AdminPageExtras';
 
 export default function X402PaymentsPage() {
-  const { capabilities } = useAppContext();
-  const { networks: sessionChains, isLoading: chainsLoading } = useX402NetworksForSession({
-    silentErrors: true,
-  });
-  const showChainLimitHint =
-    !capabilities.canAdmin &&
-    !chainsLoading &&
-    sessionChains.length === 0 &&
-    !hasEvmChainLimit(capabilities.chainIdLimit);
-
   return (
     <MainLayout>
       <Head>
@@ -31,7 +18,7 @@ export default function X402PaymentsPage() {
             <p className="max-w-2xl text-sm text-muted-foreground">
               Transaction activity for the x402 (EVM) rail.{' '}
               <a
-                href="https://www.masumi.network/dev/masumi"
+                href={MASUMI_DEV_HUB_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"
@@ -42,14 +29,7 @@ export default function X402PaymentsPage() {
             </p>
           </div>
 
-          {capabilities.canAdmin && <X402SetupGuide />}
-
-          {showChainLimitHint && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-              This API key has no EVM chains in its chain limit, so no x402 chains or payment
-              activity can be shown. An admin can add the chain ids to the key.
-            </div>
-          )}
+          <X402AdminPageExtras />
 
           <PaymentsTab />
         </div>
