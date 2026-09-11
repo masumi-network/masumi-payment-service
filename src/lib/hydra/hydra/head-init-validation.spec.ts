@@ -233,6 +233,23 @@ describe('verifyHydraHeadInitOnChain', () => {
 		).resolves.toEqual({ initTxHash: INIT_TX_HASH, depositPeriodMilliseconds: null });
 	});
 
+	it('ignores a configured deposit period on a legacy 2.3 head, whose datum carries none', async () => {
+		const legacyHash = LEGACY_HYDRA_HEAD_SCRIPT_HASHES[0];
+		if (!legacyHash) throw new Error('no legacy head script hash configured');
+		// Every head with an invite row now passes its period through; a 2.3
+		// head has nothing on chain to compare it with and must not be refused.
+		await expect(
+			verifyHydraHeadInitOnChain({
+				observer: observer(openDatum({ legacy: true }), headAddressForScriptHash(legacyHash)),
+				headId: HEAD_ID,
+				expectedVerificationKeys: [LOCAL_KEY, REMOTE_KEY],
+				expectedParticipantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				contestationPeriodSeconds: CONTESTATION_SECONDS,
+				depositPeriodSeconds: 600n,
+			}),
+		).resolves.toEqual({ initTxHash: INIT_TX_HASH, depositPeriodMilliseconds: null });
+	});
+
 	// hydra-node 2.4 moved the deposit period on chain: OpenDatum gained a
 	// `depositPeriod` field between the contestation period and the version
 	// (Hydra.Contract.HeadState at tag 2.4.1), so a 2.4 head's datum has eight
