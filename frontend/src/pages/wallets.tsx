@@ -8,13 +8,18 @@ import {
   Send,
   MoreHorizontal,
   Settings2,
+  Trash2,
 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { patchPaymentSourceExtended } from '@/lib/api/generated';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -60,9 +65,26 @@ import { SearchInput } from '@/components/ui/search-input';
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
+  /** Carried over from the list item; the source this wallet actually belongs to. */
+  paymentSourceId: string;
   isLoadingBalance?: boolean;
   /** True when the balance fetch failed — render "—", not 0. */
   isBalanceUnavailable?: boolean;
+}
+
+// Deleting is a soft delete: nothing moves on chain, but the wallet and its
+// mnemonic are no longer reachable through the API afterwards.
+function getDeleteWalletDescription(wallet: WalletWithBalance | null): string {
+  const consequence =
+    'This does not move funds. After deletion the mnemonic can no longer be exported, so back it up first with Export Wallet in the wallet details.';
+  if (!wallet) return consequence;
+  if (wallet.isBalanceUnavailable) {
+    return `This wallet's balance could not be loaded, so check it before deleting.\n\n${consequence}`;
+  }
+  const holdsFunds = Number(wallet.balance || 0) > 0 || Number(wallet.usdcxBalance || 0) > 0;
+  return holdsFunds
+    ? `This wallet still holds funds. Transfer them out first.\n\n${consequence}`
+    : consequence;
 }
 
 export default function WalletsPage() {
@@ -96,7 +118,7 @@ export default function WalletsPage() {
   const routerSearched = typeof router.query.searched === 'string' ? router.query.searched : '';
   const [prevRouterSearched, setPrevRouterSearched] = useState(routerSearched);
 
-  const { network, selectedPaymentSource, capabilities } = useAppContext();
+  const { apiClient, network, selectedPaymentSource, capabilities } = useAppContext();
   const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -108,6 +130,36 @@ export default function WalletsPage() {
     useState<WalletWithBalance | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
+  const [selectedWalletForDeletion, setSelectedWalletForDeletion] =
+    useState<WalletWithBalance | null>(null);
+
+  // Selling and buying wallets are removed through their payment source, which
+  // refuses while the wallet has a transaction in flight. Fund wallets have their
+  // own guarded delete under "Manage funding". The request names the wallet's own
+  // source, not the selected one: the selection can change in the background, and
+  // the server answers a mismatched pair with success while removing nothing.
+  const deleteWallet = useApiMutation({
+    mutationFn: (wallet: WalletWithBalance) =>
+      patchPaymentSourceExtended({
+        client: apiClient,
+        body: {
+          id: wallet.paymentSourceId,
+          ...(wallet.type === 'Selling'
+            ? { RemoveSellingWallets: [{ id: wallet.id }] }
+            : { RemovePurchasingWallets: [{ id: wallet.id }] }),
+        },
+      }),
+    invalidateKeys: [
+      ['wallets'],
+      ['wallets-paginated'],
+      ['all-wallets'],
+      ['payment-source-wallets-all'],
+      ['payment-source-wallet-list'],
+      ['payment-sources-all'],
+    ],
+    errorMessage: 'Failed to delete wallet',
+    successMessage: 'Wallet deleted',
+  });
 
   const tabs = [
     { name: 'All', count: null },
@@ -393,8 +445,8 @@ export default function WalletsPage() {
                           )}
                         >
                           <div className="flex justify-end">
-                            {/* Every action here (fund, top up, transfer, swap) is an
-                                admin-only endpoint, so the whole menu is admin-gated. */}
+                            {/* Every action here (fund, top up, transfer, swap, delete) is
+                                an admin-only endpoint, so the whole menu is admin-gated. */}
                             {capabilities.canAdmin && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -443,6 +495,18 @@ export default function WalletsPage() {
                                       <ArrowLeftRight className="h-4 w-4" />
                                       Swap tokens
                                     </DropdownMenuItem>
+                                  )}
+                                  {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+                                        onSelect={() => setSelectedWalletForDeletion(wallet)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                        Delete wallet
+                                      </DropdownMenuItem>
+                                    </>
                                   )}
                                 </DropdownMenuContent>
                               </DropdownMenu>
@@ -507,6 +571,30 @@ export default function WalletsPage() {
           isOpen={!!selectedWalletForDetails}
           onClose={() => setSelectedWalletForDetails(null)}
           wallet={selectedWalletForDetails}
+        />
+
+        <ConfirmDialog
+          open={!!selectedWalletForDeletion}
+          onClose={() => setSelectedWalletForDeletion(null)}
+          title={
+            selectedWalletForDeletion
+              ? `Delete ${getWalletTypeLabel(selectedWalletForDeletion.type).toLowerCase()} wallet?`
+              : 'Delete wallet?'
+          }
+          description={getDeleteWalletDescription(selectedWalletForDeletion)}
+          onConfirm={() => {
+            if (!selectedWalletForDeletion) return;
+            // On success close the confirm; on failure (e.g. a transaction still in
+            // flight) keep it open so the toast is read. The mutation already toasted.
+            void deleteWallet
+              .mutateAsync(selectedWalletForDeletion)
+              .then(() => setSelectedWalletForDeletion(null))
+              .catch(() => {});
+          }}
+          isLoading={deleteWallet.isPending}
+          requireConfirmation
+          confirmationText="DELETE"
+          confirmLabel="Delete wallet"
         />
       </AnimatedPage>
     </MainLayout>
