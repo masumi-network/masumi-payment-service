@@ -77,6 +77,7 @@ function makeRecord(overrides: Partial<NodeRecord> = {}): NodeRecord {
 		peers: [],
 		contestationPeriodSeconds: 120,
 		depositPeriodSeconds: 600,
+		depositActivationSeconds: 600,
 		unsyncedPeriodSeconds: 300,
 		hydraVerificationKey: `5820${'ab'.repeat(32)}`,
 		cardanoVerificationKey: `5820${'cd'.repeat(32)}`,

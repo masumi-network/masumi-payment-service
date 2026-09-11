@@ -5,7 +5,7 @@ const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 /** Hydra release reviewed by this service. Override only as part of an upgrade. */
-export const DEFAULT_EXPECTED_HYDRA_VERSION = '2.3.0';
+export const DEFAULT_EXPECTED_HYDRA_VERSION = '2.4.1';
 
 /**
  * Hash of the reviewed preprod file committed at

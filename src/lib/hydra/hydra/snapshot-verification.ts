@@ -1,34 +1,29 @@
-import {
-	Address,
-	BaseAddress,
-	CredKind,
-	EnterpriseAddress,
-	FixedTransaction,
-	NativeScript,
-	PlutusScript,
-	PointerAddress,
-	type Credential,
-	type TransactionOutput,
-} from '@emurgo/cardano-serialization-lib-nodejs';
-import { blake2b } from 'ethereum-cryptography/blake2b.js';
-import { Constr, Data, type Data as LucidData } from 'lucid-cardano';
-import { createHash, createPublicKey, verify as verifyEd25519Signature } from 'node:crypto';
+import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { createPublicKey, verify as verifyEd25519Signature } from 'node:crypto';
 
 import { HydraProtocolError } from './errors';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './schemas';
 import { computeHydraAccumulatorHash } from './snapshot-accumulator';
-
-// Re-exported so the accumulator move stays invisible to importers: this module
-// is the public face of snapshot verification, and callers should not have to
-// know which half of it computes the commitment.
-export { computeHydraAccumulatorHash } from './snapshot-accumulator';
 import {
-	HydraScriptLanguage,
-	type HydraQuantity,
-	type HydraReferenceScript,
-	type HydraTransaction,
-	type HydraValue,
-} from './types';
+	serializeCardanoTransactionOutput,
+	serializeHydraSnapshotOutput,
+	type SnapshotUtxo,
+} from './snapshot-serialization';
+import { hydraSnapshotSignableBytes } from './snapshot-signable';
+
+// Re-exported so the moves stay invisible to importers: this module is the
+// public face of snapshot verification, and callers should not have to know
+// which half of it computes the commitment, serializes an output, or builds the
+// bytes a party signs.
+export { computeHydraAccumulatorHash } from './snapshot-accumulator';
+export {
+	serializeCardanoTransactionOutput,
+	serializeHydraSnapshotOutput,
+	type SnapshotOutput,
+	type SnapshotUtxo,
+} from './snapshot-serialization';
+export { hydraSnapshotSignableBytes } from './snapshot-signable';
+import type { HydraTransaction } from './types';
 import { hydraVerificationKeyRawHex } from './keys';
 export {
 	deriveHydraVerificationKeyCborHex,
@@ -38,19 +33,6 @@ export {
 } from './keys';
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
-
-type SnapshotOutput = {
-	address: string;
-	value: HydraValue;
-	referenceScript: HydraReferenceScript | null;
-	datumhash?: string | null;
-	inlineDatumhash?: string | null;
-	inlineDatum: unknown;
-	inlineDatumRaw: string | null;
-	datum: string | null;
-};
-
-type SnapshotUtxo = Record<string, SnapshotOutput>;
 
 export type HydraSnapshotVerificationFrame = {
 	headId: string;
@@ -64,6 +46,8 @@ export type HydraSnapshotVerificationFrame = {
 		utxo: SnapshotUtxo;
 		utxoToCommit: SnapshotUtxo | null;
 		utxoToDecommit: SnapshotUtxo | null;
+		/** Hydra 2.4: the deposit this snapshot approves; bound into the signature. */
+		depositTxId?: string | null;
 	};
 };
 
@@ -93,6 +77,20 @@ export type VerifiedHydraSnapshot = {
 	committedOutputs: Map<string, string>;
 	/** This snapshot's pending decommits (`utxoToDecommit`), keyed like `outputs`. */
 	decommitOutputs: Map<string, string>;
+	/**
+	 * Hydra 2.4: the on-chain deposit this snapshot's `committedOutputs` came
+	 * from, or `null`/`undefined` for a snapshot that declares none (including
+	 * every Hydra 2.3 snapshot, which never carried the field at all).
+	 *
+	 * Carried, authenticated, and deliberately not acted on: it is bound into
+	 * the signable bytes, so a forged value fails the multisignature, but no
+	 * acceptance decision reads it. `doesHydraTransactionTransitionReachSnapshot`
+	 * attributes commits by OUTPUT REFERENCE and says at length why refusing on
+	 * this field would add a way to take a live head offline without adding
+	 * security. It is here so a reader of a verified snapshot can see which
+	 * deposit the head named.
+	 */
+	depositTxId?: string | null;
 };
 
 export type VerifiedHydraFanoutReference = {
@@ -123,298 +121,6 @@ function parseFanoutReference(
 		return null;
 	}
 	return { txHash, outputIndex, snapshotNumber, serializedOutput };
-}
-
-function credentialToPlutusData(credential: Credential): Constr<LucidData> {
-	if (credential.kind() === CredKind.Key) {
-		const keyHash = credential.to_keyhash();
-		if (!keyHash) throw new HydraProtocolError('Hydra output contained an invalid key credential');
-		return new Constr(0, [keyHash.to_hex()]);
-	}
-	const scriptHash = credential.to_scripthash();
-	if (!scriptHash) throw new HydraProtocolError('Hydra output contained an invalid script credential');
-	return new Constr(1, [scriptHash.to_hex()]);
-}
-
-function addressToPlutusData(addressString: string): Constr<LucidData> {
-	let address: Address;
-	try {
-		address = /^(?:[0-9a-fA-F]{2})+$/.test(addressString)
-			? Address.from_bytes(Buffer.from(addressString, 'hex'))
-			: Address.from_bech32(addressString);
-	} catch (error) {
-		throw new HydraProtocolError('Hydra snapshot contained an invalid Cardano address', { cause: error });
-	}
-
-	const baseAddress = BaseAddress.from_address(address);
-	if (baseAddress) {
-		return new Constr(0, [
-			credentialToPlutusData(baseAddress.payment_cred()),
-			new Constr(0, [new Constr(0, [credentialToPlutusData(baseAddress.stake_cred())])]),
-		]);
-	}
-
-	const enterpriseAddress = EnterpriseAddress.from_address(address);
-	if (enterpriseAddress) {
-		return new Constr(0, [credentialToPlutusData(enterpriseAddress.payment_cred()), new Constr(1, [])]);
-	}
-
-	const pointerAddress = PointerAddress.from_address(address);
-	if (pointerAddress) {
-		const pointer = pointerAddress.stake_pointer();
-		return new Constr(0, [
-			credentialToPlutusData(pointerAddress.payment_cred()),
-			new Constr(0, [
-				new Constr(1, [
-					BigInt(pointer.slot_bignum().to_str()),
-					BigInt(pointer.tx_index_bignum().to_str()),
-					BigInt(pointer.cert_index_bignum().to_str()),
-				]),
-			]),
-		]);
-	}
-
-	throw new HydraProtocolError('Hydra snapshot contained an unsupported Byron or reward output address');
-}
-
-function valueToPlutusData(value: Map<string, Map<string, bigint>>): Map<LucidData, LucidData> {
-	const outer = new Map<LucidData, LucidData>();
-	for (const [policyId, assets] of value) {
-		const inner = new Map<LucidData, LucidData>();
-		for (const [assetName, quantity] of assets) {
-			if (quantity < 0n) throw new HydraProtocolError('Hydra output contained a negative asset quantity');
-			inner.set(assetName, quantity);
-		}
-		outer.set(policyId, inner);
-	}
-	return outer;
-}
-
-function hydraValueToBigIntMap(value: HydraValue): Map<string, Map<string, bigint>> {
-	const result = new Map<string, Map<string, bigint>>();
-	const lovelace = value.lovelace;
-	if (lovelace == null) {
-		throw new HydraProtocolError('Hydra output omitted or contained an invalid lovelace quantity');
-	}
-	const lovelaceQuantity = toExactNonNegativeQuantity(lovelace);
-	// Cardano's Plutus Value representation places the ADA currency symbol
-	// first, followed by ordered policy ids. Never inherit JSON property order:
-	// Zod/JSON producers may reconstruct an otherwise identical value object.
-	result.set('', new Map([['', lovelaceQuantity]]));
-	const policies = Object.entries(value)
-		.filter(([policyId]) => policyId !== 'lovelace')
-		.sort(([left], [right]) => Buffer.compare(Buffer.from(left, 'hex'), Buffer.from(right, 'hex')));
-	for (const [policyId, policyValue] of policies) {
-		if (policyValue == null) continue;
-		if (typeof policyValue === 'number' || typeof policyValue === 'bigint') {
-			throw new HydraProtocolError('Hydra output contained a numeric non-lovelace policy value');
-		}
-		if (!/^[0-9a-fA-F]{56}$/.test(policyId)) {
-			throw new HydraProtocolError('Hydra output contained an invalid policy identifier');
-		}
-		const assets = new Map<string, bigint>();
-		const orderedAssets = Object.entries(policyValue).sort(([left], [right]) =>
-			Buffer.compare(Buffer.from(left, 'hex'), Buffer.from(right, 'hex')),
-		);
-		for (const [assetName, quantity] of orderedAssets) {
-			if (!/^(?:[0-9a-fA-F]{2}){0,32}$/.test(assetName)) {
-				throw new HydraProtocolError('Hydra output contained an invalid native asset');
-			}
-			assets.set(assetName.toLowerCase(), toExactNonNegativeQuantity(quantity));
-		}
-		result.set(policyId.toLowerCase(), assets);
-	}
-	return result;
-}
-
-function toExactNonNegativeQuantity(quantity: HydraQuantity): bigint {
-	if (typeof quantity === 'number' && !Number.isSafeInteger(quantity)) {
-		throw new HydraProtocolError('Hydra output contained an inexact asset quantity');
-	}
-	const integer = BigInt(quantity);
-	if (integer < 0n) throw new HydraProtocolError('Hydra output contained a negative asset quantity');
-	return integer;
-}
-
-function transactionValueToBigIntMap(output: TransactionOutput): Map<string, Map<string, bigint>> {
-	const value = output.amount();
-	const result = new Map<string, Map<string, bigint>>([['', new Map([['', BigInt(value.coin().to_str())]])]]);
-	const multiAsset = value.multiasset();
-	if (!multiAsset) return result;
-	const policies = multiAsset.keys();
-	for (let policyIndex = 0; policyIndex < policies.len(); policyIndex++) {
-		const policy = policies.get(policyIndex);
-		const policyAssets = multiAsset.get(policy);
-		if (!policyAssets) throw new HydraProtocolError('Hydra transaction output contained an invalid multi-asset value');
-		const assets = new Map<string, bigint>();
-		const assetNames = policyAssets.keys();
-		for (let assetIndex = 0; assetIndex < assetNames.len(); assetIndex++) {
-			const assetName = assetNames.get(assetIndex);
-			const quantity = policyAssets.get(assetName);
-			if (!quantity) throw new HydraProtocolError('Hydra transaction output omitted an asset quantity');
-			assets.set(Buffer.from(assetName.name()).toString('hex'), BigInt(quantity.to_str()));
-		}
-		result.set(policy.to_hex(), assets);
-	}
-	return result;
-}
-
-function referenceScriptHash(referenceScript: HydraReferenceScript): string {
-	const scriptBytes = Buffer.from(referenceScript.script.cborHex, 'hex');
-	try {
-		switch (referenceScript.script.type) {
-			case HydraScriptLanguage.SimpleScript:
-				return NativeScript.from_bytes(scriptBytes).hash().to_hex();
-			case HydraScriptLanguage.PlutusScriptV1:
-				return PlutusScript.from_bytes(scriptBytes).hash().to_hex();
-			case HydraScriptLanguage.PlutusScriptV2:
-				return PlutusScript.from_bytes_v2(scriptBytes).hash().to_hex();
-			case HydraScriptLanguage.PlutusScriptV3:
-				return PlutusScript.from_bytes_v3(scriptBytes).hash().to_hex();
-		}
-	} catch (error) {
-		throw new HydraProtocolError('Hydra output contained an invalid reference script', { cause: error });
-	}
-}
-
-function datumToPlutusData(output: SnapshotOutput): Constr<LucidData> {
-	if (output.inlineDatumRaw != null) {
-		if (output.datumhash != null) {
-			throw new HydraProtocolError('Hydra output contained both a datum hash and an inline datum');
-		}
-		let inlineDatum: LucidData;
-		try {
-			inlineDatum = Data.from(output.inlineDatumRaw);
-		} catch (error) {
-			throw new HydraProtocolError('Hydra output contained invalid inline datum CBOR', { cause: error });
-		}
-		const canonicalDatum = Data.to(inlineDatum);
-		if (
-			output.inlineDatumhash != null &&
-			Buffer.from(blake2b(Buffer.from(canonicalDatum, 'hex'), 32)).toString('hex') !==
-				output.inlineDatumhash.toLowerCase()
-		) {
-			throw new HydraProtocolError('Hydra inline datum hash did not match its canonical datum bytes');
-		}
-		return new Constr(2, [inlineDatum]);
-	}
-	if (output.inlineDatum != null || output.inlineDatumhash != null) {
-		throw new HydraProtocolError('Hydra output exposed inline datum metadata without canonical inlineDatumRaw bytes');
-	}
-	if (output.datumhash != null) return new Constr(1, [output.datumhash.toLowerCase()]);
-	return new Constr(0, []);
-}
-
-export function serializeHydraSnapshotOutput(output: SnapshotOutput): string {
-	const scriptHash =
-		output.referenceScript == null
-			? new Constr<LucidData>(1, [])
-			: new Constr(0, [referenceScriptHash(output.referenceScript)]);
-	return Data.to(
-		new Constr(0, [
-			addressToPlutusData(output.address),
-			valueToPlutusData(hydraValueToBigIntMap(output.value)),
-			datumToPlutusData(output),
-			scriptHash,
-		]),
-	);
-}
-
-export function serializeCardanoTransactionOutput(output: TransactionOutput): string {
-	const datumHash = output.data_hash();
-	const inlineDatum = output.plutus_data();
-	if (datumHash && inlineDatum) {
-		throw new HydraProtocolError('Hydra transaction output contained two datum representations');
-	}
-	const datum = inlineDatum
-		? new Constr<LucidData>(2, [Data.from(Buffer.from(inlineDatum.to_bytes()).toString('hex'))])
-		: datumHash
-			? new Constr<LucidData>(1, [datumHash.to_hex()])
-			: new Constr<LucidData>(0, []);
-	const scriptRef = output.script_ref();
-	let scriptHash: Constr<LucidData>;
-	if (!scriptRef) {
-		scriptHash = new Constr(1, []);
-	} else if (scriptRef.is_native_script()) {
-		const nativeScript = scriptRef.native_script();
-		if (!nativeScript) throw new HydraProtocolError('Hydra transaction output had an invalid native script reference');
-		scriptHash = new Constr(0, [nativeScript.hash().to_hex()]);
-	} else {
-		const plutusScript = scriptRef.plutus_script();
-		if (!plutusScript) throw new HydraProtocolError('Hydra transaction output had an invalid Plutus script reference');
-		scriptHash = new Constr(0, [plutusScript.hash().to_hex()]);
-	}
-	return Data.to(
-		new Constr(0, [
-			addressToPlutusData(output.address().to_bech32()),
-			valueToPlutusData(transactionValueToBigIntMap(output)),
-			datum,
-			scriptHash,
-		]),
-	);
-}
-
-function compareOutputReferences(left: string, right: string): number {
-	const [leftHash, leftIndex] = left.split('#');
-	const [rightHash, rightIndex] = right.split('#');
-	const hashComparison = Buffer.compare(Buffer.from(leftHash, 'hex'), Buffer.from(rightHash, 'hex'));
-	if (hashComparison !== 0) return hashComparison;
-	return Number(leftIndex) - Number(rightIndex);
-}
-
-function hashPendingUtxo(utxo: SnapshotUtxo | null): Buffer {
-	const serializedOutputs = Object.entries(utxo ?? {})
-		.sort(([left], [right]) => compareOutputReferences(left, right))
-		.map(([, output]) => Buffer.from(serializeHydraSnapshotOutput(output), 'hex'));
-	return createHash('sha256').update(Buffer.concat(serializedOutputs)).digest();
-}
-
-function cborUnsigned(value: number): Buffer {
-	if (!Number.isSafeInteger(value) || value < 0)
-		throw new HydraProtocolError('Hydra snapshot integer was out of range');
-	if (value < 24) return Buffer.from([value]);
-	if (value <= 0xff) return Buffer.from([0x18, value]);
-	if (value <= 0xffff) {
-		const result = Buffer.alloc(3);
-		result[0] = 0x19;
-		result.writeUInt16BE(value, 1);
-		return result;
-	}
-	if (value <= 0xffffffff) {
-		const result = Buffer.alloc(5);
-		result[0] = 0x1a;
-		result.writeUInt32BE(value, 1);
-		return result;
-	}
-	const result = Buffer.alloc(9);
-	result[0] = 0x1b;
-	result.writeBigUInt64BE(BigInt(value), 1);
-	return result;
-}
-
-function cborBytes(bytes: Buffer): Buffer {
-	if (bytes.length < 24) return Buffer.concat([Buffer.from([0x40 + bytes.length]), bytes]);
-	if (bytes.length <= 0xff) return Buffer.concat([Buffer.from([0x58, bytes.length]), bytes]);
-	throw new HydraProtocolError('Hydra signed snapshot byte string exceeded the supported CBOR size');
-}
-
-export function hydraSnapshotSignableBytes(frame: HydraSnapshotVerificationFrame): Buffer {
-	const snapshot = frame.snapshot;
-	const totalOutputCount =
-		Object.keys(snapshot.utxo).length +
-		Object.keys(snapshot.utxoToCommit ?? {}).length +
-		Object.keys(snapshot.utxoToDecommit ?? {}).length;
-	if (totalOutputCount > MAX_HYDRA_SNAPSHOT_OUTPUTS) {
-		throw new HydraProtocolError(`Hydra snapshot exceeded the ${MAX_HYDRA_SNAPSHOT_OUTPUTS}-output KZG limit`);
-	}
-	return Buffer.concat([
-		cborBytes(Buffer.from(snapshot.headId, 'hex')),
-		cborUnsigned(snapshot.version),
-		cborUnsigned(snapshot.number),
-		cborBytes(Buffer.from(snapshot.accumulator, 'hex')),
-		cborBytes(hashPendingUtxo(snapshot.utxoToDecommit)),
-		cborBytes(hashPendingUtxo(snapshot.utxoToCommit)),
-	]);
 }
 
 function canonicalSnapshotOutputs(snapshot: HydraSnapshotVerificationFrame['snapshot']): Map<string, string> {
@@ -589,6 +295,7 @@ export function verifyHydraSnapshot(
 		outputMultiset: outputMultiset(outputs.values()),
 		committedOutputs: partitionOutputReferences(frame.snapshot.utxoToCommit),
 		decommitOutputs: partitionOutputReferences(frame.snapshot.utxoToDecommit),
+		depositTxId: frame.snapshot.depositTxId ?? null,
 	};
 }
 
@@ -625,6 +332,38 @@ export function doesHydraTransactionTransitionReachSnapshot(
 	transactions: readonly HydraTransaction[],
 ): boolean {
 	if (previous.headId !== current.headId || current.number !== previous.number + 1) return false;
+	// Hydra 2.4: `depositTxId` names the on-chain deposit `committedOutputs`
+	// came from. Nothing here refuses on it, and that is deliberate in BOTH
+	// directions.
+	//
+	// An earlier revision of this upgrade refused the shape "depositTxId set
+	// with no pending commit". That was removed: upstream models `utxoToCommit`
+	// and `depositTxId` as INDEPENDENT `Maybe`s (see the signable
+	// representation, which defends each separately with `fromMaybe mempty` and
+	// `foldMap`), so the combination is not proven impossible, and no recorded
+	// 2.4.1 history exists to prove it never occurs. Refusing it changed no
+	// acceptance decision either — with no committed outputs there are no
+	// commit allowances to derive, so the per-reference conservation accounting
+	// below evaluates identically — while adding a way for one unmodelled frame
+	// to reject a head's history permanently, since replay restarts from the
+	// beginning on every reconnect.
+	//
+	// Nothing here refuses a committed
+	// output reference that stays pending across snapshots while being
+	// re-attributed to a DIFFERENT depositTxId. `depositTxId` is verified — it
+	// is bound into the signature (see hydraSnapshotSignableBytes) and cannot
+	// be forged independently of the multiSignature — but it is deliberately
+	// not load-bearing for attribution: this service already attributes
+	// escrows by OUTPUT REFERENCE, not by deposit id, so re-attribution buys
+	// no additional security here. ADR 0012 records that an over-tight
+	// transition check has twice taken a live head offline — no verified
+	// session, no head clock, every L2 operation failing closed while the head
+	// still reports Open — for a cost far higher than the low value a
+	// re-attribution refusal would add. The recorded 2.4.1 preprod history
+	// (recorded-head-history-2.4.1.json: two increments, one decommit, a full
+	// lifecycle) shows no re-attribution, but one head is not proof it never
+	// legitimately occurs; revisit only with more recordings, never by tightening
+	// against a single one.
 	try {
 		const createdOutputs = new Map<string, string>();
 		const spentReferences = new Set<string>();

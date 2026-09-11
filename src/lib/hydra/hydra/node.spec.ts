@@ -48,7 +48,7 @@ const mockConnectionUrls: string[] = [];
 const mockLoggerError = jest.fn();
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { error: mockLoggerError },
+	logger: { error: mockLoggerError, warn: jest.fn(), info: jest.fn() },
 }));
 
 jest.unstable_mockModule('./connection', () => ({
@@ -1688,6 +1688,94 @@ describe('HydraNode', () => {
 			await expect(node.init()).resolves.toBeUndefined();
 			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
 		});
+
+		/**
+		 * hydra-node parks commands while it is catching up with the chain
+		 * (`WaitOnNodeInSync`) and is meant to release them on `NodeSynced`.
+		 * Observed live 2026-09-07 on preprod: Init sent to a node whose Greetings
+		 * said `CatchingUp`, `NodeSynced` 49s later, and then nothing — no InitTx
+		 * posted, no `PostTxOnChainFailed`, no frame at all, until the 300s
+		 * observe timeout raised an ambiguous error for a transaction that had
+		 * never been sent. So Init is not handed to a node that has said it is
+		 * behind; it waits for the node to report synced first. Unknown sync
+		 * state (no Greetings yet) sends as before — only a positive "behind" holds.
+		 */
+		it('holds Init while the node reports CatchingUp and sends it on NodeSynced', async () => {
+			jest.useFakeTimers();
+			try {
+				const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+				node.connect();
+				mockConnectionInstance.emit(
+					'message',
+					JSON.stringify({ tag: 'Greetings', headStatus: 'Idle', chainSyncedStatus: 'CatchingUp' }),
+				);
+				mockConnectionInstance.send.mockClear();
+
+				const initPromise = node.init();
+				// Well inside the sync budget: still behind, still held.
+				await jest.advanceTimersByTimeAsync(5_000);
+				expect(mockConnectionInstance.send).not.toHaveBeenCalledWith({ tag: 'Init' });
+
+				mockConnectionInstance.emit(
+					'message',
+					JSON.stringify({ tag: 'NodeSynced', chainSlot: 1807, chainTime: '2026-09-07T08:16:46Z', drift: 1.48 }),
+				);
+				// One poll interval is enough for the watcher to see the transition.
+				await jest.advanceTimersByTimeAsync(1_000);
+				expect(mockConnectionInstance.send).toHaveBeenCalledWith({ tag: 'Init' });
+
+				mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing', headId: HEAD_ID_A }));
+				await expect(initPromise).resolves.toBeUndefined();
+			} finally {
+				jest.useRealTimers();
+			}
+		});
+
+		it('tracks the sync state Init gates on: unknown until Greetings, then the transitions', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			expect(node.isChainSynced()).toBeUndefined();
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Idle', chainSyncedStatus: 'InSync' }),
+			);
+			expect(node.isChainSynced()).toBe(true);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'NodeUnsynced', chainSlot: 1790, chainTime: '2026-09-07T08:16:29Z', drift: 18.45 }),
+			);
+			expect(node.isChainSynced()).toBe(false);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'NodeSynced', chainSlot: 1807, chainTime: '2026-09-07T08:16:46Z', drift: 1.48 }),
+			);
+			expect(node.isChainSynced()).toBe(true);
+		});
+
+		it('refuses to send Init to a node that stays behind the chain, as not-dispatched', async () => {
+			jest.useFakeTimers();
+			try {
+				const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+				node.connect();
+				mockConnectionInstance.emit(
+					'message',
+					JSON.stringify({ tag: 'Greetings', headStatus: 'Idle', chainSyncedStatus: 'CatchingUp' }),
+				);
+				mockConnectionInstance.send.mockClear();
+
+				const initPromise = node.init();
+				const outcome = expect(initPromise).rejects.toBeInstanceOf(HydraTransportError);
+				await jest.advanceTimersByTimeAsync(HydraNode.INIT_SYNC_WAIT_MS + 1000);
+				await outcome;
+				// Nothing was ever handed to the socket, so there is nothing to reconcile.
+				expect(mockConnectionInstance.send).not.toHaveBeenCalledWith({ tag: 'Init' });
+			} finally {
+				jest.useRealTimers();
+			}
+		});
 	});
 
 	describe('close()', () => {
@@ -1822,6 +1910,38 @@ describe('HydraNode', () => {
 			} as Response);
 
 			await expect(node.post('/commit', {})).rejects.toThrow('Hydra HTTP request failed with 400 Bad Request');
+		});
+
+		// 2.4.1's POST /commit dry-runs the increment and can reject with
+		// DepositTooLarge. Without the node's own tag in the message, every 4xx
+		// commit refusal read identically as "Hydra HTTP request failed with 400
+		// Bad Request" — indistinguishable from an oversized deposit, a stale
+		// draft, or a malformed request, and that generic text is exactly what
+		// reaches the operator via `HydraTopup`'s recorded head error.
+		// The body is the one a real 2.4.1 node returned, not a hand-written {tag}:
+		// recorded 2026-09-07 from `POST /commit` on a live devnet head whose
+		// merged head output would have exceeded maxValueSize (the deposit carried
+		// 120 native assets on top of the 120 already in the head). Keeping the
+		// four size fields here proves the reason survives a full body rather than
+		// only the one-key shape the modelled test used to assert.
+		it('post() names the node-reported reason for a 400 rejection, e.g. DepositTooLarge', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			mockFetch.mockResolvedValue({
+				ok: false,
+				status: 400,
+				statusText: 'Bad Request',
+				json: async () => ({
+					estimatedTxSize: 12021,
+					estimatedValueSize: 8576,
+					maximumTxSize: 16384,
+					maximumValueSize: 5000,
+					tag: 'DepositTooLarge',
+				}),
+			} as Response);
+
+			await expect(node.post('/commit', {})).rejects.toThrow(
+				'Hydra HTTP request failed with 400 Bad Request (DepositTooLarge)',
+			);
 		});
 
 		it('post() treats response transport failures after dispatch as ambiguous', async () => {

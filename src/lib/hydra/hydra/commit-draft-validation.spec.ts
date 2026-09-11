@@ -45,7 +45,12 @@ const HEAD_ID = '22cc3e117a6e471dd7a34cfa8d0ae7ba057068ddf01c44a97513ec03';
 const COMMIT_ADDRESS =
 	'addr_test1qp6ctf8vcjxzd53et7p0hlqyncn59stnfd4g8mp978v33r6dlzjvt4s2t6wn3v993pu9aea4h3z0jeyn6lsvw6hugtesfx55dd';
 const NODE_CHANGE_ADDRESS = 'addr_test1vp6ctf8vcjxzd53et7p0hlqyncn59stnfd4g8mp978v33rca69gdx';
-const DEPOSIT_ADDRESS = 'addr_test1wrrcaryjq4epavl0gsg08kuuv95l5md5jlpyvswjnss998qyu7lhm';
+const DEPOSIT_ADDRESS = EnterpriseAddress.new(
+	0,
+	Credential.from_scripthash(ScriptHash.from_hex(DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH)),
+)
+	.to_address()
+	.to_bech32();
 const OTHER_SCRIPT_ADDRESS = 'addr_test1wq4erflxvet45fr9hrrldflevr2cwr83x622vlejzhspf3gn6jry8';
 const NOW_MS = 1_784_735_000_000;
 const SLOT_CONFIG = {
@@ -217,8 +222,31 @@ describe('validateHydraCommitDraft', () => {
 		);
 	});
 
+	// Regression for the 2.4.1 upgrade: the node now caps a deposit tx's own
+	// validity window at min(200s, depositPeriod/2) — 200s at our deployed
+	// periods — versus 2.3's much looser bound, and the deadline itself is now
+	// `deposit + depositActivation + 2*depositPeriod` rather than `deposit +
+	// 3*depositPeriod`. Neither change requires touching this validator: the
+	// existing ±5min (DEADLINE_CLOCK_SKEW_MS) acceptance window comfortably
+	// contains the new 200s cap, and the deadline-precedence check only needs
+	// the TTL to land before whatever deadline the datum states. A draft shaped
+	// exactly like a real 2.4.1 one — TTL ~200s ahead of now, deadline at
+	// `now + activation(600s) + 2*DP(600s)` on preprod — must still be accepted
+	// unchanged.
+	it('accepts a 2.4.1-shaped draft: TTL near the new 200s node cap, deadline at deposit+activation+2*DP', () => {
+		const ttlSlot = SLOT_CONFIG.zeroSlot + 200; // ~200s ahead of now, hydra 2.4.1's maxGraceTime cap
+		const depositPeriodSeconds = 600; // preprod
+		const depositActivationSeconds = 600; // preprod default (== DP, see F2 ruling)
+		const deadlineMs = NOW_MS + (depositActivationSeconds + 2 * depositPeriodSeconds) * 1000;
+
+		const result = validate(buildDraft({ ttl: ttlSlot, deadlineMs }));
+
+		expect(result.deadlineMs).toBe(deadlineMs);
+		expect(result.invalidHereafterSlot).toBe(BigInt(ttlSlot));
+	});
+
 	it('pins the trusted deposit script catalogue hash', () => {
-		expect(DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH).toBe('c78e8c9205721eb3ef4410f3db9c6169fa6db497c24641d29c20529c');
+		expect(DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH).toBe('eafae2c32f99ab347c7bb15961e0e84c74305f9088c1a7b8abf88e7f');
 	});
 });
 

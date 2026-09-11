@@ -39,8 +39,9 @@ cannot come back.
 | **ADA in a purchasing wallet**       | For the funds you put in the head, plus about 30 ADA per head for its node to pay the on-chain fees (topped back up whenever it falls under 15).                                                         |
 | **A counterparty who also runs one** | Both sides need a node. There is no one-sided head.                                                                                                                                                      |
 
-Both nodes must run the **same `hydra-node` version** (2.3.0 at the time of
-writing) and the **same ledger protocol parameters**. Mismatched versions
+Both nodes must run the **same `hydra-node` version** (2.4.1 at the time of
+writing; see [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)
+to move from 2.3.0) and the **same ledger protocol parameters**. Mismatched versions
 produce script hashes that do not agree, and the head never opens. The node
 details dialog shows both, which is the first thing to compare when a head will
 not open.
@@ -175,7 +176,7 @@ the check fails, and the readings appear under **Details → Version and hashes*
 
 | Variable                                      | Where the value comes from                                                                                                       |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `HYDRA_EXPECTED_VERSION`                      | **Details → Version**, copied exactly. Official `hydra-node` builds report `2.3.0-<git sha>`; a bare `2.3.0` does not match one. |
+| `HYDRA_EXPECTED_VERSION`                      | **Details → Version**, copied exactly. Official `hydra-node` builds report `2.4.1-<git sha>`; a bare `2.4.1` does not match one. |
 | `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH`        | **Details → Scripts**, via the copy button.                                                                                      |
 | `HYDRA_EXPECTED_LEDGER_PARAMS_HASH_<NETWORK>` | Already set for preprod. Do not copy this one from the Host: point the Host at the reviewed file instead (below).                |
 
@@ -473,5 +474,6 @@ phase asserts and the opt-in phase that opens a real head on preprod.
 - [hydra-architecture.md](hydra-architecture.md) — how the pieces fit together
 - [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md) — deploying on a droplet, without compose
 - [hydra-host-native-mode.md](hydra-host-native-mode.md) — running without a container
+- [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md) — moving Hosts and services from hydra-node 2.3.0 to 2.4.1
 - [hydra-l2-reservation-recovery.md](hydra-l2-reservation-recovery.md) — why L2 reservations are held
 - [adr/0011-head-invites-on-a-host-exchange-plane.md](adr/0011-head-invites-on-a-host-exchange-plane.md) — why invites work the way they do

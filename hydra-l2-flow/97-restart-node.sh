@@ -51,10 +51,10 @@ rm -f "$persist/bin/etcd"
     --cardano-verification-key "$PREPROD_DIR/$other_cvk" \
     --ledger-protocol-parameters "$PREPROD_DIR/protocol-parameters.json" \
     --blockfrost "$PREPROD_DIR/blockfrost.txt" \
-    --blockfrost-query-timeout 10 \
     --persistence-dir "$persist" \
     --contestation-period 220s \
     --deposit-period "${DEPOSIT_PERIOD:-300s}" \
+    --deposit-activation "${DEPOSIT_ACTIVATION:-${DEPOSIT_PERIOD:-300s}}" \
     --unsynced-period 1800s \
     ${FROM:+--start-chain-from "$FROM"} \
     >>"$STATE/node$IDX.log" 2>&1 ) &

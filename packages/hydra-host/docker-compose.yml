@@ -70,6 +70,16 @@ services:
       # hydra-node as --blockfrost, which reads the file itself.
       BLOCKFROST_PROJECT_FILE: /run/secrets/blockfrost.txt
 
+      # Transaction ids of a Hydra script set published with
+      # `hydra-node publish-scripts`, comma separated. Empty means `--network`,
+      # which resolves upstream's own pre-published scripts. Set it on preprod:
+      # upstream's preprod publication is REPORTED to be unreadable through the
+      # 2.4.1 Blockfrost client, which dies on it with
+      # `BlockfrostClientError AssetNameMissing` seconds after boot, naming
+      # neither the scripts nor this variable. That cost a settle run on
+      # 2026-09-07. See docs/hydra-2.4.1-upgrade-runbook.md.
+      HYDRA_HOST_SCRIPTS_TX_IDS: ${HYDRA_HOST_SCRIPTS_TX_IDS:-}
+
       HYDRA_HOST_PEER_PORT_START: '5001'
       HYDRA_HOST_PEER_PORT_COUNT: '32'
 

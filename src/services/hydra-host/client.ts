@@ -210,7 +210,12 @@ export async function provisionNodeOnHost(
 	baseUrl: string,
 	adminToken: string,
 	idempotencyKey: string,
-	options: { contestationPeriodSeconds?: number; depositPeriodSeconds?: number; unsyncedPeriodSeconds?: number },
+	options: {
+		contestationPeriodSeconds?: number;
+		depositPeriodSeconds?: number;
+		unsyncedPeriodSeconds?: number;
+		depositActivationSeconds?: number;
+	},
 	transport: HostTransportOptions,
 ): Promise<ProvisionedNode> {
 	const body = await request(baseUrl, '/v1/nodes', adminToken, transport, {

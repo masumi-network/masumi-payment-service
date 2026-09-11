@@ -7,11 +7,14 @@ is not.
 ## Why there is no container on macOS
 
 The image bakes `hydra-node` — that is the whole point of it, since the Host's
-job is to supervise one `hydra-node` process per Head. Upstream publishes
-exactly two builds:
+job is to supervise one `hydra-node` process per Head. Upstream builds exactly
+two targets:
 
-- `hydra-x86_64-linux-<version>.zip`
-- `hydra-aarch64-darwin-<version>.zip`
+- `x86_64-linux`
+- `aarch64-darwin`
+
+Through 2.3.0 both shipped as release zips. 2.4.1 attaches none, so the binary
+comes from the tag's own CI run instead, which step 1 below covers.
 
 There is no `aarch64-linux` build, and the official image
 `ghcr.io/cardano-scaling/hydra-node:<version>` is a single `linux/amd64`
@@ -61,26 +64,50 @@ Two arm64 cases, and they are not the same problem:
 
 ### 1. Fetch `hydra-node`
 
+2.4.1 publishes no release assets, so there is no zip to download and no
+upstream checksum to check one against (VERIFIED: `gh release view 2.4.1 --repo
+cardano-scaling/hydra --json assets` returns `{"assets":[]}`; 2.4.0 is REPORTED to behave
+the same and was not checked). The binary comes from the aarch64-darwin
+artifact of the tag's own Binaries CI run instead. The fetch script handles
+both cases, so use it rather than hand-rolling a `curl`:
+
 ```bash
-(
-set -e
-HYDRA_VERSION=2.3.0
-HYDRA_SHA256=a9074d0b69cc7104ccad672c942da7c0c695b4dbdff5002fd503904fe24ad528
-curl --proto '=https' --tlsv1.2 -fsSL -o hydra.zip \
-  "https://github.com/cardano-scaling/hydra/releases/download/${HYDRA_VERSION}/hydra-aarch64-darwin-${HYDRA_VERSION}.zip"
-printf '%s  %s\n' "$HYDRA_SHA256" hydra.zip | shasum -a 256 -c -
-unzip -j hydra.zip -d .bin
-chmod +x .bin/hydra-node
-.bin/hydra-node --version
-)
+NETWORK=preprod HYDRA_VERSION=2.4.1 ./hydra-l2-flow/hydra-native.sh bin
 ```
 
-The checksum above is the SHA-256 digest reported by the official Hydra 2.3.0
-release API on 2026-09-04. Review and replace both the version and digest
-together when upgrading.
+`NETWORK` is not optional here. The script defaults it to `devnet`, and a
+devnet run refuses to start without a `cardano-scaling/hydra` demo checkout
+beside this repo, which has nothing to do with fetching a binary. Omitting it
+fails with `hydra demo dir not found (set HYDRA_DEMO_DIR)` before the fetch
+begins.
+
+It downloads through `gh`, so install the GitHub CLI and authenticate it first.
+Both paths read from `cardano-scaling/hydra`.
+
+The script tries the release asset first, in case upstream resumes attaching
+one, and checks it against `HYDRA_RELEASE_SHA256`. That digest is pinned in the
+script for 2.3.0 only. A future tag that ships a zip therefore needs you to
+supply it: the script downloads the zip first and refuses to install it after,
+so an unpinned digest costs you the transfer, not just the install. When there
+is no asset the script falls back to the CI artifact and checks the extracted
+binary against `HYDRA_BINARY_SHA256`, which is pinned for 2.4.1. That path
+checks the digest is present before it downloads. Upstream publishes no digest
+for a CI artifact, so the value was measured locally. Re-pin it when you move
+`HYDRA_VERSION`.
+
+The binary lands at `hydra-l2-flow/.bin/hydra-node`. An existing binary at that
+path is left alone: the script returns early rather than upgrading it, and
+prints nothing at all when it does. Silence therefore means the fetch replaced
+nothing, so check the version yourself:
+
+```bash
+./hydra-l2-flow/.bin/hydra-node --version
+```
 
 Both sides of a head must run the same version, so pin it rather than tracking
-latest.
+latest. An upgrade from 2.3.0 has prerequisites that you cannot meet
+afterwards. See
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md).
 
 ### 2. Start the Host
 
@@ -90,13 +117,28 @@ HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
 HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
-HYDRA_NODE_BIN="$PWD/.bin/hydra-node" \
+HYDRA_NODE_BIN="$PWD/hydra-l2-flow/.bin/hydra-node" \
 HYDRA_HOST_DATA_DIR="$PWD/.hydra-data" \
 BLOCKFROST_PROJECT_FILE="$PWD/blockfrost.txt" \
 HYDRA_HOST_LEDGER_PARAMS_FILE="$PWD/packages/hydra-host/params/preprod.json" \
+HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
 HYDRA_HOST_USE_SYSTEM_ETCD=false \
 pnpm exec tsx packages/hydra-host/src/index.ts
 ```
+
+`HYDRA_HOST_SCRIPTS_TX_IDS` carries a Hydra script set you published yourself
+with `hydra-node publish-scripts`. On 2.4.1 preprod the Host cannot fall back to
+upstream's published set: the node then dies seconds after boot with
+`BlockfrostClientError AssetNameMissing`, an error that names neither the
+scripts nor this variable (REPORTED, see
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)). Leave it out
+only on a version that can read the upstream set.
+
+Keep the quotes when you substitute. Pasted unchanged, the quoted placeholder
+reaches the config parser and is refused by name:
+`HYDRA_HOST_SCRIPTS_TX_IDS must be comma-separated 64-character hex
+transaction ids`. Unquoted, the shell reads the angle brackets as redirects and
+the Host never starts.
 
 The loopback Exchange Plane URL is for a local native run. A reachable Host
 must use its public HTTPS Exchange Plane URL.

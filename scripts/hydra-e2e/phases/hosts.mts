@@ -61,8 +61,8 @@ export async function checkCapabilities(hosts: RunningHost[]): Promise<void> {
 
 		equals(`${host.spec.name} capabilities responds 200`, result.status, 200);
 		check(
-			`${host.spec.name} reports hydra 2.3.0`,
-			(body.hydraVersion ?? '').startsWith('2.3.0'),
+			`${host.spec.name} reports hydra 2.4.1`,
+			(body.hydraVersion ?? '').startsWith('2.4.1'),
 			body.hydraVersion ?? '(none)',
 		);
 		check(`${host.spec.name} probed the binary without error`, body.probeError == null, String(body.probeError));
