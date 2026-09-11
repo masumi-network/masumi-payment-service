@@ -14,7 +14,7 @@ import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { formatDateTime } from '@/lib/format-date';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import formatBalance from '@/lib/formatBalance';
+import { formatLovelaceAsAda } from '@/lib/format-lovelace-display';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
@@ -49,10 +49,6 @@ const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): string => {
       return status;
   }
 };
-
-function formatLovelaceToAda(amount: string) {
-  return `${formatBalance((parseInt(amount, 10) / 1000000).toFixed(2))} ADA`;
-}
 
 export function InboxAgentDetailsDialog({
   agent,
@@ -243,7 +239,7 @@ export function InboxAgentDetailsDialog({
                         <div className="font-medium mb-1">Holding wallet funding</div>
                         <div className="text-muted-foreground">
                           {agent.sendFundingLovelace
-                            ? formatLovelaceToAda(agent.sendFundingLovelace)
+                            ? formatLovelaceAsAda(agent.sendFundingLovelace)
                             : 'Default minimum'}
                         </div>
                       </div>
