@@ -14,7 +14,9 @@ const tableActionsGradientHover =
 const tableActionsHeadTypography =
   'text-right text-sm font-medium text-muted-foreground whitespace-nowrap';
 
-const tableActionsCellShared = `${tableActionsSticky} ${tableActionsGradientDefault} ${tableActionsGradientHover} transition-[background] duration-150`;
+const tableActionsCellAlignment = 'flex items-center justify-end';
+
+const tableActionsCellShared = `${tableActionsSticky} ${tableActionsGradientDefault} ${tableActionsGradientHover} transition-[background] duration-150 ${tableActionsCellAlignment}`;
 
 export const tableActionsHeadClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-48 min-w-48 p-4 pr-4 ${tableActionsHeadTypography}`;
 
@@ -29,6 +31,6 @@ export const tableActionsCellCompactLowBalanceHoverClass =
 
 export const tableActionsHeadWideClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-64 min-w-64 p-4 pr-4 ${tableActionsHeadTypography}`;
 
-export const tableActionsCellWideClass = `${tableActionsCellShared} w-64 min-w-64 p-4 pr-4 text-right`;
+export const tableActionsCellWideClass = `${tableActionsCellShared} w-64 min-w-64 p-4 pr-4`;
 
-export const tableActionsCellWideDestructiveClass = `${tableActionsSticky} ${tableActionsGradientDestructive} ${tableActionsGradientHover} transition-[background] duration-150 w-64 min-w-64 p-4 pr-4`;
+export const tableActionsCellWideDestructiveClass = `${tableActionsSticky} ${tableActionsGradientDestructive} ${tableActionsGradientHover} transition-[background] duration-150 ${tableActionsCellAlignment} w-64 min-w-64 p-4 pr-4`;
