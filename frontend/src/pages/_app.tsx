@@ -11,6 +11,7 @@ import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
 import { getHealth, getApiKeyStatus } from '@/lib/api/generated';
 import { ThemeProvider, useTheme } from '@/lib/contexts/ThemeContext';
 import { SidebarProvider } from '@/lib/contexts/SidebarContext';
+import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 import { QueryProvider } from '@/lib/contexts/QueryProvider';
 import { AgentDetailsDialogProvider } from '@/lib/contexts/AgentDetailsDialogContext';
 import { Spinner } from '@/components/ui/spinner';
@@ -80,7 +81,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   // for that pathname until the pending navigation actually lands somewhere else.
   const suppressRailRestoreOnPathRef = useRef<string | null>(null);
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsNarrowScreen();
   const [isMobileWarningDismissed, setIsMobileWarningDismissed] = useState(false);
   const [mounted, setMounted] = useState(false);
   const {
@@ -122,17 +123,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   useEffect(() => {
     queueMicrotask(() => setMounted(true));
-  }, []);
-
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
-
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-
-    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
