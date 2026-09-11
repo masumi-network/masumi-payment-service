@@ -66,7 +66,7 @@ Two arm64 cases, and they are not the same problem:
 
 2.4.1 publishes no release assets, so there is no zip to download and no
 upstream checksum to check one against (VERIFIED: `gh release view 2.4.1 --repo
-cardano-scaling/hydra --json assets` returns `[]`; 2.4.0 is REPORTED to behave
+cardano-scaling/hydra --json assets` returns `{"assets":[]}`; 2.4.0 is REPORTED to behave
 the same and was not checked). The binary comes from the aarch64-darwin
 artifact of the tag's own Binaries CI run instead. The fetch script handles
 both cases, so use it rather than hand-rolling a `curl`:
@@ -121,9 +121,18 @@ HYDRA_NODE_BIN="$PWD/hydra-l2-flow/.bin/hydra-node" \
 HYDRA_HOST_DATA_DIR="$PWD/.hydra-data" \
 BLOCKFROST_PROJECT_FILE="$PWD/blockfrost.txt" \
 HYDRA_HOST_LEDGER_PARAMS_FILE="$PWD/packages/hydra-host/params/preprod.json" \
+HYDRA_HOST_SCRIPTS_TX_IDS=<your published script tx ids> \
 HYDRA_HOST_USE_SYSTEM_ETCD=false \
 pnpm exec tsx packages/hydra-host/src/index.ts
 ```
+
+`HYDRA_HOST_SCRIPTS_TX_IDS` carries a Hydra script set you published yourself
+with `hydra-node publish-scripts`. On 2.4.1 preprod the Host cannot fall back to
+upstream's published set: the node then dies seconds after boot with
+`BlockfrostClientError AssetNameMissing`, an error that names neither the
+scripts nor this variable (REPORTED, see
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)). Leave it out
+only on a version that can read the upstream set.
 
 The loopback Exchange Plane URL is for a local native run. A reachable Host
 must use its public HTTPS Exchange Plane URL.
