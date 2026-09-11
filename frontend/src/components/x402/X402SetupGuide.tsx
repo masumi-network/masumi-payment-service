@@ -69,16 +69,15 @@ export function X402SetupGuide() {
   // `canPay` stays client-side on purpose: the readiness payload reports the
   // purchasing-wallet check for one chain (the ready or best one), while this guide
   // asks whether the rail can pay on ANY enabled chain.
-  const usable = canReceive || canPay;
-
   // Wait for auth before deciding anything: the x402 hooks return empty arrays while
   // disabled (unauthenticated), which would otherwise flash the guide on a fully
-  // configured rail. Then avoid flashing during the real load, and step aside once the
-  // rail can actually do something.
+  // configured rail. Then avoid flashing during the real load, and step aside once both
+  // setup steps are complete.
   //
   // A failed readiness request means UNKNOWN, not "nothing is configured", so stay
   // hidden rather than telling an operator with a working rail to set it up.
-  if (!apiClient || !authorized || loading || readinessUnavailable || usable) return null;
+  if (!apiClient || !authorized || loading || readinessUnavailable || completedCount === 2)
+    return null;
 
   // Prefer attaching a facilitator to an existing enabled chain — Base ships
   // preconfigured by the seed — and fall back to adding a brand new chain. Never pick a

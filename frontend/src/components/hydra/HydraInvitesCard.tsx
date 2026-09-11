@@ -8,11 +8,10 @@
  */
 
 import { useState } from 'react';
-import { Loader2, Ticket } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -20,24 +19,6 @@ import { revokeHydraInvite, useHydraInvites, type HydraInvite } from '@/lib/hook
 import { HydraInviteDetailsDialog } from '@/components/hydra/HydraInviteDetailsDialog';
 import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
 import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDialog';
-import { InviteHint } from '@/components/hydra/hydra-hints';
-
-/** Chrome-free stand-ins, so the same card can sit inside a dialog that already has a header. */
-function EmbeddedShell({ children }: { children: React.ReactNode }) {
-  return <div className="space-y-4">{children}</div>;
-}
-function EmbeddedHeader({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return <div className={className}>{children}</div>;
-}
-function EmbeddedBody({ children }: { children: React.ReactNode }) {
-  return <div>{children}</div>;
-}
 
 function statusTone(status: HydraInvite['status']) {
   if (status === 'Completed') return 'default';
@@ -58,16 +39,9 @@ function describe(invite: HydraInvite): string {
   return invite.status;
 }
 
-export function HydraInvitesCard({
-  hasConnectedNode,
-  variant = 'card',
-}: {
-  hasConnectedNode: boolean;
-  /** 'embedded' drops the card chrome, for use inside a dialog that already has a header. */
-  variant?: 'card' | 'embedded';
-}) {
+/** Invite list for the Hydra manage dialog (embedded, no outer card chrome). */
+export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boolean }) {
   const { apiClient, network } = useAppContext();
-  // One network's invites, matching the heads and nodes on the page behind it.
   const { invites, refetch, isLoading, isError } = useHydraInvites(
     network === 'Preprod' || network === 'Mainnet' ? network : undefined,
   );
@@ -91,27 +65,10 @@ export function HydraInvitesCard({
     }
   }
 
-  const isEmbedded = variant === 'embedded';
-  const Shell = isEmbedded ? EmbeddedShell : Card;
-  const HeaderShell = isEmbedded ? EmbeddedHeader : CardHeader;
-  const BodyShell = isEmbedded ? EmbeddedBody : CardContent;
-
   return (
-    <Shell>
-      <HeaderShell className="flex flex-row flex-wrap items-start justify-between gap-3">
-        {isEmbedded ? (
-          <span />
-        ) : (
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Ticket className="h-4 w-4" />
-              Invites
-              <Badge variant="outline">{invites.length}</Badge>
-              <InviteHint />
-            </CardTitle>
-            <CardDescription>Outstanding offers to open a head.</CardDescription>
-          </div>
-        )}
+    <div className="space-y-4">
+      <div className="flex flex-row flex-wrap items-start justify-between gap-3">
+        <span />
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -137,19 +94,15 @@ export function HydraInvitesCard({
             Invite someone
           </Button>
         </div>
-      </HeaderShell>
+      </div>
 
-      <BodyShell>
+      <div>
         {isLoading ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading invites…
           </p>
         ) : isError && invites.length === 0 ? (
-          // Never the affirmative empty state on a failed read. An operator who
-          // is told there are no invites, next to a button offering to make
-          // one, invites again — and a second invite reserves a second node and
-          // a second peer port while the first is still outstanding.
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-destructive/40 px-3 py-2">
             <span className="text-sm text-muted-foreground">Could not read your invites.</span>
             <Button type="button" size="sm" variant="outline" onClick={() => void refetch()}>
@@ -198,7 +151,7 @@ export function HydraInvitesCard({
             ))}
           </ul>
         )}
-      </BodyShell>
+      </div>
 
       <IssueHydraInviteDialog
         open={isIssueOpen}
@@ -234,6 +187,6 @@ export function HydraInvitesCard({
           if (pendingRevoke !== null) void handleRevoke(pendingRevoke);
         }}
       />
-    </Shell>
+    </div>
   );
 }
