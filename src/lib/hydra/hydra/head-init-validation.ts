@@ -5,7 +5,16 @@ import { hydraVerificationKeyRawHex } from './keys';
 /** Hydra 2.3 `HydraHeadV2` state-token asset name. */
 export const HYDRA_HEAD_V2_ASSET_NAME_HEX = '4879647261486561645632';
 
-/** `vHead` hash from the Hydra script catalogue used by this deployment. */
+/**
+ * `vHead` hash from the Hydra script catalogue used by this deployment.
+ *
+ * Upstream's `hydra-chain-observer/script-hashes.json` at tag 2.4.1 lists the
+ * two 2.4.x hashes the other way round (this one under `depositScriptHashes`).
+ * The chain says otherwise: on preprod the InitTx of the recorded 2.4.1 head
+ * (`29519fad…`, the first tx of its `HydraHeadV2` token) pays its head output to
+ * this script, and the deposit tx `63fc758a…` pays its deposit output to
+ * `DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH`. Do not swap these to match that file.
+ */
 export const DEFAULT_HYDRA_HEAD_SCRIPT_HASH = '1d511733200df551c8cd8cddb3160ed39087af815638be37a1b80ffd';
 
 /**

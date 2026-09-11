@@ -11,7 +11,11 @@ import {
 import type { SlotConfig, UTxO } from '@meshsdk/core';
 import { HydraTransactionType, type HydraTransaction } from './types';
 
-/** Script hash from the Hydra script catalogue bundled with this deployment. */
+/**
+ * `vDeposit` hash from the Hydra script catalogue bundled with this deployment.
+ * Upstream's `script-hashes.json` labels this one as the 2.4.x head script; the
+ * preprod chain shows it holding deposits. See `DEFAULT_HYDRA_HEAD_SCRIPT_HASH`.
+ */
 export const DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH = 'eafae2c32f99ab347c7bb15961e0e84c74305f9088c1a7b8abf88e7f';
 
 const MAX_COMMIT_DRAFT_BYTES = 64 * 1024;
