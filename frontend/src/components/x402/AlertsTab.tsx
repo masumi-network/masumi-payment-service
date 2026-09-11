@@ -36,6 +36,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402LowBalanceRules, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import { getEvmNativeSymbol } from '@/lib/x402-rail';
 import { cn, formatX402Amount, groupDigits, shortenAddress } from '@/lib/utils';
 import { walletsForNetworks } from '@/lib/x402-rail';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
@@ -55,11 +56,16 @@ const STATUS_VARIANT: Record<X402LowBalanceRule['status'], BadgeProps['variant']
   Unknown: 'secondary',
 };
 
-// The native gas token has known 18 decimals, so show it in ETH; an ERC-20 threshold's
-// decimals aren't stored on the rule, so label the grouped value explicitly as base units
-// rather than render a misleading bare number that reads like a whole-token amount.
-const formatRuleAmount = (amount: string | null | undefined, asset: string) =>
-  asset === NATIVE ? `${formatX402Amount(amount, 18)} ETH` : `${groupDigits(amount)} base units`;
+// Native gas tokens use 18 decimals on EVM chains; ERC-20 thresholds keep base units
+// because decimals are not stored on the rule.
+const formatRuleAmount = (
+  amount: string | null | undefined,
+  asset: string,
+  caip2Network: string,
+) =>
+  asset === NATIVE
+    ? `${formatX402Amount(amount, 18)} ${getEvmNativeSymbol(caip2Network)}`
+    : `${groupDigits(amount)} base units`;
 
 const ruleFormSchema = z
   .object({
@@ -236,7 +242,7 @@ export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
                   <td className="p-4 text-sm">{chainLabel(rule.caip2Network)}</td>
                   <td className="p-4 font-mono text-sm">{assetLabel(rule.asset)}</td>
                   <td className="p-4 text-right font-mono text-sm">
-                    {formatRuleAmount(rule.thresholdAmount, rule.asset)}
+                    {formatRuleAmount(rule.thresholdAmount, rule.asset, rule.caip2Network)}
                   </td>
                   <td className="p-4 text-right font-mono text-sm text-muted-foreground">
                     {rule.lastKnownAmount != null

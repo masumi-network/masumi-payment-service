@@ -442,8 +442,8 @@ function SourceDropdown({
             <DropdownMenuSeparator className="my-1" />
             <DropdownSectionLabel trailing={<RailBadge rail="x402" />}>x402</DropdownSectionLabel>
             <div className="px-2 py-2 text-xs text-muted-foreground">
-              This API key has no EVM chains in its chain limit, so none can be shown. An admin can
-              add them to the key.
+              This API key has no EVM chains allowed, so none can be shown. An admin can add chain
+              ids to the key.
             </div>
           </>
         )}
@@ -475,7 +475,9 @@ function SourceDropdown({
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
                       <span className="truncate text-sm font-medium">{chain.displayName}</span>
                     </div>
-                    <span className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {chain.isTestnet ? 'Testnet' : 'Mainnet'}
+                    </span>
                   </div>
                 </DropdownMenuItem>
               );
