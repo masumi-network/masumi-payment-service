@@ -341,7 +341,6 @@ export function WebhookDialog({
               <Input
                 id="webhook-auth-token"
                 type="password"
-
                 autoComplete="new-password"
                 placeholder={
                   canKeepStoredToken ? 'Leave blank to keep the current token' : 'shared-secret'

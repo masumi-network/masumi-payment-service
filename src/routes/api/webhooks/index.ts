@@ -189,7 +189,6 @@ export const patchWebhookPatch = webhookMutationEndpointFactory.build({
 			}
 		}
 
-
 		const keepStoredAuthToken = input.format === WebhookFormat.EXTENDED && input.authToken == null;
 		if (keepStoredAuthToken && (webhook.format !== WebhookFormat.EXTENDED || webhook.authToken == null)) {
 			throw createHttpError(400, 'authToken is required when format is EXTENDED');
@@ -211,7 +210,6 @@ export const patchWebhookPatch = webhookMutationEndpointFactory.build({
 		let updatedWebhook;
 		try {
 			updatedWebhook = await prisma.webhookEndpoint.update({
-
 				where: keepStoredAuthToken
 					? { id: input.webhookId, format: WebhookFormat.EXTENDED, authToken: { not: null } }
 					: { id: input.webhookId },
