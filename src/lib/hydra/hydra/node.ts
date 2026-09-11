@@ -86,13 +86,18 @@ export class HydraNode extends EventEmitter {
 	 * How long a submission waits for the HEAD to confirm a body this node has
 	 * already called `TxValid` (see `HydraProvider.submitTx`).
 	 *
-	 * Named rather than inherited from the command timeout: it is the same 30s
-	 * today, but it is not the same thing to size — it covers the peer signing
-	 * and a snapshot forming, not a request/response round trip. Exceeding it is
-	 * not a failure but `HydraTransportAmbiguousError`: the reservation stays
-	 * Pending and recovery settles it once the body is past its validity upper
-	 * bound. Raising it holds the wallet lease open longer; lowering it sends
-	 * bodies to reconciliation that would have confirmed on their own.
+	 * Named rather than inherited from the command timeout. It is the same 30s
+	 * today, but it is not the same thing to size: it covers a peer signing and
+	 * a snapshot forming, not a request/response round trip.
+	 *
+	 * Exceeding it is not a failure but `HydraTransportAmbiguousError`, and the
+	 * reservation then stays Pending and held. Recovery does NOT settle it on
+	 * its own: `reportExpiredL2Reservations` reports an expired reservation
+	 * without releasing it, and releases only one the head explicitly refused
+	 * (`l2RejectedByHeadAt`), which a timeout never sets. So a body that times
+	 * out here waits for reconciliation, and the wallet lease stays held until
+	 * then. Raising this holds that lease open longer; lowering it sends bodies
+	 * to reconciliation that would have confirmed on their own.
 	 */
 	static readonly SUBMIT_CONFIRMATION_TIMEOUT_MS = 30_000;
 	static readonly CONNECTION_TIMEOUT_MS = 10_000;
