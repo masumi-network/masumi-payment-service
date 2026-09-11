@@ -206,7 +206,7 @@ export function useAllWallets(enabled = true) {
   const { apiClient, apiKey } = useAppContext();
 
   const query = useQuery<WalletListItem[]>({
-    queryKey: ['all-wallets', apiKey],
+    queryKey: ['all-wallets', walletQueryKeyScope(apiKey)],
     queryFn: async () => {
       if (!apiKey) return [];
       let items: WalletListItem[] = [];
