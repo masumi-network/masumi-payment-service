@@ -276,11 +276,7 @@ describe('HydraProvider', () => {
 			expect(node.awaitTx).toHaveBeenCalledTimes(1);
 			// On the submission budget, not the command timeout it would inherit
 			// from an omitted argument.
-			expect(node.awaitTx).toHaveBeenCalledWith(
-				'confirmedTxHash',
-				undefined,
-				HydraNode.SUBMIT_CONFIRMATION_TIMEOUT_MS,
-			);
+			expect(node.awaitTx).toHaveBeenCalledWith('confirmedTxHash', undefined, HydraNode.SUBMIT_CONFIRMATION_TIMEOUT_MS);
 			// Confirmation is awaited after submission, never before it.
 			const newTxOrder = node.newTx.mock.invocationCallOrder[0];
 			const awaitTxOrder = node.awaitTx.mock.invocationCallOrder[0];
