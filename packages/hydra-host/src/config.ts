@@ -44,17 +44,18 @@ export type HostConfig = {
 	defaultContestationPeriodSeconds: number;
 	defaultDepositPeriodSeconds: number;
 	defaultUnsyncedPeriodSeconds: number;
-	/** Fallback for a provision request that omits `depositActivationSeconds`. */
-	defaultDepositActivationSeconds: number;
 	/**
-	 * Set only when an operator configured one explicitly.
+	 * Set only when an operator configured one explicitly, and then it wins over
+	 * whatever a provision request asks for (see `server.ts`).
 	 *
 	 * `undefined` is the signal that this Host has no opinion, which lets a
 	 * provisioning request fall back to the deposit period IT asked for rather
 	 * than to this Host's own default period. Those differ whenever an older
 	 * payment-service build omits the field, and pairing our period against
 	 * their request is exactly how the activation == depositPeriod invariant
-	 * breaks silently.
+	 * breaks silently. There is deliberately no `defaultDepositActivationSeconds`
+	 * beside this: a Host-wide default is precisely the wrong fallback, for the
+	 * reason just given.
 	 */
 	depositActivationSecondsOverride: number | undefined;
 	/** How long a provisioned-but-unacknowledged node survives before the reaper removes it. */
@@ -273,17 +274,13 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		defaultContestationPeriodSeconds: positiveInteger(env, 'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS', 220),
 		defaultDepositPeriodSeconds,
 		defaultUnsyncedPeriodSeconds,
-		// Defaults to the deposit period itself, not a fixed number: every comment
-		// in this upgrade asserts activation == depositPeriod (it reproduces
-		// 2.3.0's proven timing exactly), and a Host serving an older
-		// payment-service build that omits this field entirely must not silently
-		// break that invariant by pairing a hardcoded activation against whatever
-		// deposit period THAT request actually asked for.
-		defaultDepositActivationSeconds: positiveInteger(
-			env,
-			'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS',
-			defaultDepositPeriodSeconds,
-		),
+		// An override, not a default. Unset means the provision request decides,
+		// and its own fallback is the deposit period THAT request asked for: every
+		// comment in this upgrade asserts activation == depositPeriod (it
+		// reproduces 2.3.0's proven timing exactly), and a Host serving an older
+		// payment-service build that omits the field entirely must not silently
+		// break that invariant by pairing a Host-wide activation against whatever
+		// deposit period that request actually asked for.
 		depositActivationSecondsOverride: env.get('HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS')?.trim()
 			? positiveInteger(env, 'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS', defaultDepositPeriodSeconds)
 			: undefined,

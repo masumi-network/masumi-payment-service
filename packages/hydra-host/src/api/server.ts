@@ -400,19 +400,25 @@ export function createControlPlane(deps: ServerDeps): Server {
 						),
 						depositPeriodSeconds: requestDepositPeriodSeconds,
 						unsyncedPeriodSeconds: numberOr(body, 'unsyncedPeriodSeconds', config.defaultUnsyncedPeriodSeconds),
-						// Falls back to the period THIS request asked for, not to this
-						// Host's own default period. An older payment-service build omits
-						// the field entirely, and defaulting from our own config would pair
-						// our activation against their period — e.g. a mainnet node
-						// provisioned with depositPeriod 1200 would run activation 300,
-						// cutting the maturity wait 4x. That wait is what rules out an L1
-						// rollback before funds count on L2, and nothing would report it.
-						// An explicit HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS still wins.
-						depositActivationSeconds: numberOr(
-							body,
-							'depositActivationSeconds',
-							config.depositActivationSecondsOverride ?? requestDepositPeriodSeconds,
-						),
+						// An explicit HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS wins outright.
+						// It is the operator's escape hatch, and it has to beat the request:
+						// every current payment-service build always sends this field, so an
+						// override that only filled an ABSENT field would never apply to
+						// anything. Setting it breaks the activation == depositPeriod
+						// invariant this deployment reports deadlines against — see
+						// docs/hydra-2.4.1-upgrade-runbook.md.
+						//
+						// Without an override, the request's own value, falling back to the
+						// period THIS request asked for rather than to this Host's own
+						// default period. An older payment-service build omits the field
+						// entirely, and defaulting from our own config would pair our
+						// activation against their period — e.g. a mainnet node provisioned
+						// with depositPeriod 1200 would run activation 300, cutting the
+						// maturity wait 4x. That wait is what rules out an L1 rollback
+						// before funds count on L2, and nothing would report it.
+						depositActivationSeconds:
+							config.depositActivationSecondsOverride ??
+							numberOr(body, 'depositActivationSeconds', requestDepositPeriodSeconds),
 					},
 					provision,
 				);

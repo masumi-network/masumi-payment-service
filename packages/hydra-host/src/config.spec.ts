@@ -157,19 +157,22 @@ describe('numbers that must be above zero', () => {
 		expect(() => loadHostConfig(env({ [key]: '-1' }))).toThrow(ConfigError);
 	});
 
-	// Defaults to the deposit-period default itself, not a fixed number: every
-	// comment in this upgrade asserts activation == depositPeriod, and a Host
-	// serving an older payment-service build that omits BOTH fields entirely
-	// must not silently break that invariant by pairing a hardcoded activation
-	// (say, 600) against a differently-configured deposit-period default.
-	it('defaults deposit activation to the deposit-period default, not a fixed number', () => {
-		expect(loadHostConfig(env()).defaultDepositActivationSeconds).toBe(
-			loadHostConfig(env()).defaultDepositPeriodSeconds,
-		);
-		expect(loadHostConfig(env()).defaultDepositActivationSeconds).toBe(300);
+	// An override, never a Host-wide default: every comment in this upgrade
+	// asserts activation == depositPeriod, and a Host serving an older
+	// payment-service build that omits the field entirely must not silently
+	// break that invariant by pairing a Host-wide activation (say, 600) against
+	// a differently-configured deposit period on the request. `undefined` is
+	// what carries "this Host has no opinion" through to the provision handler.
+	it('leaves deposit activation unset unless an operator configured one', () => {
+		expect(loadHostConfig(env()).depositActivationSecondsOverride).toBeUndefined();
 
-		const custom = env({ HYDRA_HOST_DEPOSIT_PERIOD_SECONDS: '654' });
-		expect(loadHostConfig(custom).defaultDepositActivationSeconds).toBe(654);
+		const custom = env({ HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS: '654' });
+		expect(loadHostConfig(custom).depositActivationSecondsOverride).toBe(654);
+
+		// Independent of the deposit period, which keeps its own default.
+		const period = env({ HYDRA_HOST_DEPOSIT_PERIOD_SECONDS: '654' });
+		expect(loadHostConfig(period).depositActivationSecondsOverride).toBeUndefined();
+		expect(loadHostConfig(period).defaultDepositPeriodSeconds).toBe(654);
 	});
 
 	// A port of zero binds an ephemeral one while `/v1/capabilities` still

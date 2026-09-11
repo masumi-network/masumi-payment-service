@@ -358,4 +358,75 @@ describe('lifecycle guards over HTTP', () => {
 		});
 		expect(bad.status).toBe(400);
 	});
+
+	// Activation == depositPeriod is the invariant this deployment's deadline
+	// arithmetic rests on. A request that names a period but no activation must
+	// pick up THAT period, never this Host's own default period.
+	it('defaults deposit activation to the period the request asked for', async () => {
+		const created = (await (
+			await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-act', body: { depositPeriodSeconds: 900 } })
+		).json()) as { nodeId: string };
+
+		const record = await new NodeRegistryStore(dataDir).read(created.nodeId);
+		expect(record?.depositActivationSeconds).toBe(900);
+	});
+});
+
+// A separate control plane, because the override is read at config load.
+describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
+	let overrideDir: string;
+	let overrideServer: Server;
+	let overrideBaseUrl: string;
+
+	beforeEach(async () => {
+		overrideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-act-'));
+		const overrideEnv: EnvSource = {
+			get: (key) => (key === 'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS' ? '777' : env.get(key)),
+		};
+		const config = { ...loadHostConfig(overrideEnv), dataDir: overrideDir };
+		const store = new NodeRegistryStore(overrideDir);
+		const ports = new PortAllocator(config.ports);
+		overrideServer = createControlPlane({
+			config,
+			store,
+			exchange: new ExchangeStore(overrideDir),
+			ports,
+			supervisor: { tick: async () => undefined } as unknown as Supervisor,
+			provision: {
+				store,
+				ports,
+				advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+				newNodeId: () => 'node-override',
+				now: () => new Date('2026-07-28T12:00:00.000Z'),
+			},
+			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		});
+		await new Promise<void>((resolve) => overrideServer.listen(0, '127.0.0.1', resolve));
+		overrideBaseUrl = `http://127.0.0.1:${(overrideServer.address() as AddressInfo).port}`;
+	});
+
+	afterEach(async () => {
+		await new Promise<void>((resolve) => overrideServer.close(() => resolve()));
+		await fs.rm(overrideDir, { recursive: true, force: true });
+	});
+
+	// The operator's escape hatch has to beat the request: every current
+	// payment-service build always sends depositActivationSeconds, so an
+	// override that only filled an absent field would never apply to anything.
+	it('wins over the value the provision request sent', async () => {
+		const response = await fetch(`${overrideBaseUrl}/v1/nodes`, {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${ADMIN}`,
+				'content-type': 'application/json',
+				'idempotency-key': 'idem-override',
+			},
+			body: JSON.stringify({ depositPeriodSeconds: 900, depositActivationSeconds: 900 }),
+		});
+		const created = (await response.json()) as { nodeId: string };
+
+		const record = await new NodeRegistryStore(overrideDir).read(created.nodeId);
+		expect(record?.depositActivationSeconds).toBe(777);
+		expect(record?.depositPeriodSeconds).toBe(900);
+	});
 });
