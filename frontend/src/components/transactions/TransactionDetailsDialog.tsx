@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { shortenRecordId } from '@/lib/readable-reference';
 import { cn, shortenAddress, getExplorerUrl, formatAssetAmount } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -392,7 +393,9 @@ export default function TransactionDetailsDialog({
               <div className="col-span-2">
                 <h4 className="font-semibold mb-1">Transaction ID</h4>
                 <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
-                  <p className="text-sm font-mono break-all">{transaction.id}</p>
+                  <p className="text-sm font-mono break-all" title={transaction.id}>
+                    {shortenRecordId(transaction.id)}
+                  </p>
                   <CopyButton value={transaction.id} />
                 </div>
               </div>

@@ -290,9 +290,15 @@ export function ChainsTab() {
 }
 
 function FacilitatorLabel({ address, walletId }: { address: string | null; walletId: string }) {
-  // Address is denormalized onto the network response, so labelling no longer
-  // requires loading the full managed-wallet set.
-  return <span className="font-mono">{address ? shortenAddress(address, 6) : walletId}</span>;
+  const { wallets } = useX402Wallets();
+  if (address) return <span className="font-mono">{shortenAddress(address, 6)}</span>;
+  const wallet = wallets.find((w) => w.id === walletId);
+  const label = wallet?.note || (wallet?.address ? shortenAddress(wallet.address, 6) : null);
+  return (
+    <span className="font-mono" title={walletId}>
+      {label ?? `${walletId.slice(0, 8)}…${walletId.slice(-4)}`}
+    </span>
+  );
 }
 
 export function ChainForm({
