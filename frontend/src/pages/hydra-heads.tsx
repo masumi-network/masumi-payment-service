@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import { ChevronDown, Plus, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { getApiErrorToastMessage } from '@/lib/api-error';
 import { useResync } from '@/lib/hooks/useResync';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -275,7 +276,7 @@ export default function HydraHeadsPage() {
           // keeps a failed close from failing silently. An escrow that appeared
           // between the read and the press lands here too — refreshing the
           // readiness puts the acknowledgement in the dialog on the retry.
-          toast.error(error instanceof Error ? error.message : String(error));
+          toast.error(getApiErrorToastMessage(error, 'Failed to close Hydra head'));
           keepDialogOpen = true;
           void refetchClosingHeadConnection();
           return;

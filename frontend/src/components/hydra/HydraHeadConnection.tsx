@@ -12,6 +12,7 @@
  */
 
 import { useState } from 'react';
+import { getApiErrorToastMessage } from '@/lib/api-error';
 import { CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +32,7 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
     try {
       setState(await readHydraHeadConnection(apiClient, { headId }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to check the connection');
+      toast.error(getApiErrorToastMessage(error, 'Failed to check the connection'));
     } finally {
       setIsChecking(false);
     }

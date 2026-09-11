@@ -52,6 +52,11 @@ function getPlainObjectApiMessage(value: object): string | undefined {
   );
 }
 
+/** User-facing message for toast.error from an unknown caught value. */
+export function getApiErrorToastMessage(error: unknown, fallback: string): string {
+  return extractApiErrorMessage(error, fallback);
+}
+
 export function extractApiErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
 
