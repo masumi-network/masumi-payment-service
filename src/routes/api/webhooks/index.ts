@@ -2,7 +2,7 @@ import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { Network, WebhookFormat } from '@/generated/prisma/client';
+import { Network, Prisma, WebhookFormat } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import {
 	decryptWebhookUrlSafe,
@@ -189,6 +189,12 @@ export const patchWebhookPatch = webhookMutationEndpointFactory.build({
 			}
 		}
 
+
+		const keepStoredAuthToken = input.format === WebhookFormat.EXTENDED && input.authToken == null;
+		if (keepStoredAuthToken && (webhook.format !== WebhookFormat.EXTENDED || webhook.authToken == null)) {
+			throw createHttpError(400, 'authToken is required when format is EXTENDED');
+		}
+
 		const existingWebhook = await prisma.webhookEndpoint.findFirst({
 			where: {
 				id: { not: input.webhookId },
@@ -202,17 +208,33 @@ export const patchWebhookPatch = webhookMutationEndpointFactory.build({
 			throw createHttpError(409, 'Webhook URL already registered for this payment source');
 		}
 
-		const updatedWebhook = await prisma.webhookEndpoint.update({
-			where: { id: input.webhookId },
-			data: {
-				url: encryptWebhookUrl(input.url),
-				urlHash,
-				authToken: input.format === WebhookFormat.EXTENDED ? encryptWebhookAuthToken(input.authToken) : null,
-				format: input.format,
-				events: input.Events,
-				name: input.name ?? null,
-			},
-		});
+		let updatedWebhook;
+		try {
+			updatedWebhook = await prisma.webhookEndpoint.update({
+
+				where: keepStoredAuthToken
+					? { id: input.webhookId, format: WebhookFormat.EXTENDED, authToken: { not: null } }
+					: { id: input.webhookId },
+				data: {
+					url: encryptWebhookUrl(input.url),
+					urlHash,
+					// undefined leaves the stored token untouched
+					authToken: keepStoredAuthToken
+						? undefined
+						: input.format === WebhookFormat.EXTENDED
+							? encryptWebhookAuthToken(input.authToken)
+							: null,
+					format: input.format,
+					events: input.Events,
+					name: input.name ?? null,
+				},
+			});
+		} catch (err) {
+			if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+				throw createHttpError(409, 'Webhook changed concurrently; reload and retry');
+			}
+			throw err;
+		}
 
 		return {
 			id: updatedWebhook.id,
