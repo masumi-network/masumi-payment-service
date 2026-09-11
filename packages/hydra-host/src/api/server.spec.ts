@@ -445,5 +445,8 @@ describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 		});
 
 		expect(response.status).toBe(400);
+		// Named, so this keeps failing for the right reason if another 400 is
+		// ever added ahead of this one.
+		expect(((await response.json()) as { error: string }).error).toContain('depositActivationSeconds');
 	});
 });

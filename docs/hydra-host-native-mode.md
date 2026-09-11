@@ -13,8 +13,8 @@ two targets:
 - `x86_64-linux`
 - `aarch64-darwin`
 
-Through 2.3.0 both shipped as release zips. From 2.4.0 they come from the tag's
-own CI run instead, which step 1 below covers.
+Through 2.3.0 both shipped as release zips. 2.4.1 attaches none, so the binary
+comes from the tag's own CI run instead, which step 1 below covers.
 
 There is no `aarch64-linux` build, and the official image
 `ghcr.io/cardano-scaling/hydra-node:<version>` is a single `linux/amd64`
@@ -80,16 +80,19 @@ Both paths read from `cardano-scaling/hydra`.
 
 The script tries the release asset first, in case upstream resumes attaching
 one, and checks it against `HYDRA_RELEASE_SHA256`. That digest is pinned in the
-script for 2.3.0 only, so a future tag that ships a zip needs you to supply it
-or the download refuses to proceed. When there is no asset the script falls
-back to the CI artifact and checks the extracted binary against
-`HYDRA_BINARY_SHA256`, which is pinned for 2.4.1. Upstream publishes no digest
-for a CI artifact, so that value was measured locally. Re-pin it when you move
+script for 2.3.0 only. A future tag that ships a zip therefore needs you to
+supply it: the script downloads the zip first and refuses to install it after,
+so an unpinned digest costs you the transfer, not just the install. When there
+is no asset the script falls back to the CI artifact and checks the extracted
+binary against `HYDRA_BINARY_SHA256`, which is pinned for 2.4.1. That path
+checks the digest is present before it downloads. Upstream publishes no digest
+for a CI artifact, so the value was measured locally. Re-pin it when you move
 `HYDRA_VERSION`.
 
 The binary lands at `hydra-l2-flow/.bin/hydra-node`. An existing binary at that
-path is left alone: the script returns early rather than upgrading it, so read
-the version it prints rather than assuming the fetch replaced anything.
+path is left alone: the script returns early rather than upgrading it, and
+prints nothing at all when it does. Silence therefore means the fetch replaced
+nothing, so check the version yourself:
 
 ```bash
 ./hydra-l2-flow/.bin/hydra-node --version
