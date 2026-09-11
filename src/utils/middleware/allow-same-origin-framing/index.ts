@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 
-
 export const allowSameOriginFraming = (_req: Request, res: Response, next: NextFunction) => {
 	const contentSecurityPolicy = res.getHeader('Content-Security-Policy');
 	if (typeof contentSecurityPolicy === 'string') {
