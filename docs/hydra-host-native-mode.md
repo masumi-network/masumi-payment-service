@@ -121,7 +121,7 @@ HYDRA_NODE_BIN="$PWD/hydra-l2-flow/.bin/hydra-node" \
 HYDRA_HOST_DATA_DIR="$PWD/.hydra-data" \
 BLOCKFROST_PROJECT_FILE="$PWD/blockfrost.txt" \
 HYDRA_HOST_LEDGER_PARAMS_FILE="$PWD/packages/hydra-host/params/preprod.json" \
-HYDRA_HOST_SCRIPTS_TX_IDS=<your published script tx ids> \
+HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
 HYDRA_HOST_USE_SYSTEM_ETCD=false \
 pnpm exec tsx packages/hydra-host/src/index.ts
 ```
@@ -133,6 +133,12 @@ upstream's published set: the node then dies seconds after boot with
 scripts nor this variable (REPORTED, see
 [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)). Leave it out
 only on a version that can read the upstream set.
+
+Keep the quotes when you substitute. Pasted unchanged, the quoted placeholder
+reaches the config parser and is refused by name:
+`HYDRA_HOST_SCRIPTS_TX_IDS must be comma-separated 64-character hex
+transaction ids`. Unquoted, the shell reads the angle brackets as redirects and
+the Host never starts.
 
 The loopback Exchange Plane URL is for a local native run. A reachable Host
 must use its public HTTPS Exchange Plane URL.
