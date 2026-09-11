@@ -76,18 +76,14 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
     watch,
   );
 
-  useDialogResetOnOpen(
-    open,
-    () => {
-      resetInputData();
-      setValue('paymentOptionId', '');
-      setValue('identifierFromPurchaser', generateRandomHex(16));
-      setResponse(null);
-      setError(null);
-      setCurlCommand('');
-    },
-    [selectedPaymentSource?.id, setValue, resetInputData],
-  );
+  useDialogResetOnOpen(open, () => {
+    resetInputData();
+    setValue('paymentOptionId', '');
+    setValue('identifierFromPurchaser', generateRandomHex(16));
+    setResponse(null);
+    setError(null);
+    setCurlCommand('');
+  }, [selectedPaymentSource?.id, setValue, resetInputData]);
 
   const onSubmit = useCallback(
     async (data: PaymentFormValues) => {

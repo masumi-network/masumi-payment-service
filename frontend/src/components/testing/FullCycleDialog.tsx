@@ -95,22 +95,18 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     watch,
   );
 
-  useDialogResetOnOpen(
-    open,
-    () => {
-      resetInputData();
-      setValue('paymentOptionId', '');
-      setValue('identifierFromPurchaser', generateRandomHex(16));
-      setStep(1);
-      setPaymentResponse(null);
-      setPurchaseResponse(null);
-      setPaymentError(null);
-      setPurchaseError(null);
-      setPaymentCurl('');
-      setPurchaseCurl('');
-    },
-    [selectedPaymentSource?.id, setValue, resetInputData],
-  );
+  useDialogResetOnOpen(open, () => {
+    resetInputData();
+    setValue('paymentOptionId', '');
+    setValue('identifierFromPurchaser', generateRandomHex(16));
+    setStep(1);
+    setPaymentResponse(null);
+    setPurchaseResponse(null);
+    setPaymentError(null);
+    setPurchaseError(null);
+    setPaymentCurl('');
+    setPurchaseCurl('');
+  }, [selectedPaymentSource?.id, setValue, resetInputData]);
 
   const createPurchaseAutomatically = useCallback(
     async (payment: PostPaymentResponse['data'], originalFormData: PaymentFormValues) => {
