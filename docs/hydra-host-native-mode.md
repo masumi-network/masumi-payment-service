@@ -65,15 +65,21 @@ Two arm64 cases, and they are not the same problem:
 ### 1. Fetch `hydra-node`
 
 2.4.1 publishes no release assets, so there is no zip to download and no
-upstream checksum to check one against (VERIFIED: `gh release view 2.4.1 --json
-assets` returns `[]`; 2.4.0 is REPORTED to behave the same and was not
-checked). The binary comes from the aarch64-darwin artifact of the tag's own
-Binaries CI run instead. The fetch script handles both cases, so use it rather
-than hand-rolling a `curl`:
+upstream checksum to check one against (VERIFIED: `gh release view 2.4.1 --repo
+cardano-scaling/hydra --json assets` returns `[]`; 2.4.0 is REPORTED to behave
+the same and was not checked). The binary comes from the aarch64-darwin
+artifact of the tag's own Binaries CI run instead. The fetch script handles
+both cases, so use it rather than hand-rolling a `curl`:
 
 ```bash
-HYDRA_VERSION=2.4.1 ./hydra-l2-flow/hydra-native.sh bin
+NETWORK=preprod HYDRA_VERSION=2.4.1 ./hydra-l2-flow/hydra-native.sh bin
 ```
+
+`NETWORK` is not optional here. The script defaults it to `devnet`, and a
+devnet run refuses to start without a `cardano-scaling/hydra` demo checkout
+beside this repo, which has nothing to do with fetching a binary. Omitting it
+fails with `hydra demo dir not found (set HYDRA_DEMO_DIR)` before the fetch
+begins.
 
 It downloads through `gh`, so install the GitHub CLI and authenticate it first.
 Both paths read from `cardano-scaling/hydra`.
