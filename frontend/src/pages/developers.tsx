@@ -154,7 +154,7 @@ export default function Developers() {
                     Interactive API documentation powered by Swagger UI.
                   </p>
                   <Button variant="outline" size="sm" asChild>
-                    <a href="/docs" target="_blank" rel="noopener noreferrer">
+                    <a href="/docs/" target="_blank" rel="noopener noreferrer">
                       Open in new tab
                       <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
                     </a>
@@ -166,7 +166,7 @@ export default function Developers() {
                   )}
                   <iframe
                     ref={iframeRef}
-                    src="/docs"
+                    src="/docs/"
                     className="w-full h-full"
                     title="OpenAPI Documentation"
                     onLoad={handleIframeLoad}

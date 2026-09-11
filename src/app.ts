@@ -12,6 +12,7 @@ import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { robotsNoindex, serveRobotsTxt } from '@/utils/middleware/robots-noindex';
+import { allowSameOriginFraming } from '@/utils/middleware/allow-same-origin-framing';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
@@ -170,6 +171,7 @@ export async function startApp() {
 
 			app.use(
 				'/docs',
+				allowSameOriginFraming,
 				ui.serve,
 				ui.setup(JSON.parse(docsString) as JsonObject, {
 					explorer: false,
