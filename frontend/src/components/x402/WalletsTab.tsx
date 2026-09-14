@@ -24,6 +24,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellWideClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -148,7 +153,7 @@ export function WalletsTab() {
         </div>
       </div>
 
-      <div className="border rounded-lg overflow-x-auto">
+      <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
@@ -167,7 +172,7 @@ export function WalletsTab() {
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Created
               </th>
-              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className={tableActionsHeadWideClass}>
                 Actions
               </th>
             </tr>
@@ -196,7 +201,7 @@ export function WalletsTab() {
               </tr>
             ) : (
               wallets.map((wallet) => (
-                <tr key={wallet.id} className="border-b last:border-0">
+                <tr key={wallet.id} className="group border-b last:border-0 hover:bg-muted/50">
                   <td className="p-4">
                     <div className="flex items-center gap-1">
                       <span className="font-mono text-sm" title={wallet.address}>
@@ -213,7 +218,7 @@ export function WalletsTab() {
                   <td className="p-4 text-sm text-muted-foreground">
                     {formatDateTime(wallet.createdAt)}
                   </td>
-                  <td className="p-4 text-right">
+                  <td className={tableActionsCellWideClass}>
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => setDetailsWallet(wallet)}>
                         <WalletIcon className="h-4 w-4" />
@@ -249,7 +254,7 @@ export function WalletsTab() {
             )}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
 
       {hasMore && (
         <div className="flex justify-center">

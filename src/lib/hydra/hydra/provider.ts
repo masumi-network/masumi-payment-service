@@ -12,6 +12,7 @@ import type {
 import { POLICY_ID_LENGTH } from '@meshsdk/core';
 import type { IFetcher, ISubmitter } from '@meshsdk/core';
 
+import { HydraNode } from './node';
 import type { HydraHeadClock, HydraRawCostModels, IHydraNode } from './node';
 import { HydraTransactionType } from './types';
 import type { HydraTransaction } from './types';
@@ -170,6 +171,29 @@ export class HydraProvider implements IFetcher, ISubmitter {
 			cborHex,
 		};
 		const txHash = await this._node.newTx(transaction);
+		// `newTx` resolves on `TxValid`, which is only THIS node's local ledger
+		// accepting the body. It is not the head's answer. A peer can refuse the
+		// same body — observed live 2026-09-07: node 2's Blockfrost clock sat 44
+		// slots behind node 1's, the window's `invalidBefore` was in node 2's
+		// future, it answered OutsideValidityIntervalUTxO and never signed — and
+		// then no snapshot is proposed and the tx quietly never exists. No frame
+		// reports that to the submitter; the only visible symptom was the service
+		// having already advanced its DB on the `TxValid`, leaving the request
+		// pointing at a tx no node held and its next step deferring forever.
+		//
+		// The head's answer is the confirmed snapshot. Wait for it. On timeout
+		// `awaitTx` throws `HydraTransportAmbiguousError`, which the reservation
+		// layer already classifies as ambiguous: the reservation stays Pending
+		// and held. Recovery releases a held reservation on its own only when
+		// the head reported that it refused the body (`l2RejectedByHeadAt`); a
+		// timeout is not such a report, so the reservation waits for explicit
+		// reconciliation instead of being finalized against a phantom.
+		//
+		// On its own budget, not the command timeout it used to inherit by
+		// omission: what is being waited on here is a peer signing and a snapshot
+		// forming, not a request/response round trip. See
+		// `HydraNode.SUBMIT_CONFIRMATION_TIMEOUT_MS`.
+		await this._node.awaitTx(txHash, undefined, HydraNode.SUBMIT_CONFIRMATION_TIMEOUT_MS);
 		return txHash;
 	}
 

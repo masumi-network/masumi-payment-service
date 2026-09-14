@@ -1,4 +1,8 @@
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  tableActionsCellClass,
+  tableActionsCellCompactClass,
+} from '@/components/ui/table-actions-column';
 
 // Placeholder bar widths for the leading data columns, in order. Shorter than
 // the maximum column count on purpose: cells past the end fall back to a
@@ -19,6 +23,8 @@ export function AIAgentTableSkeleton({
   rows?: number;
   columns?: number;
 }) {
+  const actionsCellClass = columns >= 9 ? tableActionsCellClass : tableActionsCellCompactClass;
+
   return (
     <>
       {Array.from({ length: rows }).map((_, rowIndex) => (
@@ -28,7 +34,7 @@ export function AIAgentTableSkeleton({
               <Skeleton className={`h-4 ${CELL_WIDTHS[cellIndex] ?? 'w-24'}`} />
             </td>
           ))}
-          <td className="w-20 p-4">
+          <td className={actionsCellClass}>
             <Skeleton className="h-4 w-8" />
           </td>
         </tr>

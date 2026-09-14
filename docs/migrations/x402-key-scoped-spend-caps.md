@@ -51,8 +51,9 @@ nothing at upgrade time. Restore the cap yourself with step 2 below.
    SELECT "apiKeyId", "evmWalletId" FROM "ApiKeyX402WalletScope" WHERE "id" LIKE 'mig_%';
    ```
 
-A usage-limited key with no `eip155:` credit row at all stays uncapped and logs a
-warning on each payment. This is deliberate: it keeps Cardano-only keys working.
+A usage-limited key needs enough credit in the exact
+`eip155:<chainId>:<asset>` unit. A missing or insufficient balance returns HTTP 402. Set `usageLimited` to false only when the key must spend without this
+ledger limit.
 
 ## Rollback
 

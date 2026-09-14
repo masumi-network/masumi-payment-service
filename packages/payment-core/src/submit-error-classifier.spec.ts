@@ -1,4 +1,4 @@
-import { isDefinitiveNodeRejection } from './submit-error-classifier';
+import { isDefinitiveNodeRejection, isStaleInputRejection } from './submit-error-classifier';
 
 describe('isDefinitiveNodeRejection', () => {
 	describe('definitive ledger rejections', () => {
@@ -66,5 +66,52 @@ describe('isDefinitiveNodeRejection', () => {
 			circular.cause = circular;
 			expect(isDefinitiveNodeRejection(circular)).toBe(false);
 		});
+	});
+});
+
+describe('isStaleInputRejection', () => {
+	// Verbatim from CI run 33430764978: a V1 funds-lock batch built from a UTxO
+	// snapshot that still held an input the wallet's previous batch had spent.
+	const staleInputRejection = {
+		status: 400,
+		data: {
+			error: 'Bad Request',
+			message:
+				'{"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":' +
+				'["ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (NonEmptySet (fromList [TxIn ' +
+				'(TxId {unTxId = SafeHash \\"0eb26fbeb06008dc13f02ad6deec36d8b8c57f224029c4384121988725571074\\"}) ' +
+				'(TxIx {unTxIx = 3})]))))","ConwayUtxowFailure (UtxoFailure (ValueNotConservedUTxO ...))"],' +
+				'"kind":"ShelleyTxValidationError"}}}}',
+			status_code: 400,
+		},
+	};
+
+	it('detects the already-spent-input rejection in the Mesh/Blockfrost shape', () => {
+		expect(isStaleInputRejection(staleInputRejection)).toBe(true);
+	});
+
+	it('still reports that rejection as definitive, so reverting stays safe', () => {
+		expect(isDefinitiveNodeRejection(staleInputRejection)).toBe(true);
+	});
+
+	it('does not match the other definitive rejections, which repeat on a rebuild', () => {
+		for (const pattern of [
+			'OutsideValidityIntervalUTxO',
+			'InsufficientCollateral',
+			'FeeTooSmall',
+			'ScriptWitnessNotValidatingUTXOW',
+			'MissingScriptWitnessesUTXOW',
+			'MissingVKeyWitnessesUTXOW',
+			'ValidationTagMismatch',
+			'PlutusFailure',
+		]) {
+			expect(isStaleInputRejection(new Error(`node rejected: ${pattern}`))).toBe(false);
+		}
+	});
+
+	it('returns false for transport failures and non-error values', () => {
+		expect(isStaleInputRejection(new Error('ECONNRESET'))).toBe(false);
+		expect(isStaleInputRejection(null)).toBe(false);
+		expect(isStaleInputRejection({})).toBe(false);
 	});
 });

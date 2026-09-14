@@ -27,7 +27,11 @@ const _origWarn = logger.warn.bind(logger);
 	return _origWarn(msg, meta);
 };
 
-const HEAD_NODE_IDENTIFIER = process.env.HEAD_IDENTIFIER ?? '33f8e10a2a5e1f6e2276cf279eb4bc2f4a9e7442de5b7fb943a4ff67';
+// Undefined means: keep whatever sync-head-row.mts pinned. This used to default
+// to a hardcoded head id from 2026-08-28, which silently clobbered the live head
+// on every fresh run — the exact failure sync-head-row.mts exists to prevent, so
+// each flow died at lock with 'frame head id did not match the pinned head'.
+const HEAD_NODE_IDENTIFIER = process.env.HEAD_IDENTIFIER;
 const LOCK_LOVELACE = process.env.LOCK_LOVELACE ?? '40000000';
 
 function log(m: string) {
@@ -54,7 +58,7 @@ async function main() {
 	// ── Mark the head Open + give it the on-chain identifier ──────────────────
 	await prisma.hydraHead.update({
 		where: { id: head.id },
-		data: { status: HydraHeadStatus.Open, isEnabled: true, headIdentifier: HEAD_NODE_IDENTIFIER, openedAt: new Date() },
+		data: { status: HydraHeadStatus.Open, isEnabled: true, ...(HEAD_NODE_IDENTIFIER ? { headIdentifier: HEAD_NODE_IDENTIFIER } : {}), openedAt: new Date() },
 	});
 	log('head marked Open');
 
@@ -161,7 +165,15 @@ async function main() {
 		log(`  ${u.input.txHash.slice(0, 16)}…#${u.input.outputIndex} ${ada} lovelace datum=${u.output.plutusData ? 'present' : 'MISSING'}`);
 	}
 
-	if (scriptUtxos.length > 0 && after.NextAction.requestedAction === PurchasingAction.FundsLockingInitiated) {
+	// A successful lock does not stop at FundsLockingInitiated: the service
+	// advances it straight on to WaitingForExternalAction, so checking for that
+	// one state reported real locks as failures. Same counting bug that made the
+	// escrow bench understate locks 12x (see evidence/bench-escrow/2026-08-28-CORRECTED-N20).
+	// The honest test is: a script UTxO exists, a tx was recorded, and the
+	// request is no longer queued.
+	const lockAdvanced =
+		after.NextAction.requestedAction !== PurchasingAction.FundsLockingRequested && after.CurrentTransaction?.txHash != null;
+	if (scriptUtxos.length > 0 && lockAdvanced) {
 		log('=== L2 FUNDS-LOCK VIA MASUMI SERVICE: PASSED ===');
 	} else {
 		log('=== L2 FUNDS-LOCK: did not complete as expected (see above) ===');

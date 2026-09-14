@@ -16,11 +16,9 @@ If you run the service with Docker:
 
 - **DATABASE_URL**: The endpoint for a PostgreSQL database to be used
 - **ENCRYPTION_KEY**: The key for encrypting the wallets in the database (Please see the [Security](#security)
+  section for more details and security considerations)
 
 ## Advanced Configuration
-
-- If you need to seed a new database, you will also need to set the following:
-  - **BLOCKFROST_API_KEY**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain
 
 - **DATABASE_URL**: The endpoint for a PostgreSQL database to be used
 - **PORT**: The port to run the server on (default is 3001)
@@ -51,24 +49,24 @@ If you run the service with Docker:
   - **LOW_BALANCE_CHECK_INTERVAL**: interval in seconds for monitored wallet low-balance checks
   - **CHECK_HYDRA_TX_INTERVAL**: interval in seconds for the Hydra L2 passes and deposit reconciliation (minimum 5, default 10)
 
-1. If you're setting up the database for the first time (or want to provide some initial data) you also need the
-   following variables:
-   - **BLOCKFROST_API_KEY_PREPROD**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain
-     network, you can create this for free
-   - **BLOCKFROST_API_KEY_MAINNET**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain
-     network, you can create this for free
-   - **ADMIN_KEY**: The key of the admin user, this key will have all permissions and can create new api_keys
-   - OPTIONAL Wallet data: Used to configure payment and purchase wallets, if you want to use existing wallets
-     - **PURCHASE_WALLET_PREPROD_MNEMONIC** and **PURCHASE_WALLET_MAINNET_MNEMONIC**: The mnemonic of the wallet used to purchase any agent requests. This needs to have
-       sufficient funds to pay, or be topped up. If you do not provide a mnemonic, a new one will be generated. Please
-       ensure you export them immediately after creation and store them securely.
-     - **SELLING_WALLET_PREPROD_MNEMONIC** and **SELLING_WALLET_MAINNET_MNEMONIC**: The mnemonic of the wallet used to interact with the smart contract. This only needs
-       minimal funds, to cover the CARDANO Network fees. If you do not provide a mnemonic, a new one will be
-       generated. Please ensure you export them immediately after creation and store them securely.
-     - **COLLECTION_WALLET_PREPROD_ADDRESS** and **COLLECTION_WALLET_MAINNET_ADDRESS**: The wallet address of the collection wallet. It will receive all payments after
-       a successful and completed purchase (not refund). It does not need any funds, however it is strongly recommended
-       to create it via a hardware wallet or ensure its secret is stored securely. If you do not provide an address,
-       the SELLING_WALLET will be used.
+### Seeding a new database
+
+The seed script reads **network-specific** Blockfrost keys — there is no generic `BLOCKFROST_API_KEY` variable.
+
+| Network | Required for seed | Variable |
+| ------- | ----------------- | -------- |
+| Preprod | Yes (default install path) | **BLOCKFROST_API_KEY_PREPROD** |
+| Mainnet | Only when mainnet payment sources are configured | **BLOCKFROST_API_KEY_MAINNET** |
+
+Obtain free API keys at [https://blockfrost.io/](https://blockfrost.io/) for the network you are using.
+
+When seeding, you also need:
+
+- **ADMIN_KEY**: The key of the admin user. This key has all permissions and can create new api_keys.
+- OPTIONAL wallet data — used to configure payment and purchase hot wallets, or leave blank to generate new mnemonics during seed (see `prisma/seed.ts`):
+  - **PURCHASE_WALLET_PREPROD_MNEMONIC** / **PURCHASE_WALLET_MAINNET_MNEMONIC**: Purchasing hot wallet mnemonics
+  - **SELLING_WALLET_PREPROD_MNEMONIC** / **SELLING_WALLET_MAINNET_MNEMONIC**: Selling hot wallet mnemonics
+  - **COLLECTION_WALLET_PREPROD_ADDRESS** / **COLLECTION_WALLET_MAINNET_ADDRESS**: Collection wallet addresses (strongly recommended via hardware wallet). If omitted, the selling wallet address is used.
 
 ## Frontend Build Variables
 

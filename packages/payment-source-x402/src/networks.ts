@@ -3,8 +3,8 @@ import { Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@masumi/payment-core/encryption';
 import {
 	assertHexAddress,
-	assertSafeFacilitatorUrl,
-	assertSafeRpcUrl,
+	assertSafeFacilitatorUrlResolved,
+	assertSafeRpcUrlResolved,
 	getEip155ChainId,
 	normalizeAddress,
 } from './internal';
@@ -132,7 +132,7 @@ async function resolveFacilitatorData(input: {
 	if (wantsUrl) {
 		// The remote facilitator endpoint is admin-supplied and reached server-side, so guard
 		// it against SSRF exactly like the RPC URL.
-		assertSafeFacilitatorUrl(input.facilitatorUrl as string);
+		await assertSafeFacilitatorUrlResolved(input.facilitatorUrl as string);
 		const data: Prisma.X402NetworkUncheckedUpdateInput = {
 			facilitatorWalletId: null,
 			facilitatorUrl: input.facilitatorUrl,
@@ -192,7 +192,7 @@ async function resolveFacilitatorData(input: {
 		}
 		// Auth-only updates still persist a remote-facilitator configuration snapshot. Reject a
 		// legacy plaintext endpoint instead of rotating a credential that can only be sent unsafely.
-		assertSafeFacilitatorUrl(existing.facilitatorUrl);
+		await assertSafeFacilitatorUrlResolved(existing.facilitatorUrl);
 		// Snapshot the whole observed remote mode, not only the credential. Otherwise an auth-only
 		// update that races a URL/mode switch could commit last and attach this old-origin secret to
 		// the newly configured endpoint. Last-writer-wins may restore the observed URL, but never
@@ -219,7 +219,7 @@ export async function upsertX402Network(input: {
 	createdById?: string | null;
 }) {
 	getEip155ChainId(input.caip2Id);
-	assertSafeRpcUrl(input.rpcUrl);
+	await assertSafeRpcUrlResolved(input.rpcUrl);
 	const facilitatorData = await resolveFacilitatorData(input);
 
 	// The default-asset resolution reads the stored row to fill in whichever of

@@ -38,6 +38,9 @@ const DialogContent = React.forwardRef<
     isPushedBack?: boolean;
     hideOverlay?: boolean;
     onBack?: () => void;
+    /** Where the back control renders when `onBack` is set. Default: leading (top-left). */
+    onBackPosition?: 'leading' | 'trailing';
+    backDisabled?: boolean;
     /**
      * Standard modal width scale. Prefer this over ad-hoc `max-w-[...]` classes
      * so dialogs stay visually consistent: sm=480 (compact forms/confirms),
@@ -61,6 +64,8 @@ const DialogContent = React.forwardRef<
       isPushedBack,
       hideOverlay,
       onBack,
+      onBackPosition = 'leading',
+      backDisabled,
       size,
       elevatedStack,
       elevatedChildStack,
@@ -117,17 +122,30 @@ const DialogContent = React.forwardRef<
             variantClass,
             isPushedBack !== undefined && 'dialog-content-stackable',
             isPushedBack && 'is-pushed-back',
-            onBack && 'pt-12',
+            onBack && onBackPosition === 'leading' && 'pt-12',
             sizeClass,
             className,
           )}
           {...props}
         >
           {children}
-          {onBack && (
+          {onBack && onBackPosition === 'leading' && (
             <button
+              type="button"
               onClick={onBack}
-              className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              disabled={backDisabled}
+              className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-40"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span className="sr-only">Back</span>
+            </button>
+          )}
+          {onBack && onBackPosition === 'trailing' && (
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={backDisabled}
+              className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-40"
             >
               <ArrowLeft className="h-4 w-4" />
               <span className="sr-only">Back</span>

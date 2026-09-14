@@ -32,6 +32,7 @@
 		"./registry-entry-type": "./src/registry-entry-type.ts",
 		"./serializable-semaphore": "./src/serializable-semaphore.ts",
 		"./smart-contract-state": "./src/smart-contract-state.ts",
+		"./ssrf-guard": "./src/ssrf-guard.ts",
 		"./submit-error-classifier": "./src/submit-error-classifier.ts",
 		"./verification": "./src/verification.ts",
 		"./zod": "./src/zod.ts",

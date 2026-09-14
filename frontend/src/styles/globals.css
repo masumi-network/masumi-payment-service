@@ -97,6 +97,36 @@
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
     --accent-brand: 174 60% 51%;
+    --table-actions-row-hover-fill: color-mix(
+      in srgb,
+      hsl(var(--muted)) 50%,
+      hsl(var(--background)) 50%
+    );
+    --table-actions-row-hover-fade: color-mix(
+      in srgb,
+      var(--table-actions-row-hover-fill) 85%,
+      transparent 15%
+    );
+    --table-actions-low-balance-hover-fill: color-mix(
+      in srgb,
+      rgb(245 158 11) 10%,
+      hsl(var(--background))
+    );
+    --table-actions-low-balance-hover-fade: color-mix(
+      in srgb,
+      var(--table-actions-low-balance-hover-fill) 85%,
+      transparent 15%
+    );
+    --table-actions-destructive-row-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 10%,
+      hsl(var(--background)) 90%
+    );
+    --table-actions-destructive-row-fade: color-mix(
+      in srgb,
+      var(--table-actions-destructive-row-fill) 85%,
+      transparent 15%
+    );
   }
 
   .dark {
@@ -120,6 +150,36 @@
     --input: 0 0% 18%;
     --ring: 0 0% 83.1%;
     --accent-brand: 174 60% 55%;
+    --table-actions-row-hover-fill: color-mix(
+      in srgb,
+      hsl(var(--muted)) 50%,
+      hsl(var(--background)) 50%
+    );
+    --table-actions-row-hover-fade: color-mix(
+      in srgb,
+      var(--table-actions-row-hover-fill) 85%,
+      transparent 15%
+    );
+    --table-actions-low-balance-hover-fill: color-mix(
+      in srgb,
+      rgb(245 158 11) 10%,
+      hsl(var(--background))
+    );
+    --table-actions-low-balance-hover-fade: color-mix(
+      in srgb,
+      var(--table-actions-low-balance-hover-fill) 85%,
+      transparent 15%
+    );
+    --table-actions-destructive-row-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 10%,
+      hsl(var(--background)) 90%
+    );
+    --table-actions-destructive-row-fade: color-mix(
+      in srgb,
+      var(--table-actions-destructive-row-fill) 85%,
+      transparent 15%
+    );
   }
 }
 

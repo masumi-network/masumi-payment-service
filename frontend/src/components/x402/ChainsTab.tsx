@@ -10,6 +10,11 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellWideClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
 import {
   Dialog,
@@ -147,7 +152,7 @@ export function ChainsTab() {
         </div>
       </div>
 
-      <div className="border rounded-lg overflow-x-auto">
+      <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
@@ -166,7 +171,7 @@ export function ChainsTab() {
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Facilitator
               </th>
-              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className={tableActionsHeadWideClass}>
                 Actions
               </th>
             </tr>
@@ -191,7 +196,7 @@ export function ChainsTab() {
               </tr>
             ) : (
               networks.map((network) => (
-                <tr key={network.id} className="border-b last:border-0">
+                <tr key={network.id} className="group border-b last:border-0 hover:bg-muted/50">
                   <td className="p-4">
                     <div className="font-medium">{network.displayName}</div>
                     <div className="text-xs text-muted-foreground font-mono">{network.caip2Id}</div>
@@ -249,7 +254,7 @@ export function ChainsTab() {
                       <Badge variant="warning">Not set</Badge>
                     )}
                   </td>
-                  <td className="p-4 text-right">
+                  <td className={tableActionsCellWideClass}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -264,7 +269,7 @@ export function ChainsTab() {
             )}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
 
       <ChainDialog
         key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}

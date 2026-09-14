@@ -16,6 +16,13 @@ export enum MessageTag {
 	PeerConnected = 'PeerConnected',
 	PeerDisconnected = 'PeerDisconnected',
 
+	// Hydra 2.4 replaced the removed `SyncedStatusReport` output with these two
+	// chain-sync transitions. Distinct from the four above: those are cluster
+	// membership (can this node talk to its peer), these are chain-follower
+	// progress (has it caught up with L1). A node can be connected and unsynced.
+	NodeSynced = 'NodeSynced',
+	NodeUnsynced = 'NodeUnsynced',
+
 	HeadIsInitializing = 'HeadIsInitializing',
 	Committed = 'Committed',
 	HeadIsOpen = 'HeadIsOpen',

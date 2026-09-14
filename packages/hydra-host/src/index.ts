@@ -190,6 +190,7 @@ async function main(): Promise<void> {
 	const exchangePlane = createExchangePlane({
 		store: exchange,
 		logger,
+		trustProxy: config.exchangeTrustProxy,
 		onRedeemed: async (nonce, hostNodeId) => {
 			const invite = (await exchange.listInvites()).find((candidate) => candidate.nonce === nonce);
 			if (invite?.redeemer == null) {

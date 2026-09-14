@@ -28,7 +28,7 @@ export function getAgentStatusBadgeVariant(status: string): AgentStatusBadgeVari
 export const parseAgentStatus = (status: RegistryEntry['state']): string => {
   switch (status) {
     case 'RegistrationRequested':
-      return 'Pending';
+      return 'Registering';
     case 'RegistrationInitiated':
       return 'Registering';
     case 'RegistrationConfirmed':
@@ -36,7 +36,7 @@ export const parseAgentStatus = (status: RegistryEntry['state']): string => {
     case 'RegistrationFailed':
       return 'Registration Failed';
     case 'UpdateRequested':
-      return 'Pending';
+      return 'Update pending';
     case 'UpdateInitiated':
       return 'Updating';
     case 'UpdateConfirmed':
@@ -44,7 +44,7 @@ export const parseAgentStatus = (status: RegistryEntry['state']): string => {
     case 'UpdateFailed':
       return 'Update Failed';
     case 'DeregistrationRequested':
-      return 'Pending';
+      return 'Deregistration pending';
     case 'DeregistrationInitiated':
       return 'Deregistering';
     case 'DeregistrationConfirmed':
@@ -55,3 +55,34 @@ export const parseAgentStatus = (status: RegistryEntry['state']): string => {
       return status;
   }
 };
+
+/** Short helper copy explaining in-flight registry operations (no SLA promises). */
+export function getAgentStatusHelperText(state: RegistryEntry['state']): string | null {
+  switch (state) {
+    case 'RegistrationRequested':
+      return 'Your registration is queued and will mint on-chain shortly.';
+    case 'UpdateRequested':
+      return 'Metadata update is queued and will apply on-chain shortly.';
+    case 'DeregistrationRequested':
+      return 'Deregistration is queued and will apply on-chain shortly.';
+    default:
+      return null;
+  }
+}
+
+/** Placeholder when the agent identifier is not minted yet or is being replaced. */
+export function getAgentIdentifierPlaceholder(state: RegistryEntry['state']): string {
+  switch (state) {
+    case 'RegistrationRequested':
+    case 'RegistrationInitiated':
+      return 'Minting on-chain…';
+    case 'UpdateRequested':
+    case 'UpdateInitiated':
+      return 'Updating on-chain…';
+    case 'DeregistrationRequested':
+    case 'DeregistrationInitiated':
+      return 'Deregistering on-chain…';
+    default:
+      return '—';
+  }
+}

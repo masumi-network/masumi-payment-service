@@ -168,7 +168,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   // Both deferred until the dialog is open. `useAllAgents` walks every
   // inclusive-cursor page before it publishes anything, so running it on a
   // closed dialog is the same eager fan-out the wallet gate exists to stop.
-  const { wallets } = useWallets({ enabled: open });
+  const { wallets, isLoading: isLoadingWallets } = useWallets({ enabled: open });
   const { agents } = useAllAgents({ enabled: open });
 
   /**
@@ -224,7 +224,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || isLoadingWallets) return;
 
     if (availableBuyerWallets.length === 0) {
       if (selectedBuyerWalletId) {
@@ -238,7 +238,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     }
 
     setSelectedBuyerWalletId(availableBuyerWallets[0].id);
-  }, [open, availableBuyerWallets, selectedBuyerWalletId]);
+  }, [open, isLoadingWallets, availableBuyerWallets, selectedBuyerWalletId]);
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
@@ -523,14 +523,18 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                     <Select
                       value={selectedBuyerWalletId}
                       onValueChange={setSelectedBuyerWalletId}
-                      disabled={availableBuyerWallets.length === 0}
+                      disabled={isLoadingWallets || availableBuyerWallets.length === 0}
                     >
-                      <SelectTrigger className="flex-1">
+                      <SelectTrigger
+                        className={`flex-1 ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
                         <SelectValue
                           placeholder={
-                            availableBuyerWallets.length === 0
-                              ? 'No purchasing wallets on selected payment source'
-                              : 'Select buyer wallet'
+                            isLoadingWallets
+                              ? 'Loading wallets...'
+                              : availableBuyerWallets.length === 0
+                                ? 'No purchasing wallets on selected payment source'
+                                : 'Select buyer wallet'
                           }
                         />
                       </SelectTrigger>
@@ -558,7 +562,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                       <CopyButton value={selectedBuyerWallet.walletAddress} />
                     )}
                   </div>
-                  {availableBuyerWallets.length === 0 && (
+                  {!isLoadingWallets && availableBuyerWallets.length === 0 && (
                     <p className="text-xs text-muted-foreground">
                       Add a purchasing wallet to the selected payment source to enable buyer wallet
                       selection.

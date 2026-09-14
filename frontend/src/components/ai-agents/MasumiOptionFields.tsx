@@ -8,8 +8,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Trash2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { formatFundUnit } from '@/lib/utils';
+import { getPriceAmountAriaLabel } from '@/lib/agent-registration-price-label';
+import { FixedMasumiPriceRow } from './FixedMasumiPriceRow';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 import type {
   MasumiOptionDraft,
@@ -103,77 +105,72 @@ export function MasumiOptionFields({
               Add coin
             </Button>
           </div>
-          {option.prices.map((price, priceIndex) => (
-            <div
-              key={`${option.id}-${priceIndex}`}
-              className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
-            >
-              <div className="min-w-0 flex-1">
-                <Select
-                  value={price.unit}
-                  onValueChange={(unit: MasumiOptionDraft['prices'][number]['unit']) =>
-                    onChange({
-                      ...option,
-                      prices: option.prices.map((candidate, index) =>
-                        index === priceIndex ? { ...candidate, unit } : candidate,
-                      ),
-                    })
-                  }
-                >
-                  <SelectTrigger aria-label={`Coin for Masumi price ${priceIndex + 1}`}>
-                    <SelectValue placeholder="Select a coin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
-                      <SelectItem value="lovelace">
-                        {formatFundUnit('lovelace', network)}
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="min-w-0 flex-1">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  aria-label={`Amount for Masumi price ${priceIndex + 1}`}
-                  placeholder="0.00"
-                  onWheel={(event) => event.currentTarget.blur()}
-                  value={price.amount}
-                  onChange={(event) =>
-                    onChange({
-                      ...option,
-                      prices: option.prices.map((candidate, index) =>
-                        index === priceIndex
-                          ? { ...candidate, amount: event.target.value }
-                          : candidate,
-                      ),
-                    })
-                  }
-                  min="0"
-                  step="0.000001"
-                />
-              </div>
-              {option.prices.length > 1 ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
-                  aria-label={`Remove Masumi price ${priceIndex + 1}`}
-                  onClick={() =>
-                    onChange({
-                      ...option,
-                      prices: option.prices.filter((_, index) => index !== priceIndex),
-                    })
-                  }
-                >
-                  <Trash2 />
-                </Button>
-              ) : null}
-            </div>
-          ))}
+          {option.prices.map((price, priceIndex) => {
+            const displayUnit = formatFundUnit(price.unit, network);
+            return (
+              <FixedMasumiPriceRow
+                key={`${option.id}-${priceIndex}`}
+                displayUnit={displayUnit}
+                priceIndex={priceIndex}
+                coinSelect={
+                  <Select
+                    value={price.unit}
+                    onValueChange={(unit: MasumiOptionDraft['prices'][number]['unit']) =>
+                      onChange({
+                        ...option,
+                        prices: option.prices.map((candidate, index) =>
+                          index === priceIndex ? { ...candidate, unit } : candidate,
+                        ),
+                      })
+                    }
+                  >
+                    <SelectTrigger aria-label={`Coin for Masumi price ${priceIndex + 1}`}>
+                      <SelectValue placeholder="Select a coin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
+                        <SelectItem value="lovelace">
+                          {formatFundUnit('lovelace', network)}
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                }
+                amountInput={
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    aria-label={getPriceAmountAriaLabel(displayUnit, priceIndex)}
+                    placeholder="0.00"
+                    onWheel={(event) => event.currentTarget.blur()}
+                    value={price.amount}
+                    onChange={(event) =>
+                      onChange({
+                        ...option,
+                        prices: option.prices.map((candidate, index) =>
+                          index === priceIndex
+                            ? { ...candidate, amount: event.target.value }
+                            : candidate,
+                        ),
+                      })
+                    }
+                    min="0"
+                    step="0.000001"
+                  />
+                }
+                onRemove={
+                  option.prices.length > 1
+                    ? () =>
+                        onChange({
+                          ...option,
+                          prices: option.prices.filter((_, index) => index !== priceIndex),
+                        })
+                    : undefined
+                }
+              />
+            );
+          })}
         </div>
       ) : null}
     </>

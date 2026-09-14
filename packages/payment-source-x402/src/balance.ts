@@ -40,9 +40,9 @@ export type X402NetworkBalance = {
 	error: string | null;
 };
 
-export function buildPublicClient(network: { caip2Id: string; rpcUrl: string; displayName: string }) {
+export async function buildPublicClient(network: { caip2Id: string; rpcUrl: string; displayName: string }) {
 	const chain = createChain(network.caip2Id, network.rpcUrl, network.displayName);
-	return createPublicClient({ chain, transport: safeHttpTransport(network.rpcUrl) });
+	return createPublicClient({ chain, transport: await safeHttpTransport(network.rpcUrl) });
 }
 
 // The literal asset id used by a low-balance rule to mean the chain's native gas token
@@ -52,7 +52,7 @@ export const NATIVE_ASSET = 'native';
 // Reads the raw balance (base units) of `asset` for `owner` on an already-built client.
 // `asset` is "native" for the gas token, otherwise an ERC-20 contract address.
 export async function readAssetAmount(
-	client: ReturnType<typeof buildPublicClient>,
+	client: Awaited<ReturnType<typeof buildPublicClient>>,
 	owner: HexAddress,
 	asset: string,
 ): Promise<bigint> {
@@ -69,7 +69,7 @@ export async function readAssetAmount(
 }
 
 async function readErc20Balance(
-	client: ReturnType<typeof buildPublicClient>,
+	client: Awaited<ReturnType<typeof buildPublicClient>>,
 	asset: HexAddress,
 	owner: HexAddress,
 ): Promise<X402TokenBalance> {
@@ -119,7 +119,7 @@ export async function getX402WalletBalances(input: {
 	const balances = await Promise.all(
 		networks.map(async (network): Promise<X402NetworkBalance> => {
 			try {
-				const client = buildPublicClient(network);
+				const client = await buildPublicClient(network);
 				await assertRpcServesDeclaredChain(client, network.caip2Id);
 				const [nativeAmount, assetBalance] = await Promise.all([
 					client.getBalance({ address: owner }),

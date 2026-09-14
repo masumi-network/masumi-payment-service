@@ -5,6 +5,7 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { Pagination } from '@/components/ui/pagination';
 import {
   Select,
@@ -159,13 +160,13 @@ export default function TxSyncQuarantinePage() {
           </div>
 
           {isInitialLoading ? (
-            <div className="border rounded-lg overflow-x-auto">
+            <HorizontalScrollArea className="border rounded-lg">
               <table className="w-full">
                 <tbody>
                   <TransactionTableSkeleton rows={5} />
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
           ) : isError ? (
             <div className="rounded-lg border">
               <EmptyState

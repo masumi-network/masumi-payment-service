@@ -33,23 +33,35 @@ cd masumi-payment-service
 pnpm install                    # installs deps + generates the Prisma client
 
 cp .env.example .env            # then fill in DATABASE_URL, ENCRYPTION_KEY,
-                                # Blockfrost keys, ... (see docs/configuration.md)
+                                # BLOCKFROST_API_KEY_PREPROD, ... (see docs/configuration.md)
 
-pnpm run prisma:migrate:dev     # apply database migrations
+# Required before seeding Preprod payment sources (minimum for a new install):
+#   DATABASE_URL, ENCRYPTION_KEY, BLOCKFROST_API_KEY_PREPROD
+# Recommended: ADMIN_KEY (a secure value; the seed falls back to a public default if unset)
+# Optional wallet mnemonics: PURCHASE_WALLET_* / SELLING_WALLET_* (brewed and printed if blank)
+# Legacy V1 sources: set SEED_V1_LEGACY=true (requires separate PURCHASE/SELLING_WALLET_V2_* when seeding both types)
+
+pnpm run prisma:migrate         # apply checked-in migrations (no shadow DB required)
 pnpm run prisma:seed            # seed initial data (admin key, payment source)
 
+
+pnpm -C frontend run build      # build the admin UI into frontend/dist (required for /admin/)
 pnpm run dev                    # start the API server on http://localhost:3001
 ```
 
-Once the API server is up, open **<http://localhost:3001/>** — browser requests
-to `/` are redirected to the admin interface at `/admin/`. API clients, health
-probes and `curl` are unaffected: the redirect only fires for requests that
-actually ask for HTML.
+`pnpm run dev` starts the API only. It serves `/admin/` when `frontend/dist` exists
+(from the build step above). The root `pnpm run build` command builds the **backend**
+only — it does not build the frontend.
 
-The admin interface served under `/admin/` is the **built** Next.js bundle
-(`frontend/dist`), so it only exists after the frontend has been built. To work
-on the dashboard itself, run it as its own dev server instead — that gives you
-hot reload on <http://localhost:3000/>:
+Once the API server is up **and** the frontend is built, open
+**<http://localhost:3001/admin/>** — browser requests to `/` redirect there.
+API clients, health probes and `curl` are unaffected: the redirect only fires for
+requests that actually ask for HTML.
+
+### Frontend development (separate from built `/admin/`)
+
+To work on the dashboard with hot reload, run the frontend dev server on
+<http://localhost:3000/> instead of using the built bundle:
 
 ```bash
 cd frontend
@@ -69,6 +81,19 @@ NEXT_PUBLIC_PAYMENT_API_BASE_URL=http://localhost:3001/api/v1
 The admin interface is designed for desktop. Narrow screens now show a
 dismissible warning rather than being blocked outright, but tables and dialogs
 are still cramped below ~1024px.
+
+### Database migrations for contributors
+
+Use `pnpm run prisma:migrate` to apply checked-in migrations when installing or
+deploying — it runs `prisma migrate deploy` and does **not** need a shadow
+database.
+
+Use `pnpm run prisma:migrate:dev` only when you **author or edit** migrations.
+That command runs `prisma migrate dev`, which creates a temporary shadow
+database. The PostgreSQL user needs superuser or `CREATEDB` permission, or you
+can set **`SHADOW_DATABASE_URL`** to a separate database the user is allowed
+to create/drop. See the [Prisma shadow database
+docs](https://www.prisma.io/docs/orm/prisma-migrate/understanding-prisma-migrate/shadow-database).
 
 Useful commands: `pnpm run test` (unit tests — always via pnpm, not bare
 `npx jest`), `pnpm run lint`, `pnpm run format`, `pnpm run typecheck`. See the

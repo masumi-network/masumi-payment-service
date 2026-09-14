@@ -18,6 +18,11 @@ import { Spinner } from '@/components/ui/spinner';
 import { Tabs } from '@/components/ui/tabs';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
+} from '@/components/ui/table-actions-column';
 import { RefreshButton } from '@/components/RefreshButton';
 import { InboxAgentDetailsDialog } from '@/components/inbox-agents/InboxAgentDetailsDialog';
 import { RegisterInboxAgentDialog } from '@/components/inbox-agents/RegisterInboxAgentDialog';
@@ -304,7 +309,7 @@ export default function InboxAgentsPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border overflow-x-auto">
+            <HorizontalScrollArea className="rounded-lg border">
               <table
                 className={cn(
                   'w-full transition-opacity duration-150',
@@ -334,7 +339,7 @@ export default function InboxAgentsPage() {
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Status
                     </th>
-                    <th className="w-24 p-4 pr-8"></th>
+                    <th className={tableActionsHeadCompactClass}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -380,7 +385,7 @@ export default function InboxAgentsPage() {
                         <tr
                           key={agent.id}
                           className={cn(
-                            'border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
+                            'group border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
                             agent.state === 'DeregistrationConfirmed'
                               ? 'animate-fade-in-to-muted'
                               : 'animate-fade-in',
@@ -478,7 +483,7 @@ export default function InboxAgentsPage() {
                               {parseInboxAgentStatus(agent.state)}
                             </Badge>
                           </td>
-                          <td className="p-4 pr-8">
+                          <td className={tableActionsCellCompactClass}>
                             <div className="flex items-center gap-1">
                               <Button
                                 variant="ghost"
@@ -500,14 +505,14 @@ export default function InboxAgentsPage() {
                                     event.stopPropagation();
                                     handleDeleteClick(agent);
                                   }}
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
                                   title={
                                     agent.state === 'RegistrationConfirmed'
                                       ? 'Deregister inbox agent'
                                       : 'Delete inbox agent'
                                   }
                                 >
-                                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
                                 </Button>
                               ) : agent.state === 'RegistrationInitiated' ||
                                 agent.state === 'DeregistrationInitiated' ? (
@@ -528,7 +533,7 @@ export default function InboxAgentsPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
 
             <div className="flex flex-col gap-4 items-center">
               {!((isLoading || isSourceResolving) && !inboxAgents.length) && (

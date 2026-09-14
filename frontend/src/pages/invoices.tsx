@@ -15,19 +15,15 @@ import { Badge } from '@/components/ui/badge';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { MonthPicker } from '@/components/ui/month-picker';
 import { useInvoices, type InvoiceSummary } from '@/lib/hooks/useInvoices';
 import { useUninvoicedPayments, type UninvoicedPayment } from '@/lib/hooks/useUninvoicedPayments';
 import { InvoiceDetailsDialog } from '@/components/invoices/InvoiceDetailsDialog';
 import { GenerateInvoiceDialog } from '@/components/invoices/GenerateInvoiceDialog';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { getCurrentMonth } from '@/lib/invoices-month';
 import { toast } from 'react-toastify';
-
-function getPreviousMonth(): string {
-  const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
-}
 
 function formatMonthLabel(month: string): string {
   const [yearStr, monthStr] = month.split('-');
@@ -118,7 +114,7 @@ export default function Invoices() {
   const { network, capabilities } = useAppContext();
 
   const [activeTab, setActiveTab] = useState('Generated Invoices');
-  const [selectedMonth, setSelectedMonth] = useState(getPreviousMonth);
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceSummary | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
@@ -317,7 +313,7 @@ export default function Invoices() {
                   {invoicesErrorMessage}
                 </div>
               )}
-              <div className="border rounded-lg overflow-x-auto">
+              <HorizontalScrollArea className="border rounded-lg">
                 <table className="w-full">
                   <thead className="bg-muted/30 dark:bg-muted/15">
                     <tr className="border-b">
@@ -382,7 +378,7 @@ export default function Invoices() {
                         <tr
                           key={invoice.id}
                           className={cn(
-                            'border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                            'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
                             'cursor-pointer hover:bg-muted/50',
                           )}
                           style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
@@ -423,7 +419,7 @@ export default function Invoices() {
                     )}
                   </tbody>
                 </table>
-              </div>
+              </HorizontalScrollArea>
 
               <div className="flex flex-col gap-4 items-center">
                 {!isLoadingInvoices && (

@@ -68,24 +68,16 @@ async function reserveCreditsForAttempt({
 				select: { id: true, amount: true },
 			});
 			if (creditRows.length === 0) {
-				// Grandfathering: usageLimited predates EVM credits, so an existing key
-				// whose flag meant "Cardano-limited" would be hard-stopped on deploy by a
-				// unit format it has never heard of. A key with NO chain-qualified rows at
-				// all keeps its pre-cap behaviour (uncapped x402) and says so in the log;
-				// the moment the operator provisions any eip155 credit row the cap becomes
-				// binding for every EVM chain, so it cannot be dodged chain-by-chain.
-				const evmCreditRowCount = await tx.unitValue.count({
-					where: { apiKeyId, unit: { startsWith: 'eip155:' } },
-				});
-				if (evmCreditRowCount > 0) {
-					throw createHttpError(
-						402,
-						`Insufficient usage credits for ${creditUnit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
-					);
-				}
-				logger.warn(
-					'x402 credit cap not enforced: usage-limited key has no EVM credit rows (pre-cap key); add eip155-format usage credits to activate the cap',
-					{ apiKeyId: '[REDACTED]', unit: creditUnit },
+				// Fail closed. This used to grandfather a key with NO chain-qualified rows
+				// to its pre-cap behaviour, on the grounds that usageLimited predates EVM
+				// credits and once meant "Cardano-limited". That inverted what the flag
+				// promises: a key the operator had marked limited spent x402 against the
+				// wallet's whole balance, capped by nothing, and the only trace was a log
+				// line nobody reads. No credits for the unit means no allowance, so the
+				// payment is refused — the same answer the Cardano path gives.
+				throw createHttpError(
+					402,
+					`Insufficient usage credits for ${creditUnit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
 				);
 			} else {
 				// Consolidate split rows into the first one before debiting. Every write is

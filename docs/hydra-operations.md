@@ -39,8 +39,9 @@ cannot come back.
 | **ADA in a purchasing wallet**       | For the funds you put in the head, plus about 30 ADA per head for its node to pay the on-chain fees (topped back up whenever it falls under 15).                                                         |
 | **A counterparty who also runs one** | Both sides need a node. There is no one-sided head.                                                                                                                                                      |
 
-Both nodes must run the **same `hydra-node` version** (2.3.0 at the time of
-writing) and the **same ledger protocol parameters**. Mismatched versions
+Both nodes must run the **same `hydra-node` version** (2.4.1 at the time of
+writing; see [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)
+to move from 2.3.0) and the **same ledger protocol parameters**. Mismatched versions
 produce script hashes that do not agree, and the head never opens. The node
 details dialog shows both, which is the first thing to compare when a head will
 not open.
@@ -65,6 +66,7 @@ block-storage volume, the systemd unit, the firewall, and backups end to end.
 cd packages/hydra-host
 HYDRA_HOST_IMAGE=hydra-host:local \
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
+HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
 HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
@@ -100,6 +102,11 @@ a head. `HYDRA_HOST_PUBLIC_HOST` is a bare hostname or IP with no scheme, port
 or path; the Host refuses to start otherwise, because that value becomes each
 node's advertise identity and must not change for a head's lifetime.
 
+`HYDRA_HOST_PUBLIC_EXCHANGE_URL` is the full URL that signed invites give to
+counterparties. It must end in `/exchange`. It must use HTTPS unless it points
+to loopback. Set `HYDRA_HOST_EXCHANGE_TRUST_PROXY=true` only when a trusted
+HTTP proxy is the only network path to port `8444`.
+
 The ports are the security boundary. Five ranges exist and only three may leave
 the machine:
 
@@ -113,6 +120,9 @@ the machine:
 
 The API range is additionally bound to `127.0.0.1` inside the container, so it
 stays shut even if someone switches to host networking.
+
+The base Compose file also binds the Control Plane and Exchange Plane to
+`127.0.0.1`. Public access requires an explicit deployment configuration.
 
 **The peer plane cannot authenticate its callers**, which is why the base
 compose file does not publish it. It still has to be reachable, because a head
@@ -166,7 +176,7 @@ the check fails, and the readings appear under **Details → Version and hashes*
 
 | Variable                                      | Where the value comes from                                                                                                       |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `HYDRA_EXPECTED_VERSION`                      | **Details → Version**, copied exactly. Official `hydra-node` builds report `2.3.0-<git sha>`; a bare `2.3.0` does not match one. |
+| `HYDRA_EXPECTED_VERSION`                      | **Details → Version**, copied exactly. Official `hydra-node` builds report `2.4.1-<git sha>`; a bare `2.4.1` does not match one. |
 | `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH`        | **Details → Scripts**, via the copy button.                                                                                      |
 | `HYDRA_EXPECTED_LEDGER_PARAMS_HASH_<NETWORK>` | Already set for preprod. Do not copy this one from the Host: point the Host at the reviewed file instead (below).                |
 
@@ -464,5 +474,6 @@ phase asserts and the opt-in phase that opens a real head on preprod.
 - [hydra-architecture.md](hydra-architecture.md) — how the pieces fit together
 - [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md) — deploying on a droplet, without compose
 - [hydra-host-native-mode.md](hydra-host-native-mode.md) — running without a container
+- [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md) — moving Hosts and services from hydra-node 2.3.0 to 2.4.1
 - [hydra-l2-reservation-recovery.md](hydra-l2-reservation-recovery.md) — why L2 reservations are held
 - [adr/0011-head-invites-on-a-host-exchange-plane.md](adr/0011-head-invites-on-a-host-exchange-plane.md) — why invites work the way they do

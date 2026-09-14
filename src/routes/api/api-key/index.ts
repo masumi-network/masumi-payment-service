@@ -28,7 +28,13 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
-import { consolidateUsageCredits, findNonCanonicalEvmCreditUnit, normalizeCreditUnit } from './credit-units';
+import { resolveCreateUsageLimited } from './usage-limited';
+import {
+	consolidateUsageCredits,
+	findNonCanonicalEvmCreditUnit,
+	normalizeCreditUnit,
+	planCreditDelta,
+} from './credit-units';
 import {
 	computePermissionFromFlags,
 	flagsFromLegacyPermission,
@@ -260,9 +266,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 			hotWalletIds: input.walletScopeEnabled ? input.WalletScopeHotWalletIds : undefined,
 			evmWalletIds: input.x402WalletScopeEnabled ? input.X402WalletScopeEvmWalletIds : undefined,
 		});
-		if (isAdmin && input.usageLimited) {
-			throw createHttpError(400, 'Admin API keys cannot have usage limits');
-		}
+		const usageLimited = resolveCreateUsageLimited({ isAdmin, requested: input.usageLimited });
 		// Omitted means "every configured EVM chain in the key's environment", the twin
 		// of NetworkLimit defaulting to every Cardano network. An explicit [] still
 		// means none. Skipped for admins, whose networkLimit is [] and who are
@@ -270,7 +274,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		const chainIdLimit = isAdmin ? [] : (input.ChainIdLimit ?? (await allConfiguredEvmChainIds(input.NetworkLimit)));
 		// Fail closed on a unit that was meant to be an EVM credit but is not exactly
 		// eip155:<chainId>:0x<40 hex>: stored verbatim it would never match the debit
-		// lookup and would leave the key's x402 spending uncapped while looking funded.
+		// lookup, so payments would fail despite the displayed balance.
 		const badUnit = findNonCanonicalEvmCreditUnit(input.UsageCredits.map((credit) => credit.unit));
 		if (badUnit != null) {
 			throw createHttpError(
@@ -302,7 +306,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				canRead: canRead,
 				canPay: canPay,
 				canAdmin: canAdmin,
-				usageLimited: isAdmin ? false : input.usageLimited,
+				usageLimited: usageLimited,
 				networkLimit: isAdmin
 					? []
 					: mergeCaip2NetworkLimits(
@@ -386,11 +390,12 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					if (!apiKey) {
 						throw createHttpError(404, 'API key not found');
 					}
-					if (input.UsageCreditsToAddOrRemove) {
+					if (input.UsageCreditsToAddOrRemove || input.usageLimited === true) {
+						const requestedUsageCredits = input.UsageCreditsToAddOrRemove ?? [];
 						// Same fail-closed check as the create path: an EVM-ish unit that is
 						// not exactly eip155:<chainId>:0x<40 hex> would never match the debit
-						// lookup and would leave the key's x402 spending uncapped.
-						const badUnit = findNonCanonicalEvmCreditUnit(input.UsageCreditsToAddOrRemove.map((credit) => credit.unit));
+						// lookup, so payments would fail despite the displayed balance.
+						const badUnit = findNonCanonicalEvmCreditUnit(requestedUsageCredits.map((credit) => credit.unit));
 						if (badUnit != null) {
 							throw createHttpError(
 								400,
@@ -403,7 +408,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						// row and then updated the deleted id (raw P2025 500, whole PATCH lost),
 						// and two positive deltas for a new unit created two rows for it.
 						const deltasByUnit = new Map<string, bigint>();
-						for (const usageCredit of input.UsageCreditsToAddOrRemove) {
+						for (const usageCredit of requestedUsageCredits) {
 							// Match and store the normalized unit: the x402 debit looks credits up
 							// by the lowercased form, so a checksummed top-up would otherwise
 							// create (or leave) a row the payment path can never match. Comparing
@@ -412,32 +417,47 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 							const unit = normalizeCreditUnit(usageCredit.unit);
 							deltasByUnit.set(unit, (deltasByUnit.get(unit) ?? 0n) + BigInt(usageCredit.amount));
 						}
+						// Enabling the cap must also repair stored aliases. The update dialog
+						// displays `lovelace` as `''` and checksummed EVM units in lowercase, so
+						// an unchanged balance sends no delta. Seed a zero delta for each stored
+						// unit so the plan below consolidates and writes its canonical form before
+						// the limited key starts using exact-unit lookups.
+						if (input.usageLimited === true) {
+							for (const credit of apiKey.RemainingUsageCredits) {
+								const unit = normalizeCreditUnit(credit.unit);
+								if (!deltasByUnit.has(unit)) deltasByUnit.set(unit, 0n);
+							}
+						}
 						for (const [unit, delta] of deltasByUnit) {
-							const existingCredit = apiKey.RemainingUsageCredits.find(
-								(credit) => normalizeCreditUnit(credit.unit) == unit,
-							);
-							if (existingCredit) {
-								const nextAmount = existingCredit.amount + delta;
-								if (nextAmount < 0n) {
-									throw createHttpError(400, 'Invalid amount');
+							// Applied across EVERY row carrying the unit, not just the first one
+							// found. Duplicate rows read as a single balance everywhere else, so
+							// resolving one row here refused edits the real balance covered and let
+							// a removal land on the wrong row.
+							const plan = planCreditDelta(apiKey.RemainingUsageCredits, unit, delta);
+							if (plan === null) {
+								throw createHttpError(400, 'Invalid amount');
+							}
+							if (plan.updateId !== null) {
+								// Fold the duplicates away first, so the unit is left on one row.
+								if (plan.deleteIds.length > 0) {
+									await prisma.unitValue.deleteMany({ where: { id: { in: plan.deleteIds } } });
 								}
-								// A zeroed row is KEPT, not deleted. Deleting it removed the only
-								// evidence that this key is capped on that chain+asset, and the
-								// x402 enforcement probe reads "no EVM credit rows" as "pre-cap
-								// key, do not enforce" — so revoking a key's last EVM allowance
-								// used to hand it UNLIMITED spend instead of none.
+								// A zeroed row is KEPT, not deleted: it is the record that this key
+								// is capped on that chain and asset, and the operator can top it up
+								// again without retyping the unit. Enforcement no longer depends on
+								// the row existing — a usage-limited key with no credits for the
+								// unit it pays in is refused either way — but a key that shows its
+								// zeroed allowances is easier to reason about than one that hides
+								// them.
 								await prisma.unitValue.update({
-									where: { id: existingCredit.id },
-									data: { amount: nextAmount, unit },
+									where: { id: plan.updateId },
+									data: { amount: plan.amount, unit },
 								});
 							} else {
-								if (delta <= 0n) {
-									throw createHttpError(400, 'Invalid amount');
-								}
 								await prisma.unitValue.create({
 									data: {
 										unit,
-										amount: delta,
+										amount: plan.amount,
 										apiKeyId: apiKey.id,
 										agentFixedPricingId: null,
 										paymentRequestId: null,

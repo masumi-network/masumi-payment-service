@@ -11,7 +11,7 @@ import { createPublicClient, createWalletClient, publicActions } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
 	assertRpcServesDeclaredChain,
-	assertSafeFacilitatorUrl,
+	assertSafeFacilitatorUrlResolved,
 	createChain,
 	getEip155ChainId,
 	getManagedWalletWithSecretOrThrow,
@@ -44,7 +44,7 @@ export async function getClientForWallet(
 	const privateKey = decrypt(wallet.Secret.encryptedPrivateKey) as PrivateKey;
 	const account = privateKeyToAccount(privateKey);
 	const chain = createChain(network.caip2Id, network.rpcUrl, network.displayName);
-	const publicClient = createPublicClient({ chain, transport: safeHttpTransport(network.rpcUrl) });
+	const publicClient = createPublicClient({ chain, transport: await safeHttpTransport(network.rpcUrl) });
 	await assertRpcServesDeclaredChain(publicClient, network.caip2Id);
 	const signer = toClientEvmSigner(account, publicClient);
 	const client = new x402Client();
@@ -90,7 +90,7 @@ export async function getFacilitatorForNetwork(
 	if (network.facilitatorUrl != null) {
 		// Persistence validation protects new writes; this use-time check also rejects unsafe
 		// legacy rows before decrypting or sending their stored Authorization header.
-		assertSafeFacilitatorUrl(network.facilitatorUrl);
+		await assertSafeFacilitatorUrlResolved(network.facilitatorUrl);
 		const authEnc = network.facilitatorAuthEnc;
 		const facilitator = new RemoteHTTPFacilitatorClient({
 			url: network.facilitatorUrl,
@@ -118,9 +118,11 @@ export async function getFacilitatorForNetwork(
 	const privateKey = decrypt(network.FacilitatorWallet.Secret.encryptedPrivateKey) as PrivateKey;
 	const account = privateKeyToAccount(privateKey);
 	const chain = createChain(network.caip2Id, network.rpcUrl, network.displayName);
-	const walletClient = createWalletClient({ account, chain, transport: safeHttpTransport(network.rpcUrl) }).extend(
-		publicActions,
-	);
+	const walletClient = createWalletClient({
+		account,
+		chain,
+		transport: await safeHttpTransport(network.rpcUrl),
+	}).extend(publicActions);
 	await assertRpcServesDeclaredChain(walletClient, network.caip2Id);
 	const facilitatorSigner = toFacilitatorEvmSigner(
 		Object.assign(walletClient, {

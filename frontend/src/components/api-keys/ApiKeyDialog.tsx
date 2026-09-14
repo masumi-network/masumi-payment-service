@@ -10,6 +10,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { capabilitiesFromApiKeyStatus, DEFAULT_CAPABILITIES } from '@/lib/permissions';
+import { MASUMI_API_KEY_DOCS_URL } from '@/lib/masumi-links';
 
 interface ApiError {
   message: string;
@@ -88,20 +89,20 @@ export function ApiKeyDialog() {
       <main className="flex flex-col items-center justify-center min-h-screen py-20">
         <h1 className="text-4xl font-bold mb-4">Enter your API Key</h1>
 
-        <p className="text-sm text-muted-foreground mb-8 text-center max-w-md">
-          Your API key is needed to access the dashboard. This key is required to manage your ai
-          agents, payment settings and view transactions.
-        </p>
-
-        <Button variant="muted" className="text-sm mb-8 hover:underline" asChild>
+        <div className="text-sm text-muted-foreground mb-8 text-center max-w-lg space-y-3">
+          <p>
+            Sign in with the <code className="text-foreground">ADMIN_KEY</code> from your node
+            environment, or any other valid API key from this payment service.
+          </p>
           <Link
-            href={'https://www.masumi.network/dev/masumi/'}
+            href={MASUMI_API_KEY_DOCS_URL}
             target="_blank"
             rel="noopener noreferrer"
+            className="inline-block text-primary underline underline-offset-4 hover:text-primary/80"
           >
-            Learn more
+            Learn more about API keys and ADMIN_KEY
           </Link>
-        </Button>
+        </div>
 
         <form
           onSubmit={(e) => {

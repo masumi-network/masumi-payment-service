@@ -3,6 +3,7 @@ import Image from 'next/image';
 import logo from '@/assets/masumi_logo.png';
 import Link from 'next/link';
 import { BookOpen, MessageSquare } from 'lucide-react';
+import { MASUMI_DOCUMENTATION_URL, MASUMI_SUPPORT_URL } from '@/lib/masumi-links';
 
 export function Header() {
   return (
@@ -13,7 +14,7 @@ export function Header() {
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" asChild>
               <Link
-                href="https://www.masumi.network/dev/masumi"
+                href={MASUMI_DOCUMENTATION_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2"
@@ -24,7 +25,7 @@ export function Header() {
             </Button>
             <Button variant="outline" size="sm" asChild>
               <Link
-                href="https://www.masumi.network/contact"
+                href={MASUMI_SUPPORT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2"

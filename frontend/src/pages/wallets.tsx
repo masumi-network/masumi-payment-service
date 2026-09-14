@@ -32,10 +32,16 @@ import {
   type HotWalletType,
 } from '@/lib/wallet-type';
 
-import { formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
+import { formatSixDecimalAmount, shortenAddress, cn } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
 import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellCompactClass,
+  tableActionsCellCompactLowBalanceHoverClass,
+  tableActionsHeadCompactClass,
+} from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
 import { usePaginatedWallets } from '@/lib/queries/useWallets';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -246,7 +252,7 @@ export default function WalletsPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border overflow-x-auto">
+          <HorizontalScrollArea className="rounded-lg border">
             <table className="w-full">
               <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
@@ -266,7 +272,7 @@ export default function WalletsPage() {
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Balance, {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
                   </th>
-                  <th className="w-20 p-4 pr-8"></th>
+                  <th className={tableActionsHeadCompactClass}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -287,7 +293,7 @@ export default function WalletsPage() {
                     {filteredWallets.map((wallet, index) => (
                       <tr
                         key={wallet.id}
-                        className={`border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
+                        className={`group border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
                           wallet.LowBalanceSummary?.isLow
                             ? 'bg-amber-500/5 hover:bg-amber-500/10'
                             : 'hover:bg-muted/50'
@@ -379,7 +385,13 @@ export default function WalletsPage() {
                             )}
                           </div>
                         </td>
-                        <td className="p-4 pr-8">
+                        <td
+                          className={cn(
+                            tableActionsCellCompactClass,
+                            wallet.LowBalanceSummary?.isLow &&
+                              tableActionsCellCompactLowBalanceHoverClass,
+                          )}
+                        >
                           <div className="flex justify-end">
                             {/* Every action here (fund, top up, transfer, swap) is an
                                 admin-only endpoint, so the whole menu is admin-gated. */}
@@ -443,7 +455,7 @@ export default function WalletsPage() {
                 )}
               </tbody>
             </table>
-          </div>
+          </HorizontalScrollArea>
 
           {hasMore && (
             <div className="flex justify-center">

@@ -72,7 +72,34 @@ export class HydraNode extends EventEmitter {
 	// that a dropped InitTx surfaces as a retryable error rather than an infinite
 	// hang. Overridable per-call for devnet (sub-second) or slow-sync scenarios.
 	static readonly INIT_OBSERVE_TIMEOUT_MS = 300_000;
+	/**
+	 * How long `init()` will wait for a node that has said it is behind the
+	 * chain to report `NodeSynced` before giving up without sending. Sized to
+	 * the catch-up a preprod restart was measured to need (341s of drift
+	 * collapsing to 70s within a couple of minutes), not to the observe timeout:
+	 * spending that budget here would leave Init itself no time to be observed.
+	 */
+	static readonly INIT_SYNC_WAIT_MS = 180_000;
+	private static readonly INIT_SYNC_POLL_MS = 250;
 	static readonly COMMAND_RESPONSE_TIMEOUT_MS = 30_000;
+	/**
+	 * How long a submission waits for the HEAD to confirm a body this node has
+	 * already called `TxValid` (see `HydraProvider.submitTx`).
+	 *
+	 * Named rather than inherited from the command timeout. It is the same 30s
+	 * today, but it is not the same thing to size: it covers a peer signing and
+	 * a snapshot forming, not a request/response round trip.
+	 *
+	 * Exceeding it is not a failure but `HydraTransportAmbiguousError`, and the
+	 * reservation then stays Pending and held. Recovery does NOT settle it on
+	 * its own: `reportExpiredL2Reservations` reports an expired reservation
+	 * without releasing it, and releases only one the head explicitly refused
+	 * (`l2RejectedByHeadAt`), which a timeout never sets. So a body that times
+	 * out here waits for reconciliation, and the wallet lease stays held until
+	 * then. Raising this holds that lease open longer; lowering it sends bodies
+	 * to reconciliation that would have confirmed on their own.
+	 */
+	static readonly SUBMIT_CONFIRMATION_TIMEOUT_MS = 30_000;
 	static readonly CONNECTION_TIMEOUT_MS = 10_000;
 	static readonly HTTP_TIMEOUT_MS = 30_000;
 	static readonly LIFECYCLE_RESPONSE_TIMEOUT_MS = 300_000;
@@ -480,6 +507,23 @@ export class HydraNode extends EventEmitter {
 			return;
 		}
 
+		// A node that is behind the chain does not refuse Init — it parks it
+		// (`WaitOnNodeInSync`), to be released on `NodeSynced`. Observed live
+		// 2026-09-07 on preprod: Init handed to a node whose Greetings said
+		// `CatchingUp`, `NodeSynced` 49s later, then nothing at all — no InitTx
+		// posted, no `PostTxOnChainFailed`, no frame — until the observe timeout
+		// raised an ambiguous error for a transaction that had never existed.
+		// So a node that has positively said it is behind is waited out first.
+		// Unknown sync state (no Greetings yet) sends as before: only a reported
+		// "behind" holds, and holding on silence would stall every fresh socket.
+		//
+		// Guarded rather than awaited unconditionally: an `await` on an
+		// already-resolved promise still yields a microtask, and callers rely on
+		// Init reaching the socket in the same synchronous turn as the call.
+		if (this._live.chainSynced === false) {
+			await this.awaitChainSyncedForInit();
+		}
+
 		return await this.sendCommandAndWait({
 			command: 'Init',
 			payload: { tag: 'Init' },
@@ -546,6 +590,37 @@ export class HydraNode extends EventEmitter {
 		return txHash;
 	}
 
+	/**
+	 * Whether the node says it is caught up with its chain, or `undefined` if
+	 * it has not said. See `LiveFrameProcessor.chainSynced`.
+	 */
+	isChainSynced(): boolean | undefined {
+		return this._live.chainSynced;
+	}
+
+	/**
+	 * Hold until a node that reported itself behind the chain reports synced.
+	 * Resolves at once when the state is synced or unknown. Rejects as a
+	 * transport error — the command was never sent, so there is nothing to
+	 * reconcile — if the node is still behind after `INIT_SYNC_WAIT_MS`.
+	 */
+	private async awaitChainSyncedForInit(): Promise<void> {
+		logger.info('[HydraNode] Node reports it is catching up; holding Init until it is synced', {
+			headId: this._expectedHeadId,
+		});
+		const deadline = Date.now() + HydraNode.INIT_SYNC_WAIT_MS;
+		while (this._live.chainSynced === false) {
+			if (Date.now() >= deadline) {
+				throw new HydraTransportError(
+					`Init not sent: hydra-node still reports it is behind the chain after ${Math.round(
+						HydraNode.INIT_SYNC_WAIT_MS / 1000,
+					)}s; retry once it reports synced`,
+				);
+			}
+			await new Promise((resolve) => setTimeout(resolve, HydraNode.INIT_SYNC_POLL_MS));
+		}
+	}
+
 	isTxConfirmed(txHash: string): boolean {
 		return this._ledger.hasConfirmed(txHash);
 	}
@@ -589,9 +664,12 @@ export class HydraNode extends EventEmitter {
 		this._connectionsStarted = false;
 	}
 
-	async awaitTx(txHash: string, checkInterval: number = 1000) {
+	async awaitTx(txHash: string, checkInterval: number = 1000, timeoutMs: number = this._commandTimeoutMs) {
 		if (!Number.isSafeInteger(checkInterval) || checkInterval <= 0) {
 			throw new HydraProtocolError('Hydra confirmation polling interval must be a positive safe integer');
+		}
+		if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+			throw new HydraProtocolError('Hydra confirmation timeout must be a positive safe integer');
 		}
 		if (this._ledger.hasConfirmed(txHash)) return true;
 		return await awaitHydraTxConfirmation({
@@ -599,7 +677,7 @@ export class HydraNode extends EventEmitter {
 			hasConfirmed: (hash) => this._ledger.hasConfirmed(hash),
 			txHash,
 			checkIntervalMs: checkInterval,
-			timeoutMs: this._commandTimeoutMs,
+			timeoutMs,
 		});
 	}
 

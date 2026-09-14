@@ -76,7 +76,10 @@ hydra-l2-flow/preprod/*.pid
 hydra-l2-flow/preprod/protocol-parameters*.json
 
 # Hydra L2 E2E — generated evidence reports (regenerate via run-hydra-e2e.sh evidence)
-hydra-l2-flow/evidence/
+# Exploratory bench runs stay local; the canonical settled run ships with the PR
+# so a reviewer can check every claim (the report cites these paths).
+hydra-l2-flow/evidence/*
+!hydra-l2-flow/evidence/2026-08-31-settled/
 
 # Hydra Host build output
 packages/*/dist/
@@ -88,3 +91,9 @@ packages/*/dist/
 # state would confuse it, and a new name must not become the first thing an
 # operator accidentally commits.
 .hydra-*/
+
+# Local QA/testing artifacts — .qa holds .env, admin/read API keys and wallet
+# keys, so it must never be committable. Added 2026-08-29 after finding these
+# were untracked-but-stageable.
+.qa/
+.playwright-mcp/

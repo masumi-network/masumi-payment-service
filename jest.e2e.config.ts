@@ -31,6 +31,20 @@ const testMatch = process.env.TEST_PAYMENT_SOURCE_TYPE
 	? (sourceScopedTestMatches[process.env.TEST_PAYMENT_SOURCE_TYPE] ?? allE2ETestMatches)
 	: allE2ETestMatches;
 
+// One worker per V1 flow file, which is the largest set a single Jest
+// invocation discovers today. Overridable with E2E_MAX_WORKERS.
+const DEFAULT_E2E_MAX_WORKERS = 3;
+
+function parseMaxWorkers(): number {
+	const raw = process.env.E2E_MAX_WORKERS;
+	if (raw == null || raw.trim() === '') return DEFAULT_E2E_MAX_WORKERS;
+	const parsed = Number(raw);
+	if (!Number.isInteger(parsed) || parsed < 1) {
+		throw new Error(`E2E_MAX_WORKERS must be a positive integer, got "${raw}"`);
+	}
+	return parsed;
+}
+
 const config: Config.InitialOptions = {
 	preset: 'ts-jest/presets/default-esm',
 	displayName: 'E2E',
@@ -51,11 +65,22 @@ const config: Config.InitialOptions = {
 	setupFilesAfterEnv: ['<rootDir>/jest.setup.libsodium.ts', '<rootDir>/tests/e2e/setup/testEnvironment.ts'],
 	// Per-test timeout (applies to each `test(...)` and async hooks in test files)
 	testTimeout: 1_200_000, // 20 minutes
-	// Sequential workers: the V2 source-isolation suite mutates
-	// `global.testConfig.paymentSourceType` and the describe.each blocks in the
-	// shared flow tests do the same. Running in parallel would cause cross-file
-	// races on that shared global.
-	maxWorkers: 1,
+	// Concurrent test files. Suites mutate `global.testConfig.paymentSourceType`
+	// and `global.testAgent`, but that cannot race across files: Jest gives every
+	// test file its own module registry and its own `global`, and worker
+	// processes inherit `process.env` at fork time, so globalSetup's agent state
+	// still reaches them.
+	//
+	// What still serializes is on chain. V1 takes one request per hot wallet per
+	// scheduler tick and keeps the wallet locked until its transaction confirms,
+	// so flows sharing a wallet pipeline instead of running fully in parallel.
+	// Seed one selling wallet per flow to remove that half (see
+	// tests/e2e/README.md > Parallel flows).
+	//
+	// Set E2E_MAX_WORKERS=1 to go back to serial, live-streamed logs: a worker
+	// buffers its console output until the test file finishes, which hides
+	// progress while a long on-chain wait is in flight.
+	maxWorkers: parseMaxWorkers(),
 	collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts', '!src/**/*.test.ts'],
 };
 

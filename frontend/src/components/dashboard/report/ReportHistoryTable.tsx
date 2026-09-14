@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { cn } from '@/lib/utils';
 import type { ReportChartRow } from '@/lib/transaction-report/chart-data';
 import {
@@ -53,7 +54,7 @@ export function ReportHistoryTable({
 
       {isOpen && (
         <div className="mt-2 rounded-lg border">
-          <div className="overflow-x-auto">
+          <HorizontalScrollArea>
             <table className="w-full text-left text-xs">
               <caption className="sr-only">{label}</caption>
               <thead className="bg-muted/30 text-muted-foreground">
@@ -93,7 +94,7 @@ export function ReportHistoryTable({
                 ))}
               </tbody>
             </table>
-          </div>
+          </HorizontalScrollArea>
           <ReportTablePagination
             page={page.page}
             pageCount={page.pageCount}

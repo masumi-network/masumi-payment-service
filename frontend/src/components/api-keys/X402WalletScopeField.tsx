@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useX402Wallets } from '@/lib/hooks/useX402';
 import { shortenAddress } from '@/lib/utils';
+import { walletScopeProblem } from '@/components/api-keys/wallet-scope.helpers';
 
 interface X402WalletScopeFieldProps {
   /** Whether this key is restricted to the selected managed EVM wallets. */
@@ -41,13 +42,11 @@ export function X402WalletScopeField({
           <Checkbox
             aria-label="Restrict to specific EVM wallets"
             checked={enabled}
-            onCheckedChange={(checked) => {
-              const next = checked === true;
-              onEnabledChange(next);
-              if (!next) {
-                onSelectedIdsChange([]);
-              }
-            }}
+            // The selection survives an untick. Clearing it here made
+            // untick-then-retick, a net-zero action on screen, save the scope
+            // with an empty list, which reaches no wallet at all. Both dialogs
+            // already send [] while the box is off.
+            onCheckedChange={(checked) => onEnabledChange(checked === true)}
           />
           <label className="text-sm font-medium">Restrict to specific EVM wallets</label>
         </div>
@@ -102,10 +101,15 @@ export function X402WalletScopeField({
               ))
             )}
           </div>
-          {selectedIds.length > 0 && (
+          {selectedIds.length > 0 ? (
             <p className="text-xs text-muted-foreground">
               {selectedIds.length} wallet{selectedIds.length !== 1 ? 's' : ''} selected
             </p>
+          ) : (
+            // In the field, not the dialogs: both of them render this picker, and
+            // the state it names is one neither could see, because the count line
+            // hid itself at zero.
+            <p className="text-xs text-destructive">{walletScopeProblem(true, selectedIds)}</p>
           )}
         </div>
       )}
