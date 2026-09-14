@@ -125,7 +125,7 @@ docker create --name hydra-host \
   -e HYDRA_HOST_ADMIN_TOKEN="$HYDRA_HOST_ADMIN_TOKEN" \
   -e HYDRA_HOST_USER_TOKEN="$HYDRA_HOST_USER_TOKEN" \
   -e BLOCKFROST_PROJECT_FILE=/run/secrets/blockfrost.txt \
-  -e HYDRA_HOST_SCRIPTS_TX_IDS="$HYDRA_HOST_SCRIPTS_TX_IDS" \
+  -e HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
   -e HYDRA_HOST_PEER_PORT_START=5001 \
   -e HYDRA_HOST_PEER_PORT_COUNT=32 \
   -e HYDRA_HOST_MONITORING_ENABLED=false \
@@ -133,12 +133,24 @@ docker create --name hydra-host \
 ```
 
 `HYDRA_HOST_SCRIPTS_TX_IDS` holds the comma-separated transaction ids of a
-Hydra script set you published yourself with `hydra-node publish-scripts`. On
-preprod this is required from 2.4.1 on: left empty, the Host passes
-`--network preprod`, the node resolves upstream's published set, and it dies
-seconds after boot with `BlockfrostClientError AssetNameMissing` (REPORTED, see
+Hydra script set you published yourself:
+
+```bash
+hydra-node publish-scripts --blockfrost /srv/hydra/blockfrost.txt \
+  --cardano-signing-key /srv/hydra/publisher.sk
+```
+
+On preprod this is required from 2.4.1 on. Left empty, the Host passes
+`--network preprod` instead, the node resolves upstream's published set, and it
+dies seconds after boot with `BlockfrostClientError AssetNameMissing`
+(REPORTED, see
 [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)). That message
 names neither the scripts nor this variable, so it reads as a chain-data fault.
+
+The placeholder above is deliberate. An empty value is accepted silently and
+fails minutes later at the node; the unsubstituted placeholder is refused at
+startup by name, with `HYDRA_HOST_SCRIPTS_TX_IDS must be comma-separated
+64-character hex transaction ids`.
 
 `docker create` rather than `docker run -d`: the container is created here and
 started by systemd in the next step, so there is exactly one thing that decides
