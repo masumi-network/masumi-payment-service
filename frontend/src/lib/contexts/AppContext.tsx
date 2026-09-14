@@ -408,9 +408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
-  return (
-    <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>
-  );
+  return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>;
 }
 
 export function useAppContext() {
