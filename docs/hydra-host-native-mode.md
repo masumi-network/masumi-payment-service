@@ -76,14 +76,8 @@ artifact of the tag's own Binaries CI run instead. The fetch script handles
 both cases, so use it rather than hand-rolling a `curl`:
 
 ```bash
-NETWORK=preprod HYDRA_VERSION=2.4.1 ./hydra-l2-flow/hydra-native.sh bin
+HYDRA_VERSION=2.4.1 ./hydra-l2-flow/hydra-native.sh bin
 ```
-
-`NETWORK` is not optional here. The script defaults it to `devnet`, and a
-devnet run refuses to start without a `cardano-scaling/hydra` demo checkout
-beside this repo, which has nothing to do with fetching a binary. Omitting it
-fails with `hydra demo dir not found (set HYDRA_DEMO_DIR)` before the fetch
-begins.
 
 It downloads through `gh`, so install the GitHub CLI and authenticate it first.
 Both paths read from `cardano-scaling/hydra`.

@@ -621,9 +621,20 @@ status(){
   done
 }
 
-if [ "$NETWORK" = devnet ]; then
-  [ -d "$DEMO" ] || { c_red "hydra demo dir not found (set HYDRA_DEMO_DIR): $DEMO"; exit 1; }
-fi
+# Only the subcommands that touch devnet assets need the demo checkout. `bin`,
+# `drift` and `status` read none of it: `bin` downloads a binary, and the other
+# two read $STATE. Guarding them too made the documented fetch command
+# (`hydra-native.sh bin`, see docs/hydra-host-native-mode.md) fail on any
+# machine without a cardano-scaling/hydra checkout beside this repo, with an
+# error naming HYDRA_DEMO_DIR, which that subcommand never reads.
+case "${1:-}" in
+  bin|drift|status) ;;
+  *)
+    if [ "$NETWORK" = devnet ]; then
+      [ -d "$DEMO" ] || { c_red "hydra demo dir not found (set HYDRA_DEMO_DIR): $DEMO"; exit 1; }
+    fi
+    ;;
+esac
 
 case "${1:-}" in
   bin)       ensure_bin ;;
