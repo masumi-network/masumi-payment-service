@@ -1,37 +1,44 @@
 # Running a Hydra Host natively
 
-The Hydra Host normally ships as a container. On macOS it cannot, and the
-reason is worth stating precisely because it looks like a packaging problem and
-is not.
+The Hydra Host normally ships as a container. Native mode runs the same Host
+process directly against the platform's own `hydra-node` binary. Through 2.3.0
+that was the only way to run a Host on Apple silicon. From 2.4.0 it is a
+choice, and the reason is worth stating precisely.
 
-## Why there is no container on macOS
+## What 2.4.0 changed about architecture
 
-The image bakes `hydra-node` — that is the whole point of it, since the Host's
-job is to supervise one `hydra-node` process per Head. Upstream builds exactly
-two targets:
+The image bakes `hydra-node`, since the Host's job is to supervise one
+`hydra-node` process per Head. At 2.3.0 upstream built exactly two targets,
+`x86_64-linux` and `aarch64-darwin`, shipped both as release zips, and
+published `ghcr.io/cardano-scaling/hydra-node:<version>` as a single
+`linux/amd64` manifest. A container on an arm64 Mac runs Linux, so it needed a
+_Linux_ `hydra-node`, and the only one was amd64. Under Docker Desktop's
+emulation that binary died with `SIGILL` (exit 132) the moment it touched its
+crypto path: `--version` succeeded, `--hydra-script-catalogue` did not.
 
-- `x86_64-linux`
-- `aarch64-darwin`
+2.4.0 changed both halves of that.
 
-Through 2.3.0 both shipped as release zips. 2.4.1 attaches none, so the binary
-comes from the tag's own CI run instead, which step 1 below covers.
+The tag publishes no release zips at all. VERIFIED: `gh release view 2.4.1
+--repo cardano-scaling/hydra --json assets` returns `{"assets":[]}`. Step 1
+below takes the Darwin binary from the tag's own CI run instead.
 
-There is no `aarch64-linux` build, and the official image
-`ghcr.io/cardano-scaling/hydra-node:<version>` is a single `linux/amd64`
-manifest rather than a multi-arch one.
+The image is now multi-arch. VERIFIED: `docker buildx imagetools inspect
+ghcr.io/cardano-scaling/hydra-node:2.4.1` reports a manifest list carrying both
+`linux/amd64` and `linux/arm64`. `packages/hydra-host/Dockerfile` pins that
+index digest and builds for both, and records the arm64 image running on Apple
+silicon with no emulation and no `SIGILL` (REPORTED).
 
-A container on an arm64 Mac runs Linux, so it needs a _Linux_ `hydra-node`, and
-the only one that exists is amd64. Under Docker Desktop's emulation that binary
-dies with `SIGILL` (exit 132) the moment it touches its crypto path —
-`--version` succeeds, `--hydra-script-catalogue` does not. Changing the base
-image does not help: the missing thing is the binary, not the distribution
-around it.
+So on Apple silicon the container is now the straightforward path, and arm64
+Linux is served by the same image. Use this document when you want the Host
+without a container at all: no Docker on the machine, or debugging the Host
+process directly against a local `hydra-node`.
 
-Building `hydra-node` for `aarch64-linux` from its Nix flake is possible in
-principle (haskell.nix plus a Rust accumulator), but it compiles GHC and Rust
-largely from source, and it produces an unofficial binary whose script hashes
-would have to be verified against `HYDRA_DEPOSIT_SCRIPT_HASH` and
-`HYDRA_HEAD_SCRIPT_HASH` before any Head opened with it could interoperate.
+There is still no standalone `aarch64-linux` download. Building one from the
+Nix flake is possible in principle (haskell.nix plus a Rust accumulator), but it
+compiles GHC and Rust largely from source, and it produces an unofficial binary
+whose script hashes would have to be verified against
+`HYDRA_DEPOSIT_SCRIPT_HASH` and `HYDRA_HEAD_SCRIPT_HASH` before any Head opened
+with it could interoperate. Run the container there instead.
 
 ## What native mode is
 
@@ -41,11 +48,11 @@ registry, port allocation, supervisor, plan/drain/drift/unwedge, node client,
 auth, routes, provisioning, and the proxy. Three environment variables differ,
 and all three are configuration rather than code paths:
 
-| Variable                     | Container                                        | Native (macOS)                             |
-| ---------------------------- | ------------------------------------------------ | ------------------------------------------ |
-| `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, amd64 Linux) | path to the Darwin arm64 build             |
-| `HYDRA_HOST_DATA_DIR`        | `/data` volume                                   | a local directory                          |
-| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes a matching etcd 3.5.25  | `false` — let `hydra-node` extract its own |
+| Variable                     | Container                                       | Native (macOS)                             |
+| ---------------------------- | ----------------------------------------------- | ------------------------------------------ |
+| `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, Linux)      | path to the Darwin arm64 build             |
+| `HYDRA_HOST_DATA_DIR`        | `/data` volume                                  | a local directory                          |
+| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes a matching etcd 3.5.25 | `false` — let `hydra-node` extract its own |
 
 Native mode is a supported way to run the Host, not a workaround.
 
@@ -53,14 +60,11 @@ Native mode is a supported way to run the Host, not a workaround.
 
 Two arm64 cases, and they are not the same problem:
 
-- **macOS on Apple silicon** — upstream publishes `aarch64-darwin`, so this
+- **macOS on Apple silicon**: upstream builds `aarch64-darwin`, so native mode
   works today. Everything below applies.
-- **arm64 Linux** — upstream publishes _no_ build, so there is nothing to point
-  `HYDRA_NODE_BIN` at. Native mode does not rescue this: you would have to
-  build `hydra-node` from its Nix flake and verify the resulting script hashes
-  against `HYDRA_DEPOSIT_SCRIPT_HASH` and `HYDRA_HEAD_SCRIPT_HASH` before any
-  head opened with it could interoperate. Use amd64 Linux instead unless you
-  are prepared to do that.
+- **arm64 Linux**: there is no standalone binary to point `HYDRA_NODE_BIN` at,
+  so native mode does not apply. Since 2.4.0 the official image carries a
+  `linux/arm64` manifest, so run the container there.
 
 ### 1. Fetch `hydra-node`
 
