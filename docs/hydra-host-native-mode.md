@@ -188,10 +188,12 @@ before a single stuck node has finished.
 
 Running natively verifies the logic; it does not verify the image. The
 container additionally covers the build itself, the baked binaries being on
-`PATH`, the non-root user, volume permissions, and `--network host`. The one
-path that only an amd64 machine can exercise is a node reaching `Running`
-_inside_ the container using the baked etcd — the baked version matches the one
-`hydra-node` embeds, but a version match is not proof it runs.
+`PATH`, the non-root user, volume permissions, and `--network host`. The path
+native mode cannot exercise at all is a node reaching `Running` _inside_ the
+container using the baked etcd: the baked version matches the one `hydra-node`
+embeds, but a version match is not proof it runs. Since 2.4.0 that test needs
+no amd64 machine. The image builds and runs on `linux/arm64` too, and
+`packages/hydra-host/Dockerfile` bakes an arm64 etcd beside the amd64 one.
 
 ## Running the end-to-end suite
 
