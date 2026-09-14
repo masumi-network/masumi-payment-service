@@ -31788,7 +31788,7 @@
                                         "type": "integer",
                                         "minimum": 300,
                                         "maximum": 86400,
-                                        "description": "How long a deposit must settle before this head will take it. Both nodes run the value signed here. A top-up is unusable for one period and cannot be recovered for three. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2."
+                                        "description": "How long a deposit must settle before this head will take it — and, since this service always keeps hydra-node 2.4's deposit-activation equal to this same value, also how long before the deposit matures. Both nodes run the value signed here. A top-up is unusable until it matures, absorbable for one period after that, and cannot be recovered until two periods after it matures. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2."
                                     },
                                     "contestationPeriodSeconds": {
                                         "type": "integer",

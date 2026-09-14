@@ -165,11 +165,16 @@ export const createInviteSchemaInput = z.object({
 	depositPeriodSeconds: z.coerce
 		.number()
 		.int()
-		// Five minutes. A node measures a deposit's age in its OWN chain time, and
-		// the window in which it will take one is a single period wide: from
-		// deposit + one period to deposit + two periods. The deadline it writes is
-		// deposit + three periods — a further period later, and the moment
-		// recovery opens, not the moment absorption closes.
+		// Five minutes. A node measures a deposit's age in its OWN chain time.
+		// hydra-node 2.4's window: a deposit matures at deposit + depositActivation,
+		// stays takeable for one more period (until deposit + depositActivation +
+		// depositPeriod), and cannot be recovered until deposit + depositActivation
+		// + 2·depositPeriod — a further period later, and the moment recovery
+		// opens, not the moment absorption closes. This service always sets
+		// depositActivation to this very value, so on this deployment the deadline
+		// still lands at exactly deposit + 3·depositPeriod, same as 2.3.0's flat
+		// three-period formula — but the mechanism 2.4.1 actually enforces is
+		// activation-based, not a fixed multiple of this period.
 		//
 		// The old floor of two minutes assumed a chain view about half a minute
 		// behind. A Blockfrost-backed node on preprod was measured 140 to 360
@@ -181,7 +186,7 @@ export const createInviteSchemaInput = z.object({
 		.max(86_400)
 		.optional()
 		.describe(
-			'How long a deposit must settle before this head will take it. Both nodes run the value signed here. A top-up is unusable for one period and cannot be recovered for three. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.',
+			"How long a deposit must settle before this head will take it — and, since this service always keeps hydra-node 2.4's deposit-activation equal to this same value, also how long before the deposit matures. Both nodes run the value signed here. A top-up is unusable until it matures, absorbable for one period after that, and cannot be recovered until two periods after it matures. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.",
 		),
 	contestationPeriodSeconds: z.coerce
 		.number()

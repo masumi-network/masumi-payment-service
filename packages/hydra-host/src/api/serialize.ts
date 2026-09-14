@@ -23,6 +23,7 @@ export type PublicNode = {
 	contestationPeriodSeconds: number;
 	depositPeriodSeconds: number;
 	unsyncedPeriodSeconds: number;
+	depositActivationSeconds: number;
 	escrowAckedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
@@ -80,6 +81,7 @@ export function toPublicNode(record: NodeRecord, driftOverride?: Partial<DriftTh
 		contestationPeriodSeconds: record.contestationPeriodSeconds,
 		depositPeriodSeconds: record.depositPeriodSeconds,
 		unsyncedPeriodSeconds: record.unsyncedPeriodSeconds,
+		depositActivationSeconds: record.depositActivationSeconds,
 		escrowAckedAt: record.escrowAckedAt,
 		createdAt: record.createdAt,
 		updatedAt: record.updatedAt,

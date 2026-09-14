@@ -129,7 +129,15 @@ async function main() {
 	// Minimum lovelace the committed UTxO must carry: enough for buyer (40 ADA) +
 	// seller (20 ADA) in-head funding plus margin. Kept well below any reasonable
 	// fuel-UTxO size (see selection note below).
-	const MIN_COMMIT_LOVELACE = 100_000_000;
+	//
+	// Overridable because the default collides with devnet's seed: seed-devnet.sh
+	// funds this address with exactly 100 ADA, which equals the default and leaves
+	// nothing larger behind for fuel, so the run dies at the check below with no
+	// way forward that does not involve editing this file.
+	const MIN_COMMIT_LOVELACE = Number(process.env.COMMIT_LOVELACE ?? 100_000_000);
+	if (!Number.isSafeInteger(MIN_COMMIT_LOVELACE) || MIN_COMMIT_LOVELACE <= 0) {
+		throw new Error(`COMMIT_LOVELACE must be a positive integer, got ${process.env.COMMIT_LOVELACE}`);
+	}
 
 	// The node's own cardano wallet (the SAME address as the funds address, since
 	// hydra-native.sh passes purchasing-cardano.sk as --cardano-signing-key) is also
@@ -153,12 +161,20 @@ async function main() {
 			.sort((a, b) => utxos[a].value.lovelace - utxos[b].value.lovelace);
 		const utxoKey = candidates[0];
 		if (!utxoKey)
-			throw new Error(`no UTxO ≥ ${MIN_COMMIT_LOVELACE} lovelace found at ${fundsAddr} — fund it via faucet first`);
+			throw new Error(
+				`no UTxO >= ${MIN_COMMIT_LOVELACE} lovelace found at ${fundsAddr} — fund it via faucet first, ` +
+					'or lower the commit with COMMIT_LOVELACE=<lovelace>',
+			);
 		const lovelace = utxos[utxoKey].value.lovelace;
 		const hasLargerFuelUtxo = Object.keys(utxos).some((k) => k !== utxoKey && utxos[k].value.lovelace > lovelace);
 		if (!hasLargerFuelUtxo) {
 			throw new Error(
-				`no UTxO at ${fundsAddr} is larger than the ${lovelace}-lovelace commit candidate — need a bigger fuel UTxO left over for the node's own wallet (see NotEnoughFuel note above)`,
+				`no UTxO at ${fundsAddr} is larger than the ${lovelace}-lovelace commit candidate — the node's own ` +
+					'wallet needs a bigger UTxO left over to pay the deposit fee (see the NotEnoughFuel note above). ' +
+					'Two ways out: send that address a second, LARGER UTxO from the faucet, or commit less with ' +
+					`COMMIT_LOVELACE=<lovelace> (must stay under the largest UTxO, currently ${Math.max(
+						...Object.keys(utxos).map((k) => utxos[k].value.lovelace),
+					)}).`,
 			);
 		}
 

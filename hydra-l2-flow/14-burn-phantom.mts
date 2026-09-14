@@ -7,6 +7,13 @@
  * 2.3.0). Root cause #2 (no restart needed): a separate, still-open bug where
  * the deposit UTxO is usable on L2 before its L1 increment is observed
  * (reported to the Hydra team 2026-07-14/15, no upstream issue number yet).
+ *
+ * 2.4.1 STATUS — RE-VERIFY, DO NOT RETIRE ON THIS NOTE ALONE. Hydra 2.4 makes a
+ * snapshot name the single deposit it approves (`depositTxId`, bound into the
+ * signature) and its validators enforce one claim per increment (D09/D10) and a
+ * single deposit per recover (D10), which plausibly removes root cause #2. That
+ * is reasoning from the changelog, not a measurement: this guard stays until a
+ * live 2.4.1 preprod run reproduces the scenario and shows it cannot happen.
  * Either one inflates the L2 UTxO total above the L1 head output's real capacity
  * (headLovelace − storedHeadAdaOverhead). Close then fails H65
  * (ChangedHeadAdaOverhead) because the off-chain builder re-computes the

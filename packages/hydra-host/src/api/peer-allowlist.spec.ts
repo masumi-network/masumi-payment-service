@@ -15,6 +15,7 @@ function node(overrides: Partial<NodeRecord>): NodeRecord {
 		peers: [],
 		contestationPeriodSeconds: 220,
 		depositPeriodSeconds: 300,
+		depositActivationSeconds: 300,
 		unsyncedPeriodSeconds: 1800,
 		...overrides,
 	} as NodeRecord;

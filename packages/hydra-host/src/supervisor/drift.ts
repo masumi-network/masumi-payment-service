@@ -16,7 +16,10 @@
  *
  *  - It is not reliably there. Hydra 2.3 does not stream `Tick` /
  *    `SyncedStatusReport` on a quiet head, so a probe holding an 8s budget
- *    would often see none. `Greetings` arrives on connect, every time.
+ *    would often see none. `Greetings` arrives on connect, every time. 2.4
+ *    removed `SyncedStatusReport` outright, which only sharpens the point:
+ *    `Greetings.chainSyncedStatus` is now the sole reliable source, and this
+ *    probe already reads that connect-time frame.
  *  - It points the dependency the wrong way. This supervisor exists to judge a
  *    node that may be unhealthy; a wedged follower's self-reported drift is
  *    precisely the number that cannot be trusted. `currentSlot` is a claim
