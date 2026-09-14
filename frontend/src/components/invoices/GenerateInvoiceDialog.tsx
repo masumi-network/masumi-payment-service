@@ -221,7 +221,10 @@ const INVOICE_FIELD_LABELS: Record<string, string> = {
 };
 
 function formatValidationFieldLabel(path: string): string {
-  return INVOICE_FIELD_LABELS[path] ?? path.replace(/\./g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+  return (
+    INVOICE_FIELD_LABELS[path] ??
+    path.replace(/\./g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+  );
 }
 
 function findFirstValidationError(
