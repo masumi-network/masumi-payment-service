@@ -3580,6 +3580,10 @@ export type GetWalletListData = {
          * Filter to wallets with this Cardano address
          */
         walletAddress?: string;
+        /**
+         * Free-text search over wallet address, collection address, payment key hash, note, and wallet type. Matching is case-insensitive.
+         */
+        searchQuery?: string;
     };
     url: '/wallet/list';
 };

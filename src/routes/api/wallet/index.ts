@@ -99,9 +99,7 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 								{ collectionAddress: { contains: searchLower, mode: 'insensitive' as const } },
 								{ walletVkey: { contains: searchLower, mode: 'insensitive' as const } },
 								{ note: { contains: searchLower, mode: 'insensitive' as const } },
-								...(matchingTypes != null && matchingTypes.length > 0
-									? [{ type: { in: matchingTypes } }]
-									: []),
+								...(matchingTypes != null && matchingTypes.length > 0 ? [{ type: { in: matchingTypes } }] : []),
 							],
 						}
 					: {}),

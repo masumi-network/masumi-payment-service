@@ -7497,6 +7497,17 @@
                         "description": "Filter to wallets with this Cardano address",
                         "name": "walletAddress",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 500,
+                            "description": "Free-text search over wallet address, collection address, payment key hash, note, and wallet type. Matching is case-insensitive."
+                        },
+                        "required": false,
+                        "description": "Free-text search over wallet address, collection address, payment key hash, note, and wallet type. Matching is case-insensitive.",
+                        "name": "searchQuery",
+                        "in": "query"
                     }
                 ],
                 "responses": {
