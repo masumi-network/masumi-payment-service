@@ -148,9 +148,9 @@ dies seconds after boot with `BlockfrostClientError AssetNameMissing`
 names neither the scripts nor this variable, so it reads as a chain-data fault.
 
 The placeholder above is deliberate. An empty value is accepted silently and
-fails minutes later at the node; the unsubstituted placeholder is refused at
-startup by name, with `HYDRA_HOST_SCRIPTS_TX_IDS must be comma-separated
-64-character hex transaction ids`.
+fails later at the node; the unsubstituted placeholder is refused at startup by
+name, with `HYDRA_HOST_SCRIPTS_TX_IDS must be comma-separated 64-character hex
+transaction ids`.
 
 `docker create` rather than `docker run -d`: the container is created here and
 started by systemd in the next step, so there is exactly one thing that decides

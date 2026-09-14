@@ -62,6 +62,10 @@ describe('Hydra Host transport security', () => {
 });
 
 describe('provisioning against a Host that overrides the deposit activation', () => {
+	afterEach(() => {
+		jest.restoreAllMocks();
+	});
+
 	function hostResponse(depositActivationSeconds: number): Response {
 		return new Response(
 			JSON.stringify({
@@ -93,11 +97,14 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 			{ allowInsecureHttp: false },
 		);
 
-		expect(warn).toHaveBeenCalledWith(
+		// Through `mock.calls`, not `toHaveBeenCalledWith`: winston's `warn` is
+		// overloaded and the spy infers the single-argument form, so the
+		// two-argument matcher does not type-check even when it is right at
+		// runtime. Same pattern as l2-reservation-recovery.spec.ts.
+		expect(warn.mock.calls[0]).toEqual([
 			expect.stringContaining('overrode the deposit activation'),
 			expect.objectContaining({ requested: 900, effective: 777 }),
-		);
-		warn.mockRestore();
+		]);
 	});
 
 	it('stays quiet when the Host honoured the request', async () => {
@@ -113,6 +120,5 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 		);
 
 		expect(warn).not.toHaveBeenCalled();
-		warn.mockRestore();
 	});
 });
