@@ -391,6 +391,7 @@ export default function ApiKeys() {
 
       {keyToUpdate && (
         <UpdateApiKeyDialog
+          key={keyToUpdate.id}
           open={true}
           onClose={() => setKeyToUpdate(null)}
           onSuccess={() => {
