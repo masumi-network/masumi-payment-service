@@ -39,12 +39,19 @@ fi
 mkdir -p "$persist"
 rm -f "$persist/bin/etcd"
 
+# Match start_node_preprod: the script publication and network are alternatives.
+if [ -n "${HYDRA_SCRIPTS_TX_IDS:-}" ]; then
+  script_source=(--hydra-scripts-tx-id "$HYDRA_SCRIPTS_TX_IDS")
+else
+  script_source=(--network preprod)
+fi
+
 ( "$BIN" \
     --node-id "$IDX" \
     --api-host 127.0.0.1 --api-port "$api" \
     --listen "127.0.0.1:$p2p" --monitoring-port "$mon" \
     --peer "127.0.0.1:$((5000 + other))" \
-    --network preprod \
+    "${script_source[@]}" \
     --hydra-signing-key "$PREPROD_DIR/$party-hydra.sk" \
     --hydra-verification-key "$PREPROD_DIR/$other_vk" \
     --cardano-signing-key "$PREPROD_DIR/$party-cardano.sk" \
