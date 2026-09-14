@@ -39,6 +39,7 @@ import {
 import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
 import type { ApiKey, PostApiKeyData } from '@/lib/api/generated';
 import { walletScopeProblem } from '@/components/api-keys/wallet-scope.helpers';
+import { MASUMI_API_KEY_PERMISSIONS_DOCS_URL } from '@/lib/masumi-links';
 
 interface AddApiKeyDialogProps {
   open: boolean;
@@ -290,7 +291,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     const isReadOnly = !data.canPay && !data.canAdmin;
-    const defaultCredits = [
+    const readOnlyDefaultCredits = [
       {
         unit: 'lovelace',
         amount: '1000000000', // 1000 ADA
@@ -321,7 +322,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             ? undefined
             : data.evmChains,
         UsageCredits: isReadOnly
-          ? defaultCredits
+          ? readOnlyDefaultCredits
           : data.usageLimited
             ? [
                 ...(data.credits.lovelace
@@ -560,6 +561,25 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   <p className="text-xs text-muted-foreground">Admin keys are not usage limited</p>
                 )}
               </div>
+
+              {isReadOnly && (
+                <div className="rounded-md border border-muted bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Read-only keys are always usage-limited. They receive a default allowance of
+                    1000 ADA for read operations. This limit is applied automatically and cannot be
+                    changed here.{' '}
+                    <a
+                      href={MASUMI_API_KEY_PERMISSIONS_DOCS_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline underline-offset-4 hover:text-primary/80"
+                    >
+                      Learn more about API key permissions
+                    </a>
+                    .
+                  </p>
+                </div>
+              )}
 
               {usageLimited && !isReadOnly && (
                 <>
