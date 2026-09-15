@@ -151,6 +151,15 @@ describe('signed mock reservations follow decoded validity', () => {
 		expect((await post('bb', 'aa'.repeat(32))).status).toBe(400);
 		expect(sign).toHaveBeenCalledTimes(1);
 	});
+	it('replays identical approval witnesses without signing again', async () => {
+		sign.mockResolvedValueOnce('aabb').mockResolvedValueOnce('ccdd');
+		const first = await post('aa');
+		expect(first.status).toBe(200);
+		now += 1_000;
+		const replay = await post('aa');
+		expect(replay).toEqual(first);
+		expect(sign).toHaveBeenCalledTimes(1);
+	});
 	it('echoes decoded fields on approvals, denials and cached replies', async () => {
 		for (const cbor of ['aa', 'bb', 'aa', 'bb']) {
 			const reply = await post(cbor);
