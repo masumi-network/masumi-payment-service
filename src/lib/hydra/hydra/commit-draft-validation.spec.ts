@@ -184,6 +184,50 @@ describe('validateHydraCommitDraft', () => {
 		).not.toThrow();
 	});
 
+	it('rejects node-funded ADA padding that would make the deposit unabsorbable', () => {
+		// A plain token output needs less ADA than the deposit's inline-datum output.
+		// Hydra requires exact equality to absorb it, even if the node funds the difference.
+		const tokenCommitUtxo = utxo(COMMIT_TX_HASH, 1, COMMIT_ADDRESS, '1500000');
+		tokenCommitUtxo.output.amount.push({ unit: TOKEN_POLICY + TOKEN_NAME, quantity: TOKEN_QUANTITY.toString() });
+		const draft = buildDraft({
+			serializedOutput: TOKEN_SERIALIZED_COMMIT_OUTPUT.replace('1a004c4b40', '1a0016e360'),
+			depositLovelace: 3_000_000n,
+			depositToken: { policyHex: TOKEN_POLICY, nameHex: TOKEN_NAME, quantity: TOKEN_QUANTITY },
+		});
+		expect(() =>
+			validateHydraCommitDraft({
+				...baseValidationOptions(draft),
+				commitUtxos: [tokenCommitUtxo],
+				walletUtxos: [tokenCommitUtxo, otherWalletUtxo],
+			}),
+		).toThrow('deposit output value does not exactly match');
+	});
+
+	it('rejects reduced token quantity even when the node adds ADA', () => {
+		const tokenCommitUtxo = utxo(COMMIT_TX_HASH, 1, COMMIT_ADDRESS, '5000000');
+		tokenCommitUtxo.output.amount.push({ unit: TOKEN_POLICY + TOKEN_NAME, quantity: TOKEN_QUANTITY.toString() });
+		const draft = buildDraft({
+			serializedOutput: TOKEN_SERIALIZED_COMMIT_OUTPUT,
+			depositLovelace: 6_000_000n,
+			depositToken: { policyHex: TOKEN_POLICY, nameHex: TOKEN_NAME, quantity: TOKEN_QUANTITY - 1n },
+		});
+		expect(() =>
+			validateHydraCommitDraft({
+				...baseValidationOptions(draft),
+				commitUtxos: [tokenCommitUtxo],
+				walletUtxos: [tokenCommitUtxo, otherWalletUtxo],
+			}),
+		).toThrow('deposit output value does not exactly match');
+	});
+
+	it('rejects a datum that credits extra ADA not present in the committed input', () => {
+		const draft = buildDraft({
+			serializedOutput: SERIALIZED_COMMIT_OUTPUT.replace('1a004c4b40', '1a005b8d80'),
+			depositLovelace: 6_000_000n,
+		});
+		expect(() => validate(draft)).toThrow('does not exactly match the expected value');
+	});
+
 	it('rejects a multi-asset commit whose deposit token quantity is inflated', () => {
 		const tokenCommitUtxo = utxo(COMMIT_TX_HASH, 1, COMMIT_ADDRESS, '5000000');
 		tokenCommitUtxo.output.amount.push({ unit: TOKEN_POLICY + TOKEN_NAME, quantity: TOKEN_QUANTITY.toString() });
