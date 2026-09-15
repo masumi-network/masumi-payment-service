@@ -102,7 +102,7 @@ function fixture() {
 		constr(0),
 	]);
 	const policy = ScriptHash.from_bytes(new Uint8Array(28).fill(3));
-	const asset = AssetName.new(Buffer.from('USDM'));
+	const asset = AssetName.new(Buffer.from('0014df105553444d', 'hex'));
 	const assets = Assets.new();
 	assets.insert(asset, BigNum.from_str('900000'));
 	const multiasset = MultiAsset.new();
@@ -157,7 +157,7 @@ function fixture() {
 		buyerReturnAddress: null,
 		sellerReturnAddress: null,
 	};
-	const funds = [{ unit: policy.to_hex() + asset.to_hex(), amount: 900000n }];
+	const funds = [{ unit: policy.to_hex() + '0014df105553444d', amount: 900000n }];
 	purchaseFind.mockResolvedValue({ ...common, SmartContractWallet: buyer, SellerWallet: seller, PaidFunds: funds });
 	paymentFind.mockResolvedValue({ ...common, SmartContractWallet: seller, BuyerWallet: null, RequestedFunds: funds });
 	headFind.mockResolvedValue({
