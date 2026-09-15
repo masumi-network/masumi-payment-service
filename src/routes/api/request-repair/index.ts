@@ -1,6 +1,6 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import { Network, OnChainState, PaymentSourceType, TransactionLayer } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { createHash } from 'node:crypto';
@@ -15,6 +15,9 @@ import {
 	type RepairExpectedVersion,
 	type RepairTargetKind,
 } from '@/services/transactions/manual-repair';
+
+import { validateHydraRepair } from '@/services/transactions/manual-repair/hydra-validation';
+import { repairHydraRequest } from '@/services/transactions/manual-repair/hydra-repair';
 
 export const repairRequestSchemaInput = z.object({
 	kind: z.enum(['Purchase', 'Payment']).describe('Whether the blockchainIdentifier refers to a purchase or a payment'),
@@ -57,6 +60,7 @@ export const repairRequestSchemaOutput = z.object({
 });
 
 const commonRepairRequestSelect = {
+	layer: true,
 	id: true,
 	updatedAt: true,
 	blockchainIdentifier: true,
@@ -71,7 +75,7 @@ const commonRepairRequestSelect = {
 	onChainState: true,
 	resultHash: true,
 	currentTransactionId: true,
-	CurrentTransaction: { select: { txHash: true } },
+	CurrentTransaction: { select: { txHash: true, layer: true } },
 	TransactionHistory: { select: { txHash: true } },
 	SmartContractWallet: { select: { walletVkey: true, walletAddress: true } },
 	PaymentSource: {
@@ -85,6 +89,7 @@ const commonRepairRequestSelect = {
 } as const;
 
 type RepairRequestContext = {
+	isHydra: boolean;
 	id: string;
 	blockchainIdentifier: string;
 	onChainState: OnChainState | null;
@@ -121,6 +126,7 @@ async function findRepairRequest(params: {
 
 		return {
 			id: request.id,
+			isHydra: request.layer === TransactionLayer.L2 || request.CurrentTransaction?.layer === TransactionLayer.L2,
 			blockchainIdentifier: request.blockchainIdentifier,
 			onChainState: request.onChainState,
 			paymentSource: {
@@ -169,6 +175,7 @@ async function findRepairRequest(params: {
 
 	return {
 		id: request.id,
+		isHydra: request.layer === TransactionLayer.L2 || request.CurrentTransaction?.layer === TransactionLayer.L2,
 		blockchainIdentifier: request.blockchainIdentifier,
 		onChainState: request.onChainState,
 		paymentSource: {
@@ -275,6 +282,16 @@ export const repairRequestPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		try {
+			if (request.isHydra) {
+				if (force)
+					throw new RepairValidationError('Hydra repair requires verified Head evidence; force is not supported');
+				return await repairHydraRequest({
+					kind,
+					requestId: request.id,
+					txHash: input.txHash,
+					expectedVersion: request.expectedVersion,
+				});
+			}
 			const validation = force
 				? null
 				: await validateRepairTransaction({
@@ -352,15 +369,17 @@ export const previewRepairRequestPost = adminAuthenticatedEndpointFactory.build(
 		}
 
 		try {
-			const validation = await validateRepairTransaction({
-				txHash: input.txHash,
-				blockchainIdentifier: request.blockchainIdentifier,
-				smartContractAddress: request.paymentSource.smartContractAddress,
-				network: request.paymentSource.network,
-				rpcProviderApiKey: request.paymentSource.rpcProviderApiKey,
-				paymentSourceType: request.paymentSource.paymentSourceType,
-				expectedRequest: request.expectedRequest,
-			});
+			const validation = request.isHydra
+				? await validateHydraRepair({ kind, requestId: request.id, txHash: input.txHash })
+				: await validateRepairTransaction({
+						txHash: input.txHash,
+						blockchainIdentifier: request.blockchainIdentifier,
+						smartContractAddress: request.paymentSource.smartContractAddress,
+						network: request.paymentSource.network,
+						rpcProviderApiKey: request.paymentSource.rpcProviderApiKey,
+						paymentSourceType: request.paymentSource.paymentSourceType,
+						expectedRequest: request.expectedRequest,
+					});
 
 			return {
 				txHash: validation.txHash,

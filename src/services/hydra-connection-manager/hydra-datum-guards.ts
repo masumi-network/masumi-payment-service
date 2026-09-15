@@ -528,6 +528,12 @@ export function resolveInitialLockState(
 	logger.warn('[HydraDatumSync] in-head initial lock failed validation -> FundsOrDatumInvalid', {
 		...logContext,
 		errorNote: check.errorNote,
+		expectedFunds: expectedFunds.map(({ unit, amount }) => ({ unit, amount: amount.toString() })),
+		outputAmounts: outputAmounts.map(({ unit, quantity }) => ({ unit, quantity })),
+		collateralReturnLovelace: decoded.collateralReturnLovelace.toString(),
+		confirmationTimeMs,
+		signedValidityUpperBoundTimeMs: signedValidityUpperBoundTimeMs.toString(),
+		payByTime: decoded.payByTime.toString(),
 	});
 	return OnChainState.FundsOrDatumInvalid;
 }

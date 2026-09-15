@@ -22,6 +22,7 @@ import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
+import { readVerifiedCurrentOutput } from './node-current-output';
 import {
 	HydraCommandOptions,
 	awaitHydraTxConfirmation,
@@ -424,6 +425,12 @@ export class HydraNode extends EventEmitter {
 
 	get confirmedTransactionHistoryReady(): boolean {
 		return this._unsupportedPersistenceRotationError == null && this._replay.isComplete;
+	}
+
+	/** Current authenticated output bytes; reference mapping retains the configured local-node trust. */
+	getVerifiedCurrentOutput(reference: string, expectedSnapshotNumber: bigint): string | null {
+		// prettier-ignore
+		return readVerifiedCurrentOutput(this.hasVerifiedPinnedSessions, this._live.status, this._replay.verifiedSnapshot, reference, expectedSnapshotNumber);
 	}
 
 	/** Both evidence sockets have authenticated the same explicitly pinned head. */

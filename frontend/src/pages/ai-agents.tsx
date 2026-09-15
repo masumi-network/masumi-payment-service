@@ -893,9 +893,7 @@ export default function AIAgentsPage() {
               setIsRegisterDialogOpen(false);
             }}
             onSuccess={() => {
-              setTimeout(() => {
-                refetchAfterMutation();
-              }, 250);
+              void refetchAfterMutation();
             }}
           />
 
@@ -910,9 +908,7 @@ export default function AIAgentsPage() {
             onSuccess={() => {
               setSelectedAgentToUpdate(null);
               setUpdateAgentSmartContractAddress(null);
-              setTimeout(() => {
-                refetchAfterMutation();
-              }, 250);
+              void refetchAfterMutation();
             }}
           />
 
@@ -957,7 +953,7 @@ export default function AIAgentsPage() {
             open={isMigrateDialogOpen}
             onClose={() => setIsMigrateDialogOpen(false)}
             onSuccess={() => {
-              setTimeout(() => refetchAfterMutation(), 250);
+              void refetchAfterMutation();
             }}
           />
         </div>

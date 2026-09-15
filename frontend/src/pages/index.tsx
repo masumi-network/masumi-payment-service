@@ -642,9 +642,7 @@ export default function Overview() {
         open={isRegisterAgentDialogOpen}
         onClose={() => setRegisterAgentDialogOpen(false)}
         onSuccess={() => {
-          setTimeout(() => {
-            refetchAgents();
-          }, 2000);
+          refetchAgents();
         }}
       />
 
@@ -652,9 +650,7 @@ export default function Overview() {
         agent={selectedAgentForDetails}
         onClose={() => setSelectedAgentForDetails(null)}
         onSuccess={() => {
-          setTimeout(() => {
-            refetchAgents();
-          }, 2000);
+          refetchAgents();
         }}
       />
 
