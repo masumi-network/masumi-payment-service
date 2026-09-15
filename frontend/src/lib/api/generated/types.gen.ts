@@ -4280,7 +4280,7 @@ export type PostApiKeyData = {
          */
         ChainIdLimit?: Array<string>;
         /**
-         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
+         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected.
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
         /**

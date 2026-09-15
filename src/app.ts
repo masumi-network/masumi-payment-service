@@ -90,6 +90,9 @@ export async function startApp() {
 	const PORT = CONFIG.PORT;
 	logger.info('Starting web server', { component: 'server' }, { port: PORT });
 	const serverConfig = createConfig({
+		jsonParser: express.json({
+			reviver: (key: string, value: unknown): unknown => (key === '__proto__' ? undefined : value),
+		}),
 		inputSources: {
 			//read from body on get requests
 			get: ['query', 'params'],

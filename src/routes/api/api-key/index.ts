@@ -236,7 +236,34 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		let canPay: boolean;
 		let canAdmin: boolean;
 
-		if (input.canRead !== undefined || input.canPay !== undefined || input.canAdmin !== undefined) {
+		const hasExplicitFlags = input.canRead !== undefined || input.canPay !== undefined || input.canAdmin !== undefined;
+
+		if (hasExplicitFlags && input.permission !== undefined) {
+			const legacyFlags = flagsFromLegacyPermission(input.permission as LegacyPermission);
+			const requested = {
+				canRead: input.canRead ?? legacyFlags.canRead,
+				canPay: input.canPay ?? legacyFlags.canPay,
+				canAdmin: input.canAdmin ?? legacyFlags.canAdmin,
+			};
+			if (
+				requested.canRead !== legacyFlags.canRead ||
+				requested.canPay !== legacyFlags.canPay ||
+				requested.canAdmin !== legacyFlags.canAdmin
+			) {
+				throw createHttpError(
+					400,
+					`Conflicting permissions: permission '${input.permission}' does not match the canRead/canPay/canAdmin flags. ` +
+						'Send either the deprecated permission field or the flags, not both.',
+				);
+			}
+		}
+
+		if (hasExplicitFlags && input.permission !== undefined) {
+			const legacyFlags = flagsFromLegacyPermission(input.permission as LegacyPermission);
+			canRead = legacyFlags.canRead;
+			canPay = legacyFlags.canPay;
+			canAdmin = legacyFlags.canAdmin;
+		} else if (hasExplicitFlags) {
 			// New flag-based input - use flags directly
 			canRead = input.canRead ?? true;
 			canPay = input.canPay ?? false;

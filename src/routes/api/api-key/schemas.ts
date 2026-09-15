@@ -127,11 +127,12 @@ export const addAPIKeySchemaInput = z.object({
 				'array to grant none.',
 		),
 	/** @deprecated Use canRead, canPay, canAdmin flags instead. Will be removed in a future version. */
+
 	permission: z
 		.enum(['Read', 'ReadAndPay', 'Admin'])
-		.default('Read')
+		.optional()
 		.describe(
-			'[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.',
+			'[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected.',
 		),
 	// Flag-based permissions (new system - preferred)
 	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
