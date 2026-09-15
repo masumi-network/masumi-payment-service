@@ -6,6 +6,7 @@ import createHttpError from 'http-errors';
 import { errorToString } from 'advanced-retry';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 
 export const getUTXOSchemaInput = z.object({
 	address: z.string().max(150).describe('The address to get the UTXOs for'),
@@ -56,7 +57,14 @@ export const getUTXOSchemaOutput = z.object({
 	Utxos: z.array(utxoOutputSchema).describe('List of UTXOs for the specified address'),
 });
 
-export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
+const utxoEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 150,
+		windowMs: 60_000,
+	}),
+);
+
+export const queryUTXOEndpointGet = utxoEndpointFactory.build({
 	method: 'get',
 	input: getUTXOSchemaInput,
 	output: getUTXOSchemaOutput,
