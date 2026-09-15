@@ -548,9 +548,7 @@ export default function InboxAgentsPage() {
               setIsRegisterDialogOpen(false);
             }}
             onSuccess={() => {
-              setTimeout(() => {
-                refetchAfterMutation();
-              }, 250);
+              void refetchAfterMutation();
             }}
           />
 
@@ -559,9 +557,7 @@ export default function InboxAgentsPage() {
             onClose={() => setSelectedInboxAgent(null)}
             onSuccess={() => {
               setSelectedInboxAgent(null);
-              setTimeout(() => {
-                refetchAfterMutation();
-              }, 250);
+              void refetchAfterMutation();
             }}
           />
 
