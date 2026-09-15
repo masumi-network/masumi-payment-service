@@ -7,6 +7,7 @@
 // to a body we froze. It can refuse, it can never change what the body spends.
 import {
 	addVKeyWitnessSetToTransaction,
+	deserializeTx,
 	Ed25519PublicKey,
 	Ed25519Signature,
 	HexBlob,
@@ -21,6 +22,46 @@ const hash28 = z.string().regex(/^[0-9a-f]{56}$/, '28-byte hex');
 const hash32 = z.string().regex(/^[0-9a-f]{64}$/, '32-byte hex');
 const lovelace = z.string().regex(/^\d+$/, 'integer lovelace string');
 const address = z.string().min(1).max(200);
+
+const cosignBodyEchoSchema = z.object({
+	txBodyHash: hash32,
+	requiredSigners: z.array(hash28),
+});
+export type CosignBodyEcho = z.infer<typeof cosignBodyEchoSchema>;
+
+/** Decode the body we send. Quorum requests alone omit the agent signer. */
+export function decodeCosignBodyEcho(txCbor: string): CosignBodyEcho {
+	return {
+		txBodyHash: resolveTxHash(txCbor),
+		requiredSigners:
+			deserializeTx(txCbor)
+				.body()
+				.requiredSigners()
+				?.values()
+				.map((hash) => hash.toCore()) ?? [],
+	};
+}
+
+function validateBodyEcho(body: unknown, expected: CosignBodyEcho, status: number): CosignBodyEcho {
+	const parsed = cosignBodyEchoSchema.safeParse(body);
+	if (!parsed.success) {
+		throw new CosignTransportError('co-sign response is missing the decoded body hash or required signers', status);
+	}
+	const actual = parsed.data;
+	if (actual.txBodyHash !== expected.txBodyHash) {
+		throw new CosignTransportError('co-sign response names a different transaction body', status);
+	}
+	const actualSigners = [...actual.requiredSigners].sort();
+	const expectedSigners = [...expected.requiredSigners].sort();
+	if (
+		actualSigners.length !== expectedSigners.length ||
+		new Set(actualSigners).size !== actualSigners.length ||
+		actualSigners.some((signer, index) => signer !== expectedSigners[index])
+	) {
+		throw new CosignTransportError('co-sign response names different required signers', status);
+	}
+	return actual;
+}
 
 /** Placeholder 12-code denial taxonomy, pending Exchain's frozen list (MAS-596 P0 item 1). */
 export const COSIGN_DENIAL_CODES = [
@@ -158,10 +199,12 @@ export function assertSafeCosignUrl(rawUrl: string, trustedPlaintextHosts: strin
 	return url.toString().replace(/\/+$/, '');
 }
 
-export type CosignDecision = { httpStatus: 200; approved: CosignApproved } | { httpStatus: 409; denied: CosignDenied };
+export type CosignDecision =
+	| { httpStatus: 200; approved: CosignApproved & CosignBodyEcho }
+	| { httpStatus: 409; denied: CosignDenied & CosignBodyEcho };
 
 /** Validate a `/v1/cosign` HTTP response. Separate from the fetch so it can be checked without a network. */
-export function parseCosignResponse(status: number, bodyText: string, expectedTxHash: string): CosignDecision {
+export function parseCosignResponse(status: number, bodyText: string, expected: CosignBodyEcho): CosignDecision {
 	let body: unknown;
 	try {
 		body = bodyText.length === 0 ? null : JSON.parse(bodyText);
@@ -173,23 +216,27 @@ export function parseCosignResponse(status: number, bodyText: string, expectedTx
 		if (!parsed.success) {
 			throw new CosignTransportError('co-sign approval does not match the contract', status);
 		}
-		if (parsed.data.txHash !== expectedTxHash) {
+		if (parsed.data.txHash !== expected.txBodyHash) {
 			throw new CosignTransportError('co-sign approval names a different transaction body', status);
 		}
-		return { httpStatus: 200, approved: parsed.data };
+		return { httpStatus: 200, approved: { ...parsed.data, ...validateBodyEcho(body, expected, status) } };
 	}
 	if (status === 409) {
 		const parsed = cosignDeniedSchema.safeParse(body);
 		if (!parsed.success) {
 			throw new CosignTransportError('co-sign denial does not match the contract', status);
 		}
-		return { httpStatus: 409, denied: parsed.data };
+		return { httpStatus: 409, denied: { ...parsed.data, ...validateBodyEcho(body, expected, status) } };
 	}
 	throw new CosignTransportError(`co-sign service answered HTTP ${status}`, status);
 }
 
 export async function requestCosign(config: CosignConfig, request: CosignRequest): Promise<CosignDecision> {
 	const validated = cosignRequestSchema.parse(request);
+	const expected = decodeCosignBodyEcho(validated.txCbor);
+	if (expected.txBodyHash !== validated.txHash) {
+		throw new CosignTransportError('co-sign request hash does not match its transaction body', null);
+	}
 	const baseUrl = assertSafeCosignUrl(config.url, config.trustedPlaintextHosts);
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -206,7 +253,7 @@ export async function requestCosign(config: CosignConfig, request: CosignRequest
 			redirect: 'error',
 			signal: controller.signal,
 		});
-		return parseCosignResponse(response.status, await response.text(), validated.txHash);
+		return parseCosignResponse(response.status, await response.text(), expected);
 	} catch (error) {
 		if (error instanceof CosignTransportError) throw error;
 		// Never echo the credential; the transport message carries only the cause.

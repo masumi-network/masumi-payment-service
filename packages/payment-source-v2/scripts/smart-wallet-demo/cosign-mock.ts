@@ -9,13 +9,20 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { deserializeDatum, MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
+import {
+	deserializeDatum,
+	MeshWallet,
+	resolvePaymentKeyHash,
+	SLOT_CONFIG_NETWORK,
+	slotToBeginUnixTime,
+} from '@meshsdk/core';
 import { deserializeTx, resolveTxHash } from '@meshsdk/core-cst';
 import { logger } from '@masumi/payment-core/logger';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
 	cosignRequestSchema,
+	decodeCosignBodyEcho,
 	type CosignApproved,
 	type CosignDenied,
 	type CosignRequest,
@@ -224,18 +231,6 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 			return { status: 400, body: { error: 'txCbor does not decode as a transaction' } };
 		}
 		const walletInputKey = `${request.wallet.input.txHash}#${request.wallet.input.outputIndex}`;
-		const reservation = reservations.get(walletInputKey);
-		if (reservation != null && reservation.txHash !== request.txHash && reservation.expiresAt > Date.now()) {
-			const denial: CosignDenied = {
-				decision: 'denied',
-				code: 'RESERVATION_CONFLICT',
-				message: 'another approved body holds this wallet input until its reservation expires',
-				retryable: true,
-				locks: [],
-			};
-			record(request, denial);
-			return { status: 409, body: denial };
-		}
 		let walletInputLovelace: bigint;
 		try {
 			walletInputLovelace = await options.resolveInputLovelace(request.wallet.input);
@@ -255,14 +250,40 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 			record(request, verdict.denial);
 			return { status: 409, body: verdict.denial };
 		}
+		const expiresAt = body.ttl == null ? NaN : slotToBeginUnixTime(body.ttl, SLOT_CONFIG_NETWORK[request.network]);
+		if (!Number.isSafeInteger(body.ttl) || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+			const denial: CosignDenied = {
+				decision: 'denied',
+				code: 'VALIDITY_TOO_WIDE',
+				message: 'the decoded validity upper bound must be finite and in the future',
+				retryable: false,
+				locks: [],
+			};
+			record(request, denial);
+			return { status: 409, body: denial };
+		}
+		const reservation = reservations.get(walletInputKey);
+		if (reservation != null && reservation.txHash !== request.txHash && reservation.expiresAt > Date.now()) {
+			const denial: CosignDenied = {
+				decision: 'denied',
+				code: 'RESERVATION_CONFLICT',
+				message: 'another approved body holds this wallet input until its validity interval closes',
+				retryable: true,
+				locks: [],
+			};
+			record(request, denial);
+			return { status: 409, body: denial };
+		}
+		// Reserve synchronously after input resolution and before any signer runs.
+		// Keep the hold if signing fails: an earlier member may already have signed.
+		// The request TTL cannot shorten the validity of an existing signature.
+		reservations.set(walletInputKey, { txHash: recomputedTxHash, expiresAt });
 		const signers = request.requiredSigners.map((vkh) => members.find((member) => member.vkh === vkh));
 		const signatures: CosignApproved['signatures'] = [];
 		for (const signer of signers) {
 			if (signer == null) throw new Error('verified signer is missing from the member set');
 			signatures.push({ vkh: signer.vkh, witnessSet: await signer.wallet.signTx(request.txCbor, true, false) });
 		}
-		const expiresAt = Date.now() + request.reservationTtlSeconds * 1000;
-		reservations.set(walletInputKey, { txHash: request.txHash, expiresAt });
 		const approval: CosignApproved = {
 			decision: 'approved',
 			txHash: request.txHash,
@@ -274,8 +295,10 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 	};
 
 	const handle = async (request: http.IncomingMessage, response: http.ServerResponse) => {
+		let bodyEcho: ReturnType<typeof decodeCosignBodyEcho> | undefined;
 		const send = (status: number, payload: Reply['body']) => {
-			response.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(payload));
+			const result = status === 200 || status === 409 ? { ...payload, ...bodyEcho } : payload;
+			response.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(result));
 		};
 		const path = (request.url ?? '/').split('?')[0];
 		// HEAD included: Node drops the body for it, and probes/link checkers use it.
@@ -315,6 +338,16 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 		}
 		if (request.headers['idempotency-key'] !== parsed.data.txHash) {
 			send(400, { error: 'Idempotency-Key must equal txHash' });
+			return;
+		}
+		try {
+			bodyEcho = decodeCosignBodyEcho(parsed.data.txCbor);
+		} catch {
+			send(400, { error: 'txCbor does not decode as a transaction' });
+			return;
+		}
+		if (bodyEcho.txBodyHash !== parsed.data.txHash) {
+			send(400, { error: 'txHash does not match txCbor' });
 			return;
 		}
 		const cached = replies.get(parsed.data.txHash);
