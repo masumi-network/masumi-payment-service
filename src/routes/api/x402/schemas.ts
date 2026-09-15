@@ -60,7 +60,7 @@ export const x402PaymentPayloadSchema = z.object({
 	extensions: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const verifySettleSchemaInput = z.object({
+export const verifySettleSchemaInput = z.strictObject({
 	supportedPaymentSourceId: z.string(),
 	paymentPayload: x402PaymentPayloadSchema,
 	paymentRequirements: x402PaymentRequirementsSchema
@@ -132,7 +132,7 @@ export const forwardedX402PaymentRequiredSchema = z.object({
 	error: z.string().optional(),
 });
 
-export const createPaymentSchemaInput = z.object({
+export const createPaymentSchemaInput = z.strictObject({
 	evmWalletId: z.string().describe('Managed EVM wallet to sign the payment with'),
 	paymentRequired: forwardedX402PaymentRequiredSchema.describe('The 402 Payment Required response the buyer received'),
 	preferredNetwork: caip2Eip155Schema.optional().describe('Restrict signing to this CAIP-2 network'),
@@ -155,7 +155,7 @@ export const createPaymentSchemaOutput = z.object({
 	paymentIdentifier: z.string().nullable(),
 });
 
-export const deleteWalletSchemaInput = z.object({
+export const deleteWalletSchemaInput = z.strictObject({
 	id: z.string().describe('Id of the managed EVM wallet to retire'),
 });
 
@@ -186,7 +186,7 @@ export const walletSchemaOutput = z
 	})
 	.openapi('X402Wallet');
 
-export const createWalletSchemaInput = z.object({
+export const createWalletSchemaInput = z.strictObject({
 	networkId: z.string().describe('Id of the x402 network (payment source) to bind this wallet to'),
 	type: z
 		.nativeEnum(X402EvmWalletType)
@@ -199,7 +199,7 @@ export const createWalletSchemaInput = z.object({
 		.describe('Optional 0x-prefixed 32-byte hex private key. A new key is generated when omitted.'),
 });
 
-export const updateWalletSchemaInput = z.object({
+export const updateWalletSchemaInput = z.strictObject({
 	id: z.string().describe('Id of the managed EVM wallet to update'),
 	note: walletNoteSchema.nullable().describe('New label for the wallet; null clears it'),
 });
@@ -295,7 +295,7 @@ export const lowBalanceRuleSchema = z
 	})
 	.openapi('X402LowBalanceRule');
 
-export const setLowBalanceRuleSchemaInput = z.object({
+export const setLowBalanceRuleSchemaInput = z.strictObject({
 	evmWalletId: z.string(),
 	caip2Network: caip2Eip155Schema,
 	asset: lowBalanceAssetSchema,
@@ -309,13 +309,13 @@ export const listLowBalanceRulesSchemaInput = z.object({
 	includeDisabled: booleanQuerySchema.optional().describe('Include disabled rules'),
 });
 
-export const updateLowBalanceRuleSchemaInput = z.object({
+export const updateLowBalanceRuleSchemaInput = z.strictObject({
 	ruleId: z.string(),
 	thresholdAmount: uintStringSchema.optional(),
 	enabled: z.boolean().optional(),
 });
 
-export const deleteLowBalanceRuleSchemaInput = z.object({ ruleId: z.string() });
+export const deleteLowBalanceRuleSchemaInput = z.strictObject({ ruleId: z.string() });
 export const deleteLowBalanceRuleSchemaOutput = z.object({ ruleId: z.string(), deletedAt: z.date() });
 
 export const listLowBalanceRulesSchemaOutput = z.object({ Rules: z.array(lowBalanceRuleSchema) });
@@ -326,7 +326,7 @@ const analyticsUnitSchema = z.object({
 	amount: z.string().describe('Summed amount in base units'),
 });
 
-export const analyticsSchemaInput = z.object({
+export const analyticsSchemaInput = z.strictObject({
 	startDate: z.coerce.date().optional().describe('Window start (defaults to 30 days ago)'),
 	endDate: z.coerce.date().optional().describe('Window end (defaults to now)'),
 	caip2Network: caip2Eip155Schema.optional().describe('Restrict to a single chain'),
@@ -433,7 +433,7 @@ export const x402AvailableNetworkSchema = z
 	})
 	.openapi('X402AvailableNetwork');
 
-export const upsertNetworkSchemaInput = z.object({
+export const upsertNetworkSchemaInput = z.strictObject({
 	caip2Id: caip2Eip155Schema,
 	displayName: z.string().min(1).max(120),
 	rpcUrl: z

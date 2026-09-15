@@ -82,7 +82,7 @@ export const paymentSourceExtendedSchemaOutput = z.object({
 });
 
 export const paymentSourceExtendedCreateSchemaInput = z
-	.object({
+	.strictObject({
 		network: z.nativeEnum(Network).describe('The network the payment source will be used on'),
 		paymentSourceType: z
 			.nativeEnum(PaymentSourceType)
@@ -244,7 +244,7 @@ export const paymentSourceExtendedCreateSchemaInput = z
 
 export const paymentSourceExtendedCreateSchemaOutput = paymentSourceExtendedOutputSchema;
 
-export const paymentSourceExtendedUpdateSchemaInput = z.object({
+export const paymentSourceExtendedUpdateSchemaInput = z.strictObject({
 	id: z.string().max(250).describe('The id of the payment source to be updated'),
 	PaymentSourceConfig: z
 		.object({
@@ -314,7 +314,7 @@ export const paymentSourceExtendedUpdateSchemaInput = z.object({
 
 export const paymentSourceExtendedUpdateSchemaOutput = paymentSourceExtendedOutputSchema;
 
-export const paymentSourceExtendedDeleteSchemaInput = z.object({
+export const paymentSourceExtendedDeleteSchemaInput = z.strictObject({
 	id: z.string().describe('The id of the payment source to be deleted'),
 });
 

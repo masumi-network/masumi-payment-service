@@ -303,7 +303,7 @@ export const queryPaymentsSchemaOutput = z.object({
 });
 
 export const createPaymentsSchemaInput = z
-	.object({
+	.strictObject({
 		inputHash: z
 			.string()
 			.max(250)

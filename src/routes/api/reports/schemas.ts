@@ -38,8 +38,11 @@ const suppliedFiatRateSchema = z.object({
 	to: z.coerce.date().optional(),
 });
 
+// strictObject, not .strict(): .superRefine() below returns a ZodEffects, which
+// has no .strict(). An intersection only rejects unknown keys when BOTH sides are
+// strict, so the two .and() operands below are strict too.
 export const reportFilterSchema = z
-	.object({
+	.strictObject({
 		paymentSourceId: z.string().min(1).max(250),
 		managedWalletIds: z.array(z.string().min(1).max(250)).max(100).optional(),
 		externalAddresses: z.array(z.string().min(1).max(250)).max(100).optional(),
@@ -79,13 +82,15 @@ export const reportFilterSchema = z
 	});
 
 export const reportTransactionsInputSchema = reportFilterSchema.and(
-	z.object({
+	z.strictObject({
 		cursor: z.string().max(4_000).optional(),
 		limit: z.coerce.number().int().min(1).max(REPORT_MAX_PAGE_SIZE).default(REPORT_DEFAULT_PAGE_SIZE),
 	}),
 );
 
-export const reportSummaryInputSchema = reportFilterSchema.and(z.object({ bucket: bucketSchema.default('Auto') }));
+export const reportSummaryInputSchema = reportFilterSchema.and(
+	z.strictObject({ bucket: bucketSchema.default('Auto') }),
+);
 
 export const serializedReportAmountSchema = z.object({
 	unit: z.string(),

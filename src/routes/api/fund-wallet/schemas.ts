@@ -38,7 +38,7 @@ export const getFundWalletSchemaOutput = z
 	})
 	.openapi('FundWalletList');
 
-export const postFundWalletSchemaInput = z.object({
+export const postFundWalletSchemaInput = z.strictObject({
 	paymentSourceId: z.string().min(1).max(250).describe('Payment source to associate the fund wallet with'),
 	walletMnemonic: z.string().min(1).max(1500).describe('BIP-39 mnemonic phrase for the fund wallet (12-24 words)'),
 	batchWindowMs: z
@@ -62,7 +62,7 @@ export const postFundWalletSchemaOutput = z
 	})
 	.openapi('FundWalletCreated');
 
-export const patchFundWalletSchemaInput = z.object({
+export const patchFundWalletSchemaInput = z.strictObject({
 	id: z.string().min(1).max(250).describe('Fund wallet id to update'),
 	enabled: z.boolean().optional().describe('Enable or disable this wallet as a funding source'),
 	batchWindowMs: z
@@ -81,7 +81,7 @@ export const patchFundWalletSchemaOutput = z
 	})
 	.openapi('FundWalletUpdated');
 
-export const deleteFundWalletSchemaInput = z.object({
+export const deleteFundWalletSchemaInput = z.strictObject({
 	id: z.string().min(1).max(250).describe('Fund wallet id to delete'),
 	force: z
 		.boolean()

@@ -42,7 +42,7 @@ export const triggerMonitoringCycleResponseSchema = z
 	})
 	.openapi('TriggeredMonitoringCycle');
 
-export const startMonitoringSchemaInput = z.object({
+export const startMonitoringSchemaInput = z.strictObject({
 	intervalMs: z.number().min(5000).max(300000).default(30000).describe('Monitoring interval in milliseconds'),
 });
 

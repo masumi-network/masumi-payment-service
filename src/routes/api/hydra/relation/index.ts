@@ -151,7 +151,7 @@ export const getOrListRelationsGet = adminAuthenticatedEndpointFactory.build({
 // wallet and Exchange Plane URL — both derived from a signature rather than
 // from a form. See ADR 0011.
 
-export const deleteRelationSchemaInput = z.object({
+export const deleteRelationSchemaInput = z.strictObject({
 	id: z.string().min(1).describe('ID of the HydraRelation to delete'),
 });
 

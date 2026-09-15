@@ -14,7 +14,7 @@ import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { serializeInboxRegistryEntry } from '../serializers';
 
-export const unregisterInboxAgentSchemaInput = z.object({
+export const unregisterInboxAgentSchemaInput = z.strictObject({
 	agentIdentifier: z
 		.string()
 		.min(57)

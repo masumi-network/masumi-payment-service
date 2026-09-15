@@ -62,7 +62,7 @@ export const getWalletLowBalanceRulesSchemaOutput = z.object({
 	Rules: z.array(walletLowBalanceRuleWithWalletSchema),
 });
 
-export const postWalletLowBalanceRuleSchemaInput = z.object({
+export const postWalletLowBalanceRuleSchemaInput = z.strictObject({
 	walletId: z.string().min(1).max(250).describe('Hot wallet id to attach the rule to'),
 	assetUnit: z
 		.string()
@@ -83,7 +83,7 @@ export const postWalletLowBalanceRuleSchemaInput = z.object({
 
 export const postWalletLowBalanceRuleSchemaOutput = walletLowBalanceRuleWithWalletSchema;
 
-export const patchWalletLowBalanceRuleSchemaInput = z.object({
+export const patchWalletLowBalanceRuleSchemaInput = z.strictObject({
 	ruleId: z.string().min(1).max(250).describe('Low-balance rule id to update'),
 	thresholdAmount: z.string().regex(/^\d+$/).optional().describe('Updated threshold in raw on-chain units'),
 	enabled: z.boolean().optional().describe('Updated enabled state'),
@@ -100,7 +100,7 @@ export const patchWalletLowBalanceRuleSchemaInput = z.object({
 
 export const patchWalletLowBalanceRuleSchemaOutput = walletLowBalanceRuleWithWalletSchema;
 
-export const deleteWalletLowBalanceRuleSchemaInput = z.object({
+export const deleteWalletLowBalanceRuleSchemaInput = z.strictObject({
 	ruleId: z.string().min(1).max(250).describe('Low-balance rule id to delete'),
 });
 

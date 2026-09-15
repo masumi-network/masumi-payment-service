@@ -29,7 +29,7 @@ const sundaeswapPoolIdSchema = z
 	// Cap length and restrict to alphanumeric to block injection-style inputs.
 	.regex(/^[0-9a-zA-Z]+$/, 'poolId must be alphanumeric');
 
-export const swapTokensSchemaInput = z.object({
+export const swapTokensSchemaInput = z.strictObject({
 	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) to identify the wallet'),
 	amount: z
 		.number()
@@ -64,7 +64,7 @@ export const getSwapConfirmSchemaInput = z.object({
 	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) that submitted the swap'),
 });
 
-export const cancelSwapSchemaInput = z.object({
+export const cancelSwapSchemaInput = z.strictObject({
 	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) of the wallet that placed the order'),
 	swapTransactionId: swapTransactionIdSchema.describe('ID of the SwapTransaction to cancel'),
 });
@@ -73,7 +73,7 @@ export const cancelSwapSchemaOutput = z.object({
 	cancelTxHash: z.string().describe('Transaction hash of the cancel transaction'),
 });
 
-export const acknowledgeSwapTimeoutSchemaInput = z.object({
+export const acknowledgeSwapTimeoutSchemaInput = z.strictObject({
 	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) of the wallet'),
 	swapTransactionId: swapTransactionIdSchema.describe('ID of the timed-out SwapTransaction'),
 });

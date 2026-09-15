@@ -131,7 +131,7 @@ export const getLocalParticipantGet = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: delete local participant ---
 
-export const deleteLocalParticipantInput = z.object({
+export const deleteLocalParticipantInput = z.strictObject({
 	id: z.string().min(1).describe('ID of the local participant to delete'),
 });
 
@@ -373,7 +373,7 @@ export const getRemoteParticipantGet = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: delete remote participant ---
 
-export const deleteRemoteParticipantInput = z.object({
+export const deleteRemoteParticipantInput = z.strictObject({
 	id: z.string().min(1).describe('ID of the remote participant to delete'),
 });
 
@@ -529,7 +529,7 @@ export async function deleteHydraRemoteParticipant(id: string): Promise<void> {
 // ONE-TIME KEY BACKUP
 // ============================================================
 
-export const revealParticipantKeysInput = z.object({
+export const revealParticipantKeysInput = z.strictObject({
 	id: z.string().min(1).describe('ID of the local participant whose node keys to back up'),
 });
 
@@ -612,7 +612,7 @@ export const revealParticipantKeysPost = adminAuthenticatedEndpointFactory.build
 
 // --- POST: fund this node's Cardano key ---
 
-export const fundParticipantNodeInput = z.object({
+export const fundParticipantNodeInput = z.strictObject({
 	id: z.string().min(1).describe('Local participant whose node should be funded'),
 });
 
@@ -703,7 +703,7 @@ export const fundParticipantNodePost = adminAuthenticatedEndpointFactory.build({
 
 // --- POST: return this node's remaining fuel to its wallet ---
 
-export const withdrawParticipantNodeInput = z.object({
+export const withdrawParticipantNodeInput = z.strictObject({
 	id: z.string().min(1).describe('Local participant whose node should be swept'),
 });
 

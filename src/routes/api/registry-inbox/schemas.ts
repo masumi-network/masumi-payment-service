@@ -101,7 +101,7 @@ export const queryRegistryInboxCountSchemaOutput = z.object({
 	total: z.number().describe('Total number of inbox agents'),
 });
 
-export const registerInboxAgentSchemaInput = z.object({
+export const registerInboxAgentSchemaInput = z.strictObject({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the inbox agent on'),
 	sellingWalletVkey: z.string().max(250).describe('The payment key of a specific wallet used for the registration'),
 	recipientWalletAddress: z
@@ -126,7 +126,7 @@ export const registerInboxAgentSchemaInput = z.object({
 
 export const registerInboxAgentSchemaOutput = registryInboxRequestOutputSchema;
 
-export const deleteInboxAgentRegistrationSchemaInput = z.object({
+export const deleteInboxAgentRegistrationSchemaInput = z.strictObject({
 	id: z.string().cuid().describe('The database ID of the inbox registration record to be deleted.'),
 });
 

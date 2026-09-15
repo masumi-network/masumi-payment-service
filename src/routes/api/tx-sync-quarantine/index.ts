@@ -93,7 +93,7 @@ export const queryTxSyncQuarantineGet = adminAuthenticatedEndpointFactory.build(
 	},
 });
 
-export const retryTxSyncQuarantineSchemaInput = z.object({
+export const retryTxSyncQuarantineSchemaInput = z.strictObject({
 	id: z.string().describe('The quarantine entry to retry'),
 });
 
@@ -159,7 +159,7 @@ export const retryTxSyncQuarantinePost = adminAuthenticatedEndpointFactory.build
 	},
 });
 
-export const deleteTxSyncQuarantineSchemaInput = z.object({
+export const deleteTxSyncQuarantineSchemaInput = z.strictObject({
 	id: z.string().describe('The quarantine entry to delete'),
 });
 

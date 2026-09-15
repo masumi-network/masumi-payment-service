@@ -11,7 +11,7 @@ import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
-export const authorizePaymentRefundSchemaInput = z.object({
+export const authorizePaymentRefundSchemaInput = z.strictObject({
 	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase to be refunded'),
 	network: z.nativeEnum(Network).describe('The network the Cardano wallet will be used on'),
 });

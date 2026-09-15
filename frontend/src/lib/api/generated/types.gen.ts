@@ -13235,7 +13235,7 @@ export type PostFundDistributionTriggerData = {
      * No parameters
      */
     body?: {
-        [key: string]: unknown;
+        [key: string]: never;
     };
     path?: never;
     query?: never;

@@ -15,7 +15,7 @@ import { z } from '@masumi/payment-core/zod';
 import { getPurchaseRetryAction } from '@/utils/shared/error-recovery';
 import { selectRecoveryTransaction } from '@/routes/api/shared/recovery-transaction';
 
-export const purchaseErrorStateRecoverySchemaInput = z.object({
+export const purchaseErrorStateRecoverySchemaInput = z.strictObject({
 	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier of the purchase request'),
 	network: z.nativeEnum(Network).describe('The network the transaction was made on'),
 	updatedAt: ez.dateIn().describe('The time of the last update, to ensure you clear the correct error state'),

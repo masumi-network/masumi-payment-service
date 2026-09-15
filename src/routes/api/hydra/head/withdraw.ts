@@ -9,7 +9,7 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 
-export const withdrawInput = z.object({
+export const withdrawInput = z.strictObject({
 	headId: z.string().describe('The Hydra head to withdraw from'),
 	lovelace: z
 		.string()

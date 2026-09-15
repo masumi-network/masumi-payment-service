@@ -83,7 +83,7 @@ export const getWalletSchemaOutput = z
 	})
 	.openapi('Wallet');
 
-export const postWalletSchemaInput = z.object({
+export const postWalletSchemaInput = z.strictObject({
 	network: z.nativeEnum(Network).describe('The network the Cardano wallet will be used on'),
 });
 
@@ -97,7 +97,7 @@ export const postWalletSchemaOutput = z
 	})
 	.openapi('GeneratedWalletSecret');
 
-export const patchWalletSchemaInput = z.object({
+export const patchWalletSchemaInput = z.strictObject({
 	id: z.string().min(1).max(250).describe('The id of the wallet to update'),
 	newCollectionAddress: z
 		.string()
@@ -138,7 +138,7 @@ const MAX_LOVELACE_DIGITS = 20;
  */
 const MAX_FUND_TRANSFER_ASSETS = 10;
 
-export const postWalletFundSchemaInput = z.object({
+export const postWalletFundSchemaInput = z.strictObject({
 	fromWalletAddress: z.string().min(1).max(250).describe('The Cardano address of the hot wallet to send funds from'),
 	toAddress: z.string().min(1).max(250).describe('The Cardano address to send funds to'),
 	lovelaceAmount: z

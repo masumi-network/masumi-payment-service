@@ -69,7 +69,7 @@ export const getAPIKeySchemaOutput = z.object({
 	ApiKeys: z.array(apiKeyOutputSchema).describe('List of API keys'),
 });
 
-export const addAPIKeySchemaInput = z.object({
+export const addAPIKeySchemaInput = z.strictObject({
 	// Optional, NOT defaulted. A default is applied whenever the field is absent, and
 	// combined with the admin guard in the route that made the documented admin create
 	// call impossible: POST /api-key {permission: 'Admin'} was filled in as
@@ -171,7 +171,7 @@ export const addAPIKeySchemaInput = z.object({
 
 export const addAPIKeySchemaOutput = apiKeyOutputSchema;
 
-export const updateAPIKeySchemaInput = z.object({
+export const updateAPIKeySchemaInput = z.strictObject({
 	id: z.string().max(150).describe('The id of the API key to update. Provide either id or apiKey'),
 	token: z.string().min(15).max(550).optional().describe('To change the api key token'),
 	UsageCreditsToAddOrRemove: z
@@ -248,7 +248,7 @@ export const updateAPIKeySchemaInput = z.object({
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
 
-export const deleteAPIKeySchemaInput = z.object({
+export const deleteAPIKeySchemaInput = z.strictObject({
 	id: z.string().max(150).describe('The id of the API key to be (soft) deleted.'),
 });
 

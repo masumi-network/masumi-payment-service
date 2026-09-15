@@ -18,7 +18,7 @@ import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchasePaymentSourceTypeFilter } from '../queries';
 
-export const postPurchaseSpendingSchemaInput = z.object({
+export const postPurchaseSpendingSchemaInput = z.strictObject({
 	agentIdentifier: z
 		.string()
 		.min(57)

@@ -11,7 +11,7 @@ import { generateHash } from '@/utils/crypto';
 import { z } from '@masumi/payment-core/zod';
 
 export const postMonthlySignatureSchemaInput = z
-	.object({
+	.strictObject({
 		buyerWalletVkey: z.string().min(1).max(1000).describe('The buyer wallet vkey for which to aggregate the month'),
 		month: z
 			.string()

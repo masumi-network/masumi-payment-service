@@ -283,7 +283,7 @@ export const queryPurchaseRequestSchemaOutput = z.object({
 });
 
 export const createPurchaseInitSchemaInput = z
-	.object({
+	.strictObject({
 		blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase. Is provided by the seller'),
 		network: z.nativeEnum(Network).describe('The network the transaction will be made on'),
 		paymentSourceType: z

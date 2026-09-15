@@ -16,7 +16,7 @@ import {
 	type RepairTargetKind,
 } from '@/services/transactions/manual-repair';
 
-export const repairRequestSchemaInput = z.object({
+export const repairRequestSchemaInput = z.strictObject({
 	kind: z.enum(['Purchase', 'Payment']).describe('Whether the blockchainIdentifier refers to a purchase or a payment'),
 	network: z.nativeEnum(Network).describe('The network the request belongs to'),
 	blockchainIdentifier: z.string().min(1).describe('The request to repair'),

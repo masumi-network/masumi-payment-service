@@ -43,10 +43,10 @@ export const listWalletBaseSchemaOutput = z.object({
  * is defined by whose wallet sits on each side.
  */
 export const ensureWalletBaseSchemaInput = z.union([
-	z.object({
+	z.strictObject({
 		hotWalletId: z.string().min(1).describe('HotWallet to expose as a public WalletBase option'),
 	}),
-	z.object({
+	z.strictObject({
 		paymentSourceId: z.string().min(1).describe('Payment source this counterparty belongs to'),
 		walletAddress: z.string().min(1).max(250).describe("The counterparty's Cardano address, as they gave it to you"),
 		type: z.nativeEnum(WalletType).optional().describe('Their role in the trade. Defaults to Seller.'),

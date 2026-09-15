@@ -7266,6 +7266,7 @@
                                 "required": [
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod"
                                 }
@@ -7344,6 +7345,7 @@
                                     "id",
                                     "newCollectionAddress"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "unique_cuid_v2_of_entry_to_update",
                                     "newCollectionAddress": "collection_address"
@@ -7841,6 +7843,7 @@
                                     "assetUnit",
                                     "thresholdAmount"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "walletId": "unique_cuid_v2_of_wallet",
                                     "assetUnit": "lovelace",
@@ -8060,6 +8063,7 @@
                                 "required": [
                                     "ruleId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "ruleId": "low_balance_rule_id",
                                     "thresholdAmount": "7000000",
@@ -8256,6 +8260,7 @@
                                 "required": [
                                     "ruleId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "ruleId": "low_balance_rule_id"
                                 }
@@ -8379,6 +8384,7 @@
                                     "blockchainIdentifier",
                                     "action"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "action": "RevealData",
                                     "blockchainIdentifier": "blockchain_identifier",
@@ -8714,6 +8720,7 @@
                                 "required": [
                                     "UsageCredits"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "usageLimited": "true",
                                     "UsageCredits": [
@@ -8920,6 +8927,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "unique_cuid_v2_of_entry_to_update",
                                     "token": "api_key_to_change_to",
@@ -9035,6 +9043,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "id_or_apiKey_unique_cuid_v2_of_entry_to_delete"
                                 }
@@ -9206,6 +9215,7 @@
                                     "ToToken",
                                     "poolId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "walletVkey": "wallet_verification_key_here",
                                     "amount": 1,
@@ -9709,6 +9719,7 @@
                                     "walletVkey",
                                     "swapTransactionId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "walletVkey": "wallet_verification_key_here",
                                     "swapTransactionId": "clx1abc..."
@@ -9792,6 +9803,7 @@
                                     "walletVkey",
                                     "swapTransactionId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "walletVkey": "wallet_verification_key_here",
                                     "swapTransactionId": "clx1abc..."
@@ -9908,6 +9920,7 @@
                                     "toAddress",
                                     "lovelaceAmount"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "fromWalletAddress": "addr_test1qx9...source_wallet_address",
                                     "toAddress": "addr_test1qz8x...destination_address",
@@ -10515,6 +10528,7 @@
                                     "agentIdentifier",
                                     "identifierFromPurchaser"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "agentIdentifier": "agent_identifier",
                                     "network": "Preprod",
@@ -12125,6 +12139,7 @@
                                     "submitResultHash",
                                     "blockchainIdentifier"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod",
                                     "blockchainIdentifier": "identifier",
@@ -12775,6 +12790,7 @@
                                     "blockchainIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod",
                                     "blockchainIdentifier": "blockchain_identifier"
@@ -13447,6 +13463,7 @@
                                     "network",
                                     "updatedAt"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "blockchainIdentifier": "blockchain_identifier",
                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -14132,6 +14149,7 @@
                                     "network",
                                     "updatedAt"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "blockchainIdentifier": "blockchain_identifier",
                                     "network": "Preprod",
@@ -14880,6 +14898,7 @@
                                     "action",
                                     "Buyer"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "action": "RetrieveMonthlyInvoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
@@ -15000,6 +15019,7 @@
                                     "agentIdentifier",
                                     "action"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "action": "VerifyAndPublishAgent",
                                     "publicKey": "ed25519_pk1example",
@@ -15442,6 +15462,7 @@
                                     "validUntil",
                                     "action"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "signature": "ed25519_signature",
                                     "key": "ed25519_key",
@@ -16339,6 +16360,7 @@
                                     "Seller",
                                     "Buyer"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
@@ -17006,6 +17028,7 @@
                                     "payByTime",
                                     "identifierFromPurchaser"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "identifierFromPurchaser": "aabbaabb11221122aabb",
                                     "network": "Preprod",
@@ -18703,6 +18726,7 @@
                                     "blockchainIdentifier",
                                     "buyerAddress"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod",
                                     "blockchainIdentifier": "blockchain_identifier",
@@ -18808,6 +18832,7 @@
                                     "blockchainIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod",
                                     "blockchainIdentifier": "blockchain_identifier"
@@ -19453,6 +19478,7 @@
                                     "blockchainIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod",
                                     "blockchainIdentifier": "blockchain_identifier"
@@ -20109,6 +20135,7 @@
                                     "blockchainIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "blockchainIdentifier": "blockchain_identifier",
                                     "network": "Preprod",
@@ -20256,6 +20283,7 @@
                                     "blockchainIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "blockchainIdentifier": "blockchain_identifier",
                                     "network": "Preprod",
@@ -21575,6 +21603,7 @@
                                     "Capability",
                                     "Author"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod",
                                     "ExampleOutputs": [
@@ -21776,6 +21805,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "example_id"
                                 }
@@ -22180,6 +22210,7 @@
                                     "agentIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "agentIdentifier": "agentIdentifier",
                                     "network": "Preprod"
@@ -23056,6 +23087,7 @@
                                     "Author",
                                     "agentIdentifier"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "agentIdentifier": "agentIdentifier",
                                     "network": "Preprod",
@@ -23639,6 +23671,7 @@
                                     "PurchasingWallets",
                                     "SellingWallets"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod",
                                     "paymentSourceType": "Web3CardanoV2",
@@ -23895,6 +23928,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "unique_cuid_v2",
                                     "lastIdentifierChecked": "optional_identifier",
@@ -24026,6 +24060,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "unique_cuid_v2_auto_generated"
                                 }
@@ -24521,6 +24556,7 @@
                                     "agentIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "agentIdentifier": "example_agent_identifier_asset_id",
                                     "startDate": "2024-01-01",
@@ -25167,6 +25203,7 @@
                                     "agentIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "agentIdentifier": "example_agent_identifier_asset_id",
                                     "startDate": "2024-01-01",
@@ -26034,6 +26071,7 @@
                                     "url",
                                     "Events"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "url": "https://your-server.com/webhook",
                                     "authToken": "your-webhook-secret-token",
@@ -26246,6 +26284,7 @@
                                     "format",
                                     "Events"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "webhookId": "webhook_endpoint_id",
                                     "url": "https://hooks.slack.com/services/example/path",
@@ -26413,6 +26452,7 @@
                                 "required": [
                                     "webhookId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "webhookId": "webhook_endpoint_id"
                                 }
@@ -26516,6 +26556,7 @@
                                 "required": [
                                     "webhookId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "webhookId": "webhook_endpoint_id"
                                 }
@@ -27027,6 +27068,7 @@
                                     "name",
                                     "agentSlug"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "network": "Preprod",
                                     "sellingWalletVkey": "wallet_vkey",
@@ -27118,6 +27160,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "example_id"
                                 }
@@ -27382,6 +27425,7 @@
                                     "agentIdentifier",
                                     "network"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "agentIdentifier": "agentIdentifier",
                                     "network": "Preprod"
@@ -27677,6 +27721,7 @@
                                         "description": "Monitoring interval in milliseconds"
                                     }
                                 },
+                                "additionalProperties": false,
                                 "example": {
                                     "intervalMs": 30000
                                 }
@@ -28031,6 +28076,7 @@
                                     "displayName",
                                     "rpcUrl"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "caip2Id": "eip155:8453",
                                     "displayName": "Base",
@@ -28268,6 +28314,7 @@
                                     "networkId",
                                     "type"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "networkId": "clx402network0001",
                                     "type": "Purchasing"
@@ -28414,6 +28461,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "clmanagedwallet0001"
                                 }
@@ -28615,6 +28663,7 @@
                                     "supportedPaymentSourceId",
                                     "paymentPayload"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "supportedPaymentSourceId": "supported_payment_source_id",
                                     "paymentPayload": {
@@ -28881,6 +28930,7 @@
                                     "supportedPaymentSourceId",
                                     "paymentPayload"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "supportedPaymentSourceId": "supported_payment_source_id",
                                     "paymentPayload": {
@@ -29136,6 +29186,7 @@
                                     "evmWalletId",
                                     "paymentRequired"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "evmWalletId": "clmanagedwallet0001",
                                     "paymentRequired": {
@@ -29734,6 +29785,7 @@
                                     "id",
                                     "note"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "clmanagedwallet0001",
                                     "note": "Renamed buyer wallet"
@@ -30201,6 +30253,7 @@
                                     "asset",
                                     "thresholdAmount"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "evmWalletId": "clmanagedwallet0002",
                                     "caip2Network": "eip155:8453",
@@ -30289,6 +30342,7 @@
                                 "required": [
                                     "ruleId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "ruleId": "clx402lbrule0001",
                                     "thresholdAmount": "20000000000000000"
@@ -30368,6 +30422,7 @@
                                 "required": [
                                     "ruleId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "ruleId": "clx402lbrule0001"
                                 }
@@ -30667,6 +30722,7 @@
                                         "description": "IANA timezone for day/month bucketing (default Etc/UTC)"
                                     }
                                 },
+                                "additionalProperties": false,
                                 "example": {
                                     "timeZone": "Etc/UTC"
                                 }
@@ -31128,6 +31184,7 @@
                                     "paymentSourceId",
                                     "walletMnemonic"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "paymentSourceId": "cuid_v2_auto_generated",
                                     "walletMnemonic": "word1 word2 word3 ... word24",
@@ -31230,6 +31287,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated",
                                     "enabled": true,
@@ -31319,6 +31377,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated",
                                     "force": false
@@ -31525,6 +31584,7 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {},
+                                "additionalProperties": false,
                                 "example": {}
                             }
                         }
@@ -31806,6 +31866,7 @@
                                 "required": [
                                     "hotWalletId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {}
                             }
                         }
@@ -31895,6 +31956,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {}
                             }
                         }
@@ -31986,6 +32048,7 @@
                                 "required": [
                                     "code"
                                 ],
+                                "additionalProperties": false,
                                 "example": {}
                             }
                         }
@@ -32188,6 +32251,7 @@
                                     "code",
                                     "hotWalletId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {}
                             }
                         }
@@ -32388,7 +32452,8 @@
                                     "network",
                                     "baseUrl",
                                     "adminToken"
-                                ]
+                                ],
+                                "additionalProperties": false
                             }
                         }
                     }
@@ -32485,7 +32550,8 @@
                                 },
                                 "required": [
                                     "id"
-                                ]
+                                ],
+                                "additionalProperties": false
                             }
                         }
                     }
@@ -32550,7 +32616,8 @@
                                 },
                                 "required": [
                                     "id"
-                                ]
+                                ],
+                                "additionalProperties": false
                             }
                         }
                     }
@@ -32628,7 +32695,8 @@
                                 },
                                 "required": [
                                     "id"
-                                ]
+                                ],
+                                "additionalProperties": false
                             }
                         }
                     }
@@ -32885,7 +32953,8 @@
                                         },
                                         "required": [
                                             "hotWalletId"
-                                        ]
+                                        ],
+                                        "additionalProperties": false
                                     },
                                     {
                                         "type": "object",
@@ -32918,7 +32987,8 @@
                                         "required": [
                                             "paymentSourceId",
                                             "walletAddress"
-                                        ]
+                                        ],
+                                        "additionalProperties": false
                                     }
                                 ],
                                 "example": {}
@@ -33162,6 +33232,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated"
                                 }
@@ -33404,6 +33475,7 @@
                                     "id",
                                     "isEnabled"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated",
                                     "isEnabled": true
@@ -33486,6 +33558,7 @@
                                 "required": [
                                     "headId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "headId": "cuid_v2_auto_generated"
                                 }
@@ -33588,6 +33661,7 @@
                                 "required": [
                                     "headId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "headId": "cuid_v2_auto_generated"
                                 }
@@ -33693,6 +33767,7 @@
                                 "required": [
                                     "headId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "headId": "cuid_v2_auto_generated"
                                 }
@@ -33801,6 +33876,7 @@
                                     "headId",
                                     "lovelace"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "headId": "cuid_v2_auto_generated",
                                     "lovelace": "10000000"
@@ -33920,6 +33996,7 @@
                                 "required": [
                                     "headId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "headId": "cuid_v2_auto_generated",
                                     "assetFilter": "ada-only",
@@ -34196,6 +34273,7 @@
                                 "required": [
                                     "headId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "headId": "cuid_v2_auto_generated",
                                     "lovelace": "10000000",
@@ -34790,6 +34868,7 @@
                                 "required": [
                                     "topupId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "topupId": "cuid_v2_auto_generated"
                                 }
@@ -35181,6 +35260,7 @@
                                 "required": [
                                     "headId"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "headId": "cuid_v2_auto_generated"
                                 }
@@ -35373,6 +35453,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated"
                                 }
@@ -35477,6 +35558,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated"
                                 }
@@ -35673,6 +35755,7 @@
                                     "assetUnit",
                                     "thresholdAmount"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "hydraLocalParticipantId": "cuid_v2_auto_generated",
                                     "assetUnit": "lovelace",
@@ -35771,6 +35854,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated"
                                 }
@@ -35978,6 +36062,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated"
                                 }
@@ -36066,6 +36151,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated"
                                 }
@@ -36281,6 +36367,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "cuid_v2_auto_generated"
                                 }
@@ -36712,6 +36799,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "quarantine_entry_id"
                                 }
@@ -36803,6 +36891,7 @@
                                 "required": [
                                     "id"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "id": "quarantine_entry_id"
                                 }
@@ -36926,6 +37015,7 @@
                                     "blockchainIdentifier",
                                     "txHash"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "kind": "Purchase",
                                     "network": "Preprod",
@@ -37128,6 +37218,7 @@
                                     "blockchainIdentifier",
                                     "txHash"
                                 ],
+                                "additionalProperties": false,
                                 "example": {
                                     "kind": "Purchase",
                                     "network": "Preprod",
@@ -37811,7 +37902,8 @@
                                             "paymentSourceId",
                                             "from",
                                             "to"
-                                        ]
+                                        ],
+                                        "additionalProperties": false
                                     },
                                     {
                                         "type": "object",
@@ -37826,7 +37918,8 @@
                                                 "maximum": 100,
                                                 "default": 50
                                             }
-                                        }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 ],
                                 "example": {
@@ -39525,7 +39618,8 @@
                                             "paymentSourceId",
                                             "from",
                                             "to"
-                                        ]
+                                        ],
+                                        "additionalProperties": false
                                     },
                                     {
                                         "type": "object",
@@ -39540,7 +39634,8 @@
                                                 ],
                                                 "default": "Auto"
                                             }
-                                        }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 ],
                                 "example": {
@@ -42589,7 +42684,8 @@
                                             "paymentSourceId",
                                             "from",
                                             "to"
-                                        ]
+                                        ],
+                                        "additionalProperties": false
                                     },
                                     {
                                         "type": "object",
@@ -42604,7 +42700,8 @@
                                                 ],
                                                 "default": "Auto"
                                             }
-                                        }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 ],
                                 "example": {
@@ -43135,7 +43232,8 @@
                                             "paymentSourceId",
                                             "from",
                                             "to"
-                                        ]
+                                        ],
+                                        "additionalProperties": false
                                     },
                                     {
                                         "type": "object",
@@ -43150,7 +43248,8 @@
                                                 ],
                                                 "default": "Auto"
                                             }
-                                        }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 ],
                                 "example": {
@@ -43681,7 +43780,8 @@
                                             "paymentSourceId",
                                             "from",
                                             "to"
-                                        ]
+                                        ],
+                                        "additionalProperties": false
                                     },
                                     {
                                         "type": "object",
@@ -43696,7 +43796,8 @@
                                                 ],
                                                 "default": "Auto"
                                             }
-                                        }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 ],
                                 "example": {
@@ -44227,7 +44328,8 @@
                                             "paymentSourceId",
                                             "from",
                                             "to"
-                                        ]
+                                        ],
+                                        "additionalProperties": false
                                     },
                                     {
                                         "type": "object",
@@ -44242,7 +44344,8 @@
                                                 ],
                                                 "default": "Auto"
                                             }
-                                        }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 ],
                                 "example": {

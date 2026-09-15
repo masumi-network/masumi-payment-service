@@ -1,7 +1,6 @@
 import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
 import { prisma } from './db';
-import { z } from './zod';
 import { ApiKeyStatus, Network } from '@prisma/client';
 import { generateApiKeySecureHash } from './api-key-hash';
 import { RequiredPermissionFlags, hasPermission, getPermissionName } from './permissions';
@@ -35,7 +34,11 @@ export type AuthContext = {
 	x402WalletScopeIds: string[] | null;
 };
 
-const authMiddlewareInputSchema = z.object({});
+// No `input` schema on the middlewares below: express-zod-api intersects every
+// middleware's input schema with the endpoint's, and an empty *loose* object
+// silently defeats the endpoint's strictness, letting unknown body fields through.
+// These middlewares read nothing from the input, so declaring no schema is both
+// accurate and keeps endpoint strictness intact.
 
 /**
  * Authentication middleware factory.
@@ -45,13 +48,12 @@ const authMiddlewareInputSchema = z.object({});
  * @returns Express-zod-api middleware
  */
 export const authMiddleware = (required: RequiredPermissionFlags) =>
-	new Middleware<Record<string, never>, AuthContext, string, typeof authMiddlewareInputSchema>({
+	new Middleware<Record<string, never>, AuthContext, string>({
 		security: {
 			// this information is optional and used for generating documentation
 			type: 'header',
 			name: 'api-key',
 		},
-		input: authMiddlewareInputSchema,
 		handler: async ({ request, logger }) => {
 			try {
 				const sentKey = request.headers.token;
