@@ -115,6 +115,9 @@ export async function startApp() {
 							// calls them directly — reachability and balances are checked server-side.
 							connectSrc: ["'self'", 'https://*.blockfrost.io', 'https://api.coingecko.com'],
 							fontSrc: ["'self'", 'data:'],
+							// Frames the admin UI may embed: our own pages (the OpenAPI docs), plus the
+							// partner co-sign dashboard on the MAS-596 demo page when one is configured.
+							frameSrc: ["'self'", ...(CONFIG.EXCHAIN_DASHBOARD_ORIGIN ? [CONFIG.EXCHAIN_DASHBOARD_ORIGIN] : [])],
 							frameAncestors: ["'none'"],
 							imgSrc: ["'self'", 'data:'],
 							objectSrc: ["'none'"],
