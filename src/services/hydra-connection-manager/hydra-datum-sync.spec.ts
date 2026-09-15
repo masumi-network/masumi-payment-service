@@ -67,6 +67,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 }));
 
 const { applyDatumStateToLocalRequests: applyDatumStateToLocalRequestsRaw } = await import('./hydra-datum-sync');
+const { logger: diagnosticLogger } = await import('@masumi/payment-core/logger');
 // The terminal spend moved to its own module when this one passed the line
 // limit; the datum flow it ends is still the same one exercised here.
 const { applyTerminalHydraSpends } = await import('./hydra-datum-terminal');
@@ -611,6 +612,18 @@ describe('applyDatumStateToLocalRequests', () => {
 		});
 
 		expect(outcome).toBe('applied');
+		expect(diagnosticLogger.warn).toHaveBeenCalledWith(
+			'[HydraDatumSync] in-head initial lock failed validation -> FundsOrDatumInvalid',
+			expect.objectContaining({
+				expectedFunds: [
+					{ unit: 'lovelace', amount: '5000000' },
+					{ unit: '', amount: '5000000' },
+				],
+				outputAmounts: [{ unit: 'lovelace', quantity: '5000000' }],
+				collateralReturnLovelace: '0',
+				confirmationTimeMs: 49,
+			}),
+		);
 		expect(mockPaymentUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({ onChainState: OnChainState.FundsOrDatumInvalid }),
