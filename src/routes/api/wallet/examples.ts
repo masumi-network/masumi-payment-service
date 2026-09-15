@@ -46,6 +46,7 @@ export const listWalletsQueryExample = {
 	cursorId: 'unique_cuid_v2_of_last_returned_wallet',
 	paymentSourceId: 'unique_cuid_v2_of_payment_source',
 	walletType: HotWalletType.Selling,
+	searchQuery: 'addr_test1',
 };
 
 export const listWalletsResponseExample = {

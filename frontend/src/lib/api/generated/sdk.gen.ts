@@ -87,9 +87,9 @@ export const postWallet = <ThrowOnError extends boolean = false>(options?: Optio
 });
 
 /**
- * List hot wallets, optionally filtered by payment source and type. (read access required)
+ * List hot wallets, optionally filtered or searched by payment source, type and free text. (read access required)
  *
- * Lists hot wallets across payment sources with cursor-based pagination
+ * Lists hot wallets across payment sources with cursor-based pagination. searchQuery applies before pagination, so a wallet beyond the first page is still found.
  */
 export const getWalletList = <ThrowOnError extends boolean = false>(options?: Options<GetWalletListData, ThrowOnError>): RequestResult<GetWalletListResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetWalletListResponses, unknown, ThrowOnError>({
     responseTransformer: getWalletListResponseTransformer,
