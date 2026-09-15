@@ -2,6 +2,7 @@ import { Transaction, resolveTxHash, type IFetcher, type MeshWallet, type UTxO }
 import type { Network } from '@/generated/prisma/client';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { logger } from '@masumi/payment-core/logger';
+import { calculateTokenDepositMinLovelace } from './deposit-min-ada';
 
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
 const CONFIRM_POLL_MS = 15_000;
@@ -48,8 +49,8 @@ function isPureLovelace(utxo: UTxO): boolean {
  * The purity half matters as much as the amount: Hydra commits WHOLE UTxOs, so
  * anything else riding along goes into the head too and only a decommit or a
  * close gets it back. A lovelace carve pays a pure-ADA output; a token carve
- * pays the token and its min-ADA and nothing else, while the change output
- * beside it carries every other asset the wallet held — including an agent's
+ * pays the token and the deposit's minimum ADA and nothing else. The change
+ * output carries every other asset the wallet held — including an agent's
  * registry NFT.
  */
 function isCarveOf(utxo: UTxO, walletAddress: string, unit: string, amount: bigint): boolean {
@@ -77,12 +78,21 @@ async function defaultSubmitCarveTx(
 	unit: string,
 	amount: bigint,
 	reportIntendedHash: (txHash: string) => Promise<void>,
+	blockchainProvider: IFetcher,
 ): Promise<string> {
 	const tx = new Transaction({ initiator: wallet });
 	if (unit === 'lovelace') {
 		tx.sendLovelace(walletAddress, amount.toString());
 	} else {
-		tx.sendAssets(walletAddress, [{ unit, quantity: amount.toString() }]);
+		// Mesh's Blockfrost provider uses NaN to request the latest epoch.
+		const { coinsPerUtxoSize } = await blockchainProvider.fetchProtocolParameters(Number.NaN);
+		const lovelace = calculateTokenDepositMinLovelace({ walletAddress, unit, amount, coinsPerUtxoSize });
+		// Fund the final deposit's inline datum here. Padding only the deposit
+		// output would change its value relative to the UTxO recorded in its datum.
+		tx.sendAssets(walletAddress, [
+			{ unit, quantity: amount.toString() },
+			{ unit: 'lovelace', quantity: lovelace.toString() },
+		]);
 	}
 	const unsigned = await tx.build();
 	const signed = await wallet.signTx(unsigned);
@@ -154,8 +164,8 @@ export async function carveExactUtxo(params: {
 	//
 	// A token UTxO carries lovelace as well, and how much is not ours to choose:
 	// a wallet UTxO holding exactly 750 USDM may sit on 200 ADA, and committing
-	// it would lock that ADA in the head until the head closes. A carve pays the
-	// ledger minimum, so for a token a second carve is the cheaper mistake.
+	// it would lock that ADA in the head until the head closes. A carve pays
+	// enough ADA for the final deposit, so a second carve is the cheaper mistake.
 	const reusable =
 		params.unit === 'lovelace'
 			? params.existingUtxos?.find((utxo) => isCarveOf(utxo, params.walletAddress, params.unit, params.amount))
@@ -170,7 +180,10 @@ export async function carveExactUtxo(params: {
 		return reusable;
 	}
 
-	const submitCarveTx = params.submitCarveTx ?? defaultSubmitCarveTx;
+	const submitCarveTx =
+		params.submitCarveTx ??
+		((wallet, walletAddress, unit, amount, reportIntendedHash) =>
+			defaultSubmitCarveTx(wallet, walletAddress, unit, amount, reportIntendedHash, params.blockchainProvider));
 	// Recording the hash must never lose the carve itself, which by then is on
 	// its way to the chain either way.
 	const reportedHashes = new Set<string>();
