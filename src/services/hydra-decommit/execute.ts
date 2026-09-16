@@ -46,6 +46,7 @@ import {
 	selectDecommittableUtxos,
 	utxoRef,
 } from './select';
+import { assertDecommitOutputMinimum } from './min-output';
 
 /**
  * How long the in-head split gets to confirm before the withdrawal gives up.
@@ -623,6 +624,7 @@ async function splitExactAmountInHead(params: {
 				{ unit: 'lovelace', quantity: TOKEN_OUTPUT_LOVELACE.toString() },
 				{ unit, quantity: amount.toString() },
 			];
+	assertDecommitOutputMinimum(address, carvedValue, headParameters.coinsPerUtxoSize);
 	const unsignedTx = await builder
 		.txOut(address, carvedValue)
 		.changeAddress(address)

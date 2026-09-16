@@ -1,3 +1,4 @@
+import { addWithdrawalOutputs, type BatchWithdrawItem } from './withdrawal-outputs';
 // Mesh SDK pinning: this file lives in the V2 package and MUST resolve to the
 // V2 mesh line (`@meshsdk/core@1.9.0-beta.102` / `@meshsdk/core-cst@1.9.0-beta.102`).
 // The derived script-data-hash and CBOR encoding depend on the exact serializer
@@ -10,7 +11,6 @@ import {
 	type IFetcher,
 	type LanguageVersion,
 	MeshTxBuilder,
-	mOutputReference,
 	type Network,
 	type UTxO,
 } from '@meshsdk/core';
@@ -563,33 +563,7 @@ async function buildBatchInteractionTx(
 		.complete();
 }
 
-/**
- * One withdraw leg of a V2 batch-withdraw transaction. Each item produces:
- *   - one Spend input + its `Withdraw` or `WithdrawRefund` redeemer,
- *   - one collection output to `collectionAddress` carrying `collectAssets`,
- *   - one optional fee output (V2 has none → always `null`),
- *   - one optional collateral-return output to the buyer.
- *
- * Every collection / fee / collateral-return output's inline datum is
- * `mOutputReference(item.smartContractUtxo.input.txHash, item.smartContractUtxo.input.outputIndex)`.
- * The V2 validator's `outputs_with_reference_tag(self.outputs, own_ref, default, return_addr)`
- * filters outputs by `output.datum == own_ref` AND `output.address == expected`,
- * which is what ties each tagged output back to its specific spending input
- * even when N inputs share the same script and the same return-address shape.
- *
- * Tagging is unconditional in V2 — emitting outputs without the tag would
- * leave them invisible to the validator's output filter and break per-input
- * value accounting. If a future flow needs untagged outputs it should use a
- * separate builder.
- */
-export type BatchWithdrawItem = {
-	type: 'CollectCompleted' | 'CollectRefund';
-	smartContractUtxo: UTxO;
-	collection: { collectAssets: Asset[]; collectionAddress: string };
-	/** V2 has no protocol fee — pass `null`. The field stays general so future flows can attach one. */
-	fee: { feeAssets: Asset[]; feeAddress: string } | null;
-	collateralReturn: { lovelace: bigint; address: string } | null;
-};
+export type { BatchWithdrawItem } from './withdrawal-outputs';
 
 export async function generateMasumiSmartContractBatchWithdrawTransactionAutomaticFees(
 	blockchainProvider: BlockfrostProvider,
@@ -716,31 +690,16 @@ async function buildBatchWithdrawTx(
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);
 
-	// Per-item collection / fee / collateral-return outputs. Each tagged output
-	// MUST carry THAT item's own_ref — sharing a tag across items would let one
-	// input's outputs satisfy another input's filter and break per-input value
-	// accounting. See `outputs_with_reference_tag` in
-	// smart-contracts/payment-v2/validators/vested_pay.ak.
+	// Each output retains its own input reference and is funded before selection.
 	for (const item of sortedItems) {
-		const ownRefDatum = mOutputReference(item.smartContractUtxo.input.txHash, item.smartContractUtxo.input.outputIndex);
-
-		txBuilder.txOut(item.collection.collectionAddress, item.collection.collectAssets);
-		txBuilder.txOutInlineDatumValue(ownRefDatum);
-
-		if (item.fee != null) {
-			txBuilder.txOut(item.fee.feeAddress, item.fee.feeAssets);
-			txBuilder.txOutInlineDatumValue(ownRefDatum);
-		}
-
-		if (item.collateralReturn != null && item.collateralReturn.lovelace > 0n) {
-			txBuilder.txOut(item.collateralReturn.address, [
-				{
-					unit: 'lovelace',
-					quantity: item.collateralReturn.lovelace.toString(),
-				},
-			]);
-			txBuilder.txOutInlineDatumValue(ownRefDatum);
-		}
+		addWithdrawalOutputs(
+			txBuilder,
+			protocolParameters,
+			item.smartContractUtxo.input,
+			item.collection,
+			item.fee,
+			item.collateralReturn,
+		);
 	}
 
 	// Conditional wallet "splitter" output — same rationale as in
