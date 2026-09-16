@@ -18,7 +18,7 @@ class MockMeshTxBuilder {
 	txInRedeemerValue = jest.fn(() => this);
 	txInInlineDatumPresent = jest.fn(() => this);
 	txInCollateral = jest.fn(() => this) as jest.Mock;
-	setTotalCollateral = jest.fn(() => this);
+	setTotalCollateral = jest.fn(() => this) as jest.Mock;
 	txOut = jest.fn(() => this) as jest.Mock;
 	txOutInlineDatumValue = jest.fn(() => this);
 	selectUtxosFrom = jest.fn(() => this) as jest.Mock;
@@ -303,6 +303,7 @@ it.each(['CollectCompleted', 'CollectRefund'] as const)(
 		expect(builder.txOut).toHaveBeenCalledWith('addr_test1_buyer', [{ unit: 'lovelace', quantity: '1400000' }]);
 		expect(builder.selectUtxosFrom).toHaveBeenCalledWith([funding]);
 		expect(builder.setFee).toHaveBeenCalledWith('0');
+		expect(builder.setTotalCollateral).toHaveBeenCalledWith('0');
 		expect(assets[0].quantity).toBe('34480');
 	},
 );

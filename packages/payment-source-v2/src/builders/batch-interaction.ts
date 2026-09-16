@@ -11,6 +11,7 @@ import {
 	type IFetcher,
 	type LanguageVersion,
 	MeshTxBuilder,
+	getOutputMinLovelace,
 	type Network,
 	type UTxO,
 } from '@meshsdk/core';
@@ -472,6 +473,16 @@ async function buildBatchInteractionTx(
 			coinsPerUtxoSize,
 			includeBuffers: true,
 		});
+		const serializedMinimum = getOutputMinLovelace(
+			{
+				address: smartContractAddress,
+				amount: item.smartContractUtxo.output.amount,
+				datum: { type: 'Inline', data: { type: 'Mesh', content: item.newInlineDatum } },
+			},
+			coinsPerUtxoSize,
+		);
+		if (serializedMinimum > minUtxoResult.minUtxoLovelace) minUtxoResult.minUtxoLovelace = serializedMinimum;
+
 		const currentLovelace = getLovelaceFromAmounts(item.smartContractUtxo.output.amount);
 		const topUpAmount = calculateTopUpAmount(currentLovelace, minUtxoResult.minUtxoLovelace);
 		const outputAmount: Asset[] = [...item.smartContractUtxo.output.amount];

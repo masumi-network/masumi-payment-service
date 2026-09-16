@@ -20,6 +20,7 @@ import {
 	type IFetcher,
 	type LanguageVersion,
 	MeshTxBuilder,
+	getOutputMinLovelace,
 	type Network,
 	type UTxO,
 } from '@meshsdk/core';
@@ -282,6 +283,16 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		includeBuffers: true,
 	});
 
+	const serializedMinimum = getOutputMinLovelace(
+		{
+			address: smartContractAddress,
+			amount: smartContractUtxo.output.amount,
+			datum: { type: 'Inline', data: { type: 'Mesh', content: newInlineDatum } },
+		},
+		coinsPerUtxoSize,
+	);
+	if (serializedMinimum > minUtxoResult.minUtxoLovelace) minUtxoResult.minUtxoLovelace = serializedMinimum;
+
 	const currentLovelace = getLovelaceFromAmounts(smartContractUtxo.output.amount);
 	const topUpAmount = calculateTopUpAmount(currentLovelace, minUtxoResult.minUtxoLovelace);
 
@@ -345,7 +356,7 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	}
 
 	txBuilder
-		.setTotalCollateral('3000000')
+		.setTotalCollateral(isHydra ? '0' : '3000000')
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
@@ -590,7 +601,7 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		txBuilder.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex);
 	}
 
-	txBuilder.setTotalCollateral('3000000');
+	txBuilder.setTotalCollateral(isHydra ? '0' : '3000000');
 	addWithdrawalOutputs(
 		txBuilder,
 		protocolParameters,

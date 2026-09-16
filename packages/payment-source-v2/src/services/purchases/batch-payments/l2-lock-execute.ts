@@ -12,7 +12,7 @@
  * the lock wallet is built bound to the head provider so coin selection draws
  * from the buyer's in-head UTxOs rather than L1.
  */
-import { MeshTxBuilder, MeshWallet, resolveTxHash } from '@meshsdk/core';
+import { MeshTxBuilder, MeshWallet, resolveTxHash, getOutputMinLovelace } from '@meshsdk/core';
 import { PurchasingAction, TransactionLayer, TransactionStatus, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
@@ -22,6 +22,7 @@ import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import {
 	buildL2LockDatumParams,
+	inHeadChangeMinimum,
 	createTrustedL2LockWindow,
 	mapPaidFundsToAssets,
 	planL2LockValue,
@@ -137,6 +138,11 @@ export async function executeL2Lock(
 	const nativeTokenCount = request.PaidFunds.filter(
 		(fund) => fund.unit !== '' && fund.unit.toLowerCase() !== 'lovelace',
 	).length;
+	const paidAssets = new Map<string, bigint>();
+	for (const fund of request.PaidFunds) {
+		const unit = fund.unit === '' || fund.unit.toLowerCase() === 'lovelace' ? 'lovelace' : fund.unit;
+		paidAssets.set(unit, (paidAssets.get(unit) ?? 0n) + fund.amount);
+	}
 	const valuePlan = planL2LockValue(request.PaidFunds, (collateralReturnLovelace) => {
 		// Size for the larger ResultSubmitted continuation, as the L1 path does.
 		// The validator preserves value across SubmitResult, so pre-funding here
@@ -152,12 +158,25 @@ export async function executeL2Lock(
 			resultHash: DUMMY_RESULT_HASH,
 			state: SmartContractState.ResultSubmitted,
 		});
-		return calculateMinUtxo({
+		const bufferedMinimum = calculateMinUtxo({
 			datum: estimateDatum.value,
 			nativeTokenCount,
 			coinsPerUtxoSize: protocolParameters.coinsPerUtxoSize,
 			includeBuffers: true,
 		}).minUtxoLovelace;
+		const amount = [...paidAssets].map(([unit, quantity]) => ({ unit, quantity: quantity.toString() }));
+		const ada = (paidAssets.get('lovelace') ?? 0n) + collateralReturnLovelace;
+		const outputAssets = amount.filter((asset) => asset.unit !== 'lovelace');
+		outputAssets.push({ unit: 'lovelace', quantity: ada.toString() });
+		const serializedMinimum = getOutputMinLovelace(
+			{
+				address: paymentContract.smartContractAddress,
+				amount: outputAssets,
+				datum: { type: 'Inline', data: { type: 'Mesh', content: estimateDatum.value } },
+			},
+			protocolParameters.coinsPerUtxoSize,
+		);
+		return serializedMinimum > bufferedMinimum ? serializedMinimum : bufferedMinimum;
 	});
 	const datum = createDatumFromBlockchainIdentifierV2(
 		buildL2LockDatumParams({
@@ -211,16 +230,8 @@ export async function executeL2Lock(
 		valuePlan.outputFunds,
 		WALLET_SPLITTER_LOVELACE,
 		MIN_CHANGE_LOVELACE,
-		// Real min-UTxO of the (datum-less) change output given its leftover asset
-		// count — an asset-heavy change can exceed the 2-ADA floor, and hitting that
-		// only at submitTx would land AFTER the fail-closed reservation.
-		(changeAssets) =>
-			calculateMinUtxo({
-				datum: Buffer.alloc(0),
-				nativeTokenCount: changeAssets.length,
-				coinsPerUtxoSize: protocolParameters.coinsPerUtxoSize,
-				includeBuffers: true,
-			}).minUtxoLovelace,
+		// Serialize the actual policy IDs, asset names and quantities in change.
+		(changeAssets) => inHeadChangeMinimum(buyerAddress, changeAssets, protocolParameters.coinsPerUtxoSize),
 	);
 
 	// isHydra zeroes the fee params; setFee('0') keeps the in-head value conserved
@@ -228,6 +239,7 @@ export async function executeL2Lock(
 	// redistributed in-head), accumulating into the head's headAdaOverhead until
 	// Close fails the strict-equality check (H65, ChangedHeadAdaOverhead).
 	const txBuilder = new MeshTxBuilder({ fetcher: hydraV2Provider, isHydra: true });
+	txBuilder.protocolParams(protocolParameters);
 	for (const u of selected) {
 		// The 5th arg (scriptSize = 0) is ESSENTIAL on a Hydra head. Without it mesh
 		// marks the input "incomplete" (isInputInfoComplete requires scriptSize to be
