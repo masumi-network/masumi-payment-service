@@ -289,7 +289,7 @@ export class Connection extends EventEmitter {
 		this.handleTransportFailure(error, websocket, this._socketGeneration);
 	}
 
-	send(data: unknown): Promise<void> {
+	send(data: unknown, options: { signal?: AbortSignal; onQueued?: () => void } = {}): Promise<void> {
 		if (this._isManuallyDisconnected || this._isDisconnecting) {
 			return Promise.reject(new HydraTransportError('Hydra websocket is disconnecting; command not sent'));
 		}
@@ -316,6 +316,7 @@ export class Connection extends EventEmitter {
 				if (timers.interval) clearInterval(timers.interval);
 				if (timers.timeout) clearTimeout(timers.timeout);
 				this.removeListener('close', handleClose);
+				options.signal?.removeEventListener('abort', handleAbort);
 			};
 			const settle = (error?: Error) => {
 				if (settled) return;
@@ -333,12 +334,15 @@ export class Connection extends EventEmitter {
 				if (websocket?.readyState !== WebSocket.OPEN) return;
 				try {
 					websocket.send(serializedData);
-					settle();
 				} catch (error) {
 					settle(
 						new HydraTransportError('Hydra websocket rejected the command before it was queued', { cause: error }),
 					);
+					return;
 				}
+				// Record dispatch before promise reactions or deadline handlers can run.
+				options.onQueued?.();
+				settle();
 			};
 			const handleClose = (error: unknown) => {
 				settle(
@@ -348,7 +352,15 @@ export class Connection extends EventEmitter {
 				);
 			};
 
+			const handleAbort = () => {
+				settle(new HydraTransportError('Hydra command was cancelled before it was queued'));
+			};
 			this.on('close', handleClose);
+			options.signal?.addEventListener('abort', handleAbort, { once: true });
+			if (options.signal?.aborted) {
+				handleAbort();
+				return;
+			}
 			trySend();
 			if (settled) return;
 			timers.interval = setInterval(trySend, SEND_RETRY_INTERVAL_MS);
