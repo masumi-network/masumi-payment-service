@@ -31,8 +31,8 @@ import { TransactionHistorySection } from './TransactionHistorySection';
 import { TransactionErrorSection } from './TransactionErrorSection';
 import { RequestRepairDialog } from './RequestRepairDialog';
 import {
+  formatOnChainState,
   formatRequestedAction,
-  formatStatus,
   getLatestTxHash,
   getStatusColor,
   type Transaction,
@@ -492,7 +492,7 @@ export default function TransactionDetailsDialog({
                       getStatusColor(transaction.onChainState, !!transaction.NextAction?.errorType),
                     )}
                   >
-                    {formatStatus(transaction.onChainState)}
+                    {formatOnChainState(transaction.onChainState)}
                   </p>
                   {transaction.NextAction?.requestedAction && (
                     <p className="text-xs text-muted-foreground mt-1">
