@@ -184,10 +184,8 @@ export class HydraProvider implements IFetcher, ISubmitter {
 		// The head's answer is the confirmed snapshot. Wait for it. On timeout
 		// `awaitTx` throws `HydraTransportAmbiguousError`, which the reservation
 		// layer already classifies as ambiguous: the reservation stays Pending
-		// and held. Recovery releases a held reservation on its own only when
-		// the head reported that it refused the body (`l2RejectedByHeadAt`); a
-		// timeout is not such a report, so the reservation waits for explicit
-		// reconciliation instead of being finalized against a phantom.
+		// and held until explicit reconciliation. A node rejection also cannot
+		// rule out earlier acceptance followed by withheld snapshot evidence.
 		//
 		// On its own budget, not the command timeout it used to inherit by
 		// omission: what is being waited on here is a peer signing and a snapshot

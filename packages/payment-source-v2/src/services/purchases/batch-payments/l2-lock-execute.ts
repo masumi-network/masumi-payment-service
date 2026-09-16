@@ -314,11 +314,8 @@ export async function executeL2Lock(
 		// wallet inputs remain fresh. A withholding node can relay a valid lock and
 		// then report rejection; releasing this reservation would permit a second
 		// lock from different inputs. Keep it fail-closed for reconciliation.
-		// A rejection naming our own transaction hash is the one outcome that is
-		// not ambiguous: the head refused this body. Record it so recovery can
-		// hand the request back once the body's validity window has closed and it
-		// can never be included after the fact. The reservation stays held either
-		// way — this only decides whether it can ever be released.
+		// Record a matching rejection for diagnosis. It does not authorize release:
+		// expiry cannot disprove acceptance in a snapshot withheld before expiry.
 		if (error instanceof HydraTransactionRejectedError) {
 			await prisma.transaction
 				.updateMany({
@@ -326,8 +323,8 @@ export async function executeL2Lock(
 					data: { l2RejectedByHeadAt: new Date(), l2RejectedByHeadReason: error.message.slice(0, 500) },
 				})
 				.catch((persistError: unknown) => {
-					// The reservation is what protects the funds; failing to annotate it
-					// only means recovery cannot release it automatically later.
+					// The reservation protects the funds even if its diagnostic marker
+					// cannot be saved.
 					logger.warn('L2 lock: could not record the head rejection on the reservation', {
 						purchaseRequestId: request.id,
 						hydraHeadId,
