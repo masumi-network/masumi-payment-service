@@ -176,12 +176,8 @@ export default function WalletsPage() {
         false;
       const matchNote = wallet.note?.toLowerCase().includes(query) || false;
       const matchType = wallet.type?.toLowerCase().includes(query) || false;
-      const matchBalance = wallet.balance
-        ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
-        : false;
-      const matchUsdcxBalance = wallet.usdcxBalance?.includes(query) || false;
 
-      return matchAddress || matchNote || matchType || matchBalance || matchUsdcxBalance;
+      return matchAddress || matchNote || matchType;
     });
   }, [allWallets, debouncedSearchQuery, searchQuery]);
 
@@ -250,7 +246,7 @@ export default function WalletsPage() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by address, note, type, or balance..."
+                placeholder="Search by address, note, or type..."
                 className="max-w-xs"
                 isLoading={isSearchPending && !!searchQuery}
               />
