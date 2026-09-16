@@ -48,7 +48,11 @@ export function FundTransfersSection({
         client: apiClient,
         query: { walletAddress, limit: PAGE_SIZE },
       });
-      return extractApiPayload(res)?.transfers ?? [];
+      const payload = extractApiPayload(res);
+      if (!payload) {
+        throw new Error('Failed to load fund transfers');
+      }
+      return payload.transfers ?? [];
     },
   });
 
