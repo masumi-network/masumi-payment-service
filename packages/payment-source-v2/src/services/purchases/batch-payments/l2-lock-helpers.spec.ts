@@ -2,6 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import {
 	buildL2LockDatumParams,
+	inHeadChangeMinimum,
 	createTrustedL2LockWindow,
 	isHotWalletEligibleForL2Lock,
 	L2_LOCK_HEAD_CLOCK_MAX_AGE_MS,
@@ -428,4 +429,32 @@ describe('planL2LockValue duplicate-unit aggregation', () => {
 		const units = mapPaidFundsToAssets(plan.outputFunds).map((a) => a.unit);
 		expect(new Set(units).size).toBe(units.length);
 	});
+});
+
+it('funds change containing eight full-length assets beyond the count-based estimate', () => {
+	const address =
+		'addr1qxk6pvm8uufjvmwappnl4s7zu7t0ql6rx9wnzl3e4x0zuqdcgnhgarwqwzera5canfysuau8z4rtd7exc0qrul4hcm5s5l8xwx';
+	const assets = Array.from({ length: 8 }, (_, i) => ({
+		unit: (i + 1).toString(16).padStart(2, '0').repeat(28) + 'ab'.repeat(32),
+		quantity: 1n,
+	}));
+	expect(inHeadChangeMinimum(address, assets, 4310)).toBe(3254050n);
+	const bundle: L2FundingUtxo = {
+		input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+		output: {
+			address,
+			amount: [
+				{ unit: 'lovelace', quantity: '10124750' },
+				...assets.map((a) => ({ unit: a.unit, quantity: a.quantity.toString() })),
+			],
+		},
+	};
+	const topup: L2FundingUtxo = {
+		input: { txHash: 'b'.repeat(64), outputIndex: 0 },
+		output: { address, amount: [{ unit: 'lovelace', quantity: '1000000' }] },
+	};
+	const minimum = (change: typeof assets) => inHeadChangeMinimum(address, change, 4310);
+	const paid = [{ unit: '', amount: 5000000n }];
+	expect(() => selectInHeadFundingUtxos([bundle], paid, 2000000n, 2000000n, minimum)).toThrow('short 129300');
+	expect(selectInHeadFundingUtxos([bundle, topup], paid, 2000000n, 2000000n, minimum)).toEqual([bundle, topup]);
 });

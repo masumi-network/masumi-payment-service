@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
-import { Network } from '@/generated/prisma/client';
+import { Network, TransactionStatus } from '@/generated/prisma/client';
 import {
 	canReportExpiredL2Reservation,
 	EXPIRED_L2_RESERVATION_WARNING_INTERVAL_MS,
@@ -63,6 +63,7 @@ describe('expired L2 reservation reporting', () => {
 			confirmed?: boolean;
 			currentTxHash?: string | null;
 			initialLock?: boolean;
+			rejected?: boolean;
 		} = {},
 	) {
 		const intendedTxHash = 'a'.repeat(64);
@@ -75,6 +76,7 @@ describe('expired L2 reservation reporting', () => {
 						txHash: options.currentTxHash ?? null,
 						invalidHereafterSlot: expirySlot,
 						l2ReservationPreviousTransactionId: options.initialLock ? null : 'previous-transaction',
+						l2RejectedByHeadAt: options.rejected ? new Date(recoveryNowMs - 120_000) : null,
 					})),
 				),
 			},
@@ -122,6 +124,40 @@ describe('expired L2 reservation reporting', () => {
 			}),
 		).resolves.toBe(1);
 		expect(h.database.$transaction).not.toHaveBeenCalled();
+	});
+
+	it('retains an expired rejected initial lock because a node can withhold an earlier accepted snapshot', async () => {
+		const h = harness({ initialLock: true, rejected: true });
+		const mutationClient = {
+			transaction: {
+				findUnique: jest.fn(async () => ({
+					status: TransactionStatus.Pending,
+					txHash: null,
+					l2RejectedByHeadAt: new Date(recoveryNowMs - 120_000),
+					PurchaseRequestCurrent: [{ id: 'purchase-1', nextActionId: 'action-1' }],
+				})),
+				update: jest.fn(),
+			},
+			hotWallet: { updateMany: jest.fn() },
+			purchaseRequest: { update: jest.fn() },
+		};
+		h.database.$transaction.mockImplementation(
+			async (callback: unknown) =>
+				await (callback as (client: typeof mutationClient) => Promise<unknown>)(mutationClient),
+		);
+		await expect(
+			reportExpiredL2Reservations({
+				hydraHeadId: 'head-rejected-initial-lock',
+				network: Network.Preprod,
+				node: h.node as never,
+				nowMs: recoveryNowMs,
+				database: h.database as never,
+			}),
+		).resolves.toBe(1);
+		expect(h.database.$transaction).not.toHaveBeenCalled();
+		expect(mutationClient.transaction.update).not.toHaveBeenCalled();
+		expect(mutationClient.hotWallet.updateMany).not.toHaveBeenCalled();
+		expect(mutationClient.purchaseRequest.update).not.toHaveBeenCalled();
 	});
 
 	it('leaves confirmed evidence to the ordered replay path', async () => {

@@ -20,7 +20,7 @@ import {
 	type IFetcher,
 	type LanguageVersion,
 	MeshTxBuilder,
-	mOutputReference,
+	getOutputMinLovelace,
 	type Network,
 	type UTxO,
 } from '@meshsdk/core';
@@ -31,6 +31,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, calculateTopUpAmount, getLovelaceFromAmounts, getNativeTokenCount } from '@/utils/min-utxo';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
+import { addWithdrawalOutputs } from './withdrawal-outputs';
 import { generateRedeemerData } from './redeemer-data';
 import { getSpendableWalletUtxos } from './batch-helpers';
 import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
@@ -124,7 +125,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	}
 	let coinsPerUtxoSize: number = FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
-		const protocolParams = await blockchainProvider.fetchProtocolParameters();
+		const protocolParams = await provider.fetchProtocolParameters(Number.NaN);
 		if (protocolParams.coinsPerUtxoSize != null) {
 			coinsPerUtxoSize = protocolParams.coinsPerUtxoSize;
 		}
@@ -282,6 +283,16 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		includeBuffers: true,
 	});
 
+	const serializedMinimum = getOutputMinLovelace(
+		{
+			address: smartContractAddress,
+			amount: smartContractUtxo.output.amount,
+			datum: { type: 'Inline', data: { type: 'Mesh', content: newInlineDatum } },
+		},
+		coinsPerUtxoSize,
+	);
+	if (serializedMinimum > minUtxoResult.minUtxoLovelace) minUtxoResult.minUtxoLovelace = serializedMinimum;
+
 	const currentLovelace = getLovelaceFromAmounts(smartContractUtxo.output.amount);
 	const topUpAmount = calculateTopUpAmount(currentLovelace, minUtxoResult.minUtxoLovelace);
 
@@ -345,7 +356,7 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	}
 
 	txBuilder
-		.setTotalCollateral('3000000')
+		.setTotalCollateral(isHydra ? '0' : '3000000')
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
@@ -590,29 +601,16 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		txBuilder.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex);
 	}
 
-	txBuilder.setTotalCollateral('3000000').txOut(collection.collectionAddress, collection.collectAssets);
-
-	if (tagMainOutputAsOwnRef) {
-		txBuilder.txOutInlineDatumValue(
-			mOutputReference(smartContractUtxo.input.txHash, smartContractUtxo.input.outputIndex),
-		);
-	}
-
-	if (fee) {
-		const outputReference = mOutputReference(fee.txHash, fee.outputIndex);
-		txBuilder.txOut(fee.feeAddress, fee.feeAssets).txOutInlineDatumValue(outputReference);
-	}
-	if (collateralReturn != null && collateralReturn.lovelace > 0n) {
-		const outputReference = mOutputReference(collateralReturn.txHash, collateralReturn.outputIndex);
-		txBuilder
-			.txOut(collateralReturn.address, [
-				{
-					unit: 'lovelace',
-					quantity: collateralReturn.lovelace.toString(),
-				},
-			])
-			.txOutInlineDatumValue(outputReference);
-	}
+	txBuilder.setTotalCollateral(isHydra ? '0' : '3000000');
+	addWithdrawalOutputs(
+		txBuilder,
+		protocolParameters,
+		smartContractUtxo.input,
+		collection,
+		fee,
+		collateralReturn,
+		tagMainOutputAsOwnRef,
+	);
 
 	// Optional V2 single-item splitter — see CustomFee equivalent on the
 	// interaction builder for full rationale.

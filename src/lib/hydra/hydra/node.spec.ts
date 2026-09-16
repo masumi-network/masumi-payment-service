@@ -37,7 +37,9 @@ class MockConnection extends EventEmitter {
 		await this.connect();
 	});
 	disconnect = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
-	send = jest.fn<(data: unknown) => Promise<void>>().mockResolvedValue(undefined);
+	send = jest
+		.fn<(data: unknown, options?: { signal?: AbortSignal; onQueued?: () => void }) => Promise<void>>()
+		.mockResolvedValue(undefined);
 	isOpen = jest.fn<() => boolean>().mockReturnValue(false);
 	invalidate = jest.fn<(error: Error) => void>();
 }
@@ -1638,7 +1640,10 @@ describe('HydraNode', () => {
 			node.connect();
 
 			const initPromise = node.init();
-			expect(mockConnectionInstance.send).toHaveBeenCalledWith({ tag: 'Init' });
+			expect(mockConnectionInstance.send).toHaveBeenCalledWith(
+				{ tag: 'Init' },
+				{ signal: expect.any(AbortSignal), onQueued: expect.any(Function) },
+			);
 
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing', headId: HEAD_ID_A }));
 			await expect(initPromise).resolves.toBeUndefined();
@@ -1714,7 +1719,10 @@ describe('HydraNode', () => {
 				const initPromise = node.init();
 				// Well inside the sync budget: still behind, still held.
 				await jest.advanceTimersByTimeAsync(5_000);
-				expect(mockConnectionInstance.send).not.toHaveBeenCalledWith({ tag: 'Init' });
+				expect(mockConnectionInstance.send).not.toHaveBeenCalledWith(
+					{ tag: 'Init' },
+					{ signal: expect.any(AbortSignal), onQueued: expect.any(Function) },
+				);
 
 				mockConnectionInstance.emit(
 					'message',
@@ -1722,7 +1730,10 @@ describe('HydraNode', () => {
 				);
 				// One poll interval is enough for the watcher to see the transition.
 				await jest.advanceTimersByTimeAsync(1_000);
-				expect(mockConnectionInstance.send).toHaveBeenCalledWith({ tag: 'Init' });
+				expect(mockConnectionInstance.send).toHaveBeenCalledWith(
+					{ tag: 'Init' },
+					{ signal: expect.any(AbortSignal), onQueued: expect.any(Function) },
+				);
 
 				mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing', headId: HEAD_ID_A }));
 				await expect(initPromise).resolves.toBeUndefined();
@@ -1771,7 +1782,10 @@ describe('HydraNode', () => {
 				await jest.advanceTimersByTimeAsync(HydraNode.INIT_SYNC_WAIT_MS + 1000);
 				await outcome;
 				// Nothing was ever handed to the socket, so there is nothing to reconcile.
-				expect(mockConnectionInstance.send).not.toHaveBeenCalledWith({ tag: 'Init' });
+				expect(mockConnectionInstance.send).not.toHaveBeenCalledWith(
+					{ tag: 'Init' },
+					{ signal: expect.any(AbortSignal), onQueued: expect.any(Function) },
+				);
 			} finally {
 				jest.useRealTimers();
 			}

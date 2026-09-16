@@ -94,9 +94,9 @@ export class HydraNode extends EventEmitter {
 	 * Exceeding it is not a failure but `HydraTransportAmbiguousError`, and the
 	 * reservation then stays Pending and held. Recovery does NOT settle it on
 	 * its own: `reportExpiredL2Reservations` reports an expired reservation
-	 * without releasing it, and releases only one the head explicitly refused
-	 * (`l2RejectedByHeadAt`), which a timeout never sets. So a body that times
-	 * out here waits for reconciliation, and the wallet lease stays held until
+	 * without releasing it. A node rejection is also insufficient proof that
+	 * the body was never accepted. A timed-out body waits for reconciliation,
+	 * and the wallet lease stays held until
 	 * then. Raising this holds that lease open longer; lowering it sends bodies
 	 * to reconciliation that would have confirmed on their own.
 	 */

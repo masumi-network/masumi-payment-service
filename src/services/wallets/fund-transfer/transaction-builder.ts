@@ -2,7 +2,8 @@ import { Network } from '@/generated/prisma/client';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { Transaction, createTxWindow } from '@/services/shared';
-import { resolveTxHash } from '@meshsdk/core';
+import { getOutputMinLovelace, resolveTxHash } from '@meshsdk/core';
+import createHttpError from 'http-errors';
 
 /**
  * A fund transfer is a PURE VALUE TRANSFER (hot wallet → an arbitrary address,
@@ -54,6 +55,19 @@ export async function buildAndSignFundTransferTx(params: {
 	const { wallet, blockchainProvider } = await generateWalletExtended(network, rpcProviderApiKey, encryptedMnemonic);
 
 	const meshNetwork = convertNetwork(network);
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
+	if (!Number.isSafeInteger(protocolParameters.coinsPerUtxoSize) || protocolParameters.coinsPerUtxoSize <= 0) {
+		throw createHttpError(502, 'Chain returned an invalid coinsPerUtxoSize');
+	}
+	const outputAssets = assets.map((asset) => ({ unit: asset.unit, quantity: asset.quantity.toString() }));
+	const minimum = getOutputMinLovelace(
+		{ address: toAddress, amount: outputAssets },
+		protocolParameters.coinsPerUtxoSize,
+	);
+	const lovelace = assets.reduce((total, asset) => total + (asset.unit === 'lovelace' ? asset.quantity : 0n), 0n);
+	if (lovelace < minimum) {
+		throw createHttpError(400, `Transfer output requires at least ${minimum} lovelace; requested ${lovelace}`);
+	}
 
 	const unsignedTx = new Transaction({
 		initiator: wallet,
@@ -64,10 +78,8 @@ export async function buildAndSignFundTransferTx(params: {
 
 	// One output carrying ADA and any native tokens together. Quantities are
 	// strings because lovelace and token amounts both exceed Number's safe range.
-	unsignedTx.sendAssets(
-		toAddress,
-		assets.map((asset) => ({ unit: asset.unit, quantity: asset.quantity.toString() })),
-	);
+	unsignedTx.sendAssets(toAddress, outputAssets);
+	unsignedTx.txBuilder.protocolParams(protocolParameters);
 
 	// Shared window helper so this builder agrees with every other one on
 	// validity bounds. A plain payment has no on-chain deadline to constrain

@@ -10,6 +10,7 @@ class MockMeshTxBuilder {
 			},
 		},
 	};
+	setFee = jest.fn(() => this) as jest.Mock;
 	protocolParams = jest.fn(() => this);
 	spendingPlutusScript = jest.fn(() => this);
 	txIn = jest.fn(() => this) as jest.Mock;
@@ -17,8 +18,8 @@ class MockMeshTxBuilder {
 	txInRedeemerValue = jest.fn(() => this);
 	txInInlineDatumPresent = jest.fn(() => this);
 	txInCollateral = jest.fn(() => this) as jest.Mock;
-	setTotalCollateral = jest.fn(() => this);
-	txOut = jest.fn(() => this);
+	setTotalCollateral = jest.fn(() => this) as jest.Mock;
+	txOut = jest.fn(() => this) as jest.Mock;
 	txOutInlineDatumValue = jest.fn(() => this);
 	selectUtxosFrom = jest.fn(() => this) as jest.Mock;
 	changeAddress = jest.fn(() => this);
@@ -50,6 +51,7 @@ class MockMeshTxBuilder {
 jest.unstable_mockModule('@meshsdk/core', () => ({
 	MeshTxBuilder: MockMeshTxBuilder,
 	mOutputReference: jest.fn(),
+	getOutputMinLovelace: jest.fn(() => 1_400_000n),
 }));
 
 jest.unstable_mockModule('@meshsdk/core-cst', () => ({
@@ -263,3 +265,45 @@ describe('V2 single-item smart-contract input selection', () => {
 		expect(builders).toHaveLength(1);
 	});
 });
+
+it.each(['CollectCompleted', 'CollectRefund'] as const)(
+	'funds undersized Hydra %s outputs before coin selection',
+	async (type) => {
+		const provider = { fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })) };
+		const collateral = createUtxo('collateral', '5000000');
+		const funding = createUtxo('funding', '10000000');
+		const assets = [
+			{ unit: 'lovelace', quantity: '34480' },
+			{ unit: 'token', quantity: '900000' },
+		];
+		await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+			type,
+			provider as never,
+			'mainnet',
+			{ version: 'V3', code: 'script' },
+			'addr_test1_wallet',
+			createUtxo('contract', '4503790'),
+			collateral,
+			[collateral, funding],
+			{ collectAssets: assets, collectionAddress: 'addr_test1_seller' },
+			null,
+			{ lovelace: 1n, address: 'addr_test1_buyer', txHash: 'contract', outputIndex: 0 },
+			100,
+			200,
+			true,
+			undefined,
+			undefined,
+			provider as never,
+		);
+		const builder = builders[builders.length - 1];
+		expect(builder.txOut).toHaveBeenCalledWith('addr_test1_seller', [
+			{ unit: 'lovelace', quantity: '1400000' },
+			assets[1],
+		]);
+		expect(builder.txOut).toHaveBeenCalledWith('addr_test1_buyer', [{ unit: 'lovelace', quantity: '1400000' }]);
+		expect(builder.selectUtxosFrom).toHaveBeenCalledWith([funding]);
+		expect(builder.setFee).toHaveBeenCalledWith('0');
+		expect(builder.setTotalCollateral).toHaveBeenCalledWith('0');
+		expect(assets[0].quantity).toBe('34480');
+	},
+);
