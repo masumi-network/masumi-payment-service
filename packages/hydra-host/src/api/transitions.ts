@@ -108,25 +108,27 @@ export async function requestRemoval(
 	nodeId: string,
 	options: { force: boolean },
 ): Promise<NodeRecord> {
-	const record = await load(store, nodeId);
-	const couldHoldHeadState = record.escrowAckedAt !== null && record.peers.length > 0;
-	if (couldHoldHeadState && !options.force) {
-		throw new HostApiError(
-			'this node has been live and its persistence directory may hold the only copy of the head state; ' +
-				'removing it would make the head impossible to close from this host. Retry with force=true once the head is finalised',
-			409,
-		);
-	}
 	// Both, and the flag is the one that survives: removal starts by stopping the
 	// node, and stopping it overwrites the state for as long as the drain and the
 	// SIGKILL grace take. `removalRequested` is what the supervisor reads back
 	// after a restart that lands in that window.
-	const updated = await store.update(nodeId, (current) => ({
-		...current,
-		state: 'Removing',
-		removalRequested: true,
-	}));
-	return updated ?? record;
+	const updated = await store.update(nodeId, (current) => {
+		// Peer setup and escrow acknowledgement use this same queue. Check the
+		// record here so a concurrent update cannot bypass the removal guard.
+		const couldHoldHeadState = current.escrowAckedAt !== null && current.peers.length > 0;
+		if (couldHoldHeadState && !options.force) {
+			throw new HostApiError(
+				'this node has been live and its persistence directory may hold the only copy of the head state; ' +
+					'removing it would make the head impossible to close from this host. Retry with force=true once the head is finalised',
+				409,
+			);
+		}
+		return { ...current, state: 'Removing', removalRequested: true };
+	});
+	if (updated === null) {
+		throw new HostApiError(`no such node: ${nodeId}`, 404);
+	}
+	return updated;
 }
 
 /**

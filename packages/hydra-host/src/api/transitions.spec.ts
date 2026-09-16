@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -54,6 +54,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	jest.restoreAllMocks();
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
 
@@ -107,6 +108,18 @@ describe('requestRestart', () => {
 });
 
 describe('requestRemoval', () => {
+	it('checks the current queued record when peers appear before removal commits', async () => {
+		await store.write(record({ peers: [] }));
+		const update = store.update.bind(store);
+		jest.spyOn(store, 'update').mockImplementationOnce(async (nodeId, mutate) => {
+			await update(nodeId, (current) => ({ ...current, state: 'Running', peers: [PEER] }));
+			return update(nodeId, mutate);
+		});
+		await expect(requestRemoval(store, 'node-1', { force: false })).rejects.toMatchObject({ status: 409 });
+		expect(await store.read('node-1')).toMatchObject({ state: 'Running', peers: [PEER] });
+		expect((await store.read('node-1'))?.removalRequested).not.toBe(true);
+	});
+
 	// Removal destroys the persistence directory, which is the only copy of the
 	// head state on this host.
 	it('refuses an acknowledged node without force', async () => {
