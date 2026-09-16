@@ -323,7 +323,12 @@ async function markReconciliationStalled(hydraHeadId: string, txId: string, reas
 		await prisma.hydraHead.updateMany({
 			where: {
 				id: hydraHeadId,
-				OR: [{ reconciliationStalledTxId: { not: txId } }, { reconciliationStalledReason: { not: reason } }],
+				OR: [
+					{ reconciliationStalledTxId: null },
+					{ reconciliationStalledReason: null },
+					{ reconciliationStalledTxId: { not: txId } },
+					{ reconciliationStalledReason: { not: reason } },
+				],
 			},
 			data: {
 				reconciliationStalledTxId: txId,
