@@ -81,6 +81,14 @@ export const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): stri
       return 'Registered';
     case 'RegistrationFailed':
       return 'Registration Failed';
+    case 'UpdateRequested':
+      return 'Update pending';
+    case 'UpdateInitiated':
+      return 'Updating';
+    case 'UpdateConfirmed':
+      return 'Registered';
+    case 'UpdateFailed':
+      return 'Update Failed';
     case 'DeregistrationRequested':
       return 'Pending';
     case 'DeregistrationInitiated':
