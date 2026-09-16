@@ -24,6 +24,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { capabilitiesFromApiKeyStatus, isAdminOnlyPath, isPayOnlyPath } from '@/lib/permissions';
+import { decryptFromStorage } from '@/lib/secure-storage';
 import { hasLegacyOnlyPaymentSources, isV2PaymentSource } from '@/lib/payment-source-type';
 import { MASUMI_DOCUMENTATION_URL } from '@/lib/masumi-links';
 import {
@@ -323,14 +324,20 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         return;
       }
 
-      const hexedKey = localStorage.getItem('payment_api_key');
-      if (!hexedKey) {
+      const storedEncryptedKey = localStorage.getItem('payment_api_key');
+      if (!storedEncryptedKey) {
         setIsHealthy(true);
         setAuthorized(false);
         return;
       }
 
-      const storedApiKey = Buffer.from(hexedKey, 'hex').toString('utf-8');
+      const storedApiKey = await decryptFromStorage(storedEncryptedKey);
+      if (!storedApiKey) {
+        localStorage.removeItem('payment_api_key');
+        setIsHealthy(true);
+        setAuthorized(false);
+        return;
+      }
       apiClient.setConfig({
         headers: {
           token: storedApiKey,
@@ -349,7 +356,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       // Re-read the stored key: signOut() clears it without changing this
       // effect's deps, and authorizing from the stale value would sign the
       // user straight back in.
-      if (cancelled || localStorage.getItem('payment_api_key') !== hexedKey) return;
+      if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) return;
 
       if (!apiKeyStatus) {
         setIsHealthy(true);
