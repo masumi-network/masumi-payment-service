@@ -18,7 +18,7 @@ export function useRailReadiness(options?: { network?: NetworkType; silentErrors
   const silentErrors = options?.silentErrors ?? false;
 
   const query = useQuery({
-    queryKey: ['rail-readiness', network, silentErrors],
+    queryKey: ['rail-readiness', network],
     queryFn: async () => {
       const response = await handleApiCall(
         () => getRailReadiness({ client: apiClient, query: { network } }),
