@@ -24,6 +24,8 @@ import {
 import { formatDateTime } from '@/lib/format-date';
 import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
 import type { HydraInvite } from '@/lib/hooks/useHydraHeads';
+import { useHydraHosts } from '@/lib/hooks/useHydraHosts';
+import { shortenRecordId } from '@/lib/readable-reference';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -49,6 +51,9 @@ export function HydraInviteDetailsDialog({
   isRevoking: boolean;
   network: string;
 }) {
+  const { hosts } = useHydraHosts();
+  const hostName = invite ? hosts.find((h) => h.id === invite.hostNodeId)?.name : null;
+
   if (!invite) return null;
 
   // Only an unredeemed invite we issued can be taken back. Once the far side has
@@ -99,11 +104,15 @@ export function HydraInviteDetailsDialog({
             {formatDateTime(invite.redeemedAt ?? invite.expiresAt)}
           </Row>
           <Row label="Node held">
-            <span className="break-all font-mono text-xs">{invite.hostNodeId}</span>
+            <span className="font-mono text-xs" title={invite.hostNodeId}>
+              {hostName ?? shortenRecordId(invite.hostNodeId)}
+            </span>
           </Row>
           {invite.hydraHeadId && (
             <Row label="Head">
-              <span className="break-all font-mono text-xs">{invite.hydraHeadId}</span>
+              <span className="font-mono text-xs" title={invite.hydraHeadId}>
+                {shortenRecordId(invite.hydraHeadId)}
+              </span>
             </Row>
           )}
         </div>
