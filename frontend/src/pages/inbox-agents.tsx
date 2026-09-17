@@ -38,7 +38,8 @@ import { useInboxAgents } from '@/lib/queries/useInboxAgents';
 import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { formatDate } from '@/lib/format-date';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { cn, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
+import { formatLovelaceAsAda } from '@/lib/format-lovelace-display';
+import { cn, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 
 type InboxAgent = RegistryInboxEntry;
@@ -70,14 +71,6 @@ const parseInboxAgentStatus = (status: InboxAgent['state']): string => {
       return status;
   }
 };
-
-function formatLovelaceToAda(amount: string | null) {
-  if (!amount) {
-    return 'Default minimum';
-  }
-
-  return `${formatSixDecimalAmount(amount)} ADA`;
-}
 
 export default function InboxAgentsPage() {
   const router = useRouter();
@@ -476,7 +469,7 @@ export default function InboxAgentsPage() {
                           </td>
                           <td className="p-4 text-sm font-mono">{agent.agentSlug}</td>
                           <td className="p-4 text-sm">
-                            {formatLovelaceToAda(agent.sendFundingLovelace)}
+                            {formatLovelaceAsAda(agent.sendFundingLovelace)}
                           </td>
                           <td className="p-4">
                             <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
