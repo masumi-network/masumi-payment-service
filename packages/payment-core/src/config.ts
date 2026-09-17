@@ -243,6 +243,36 @@ if (checkFundTransferConfirmationInterval < 5)
 const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
 const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
 
+/**
+ * Origin of the partner-hosted co-sign dashboard the admin UI embeds on its
+ * demo page (MAS-596). Read from the same variable the frontend build inlines,
+ * so the iframe src and the CSP frame-src always name the same host. Unset
+ * means no third-party frame is allowed.
+ */
+function parseExchainDashboardOrigin(name: string, rawValue: string | undefined): string | null {
+	const value = rawValue?.trim();
+	if (!value) return null;
+	let url: URL;
+	try {
+		url = new URL(value);
+	} catch {
+		throw new Error(`${name} must be an absolute URL`);
+	}
+	const isLoopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+	if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopback)) {
+		throw new Error(`${name} must use https; plain http is accepted only for localhost`);
+	}
+	if (url.username || url.password) {
+		throw new Error(`${name} must not contain credentials`);
+	}
+	return url.origin;
+}
+
+const exchainDashboardOrigin = parseExchainDashboardOrigin(
+	'NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL',
+	process.env.NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL,
+);
+
 export const CONFIG = {
 	PORT: process.env.PORT ?? '3001',
 	DATABASE_URL: process.env.DATABASE_URL,
@@ -284,6 +314,7 @@ export const CONFIG = {
 	LOW_BALANCE_DEFAULT_RULES_PREPROD: lowBalanceDefaultRulesPreprod,
 	CHECK_FUND_TRANSFER_INTERVAL: checkFundTransferInterval,
 	CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL: checkFundTransferConfirmationInterval,
+	EXCHAIN_DASHBOARD_ORIGIN: exchainDashboardOrigin,
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: parseNumberEnv(
 		'OTEL_PRISMA_OUTLIER_THRESHOLD_MS',
