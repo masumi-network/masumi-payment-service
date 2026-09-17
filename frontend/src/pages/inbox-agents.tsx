@@ -35,7 +35,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useInboxAgents } from '@/lib/queries/useInboxAgents';
-import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { getAgentStatusBadgeVariant, parseInboxAgentStatus } from '@/lib/agent-status';
 import { formatDate } from '@/lib/format-date';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { cn, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
@@ -47,29 +47,6 @@ const getHoldingWallet = (agent: InboxAgent) => agent.RecipientWallet ?? agent.S
 
 const usesCombinedWallet = (agent: InboxAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
-
-const parseInboxAgentStatus = (status: InboxAgent['state']): string => {
-  switch (status) {
-    case 'RegistrationRequested':
-      return 'Pending';
-    case 'RegistrationInitiated':
-      return 'Registering';
-    case 'RegistrationConfirmed':
-      return 'Registered';
-    case 'RegistrationFailed':
-      return 'Registration Failed';
-    case 'DeregistrationRequested':
-      return 'Pending';
-    case 'DeregistrationInitiated':
-      return 'Deregistering';
-    case 'DeregistrationConfirmed':
-      return 'Deregistered';
-    case 'DeregistrationFailed':
-      return 'Deregistration Failed';
-    default:
-      return status;
-  }
-};
 
 function formatLovelaceToAda(amount: string | null) {
   if (!amount) {

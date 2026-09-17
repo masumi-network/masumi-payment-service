@@ -1,4 +1,4 @@
-import { RegistryEntry } from '@/lib/api/generated';
+import { RegistryEntry, RegistryInboxEntry } from '@/lib/api/generated';
 
 /** Badge variants used to color an agent/inbox lifecycle state. */
 type AgentStatusBadgeVariant = 'success' | 'destructive' | 'processing' | 'pending' | 'secondary';
@@ -69,6 +69,38 @@ export function getAgentStatusHelperText(state: RegistryEntry['state']): string 
       return null;
   }
 }
+
+/** Human-readable inbox registry lifecycle label (list + details dialog). */
+export const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): string => {
+  switch (status) {
+    case 'RegistrationRequested':
+      return 'Pending';
+    case 'RegistrationInitiated':
+      return 'Registering';
+    case 'RegistrationConfirmed':
+      return 'Registered';
+    case 'RegistrationFailed':
+      return 'Registration Failed';
+    case 'UpdateRequested':
+      return 'Update pending';
+    case 'UpdateInitiated':
+      return 'Updating';
+    case 'UpdateConfirmed':
+      return 'Registered';
+    case 'UpdateFailed':
+      return 'Update Failed';
+    case 'DeregistrationRequested':
+      return 'Pending';
+    case 'DeregistrationInitiated':
+      return 'Deregistering';
+    case 'DeregistrationConfirmed':
+      return 'Deregistered';
+    case 'DeregistrationFailed':
+      return 'Deregistration Failed';
+    default:
+      return status;
+  }
+};
 
 /** Placeholder when the agent identifier is not minted yet or is being replaced. */
 export function getAgentIdentifierPlaceholder(state: RegistryEntry['state']): string {
