@@ -545,12 +545,12 @@ export default function HydraHeadsPage() {
       <RedeemHydraInviteDialog
         open={isRedeemInviteOpen}
         onOpenChange={setIsRedeemInviteOpen}
-        onRedeemed={() => void refetch()}
+        onRedeemed={() => void resync('hydra')}
       />
       <ConnectHydraNodeDialog
         open={isConnectNodeOpen}
         onOpenChange={setIsConnectNodeOpen}
-        onConnected={() => void refetch()}
+        onConnected={() => void resync('hydra')}
       />
       {/* A second instance rather than one with a `host` that toggles: the form
           seeds its fields from the host it opens with, and reusing the add
