@@ -11,6 +11,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { formatDateTime } from '@/lib/format-date';
 import { useX402LowBalanceRules } from '@/lib/hooks/useX402';
 import { X402Wallet } from '@/lib/api/generated';
+import { formatX402WalletType } from '@/lib/display-labels';
 import { AlertsTab } from './AlertsTab';
 import { WalletBalances } from './WalletExtras';
 
@@ -34,7 +35,7 @@ export function WalletDetailsDialog({
       <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>Wallet details</DialogTitle>
-          <DialogDescription>{wallet.type} wallet</DialogDescription>
+          <DialogDescription>{formatX402WalletType(wallet.type)} wallet</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -49,7 +50,7 @@ export function WalletDetailsDialog({
                 <CopyButton value={wallet.address} />
               </OverviewField>
               <OverviewField label="Chain">{chainLabel(wallet.caip2Network)}</OverviewField>
-              <OverviewField label="Direction">{wallet.type}</OverviewField>
+              <OverviewField label="Direction">{formatX402WalletType(wallet.type)}</OverviewField>
               <OverviewField label="Created">{formatDateTime(wallet.createdAt)}</OverviewField>
               {wallet.note && <OverviewField label="Note">{wallet.note}</OverviewField>}
             </div>
