@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { deleteWebhooks, postWebhooksTest } from '@/lib/api/generated';
+import { MASUMI_API_REFERENCE_URL } from '@/lib/masumi-links';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { Badge } from '@/components/ui/badge';
@@ -402,7 +403,7 @@ export default function WebhooksPage() {
                   ? 'Send x402 payment events to custom endpoints, Slack, Google Chat, or Discord. '
                   : 'Send Cardano payment source events to custom endpoints, Slack, Google Chat, or Discord. '}
                 <Link
-                  href="https://www.masumi.network/dev/masumi/api-reference"
+                  href={MASUMI_API_REFERENCE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

@@ -7,6 +7,7 @@ import { X402SetupGuide } from '@/components/x402/X402SetupGuide';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { hasEvmChainLimit } from '@/lib/permissions';
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
+import { MASUMI_DEV_HUB_URL } from '@/lib/masumi-links';
 
 export default function X402PaymentsPage() {
   const { capabilities } = useAppContext();
@@ -31,7 +32,7 @@ export default function X402PaymentsPage() {
             <p className="max-w-2xl text-sm text-muted-foreground">
               Transaction activity for the x402 (EVM) rail.{' '}
               <a
-                href="https://www.masumi.network/dev/masumi"
+                href={MASUMI_DEV_HUB_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"

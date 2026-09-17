@@ -9,6 +9,7 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { MASUMI_API_REFERENCE_URL } from '@/lib/masumi-links';
 import { formatAssetAmount } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
@@ -202,7 +203,7 @@ export default function ApiKeys() {
               <p className="text-sm text-muted-foreground">
                 Manage your API keys for accessing the payment service.{' '}
                 <a
-                  href="https://www.masumi.network/dev/masumi/api-reference"
+                  href={MASUMI_API_REFERENCE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
