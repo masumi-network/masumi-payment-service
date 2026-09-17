@@ -1,5 +1,5 @@
 import { RegisterAgentDialogView } from './RegisterAgentDialogView';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, postRegistryUpdate, RegistryEntry } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -87,6 +87,10 @@ export function RegisterAIAgentDialog({
   const isReRegisterMode = !isUpdateMode && !!prefillAgent;
   const sourceAgent = editingAgent ?? prefillAgent ?? null;
   const [isLoading, setIsLoading] = useState(false);
+  // Synchronous re-entry guard for register/mint. `setIsLoading(true)` is async,
+  // so a double-click on Confirm can fire two postRegistry calls (~5 ADA each)
+  // before the button disables. Migrate and Details dialogs already use this pattern.
+  const isSubmittingRef = useRef(false);
   const [topUpWalletAddress, setTopUpWalletAddress] = useState<string | null>(null);
   const [step, setStep] = useState<RegisterAgentDialogStep>('form');
   const [reviewValues, setReviewValues] = useState<AgentFormValues | null>(null);
@@ -350,6 +354,8 @@ export function RegisterAIAgentDialog({
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
       try {
         setIsLoading(true);
         const selectedWalletVkey = data.selectedWallet;
@@ -584,6 +590,7 @@ export function RegisterAIAgentDialog({
             ? 'AI agent re-registration requested (a new identifier will be minted)'
             : 'AI agent registered successfully',
         );
+        await resync('agents');
         onSuccess();
         onClose();
         reset();
@@ -591,6 +598,7 @@ export function RegisterAIAgentDialog({
         console.error('Error registering AI agent:', error);
         toast.error(error instanceof Error ? error.message : 'Failed to register AI agent');
       } finally {
+        isSubmittingRef.current = false;
         setIsLoading(false);
       }
     },
