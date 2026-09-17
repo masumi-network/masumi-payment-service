@@ -46,10 +46,21 @@ export const config = {
 	lockLovelace: lovelaceEnv('SMART_WALLET_DEMO_LOCK_LOVELACE', 6n * ADA),
 	denyLockLovelace: lovelaceEnv('SMART_WALLET_DEMO_DENY_LOCK_LOVELACE', 8n * ADA),
 	mockCapLovelace: lovelaceEnv('SMART_WALLET_DEMO_MOCK_CAP_LOVELACE', 70n * ADA),
+	// Largest single lock the mock admits (`per_tx_cap`). Defaults to the
+	// cumulative cap, so it never fires unless the operator lowers it to
+	// rehearse a partial denial locally.
+	mockPerTxCapLovelace: lovelaceEnv(
+		'SMART_WALLET_DEMO_MOCK_PER_TX_CAP_LOVELACE',
+		lovelaceEnv('SMART_WALLET_DEMO_MOCK_CAP_LOVELACE', 70n * ADA),
+	),
 	fundLovelace: lovelaceEnv('SMART_WALLET_DEMO_FUND_LOVELACE', 150n * ADA),
 	cosignUrl: process.env.EXCHAIN_COSIGN_URL?.trim() || null,
 	cosignApiKey: process.env.EXCHAIN_COSIGN_API_KEY?.trim() || null,
 	cosignQuorumVkhs: listEnv('EXCHAIN_COSIGN_QUORUM_VKHS'),
+	// Identify this node to the co-signer (`context`). Required against a real
+	// service, which issues both at onboarding.
+	cosignNodeId: process.env.EXCHAIN_NODE_ID?.trim() || null,
+	cosignOrgId: process.env.EXCHAIN_ORG_ID?.trim() || null,
 	cosignTimeoutMs: intEnv('EXCHAIN_COSIGN_TIMEOUT_MS', COSIGN_TIMEOUT_MS, 100, 120_000),
 	trustedPlaintextHosts: listEnv('EXCHAIN_COSIGN_TRUSTED_PLAINTEXT_HOSTS'),
 };

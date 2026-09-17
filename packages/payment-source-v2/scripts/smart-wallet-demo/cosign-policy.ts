@@ -1,25 +1,44 @@
-// Demo stand-in for the co-signer's "purchase-shaped transaction body verifier"
-// (Exchain X-04, not started on their side). Pure: the mock server decodes the
-// body, the escrow datums and the wallet input's value, then asks this function
-// whether the frozen body is exactly what the intent says before any key signs.
-import type { CosignDenialCode, CosignDenied, CosignRequest } from '../../src/smart-wallet/cosign-client';
+// Demo stand-in for the quorum's "purchase-shaped transaction body verifier"
+// (Exchain X-04). Pure: the mock server decodes the body, the escrow datums and
+// the wallet input, then asks this function whether the frozen body is exactly
+// what the intents say — and which members the mandate admits — before any key
+// signs.
+//
+// Contract 1.1 carries no wallet address, change address or escrow address in
+// the request: the verifier resolves the wallet from the body's continuing
+// output and knows the agent keys and escrow addresses from registration. The
+// `policy` argument below stands in for that registration.
+import type {
+	CosignBatchDenialCode,
+	CosignIntent,
+	CosignMemberVerdict,
+	CosignRequest,
+} from '../../src/smart-wallet/cosign-client';
 
 export type TxRef = { txHash: string; outputIndex: number };
 
 /** The payee-relevant fields of a V2 escrow datum, decoded from the body by the caller. */
 export type DecodedEscrowLock = {
 	blockchainIdentifier: string;
-	buyerAddress: string;
-	buyerReturnAddress: string | null;
-	sellerAddress: string;
-	sellerReturnAddress: string | null;
+	buyerPaymentKeyHash: string | null;
+	sellerPaymentKeyHash: string | null;
 	fundsLocked: boolean;
+};
+
+export type DecodedOutput = {
+	address: string;
+	lovelace: bigint;
+	/** True when the output carries any asset other than lovelace. */
+	hasOtherAssets: boolean;
+	/** Null when the address is a script address or cannot be parsed. */
+	paymentKeyHash: string | null;
+	/** Null when the output carries no inline datum that decodes as a V2 escrow datum. */
+	lock: DecodedEscrowLock | null;
 };
 
 export type DecodedTxBody = {
 	inputs: TxRef[];
-	/** `lock` is null when the output carries no inline datum that decodes as a V2 escrow datum. */
-	outputs: Array<{ address: string; lovelace: bigint; lock: DecodedEscrowLock | null }>;
+	outputs: DecodedOutput[];
 	requiredSigners: string[];
 	validityStart: number | null;
 	ttl: number | null;
@@ -28,131 +47,197 @@ export type DecodedTxBody = {
 export type CosignPolicy = {
 	memberVkhs: string[];
 	threshold: number;
+	/** Cumulative outflow admitted per transaction. Stands in for a rolling-window rule. */
 	maxOutflowLovelace: bigint;
+	/** Largest single lock admitted. Stands in for `per_tx_cap`. */
+	maxPerIntentLovelace: bigint;
 	maxValiditySlots: number;
+	/** From registration: the hot keys allowed to spend, and where their change may go. */
+	agentVkhs: string[];
+	escrowAddresses: string[];
 };
 
-export type PolicyVerdict = { ok: true } | { ok: false; denial: CosignDenied };
+export type PolicyOutcome =
+	| { kind: 'allow'; members: CosignMemberVerdict[] }
+	| { kind: 'batch-denied'; code: CosignBatchDenialCode; reasonEnglish: string; detail?: string }
+	| { kind: 'member-denied'; members: CosignMemberVerdict[]; keep: string[] };
 
-function deny(code: CosignDenialCode, message: string, locks: CosignDenied['locks'] = []): PolicyVerdict {
-	return { ok: false, denial: { decision: 'denied', code, message, retryable: false, locks } };
+function batchDenied(code: CosignBatchDenialCode, reasonEnglish: string, detail?: string): PolicyOutcome {
+	return { kind: 'batch-denied', code, reasonEnglish, detail };
 }
 
-/** One canonical key per escrow output, covering every field that decides where its funds can go. */
-function lockKey(lock: {
-	address: string;
-	lovelace: string;
-	blockchainIdentifier: string;
-	sellerAddress: string;
-	buyerReturnAddress: string | null;
-	sellerReturnAddress: string | null;
-}): string {
-	return [
-		lock.address,
-		lock.lovelace,
-		lock.blockchainIdentifier,
-		lock.sellerAddress,
-		lock.buyerReturnAddress ?? '-',
-		lock.sellerReturnAddress ?? '-',
-	].join('|');
+function allowedMember(intent: CosignIntent): CosignMemberVerdict {
+	return { purchaseId: intent.purchaseId, outputIndex: intent.outputIndex, verdict: 'allowed' };
 }
 
-export function verifyIntentAgainstBody(input: {
+const ada = (lovelace: bigint) => `${(Number(lovelace) / 1e6).toFixed(6)} tADA`;
+
+export type VerifyInput = {
 	request: CosignRequest;
 	body: DecodedTxBody;
-	recomputedTxHash: string;
-	walletInputLovelace: bigint;
+	/** Value and address of the wallet input named by `walletUtxoRef`, resolved on chain. */
+	walletInput: { address: string; lovelace: bigint };
 	policy: CosignPolicy;
-}): PolicyVerdict {
-	const { request, body, policy } = input;
-	const { intent, wallet } = request;
+	nowMs: number;
+};
 
-	if (input.recomputedTxHash !== request.txHash) {
-		return deny('INTENT_MISMATCH', 'txHash does not match txCbor');
+/**
+ * Batch-level checks first (a batch denial leaves every member unevaluated),
+ * then a greedy per-member pass in submission order: each member is judged
+ * against the state that includes every member admitted before it.
+ */
+export function verifyIntentAgainstBody(input: VerifyInput): PolicyOutcome {
+	const { request, body, policy } = input;
+	const [walletTxHash, walletIndex] = request.walletUtxoRef.split('#');
+
+	if (!body.inputs.some((ref) => ref.txHash === walletTxHash && ref.outputIndex === Number(walletIndex))) {
+		return batchDenied('utxo_unknown', 'The body does not spend the named wallet input.', 'stale_ref');
 	}
-	if (!body.inputs.some((ref) => ref.txHash === wallet.input.txHash && ref.outputIndex === wallet.input.outputIndex)) {
-		return deny('WALLET_INPUT_UNKNOWN', 'the body does not spend the named wallet input');
+
+	const walletOutputs = body.outputs.filter((output) => output.address === input.walletInput.address);
+	if (walletOutputs.length !== 1) {
+		return batchDenied(
+			'body_mismatch',
+			`Expected exactly one continuing wallet output, found ${walletOutputs.length}.`,
+		);
 	}
+
 	if (body.validityStart == null || body.ttl == null) {
-		return deny('VALIDITY_TOO_WIDE', 'both validity bounds must be set');
+		return batchDenied('clock_skew', 'A guarded spend must set both validity bounds.');
 	}
 	if (body.ttl - body.validityStart > policy.maxValiditySlots) {
-		return deny('VALIDITY_TOO_WIDE', `validity range spans ${body.ttl - body.validityStart} slots`);
+		return batchDenied('clock_skew', `The validity range spans ${body.ttl - body.validityStart} slots.`);
 	}
-	if (body.validityStart !== intent.validity.invalidBefore || body.ttl !== intent.validity.invalidAfter) {
-		return deny('INTENT_MISMATCH', 'the body validity range differs from the intent');
-	}
-	if (request.requiredSigners.length < policy.threshold) {
-		return deny(
-			'INTENT_MISMATCH',
-			`${request.requiredSigners.length} signer(s) requested, the quorum needs ${policy.threshold}`,
+
+	// The quorum members that must sign are read out of the body, never from a
+	// request hint. Enough of them must be declared, or the signatures we
+	// produce could not satisfy the validator anyway.
+	const declaredMembers = policy.memberVkhs.filter((vkh) => body.requiredSigners.includes(vkh));
+	if (declaredMembers.length < policy.threshold) {
+		return batchDenied(
+			'body_mismatch',
+			`The body declares ${declaredMembers.length} quorum signer(s); the threshold is ${policy.threshold}.`,
 		);
 	}
-	for (const vkh of request.requiredSigners) {
-		if (!policy.memberVkhs.includes(vkh)) {
-			return deny('SIGNER_NOT_MEMBER', `${vkh} is not a quorum member`);
+
+	const escrowAddresses = new Set(policy.escrowAddresses);
+	const intentByOutputIndex = new Map(request.intents.map((intent) => [intent.outputIndex, intent]));
+
+	for (const [index, output] of body.outputs.entries()) {
+		if (output.address === input.walletInput.address || intentByOutputIndex.has(index)) continue;
+		// Anything left must be change returning to a registered agent key.
+		if (escrowAddresses.has(output.address) || output.paymentKeyHash == null) {
+			return batchDenied('payee_unpinned', `Output ${index} pays ${output.address}, which no purchase names.`);
 		}
-		if (!body.requiredSigners.includes(vkh)) {
-			return deny('INTENT_MISMATCH', `${vkh} is not a required signer of the body`);
+		if (!policy.agentVkhs.includes(output.paymentKeyHash)) {
+			return batchDenied('payee_unpinned', `Output ${index} pays a key the mandate does not pin.`);
 		}
 	}
 
-	const walletOutputs = body.outputs.filter((output) => output.address === wallet.address);
-	if (walletOutputs.length !== 1) {
-		return deny('INTENT_MISMATCH', `expected exactly one continuing wallet output, found ${walletOutputs.length}`);
-	}
-	const lockAddresses = new Set(intent.locks.map((lock) => lock.address));
-	for (const output of body.outputs) {
-		const allowed =
-			output.address === wallet.address || lockAddresses.has(output.address) || output.address === intent.changeAddress;
-		if (!allowed) {
-			return deny('RECIPIENT_NOT_ALLOWED', `the body pays ${output.address}, which the intent does not name`);
+	let declaredOutflow = 0n;
+	for (const intent of request.intents) {
+		const output = body.outputs[intent.outputIndex];
+		if (output == null) {
+			return batchDenied(
+				'body_mismatch',
+				`Purchase ${intent.purchaseId} names output ${intent.outputIndex}, which does not exist.`,
+			);
 		}
-	}
-
-	// Bind every escrow output to one intent lock through its decoded datum: the
-	// purchase identifier and every address the escrow can later pay. Totals
-	// alone would approve a body that locks the right amount for the wrong seller.
-	const bodyLockKeys: string[] = [];
-	for (const output of body.outputs.filter((candidate) => lockAddresses.has(candidate.address))) {
+		if (!escrowAddresses.has(output.address)) {
+			return batchDenied('payee_unpinned', `Purchase ${intent.purchaseId} does not pay a registered escrow address.`);
+		}
+		if (intent.asset !== 'lovelace') {
+			// The mock governs lovelace only. The live service governs tUSDM.
+			return batchDenied(
+				'asset_not_listed',
+				`This wallet governs lovelace; purchase ${intent.purchaseId} names ${intent.asset}.`,
+			);
+		}
+		if (output.hasOtherAssets) {
+			return batchDenied(
+				'asset_not_listed',
+				`Output ${intent.outputIndex} carries an asset the mandate does not list.`,
+			);
+		}
+		if (output.lovelace !== BigInt(intent.amount)) {
+			return batchDenied(
+				'body_mismatch',
+				`Purchase ${intent.purchaseId} declares ${intent.amount} lovelace; output ${intent.outputIndex} carries ${output.lovelace}.`,
+			);
+		}
 		const lock = output.lock;
-		if (lock == null) {
-			return deny('INTENT_MISMATCH', `an escrow output at ${output.address} carries no decodable escrow datum`);
+		if (lock == null || !lock.fundsLocked) {
+			return batchDenied(
+				'body_mismatch',
+				`Output ${intent.outputIndex} carries no escrow datum in the FundsLocked state.`,
+			);
 		}
-		if (!lock.fundsLocked) {
-			return deny('INTENT_MISMATCH', 'an escrow datum is not in the FundsLocked state');
+		if (lock.sellerPaymentKeyHash == null || `sellerVkeyHash:${lock.sellerPaymentKeyHash}` !== intent.counterparty) {
+			return batchDenied(
+				'payee_unpinned',
+				`Output ${intent.outputIndex} names a seller other than the declared counterparty.`,
+			);
 		}
-		if (lock.buyerAddress !== intent.buyerAddress) {
-			return deny('INTENT_MISMATCH', 'an escrow datum names a buyer other than the intent buyer');
+		if (lock.buyerPaymentKeyHash == null || !policy.agentVkhs.includes(lock.buyerPaymentKeyHash)) {
+			return batchDenied(
+				'body_mismatch',
+				`Output ${intent.outputIndex} names a buyer that is not a registered agent key.`,
+			);
 		}
-		bodyLockKeys.push(lockKey({ ...lock, address: output.address, lovelace: output.lovelace.toString() }));
-	}
-	const intentLockKeys = intent.locks.map(lockKey);
-	if ([...bodyLockKeys].sort().join(',') !== [...intentLockKeys].sort().join(',')) {
-		return deny('INTENT_MISMATCH', 'the escrow outputs differ from the intent locks in amount, purchase or payee');
-	}
-
-	// Outflow is what the WALLET loses, from the resolved input value, not a
-	// self-reported number. Equal to the locks, so no wallet value can reach change.
-	const outflow = input.walletInputLovelace - walletOutputs[0].lovelace;
-	const lockTotal = intent.locks.reduce((sum, lock) => sum + BigInt(lock.lovelace), 0n);
-	if (outflow !== lockTotal || BigInt(intent.outflowLovelace) !== outflow) {
-		return deny('INTENT_MISMATCH', `wallet outflow ${outflow} differs from the locked total ${lockTotal}`);
+		declaredOutflow += BigInt(intent.amount);
 	}
 
-	if (outflow > policy.maxOutflowLovelace) {
-		let cumulative = 0n;
-		const locks = intent.locks.map((lock, index) => {
-			cumulative += BigInt(lock.lovelace);
-			return cumulative > policy.maxOutflowLovelace
-				? { index, verdict: 'denied' as const, code: 'POLICY_LIMIT_EXCEEDED' as const }
-				: { index, verdict: 'allowed' as const };
-		});
-		return deny(
-			'POLICY_LIMIT_EXCEEDED',
-			`outflow ${outflow} lovelace exceeds the policy cap of ${policy.maxOutflowLovelace}`,
-			locks,
+	// Outflow is what the WALLET loses, taken from the resolved input value, not
+	// from a self-reported number: no wallet value may reach change.
+	const outflow = input.walletInput.lovelace - walletOutputs[0].lovelace;
+	if (outflow !== declaredOutflow) {
+		return batchDenied(
+			'body_mismatch',
+			`The wallet loses ${ada(outflow)} but the purchases declare ${ada(declaredOutflow)}.`,
 		);
 	}
-	return { ok: true };
+
+	const members: CosignMemberVerdict[] = [];
+	const keep: string[] = [];
+	let used = 0n;
+	for (const intent of request.intents) {
+		const attempted = BigInt(intent.amount);
+		if (attempted > policy.maxPerIntentLovelace) {
+			members.push({
+				purchaseId: intent.purchaseId,
+				outputIndex: intent.outputIndex,
+				verdict: 'denied',
+				denied: 'per_tx_cap',
+				reasonEnglish: `This payment is ${ada(attempted)}. The mandate allows ${ada(policy.maxPerIntentLovelace)} in a single payment.`,
+				bound: policy.maxPerIntentLovelace.toString(),
+				used: used.toString(),
+				attempted: attempted.toString(),
+			});
+			continue;
+		}
+		if (used + attempted > policy.maxOutflowLovelace) {
+			const windowResetsAt = new Date(input.nowMs + 3_600_000).toISOString();
+			members.push({
+				purchaseId: intent.purchaseId,
+				outputIndex: intent.outputIndex,
+				verdict: 'denied',
+				denied: 'hourly_outflow',
+				reasonEnglish: `This would take the hour's spending to ${ada(used + attempted)}. The mandate allows ${ada(policy.maxOutflowLovelace)}.`,
+				bound: policy.maxOutflowLovelace.toString(),
+				used: used.toString(),
+				attempted: attempted.toString(),
+				retryAfterSec: 3_600,
+				windowResetsAt,
+			});
+			continue;
+		}
+		used += attempted;
+		members.push(allowedMember(intent));
+		keep.push(intent.purchaseId);
+	}
+
+	if (members.some((member) => member.verdict === 'denied')) {
+		return { kind: 'member-denied', members, keep };
+	}
+	return { kind: 'allow', members };
 }

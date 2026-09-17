@@ -1,11 +1,12 @@
-// Mock of Exchain's `POST /v1/cosign` for the MAS-596 demo, speaking the
-// contract proposed in src/smart-wallet/cosign-client.ts. It holds the quorum
-// member keys, checks the frozen body against the intent (cosign-policy.ts),
-// and signs or refuses. It never builds, changes or submits a transaction.
+// Mock of Exchain's `POST /v1/cosign` for the MAS-596 demo, speaking contract
+// 1.1 (https://cosign-preprod.exchain.network/openapi.yaml). It holds the
+// quorum member keys, checks the frozen body against the declared intents
+// (cosign-policy.ts), and signs or names exactly which members were refused. It
+// never builds, changes or submits a transaction.
 //
-// `GET /` renders the decision feed; it is the iframe stand-in until Exchain's
-// hosted dashboard (X-08) exists. Binds to 127.0.0.1 only.
-import { createHash, timingSafeEqual } from 'node:crypto';
+// `GET /` renders the decision feed; it is the iframe stand-in for the hosted
+// dashboard. Binds to 127.0.0.1 only.
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -16,16 +17,24 @@ import {
 	SLOT_CONFIG_NETWORK,
 	slotToBeginUnixTime,
 } from '@meshsdk/core';
-import { deserializeTx, resolveTxHash } from '@meshsdk/core-cst';
+import {
+	addVKeyWitnessSetToTransaction,
+	deserializeTx,
+	HexBlob,
+	resolveTxHash,
+	TransactionWitnessSet,
+} from '@meshsdk/core-cst';
 import { logger } from '@masumi/payment-core/logger';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
 	cosignRequestSchema,
-	decodeCosignBodyEcho,
-	type CosignApproved,
-	type CosignDenied,
+	withDigestPrefix,
+	type CosignAllow,
+	type CosignDeny,
+	type CosignMemberVerdict,
 	type CosignRequest,
+	type QuorumUnavailable,
 } from '../../src/smart-wallet/cosign-client';
 import {
 	verifyIntentAgainstBody,
@@ -37,14 +46,21 @@ import {
 
 const MAX_BODY_BYTES = 1_000_000;
 const FEED_SIZE = 100;
+const REBUILD_HOLD_MS = 120_000;
+const NETWORK = 'preprod' as const;
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 export type MockCosignOptions = {
 	memberMnemonics: string[];
 	apiKey: string;
 	threshold: number;
 	maxOutflowLovelace: bigint;
+	maxPerIntentLovelace: bigint;
 	maxValiditySlots: number;
-	resolveInputLovelace: (ref: TxRef) => Promise<bigint>;
+	/** From registration: hot keys allowed to spend, and the escrow addresses they may pay. */
+	agentVkhs: string[];
+	escrowAddresses: string[];
+	resolveWalletInput: (ref: TxRef) => Promise<{ address: string; lovelace: bigint }>;
 	decisionsFile: string;
 	port: number;
 };
@@ -53,38 +69,54 @@ export type MockCosignServer = { url: string; memberVkhs: string[]; close: () =>
 
 type DecisionRecord = {
 	at: string;
-	txHash: string;
-	decision: 'approved' | 'denied';
-	code: string | null;
-	walletInput: string;
-	locks: number;
+	decisionId: string;
+	batchId: string;
+	txBodyHash: string;
+	outcome: 'allowed' | 'denied' | 'security';
+	denied: string | null;
+	walletUtxoRef: string;
+	intents: number;
+	admitted: number;
+	deniedPurchaseIds: string[];
 	outflowLovelace: string;
-	deniedLocks: number[];
 };
 
-type Reply = { status: number; body: CosignApproved | CosignDenied | { error: string } };
+/** Every JSON body the contract carries, including the plain error shapes. */
+type Envelope = { asOf: string; schemaVersion: string; chainTip: null };
+type ErrorBody = Envelope & { error: string; detail?: string; retryAfterSec?: number };
+type ReplyBody = CosignAllow | CosignDeny | QuorumUnavailable | ErrorBody;
+type Reply = { status: number; body: ReplyBody };
 
 export async function memberVkhOf(mnemonic: string): Promise<string> {
 	const wallet = new MeshWallet({ networkId: 0, key: { type: 'mnemonic', words: mnemonic.split(' ') } });
 	return resolvePaymentKeyHash((await wallet.getUnusedAddresses())[0]);
 }
 
+function ulid(prefix: string): string {
+	let out = '';
+	for (const byte of randomBytes(26)) out += CROCKFORD[byte % CROCKFORD.length];
+	return `${prefix}${out}`;
+}
+
+/**
+ * The request carries the BODY only. Wrapping it as `[body, {}, true, null]`
+ * yields a transaction whose hash is `blake2b_256(body)` — the same hash the
+ * node froze — so one decoding path serves both inspection and signing.
+ */
+function wrapBody(txBodyHex: string): string {
+	return `84${txBodyHex}a0f5f6`;
+}
+
 /** Decode an output's inline datum as a V2 escrow datum with the repo's own decoder; null for anything else. */
-function decodeEscrowLock(
-	inlineDatumCbor: string | undefined,
-	address: string,
-	network: CosignRequest['network'],
-): DecodedEscrowLock | null {
+function decodeEscrowLock(inlineDatumCbor: string | undefined, address: string): DecodedEscrowLock | null {
 	if (inlineDatumCbor == null) return null;
 	try {
-		const decoded = decodeV2ContractDatum(deserializeDatum(inlineDatumCbor), network, address);
+		const decoded = decodeV2ContractDatum(deserializeDatum(inlineDatumCbor), NETWORK, address);
 		if (decoded == null) return null;
 		return {
 			blockchainIdentifier: decoded.blockchainIdentifier,
-			buyerAddress: decoded.buyerAddress,
-			buyerReturnAddress: decoded.buyerReturnAddress ?? null,
-			sellerAddress: decoded.sellerAddress,
-			sellerReturnAddress: decoded.sellerReturnAddress ?? null,
+			buyerPaymentKeyHash: paymentKeyHashOf(decoded.buyerAddress),
+			sellerPaymentKeyHash: paymentKeyHashOf(decoded.sellerAddress),
 			fundsLocked: decoded.state === SmartContractState.FundsLocked,
 		};
 	} catch {
@@ -92,8 +124,17 @@ function decodeEscrowLock(
 	}
 }
 
-function decodeTxBody(txCbor: string, network: CosignRequest['network']): DecodedTxBody {
-	const body = deserializeTx(txCbor).body();
+/** Null for a script address or anything unparseable — the caller treats that as "not a key payee". */
+function paymentKeyHashOf(address: string): string | null {
+	try {
+		return resolvePaymentKeyHash(address);
+	} catch {
+		return null;
+	}
+}
+
+function decodeTxBody(txBodyHex: string): DecodedTxBody {
+	const body = deserializeTx(wrapBody(txBodyHex)).body();
 	const start = body.validityStartInterval();
 	const ttl = body.ttl();
 	return {
@@ -103,10 +144,13 @@ function decodeTxBody(txCbor: string, network: CosignRequest['network']): Decode
 			.map((input) => ({ txHash: input.transactionId(), outputIndex: Number(input.index()) })),
 		outputs: body.outputs().map((output) => {
 			const address = output.address().toBech32();
+			const value = output.amount();
 			return {
 				address,
-				lovelace: output.amount().coin(),
-				lock: decodeEscrowLock(output.datum()?.asInlineData()?.toCbor(), address, network),
+				lovelace: value.coin(),
+				hasOtherAssets: (value.multiasset()?.size ?? 0) > 0,
+				paymentKeyHash: paymentKeyHashOf(address),
+				lock: decodeEscrowLock(output.datum()?.asInlineData()?.toCbor(), address),
 			};
 		}),
 		requiredSigners:
@@ -137,13 +181,13 @@ function readFeed(decisionsFile: string): DecisionRecord[] {
 function renderFeed(records: DecisionRecord[]): string {
 	const rows = records
 		.map(
-			(record) => `<tr class="${record.decision}">
+			(record) => `<tr class="${record.outcome}">
 	<td>${escapeHtml(record.at)}</td>
-	<td><strong>${escapeHtml(record.decision)}</strong>${record.code ? `<br><code>${escapeHtml(record.code)}</code>` : ''}</td>
-	<td class="hash"><code title="${escapeHtml(record.txHash)}">${escapeHtml(record.txHash)}</code></td>
-	<td>${record.locks}</td>
+	<td><strong>${escapeHtml(record.outcome)}</strong>${record.denied ? `<br><code>${escapeHtml(record.denied)}</code>` : ''}</td>
+	<td class="hash"><code title="${escapeHtml(record.txBodyHash)}">${escapeHtml(record.txBodyHash)}</code></td>
+	<td>${record.admitted} / ${record.intents}</td>
 	<td>${escapeHtml((Number(BigInt(record.outflowLovelace)) / 1e6).toFixed(2))} tADA</td>
-	<td>${record.deniedLocks.length > 0 ? escapeHtml(record.deniedLocks.join(', ')) : '—'}</td>
+	<td>${record.deniedPurchaseIds.length > 0 ? escapeHtml(record.deniedPurchaseIds.join(', ')) : '—'}</td>
 </tr>`,
 		)
 		.join('\n');
@@ -153,17 +197,15 @@ function renderFeed(records: DecisionRecord[]): string {
 <style>
 body{font:14px/1.4 system-ui,sans-serif;margin:16px;color:#1f2937;background:#fff}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top}
-tr.approved td:nth-child(2){color:#047857}tr.denied td:nth-child(2){color:#b91c1c}
+tr.allowed td:nth-child(2){color:#047857}tr.denied td:nth-child(2){color:#b91c1c}tr.security td:nth-child(2){color:#7c2d12;font-weight:700}
 p{color:#6b7280}
-/* The cell holds the FULL 32-byte hash and only clips it visually, so copying
-   yields all 64 characters. user-select:all makes one click select the whole
-   value. The earlier version put a 16-character prefix in the DOM, so a copy
-   silently produced a truncated hash that matches nothing on an explorer. */
+/* The cell holds the FULL hash and only clips it visually, so copying yields
+   every character. user-select:all makes one click select the whole value. */
 td.hash code{display:inline-block;max-width:18ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;-webkit-user-select:all;user-select:all;cursor:text}
 </style></head><body>
 <h1>Quorum co-sign decisions</h1>
-<p>Mock co-signer for the MAS-596 demo. Refreshes every 10 s. Each row is one frozen transaction body. Click a body hash to select all 64 characters.</p>
-<table><thead><tr><th>Time</th><th>Decision</th><th>Body hash</th><th>Locks</th><th>Wallet outflow</th><th>Denied locks</th></tr></thead>
+<p>Mock co-signer for the MAS-596 demo, speaking contract 1.1. Refreshes every 10 s. Each row is one frozen transaction body. Click a body hash to select all of it.</p>
+<table><thead><tr><th>Time</th><th>Decision</th><th>Body hash</th><th>Admitted</th><th>Wallet outflow</th><th>Denied purchases</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="6">No decisions yet.</td></tr>'}</tbody></table>
 </body></html>`;
 }
@@ -189,7 +231,8 @@ async function readBody(request: http.IncomingMessage): Promise<string | null> {
 
 export async function startMockCosignServer(options: MockCosignOptions): Promise<MockCosignServer> {
 	const members = await Promise.all(
-		options.memberMnemonics.map(async (mnemonic) => ({
+		options.memberMnemonics.map(async (mnemonic, index) => ({
+			id: `mock-member-${index + 1}`,
 			vkh: await memberVkhOf(mnemonic),
 			wallet: new MeshWallet({ networkId: 0, key: { type: 'mnemonic', words: mnemonic.split(' ') } }),
 		})),
@@ -198,110 +241,163 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 		memberVkhs: members.map((member) => member.vkh),
 		threshold: options.threshold,
 		maxOutflowLovelace: options.maxOutflowLovelace,
+		maxPerIntentLovelace: options.maxPerIntentLovelace,
 		maxValiditySlots: options.maxValiditySlots,
+		agentVkhs: options.agentVkhs,
+		escrowAddresses: options.escrowAddresses,
 	};
-	const replies = new Map<string, Reply>();
-	const reservations = new Map<string, { txHash: string; expiresAt: number }>();
+	/** Idempotency: one stored answer per batch id, superseded when the body changes. */
+	const replies = new Map<string, { txBodyHash: string; reply: Reply }>();
+	const reservations = new Map<string, { batchId: string; expiresAt: number }>();
+	let baseUrl = '';
 
-	const record = (request: CosignRequest, reply: CosignApproved | CosignDenied) => {
+	const envelope = (): Envelope => ({ asOf: new Date().toISOString(), schemaVersion: '1.1', chainTip: null });
+
+	const record = (request: CosignRequest, decisionId: string, txBodyHash: string, reply: CosignAllow | CosignDeny) => {
+		const denied = 'denied' in reply ? reply.denied : null;
+		const members_: CosignMemberVerdict[] = reply.members;
+		const alarm = 'alarm' in reply ? reply.alarm : false;
 		const entry: DecisionRecord = {
 			at: new Date().toISOString(),
-			txHash: request.txHash,
-			decision: reply.decision,
-			code: reply.decision === 'denied' ? reply.code : null,
-			walletInput: `${request.wallet.input.txHash}#${request.wallet.input.outputIndex}`,
-			locks: request.intent.locks.length,
-			outflowLovelace: request.intent.outflowLovelace,
-			deniedLocks:
-				reply.decision === 'denied'
-					? reply.locks.filter((lock) => lock.verdict === 'denied').map((lock) => lock.index)
-					: [],
+			decisionId,
+			batchId: request.batchId,
+			txBodyHash,
+			outcome: denied == null ? 'allowed' : alarm ? 'security' : 'denied',
+			denied,
+			walletUtxoRef: request.walletUtxoRef,
+			intents: request.intents.length,
+			admitted: members_.filter((member) => member.verdict === 'allowed').length,
+			deniedPurchaseIds: members_.filter((member) => member.verdict === 'denied').map((member) => member.purchaseId),
+			outflowLovelace: request.intents.reduce((sum, intent) => sum + BigInt(intent.amount), 0n).toString(),
 		};
 		fs.appendFileSync(options.decisionsFile, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
-		logger.info('mock co-sign decision', { txHash: entry.txHash, decision: entry.decision, code: entry.code });
+		logger.info('mock co-sign decision', { decisionId, outcome: entry.outcome, denied });
 	};
 
-	const decide = async (request: CosignRequest): Promise<Reply> => {
+	const notEvaluated = (request: CosignRequest): CosignMemberVerdict[] =>
+		request.intents.map((intent) => ({
+			purchaseId: intent.purchaseId,
+			outputIndex: intent.outputIndex,
+			verdict: 'not_evaluated' as const,
+		}));
+
+	const decide = async (request: CosignRequest, txBodyHash: string): Promise<Reply> => {
+		const decisionId = ulid('dec_');
+		const journalRef = `${baseUrl}/decisions/${decisionId}`;
 		let body: DecodedTxBody;
-		let recomputedTxHash: string;
 		try {
-			body = decodeTxBody(request.txCbor, request.network);
-			recomputedTxHash = resolveTxHash(request.txCbor);
+			body = decodeTxBody(request.txBodyHex);
 		} catch {
-			return { status: 400, body: { error: 'txCbor does not decode as a transaction' } };
-		}
-		const walletInputKey = `${request.wallet.input.txHash}#${request.wallet.input.outputIndex}`;
-		let walletInputLovelace: bigint;
-		try {
-			walletInputLovelace = await options.resolveInputLovelace(request.wallet.input);
-		} catch {
-			const denial: CosignDenied = {
-				decision: 'denied',
-				code: 'WALLET_INPUT_UNKNOWN',
-				message: 'the wallet input could not be resolved on chain',
-				retryable: true,
-				locks: [],
+			return {
+				status: 400,
+				body: { ...envelope(), error: 'bad_request', detail: 'txBodyHex does not decode as a transaction body' },
 			};
-			record(request, denial);
-			return { status: 409, body: denial };
 		}
-		const verdict = verifyIntentAgainstBody({ request, body, recomputedTxHash, walletInputLovelace, policy });
-		if (!verdict.ok) {
-			record(request, verdict.denial);
-			return { status: 409, body: verdict.denial };
-		}
-		const expiresAt = body.ttl == null ? NaN : slotToBeginUnixTime(body.ttl, SLOT_CONFIG_NETWORK[request.network]);
-		if (!Number.isSafeInteger(body.ttl) || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-			const denial: CosignDenied = {
-				decision: 'denied',
-				code: 'VALIDITY_TOO_WIDE',
-				message: 'the decoded validity upper bound must be finite and in the future',
-				retryable: false,
-				locks: [],
+		const alarmCodes = new Set(['body_mismatch', 'payee_unpinned', 'clock_skew']);
+		const denyBatch = (code: string, reasonEnglish: string, detail?: string): Reply => {
+			const deny: CosignDeny = {
+				...envelope(),
+				decisionId,
+				txBodyHash: withDigestPrefix(txBodyHash),
+				requiredSigners: body.requiredSigners,
+				denied: code as CosignDeny['denied'],
+				reasonEnglish,
+				...(detail == null ? {} : { detail }),
+				members: notEvaluated(request),
+				alarm: alarmCodes.has(code),
+				journalRef,
 			};
-			record(request, denial);
-			return { status: 409, body: denial };
-		}
-		const reservation = reservations.get(walletInputKey);
-		if (reservation != null && reservation.txHash !== request.txHash && reservation.expiresAt > Date.now()) {
-			const denial: CosignDenied = {
-				decision: 'denied',
-				code: 'RESERVATION_CONFLICT',
-				message: 'another approved body holds this wallet input until its validity interval closes',
-				retryable: true,
-				locks: [],
-			};
-			record(request, denial);
-			return { status: 409, body: denial };
-		}
-		// Reserve synchronously after input resolution and before any signer runs.
-		// Keep the hold if signing fails: an earlier member may already have signed.
-		// The request TTL cannot shorten the validity of an existing signature.
-		reservations.set(walletInputKey, { txHash: recomputedTxHash, expiresAt });
-		const signers = request.requiredSigners.map((vkh) => members.find((member) => member.vkh === vkh));
-		const signatures: CosignApproved['signatures'] = [];
-		for (const signer of signers) {
-			if (signer == null) throw new Error('verified signer is missing from the member set');
-			signatures.push({ vkh: signer.vkh, witnessSet: await signer.wallet.signTx(request.txCbor, true, false) });
-		}
-		const approval: CosignApproved = {
-			decision: 'approved',
-			txHash: request.txHash,
-			signatures,
-			expiresAt: new Date(expiresAt).toISOString(),
+			record(request, decisionId, txBodyHash, deny);
+			return { status: 409, body: deny };
 		};
-		record(request, approval);
-		return { status: 200, body: approval };
+
+		let walletInput: { address: string; lovelace: bigint };
+		try {
+			walletInput = await options.resolveWalletInput({
+				txHash: request.walletUtxoRef.split('#')[0],
+				outputIndex: Number(request.walletUtxoRef.split('#')[1]),
+			});
+		} catch {
+			return denyBatch('utxo_unknown', 'The wallet input could not be resolved on chain.', 'stale_ref');
+		}
+
+		const outcome = verifyIntentAgainstBody({ request, body, walletInput, policy, nowMs: Date.now() });
+		if (outcome.kind === 'batch-denied') {
+			return denyBatch(outcome.code, outcome.reasonEnglish, outcome.detail);
+		}
+
+		// A validity upper bound that is absent, unreadable or already past can
+		// never produce a submittable transaction.
+		const expiresAt = body.ttl == null ? NaN : slotToBeginUnixTime(body.ttl, SLOT_CONFIG_NETWORK[NETWORK]);
+		if (!Number.isSafeInteger(body.ttl) || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+			return denyBatch('clock_skew', 'The decoded validity upper bound must be finite and in the future.');
+		}
+
+		if (outcome.kind === 'member-denied') {
+			const deny: CosignDeny = {
+				...envelope(),
+				decisionId,
+				txBodyHash: withDigestPrefix(txBodyHash),
+				requiredSigners: body.requiredSigners,
+				denied: 'member_denied',
+				members: outcome.members,
+				rebuild: {
+					keep: outcome.keep,
+					batchId: request.batchId,
+					heldUntil: new Date(Date.now() + REBUILD_HOLD_MS).toISOString(),
+				},
+				alarm: false,
+				journalRef,
+			};
+			record(request, decisionId, txBodyHash, deny);
+			return { status: 409, body: deny };
+		}
+
+		const reservation = reservations.get(request.walletUtxoRef);
+		if (reservation != null && reservation.batchId !== request.batchId && reservation.expiresAt > Date.now()) {
+			return denyBatch(
+				'reservation_conflict',
+				'Another signed body holds this wallet input until its validity interval closes.',
+			);
+		}
+		// Reserve synchronously after resolution and before any signer runs. Keep
+		// the hold if signing fails: an earlier member may already have signed,
+		// and a request cannot shorten the validity of an existing signature.
+		reservations.set(request.walletUtxoRef, { batchId: request.batchId, expiresAt });
+
+		const signing = members.filter((member) => body.requiredSigners.includes(member.vkh));
+		const dummyTx = wrapBody(request.txBodyHex);
+		let merged = dummyTx;
+		const witnesses: CosignAllow['witnesses'] = [];
+		for (const member of signing) {
+			const witnessSet = await member.wallet.signTx(dummyTx, true, false);
+			const vkey = TransactionWitnessSet.fromCbor(HexBlob(witnessSet)).vkeys()?.values()[0];
+			if (vkey == null) throw new Error(`member ${member.id} produced no vkey witness`);
+			witnesses.push({ member: member.id, vkeyHex: vkey.vkey(), signatureHex: vkey.signature() });
+			merged = addVKeyWitnessSetToTransaction(merged, witnessSet);
+		}
+
+		const allow: CosignAllow = {
+			...envelope(),
+			decisionId,
+			txBodyHash: withDigestPrefix(txBodyHash),
+			requiredSigners: body.requiredSigners,
+			quorumMembers: signing.map((member) => member.id),
+			witnessSetHex: deserializeTx(merged).witnessSet().toCbor(),
+			witnesses,
+			members: outcome.members,
+			boundsRemaining: boundsAfter(request, policy),
+			journalRef,
+		};
+		record(request, decisionId, txBodyHash, allow);
+		return { status: 200, body: allow };
 	};
 
 	const handle = async (request: http.IncomingMessage, response: http.ServerResponse) => {
-		let bodyEcho: ReturnType<typeof decodeCosignBodyEcho> | undefined;
-		const send = (status: number, payload: Reply['body']) => {
-			const result = status === 200 || status === 409 ? { ...payload, ...bodyEcho } : payload;
-			response.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(result));
-		};
+		const send = (status: number, payload: ReplyBody) =>
+			response.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(payload));
 		const path = (request.url ?? '/').split('?')[0];
-		// HEAD included: Node drops the body for it, and probes/link checkers use it.
+		// HEAD included: Node drops the body for it, and probes use it.
 		if ((request.method === 'GET' || request.method === 'HEAD') && path === '/') {
 			response
 				.writeHead(200, {
@@ -312,52 +408,59 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 			return;
 		}
 		if (request.method !== 'POST' || path !== '/v1/cosign') {
-			send(404, { error: 'not found' });
+			send(404, { ...envelope(), error: 'not_found' });
 			return;
 		}
 		if (!sameSecret(request.headers.authorization, options.apiKey)) {
-			send(401, { error: 'unauthorized' });
+			send(401, { ...envelope(), error: 'unauthorized' });
 			return;
 		}
 		const raw = await readBody(request);
 		if (raw == null) {
-			send(413, { error: 'request body too large' });
+			send(413, { ...envelope(), error: 'payload_too_large' });
 			return;
 		}
 		let json: unknown;
 		try {
 			json = JSON.parse(raw);
 		} catch {
-			send(400, { error: 'request body is not JSON' });
+			send(400, { ...envelope(), error: 'bad_request', detail: 'request body is not JSON' });
 			return;
 		}
 		const parsed = cosignRequestSchema.safeParse(json);
 		if (!parsed.success) {
-			send(400, { error: 'request does not match the /v1/cosign contract' });
+			send(400, { ...envelope(), error: 'bad_request', detail: 'request does not match the /v1/cosign contract' });
 			return;
 		}
-		if (request.headers['idempotency-key'] !== parsed.data.txHash) {
-			send(400, { error: 'Idempotency-Key must equal txHash' });
+		if (request.headers['idempotency-key'] !== parsed.data.batchId) {
+			send(400, { ...envelope(), error: 'bad_request', detail: 'Idempotency-Key must equal batchId' });
 			return;
 		}
+		let txBodyHash: string;
 		try {
-			bodyEcho = decodeCosignBodyEcho(parsed.data.txCbor);
+			txBodyHash = resolveTxHash(wrapBody(parsed.data.txBodyHex));
 		} catch {
-			send(400, { error: 'txCbor does not decode as a transaction' });
+			send(400, { ...envelope(), error: 'bad_request', detail: 'txBodyHex does not decode as a transaction body' });
 			return;
 		}
-		if (bodyEcho.txBodyHash !== parsed.data.txHash) {
-			send(400, { error: 'txHash does not match txCbor' });
-			return;
+
+		// Same batch id and same body replays the stored answer; same batch id
+		// and a new body supersedes the earlier decision and releases its hold.
+		const stored = replies.get(parsed.data.batchId);
+		if (stored != null) {
+			if (stored.txBodyHash === txBodyHash) {
+				send(stored.reply.status, stored.reply.body);
+				return;
+			}
+			replies.delete(parsed.data.batchId);
+			for (const [ref, reservation] of reservations) {
+				if (reservation.batchId === parsed.data.batchId) reservations.delete(ref);
+			}
 		}
-		const cached = replies.get(parsed.data.txHash);
-		if (cached != null) {
-			send(cached.status, cached.body);
-			return;
-		}
-		const reply = await decide(parsed.data);
+
+		const reply = await decide(parsed.data, txBodyHash);
 		if (reply.status === 200 || reply.status === 409) {
-			replies.set(parsed.data.txHash, reply);
+			replies.set(parsed.data.batchId, { txBodyHash, reply });
 		}
 		send(reply.status, reply.body);
 	};
@@ -375,9 +478,33 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 		server.listen(options.port, '127.0.0.1', () => resolve());
 	});
 	const { port } = server.address() as AddressInfo;
+	baseUrl = `http://127.0.0.1:${port}`;
 	return {
-		url: `http://127.0.0.1:${port}`,
+		url: baseUrl,
 		memberVkhs: policy.memberVkhs,
 		close: () => new Promise((resolve) => server.close(() => resolve())),
+	};
+}
+
+/** Remaining room under each mock rule after this batch, in the contract's shape. */
+function boundsAfter(request: CosignRequest, policy: CosignPolicy): CosignAllow['boundsRemaining'] {
+	const used = request.intents.reduce((sum, intent) => sum + BigInt(intent.amount), 0n);
+	const remaining = policy.maxOutflowLovelace > used ? policy.maxOutflowLovelace - used : 0n;
+	const largest = request.intents.reduce(
+		(max, intent) => (BigInt(intent.amount) > max ? BigInt(intent.amount) : max),
+		0n,
+	);
+	return {
+		per_tx_cap: {
+			limit: policy.maxPerIntentLovelace.toString(),
+			used: largest.toString(),
+			remaining: (policy.maxPerIntentLovelace > largest ? policy.maxPerIntentLovelace - largest : 0n).toString(),
+		},
+		hourly_outflow: {
+			limit: policy.maxOutflowLovelace.toString(),
+			used: used.toString(),
+			remaining: remaining.toString(),
+			windowResetsAt: new Date(Date.now() + 3_600_000).toISOString(),
+		},
 	};
 }

@@ -27,7 +27,7 @@ import {
 	walletPeriodLimitLovelace,
 } from './demo-config';
 import { calculateMinUtxo } from '@/utils/min-utxo';
-import { generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { decodeBlockchainIdentifier, generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { MeshTxBuilder, MeshWallet, resolvePaymentKeyHash, resolveTxHash } from '@meshsdk/core';
 import 'dotenv/config';
@@ -41,7 +41,7 @@ import {
 	mergeCosignWitnesses,
 	requestCosign,
 	type CosignConfig,
-	type CosignRequest,
+	type CosignIntent,
 } from '../../src/smart-wallet/cosign-client';
 import {
 	buildGuardedLockTx,
@@ -58,27 +58,33 @@ import {
 } from '../../src/smart-wallet/wallet-lifecycle';
 import { memberVkhOf, startMockCosignServer } from './cosign-mock';
 
+/** A denied member costs one rebuild; a second denial on the admitted set means the mandate moved under us. */
+const MAX_COSIGN_REBUILDS = 2;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 import {
 	ADA,
 	ada,
 	agentMnemonic,
 	blockfrostKey,
 	brewMnemonic,
+	cosignContext,
 	DECISIONS_FILE,
 	escrowAddress,
 	event,
 	firstAddress,
 	hex,
+	jobHashOf,
 	liveWallet,
 	loadState,
 	log,
+	mockRegistrationOf,
 	MOCK_MAX_VALIDITY_SLOTS,
 	NETWORK,
 	ownerMnemonic,
 	provider,
 	reconcileApprovedRuns,
-	RESERVATION_TTL_SECONDS,
-	resolveInputLovelace,
+	resolveWalletInput,
 	saveState,
 	sha256,
 	signAndSubmit,
@@ -269,6 +275,18 @@ async function confirmMint(state: DemoState): Promise<void> {
 	log(`wallet live at ${script.address} with ${ada(lovelaceFromUtxo(utxo))}; agent ${datum.agent}`);
 }
 
+/** Stable within a batch, so `rebuild.keep` can be mapped back to the purchases it names. */
+function purchaseIdOf(index: number): string {
+	return `pur-demo-${index}`;
+}
+
+function purchaseIndexOf(purchaseId: string): number {
+	const index = Number(purchaseId.replace('pur-demo-', ''));
+	if (!Number.isSafeInteger(index) || index < 0)
+		throw new Error(`the co-signer named an unknown purchase ${purchaseId}`);
+	return index;
+}
+
 async function guardedLock(
 	state: DemoState,
 	cosign: CosignConfig,
@@ -281,9 +299,15 @@ async function guardedLock(
 	const agent = wallet(agentMnemonic(state));
 	const agentAddress = await firstAddress(agent);
 	const sellerAddress = await firstAddress(wallet(state.sellerMnemonic));
+	const sellerVkh = resolvePaymentKeyHash(sellerAddress);
 	const escrow = await escrowAddress();
 	const protocolParameters = await provider.fetchProtocolParameters();
 	const cosignerVkhs = state.quorumVkhs.slice(0, state.threshold);
+	// One batch id for the whole attempt: a rebuild under `rebuild.keep`
+	// supersedes the earlier decision instead of counting as a second one.
+	const batchId = randomUUID();
+	let rebuilds = 0;
+	let quorumRetries = 0;
 
 	let indexes = purchaseIndexes;
 	for (;;) {
@@ -349,38 +373,27 @@ async function guardedLock(
 		const frozenAt = new Date().toISOString();
 		event('frozen', { kind, txHash: built.txHash, locks: indexes.length, unsignedBytes: built.unsignedBytes });
 
-		const request: CosignRequest = {
-			version: 1,
-			network: NETWORK,
-			txCbor: built.unsignedTx,
-			txHash: built.txHash,
-			wallet: {
-				address: script.address,
-				stateTokenUnit: `${script.policyId}${record.tokenName}`,
-				input: walletUtxo.input,
-			},
-			requiredSigners: cosignerVkhs,
-			intent: {
-				kind: 'escrow-lock',
-				buyerAddress: agentAddress,
-				// Must match the datum built above field for field; the co-signer decodes and compares.
-				locks: indexes.map((index) => ({
-					address: escrow,
-					lovelace: lockLovelace.toString(),
-					blockchainIdentifier: state.purchases[index].blockchainIdentifier,
-					sellerAddress,
-					buyerReturnAddress: agentAddress,
-					sellerReturnAddress: null,
-				})),
-				outflowLovelace: built.outflowLovelace.toString(),
-				changeAddress: agentAddress,
-				validity: built.validity,
-				requestedBy: 'masumi-payment-service/smart-wallet-demo',
-			},
-			reservationTtlSeconds: RESERVATION_TTL_SECONDS,
-		};
+		// One intent per lock, bound to the escrow output the builder read back
+		// out of the frozen body. The co-signer decodes that output and compares.
+		const intents: CosignIntent[] = indexes.map((index, position) => ({
+			purchaseId: purchaseIdOf(index),
+			outputIndex: built.lockOutputIndexes[position],
+			counterparty: `sellerVkeyHash:${sellerVkh}`,
+			amount: lockLovelace.toString(),
+			asset: 'lovelace',
+			jobHash: jobHashOf(state.purchases[index].inputHash),
+			agentIdentifier:
+				decodeBlockchainIdentifier(state.purchases[index].blockchainIdentifier)?.agentIdentifier ??
+				`demo-agent-${index}`,
+		}));
 		const tCosign0 = performance.now();
-		const decision = await requestCosign(cosign, request);
+		const decision = await requestCosign(cosign, {
+			unsignedTx: built.unsignedTx,
+			batchId,
+			walletUtxoRef: `${walletUtxo.input.txHash}#${walletUtxo.input.outputIndex}`,
+			intents,
+			context: cosignContext(script.address),
+		});
 		const tCosign1 = performance.now();
 		const paymentValue = lockLovelace * BigInt(indexes.length);
 		const run: RunRecord = {
@@ -401,15 +414,53 @@ async function guardedLock(
 			submitted: false,
 		};
 
+		if (decision.httpStatus === 503) {
+			const { retryAfterSec, reachable, threshold } = decision.unavailable;
+			if (quorumRetries >= 1) {
+				throw new Error(`the quorum is still unavailable (${reachable}/${threshold} reachable); nothing was submitted`);
+			}
+			quorumRetries++;
+			log(
+				`${kind}: quorum unavailable (${reachable}/${threshold}); retrying in ${retryAfterSec}s with the same batch id`,
+			);
+			await sleep(retryAfterSec * 1000);
+			continue;
+		}
+
 		if (decision.httpStatus === 409) {
-			run.denialCode = decision.denied.code;
-			run.deniedLocks = decision.denied.locks.filter((lock) => lock.verdict === 'denied').map((lock) => lock.index);
+			const denial = decision.denied;
+			const deniedMembers = denial.members.filter((member) => member.verdict === 'denied');
+			run.decisionId = denial.decisionId;
+			run.denialCode = denial.denied;
+			run.deniedPurchaseIds = deniedMembers.map((member) => member.purchaseId);
+			run.deniedCodes = deniedMembers.map((member) => member.denied ?? 'unknown');
+			run.rebuilds = rebuilds;
+			const summary = deniedMembers
+				.map((member) => `${member.purchaseId}: ${member.denied} — ${member.reasonEnglish ?? ''}`)
+				.join('; ');
+			event('denied', { kind, txHash: built.txHash, code: denial.denied, decisionId: denial.decisionId });
+			log(
+				`${kind}: co-signer DENIED ${built.txHash.slice(0, 16)}… — ${denial.denied}: ${summary || denial.reasonEnglish}`,
+			);
+
+			// A partial denial is a shrink constraint, not a failure: rebuild with
+			// exactly the admitted set, under the same batch id, while the hold
+			// lasts. The `deny` scenario deliberately stops at the refusal.
+			const keep = denial.rebuild?.keep ?? [];
+			const canRebuild =
+				kind !== 'deny' &&
+				denial.denied === 'member_denied' &&
+				keep.length > 0 &&
+				rebuilds < MAX_COSIGN_REBUILDS &&
+				Date.parse(denial.rebuild!.heldUntil) > Date.now();
+			if (canRebuild) {
+				rebuilds++;
+				indexes = keep.map(purchaseIndexOf);
+				log(`${kind}: rebuilding with the ${indexes.length} admitted purchase(s) under the same batch id`);
+				continue;
+			}
 			state.runs.push(run);
 			saveState(state);
-			event('denied', { kind, txHash: built.txHash, code: decision.denied.code, message: decision.denied.message });
-			log(
-				`${kind}: co-signer DENIED ${built.txHash.slice(0, 16)}… — ${decision.denied.code}: ${decision.denied.message}`,
-			);
 			return run;
 		}
 		if (kind === 'deny') {
@@ -418,10 +469,12 @@ async function guardedLock(
 			throw new Error('the deny scenario was APPROVED by the co-signer; nothing was submitted, check the policy cap');
 		}
 
+		run.decisionId = decision.approved.decisionId;
+		run.rebuilds = rebuilds;
 		const merged = mergeCosignWitnesses(
 			built.unsignedTx,
 			{ txHash: built.txHash, signerVkhs: cosignerVkhs },
-			decision.approved.signatures,
+			decision.approved.witnessSetHex,
 		);
 		const signed = await agent.signTx(merged, true);
 		if (resolveTxHash(signed) !== built.txHash) throw new Error('agent signature changed the frozen body');
@@ -505,8 +558,10 @@ async function mock(state: DemoState): Promise<void> {
 		apiKey: state.mockApiKey,
 		threshold: state.threshold,
 		maxOutflowLovelace: config.mockCapLovelace,
+		maxPerIntentLovelace: config.mockPerTxCapLovelace,
 		maxValiditySlots: MOCK_MAX_VALIDITY_SLOTS,
-		resolveInputLovelace,
+		...(await mockRegistrationOf(state)),
+		resolveWalletInput,
 		decisionsFile: DECISIONS_FILE,
 		port: config.mockPort,
 	});

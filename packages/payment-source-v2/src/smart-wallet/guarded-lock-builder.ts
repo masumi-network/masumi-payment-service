@@ -18,6 +18,7 @@ import {
 	type Data,
 	type UTxO,
 } from '@meshsdk/core';
+import { deserializeTx } from '@meshsdk/core-cst';
 import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
 import { createTxWindow } from '@/services/shared/tx-window';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
@@ -133,6 +134,8 @@ export type GuardedLockBuild = {
 	txHash: string;
 	unsignedBytes: number;
 	requiredSigners: string[];
+	/** Body output index of each lock, in the order `locks` was given. The co-signer binds a purchase to its output by index. */
+	lockOutputIndexes: number[];
 	nextDatum: WalletDatum;
 	continuingAmount: Asset[];
 	outflowLovelace: bigint;
@@ -166,6 +169,27 @@ function assertGuardedLockParams(params: BuildGuardedLockParams, agentVkh: strin
 			throw new Error('a lock output must not pay the wallet address; the validator allows one continuing output');
 		}
 	}
+}
+
+/**
+ * The continuing wallet output is emitted first and the locks follow in the
+ * order they were given, so lock `i` sits at output `i + 1`. The co-signer
+ * binds each purchase to its escrow output BY INDEX, so the layout is read back
+ * out of the frozen body rather than assumed: a reordering would otherwise bind
+ * a purchase to another purchase's output and be rejected as a body mismatch.
+ */
+function readLockOutputIndexes(txCbor: string, walletAddress: string, lockAddresses: string[]): number[] {
+	const outputs = deserializeTx(txCbor).body().outputs();
+	const addressAt = (index: number) => (index < outputs.length ? outputs[index].address().toBech32() : undefined);
+	if (addressAt(0) !== walletAddress) {
+		throw new Error('the continuing wallet output is not the first output of the frozen body');
+	}
+	return lockAddresses.map((address, index) => {
+		if (addressAt(index + 1) !== address) {
+			throw new Error(`lock ${index} is not at output ${index + 1} of the frozen body`);
+		}
+		return index + 1;
+	});
 }
 
 export async function buildGuardedLockTx(params: BuildGuardedLockParams): Promise<GuardedLockBuild> {
@@ -242,6 +266,10 @@ export async function buildGuardedLockTx(params: BuildGuardedLockParams): Promis
 			for (const vkh of requiredSigners) {
 				txBuilder.requiredSignerHash(vkh);
 			}
+			// Same CIP-20 message every Masumi funds-lock carries, so a guarded
+			// lock is recognisable on an explorer like any other. The quorum
+			// verifier accepts auxiliary data on a guarded spend (confirmed on
+			// preprod in bed7b545…, which co-signed and landed with this label).
 			return await txBuilder
 				.changeAddress(agentAddress)
 				.invalidBefore(window.invalidBefore)
@@ -268,6 +296,11 @@ export async function buildGuardedLockTx(params: BuildGuardedLockParams): Promis
 		txHash: resolveTxHash(built.tx),
 		unsignedBytes: Math.floor(built.tx.length / 2),
 		requiredSigners,
+		lockOutputIndexes: readLockOutputIndexes(
+			built.tx,
+			wallet.address,
+			locks.map((lock) => lock.address),
+		),
 		nextDatum,
 		continuingAmount,
 		outflowLovelace: lovelaceOf(walletUtxo.output.amount) - lovelaceOf(continuingAmount),

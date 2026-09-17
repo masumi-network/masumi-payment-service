@@ -1,7 +1,8 @@
 import { config, requiredEnv } from './demo-config';
 import { BlockFrostAPI, BlockfrostServerError } from '@blockfrost/blockfrost-js';
 import { DEFAULTS } from '@masumi/payment-core/config';
-import { BlockfrostProvider, MeshWallet, resolveTxHash, type UTxO } from '@meshsdk/core';
+import { BlockfrostProvider, MeshWallet, resolvePaymentKeyHash, resolveTxHash, type UTxO } from '@meshsdk/core';
+import { blake2b, HexBlob } from '@meshsdk/core-cst';
 import 'dotenv/config';
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
@@ -9,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lovelaceFromUtxo } from '../../src/builders/batch-helpers';
 import { getPaymentScriptV2 } from '../../src/contract-generator';
-import { type CosignConfig } from '../../src/smart-wallet/cosign-client';
+import { type CosignConfig, type CosignContext } from '../../src/smart-wallet/cosign-client';
 import {
 	fetchWalletUtxo,
 	loadSmartWalletScript,
@@ -28,7 +29,6 @@ export const EVIDENCE_DIR = path.join(HERE, 'evidence');
 const CONFIRM_TIMEOUT_MS = 15 * 60_000;
 const POLL_MS = 10_000;
 export const MOCK_MAX_VALIDITY_SLOTS = 900;
-export const RESERVATION_TTL_SECONDS = 120;
 
 export const blockfrostKey = requiredEnv('BLOCKFROST_API_KEY_PREPROD');
 
@@ -68,8 +68,14 @@ export type RunRecord = {
 	walletInput: string;
 	frozenAt: string;
 	decision: 'approved' | 'denied';
+	decisionId?: string;
+	/** The reply's top-level code: `member_denied`, or a batch-level code. */
 	denialCode?: string;
-	deniedLocks?: number[];
+	/** Per-member codes, for the purchases the quorum refused. */
+	deniedPurchaseIds?: string[];
+	deniedCodes?: string[];
+	/** How many times the batch was rebuilt from `rebuild.keep` before it was signed. */
+	rebuilds?: number;
 	timings: {
 		buildMs: number;
 		cosignRoundTripMs: number;
@@ -204,18 +210,46 @@ function cosignConfig(state: DemoState, mockUrl: string | null): CosignConfig {
 	};
 }
 
+/** Who is asking. A real service issues both ids at onboarding, so they are required against one. */
+export function cosignContext(walletAddress: string): CosignContext {
+	if (config.cosignUrl != null && (config.cosignNodeId == null || config.cosignOrgId == null)) {
+		throw new Error('EXCHAIN_NODE_ID and EXCHAIN_ORG_ID are required when EXCHAIN_COSIGN_URL is set');
+	}
+	return {
+		nodeId: config.cosignNodeId ?? 'masumi-demo-node',
+		orgId: config.cosignOrgId ?? 'masumi-demo-org',
+		submittedAt: new Date().toISOString(),
+		// Ignored since 1.1 (the wallet is resolved from the body); sent so a 1.0 service still validates.
+		walletAddress,
+	};
+}
+
+/**
+ * Options the mock needs that a real service takes from wallet registration:
+ * the hot keys allowed to spend and the escrow addresses they may pay.
+ */
+export async function mockRegistrationOf(
+	state: DemoState,
+): Promise<{ agentVkhs: string[]; escrowAddresses: string[] }> {
+	const agentAddress = await firstAddress(wallet(agentMnemonic(state)));
+	return { agentVkhs: [resolvePaymentKeyHash(agentAddress)], escrowAddresses: [await escrowAddress()] };
+}
+
 export async function withCosigner<T>(state: DemoState, work: (cosign: CosignConfig) => Promise<T>): Promise<T> {
 	if (config.cosignUrl != null) return work(cosignConfig(state, null));
 	if (state.memberMnemonics.length === 0) {
 		throw new Error('this state was created for an external co-signer; set EXCHAIN_COSIGN_URL');
 	}
+	const registration = await mockRegistrationOf(state);
 	const mock = await startMockCosignServer({
 		memberMnemonics: state.memberMnemonics,
 		apiKey: state.mockApiKey,
 		threshold: state.threshold,
 		maxOutflowLovelace: config.mockCapLovelace,
+		maxPerIntentLovelace: config.mockPerTxCapLovelace,
 		maxValiditySlots: MOCK_MAX_VALIDITY_SLOTS,
-		resolveInputLovelace,
+		...registration,
+		resolveWalletInput,
 		decisionsFile: DECISIONS_FILE,
 		port: 0,
 	});
@@ -226,11 +260,25 @@ export async function withCosigner<T>(state: DemoState, work: (cosign: CosignCon
 	}
 }
 
-export async function resolveInputLovelace(ref: { txHash: string; outputIndex: number }): Promise<bigint> {
+/** Address and lovelace of an input, read from chain — never from the request. */
+export async function resolveWalletInput(ref: {
+	txHash: string;
+	outputIndex: number;
+}): Promise<{ address: string; lovelace: bigint }> {
 	const utxos = await provider.fetchUTxOs(ref.txHash, ref.outputIndex);
 	const utxo = utxos.find((candidate) => candidate.input.outputIndex === ref.outputIndex);
 	if (utxo == null) throw new Error(`input ${ref.txHash}#${ref.outputIndex} not found`);
-	return lovelaceFromUtxo(utxo);
+	return { address: utxo.output.address, lovelace: lovelaceFromUtxo(utxo) };
+}
+
+/**
+ * `jobHash` is a required intent field and the contract only fixes its FORMAT
+ * (`blake2b_256:<32-byte hex>`). Exchain has not yet told us what it hashes, so
+ * the demo derives it from the purchase's input hash — deterministic, and
+ * trivially re-pointed once they answer.
+ */
+export function jobHashOf(inputHash: string): string {
+	return `blake2b_256:${blake2b.hash(HexBlob(Buffer.from(inputHash, 'utf8').toString('hex')), 32)}`;
 }
 
 async function lookupChainTx(txHash: string): Promise<ChainTx | null> {
