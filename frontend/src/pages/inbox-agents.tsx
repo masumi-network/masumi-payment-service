@@ -22,6 +22,7 @@ import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
   tableActionsHeadCompactClass,
+  tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
 import { RefreshButton } from '@/components/RefreshButton';
 import { InboxAgentDetailsDialog } from '@/components/inbox-agents/InboxAgentDetailsDialog';
@@ -484,7 +485,7 @@ export default function InboxAgentsPage() {
                             </Badge>
                           </td>
                           <td className={tableActionsCellCompactClass}>
-                            <div className="flex items-center gap-1">
+                            <div className={tableActionsInnerClass}>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -516,14 +517,26 @@ export default function InboxAgentsPage() {
                                 </Button>
                               ) : agent.state === 'RegistrationInitiated' ||
                                 agent.state === 'DeregistrationInitiated' ? (
-                                <div className="flex items-center justify-center w-8 h-8">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled
+                                  className="text-primary"
+                                  title="Processing on-chain"
+                                >
                                   <Spinner size={16} />
-                                </div>
+                                </Button>
                               ) : agent.state === 'RegistrationRequested' ||
                                 agent.state === 'DeregistrationRequested' ? (
-                                <div className="flex items-center justify-center w-8 h-8">
-                                  <FaRegClock size={12} />
-                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled
+                                  className="text-primary"
+                                  title="Queued on-chain"
+                                >
+                                  <FaRegClock />
+                                </Button>
                               ) : null}
                             </div>
                           </td>

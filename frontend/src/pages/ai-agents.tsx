@@ -18,7 +18,11 @@ import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
-import { tableActionsCellClass, tableActionsHeadClass } from '@/components/ui/table-actions-column';
+import {
+  tableActionsCellClass,
+  tableActionsHeadClass,
+  tableActionsInnerClass,
+} from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
@@ -36,6 +40,14 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
@@ -503,23 +515,28 @@ export default function AIAgentsPage() {
                   isLoading={isSearchPending && !!searchQuery}
                 />
               </div>
-              <select
+              <Select
                 value={typeFilter}
-                onChange={(event) =>
-                  setTypeFilter(event.target.value as 'All' | 'Standard' | 'OpenApi' | 'X402')
+                onValueChange={(value) =>
+                  setTypeFilter(value as 'All' | 'Standard' | 'OpenApi' | 'X402')
                 }
-                className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label="Filter agents by type"
               >
-                <option value="All">All types</option>
-                {/* Options come from the same label map as the Type column, so
-                    the filter can never disagree with the badges it filters. */}
-                {Object.entries(AGENT_TYPE_LABELS).map(([type, label]) => (
-                  <option key={type} value={type}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-[140px]" aria-label="Filter agents by type">
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="All">All types</SelectItem>
+                    {/* Options come from the same label map as the Type column, so
+                        the filter can never disagree with the badges it filters. */}
+                    {Object.entries(AGENT_TYPE_LABELS).map(([type, label]) => (
+                      <SelectItem key={type} value={type}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </div>
 
             {truncated && !isLoading && (
@@ -787,86 +804,100 @@ export default function AIAgentsPage() {
                             </div>
                           </td>
                           <td className={tableActionsCellClass}>
-                            {isDeregisterableAgentState(agent.state) ? (
-                              <div className="flex items-center gap-1">
-                                {/* Manage actions (verify/update/delete) only apply to agents
+                            <div className={tableActionsInnerClass}>
+                              {isDeregisterableAgentState(agent.state) ? (
+                                <>
+                                  {/* Manage actions (verify/update/delete) only apply to agents
                                     registered on the active source. Agents shown because they
                                     accept payment here are managed from their home source. */}
-                                {agent.relation !== 'payment' && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedAgentForVerification(agent);
-                                    }}
-                                    className="text-primary hover:text-primary hover:bg-primary/10"
-                                    title="Verify and Publish"
-                                  >
-                                    <ShieldCheck className="h-4 w-4" />
-                                  </Button>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openAgentDetails(agent, { initialTab: 'Earnings' });
-                                  }}
-                                  className="text-primary hover:text-primary hover:bg-primary/10"
-                                  title="View Details & Earnings"
-                                >
-                                  <ExternalLink className="h-4 w-4" />
-                                </Button>
-                                {canEditAgentMetadata({
-                                  relation: agent.relation,
-                                  canPay: capabilities.canPay,
-                                  selectedPaymentSource,
-                                }) && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUpdateClick(agent);
-                                    }}
-                                    className="text-primary hover:text-primary hover:bg-primary/10"
-                                    title="Update agent metadata (V2)"
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                )}
-                                {agent.relation !== 'payment' &&
-                                  (agent.state === 'RegistrationFailed' ||
-                                  agent.state === 'DeregistrationConfirmed'
-                                    ? capabilities.canAdmin
-                                    : capabilities.canPay) && (
+                                  {agent.relation !== 'payment' && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleDeleteClick(agent);
+                                        setSelectedAgentForVerification(agent);
                                       }}
-                                      className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
+                                      className="text-primary hover:text-primary hover:bg-primary/10"
+                                      title="Verify and Publish"
                                     >
-                                      <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
+                                      <ShieldCheck className="h-4 w-4" />
                                     </Button>
                                   )}
-                              </div>
-                            ) : agent.state === 'RegistrationInitiated' ||
-                              agent.state === 'DeregistrationInitiated' ? (
-                              <div className="flex items-center justify-center w-8 h-8">
-                                <Spinner size={16} />
-                              </div>
-                            ) : (
-                              (agent.state === 'RegistrationRequested' ||
-                                agent.state === 'DeregistrationRequested') && (
-                                <div className="flex items-center justify-center w-8 h-8">
-                                  <FaRegClock size={12} />
-                                </div>
-                              )
-                            )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openAgentDetails(agent, { initialTab: 'Earnings' });
+                                    }}
+                                    className="text-primary hover:text-primary hover:bg-primary/10"
+                                    title="View Details & Earnings"
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                  </Button>
+                                  {canEditAgentMetadata({
+                                    relation: agent.relation,
+                                    canPay: capabilities.canPay,
+                                    selectedPaymentSource,
+                                  }) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateClick(agent);
+                                      }}
+                                      className="text-primary hover:text-primary hover:bg-primary/10"
+                                      title="Update agent metadata (V2)"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {agent.relation !== 'payment' &&
+                                    (agent.state === 'RegistrationFailed' ||
+                                    agent.state === 'DeregistrationConfirmed'
+                                      ? capabilities.canAdmin
+                                      : capabilities.canPay) && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteClick(agent);
+                                        }}
+                                        className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
+                                      >
+                                        <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
+                                      </Button>
+                                    )}
+                                </>
+                              ) : agent.state === 'RegistrationInitiated' ||
+                                agent.state === 'DeregistrationInitiated' ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled
+                                  className="text-primary"
+                                  title="Processing on-chain"
+                                >
+                                  <Spinner size={16} />
+                                </Button>
+                              ) : (
+                                (agent.state === 'RegistrationRequested' ||
+                                  agent.state === 'DeregistrationRequested') && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled
+                                    className="text-primary"
+                                    title={getAgentStatusHelperText(agent.state) ?? 'Pending'}
+                                  >
+                                    <FaRegClock />
+                                  </Button>
+                                )
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

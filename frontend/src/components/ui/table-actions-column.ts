@@ -20,6 +20,9 @@ export const tableActionsHeadClass = `${tableActionsSticky} ${tableActionsGradie
 
 export const tableActionsCellClass = `${tableActionsCellShared} w-48 min-w-48 p-4 pr-4`;
 
+/** Right-align row actions to match the Actions column header. */
+export const tableActionsInnerClass = 'flex items-center justify-end gap-1 min-h-8';
+
 export const tableActionsHeadCompactClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-28 min-w-28 p-4 pr-4 ${tableActionsHeadTypography}`;
 
 export const tableActionsCellCompactClass = `${tableActionsCellShared} w-28 min-w-28 p-4 pr-4`;
