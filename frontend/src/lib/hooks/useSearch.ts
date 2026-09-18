@@ -1,5 +1,8 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
+import type { RegistryEntry } from '@/lib/api/generated';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from './usePaymentSourceExtendedAll';
+import { useContextAgents } from '../queries/useContextAgents';
 import { useAllWallets } from '../queries/useWallets';
 import { useAppContext } from '../contexts/AppContext';
 import { getWalletTypeTitleLabel } from '../wallet-type';
@@ -12,6 +15,8 @@ export interface SearchableItem {
   href: string;
   keywords?: string[];
   elementId?: string;
+  /** Populated for `type: 'agent'` so the palette can open details without a round-trip. */
+  registryEntry?: RegistryEntry;
   /**
    * Capability this entry needs. The palette is a second route into every page
    * and quick action, so without this a read-only key could search its way to a
@@ -19,6 +24,8 @@ export interface SearchableItem {
    */
   requires?: 'pay' | 'admin';
 }
+
+const PALETTE_AGENT_LIMIT = 15;
 
 const searchableItems: SearchableItem[] = [
   { id: 'dashboard', title: 'Dashboard', type: 'page', href: '/' },
@@ -129,28 +136,57 @@ const searchableItems: SearchableItem[] = [
   },
 ];
 
-export function useSearch(enabled = true) {
+export function registryEntryToSearchItem(agent: RegistryEntry): SearchableItem {
+  return {
+    id: `agent-${agent.id}`,
+    title: agent.name,
+    description: agent.description ?? agent.agentIdentifier ?? undefined,
+    type: 'agent',
+    href: '/ai-agents',
+    registryEntry: agent,
+    keywords: [agent.agentIdentifier ?? '', ...(agent.Tags ?? [])].filter(Boolean),
+  };
+}
+
+function matchesLocalSearch(item: SearchableItem, queryLower: string): boolean {
+  return (
+    item.title.toLowerCase().includes(queryLower) ||
+    item.description?.toLowerCase().includes(queryLower) ||
+    (item.keywords?.some((keyword) => keyword.toLowerCase().includes(queryLower)) ?? false)
+  );
+}
+
+export function useSearch(paletteOpen: boolean, searchQuery = '') {
   const { network, capabilities } = useAppContext();
+  const trimmedQuery = searchQuery.trim();
+  const debouncedQuery = useDebouncedValue(trimmedQuery);
 
   const { paymentSources } = usePaymentSourceExtendedAll();
-  // Only load the full wallet set while the search UI is actually open — this
-  // hook is mounted app-wide (MainLayout), so an unconditional fetch would
-  // reintroduce the global wallet load on every page.
-  const { wallets, isLoading: isWalletsLoading } = useAllWallets(enabled);
+  const { wallets, isLoading: isWalletsLoading } = useAllWallets(paletteOpen);
+
+  const agentSearchEnabled = paletteOpen && debouncedQuery.length > 0;
+  const {
+    agents: registryAgents,
+    isLoading: isRegistryAgentsLoading,
+    isFetching: isRegistryAgentsFetching,
+    isPlaceholderData: isRegistryAgentsPlaceholder,
+  } = useContextAgents({
+    searchQuery: debouncedQuery || undefined,
+    enabled: agentSearchEnabled,
+  });
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((ps) => ps.network === network),
     [paymentSources, network],
   );
 
-  const allResults = useMemo(() => {
+  const staticResults = useMemo(() => {
     const dynamicResults: SearchableItem[] = [];
 
-    // Index wallets that belong to a payment source on the active network.
-    // Wallets are no longer embedded in the source, so join by paymentSourceId.
     const currentNetworkSourceIds = new Set(
       currentNetworkPaymentSources.map((source) => source.id),
     );
+
     wallets.forEach((wallet) => {
       if (!currentNetworkSourceIds.has(wallet.paymentSourceId)) return;
       dynamicResults.push({
@@ -185,29 +221,35 @@ export function useSearch(enabled = true) {
     return [...searchableItems, ...dynamicResults].filter(permitted);
   }, [currentNetworkPaymentSources, wallets, capabilities.canAdmin, capabilities.canPay]);
 
-  const handleSearch = useCallback(
-    async (query: string) => {
-      if (!query.trim()) {
-        return allResults;
-      }
+  const agentResults = useMemo(() => {
+    if (!trimmedQuery || debouncedQuery !== trimmedQuery) {
+      return [];
+    }
+    return registryAgents.slice(0, PALETTE_AGENT_LIMIT).map(registryEntryToSearchItem);
+  }, [registryAgents, trimmedQuery, debouncedQuery]);
 
-      const queryLower = query.toLowerCase();
-      const filteredResults = allResults.filter(
-        (item) =>
-          item.title.toLowerCase().includes(queryLower) ||
-          item.description?.toLowerCase().includes(queryLower) ||
-          item.keywords?.some((keyword) => keyword.toLowerCase().includes(queryLower)),
-      );
+  const searchResults = useMemo(() => {
+    if (!trimmedQuery) {
+      return staticResults.filter((item) => item.type === 'page');
+    }
 
-      return filteredResults;
-    },
-    [allResults],
-  );
+    const queryLower = trimmedQuery.toLowerCase();
+    const localMatches = staticResults.filter((item) => matchesLocalSearch(item, queryLower));
+
+    return [...agentResults, ...localMatches];
+  }, [agentResults, staticResults, trimmedQuery]);
+
+  const isAgentSearchPending =
+    trimmedQuery.length > 0 &&
+    (trimmedQuery !== debouncedQuery ||
+      (agentSearchEnabled && isRegistryAgentsFetching && isRegistryAgentsPlaceholder));
+
+  const isSearchIndexLoading =
+    isWalletsLoading || (agentSearchEnabled && isRegistryAgentsLoading) || isAgentSearchPending;
 
   return {
-    handleSearch,
-    // Wallets load lazily once the search UI opens; surface this so consumers can
-    // signal that wallet matches may still be incoming.
-    isWalletsLoading,
+    searchResults,
+    isWalletsLoading: isSearchIndexLoading,
+    isAgentsLoading: agentSearchEnabled && isRegistryAgentsLoading,
   };
 }

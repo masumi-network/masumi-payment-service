@@ -204,8 +204,8 @@
   }
 }
 
-/* Custom styles for light mode inputs */
-.light input {
+/* Custom styles for light mode inputs (exclude cmdk command palette) */
+.light input:not([data-slot='command-input']) {
   background-color: #ffffff;
   border: 1px solid #e5e7eb;
   color: #171717;
