@@ -685,6 +685,12 @@ export default function AIAgentsPage() {
                       const holdingWallet = getHoldingWallet(agent);
                       const isCombinedWallet = usesCombinedWallet(agent);
                       const statusHelperText = getAgentStatusHelperText(agent.state);
+                      const hasRowActions =
+                        isDeregisterableAgentState(agent.state) ||
+                        agent.state === 'RegistrationInitiated' ||
+                        agent.state === 'DeregistrationInitiated' ||
+                        agent.state === 'RegistrationRequested' ||
+                        agent.state === 'DeregistrationRequested';
 
                       return (
                         <tr
@@ -837,8 +843,11 @@ export default function AIAgentsPage() {
                             </div>
                           </td>
                           <td
-                            className={tableActionsCellCompactClass}
-                            onClick={(event) => event.stopPropagation()}
+                            className={cn(
+                              tableActionsCellCompactClass,
+                              !hasRowActions && 'pointer-events-none',
+                            )}
+                            onClick={hasRowActions ? (event) => event.stopPropagation() : undefined}
                           >
                             <div className={tableActionsInnerClass}>
                               {isDeregisterableAgentState(agent.state) ? (
