@@ -24,6 +24,7 @@ import {
   tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
 import { AIAgentRowActionsMenu } from '@/components/ai-agents/AIAgentRowActionsMenu';
+import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
@@ -68,23 +69,65 @@ import { formatDate } from '@/lib/format-date';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
-// Tells apart agents registered on the active source from those registered elsewhere that
-// merely accept payment on it (or over x402 on an EVM chain).
 function RelationBadge({ relation }: { relation?: AgentRelation }) {
   if (relation === 'payment') {
     return (
       <Badge
         variant="outline"
-        className="mt-1 border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
+        className="w-fit border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
       >
         Registered elsewhere
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="mt-1 text-[10px]">
+    <Badge variant="outline" className="w-fit text-[10px]">
       Registered here
     </Badge>
+  );
+}
+
+type AgentWalletRowProps = {
+  label: string;
+  address: string;
+  walletVkey: string;
+  onWalletClick: (walletVkey: string) => void;
+  /** Wider preview when minting and holding share one address (single-column layout). */
+  variant?: 'split' | 'combined';
+};
+
+function AgentWalletRow({
+  label,
+  address,
+  walletVkey,
+  onWalletClick,
+  variant = 'split',
+}: AgentWalletRowProps) {
+  const previewChars = variant === 'combined' ? 10 : 4;
+
+  return (
+    <div className={cn('min-w-0 space-y-1', variant === 'split' && 'flex-1')}>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <button
+          type="button"
+          className={cn(
+            'min-w-0 text-left font-mono text-xs text-muted-foreground hover:text-primary',
+            variant === 'combined' ? 'max-w-[14rem] truncate' : 'truncate',
+          )}
+          title={address}
+          onClick={(event) => {
+            event.stopPropagation();
+            onWalletClick(walletVkey);
+          }}
+        >
+          {shortenAddress(address, previewChars)}
+        </button>
+        <CopyButton value={address} />
+      </div>
+    </div>
   );
 }
 
@@ -641,6 +684,7 @@ export default function AIAgentsPage() {
                     displayAgents.map((agent, index) => {
                       const holdingWallet = getHoldingWallet(agent);
                       const isCombinedWallet = usesCombinedWallet(agent);
+                      const statusHelperText = getAgentStatusHelperText(agent.state);
 
                       return (
                         <tr
@@ -699,61 +743,46 @@ export default function AIAgentsPage() {
                               </span>
                             )}
                           </td>
-                          <td className="p-4">
-                            <div className="space-y-2">
-                              <RelationBadge relation={agent.relation} />
-                              {isCombinedWallet ? (
-                                <div>
-                                  <div className="text-xs font-medium">
-                                    Minting & holding wallet
-                                  </div>
-                                  <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                                    <span
-                                      className="cursor-pointer hover:text-primary"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleWalletClick(holdingWallet.walletVkey);
-                                      }}
-                                    >
-                                      {shortenAddress(holdingWallet.walletAddress)}
-                                    </span>
-                                    <CopyButton value={holdingWallet.walletAddress} />
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <div>
-                                    <div className="text-xs font-medium">Minting wallet</div>
-                                    <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                                      <span
-                                        className="cursor-pointer hover:text-primary"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleWalletClick(agent.SmartContractWallet.walletVkey);
-                                        }}
-                                      >
-                                        {shortenAddress(agent.SmartContractWallet.walletAddress)}
-                                      </span>
-                                      <CopyButton value={agent.SmartContractWallet.walletAddress} />
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-xs font-medium">Holding wallet</div>
-                                    <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                                      <span
-                                        className="cursor-pointer hover:text-primary"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleWalletClick(holdingWallet.walletVkey);
-                                        }}
-                                      >
-                                        {shortenAddress(holdingWallet.walletAddress)}
-                                      </span>
-                                      <CopyButton value={holdingWallet.walletAddress} />
-                                    </div>
-                                  </div>
-                                </>
+                          <td className="p-4 align-top">
+                            <div
+                              className={cn(
+                                'space-y-2',
+                                isCombinedWallet ? 'w-fit max-w-md' : 'min-w-[15rem]',
                               )}
+                            >
+                              <RelationBadge relation={agent.relation} />
+                              <div
+                                className={cn(
+                                  'rounded-md border bg-muted/10 p-2.5',
+                                  isCombinedWallet && 'w-fit max-w-full',
+                                )}
+                              >
+                                {isCombinedWallet ? (
+                                  <AgentWalletRow
+                                    variant="combined"
+                                    label="Minting & holding"
+                                    address={holdingWallet.walletAddress}
+                                    walletVkey={holdingWallet.walletVkey}
+                                    onWalletClick={handleWalletClick}
+                                  />
+                                ) : (
+                                  <div className="flex items-stretch gap-3">
+                                    <AgentWalletRow
+                                      label="Minting"
+                                      address={agent.SmartContractWallet.walletAddress}
+                                      walletVkey={agent.SmartContractWallet.walletVkey}
+                                      onWalletClick={handleWalletClick}
+                                    />
+                                    <Separator orientation="vertical" className="h-auto" />
+                                    <AgentWalletRow
+                                      label="Holding"
+                                      address={holdingWallet.walletAddress}
+                                      walletVkey={holdingWallet.walletVkey}
+                                      onWalletClick={handleWalletClick}
+                                    />
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="p-4 text-sm truncate max-w-25">
@@ -797,9 +826,12 @@ export default function AIAgentsPage() {
                               <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
                                 {parseAgentStatus(agent.state)}
                               </Badge>
-                              {getAgentStatusHelperText(agent.state) && (
-                                <p className="text-xs text-muted-foreground max-w-48">
-                                  {getAgentStatusHelperText(agent.state)}
+                              {statusHelperText && (
+                                <p
+                                  className="text-xs text-muted-foreground max-w-48 truncate"
+                                  title={statusHelperText}
+                                >
+                                  {statusHelperText}
                                 </p>
                               )}
                             </div>
