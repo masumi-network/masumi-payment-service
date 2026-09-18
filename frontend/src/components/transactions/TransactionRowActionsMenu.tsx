@@ -1,4 +1,4 @@
-import { ExternalLink, Eye, MoreHorizontal, RotateCcw, Eraser } from 'lucide-react';
+import { Eraser, ExternalLink, Info, MoreHorizontal, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -47,7 +47,7 @@ export function TransactionRowActionsMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
         <DropdownMenuItem className="cursor-pointer gap-2" onSelect={() => onViewDetails()}>
-          <Eye className="h-4 w-4" />
+          <Info className="h-4 w-4" />
           View details
         </DropdownMenuItem>
         {explorerUrl && (

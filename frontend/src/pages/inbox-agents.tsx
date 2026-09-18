@@ -2,7 +2,7 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { Info, Plus, Trash2 } from 'lucide-react';
 import { FaRegClock } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -496,7 +496,7 @@ export default function InboxAgentsPage() {
                                 className="text-primary hover:text-primary hover:bg-primary/10"
                                 title="View details"
                               >
-                                <ExternalLink className="h-4 w-4" />
+                                <Info className="h-4 w-4" />
                               </Button>
                               {canDelete ? (
                                 <Button

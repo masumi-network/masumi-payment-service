@@ -2,16 +2,15 @@
 // Pin actions only when the table container is at least 32rem wide.
 const tableActionsSticky = '@lg/table-scroll:sticky right-0 z-10';
 
-const tableActionsGradientDefault =
-  'bg-[linear-gradient(to_right,transparent_0%,hsl(var(--background)/0.85)_14%,hsl(var(--background))_32%,hsl(var(--background))_100%)]';
+/** Match masumi-saas table actions column (agents-table, x402-table-ui). */
+const tableActionsGradient = 'bg-gradient-to-r from-transparent via-background/80 to-background';
 
 const tableActionsHeadTypography =
   'text-right text-sm font-medium text-muted-foreground whitespace-nowrap';
 
-/** Row-synced fade lives in globals.css (`.table-actions-cell`, @property transitions). */
-const tableActionsCellBase = `${tableActionsSticky} table-actions-cell`;
+const tableActionsCellBase = `${tableActionsSticky} ${tableActionsGradient}`;
 
-export const tableActionsHeadClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-48 min-w-48 p-4 pr-4 ${tableActionsHeadTypography}`;
+export const tableActionsHeadClass = `${tableActionsCellBase} w-48 min-w-48 p-4 pr-4 ${tableActionsHeadTypography}`;
 
 export const tableActionsCellClass = `${tableActionsCellBase} w-48 min-w-48 p-4 pr-4`;
 
@@ -20,19 +19,22 @@ export const tableActionsInnerClass = 'flex items-center justify-end gap-1 min-h
 
 const tableActionsCellCompactSizing = 'w-28 min-w-28 p-4 pr-4';
 
-export const tableActionsHeadCompactClass = `${tableActionsSticky} ${tableActionsGradientDefault} ${tableActionsCellCompactSizing} ${tableActionsHeadTypography}`;
+export const tableActionsHeadCompactClass = `${tableActionsCellBase} ${tableActionsCellCompactSizing} ${tableActionsHeadTypography}`;
 
 export const tableActionsCellCompactClass = `${tableActionsCellBase} ${tableActionsCellCompactSizing}`;
 
-export const tableActionsCellCompactDestructiveClass = `${tableActionsCellBase} table-actions-cell--destructive ${tableActionsCellCompactSizing}`;
+/** @deprecated Same gradient as default; kept for call sites that branch on row state. */
+export const tableActionsCellCompactDestructiveClass = tableActionsCellCompactClass;
 
-export const tableActionsCellCompactSelectedClass = `${tableActionsCellBase} table-actions-cell--selected ${tableActionsCellCompactSizing}`;
+/** @deprecated Same gradient as default; kept for call sites that branch on row state. */
+export const tableActionsCellCompactSelectedClass = tableActionsCellCompactClass;
 
-export const tableActionsCellCompactLowBalanceHoverClass =
-  'group-hover:!bg-[linear-gradient(to_right,transparent_0%,var(--table-actions-low-balance-hover-fade)_14%,var(--table-actions-low-balance-hover-fill)_32%,var(--table-actions-low-balance-hover-fill)_100%)]';
+/** @deprecated Same gradient as default; row tint shows through the transparent edge. */
+export const tableActionsCellCompactLowBalanceHoverClass = '';
 
-export const tableActionsHeadWideClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-64 min-w-64 p-4 pr-4 ${tableActionsHeadTypography}`;
+export const tableActionsHeadWideClass = `${tableActionsCellBase} w-64 min-w-64 p-4 pr-4 ${tableActionsHeadTypography}`;
 
 export const tableActionsCellWideClass = `${tableActionsCellBase} w-64 min-w-64 p-4 pr-4 text-right`;
 
-export const tableActionsCellWideDestructiveClass = `${tableActionsCellBase} table-actions-cell--destructive w-64 min-w-64 p-4 pr-4`;
+/** @deprecated Same gradient as default. */
+export const tableActionsCellWideDestructiveClass = tableActionsCellWideClass;

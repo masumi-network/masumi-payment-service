@@ -1,4 +1,4 @@
-import { Eye, ExternalLink, MoreHorizontal, Pencil, ShieldCheck, Trash2 } from 'lucide-react';
+import { ExternalLink, Info, MoreHorizontal, Pencil, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -46,7 +46,7 @@ export function AIAgentRowActionsMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
         <DropdownMenuItem className="cursor-pointer gap-2" onSelect={() => onViewDetails()}>
-          <Eye className="h-4 w-4" />
+          <Info className="h-4 w-4" />
           View details
         </DropdownMenuItem>
         <DropdownMenuItem className="cursor-pointer gap-2" onSelect={() => onViewEarnings()}>
