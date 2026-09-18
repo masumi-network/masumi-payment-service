@@ -39,6 +39,7 @@ import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton'
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
+  tableActionsCellCompactLowBalanceClass,
   tableActionsHeadCompactClass,
 } from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
@@ -384,7 +385,13 @@ export default function WalletsPage() {
                             )}
                           </div>
                         </td>
-                        <td className={tableActionsCellCompactClass}>
+                        <td
+                          className={
+                            wallet.LowBalanceSummary?.isLow
+                              ? tableActionsCellCompactLowBalanceClass
+                              : tableActionsCellCompactClass
+                          }
+                        >
                           <div className="flex justify-end">
                             {/* Every action here (fund, top up, transfer, swap) is an
                                 admin-only endpoint, so the whole menu is admin-gated. */}

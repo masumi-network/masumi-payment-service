@@ -123,6 +123,41 @@
   }
 }
 
+@layer components {
+  /* Saas fade at rest; on row hover, gradient fill matches tr (e.g. hover:bg-muted/50). */
+  .table-actions-head-gradient {
+    @apply bg-gradient-to-r from-transparent via-background/80 to-background;
+  }
+
+  .table-actions-cell {
+    @apply bg-gradient-to-r from-transparent via-background/80 to-background;
+  }
+
+  .group:hover .table-actions-cell {
+    @apply bg-gradient-to-r from-transparent via-muted/50 to-muted/50;
+  }
+
+  .table-actions-cell--destructive {
+    @apply bg-gradient-to-r from-transparent via-destructive/10 to-destructive/10;
+  }
+
+  .group:hover .table-actions-cell--destructive {
+    @apply bg-gradient-to-r from-transparent via-muted/50 to-muted/50;
+  }
+
+  .table-actions-cell--muted {
+    @apply bg-gradient-to-r from-transparent via-muted/50 to-muted/50;
+  }
+
+  .table-actions-cell--low-balance {
+    @apply bg-gradient-to-r from-transparent via-amber-500/5 to-amber-500/5;
+  }
+
+  .group:hover .table-actions-cell--low-balance {
+    @apply bg-gradient-to-r from-transparent via-amber-500/10 to-amber-500/10;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

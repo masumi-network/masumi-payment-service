@@ -2,15 +2,25 @@
 // Pin actions only when the table container is at least 32rem wide.
 const tableActionsSticky = '@lg/table-scroll:sticky right-0 z-10';
 
-/** Match masumi-saas table actions column (agents-table, x402-table-ui). */
-const tableActionsGradient = 'bg-gradient-to-r from-transparent via-background/80 to-background';
+/** Match masumi-saas fade shape; sync fill with common row backgrounds (see transactions). */
+const tableActionsGradientDefault =
+  'bg-gradient-to-r from-transparent via-background/80 to-background group-hover:via-muted/50 group-hover:to-muted/50';
+
+const tableActionsGradientDestructive =
+  'bg-gradient-to-r from-transparent via-destructive/10 to-destructive/10 group-hover:via-muted/50 group-hover:to-muted/50';
+
+const tableActionsGradientMuted =
+  'bg-gradient-to-r from-transparent via-muted/50 to-muted/50 group-hover:via-muted/50 group-hover:to-muted/50';
+
+const tableActionsGradientLowBalance =
+  'bg-gradient-to-r from-transparent via-amber-500/10 to-amber-500/10 group-hover:via-amber-500/10 group-hover:to-amber-500/10';
 
 const tableActionsHeadTypography =
   'text-right text-sm font-medium text-muted-foreground whitespace-nowrap';
 
-const tableActionsCellBase = `${tableActionsSticky} ${tableActionsGradient}`;
+const tableActionsCellBase = `${tableActionsSticky} ${tableActionsGradientDefault}`;
 
-export const tableActionsHeadClass = `${tableActionsCellBase} w-48 min-w-48 p-4 pr-4 ${tableActionsHeadTypography}`;
+export const tableActionsHeadClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-48 min-w-48 p-4 pr-4 ${tableActionsHeadTypography}`;
 
 export const tableActionsCellClass = `${tableActionsCellBase} w-48 min-w-48 p-4 pr-4`;
 
@@ -19,22 +29,22 @@ export const tableActionsInnerClass = 'flex items-center justify-end gap-1 min-h
 
 const tableActionsCellCompactSizing = 'w-28 min-w-28 p-4 pr-4';
 
-export const tableActionsHeadCompactClass = `${tableActionsCellBase} ${tableActionsCellCompactSizing} ${tableActionsHeadTypography}`;
+export const tableActionsHeadCompactClass = `${tableActionsSticky} ${tableActionsGradientDefault} ${tableActionsCellCompactSizing} ${tableActionsHeadTypography}`;
 
 export const tableActionsCellCompactClass = `${tableActionsCellBase} ${tableActionsCellCompactSizing}`;
 
-/** @deprecated Same gradient as default; kept for call sites that branch on row state. */
-export const tableActionsCellCompactDestructiveClass = tableActionsCellCompactClass;
+export const tableActionsCellCompactDestructiveClass = `${tableActionsSticky} ${tableActionsGradientDestructive} ${tableActionsCellCompactSizing}`;
 
-/** @deprecated Same gradient as default; kept for call sites that branch on row state. */
-export const tableActionsCellCompactSelectedClass = tableActionsCellCompactClass;
+export const tableActionsCellCompactSelectedClass = `${tableActionsSticky} ${tableActionsGradientMuted} ${tableActionsCellCompactSizing}`;
 
-/** @deprecated Same gradient as default; row tint shows through the transparent edge. */
+/** Pair with wallet rows using bg-amber-500/5 hover:bg-amber-500/10. */
+export const tableActionsCellCompactLowBalanceClass = `${tableActionsSticky} ${tableActionsGradientLowBalance} ${tableActionsCellCompactSizing}`;
+
+/** @deprecated Use tableActionsCellCompactLowBalanceClass on the cell instead of a hover-only override. */
 export const tableActionsCellCompactLowBalanceHoverClass = '';
 
-export const tableActionsHeadWideClass = `${tableActionsCellBase} w-64 min-w-64 p-4 pr-4 ${tableActionsHeadTypography}`;
+export const tableActionsHeadWideClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-64 min-w-64 p-4 pr-4 ${tableActionsHeadTypography}`;
 
 export const tableActionsCellWideClass = `${tableActionsCellBase} w-64 min-w-64 p-4 pr-4 text-right`;
 
-/** @deprecated Same gradient as default. */
-export const tableActionsCellWideDestructiveClass = tableActionsCellWideClass;
+export const tableActionsCellWideDestructiveClass = `${tableActionsSticky} ${tableActionsGradientDestructive} w-64 min-w-64 p-4 pr-4`;
