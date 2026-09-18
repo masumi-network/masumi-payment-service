@@ -365,7 +365,7 @@ export default function Overview() {
                   >
                     {agentsSectionLoading ? (
                       <OverviewListScroll>
-                        <AgentListSkeleton items={10} />
+                        <AgentListSkeleton items={9} />
                       </OverviewListScroll>
                     ) : agents.length > 0 ? (
                       <OverviewListScroll>
@@ -450,7 +450,7 @@ export default function Overview() {
                   >
                     {walletsSectionLoading ? (
                       <OverviewListScroll>
-                        <WalletListSkeleton rows={10} />
+                        <WalletListSkeleton rows={9} />
                       </OverviewListScroll>
                     ) : walletsList.length > 0 ? (
                       <DashboardWalletListSection

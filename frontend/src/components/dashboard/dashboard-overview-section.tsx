@@ -74,7 +74,7 @@ export function DashboardPanel({
   );
 }
 
-/** Fills panel body (flex-1); ~9.5 rows via panel max-height math. Load more at end of scroll. */
+/** Fills panel body (flex-1); ~9 rows via panel max-height math. Load more at end of scroll. */
 export const overviewListScrollClass = 'h-full min-h-0 overflow-y-auto overscroll-contain';
 
 export function OverviewListScroll({
