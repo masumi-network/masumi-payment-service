@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Pencil, Trash2, ExternalLink, ShieldCheck, ArrowUpRight } from 'lucide-react';
+import { Plus, ArrowUpRight, ExternalLink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
@@ -19,10 +19,11 @@ import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
-  tableActionsCellClass,
-  tableActionsHeadClass,
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
   tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
+import { AIAgentRowActionsMenu } from '@/components/ai-agents/AIAgentRowActionsMenu';
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
@@ -603,7 +604,7 @@ export default function AIAgentsPage() {
                     >
                       Status
                     </th>
-                    <th scope="col" className={tableActionsHeadClass}>
+                    <th scope="col" className={tableActionsHeadCompactClass}>
                       Actions
                     </th>
                   </tr>
@@ -803,75 +804,40 @@ export default function AIAgentsPage() {
                               )}
                             </div>
                           </td>
-                          <td className={tableActionsCellClass}>
+                          <td
+                            className={tableActionsCellCompactClass}
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             <div className={tableActionsInnerClass}>
                               {isDeregisterableAgentState(agent.state) ? (
-                                <>
-                                  {/* Manage actions (verify/update/delete) only apply to agents
-                                    registered on the active source. Agents shown because they
-                                    accept payment here are managed from their home source. */}
-                                  {agent.relation !== 'payment' && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedAgentForVerification(agent);
-                                      }}
-                                      className="text-primary hover:text-primary hover:bg-primary/10"
-                                      title="Verify and Publish"
-                                    >
-                                      <ShieldCheck className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openAgentDetails(agent, { initialTab: 'Earnings' });
-                                    }}
-                                    className="text-primary hover:text-primary hover:bg-primary/10"
-                                    title="View Details & Earnings"
-                                  >
-                                    <ExternalLink className="h-4 w-4" />
-                                  </Button>
-                                  {canEditAgentMetadata({
+                                <AIAgentRowActionsMenu
+                                  showVerifyPublish={agent.relation !== 'payment'}
+                                  showUpdateMetadata={canEditAgentMetadata({
                                     relation: agent.relation,
                                     canPay: capabilities.canPay,
                                     selectedPaymentSource,
-                                  }) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateClick(agent);
-                                      }}
-                                      className="text-primary hover:text-primary hover:bg-primary/10"
-                                      title="Update agent metadata (V2)"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                  {agent.relation !== 'payment' &&
+                                  })}
+                                  showDeleteOrDeregister={
+                                    agent.relation !== 'payment' &&
                                     (agent.state === 'RegistrationFailed' ||
                                     agent.state === 'DeregistrationConfirmed'
                                       ? capabilities.canAdmin
-                                      : capabilities.canPay) && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteClick(agent);
-                                        }}
-                                        className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
-                                      >
-                                        <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
-                                      </Button>
-                                    )}
-                                </>
+                                      : capabilities.canPay)
+                                  }
+                                  deleteLabel={
+                                    agent.state === 'RegistrationFailed' ||
+                                    agent.state === 'DeregistrationConfirmed'
+                                      ? 'Delete agent'
+                                      : 'Deregister agent'
+                                  }
+                                  onVerifyPublish={() => setSelectedAgentForVerification(agent)}
+                                  onViewDetails={() => handleAgentClick(agent)}
+                                  onViewEarnings={() =>
+                                    openAgentDetails(agent, { initialTab: 'Earnings' })
+                                  }
+                                  onUpdateMetadata={() => handleUpdateClick(agent)}
+                                  onDeleteOrDeregister={() => handleDeleteClick(agent)}
+                                />
                               ) : agent.state === 'RegistrationInitiated' ||
                                 agent.state === 'DeregistrationInitiated' ? (
                                 <Button
