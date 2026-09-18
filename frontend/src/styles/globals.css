@@ -723,49 +723,52 @@ input[type='number'] {
   --dialog-duration: 280ms;
 }
 
-/* Default enter/exit — uses `transform` so it composes with Tailwind's
-   individual `translate` centering without overriding it. */
+/* Centered modals: bake translate(-50%, -50%) into every transform keyframe so
+   enter/exit animations do not override Tailwind centering (top-left drift). */
 @keyframes dialogEnter {
   from {
     opacity: 0;
-    transform: scale(0.96);
+    transform: translate(-50%, -50%) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 @keyframes dialogExit {
   from {
     opacity: 1;
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
   to {
     opacity: 0;
-    transform: scale(0.96);
+    transform: translate(-50%, -50%) scale(0.96);
   }
 }
 
-/* Child dialog slide from right — also uses `transform` to preserve centering */
 @keyframes dialogSlideInRight {
   from {
     opacity: 0;
-    transform: translateX(30px);
+    transform: translate(calc(-50% + 24px), -50%);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translate(-50%, -50%);
   }
 }
 @keyframes dialogSlideOutRight {
   from {
     opacity: 1;
-    transform: translateX(0);
+    transform: translate(-50%, -50%);
   }
   to {
     opacity: 0;
-    transform: translateX(30px);
+    transform: translate(calc(-50% + 24px), -50%);
   }
+}
+
+.dialog-center-anchor {
+  transform: translate(-50%, -50%);
 }
 
 /* Variant classes — toggled via data-state from Radix */
