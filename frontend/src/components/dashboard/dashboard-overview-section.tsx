@@ -1,7 +1,7 @@
-import { Info } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import Link from 'next/link';
 import { type ReactNode } from 'react';
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 /** Shared overview list: full-width rows, hairline dividers, flat hover (no inset pills). */
@@ -25,6 +25,7 @@ export const overviewListSecondaryLineClass =
 export const overviewPanelHeightClass = 'min-h-overview-panel max-h-overview-panel';
 export function DashboardPanel({
   title,
+  titleHref,
   description,
   headerExtra,
   children,
@@ -32,6 +33,7 @@ export function DashboardPanel({
   reserveListHeight = false,
 }: {
   title: string;
+  titleHref: string;
   description: string;
   headerExtra?: ReactNode;
   children: ReactNode;
@@ -46,25 +48,20 @@ export function DashboardPanel({
         reserveListHeight && overviewPanelHeightClass,
       )}
     >
-      <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-        <div className="flex min-w-0 items-center gap-1">
-          <h2 className="truncate text-base font-semibold leading-tight tracking-tight">{title}</h2>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={`About ${title}`}
-              >
-                <Info className="h-3.5 w-3.5" aria-hidden />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs">
-              {description}
-            </TooltipContent>
-          </Tooltip>
+      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <Link
+            href={titleHref}
+            className="inline-flex max-w-full items-center gap-1 text-base font-semibold leading-tight tracking-tight hover:underline"
+          >
+            <span className="truncate">{title}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          </Link>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
-        <div className="flex h-8 shrink-0 items-center justify-end gap-1">{headerExtra}</div>
+        {headerExtra ? (
+          <div className="flex h-8 shrink-0 items-center justify-end gap-1">{headerExtra}</div>
+        ) : null}
       </div>
       <div className={cn('flex min-h-0 flex-col', reserveListHeight && 'flex-1 overflow-hidden')}>
         {children}
@@ -75,7 +72,7 @@ export function DashboardPanel({
 }
 
 /** Fills panel body (flex-1); ~9 rows via panel max-height math. Load more at end of scroll. */
-export const overviewListScrollClass = 'h-full min-h-0 overflow-y-auto overscroll-contain';
+export const overviewListScrollClass = 'h-full min-h-0 min-w-0 overflow-y-auto overscroll-contain';
 
 export function OverviewListScroll({
   children,
@@ -95,7 +92,7 @@ export function OverviewListItem({ children, index }: { children: ReactNode; ind
   return (
     <li
       className="border-b border-border/50 last:border-b-0 animate-fade-in opacity-0"
-      style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
     >
       {children}
     </li>

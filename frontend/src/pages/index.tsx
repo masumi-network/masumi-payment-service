@@ -12,6 +12,8 @@ import {
   ArrowUpDown,
   ChevronRight,
 } from 'lucide-react';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { RefreshButton } from '@/components/RefreshButton';
 import { cn, formatAssetAmount, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import { useState, useMemo, useEffect } from 'react';
@@ -179,6 +181,12 @@ export default function Overview() {
   const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
+    null,
+  );
+  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
+    null,
+  );
   const [isMigrateDialogOpen, setMigrateDialogOpen] = useState(false);
 
   // Returns the grouped USD amount, or null when the CoinGecko rate is
@@ -348,6 +356,7 @@ export default function Overview() {
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
                   <DashboardPanel
                     title="AI agents"
+                    titleHref="/ai-agents"
                     description="Recent agents on this payment source."
                     reserveListHeight={agentsSectionLoading || agents.length > 0}
                     footer={
@@ -365,7 +374,7 @@ export default function Overview() {
                   >
                     {agentsSectionLoading ? (
                       <OverviewListScroll>
-                        <AgentListSkeleton items={9} />
+                        <AgentListSkeleton items={8} />
                       </OverviewListScroll>
                     ) : agents.length > 0 ? (
                       <OverviewListScroll>
@@ -427,6 +436,7 @@ export default function Overview() {
 
                   <DashboardPanel
                     title="Wallets"
+                    titleHref="/wallets"
                     description="Balances for buying and selling wallets."
                     reserveListHeight={walletsSectionLoading || walletsList.length > 0}
                     headerExtra={
@@ -449,8 +459,8 @@ export default function Overview() {
                     }
                   >
                     {walletsSectionLoading ? (
-                      <OverviewListScroll>
-                        <WalletListSkeleton rows={9} />
+                      <OverviewListScroll className="overflow-auto">
+                        <WalletListSkeleton rows={8} />
                       </OverviewListScroll>
                     ) : walletsList.length > 0 ? (
                       <DashboardWalletListSection
@@ -459,6 +469,8 @@ export default function Overview() {
                         network={network}
                         canAdmin={capabilities.canAdmin}
                         onWalletClick={setSelectedWalletForDetails}
+                        onSwap={setSelectedWalletForSwap}
+                        onTopUp={setSelectedWalletForTopup}
                       />
                     ) : (
                       <div className="flex flex-col justify-center px-4 py-8">
@@ -504,6 +516,21 @@ export default function Overview() {
         isOpen={!!selectedWalletForDetails}
         onClose={() => setSelectedWalletForDetails(null)}
         wallet={selectedWalletForDetails}
+      />
+
+      <SwapDialog
+        isOpen={!!selectedWalletForSwap}
+        onClose={() => setSelectedWalletForSwap(null)}
+        walletAddress={selectedWalletForSwap?.walletAddress || ''}
+        walletVkey={selectedWalletForSwap?.walletVkey || ''}
+        network={network}
+      />
+
+      <TransakWidget
+        isOpen={!!selectedWalletForTopup}
+        onClose={() => setSelectedWalletForTopup(null)}
+        walletAddress={selectedWalletForTopup?.walletAddress || ''}
+        onSuccess={refetchWallets}
       />
 
       <MigrateAgentsDialog
