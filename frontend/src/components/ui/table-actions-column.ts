@@ -11,6 +11,10 @@ const tableActionsGradientDestructive =
 const tableActionsGradientHover =
   'group-hover:bg-[linear-gradient(to_right,transparent_0%,var(--table-actions-row-hover-fade)_14%,var(--table-actions-row-hover-fill)_32%,var(--table-actions-row-hover-fill)_100%)]';
 
+/** Matches `bg-muted/50` rows (selection, hover) so the sticky fade does not flash `--background`. */
+const tableActionsGradientMutedSelected =
+  'bg-[linear-gradient(to_right,transparent_0%,var(--table-actions-row-hover-fade)_14%,var(--table-actions-row-hover-fill)_32%,var(--table-actions-row-hover-fill)_100%)]';
+
 const tableActionsHeadTypography =
   'text-right text-sm font-medium text-muted-foreground whitespace-nowrap';
 
@@ -23,9 +27,15 @@ export const tableActionsCellClass = `${tableActionsCellShared} w-48 min-w-48 p-
 /** Right-align row actions to match the Actions column header. */
 export const tableActionsInnerClass = 'flex items-center justify-end gap-1 min-h-8';
 
-export const tableActionsHeadCompactClass = `${tableActionsSticky} ${tableActionsGradientDefault} w-28 min-w-28 p-4 pr-4 ${tableActionsHeadTypography}`;
+const tableActionsCellCompactSizing = 'w-28 min-w-28 p-4 pr-4';
 
-export const tableActionsCellCompactClass = `${tableActionsCellShared} w-28 min-w-28 p-4 pr-4`;
+export const tableActionsHeadCompactClass = `${tableActionsSticky} ${tableActionsGradientDefault} ${tableActionsCellCompactSizing} ${tableActionsHeadTypography}`;
+
+export const tableActionsCellCompactClass = `${tableActionsCellShared} ${tableActionsCellCompactSizing}`;
+
+export const tableActionsCellCompactDestructiveClass = `${tableActionsSticky} ${tableActionsGradientDestructive} ${tableActionsGradientHover} transition-[background] duration-150 ${tableActionsCellCompactSizing}`;
+
+export const tableActionsCellCompactSelectedClass = `${tableActionsSticky} ${tableActionsGradientMutedSelected} ${tableActionsGradientHover} transition-[background] duration-150 ${tableActionsCellCompactSizing}`;
 
 export const tableActionsCellCompactLowBalanceHoverClass =
   'group-hover:!bg-[linear-gradient(to_right,transparent_0%,var(--table-actions-low-balance-hover-fade)_14%,var(--table-actions-low-balance-hover-fill)_32%,var(--table-actions-low-balance-hover-fill)_100%)]';
