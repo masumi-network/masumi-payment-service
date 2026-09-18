@@ -195,10 +195,6 @@
   background-color: #000a !important;
 }
 
-#main-content {
-  overflow-y: scroll !important;
-}
-
 input[type='number']::-webkit-outer-spin-button,
 input[type='number']::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -225,7 +221,7 @@ input[type='number'] {
 }
 
 #__next {
-  overflow-y: scroll !important;
+  overflow: hidden !important;
 }
 
 @keyframes spin {

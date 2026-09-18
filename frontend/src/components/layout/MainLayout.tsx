@@ -279,18 +279,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   return (
     <div
-      className="flex bg-background w-full"
-      style={{
-        overflowY: 'scroll',
-        overflowX: 'hidden',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100%',
-        height: '100%',
-      }}
+      className="fixed inset-0 flex w-full overflow-hidden bg-background"
       onClick={(e) => e.stopPropagation()}
     >
       <aside
@@ -556,12 +545,12 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       <div
-        className="flex flex-col min-h-screen w-screen transition-all duration-300"
+        className="flex h-full min-h-0 w-screen flex-col transition-all duration-300"
         style={{
           paddingLeft: collapsed && !isHovered ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
         }}
       >
-        <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
+        <header className="z-20 shrink-0 border-b border-border bg-background/80 backdrop-blur-md">
           <div className="max-w-[1400px] mx-auto w-full">
             <div className="flex h-14 min-h-14 max-h-14 items-center justify-between gap-4 px-4">
               <div
@@ -613,9 +602,9 @@ export function MainLayout({ children }: MainLayoutProps) {
               </div>
             </div>
           </div>
-        </div>
+        </header>
 
-        <main className="flex-1 relative z-10 w-full animate-content-fade-in">
+        <main className="relative z-10 min-h-0 w-full flex-1 overflow-y-auto overscroll-contain animate-content-fade-in">
           {capabilities.canAdmin && activeRail === 'x402' && !isSetupMode && (
             <div className="mx-auto w-full max-w-[1400px] px-4 pt-4">
               <X402SetupBanner />
