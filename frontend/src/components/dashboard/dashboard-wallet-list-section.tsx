@@ -11,7 +11,7 @@ import { WalletWithBalance } from '@/lib/queries/useWallets';
 import { cn, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import { getWalletTypeRowLabel } from '@/lib/wallet-type';
 
-import { OverviewListScroll } from './dashboard-overview-section';
+import { OVERVIEW_LIST_VISIBLE_ROWS, OverviewListScroll } from './dashboard-overview-section';
 
 const DASHBOARD_PAGE_SIZE = 10;
 
@@ -105,7 +105,7 @@ export function DashboardWalletListSection({
                   ? 'bg-amber-500/[0.07] hover:bg-amber-500/10'
                   : 'hover:bg-muted/30',
               )}
-              style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+              style={{ animationDelay: `${Math.min(index, OVERVIEW_LIST_VISIBLE_ROWS) * 40}ms` }}
               onClick={() => canAdmin && onWalletClick(wallet)}
             >
               <td className={tdClass}>

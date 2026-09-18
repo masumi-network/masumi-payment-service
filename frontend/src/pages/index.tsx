@@ -33,12 +33,14 @@ import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
 import formatBalance from '@/lib/formatBalance';
 import {
   DashboardPanel,
+  OVERVIEW_LIST_VISIBLE_ROWS,
   OverviewList,
   OverviewListScroll,
   OverviewListItem,
   overviewAgentPriceColumnClass,
   overviewWalletListRowClass,
   overviewListSecondaryLineClass,
+  overviewPanelEmptyBodyClass,
 } from '@/components/dashboard/dashboard-overview-section';
 import { DashboardWalletListSection } from '@/components/dashboard/dashboard-wallet-list-section';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
@@ -353,12 +355,15 @@ export default function Overview() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch">
                   <DashboardPanel
                     title="AI agents"
                     titleHref="/ai-agents"
                     description="Recent agents on this payment source."
-                    reserveListHeight={agentsSectionLoading || agents.length > 0}
+                    reserveListHeight
+                    fillListViewport={
+                      agentsSectionLoading || agents.length >= OVERVIEW_LIST_VISIBLE_ROWS
+                    }
                     footer={
                       capabilities.canPay ? (
                         <Button
@@ -421,7 +426,12 @@ export default function Overview() {
                         />
                       </OverviewListScroll>
                     ) : (
-                      <div className="flex flex-col justify-center px-4 py-8">
+                      <div
+                        className={cn(
+                          'flex flex-col justify-center px-4 py-8 lg:min-h-0 lg:flex-1',
+                          overviewPanelEmptyBodyClass,
+                        )}
+                      >
                         <EmptyState
                           title="No agents yet"
                           description={
@@ -438,7 +448,10 @@ export default function Overview() {
                     title="Wallets"
                     titleHref="/wallets"
                     description="Balances for buying and selling wallets."
-                    reserveListHeight={walletsSectionLoading || walletsList.length > 0}
+                    reserveListHeight
+                    fillListViewport={
+                      walletsSectionLoading || walletsList.length >= OVERVIEW_LIST_VISIBLE_ROWS
+                    }
                     headerExtra={
                       <RefreshButton
                         onRefresh={() => refetchWallets()}
@@ -473,7 +486,12 @@ export default function Overview() {
                         onTopUp={setSelectedWalletForTopup}
                       />
                     ) : (
-                      <div className="flex flex-col justify-center px-4 py-8">
+                      <div
+                        className={cn(
+                          'flex flex-col justify-center px-4 py-8 lg:min-h-0 lg:flex-1',
+                          overviewPanelEmptyBodyClass,
+                        )}
+                      >
                         <EmptyState
                           title="No wallets yet"
                           description="Add a wallet to fund agents."

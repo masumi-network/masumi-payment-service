@@ -21,8 +21,19 @@ export const overviewWalletListRowClass = cn(overviewListRowBase, 'flex items-st
 export const overviewListSecondaryLineClass =
   'min-h-4 truncate text-xs leading-4 text-muted-foreground';
 
-/** Panel shell cap: header + list max + footer (`--overview-panel-max-height` in globals.css). */
-export const overviewPanelHeightClass = 'min-h-overview-panel max-h-overview-panel';
+/** Matches `--overview-list-visible-rows` in globals.css. */
+export const OVERVIEW_LIST_VISIBLE_ROWS = 8;
+
+export const overviewPanelMaxHeightClass = 'max-h-overview-panel';
+export const overviewPanelMinHeightClass = 'min-h-overview-panel';
+export const overviewPanelCompactMinHeightClass = 'min-h-overview-panel-compact';
+
+/** List body min height when panel matches empty-state size (see globals.css token). */
+export const overviewPanelEmptyBodyClass = 'min-h-[var(--overview-panel-empty-body-min-height)]';
+
+/** Side-by-side overview columns: match row height (mobile stacks without stretch). */
+export const overviewPanelEqualHeightClass = 'lg:h-full';
+
 export function DashboardPanel({
   title,
   titleHref,
@@ -31,6 +42,7 @@ export function DashboardPanel({
   children,
   footer,
   reserveListHeight = false,
+  fillListViewport = false,
 }: {
   title: string;
   titleHref: string;
@@ -38,14 +50,19 @@ export function DashboardPanel({
   headerExtra?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
-  /** Match list viewport height while loading or when showing rows (not empty). */
+  /** Cap list area and enable scroll layout when showing rows or loading. */
   reserveListHeight?: boolean;
+  /** Reserve full list viewport (min height); use while loading or when row count >= visible rows. */
+  fillListViewport?: boolean;
 }) {
   return (
     <section
       className={cn(
         'flex flex-col overflow-hidden rounded-lg border bg-card',
-        reserveListHeight && overviewPanelHeightClass,
+        overviewPanelEqualHeightClass,
+        reserveListHeight && overviewPanelMaxHeightClass,
+        fillListViewport && overviewPanelMinHeightClass,
+        reserveListHeight && !fillListViewport && overviewPanelCompactMinHeightClass,
       )}
     >
       <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
@@ -63,7 +80,13 @@ export function DashboardPanel({
           <div className="flex h-8 shrink-0 items-center justify-end gap-1">{headerExtra}</div>
         ) : null}
       </div>
-      <div className={cn('flex min-h-0 flex-col', reserveListHeight && 'flex-1 overflow-hidden')}>
+      <div
+        className={cn(
+          'flex min-h-0 flex-col lg:flex-1',
+          reserveListHeight && !fillListViewport && overviewPanelEmptyBodyClass,
+          reserveListHeight && fillListViewport && 'flex-1 overflow-hidden',
+        )}
+      >
         {children}
       </div>
       {footer ? <div className="shrink-0 border-t bg-card px-4 py-3">{footer}</div> : null}
@@ -71,7 +94,7 @@ export function DashboardPanel({
   );
 }
 
-/** Fills panel body (flex-1); ~9 rows via panel max-height math. Load more at end of scroll. */
+/** Fills panel body when `fillListViewport`; load more at end of scroll. */
 export const overviewListScrollClass = 'h-full min-h-0 min-w-0 overflow-y-auto overscroll-contain';
 
 export function OverviewListScroll({
@@ -92,7 +115,7 @@ export function OverviewListItem({ children, index }: { children: ReactNode; ind
   return (
     <li
       className="border-b border-border/50 last:border-b-0 animate-fade-in opacity-0"
-      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+      style={{ animationDelay: `${Math.min(index, OVERVIEW_LIST_VISIBLE_ROWS) * 40}ms` }}
     >
       {children}
     </li>
