@@ -42,7 +42,7 @@ import {
 	requestCosign,
 	type CosignConfig,
 	type CosignRequest,
-} from '../../src/smart-wallet/cosign-client';
+} from './cosign-proposal-client';
 import {
 	buildGuardedLockTx,
 	GuardedTxTooLargeError,

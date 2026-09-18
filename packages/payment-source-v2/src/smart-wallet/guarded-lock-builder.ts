@@ -124,6 +124,10 @@ export type BuildGuardedLockParams = {
 	/** Quorum members asked to co-sign. Declared as required signers so they land in `extra_signatories` and are priced into the fee. */
 	cosignerVkhs: string[];
 	locks: GuardedLockOutput[];
+	/** Pure-ADA output to the agent key after the locks, so the key keeps a collateral-sized UTxO for its next script spend. */
+	agentSplitterLovelace?: bigint;
+	/** Upper bound of the validity window in POSIX ms, e.g. the earliest payByTime of the batch. */
+	constrainAfterMs?: bigint;
 	nowMs?: number;
 	forceRefreshCostModels?: boolean;
 };
@@ -177,7 +181,7 @@ export async function buildGuardedLockTx(params: BuildGuardedLockParams): Promis
 		forceRefresh: params.forceRefreshCostModels,
 	});
 
-	const window = createTxWindow(network, { nowMs: params.nowMs });
+	const window = createTxWindow(network, { nowMs: params.nowMs, constrainAfterMs: params.constrainAfterMs });
 	const slotConfig = SLOT_CONFIG_NETWORK[network];
 	const continuingAmount = assetsMinus(
 		walletUtxo.output.amount,
@@ -221,6 +225,9 @@ export async function buildGuardedLockTx(params: BuildGuardedLockParams): Promis
 				.txOutInlineDatumValue(walletDatumData(nextDatum));
 			for (const lock of locks) {
 				txBuilder.txOut(lock.address, lock.amount).txOutInlineDatumValue(lock.datum);
+			}
+			if (params.agentSplitterLovelace != null) {
+				txBuilder.txOut(agentAddress, [{ unit: 'lovelace', quantity: params.agentSplitterLovelace.toString() }]);
 			}
 			txBuilder
 				.txInCollateral(

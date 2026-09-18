@@ -160,6 +160,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 					hydraFanoutHandoffHeadId: _hydraFanoutHandoffHeadId,
 					hydraFanoutHandoffTxHash: _hydraFanoutHandoffTxHash,
 					hydraFanoutHandoffOutputIndex: _hydraFanoutHandoffOutputIndex,
+					cosignDenied: _cosignDenied,
 					...existingPurchaseResponse
 				} = existingPurchaseRequest;
 				throw new HttpExistsError('Purchase exists', existingPurchaseRequest.id, {

@@ -159,6 +159,7 @@ model HotWallet {
   LimitedPurchaseRequests                 PurchaseRequest[]               @relation("HotWalletLimit")
   LowBalanceRules                         HotWalletLowBalanceRule[]
   FundDistributionConfig                  FundDistributionConfig?
+  GuardedWallet                           GuardedWallet?
   FundDistributionsSent                   FundDistributionRequest[]       @relation("FundDistributionSource")
   FundDistributionsReceived               FundDistributionRequest[]       @relation("FundDistributionTarget")
   hydraRelations                          HydraRelation[]
@@ -927,6 +928,8 @@ model PurchaseRequest {
   blockchainIdentifier                          String               @unique
   /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
   agentIdentifier                               String?
+  /// Last co-sign denial of this purchase: { code, reasonEnglish, retryAfterSec, retryAt, decisionId }. Selection skips it until retryAt.
+  cosignDenied                                  Json?
   /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
   agentIdentifierSyncedAt                       DateTime?
   /// Denormalized agent display name for search; snapshot at create/backfill from registry or on-chain metadata.
@@ -1142,6 +1145,33 @@ model FundDistributionConfig {
   /// HotWalletLowBalanceRule (the wallet that runs low decides when and how
   /// much). `enabled` toggles this wallet as a funding source; `batchWindowMs`
   /// is its distribution-cycle cadence.
+}
+
+/// Opt-in wallet type: the purchasing wallet's key is the agent key of a guarded
+/// smart wallet (smart-contracts/smart-wallet). Purchases are funded from the
+/// wallet UTxO carrying `stateToken`, and every spend is co-signed by the quorum
+/// behind `cosignBaseUrl` before the agent key signs.
+model GuardedWallet {
+  id              String    @id @default(cuid())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  hotWalletId     String    @unique
+  HotWallet       HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+  walletAddress   String
+  /// `<policyId>.<assetName hex>` of the wallet state NFT.
+  stateToken      String
+  scriptHash      String
+  ownerKeyHash    String
+  quorumKeyHashes String[]
+  quorumThreshold Int
+  cosignBaseUrl   String
+  /// Name of the environment variable holding the node token. The token itself is never stored.
+  cosignTokenRef  String
+  exchainWalletId String
+  /// The identity the node token is scoped to; sent as `context` with every co-sign.
+  nodeId          String
+  orgId           String
+  registeredAt    DateTime  @default(now())
 }
 
 /// One top-up requested by a target wallet's per-asset low-balance rule.

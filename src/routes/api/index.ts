@@ -39,6 +39,11 @@ import {
 	patchWalletLowBalanceRuleEndpointPatch,
 	postWalletLowBalanceRuleEndpointPost,
 } from './wallet/low-balance';
+import {
+	deleteWalletGuardEndpointDelete,
+	postWalletGuardEndpointPost,
+	postWalletGuardReadTokenEndpointPost,
+} from './wallet/guard';
 import { queryRpcProviderKeysEndpointGet } from './rpc-api-keys';
 import { queryUTXOEndpointGet } from './utxos';
 import {
@@ -336,6 +341,13 @@ export const apiRouter: Routing = {
 				post: postWalletLowBalanceRuleEndpointPost,
 				patch: patchWalletLowBalanceRuleEndpointPatch,
 				delete: deleteWalletLowBalanceRuleEndpointDelete,
+			},
+			guard: {
+				post: postWalletGuardEndpointPost,
+				delete: deleteWalletGuardEndpointDelete,
+				'read-token': {
+					post: postWalletGuardReadTokenEndpointPost,
+				},
 			},
 			'transfer-funds': {
 				get: getWalletFundEndpointGet,

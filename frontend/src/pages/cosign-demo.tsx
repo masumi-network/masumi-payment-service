@@ -1,13 +1,20 @@
 import Head from 'next/head';
 import { GetStaticProps } from 'next';
+import { useRouter } from 'next/router';
 import { useCallback, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { COSIGN_DASHBOARD_URL } from '@/lib/cosign-demo';
+import { postWalletGuardReadToken } from '@/lib/api/generated';
+import { extractApiPayload } from '@/lib/api-response';
+import { useAppContext } from '@/lib/contexts/AppContext';
+import { COSIGN_DASHBOARD_URL, parseCosignDashboardUrl } from '@/lib/cosign-demo';
+
+const READ_TOKEN_REFRESH_MS = 10 * 60 * 1000;
 
 export const getStaticProps: GetStaticProps = async () => {
   return {
@@ -20,6 +27,22 @@ export const getStaticProps: GetStaticProps = async () => {
 export default function CosignDemo() {
   const [isFrameLoaded, setIsFrameLoaded] = useState(false);
   const handleFrameLoad = useCallback(() => setIsFrameLoaded(true), []);
+  const { apiClient } = useAppContext();
+  const { query } = useRouter();
+  const walletId = typeof query.walletId === 'string' ? query.walletId : null;
+  const { data: walletDashboardUrl } = useQuery({
+    queryKey: ['cosignReadToken', walletId],
+    enabled: walletId != null,
+    refetchInterval: READ_TOKEN_REFRESH_MS,
+    queryFn: async () => {
+      const res = await postWalletGuardReadToken({
+        client: apiClient,
+        body: { walletId: walletId ?? '' },
+      });
+      return parseCosignDashboardUrl(extractApiPayload(res)?.url);
+    },
+  });
+  const dashboardUrl = walletId != null ? (walletDashboardUrl ?? null) : COSIGN_DASHBOARD_URL;
 
   return (
     <>
@@ -37,9 +60,9 @@ export default function CosignDemo() {
                   hosted dashboard. Embedded for the demo only.
                 </p>
               </div>
-              {COSIGN_DASHBOARD_URL && (
+              {dashboardUrl && (
                 <Button variant="outline" size="sm" asChild>
-                  <a href={COSIGN_DASHBOARD_URL} target="_blank" rel="noopener noreferrer">
+                  <a href={dashboardUrl} target="_blank" rel="noopener noreferrer">
                     Open in new tab
                     <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
                   </a>
@@ -47,13 +70,13 @@ export default function CosignDemo() {
               )}
             </div>
 
-            {COSIGN_DASHBOARD_URL ? (
+            {dashboardUrl ? (
               <div className="flex-1 border rounded-lg overflow-hidden relative">
                 {!isFrameLoaded && (
                   <Skeleton className="absolute inset-0 w-full h-full rounded-none" />
                 )}
                 <iframe
-                  src={COSIGN_DASHBOARD_URL}
+                  src={dashboardUrl}
                   title="Co-sign dashboard"
                   className="w-full h-full"
                   sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
@@ -64,7 +87,7 @@ export default function CosignDemo() {
             ) : (
               <EmptyState
                 title="No co-sign dashboard configured"
-                description="Set NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL for both the frontend build and the backend, then rebuild the admin UI."
+                description="Set NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL for both the frontend build and the backend, then rebuild the admin UI. Open this page with ?walletId=<guarded purchasing wallet> for the wallet-scoped view."
               />
             )}
           </div>

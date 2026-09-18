@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lovelaceFromUtxo } from '../../src/builders/batch-helpers';
 import { getPaymentScriptV2 } from '../../src/contract-generator';
-import { type CosignConfig } from '../../src/smart-wallet/cosign-client';
+import { type CosignConfig } from './cosign-proposal-client';
 import {
 	fetchWalletUtxo,
 	loadSmartWalletScript,

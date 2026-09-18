@@ -1,4 +1,5 @@
 import {
+	GuardedWallet,
 	HotWallet,
 	HotWalletType,
 	PaymentSourceType,
@@ -36,7 +37,15 @@ import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { asV2Provider } from '../../provider-cast';
 import { processL2PurchaseLocks, type L2LockPassResult } from './l2-lock';
+import {
+	buildAndCosignGuardedBatch,
+	CosignBatchError,
+	fetchGuardedWalletUtxo,
+	type CosignDenied,
+	type GuardedPurchase,
+} from './guarded-funding';
 
 /**
  * --- V2 batch-payments: defensive submit invariant ---
@@ -99,6 +108,7 @@ type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 		HotWallets: {
 			include: {
 				Secret: true;
+				GuardedWallet: true;
 			};
 		};
 	};
@@ -129,7 +139,32 @@ type WalletPairing = {
 	// pre-existed the placeholder convention (defensive fallback for the
 	// transitional upgrade window — should not occur in steady state).
 	placeholderTransactionId: string | null;
+	// Set when the wallet's key is the agent key of a guarded smart wallet: the
+	// purchases are funded from that wallet's UTxO and co-signed before signTx.
+	guarded: GuardedWallet | null;
 };
+
+// Purchases a guarded batch left behind before anything was signed: members the
+// co-signer denied by name keep its verdict in `cosignDenied` (selection skips
+// them until `retryAt`); members dropped for size simply wait for the next tick.
+async function requeueDroppedGuardedPurchases(
+	dropped: BatchedRequest[],
+	denied: Map<string, CosignDenied>,
+	sharedTxId: string,
+) {
+	for (const request of dropped) {
+		const cosignDenied = denied.get(request.paymentRequest.id);
+		await prisma.purchaseRequest.update({
+			where: { id: request.paymentRequest.id },
+			data: {
+				...createNextPurchaseAction(PurchasingAction.FundsLockingRequested),
+				CurrentTransaction: { disconnect: true },
+				TransactionHistory: { connect: { id: sharedTxId } },
+				...(cosignDenied != null ? { cosignDenied } : {}),
+			},
+		});
+	}
+}
 
 async function unlockUnusedPurchasingWallets(candidateWalletIds: string[], usedWalletIds: string[]) {
 	const usedWalletIdSet = new Set(usedWalletIds);
@@ -263,7 +298,8 @@ async function executeSpecificBatchPayment(
 ): Promise<BatchPairingOutcome> {
 	const wallet = walletPairing.wallet;
 	const walletId = walletPairing.walletId;
-	const batchedRequests = walletPairing.batchedRequests;
+	let batchedRequests = walletPairing.batchedRequests;
+	const guardedPurchases: GuardedPurchase[] = [];
 
 	//batch payments
 	const unsignedTx = new Transaction({
@@ -306,16 +342,25 @@ async function executeSpecificBatchPayment(
 			paymentRequestId: data.paymentRequest.id,
 		});
 
+		const lockAssets = data.paymentRequest.PaidFunds.map((amount) => ({
+			unit: amount.unit == '' ? 'lovelace' : amount.unit,
+			quantity: amount.amount.toString(),
+		}));
 		unsignedTx.sendAssets(
 			{
 				address: walletPairing.scriptAddress,
 				datum,
 			},
-			data.paymentRequest.PaidFunds.map((amount) => ({
-				unit: amount.unit == '' ? 'lovelace' : amount.unit,
-				quantity: amount.amount.toString(),
-			})),
+			lockAssets,
 		);
+		guardedPurchases.push({
+			id: data.paymentRequest.id,
+			blockchainIdentifier: data.paymentRequest.blockchainIdentifier,
+			agentIdentifier: data.paymentRequest.agentIdentifier,
+			sellerVkey: data.paymentRequest.SellerWallet.walletVkey,
+			amount: lockAssets,
+			datum: datum.value,
+		});
 	}
 
 	// Wallet "splitter" output for the funds-lock tx. Unlike script-spending
@@ -439,12 +484,43 @@ async function executeSpecificBatchPayment(
 	// returns — at that point the hash is baked into the signed body and
 	// later global mutations cannot affect it. `submitTx` is outside the
 	// critical section.
-	const requestIds = batchedRequests.map((b) => b.paymentRequest.id);
+	let requestIds = batchedRequests.map((b) => b.paymentRequest.id);
 	let completeTx: string;
 	let signedTx: string;
+	let invalidHereafterSlot = invalidAfter;
 	try {
 		const built = await withMeshCostModelLock(rpcApiKey, async () => {
 			await syncMeshCostModelsFromChainV2(rpcApiKey);
+			if (walletPairing.guarded != null) {
+				// The body is final before the quorum sees it; nothing rebuilds after signTx.
+				const cosigned = await buildAndCosignGuardedBatch({
+					provider: asV2Provider(blockchainProvider),
+					rpcApiKey,
+					network: convertNetwork(paymentContract.network),
+					guarded: walletPairing.guarded,
+					agentAddress: buyerAddress,
+					agentUtxos: walletPairing.utxos,
+					escrowAddress: walletPairing.scriptAddress,
+					purchases: guardedPurchases,
+					constrainAfterMs: minPayByTime,
+				});
+				const keptIds = new Set(cosigned.keptIds);
+				await requeueDroppedGuardedPurchases(
+					batchedRequests.filter((b) => !keptIds.has(b.paymentRequest.id)),
+					cosigned.denied,
+					sharedTxId,
+				);
+				batchedRequests = batchedRequests.filter((b) => keptIds.has(b.paymentRequest.id));
+				walletPairing.batchedRequests = batchedRequests;
+				requestIds = cosigned.keptIds;
+				if (cosigned.cosignedTx == null) {
+					throw new CosignBatchError('co-sign denied every member of the batch');
+				}
+				invalidHereafterSlot = cosigned.invalidAfter;
+				const signedTx = await wallet.signTx(cosigned.cosignedTx, true);
+				logger.info('Batching payments, co-signed tx signed');
+				return { completeTx: cosigned.cosignedTx, signedTx };
+			}
 			const completeTx = await unsignedTx.build();
 			logger.info('Batching payments, complete tx built');
 			const signedTx = await wallet.signTx(completeTx);
@@ -454,6 +530,13 @@ async function executeSpecificBatchPayment(
 		completeTx = built.completeTx;
 		signedTx = built.signedTx;
 	} catch (buildError) {
+		if (buildError instanceof CosignBatchError && buildError.denied.size > 0) {
+			const dropped = batchedRequests.filter((b) => buildError.denied.has(b.paymentRequest.id));
+			await requeueDroppedGuardedPurchases(dropped, buildError.denied, sharedTxId);
+			batchedRequests = batchedRequests.filter((b) => !buildError.denied.has(b.paymentRequest.id));
+			walletPairing.batchedRequests = batchedRequests;
+			requestIds = batchedRequests.map((b) => b.paymentRequest.id);
+		}
 		// build()/signTx run BEFORE submitTx and BEFORE intendedTxHash is
 		// recorded — a throw here (insufficient balance, cost-model sync 5xx,
 		// serialization error) means the tx was NEVER broadcast. Classify as
@@ -483,7 +566,6 @@ async function executeSpecificBatchPayment(
 	// promotes it to txHash (tx landed) or waits for `invalidHereafterSlot` to
 	// pass before declaring the tx provably lost.
 	const intendedTxHash = resolveTxHash(signedTx);
-	const invalidHereafterSlot = invalidAfter;
 	try {
 		await retryOnSerializationConflict(
 			() =>
@@ -734,6 +816,12 @@ export async function batchLatestPaymentEntriesV2() {
 											CurrentTransaction: { is: null },
 											onChainState: null,
 											payByTime: { gte: payByTime },
+											// A purchase the co-signer denied waits for its window; one denied
+											// for good stays out until an operator clears the verdict.
+											OR: [
+												{ cosignDenied: { equals: Prisma.DbNull } },
+												{ cosignDenied: { path: ['retryAt'], lte: Date.now() } },
+											],
 											// Waiting on a head wallet, not available to L1 this tick.
 											...(deferredToL2.length > 0 ? { id: { notIn: deferredToL2 } } : {}),
 											// Filter forced-Hydra and conflicting requests BEFORE `take`, or a
@@ -770,6 +858,7 @@ export async function batchLatestPaymentEntriesV2() {
 										},
 										include: {
 											Secret: true,
+											GuardedWallet: true,
 										},
 									},
 								},
@@ -928,6 +1017,8 @@ export async function batchLatestPaymentEntriesV2() {
 						return;
 					}
 
+					const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+
 					const walletAmounts = await Promise.all(
 						potentialWallets.map(async (wallet) => {
 							const {
@@ -939,7 +1030,12 @@ export async function batchLatestPaymentEntriesV2() {
 								paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 								wallet.Secret.encryptedMnemonic,
 							);
-							const balanceMap = toBalanceMapFromMeshUtxos(utxos);
+							// A guarded wallet pays the locks from its own UTxO; the key only adds fee and collateral.
+							const balanceMap = toBalanceMapFromMeshUtxos(
+								wallet.GuardedWallet != null
+									? [await fetchGuardedWalletUtxo(asV2Provider(blockchainProvider), wallet.GuardedWallet)]
+									: utxos,
+							);
 							const currentBalanceMap = await walletLowBalanceMonitorService.evaluateCurrentHotWalletById(
 								wallet.id,
 								'submission',
@@ -962,6 +1058,7 @@ export async function batchLatestPaymentEntriesV2() {
 								// see the placeholder create site above.
 								placeholderTransactionId:
 									(wallet as HotWallet & { placeholderTransactionId?: string }).placeholderTransactionId ?? null,
+								guarded: wallet.GuardedWallet,
 							};
 						}),
 					);
@@ -977,8 +1074,6 @@ export async function batchLatestPaymentEntriesV2() {
 					}> = [];
 
 					let maxBatchSizeReached = false;
-
-					const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 					const protocolParameter = await blockchainProvider.fetchProtocolParameters();
 
@@ -1236,6 +1331,7 @@ export async function batchLatestPaymentEntriesV2() {
 								currentBalanceMap: walletData.currentBalanceMap,
 								batchedRequests: batchedPaymentRequests,
 								placeholderTransactionId: walletData.placeholderTransactionId,
+								guarded: walletData.guarded,
 							});
 						}
 					}

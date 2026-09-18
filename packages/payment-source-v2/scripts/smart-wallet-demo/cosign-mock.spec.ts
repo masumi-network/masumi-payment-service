@@ -41,7 +41,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 jest.unstable_mockModule('@/utils/converter/string-datum-convert', () => ({
 	decodeV2ContractDatum: () => null,
 }));
-jest.unstable_mockModule('../../src/smart-wallet/cosign-client', () => ({
+jest.unstable_mockModule('./cosign-proposal-client', () => ({
 	cosignRequestSchema: { safeParse: (data: unknown) => ({ success: true, data }) },
 	decodeCosignBodyEcho: (cbor: string) => ({ txBodyHash: cbor.repeat(32), requiredSigners: [MEMBER] }),
 }));

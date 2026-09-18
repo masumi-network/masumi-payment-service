@@ -2,7 +2,7 @@
 // (Exchain X-04, not started on their side). Pure: the mock server decodes the
 // body, the escrow datums and the wallet input's value, then asks this function
 // whether the frozen body is exactly what the intent says before any key signs.
-import type { CosignDenialCode, CosignDenied, CosignRequest } from '../../src/smart-wallet/cosign-client';
+import type { CosignDenialCode, CosignDenied, CosignRequest } from './cosign-proposal-client';
 
 export type TxRef = { txHash: string; outputIndex: number };
 

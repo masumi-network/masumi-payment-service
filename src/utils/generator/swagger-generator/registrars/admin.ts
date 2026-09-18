@@ -35,6 +35,14 @@ import {
 	postWalletLowBalanceRuleSchemaInput,
 	postWalletLowBalanceRuleSchemaOutput,
 } from '@/routes/api/wallet/low-balance';
+import {
+	deleteWalletGuardSchemaInput,
+	deleteWalletGuardSchemaOutput,
+	postWalletGuardReadTokenSchemaInput,
+	postWalletGuardReadTokenSchemaOutput,
+	postWalletGuardSchemaInput,
+	postWalletGuardSchemaOutput,
+} from '@/routes/api/wallet/guard';
 import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
 import {
 	swapTokensSchemaInput,
@@ -316,6 +324,146 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			}),
 			404: {
 				description: 'Low-balance rule not found',
+			},
+		},
+	});
+
+	const guardedWalletExample = {
+		walletId: 'hot_wallet_id',
+		walletAddress: 'addr_test1wq8x...guarded',
+		stateToken: `${'ab'.repeat(28)}.${'cd'.repeat(32)}`,
+		scriptHash: 'ab'.repeat(28),
+		ownerKeyHash: '11'.repeat(28),
+		quorumKeyHashes: ['22'.repeat(28), '33'.repeat(28), '44'.repeat(28)],
+		quorumThreshold: 2,
+		cosignBaseUrl: 'https://cosign-preprod.exchain.network',
+		cosignTokenRef: 'EXCHAIN_COSIGN_API_KEY',
+		exchainWalletId: 'wal_01J9XK3M4N5P6Q7R8S9T0V1W2Z',
+		nodeId: 'masumi-node-1',
+		orgId: 'org-1',
+		registeredAt: new Date(1713636260),
+	};
+
+	registry.registerPath({
+		method: 'post',
+		path: '/wallet/guard',
+		description:
+			'Turns a purchasing wallet into a guarded wallet: its purchases are funded from a minted smart wallet whose agent key is this wallet, and every batch is co-signed by the Exchain quorum before the wallet signs. Registers the wallet and its mandate with the co-sign service. The mint itself happens outside this service.',
+		summary: 'Guard a purchasing wallet. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'The mint facts of the guarded wallet and its mandate template',
+				content: {
+					'application/json': {
+						schema: postWalletGuardSchemaInput.openapi({
+							example: {
+								walletId: 'hot_wallet_id',
+								walletAddress: guardedWalletExample.walletAddress,
+								stateToken: guardedWalletExample.stateToken,
+								ownerKeyHash: guardedWalletExample.ownerKeyHash,
+								agentKeyHash: '55'.repeat(28),
+								quorumKeyHashes: guardedWalletExample.quorumKeyHashes,
+								quorumThreshold: 2,
+								cosignBaseUrl: guardedWalletExample.cosignBaseUrl,
+								cosignTokenRef: 'EXCHAIN_COSIGN_API_KEY',
+								nodeId: 'masumi-node-1',
+								orgId: 'org-1',
+								governedAsset: 'lovelace',
+								template: 'enterprise-pilot',
+								params: {
+									perTxCap: '200000000',
+									daily: '8000000000',
+									perSeller: '500000000',
+									perAgent: '4000000000',
+									envelope: '200000000000',
+									burstPerMinute: 10,
+								},
+								registryGate: true,
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Wallet guarded', postWalletGuardSchemaOutput, {
+				...guardedWalletExample,
+				mandateEnglish: 'No single payment above 200 ADA. No more than 8,000 ADA in any rolling 24 hours.',
+			}),
+			400: {
+				description: 'The wallet cannot be guarded or the mint facts do not derive the wallet address',
+			},
+			404: {
+				description: 'Wallet not found',
+			},
+			409: {
+				description: 'The wallet is already guarded, or the co-sign service knows it with a different mandate',
+			},
+			502: {
+				description: 'The co-sign service refused or could not be reached',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'delete',
+		path: '/wallet/guard',
+		description:
+			'Returns a purchasing wallet to unguarded funding. Only the local record is removed; the smart wallet and its registration at the co-sign service are untouched.',
+		summary: 'Stop guarding a purchasing wallet. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'The guarded purchasing wallet',
+				content: {
+					'application/json': {
+						schema: deleteWalletGuardSchemaInput.openapi({ example: { walletId: 'hot_wallet_id' } }),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Wallet no longer guarded', deleteWalletGuardSchemaOutput, guardedWalletExample),
+			404: {
+				description: 'Wallet not found or not guarded',
+			},
+			409: {
+				description: 'The wallet is funding a batch',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/wallet/guard/read-token',
+		description:
+			'Mints a 15-minute, wallet-scoped, read-only token at the co-sign service and returns the hosted page URL for the admin iframe. The node token never reaches a browser.',
+		summary: 'Read-only co-sign page for a guarded wallet. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'The guarded purchasing wallet',
+				content: {
+					'application/json': {
+						schema: postWalletGuardReadTokenSchemaInput.openapi({ example: { walletId: 'hot_wallet_id' } }),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Hosted page URL', postWalletGuardReadTokenSchemaOutput, {
+				url: 'https://cosign-preprod.exchain.network/protected/wal_01J9XK3M4N5P6Q7R8S9T0V1W2Z?t=opaque',
+				expiresAt: '2026-09-18T12:15:00Z',
+			}),
+			404: {
+				description: 'Wallet not found or not guarded',
+			},
+			502: {
+				description: 'The co-sign service refused or could not be reached',
 			},
 		},
 	});

@@ -1,4 +1,4 @@
-import { decodeCosignBodyEcho, parseCosignResponse } from './cosign-client';
+import { decodeCosignBodyEcho, parseCosignResponse } from './cosign-proposal-client';
 
 const txBodyHash = 'a'.repeat(64);
 const agent = 'b'.repeat(56);

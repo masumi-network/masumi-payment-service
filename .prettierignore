@@ -4,6 +4,7 @@ dist/
 frontend/
 prisma/migrations/
 src/generated/
+packages/payment-source-v2/src/smart-wallet/cosign-api.d.ts
 src/utils/generator/swagger-generator/openapi-docs.json
 *.min.js
 *.min.css

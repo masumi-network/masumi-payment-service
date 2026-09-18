@@ -44,7 +44,7 @@ export type SmartWalletScript = {
 	address: string;
 	policyId: string;
 	owner: string;
-	stakeKeyHash: string;
+	stakeKeyHash: string | null;
 	quorumVkhs: string[];
 	threshold: number;
 };
@@ -62,22 +62,40 @@ export function loadSmartWalletScript(params: {
 	threshold: number;
 	network: MeshNetwork;
 }): SmartWalletScript {
+	return deriveSmartWalletScript({
+		owner: resolvePaymentKeyHash(params.ownerAddress),
+		stakeKeyHash: resolveStakeKeyHash(params.ownerAddress),
+		quorumVkhs: params.quorumVkhs,
+		threshold: params.threshold,
+		network: params.network,
+	});
+}
+
+/** The same derivation from key hashes. `stakeKeyHash: null` is a wallet minted without a stake credential. */
+export function deriveSmartWalletScript(params: {
+	owner: string;
+	stakeKeyHash: string | null;
+	quorumVkhs: string[];
+	threshold: number;
+	network: MeshNetwork;
+}): SmartWalletScript {
 	const validator = smartWalletPlutus.validators.find((entry) => entry.title === SPEND_VALIDATOR_TITLE);
 	if (validator == null) {
 		throw new Error(`${SPEND_VALIDATOR_TITLE} is missing from smart-contracts/smart-wallet/plutus.json`);
 	}
-	const owner = resolvePaymentKeyHash(params.ownerAddress);
-	const stakeKeyHash = resolveStakeKeyHash(params.ownerAddress);
+	const { owner, stakeKeyHash } = params;
 	const scriptCode = applyParamsToScript(validator.compiledCode, [
 		owner,
 		params.quorumVkhs,
 		params.threshold,
-		// Option<Credential>: Some(VerificationKey(stake key hash))
-		{ alternative: 0, fields: [{ alternative: 0, fields: [stakeKeyHash] }] },
+		// Option<Credential>: Some(VerificationKey(stake key hash)) or None
+		stakeKeyHash == null
+			? { alternative: 1, fields: [] }
+			: { alternative: 0, fields: [{ alternative: 0, fields: [stakeKeyHash] }] },
 	]);
 	const serialized: { address: unknown } = serializePlutusScript(
 		{ code: scriptCode, version: 'V3' },
-		stakeKeyHash,
+		stakeKeyHash ?? undefined,
 		params.network === 'mainnet' ? 1 : 0,
 	);
 	if (typeof serialized.address !== 'string') {

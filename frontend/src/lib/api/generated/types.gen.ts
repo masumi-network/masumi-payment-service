@@ -3993,6 +3993,268 @@ export type PostWalletLowBalanceResponses = {
 
 export type PostWalletLowBalanceResponse = PostWalletLowBalanceResponses[keyof PostWalletLowBalanceResponses];
 
+export type DeleteWalletGuardData = {
+    /**
+     * The guarded purchasing wallet
+     */
+    body?: {
+        /**
+         * The purchasing wallet to return to unguarded funding
+         */
+        walletId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guard';
+};
+
+export type DeleteWalletGuardErrors = {
+    /**
+     * Wallet not found or not guarded
+     */
+    404: unknown;
+    /**
+     * The wallet is funding a batch
+     */
+    409: unknown;
+};
+
+export type DeleteWalletGuardResponses = {
+    /**
+     * Wallet no longer guarded
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * The purchasing wallet whose key is the agent key of the guarded wallet
+             */
+            walletId: string;
+            /**
+             * Address of the guarded smart wallet
+             */
+            walletAddress: string;
+            /**
+             * `<policyId>.<assetName hex>` of the wallet state token
+             */
+            stateToken: string;
+            /**
+             * Hash of the parameterised wallet validator
+             */
+            scriptHash: string;
+            ownerKeyHash: string;
+            quorumKeyHashes: Array<string>;
+            quorumThreshold: number;
+            cosignBaseUrl: string;
+            /**
+             * Name of the environment variable holding the node token. The token is never stored or returned
+             */
+            cosignTokenRef: string;
+            /**
+             * The wallet id the co-sign service issued at registration
+             */
+            exchainWalletId: string;
+            nodeId: string;
+            orgId: string;
+            registeredAt: Date;
+        };
+    };
+};
+
+export type DeleteWalletGuardResponse = DeleteWalletGuardResponses[keyof DeleteWalletGuardResponses];
+
+export type PostWalletGuardData = {
+    /**
+     * The mint facts of the guarded wallet and its mandate template
+     */
+    body?: {
+        /**
+         * The purchasing wallet to turn into a guarded wallet
+         */
+        walletId: string;
+        /**
+         * Address the guarded wallet was minted at
+         */
+        walletAddress: string;
+        /**
+         * `<policyId>.<assetName hex>` of the wallet state token
+         */
+        stateToken: string;
+        /**
+         * Key hash of the owner (cold) key the wallet was minted with
+         */
+        ownerKeyHash: string;
+        /**
+         * Agent key hash in the wallet datum; must be the key of `walletId`
+         */
+        agentKeyHash: string;
+        /**
+         * Quorum key hashes the wallet was minted with, in order
+         */
+        quorumKeyHashes: Array<string>;
+        /**
+         * Quorum threshold the wallet was minted with
+         */
+        quorumThreshold: number;
+        /**
+         * Base URL of the Exchain co-sign service
+         */
+        cosignBaseUrl: string;
+        /**
+         * Name of the environment variable that holds the node token for this service
+         */
+        cosignTokenRef?: string;
+        /**
+         * Node identity the token is scoped to
+         */
+        nodeId: string;
+        /**
+         * Organisation the wallet belongs to
+         */
+        orgId: string;
+        /**
+         * The asset the mandate counts, `lovelace` or `<policyId>.<assetName hex>` (6 decimals)
+         */
+        governedAsset?: string;
+        /**
+         * Mandate template
+         */
+        template: 'sokosumi-coworker' | 'enterprise-pilot' | 'x402-micro';
+        /**
+         * Template parameters, in minor units of the governed asset
+         */
+        params: {
+            perTxCap: string;
+            daily: string;
+            perSeller: string;
+            perAgent: string;
+            envelope: string;
+            burstPerMinute: number;
+        };
+        /**
+         * Only pay sellers with a confirmed registry entry
+         */
+        registryGate?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guard';
+};
+
+export type PostWalletGuardErrors = {
+    /**
+     * The wallet cannot be guarded or the mint facts do not derive the wallet address
+     */
+    400: unknown;
+    /**
+     * Wallet not found
+     */
+    404: unknown;
+    /**
+     * The wallet is already guarded, or the co-sign service knows it with a different mandate
+     */
+    409: unknown;
+    /**
+     * The co-sign service refused or could not be reached
+     */
+    502: unknown;
+};
+
+export type PostWalletGuardResponses = {
+    /**
+     * Wallet guarded
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * The purchasing wallet whose key is the agent key of the guarded wallet
+             */
+            walletId: string;
+            /**
+             * Address of the guarded smart wallet
+             */
+            walletAddress: string;
+            /**
+             * `<policyId>.<assetName hex>` of the wallet state token
+             */
+            stateToken: string;
+            /**
+             * Hash of the parameterised wallet validator
+             */
+            scriptHash: string;
+            ownerKeyHash: string;
+            quorumKeyHashes: Array<string>;
+            quorumThreshold: number;
+            cosignBaseUrl: string;
+            /**
+             * Name of the environment variable holding the node token. The token is never stored or returned
+             */
+            cosignTokenRef: string;
+            /**
+             * The wallet id the co-sign service issued at registration
+             */
+            exchainWalletId: string;
+            nodeId: string;
+            orgId: string;
+            registeredAt: Date;
+            /**
+             * The mandate the co-sign service compiled, in plain English
+             */
+            mandateEnglish: string;
+        };
+    };
+};
+
+export type PostWalletGuardResponse = PostWalletGuardResponses[keyof PostWalletGuardResponses];
+
+export type PostWalletGuardReadTokenData = {
+    /**
+     * The guarded purchasing wallet
+     */
+    body?: {
+        /**
+         * A guarded purchasing wallet
+         */
+        walletId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guard/read-token';
+};
+
+export type PostWalletGuardReadTokenErrors = {
+    /**
+     * Wallet not found or not guarded
+     */
+    404: unknown;
+    /**
+     * The co-sign service refused or could not be reached
+     */
+    502: unknown;
+};
+
+export type PostWalletGuardReadTokenResponses = {
+    /**
+     * Hosted page URL
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Read-only hosted page for this wallet, carrying a wallet-scoped token
+             */
+            url: string;
+            /**
+             * When the token in `url` stops working
+             */
+            expiresAt: string;
+        };
+    };
+};
+
+export type PostWalletGuardReadTokenResponse = PostWalletGuardReadTokenResponses[keyof PostWalletGuardReadTokenResponses];
+
 export type PostSignatureVerifyRevealDataData = {
     body?: {
         /**

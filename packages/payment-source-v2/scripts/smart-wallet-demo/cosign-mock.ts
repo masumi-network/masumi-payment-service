@@ -1,5 +1,5 @@
 // Mock of Exchain's `POST /v1/cosign` for the MAS-596 demo, speaking the
-// contract proposed in src/smart-wallet/cosign-client.ts. It holds the quorum
+// shape proposed in ./cosign-proposal-client.ts. It holds the quorum
 // member keys, checks the frozen body against the intent (cosign-policy.ts),
 // and signs or refuses. It never builds, changes or submits a transaction.
 //
@@ -26,7 +26,7 @@ import {
 	type CosignApproved,
 	type CosignDenied,
 	type CosignRequest,
-} from '../../src/smart-wallet/cosign-client';
+} from './cosign-proposal-client';
 import {
 	verifyIntentAgainstBody,
 	type CosignPolicy,

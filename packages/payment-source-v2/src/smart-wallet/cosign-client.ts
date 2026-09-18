@@ -1,10 +1,10 @@
 // Mesh SDK pinning: this file lives in the V2 package and resolves the V2 mesh
 // line (`@meshsdk/core-cst@1.9.1`). See docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 //
-// Client for an external quorum co-signing service (`POST /v1/cosign`). The
-// request/response shape below is Masumi's PROPOSAL for MAS-596 P0 item 1; it
-// is not frozen with Exchain yet. The co-signer only ever adds vkey witnesses
-// to a body we froze. It can refuse, it can never change what the body spends.
+// Client for the Exchain co-sign service, contract 1.1.1. The types in
+// ./cosign-api.d.ts are generated from its openapi.yaml by openapi-typescript.
+// The co-signer only ever adds vkey witnesses to a body we froze. It can
+// refuse, it can never change what the body spends.
 import {
 	addVKeyWitnessSetToTransaction,
 	deserializeTx,
@@ -15,136 +15,55 @@ import {
 	TransactionWitnessSet,
 } from '@meshsdk/core-cst';
 import { z } from '@masumi/payment-core/zod';
+import type { components } from './cosign-api';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const hex = z.string().regex(/^(?:[0-9a-f]{2})+$/, 'lowercase hex');
-const hash28 = z.string().regex(/^[0-9a-f]{56}$/, '28-byte hex');
-const hash32 = z.string().regex(/^[0-9a-f]{64}$/, '32-byte hex');
-const lovelace = z.string().regex(/^\d+$/, 'integer lovelace string');
-const address = z.string().min(1).max(200);
+const BODY_HASH_PREFIX = 'blake2b_256:';
 
-const cosignBodyEchoSchema = z.object({
-	txBodyHash: hash32,
-	requiredSigners: z.array(hash28),
-});
-export type CosignBodyEcho = z.infer<typeof cosignBodyEchoSchema>;
+export type CosignIntent = components['schemas']['Intent'];
+export type CosignRequest = components['schemas']['CosignRequest'];
+export type CosignAllow = components['schemas']['CosignAllow'];
+export type CosignDeny = components['schemas']['CosignDeny'];
+export type QuorumUnavailable = components['schemas']['QuorumUnavailable'];
+export type WalletRegistration = components['schemas']['WalletRegistration'];
+export type WalletRegistered = components['schemas']['WalletRegistered'];
+export type ReadToken = components['schemas']['ReadToken'];
 
-/** Decode the body we send. Quorum requests alone omit the agent signer. */
-export function decodeCosignBodyEcho(txCbor: string): CosignBodyEcho {
+export type CosignBodyEcho = { txBodyHash: string; requiredSigners: string[] };
+
+/** The body bytes the co-signer judges, and what its approval must echo back. */
+export function freezeCosignBody(unsignedTx: string): CosignBodyEcho & { txBodyHex: string } {
+	const body = deserializeTx(unsignedTx).body();
 	return {
-		txBodyHash: resolveTxHash(txCbor),
+		txBodyHex: body.toCbor(),
+		txBodyHash: resolveTxHash(unsignedTx),
 		requiredSigners:
-			deserializeTx(txCbor)
-				.body()
+			body
 				.requiredSigners()
 				?.values()
 				.map((hash) => hash.toCore()) ?? [],
 	};
 }
 
-function validateBodyEcho(body: unknown, expected: CosignBodyEcho, status: number): CosignBodyEcho {
-	const parsed = cosignBodyEchoSchema.safeParse(body);
-	if (!parsed.success) {
-		throw new CosignTransportError('co-sign response is missing the decoded body hash or required signers', status);
-	}
-	const actual = parsed.data;
-	if (actual.txBodyHash !== expected.txBodyHash) {
-		throw new CosignTransportError('co-sign response names a different transaction body', status);
-	}
-	const actualSigners = [...actual.requiredSigners].sort();
-	const expectedSigners = [...expected.requiredSigners].sort();
-	if (
-		actualSigners.length !== expectedSigners.length ||
-		new Set(actualSigners).size !== actualSigners.length ||
-		actualSigners.some((signer, index) => signer !== expectedSigners[index])
-	) {
-		throw new CosignTransportError('co-sign response names different required signers', status);
-	}
-	return actual;
-}
-
-/** Placeholder 12-code denial taxonomy, pending Exchain's frozen list (MAS-596 P0 item 1). */
-export const COSIGN_DENIAL_CODES = [
-	'POLICY_LIMIT_EXCEEDED',
-	'RECIPIENT_NOT_ALLOWED',
-	'INTENT_MISMATCH',
-	'WALLET_INPUT_UNKNOWN',
-	'VALIDITY_TOO_WIDE',
-	'SIGNER_NOT_MEMBER',
-	'QUORUM_UNAVAILABLE',
-	'RESERVATION_CONFLICT',
-	'DUPLICATE_REQUEST',
-	'FROZEN',
-	'RATE_LIMITED',
-	'INTERNAL',
-] as const;
-export type CosignDenialCode = (typeof COSIGN_DENIAL_CODES)[number];
-
-export const cosignRequestSchema = z.object({
-	version: z.literal(1),
-	network: z.enum(['preprod', 'mainnet']),
-	txCbor: hex.max(40_000),
-	txHash: hash32,
-	wallet: z.object({
-		address,
-		stateTokenUnit: z.string().regex(/^[0-9a-f]{56}[0-9a-f]{64}$/, 'policy id + 32-byte token name'),
-		input: z.object({ txHash: hash32, outputIndex: z.number().int().min(0) }),
-	}),
-	requiredSigners: z.array(hash28).min(1).max(16),
-	intent: z.object({
-		kind: z.literal('escrow-lock'),
-		/** The key address named as buyer in every escrow datum. */
-		buyerAddress: address,
-		// Every payee an escrow datum can release funds to is named here, so a
-		// co-signer checks the decoded datums against it rather than trusting totals.
-		locks: z
-			.array(
-				z.object({
-					address,
-					lovelace,
-					blockchainIdentifier: hex.max(4_000),
-					sellerAddress: address,
-					buyerReturnAddress: address.nullable(),
-					sellerReturnAddress: address.nullable(),
-				}),
-			)
-			.min(1)
-			.max(64),
-		outflowLovelace: lovelace,
-		changeAddress: address,
-		validity: z.object({
-			invalidBefore: z.number().int().min(0),
-			invalidAfter: z.number().int().min(0),
-		}),
-		requestedBy: z.string().min(1).max(100),
-	}),
-	reservationTtlSeconds: z.number().int().min(1).max(3_600),
+const allowSchema = z.object({
+	decisionId: z.string().min(1),
+	txBodyHash: z.string(),
+	requiredSigners: z.array(z.string()),
+	witnessSetHex: z.string().regex(/^(?:[0-9a-f]{2})+$/),
 });
-export type CosignRequest = z.infer<typeof cosignRequestSchema>;
-
-export const cosignApprovedSchema = z.object({
-	decision: z.literal('approved'),
-	txHash: hash32,
-	signatures: z.array(z.object({ vkh: hash28, witnessSet: hex.max(2_000) })).min(1),
-	expiresAt: z.string().min(1),
-});
-export type CosignApproved = z.infer<typeof cosignApprovedSchema>;
-
-export const cosignDeniedSchema = z.object({
-	decision: z.literal('denied'),
-	code: z.enum(COSIGN_DENIAL_CODES),
-	message: z.string().max(1_000),
-	retryable: z.boolean(),
-	/** Per-lock verdicts, so one denied purchase does not have to kill the batch (P0 item 3). */
-	locks: z.array(
+const denySchema = z.object({
+	decisionId: z.string().min(1),
+	denied: z.string().min(1),
+	members: z.array(
 		z.object({
-			index: z.number().int().min(0),
-			verdict: z.enum(['allowed', 'denied']),
-			code: z.enum(COSIGN_DENIAL_CODES).optional(),
+			purchaseId: z.string(),
+			verdict: z.enum(['allowed', 'denied', 'not_evaluated']),
 		}),
 	),
+	rebuild: z.object({ keep: z.array(z.string()) }).optional(),
+	alarm: z.boolean(),
 });
-export type CosignDenied = z.infer<typeof cosignDeniedSchema>;
+const unavailableSchema = z.object({ retryAfterSec: z.number().int().min(0) });
 
 export type CosignConfig = {
 	url: string;
@@ -153,7 +72,7 @@ export type CosignConfig = {
 	trustedPlaintextHosts?: string[];
 };
 
-/** Anything other than an explicit approve or deny. Never a reason to submit, never a denial. */
+/** Anything other than an explicit allow, deny or quorum outage. Never a reason to submit, never a denial. */
 export class CosignTransportError extends Error {
 	constructor(
 		message: string,
@@ -200,62 +119,77 @@ export function assertSafeCosignUrl(rawUrl: string, trustedPlaintextHosts: strin
 }
 
 export type CosignDecision =
-	| { httpStatus: 200; approved: CosignApproved & CosignBodyEcho }
-	| { httpStatus: 409; denied: CosignDenied & CosignBodyEcho };
+	| { httpStatus: 200; allow: CosignAllow }
+	| { httpStatus: 409; deny: CosignDeny }
+	| { httpStatus: 503; unavailable: QuorumUnavailable };
 
-/** Validate a `/v1/cosign` HTTP response. Separate from the fetch so it can be checked without a network. */
-export function parseCosignResponse(status: number, bodyText: string, expected: CosignBodyEcho): CosignDecision {
-	let body: unknown;
+function parseJson(status: number, bodyText: string): unknown {
 	try {
-		body = bodyText.length === 0 ? null : JSON.parse(bodyText);
+		return bodyText.length === 0 ? null : JSON.parse(bodyText);
 	} catch {
 		throw new CosignTransportError(`co-sign service returned non-JSON (HTTP ${status})`, status);
 	}
+}
+
+/** Validate a `/v1/cosign` HTTP response. Separate from the fetch so it can be checked without a network. */
+export function parseCosignResponse(status: number, bodyText: string, expected: CosignBodyEcho): CosignDecision {
+	const body = parseJson(status, bodyText);
 	if (status === 200) {
-		const parsed = cosignApprovedSchema.safeParse(body);
+		const parsed = allowSchema.safeParse(body);
 		if (!parsed.success) {
 			throw new CosignTransportError('co-sign approval does not match the contract', status);
 		}
-		if (parsed.data.txHash !== expected.txBodyHash) {
+		if (parsed.data.txBodyHash !== `${BODY_HASH_PREFIX}${expected.txBodyHash}`) {
 			throw new CosignTransportError('co-sign approval names a different transaction body', status);
 		}
-		return { httpStatus: 200, approved: { ...parsed.data, ...validateBodyEcho(body, expected, status) } };
+		const actualSigners = [...parsed.data.requiredSigners].sort();
+		const expectedSigners = [...expected.requiredSigners].sort();
+		if (
+			actualSigners.length !== expectedSigners.length ||
+			new Set(actualSigners).size !== actualSigners.length ||
+			actualSigners.some((signer, index) => signer !== expectedSigners[index])
+		) {
+			throw new CosignTransportError('co-sign approval names different required signers', status);
+		}
+		return { httpStatus: 200, allow: body as CosignAllow };
 	}
 	if (status === 409) {
-		const parsed = cosignDeniedSchema.safeParse(body);
-		if (!parsed.success) {
+		if (!denySchema.safeParse(body).success) {
 			throw new CosignTransportError('co-sign denial does not match the contract', status);
 		}
-		return { httpStatus: 409, denied: { ...parsed.data, ...validateBodyEcho(body, expected, status) } };
+		return { httpStatus: 409, deny: body as CosignDeny };
+	}
+	if (status === 503) {
+		if (!unavailableSchema.safeParse(body).success) {
+			throw new CosignTransportError('co-sign outage answer does not match the contract', status);
+		}
+		return { httpStatus: 503, unavailable: body as QuorumUnavailable };
 	}
 	throw new CosignTransportError(`co-sign service answered HTTP ${status}`, status);
 }
 
-export async function requestCosign(config: CosignConfig, request: CosignRequest): Promise<CosignDecision> {
-	const validated = cosignRequestSchema.parse(request);
-	const expected = decodeCosignBodyEcho(validated.txCbor);
-	if (expected.txBodyHash !== validated.txHash) {
-		throw new CosignTransportError('co-sign request hash does not match its transaction body', null);
-	}
+async function post(
+	config: CosignConfig,
+	path: string,
+	init: { body?: unknown; idempotencyKey?: string },
+): Promise<{ status: number; text: string }> {
 	const baseUrl = assertSafeCosignUrl(config.url, config.trustedPlaintextHosts);
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 	try {
-		const response = await fetch(`${baseUrl}/v1/cosign`, {
+		const response = await fetch(`${baseUrl}${path}`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 				Authorization: `Bearer ${config.apiKey}`,
-				// Body-derived: a rebuilt body is a new request, a retried timeout is a replay.
-				'Idempotency-Key': validated.txHash,
+				...(init.idempotencyKey != null ? { 'Idempotency-Key': init.idempotencyKey } : {}),
 			},
-			body: JSON.stringify(validated),
+			body: init.body === undefined ? undefined : JSON.stringify(init.body),
 			redirect: 'error',
 			signal: controller.signal,
 		});
-		return parseCosignResponse(response.status, await response.text(), expected);
+		return { status: response.status, text: await response.text() };
 	} catch (error) {
-		if (error instanceof CosignTransportError) throw error;
 		// Never echo the credential; the transport message carries only the cause.
 		throw new CosignTransportError(
 			`could not reach the co-sign service: ${error instanceof Error ? error.message : String(error)}`,
@@ -266,42 +200,90 @@ export async function requestCosign(config: CosignConfig, request: CosignRequest
 	}
 }
 
+/** `unsignedTx` is the frozen transaction; only its body leaves the host. The `batchId` is the idempotency key. */
+export async function requestCosign(
+	config: CosignConfig,
+	unsignedTx: string,
+	request: Omit<CosignRequest, 'txBodyHex'>,
+): Promise<CosignDecision> {
+	const { txBodyHex, ...expected } = freezeCosignBody(unsignedTx);
+	const response = await post(config, '/v1/cosign', {
+		body: { ...request, txBodyHex } satisfies CosignRequest,
+		idempotencyKey: request.batchId,
+	});
+	return parseCosignResponse(response.status, response.text, expected);
+}
+
+export async function registerCosignWallet(
+	config: CosignConfig,
+	registration: WalletRegistration,
+): Promise<WalletRegistered> {
+	const response = await post(config, '/v1/wallets', { body: registration });
+	const body = parseJson(response.status, response.text);
+	const parsed = z.object({ walletId: z.string().regex(/^wal_[0-9A-HJKMNP-TV-Z]{26}$/) }).safeParse(body);
+	if ((response.status !== 200 && response.status !== 201) || !parsed.success) {
+		const error = z.object({ error: z.string(), detail: z.string().optional() }).safeParse(body);
+		throw new CosignTransportError(
+			`co-sign wallet registration answered HTTP ${response.status}${
+				error.success ? `: ${error.data.error}${error.data.detail ? ` (${error.data.detail})` : ''}` : ''
+			}`,
+			response.status,
+		);
+	}
+	return body as WalletRegistered;
+}
+
+export async function mintCosignReadToken(config: CosignConfig, exchainWalletId: string): Promise<ReadToken> {
+	const response = await post(config, `/v1/wallets/${encodeURIComponent(exchainWalletId)}/read-token`, {});
+	const body = parseJson(response.status, response.text);
+	const parsed = z.object({ token: z.string().min(1), expiresAt: z.string().min(1) }).safeParse(body);
+	if (response.status !== 201 || !parsed.success) {
+		throw new CosignTransportError(`co-sign read-token answered HTTP ${response.status}`, response.status);
+	}
+	return body as ReadToken;
+}
+
 /**
- * Add the co-signers' vkey witnesses to the frozen body.
+ * Add the quorum's vkey witnesses to the frozen body.
  *
- * Every requested signer must return exactly one witness whose key hashes to
- * its vkh and whose signature verifies over the body hash. The body hash is
- * re-checked after each merge, so a witness set can never alter what is signed.
+ * Every witness must come from a distinct declared quorum key and verify over
+ * the body hash, and together they must reach the threshold (a key repeated in
+ * `quorumVkhs` weighs as often as it is listed). The body hash is re-checked
+ * after the merge, so a witness set can never alter what is signed.
  */
 export function mergeCosignWitnesses(
 	unsignedTx: string,
-	expected: { txHash: string; signerVkhs: string[] },
-	signatures: CosignApproved['signatures'],
+	expected: { txHash: string; quorumVkhs: string[]; threshold: number },
+	witnessSetHex: string,
 ): string {
 	if (resolveTxHash(unsignedTx) !== expected.txHash) {
 		throw new Error('the transaction to merge into is not the frozen body');
 	}
-	let tx = unsignedTx;
-	for (const vkh of expected.signerVkhs) {
-		const entries = signatures.filter((signature) => signature.vkh === vkh);
-		if (entries.length !== 1) {
-			throw new Error(`co-signer ${vkh} returned ${entries.length} witness set(s); expected exactly 1`);
+	const witnesses = TransactionWitnessSet.fromCbor(HexBlob(witnessSetHex)).vkeys()?.values() ?? [];
+	const seen = new Set<string>();
+	let weight = 0;
+	for (const witness of witnesses) {
+		const publicKey = Ed25519PublicKey.fromHex(witness.vkey());
+		const vkh = publicKey.hash().hex();
+		const listed = expected.quorumVkhs.filter((member) => member === vkh).length;
+		if (listed === 0) {
+			throw new Error(`co-signer returned a witness for ${vkh}, which is not a quorum key of this wallet`);
 		}
-		const witnesses = TransactionWitnessSet.fromCbor(HexBlob(entries[0].witnessSet)).vkeys()?.values() ?? [];
-		if (witnesses.length !== 1) {
-			throw new Error(`co-signer ${vkh} returned ${witnesses.length} vkey witnesses; expected exactly 1`);
+		if (seen.has(vkh)) {
+			throw new Error(`co-signer returned more than one witness for ${vkh}`);
 		}
-		const publicKey = Ed25519PublicKey.fromHex(witnesses[0].vkey());
-		if (publicKey.hash().hex() !== vkh) {
-			throw new Error(`co-signer ${vkh} returned a witness for a different key`);
-		}
-		if (!publicKey.verify(Ed25519Signature.fromHex(witnesses[0].signature()), HexBlob(expected.txHash))) {
+		if (!publicKey.verify(Ed25519Signature.fromHex(witness.signature()), HexBlob(expected.txHash))) {
 			throw new Error(`co-signer ${vkh} returned a signature that does not verify over the body hash`);
 		}
-		tx = addVKeyWitnessSetToTransaction(tx, entries[0].witnessSet);
-		if (resolveTxHash(tx) !== expected.txHash) {
-			throw new Error('merging a co-signer witness changed the transaction body');
-		}
+		seen.add(vkh);
+		weight += listed;
+	}
+	if (weight < expected.threshold) {
+		throw new Error(`co-signer returned ${weight} quorum witness(es); the wallet needs ${expected.threshold}`);
+	}
+	const tx = addVKeyWitnessSetToTransaction(unsignedTx, witnessSetHex);
+	if (resolveTxHash(tx) !== expected.txHash) {
+		throw new Error('merging the co-signer witnesses changed the transaction body');
 	}
 	return tx;
 }

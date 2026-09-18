@@ -8317,6 +8317,580 @@
                 }
             }
         },
+        "/wallet/guard": {
+            "post": {
+                "description": "Turns a purchasing wallet into a guarded wallet: its purchases are funded from a minted smart wallet whose agent key is this wallet, and every batch is co-signed by the Exchain quorum before the wallet signs. Registers the wallet and its mandate with the co-sign service. The mint itself happens outside this service.",
+                "summary": "Guard a purchasing wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The mint facts of the guarded wallet and its mandate template",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "The purchasing wallet to turn into a guarded wallet"
+                                    },
+                                    "walletAddress": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Address the guarded wallet was minted at"
+                                    },
+                                    "stateToken": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{56}\\.([0-9a-f]{2}){1,32}$",
+                                        "description": "`<policyId>.<assetName hex>` of the wallet state token"
+                                    },
+                                    "ownerKeyHash": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{56}$",
+                                        "description": "Key hash of the owner (cold) key the wallet was minted with"
+                                    },
+                                    "agentKeyHash": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{56}$",
+                                        "description": "Agent key hash in the wallet datum; must be the key of `walletId`"
+                                    },
+                                    "quorumKeyHashes": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "pattern": "^[0-9a-f]{56}$"
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 16,
+                                        "description": "Quorum key hashes the wallet was minted with, in order"
+                                    },
+                                    "quorumThreshold": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "Quorum threshold the wallet was minted with"
+                                    },
+                                    "cosignBaseUrl": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "format": "uri",
+                                        "description": "Base URL of the Exchain co-sign service"
+                                    },
+                                    "cosignTokenRef": {
+                                        "type": "string",
+                                        "pattern": "^EXCHAIN_COSIGN_API_KEY[A-Z0-9_]*$",
+                                        "default": "EXCHAIN_COSIGN_API_KEY",
+                                        "description": "Name of the environment variable that holds the node token for this service"
+                                    },
+                                    "nodeId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Node identity the token is scoped to"
+                                    },
+                                    "orgId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Organisation the wallet belongs to"
+                                    },
+                                    "governedAsset": {
+                                        "type": "string",
+                                        "pattern": "^(lovelace|[0-9a-f]{56}\\.([0-9a-f]{2}){0,32})$",
+                                        "default": "lovelace",
+                                        "description": "The asset the mandate counts, `lovelace` or `<policyId>.<assetName hex>` (6 decimals)"
+                                    },
+                                    "template": {
+                                        "type": "string",
+                                        "enum": [
+                                            "sokosumi-coworker",
+                                            "enterprise-pilot",
+                                            "x402-micro"
+                                        ],
+                                        "description": "Mandate template"
+                                    },
+                                    "params": {
+                                        "type": "object",
+                                        "properties": {
+                                            "perTxCap": {
+                                                "type": "string",
+                                                "pattern": "^[0-9]+$"
+                                            },
+                                            "daily": {
+                                                "type": "string",
+                                                "pattern": "^[0-9]+$"
+                                            },
+                                            "perSeller": {
+                                                "type": "string",
+                                                "pattern": "^[0-9]+$"
+                                            },
+                                            "perAgent": {
+                                                "type": "string",
+                                                "pattern": "^[0-9]+$"
+                                            },
+                                            "envelope": {
+                                                "type": "string",
+                                                "pattern": "^[0-9]+$"
+                                            },
+                                            "burstPerMinute": {
+                                                "type": "integer",
+                                                "minimum": 1
+                                            }
+                                        },
+                                        "required": [
+                                            "perTxCap",
+                                            "daily",
+                                            "perSeller",
+                                            "perAgent",
+                                            "envelope",
+                                            "burstPerMinute"
+                                        ],
+                                        "description": "Template parameters, in minor units of the governed asset"
+                                    },
+                                    "registryGate": {
+                                        "type": "boolean",
+                                        "default": true,
+                                        "description": "Only pay sellers with a confirmed registry entry"
+                                    }
+                                },
+                                "required": [
+                                    "walletId",
+                                    "walletAddress",
+                                    "stateToken",
+                                    "ownerKeyHash",
+                                    "agentKeyHash",
+                                    "quorumKeyHashes",
+                                    "quorumThreshold",
+                                    "cosignBaseUrl",
+                                    "nodeId",
+                                    "orgId",
+                                    "template",
+                                    "params"
+                                ],
+                                "example": {
+                                    "walletId": "hot_wallet_id",
+                                    "walletAddress": "addr_test1wq8x...guarded",
+                                    "stateToken": "abababababababababababababababababababababababababababab.cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                                    "ownerKeyHash": "11111111111111111111111111111111111111111111111111111111",
+                                    "agentKeyHash": "55555555555555555555555555555555555555555555555555555555",
+                                    "quorumKeyHashes": [
+                                        "22222222222222222222222222222222222222222222222222222222",
+                                        "33333333333333333333333333333333333333333333333333333333",
+                                        "44444444444444444444444444444444444444444444444444444444"
+                                    ],
+                                    "quorumThreshold": 2,
+                                    "cosignBaseUrl": "https://cosign-preprod.exchain.network",
+                                    "cosignTokenRef": "EXCHAIN_COSIGN_API_KEY",
+                                    "nodeId": "masumi-node-1",
+                                    "orgId": "org-1",
+                                    "governedAsset": "lovelace",
+                                    "template": "enterprise-pilot",
+                                    "params": {
+                                        "perTxCap": "200000000",
+                                        "daily": "8000000000",
+                                        "perSeller": "500000000",
+                                        "perAgent": "4000000000",
+                                        "envelope": "200000000000",
+                                        "burstPerMinute": 10
+                                    },
+                                    "registryGate": true
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet guarded",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "walletId": {
+                                                    "type": "string",
+                                                    "description": "The purchasing wallet whose key is the agent key of the guarded wallet"
+                                                },
+                                                "walletAddress": {
+                                                    "type": "string",
+                                                    "description": "Address of the guarded smart wallet"
+                                                },
+                                                "stateToken": {
+                                                    "type": "string",
+                                                    "description": "`<policyId>.<assetName hex>` of the wallet state token"
+                                                },
+                                                "scriptHash": {
+                                                    "type": "string",
+                                                    "description": "Hash of the parameterised wallet validator"
+                                                },
+                                                "ownerKeyHash": {
+                                                    "type": "string"
+                                                },
+                                                "quorumKeyHashes": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "quorumThreshold": {
+                                                    "type": "integer"
+                                                },
+                                                "cosignBaseUrl": {
+                                                    "type": "string"
+                                                },
+                                                "cosignTokenRef": {
+                                                    "type": "string",
+                                                    "description": "Name of the environment variable holding the node token. The token is never stored or returned"
+                                                },
+                                                "exchainWalletId": {
+                                                    "type": "string",
+                                                    "description": "The wallet id the co-sign service issued at registration"
+                                                },
+                                                "nodeId": {
+                                                    "type": "string"
+                                                },
+                                                "orgId": {
+                                                    "type": "string"
+                                                },
+                                                "registeredAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "mandateEnglish": {
+                                                    "type": "string",
+                                                    "description": "The mandate the co-sign service compiled, in plain English"
+                                                }
+                                            },
+                                            "required": [
+                                                "walletId",
+                                                "walletAddress",
+                                                "stateToken",
+                                                "scriptHash",
+                                                "ownerKeyHash",
+                                                "quorumKeyHashes",
+                                                "quorumThreshold",
+                                                "cosignBaseUrl",
+                                                "cosignTokenRef",
+                                                "exchainWalletId",
+                                                "nodeId",
+                                                "orgId",
+                                                "registeredAt",
+                                                "mandateEnglish"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "walletId": "hot_wallet_id",
+                                            "walletAddress": "addr_test1wq8x...guarded",
+                                            "stateToken": "abababababababababababababababababababababababababababab.cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                                            "scriptHash": "abababababababababababababababababababababababababababab",
+                                            "ownerKeyHash": "11111111111111111111111111111111111111111111111111111111",
+                                            "quorumKeyHashes": [
+                                                "22222222222222222222222222222222222222222222222222222222",
+                                                "33333333333333333333333333333333333333333333333333333333",
+                                                "44444444444444444444444444444444444444444444444444444444"
+                                            ],
+                                            "quorumThreshold": 2,
+                                            "cosignBaseUrl": "https://cosign-preprod.exchain.network",
+                                            "cosignTokenRef": "EXCHAIN_COSIGN_API_KEY",
+                                            "exchainWalletId": "wal_01J9XK3M4N5P6Q7R8S9T0V1W2Z",
+                                            "nodeId": "masumi-node-1",
+                                            "orgId": "org-1",
+                                            "registeredAt": "1970-01-20T20:00:36.260Z",
+                                            "mandateEnglish": "No single payment above 200 ADA. No more than 8,000 ADA in any rolling 24 hours."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "The wallet cannot be guarded or the mint facts do not derive the wallet address"
+                    },
+                    "404": {
+                        "description": "Wallet not found"
+                    },
+                    "409": {
+                        "description": "The wallet is already guarded, or the co-sign service knows it with a different mandate"
+                    },
+                    "502": {
+                        "description": "The co-sign service refused or could not be reached"
+                    }
+                }
+            },
+            "delete": {
+                "description": "Returns a purchasing wallet to unguarded funding. Only the local record is removed; the smart wallet and its registration at the co-sign service are untouched.",
+                "summary": "Stop guarding a purchasing wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The guarded purchasing wallet",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "The purchasing wallet to return to unguarded funding"
+                                    }
+                                },
+                                "required": [
+                                    "walletId"
+                                ],
+                                "example": {
+                                    "walletId": "hot_wallet_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet no longer guarded",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "walletId": {
+                                                    "type": "string",
+                                                    "description": "The purchasing wallet whose key is the agent key of the guarded wallet"
+                                                },
+                                                "walletAddress": {
+                                                    "type": "string",
+                                                    "description": "Address of the guarded smart wallet"
+                                                },
+                                                "stateToken": {
+                                                    "type": "string",
+                                                    "description": "`<policyId>.<assetName hex>` of the wallet state token"
+                                                },
+                                                "scriptHash": {
+                                                    "type": "string",
+                                                    "description": "Hash of the parameterised wallet validator"
+                                                },
+                                                "ownerKeyHash": {
+                                                    "type": "string"
+                                                },
+                                                "quorumKeyHashes": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "quorumThreshold": {
+                                                    "type": "integer"
+                                                },
+                                                "cosignBaseUrl": {
+                                                    "type": "string"
+                                                },
+                                                "cosignTokenRef": {
+                                                    "type": "string",
+                                                    "description": "Name of the environment variable holding the node token. The token is never stored or returned"
+                                                },
+                                                "exchainWalletId": {
+                                                    "type": "string",
+                                                    "description": "The wallet id the co-sign service issued at registration"
+                                                },
+                                                "nodeId": {
+                                                    "type": "string"
+                                                },
+                                                "orgId": {
+                                                    "type": "string"
+                                                },
+                                                "registeredAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "required": [
+                                                "walletId",
+                                                "walletAddress",
+                                                "stateToken",
+                                                "scriptHash",
+                                                "ownerKeyHash",
+                                                "quorumKeyHashes",
+                                                "quorumThreshold",
+                                                "cosignBaseUrl",
+                                                "cosignTokenRef",
+                                                "exchainWalletId",
+                                                "nodeId",
+                                                "orgId",
+                                                "registeredAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "walletId": "hot_wallet_id",
+                                            "walletAddress": "addr_test1wq8x...guarded",
+                                            "stateToken": "abababababababababababababababababababababababababababab.cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                                            "scriptHash": "abababababababababababababababababababababababababababab",
+                                            "ownerKeyHash": "11111111111111111111111111111111111111111111111111111111",
+                                            "quorumKeyHashes": [
+                                                "22222222222222222222222222222222222222222222222222222222",
+                                                "33333333333333333333333333333333333333333333333333333333",
+                                                "44444444444444444444444444444444444444444444444444444444"
+                                            ],
+                                            "quorumThreshold": 2,
+                                            "cosignBaseUrl": "https://cosign-preprod.exchain.network",
+                                            "cosignTokenRef": "EXCHAIN_COSIGN_API_KEY",
+                                            "exchainWalletId": "wal_01J9XK3M4N5P6Q7R8S9T0V1W2Z",
+                                            "nodeId": "masumi-node-1",
+                                            "orgId": "org-1",
+                                            "registeredAt": "1970-01-20T20:00:36.260Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Wallet not found or not guarded"
+                    },
+                    "409": {
+                        "description": "The wallet is funding a batch"
+                    }
+                }
+            }
+        },
+        "/wallet/guard/read-token": {
+            "post": {
+                "description": "Mints a 15-minute, wallet-scoped, read-only token at the co-sign service and returns the hosted page URL for the admin iframe. The node token never reaches a browser.",
+                "summary": "Read-only co-sign page for a guarded wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The guarded purchasing wallet",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "A guarded purchasing wallet"
+                                    }
+                                },
+                                "required": [
+                                    "walletId"
+                                ],
+                                "example": {
+                                    "walletId": "hot_wallet_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Hosted page URL",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "url": {
+                                                    "type": "string",
+                                                    "description": "Read-only hosted page for this wallet, carrying a wallet-scoped token"
+                                                },
+                                                "expiresAt": {
+                                                    "type": "string",
+                                                    "description": "When the token in `url` stops working"
+                                                }
+                                            },
+                                            "required": [
+                                                "url",
+                                                "expiresAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "url": "https://cosign-preprod.exchain.network/protected/wal_01J9XK3M4N5P6Q7R8S9T0V1W2Z?t=opaque",
+                                            "expiresAt": "2026-09-18T12:15:00Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Wallet not found or not guarded"
+                    },
+                    "502": {
+                        "description": "The co-sign service refused or could not be reached"
+                    }
+                }
+            }
+        },
         "/signature/verify/reveal-data": {
             "post": {
                 "description": "Verifies the reveal data signature is valid.",
