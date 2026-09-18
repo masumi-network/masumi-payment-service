@@ -292,8 +292,8 @@ export default function ApiKeys() {
                       <tr
                         key={key.id}
                         className={cn(
-                          'group border-b transition-[background-color] duration-150 hover:bg-muted/50',
-                          isKeySelected && 'bg-muted/50',
+                          'group border-b transition-[background-color] duration-150 hover:bg-row-hover',
+                          isKeySelected && 'bg-row-hover',
                         )}
                       >
                         <td className="p-4" onClick={(event) => event.stopPropagation()}>

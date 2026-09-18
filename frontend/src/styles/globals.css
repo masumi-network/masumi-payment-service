@@ -51,6 +51,9 @@
 
   --color-brand: hsl(var(--accent-brand));
 
+  /* Opaque mix of muted + background; same target as hover:bg-muted/50 on table rows (~#212121 dark). */
+  --color-row-hover: var(--row-hover);
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -97,6 +100,7 @@
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
     --accent-brand: 174 60% 51%;
+    --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
   }
 
   .dark {
@@ -120,41 +124,42 @@
     --input: 0 0% 18%;
     --ring: 0 0% 83.1%;
     --accent-brand: 174 60% 55%;
+    --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
   }
 }
 
 @layer components {
-  /* Saas fade at rest; on row hover, gradient fill matches tr (e.g. hover:bg-muted/50). */
-  .table-actions-head-gradient {
-    @apply bg-gradient-to-r from-transparent via-background/80 to-background;
+  /* Sticky actions: fixed left fade; --table-actions-fill is rest or row-hover (not muted/50). */
+  .table-actions-head-fill,
+  .table-actions-cell-fill {
+    --table-actions-fill: hsl(var(--background));
+    background-color: transparent;
+    background-image: linear-gradient(
+      to right,
+      transparent,
+      color-mix(in srgb, var(--table-actions-fill) 80%, transparent) 2.5rem,
+      var(--table-actions-fill) 3.5rem
+    );
   }
 
-  .table-actions-cell {
-    @apply bg-gradient-to-r from-transparent via-background/80 to-background;
+  .group:hover .table-actions-cell-fill {
+    --table-actions-fill: var(--row-hover);
   }
 
-  .group:hover .table-actions-cell {
-    @apply bg-gradient-to-r from-transparent via-muted/50 to-muted/50;
+  .table-actions-cell-fill--highlight {
+    --table-actions-fill: var(--row-hover);
   }
 
-  .table-actions-cell--destructive {
-    @apply bg-gradient-to-r from-transparent via-destructive/10 to-destructive/10;
+  .table-actions-cell-fill--destructive {
+    --table-actions-fill: hsl(var(--destructive) / 0.1);
   }
 
-  .group:hover .table-actions-cell--destructive {
-    @apply bg-gradient-to-r from-transparent via-muted/50 to-muted/50;
+  .table-actions-cell-fill--low-balance {
+    --table-actions-fill: rgb(245 158 11 / 0.05);
   }
 
-  .table-actions-cell--muted {
-    @apply bg-gradient-to-r from-transparent via-muted/50 to-muted/50;
-  }
-
-  .table-actions-cell--low-balance {
-    @apply bg-gradient-to-r from-transparent via-amber-500/5 to-amber-500/5;
-  }
-
-  .group:hover .table-actions-cell--low-balance {
-    @apply bg-gradient-to-r from-transparent via-amber-500/10 to-amber-500/10;
+  .group:hover .table-actions-cell-fill--low-balance {
+    --table-actions-fill: rgb(245 158 11 / 0.1);
   }
 }
 

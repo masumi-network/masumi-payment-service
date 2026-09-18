@@ -296,7 +296,7 @@ export default function WalletsPage() {
                         className={`group border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
                           wallet.LowBalanceSummary?.isLow
                             ? 'bg-amber-500/5 hover:bg-amber-500/10'
-                            : 'hover:bg-muted/50'
+                            : 'hover:bg-row-hover'
                         }`}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => handleWalletClick(wallet)}

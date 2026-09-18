@@ -596,8 +596,8 @@ export default function Transactions() {
                         className={cn(
                           'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ease-in-out',
                           hasTxError ? 'bg-destructive/10 border-l-2 border-l-destructive' : '',
-                          'cursor-pointer hover:bg-muted/50',
-                          isTxSelected && 'bg-muted/50',
+                          'cursor-pointer hover:bg-row-hover',
+                          isTxSelected && 'bg-row-hover',
                         )}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => setSelectedTransaction(transaction)}

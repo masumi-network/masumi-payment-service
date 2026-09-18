@@ -125,7 +125,7 @@ export function X402SourcesSection({
                   <tr
                     key={chain.id}
                     className={cn(
-                      'group border-b last:border-b-0 hover:bg-muted/50',
+                      'group border-b last:border-b-0 hover:bg-row-hover',
                       isActive && 'bg-green-50 dark:bg-green-950/20',
                     )}
                   >
