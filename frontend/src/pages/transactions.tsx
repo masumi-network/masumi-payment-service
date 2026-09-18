@@ -594,7 +594,7 @@ export default function Transactions() {
                       <tr
                         key={transaction.id}
                         className={cn(
-                          'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                          'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ease-in-out',
                           hasTxError ? 'bg-destructive/10 border-l-2 border-l-destructive' : '',
                           'cursor-pointer hover:bg-muted/50',
                           isTxSelected && 'bg-muted/50',
