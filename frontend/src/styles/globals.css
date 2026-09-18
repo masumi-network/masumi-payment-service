@@ -128,41 +128,6 @@
   }
 }
 
-@layer components {
-  /* Sticky actions: fixed left fade; --table-actions-fill is rest or row-hover (not muted/50). */
-  .table-actions-head-fill,
-  .table-actions-cell-fill {
-    --table-actions-fill: hsl(var(--background));
-    background-color: transparent;
-    background-image: linear-gradient(
-      to right,
-      transparent,
-      color-mix(in srgb, var(--table-actions-fill) 80%, transparent) 2.5rem,
-      var(--table-actions-fill) 3.5rem
-    );
-  }
-
-  .group:hover .table-actions-cell-fill {
-    --table-actions-fill: var(--row-hover);
-  }
-
-  .table-actions-cell-fill--highlight {
-    --table-actions-fill: var(--row-hover);
-  }
-
-  .table-actions-cell-fill--destructive {
-    --table-actions-fill: hsl(var(--destructive) / 0.1);
-  }
-
-  .table-actions-cell-fill--low-balance {
-    --table-actions-fill: rgb(245 158 11 / 0.05);
-  }
-
-  .group:hover .table-actions-cell-fill--low-balance {
-    --table-actions-fill: rgb(245 158 11 / 0.1);
-  }
-}
-
 @layer base {
   * {
     @apply border-border;
@@ -784,4 +749,37 @@ input[type='number'] {
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Sticky actions fade (unlayered — Tailwind v4 build was dropping @layer components rules). */
+.table-actions-head-fill,
+.table-actions-cell-fill {
+  --table-actions-fill: hsl(var(--background));
+  background-color: transparent;
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--table-actions-fill) 80%, transparent) 2.5rem,
+    var(--table-actions-fill) 3.5rem
+  );
+}
+
+.group:hover .table-actions-cell-fill {
+  --table-actions-fill: var(--row-hover);
+}
+
+.table-actions-cell-fill--highlight {
+  --table-actions-fill: var(--row-hover);
+}
+
+.table-actions-cell-fill--destructive {
+  --table-actions-fill: hsl(var(--destructive) / 0.1);
+}
+
+.table-actions-cell-fill--low-balance {
+  --table-actions-fill: rgb(245 158 11 / 0.05);
+}
+
+.group:hover .table-actions-cell-fill--low-balance {
+  --table-actions-fill: rgb(245 158 11 / 0.1);
 }
