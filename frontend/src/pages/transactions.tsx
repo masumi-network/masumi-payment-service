@@ -11,9 +11,12 @@ import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTabl
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
+  tableActionsCellCompactDestructiveClass,
+  tableActionsCellCompactSelectedClass,
   tableActionsHeadCompactClass,
+  tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
-import { MoreHorizontal, FlaskConical } from 'lucide-react';
+import { FlaskConical } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -39,6 +42,7 @@ import {
 } from '@/components/transactions/TransactionFilters';
 import { buildTransactionReportViewDefaults } from '@/components/transactions/download-details.helpers';
 import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
+import { TransactionRowActionsMenu } from '@/components/transactions/TransactionRowActionsMenu';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
 
@@ -322,6 +326,34 @@ export default function Transactions() {
     [visibleTransactions, selectedIds, recoverErrors, refreshTransactions, resync],
   );
 
+  const handleRowRecoverErrors = useCallback(
+    async (transaction: Transaction, retryPreviousAction: boolean) => {
+      if (!transaction.id) return;
+
+      setBulkRecoveryMode(retryPreviousAction ? 'retry' : 'clear');
+      try {
+        const { succeeded, failed } = await recoverErrors([transaction], retryPreviousAction);
+        if (succeeded > 0) {
+          toast.success(
+            retryPreviousAction
+              ? 'Queued failed action for retry'
+              : 'Cleared error state for transaction',
+          );
+        }
+        if (failed > 0) {
+          toast.error(
+            retryPreviousAction ? 'Failed to retry transaction' : 'Failed to clear error state',
+          );
+        }
+        await resync('transactions');
+        refreshTransactions();
+      } finally {
+        setBulkRecoveryMode(null);
+      }
+    },
+    [recoverErrors, refreshTransactions, resync],
+  );
+
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
   const markAllAsReadRef = useRef(markAllAsRead);
   useEffect(() => {
@@ -554,137 +586,153 @@ export default function Transactions() {
                     </td>
                   </tr>
                 ) : (
-                  visibleTransactions.map((transaction, index) => (
-                    <tr
-                      key={transaction.id}
-                      className={cn(
-                        'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
-                        transaction.NextAction?.errorType
-                          ? 'bg-destructive/10 border-l-2 border-l-destructive'
-                          : '',
-                        'cursor-pointer hover:bg-muted/50',
-                        transaction.id && selectedIds.has(transaction.id) && 'bg-muted/50',
-                      )}
-                      style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                      onClick={() => setSelectedTransaction(transaction)}
-                    >
-                      {showSelection && (
-                        <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={transaction.id ? selectedIds.has(transaction.id) : false}
-                            onCheckedChange={() => transaction.id && toggleRow(transaction.id)}
-                            disabled={!transaction.id}
-                            aria-label="Select transaction"
+                  visibleTransactions.map((transaction, index) => {
+                    const hasTxError = !!transaction.NextAction?.errorType;
+                    const isTxSelected = Boolean(transaction.id && selectedIds.has(transaction.id));
+
+                    return (
+                      <tr
+                        key={transaction.id}
+                        className={cn(
+                          'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ease-in-out',
+                          hasTxError ? 'bg-destructive/10 border-l-2 border-l-destructive' : '',
+                          'cursor-pointer hover:bg-row-hover',
+                          isTxSelected && 'bg-row-hover',
+                        )}
+                        style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                        onClick={() => setSelectedTransaction(transaction)}
+                      >
+                        {showSelection && (
+                          <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={transaction.id ? selectedIds.has(transaction.id) : false}
+                              onCheckedChange={() => transaction.id && toggleRow(transaction.id)}
+                              disabled={!transaction.id}
+                              aria-label="Select transaction"
+                            />
+                          </td>
+                        )}
+                        <td className={cn('p-4', !showSelection && 'pl-6')}>
+                          <span className="capitalize">{transaction.type}</span>
+                        </td>
+                        <td className="p-4">
+                          {(() => {
+                            const displayTxHash = getLatestTxHash(transaction);
+                            return (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm text-muted-foreground">
+                                  {displayTxHash
+                                    ? `${displayTxHash.slice(0, 8)}...${displayTxHash.slice(-8)}`
+                                    : '—'}
+                                </span>
+                                {displayTxHash && <CopyButton value={displayTxHash} />}
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="p-4">
+                          <TransactionAgentIdentifierCell
+                            agentIdentifier={transaction.agentIdentifier}
+                            agentName={transaction.agentName}
+                            smartContractAddress={
+                              transaction.PaymentSource?.smartContractAddress ?? null
+                            }
+                            network={transaction.PaymentSource?.network}
                           />
                         </td>
-                      )}
-                      <td className={cn('p-4', !showSelection && 'pl-6')}>
-                        <span className="capitalize">{transaction.type}</span>
-                      </td>
-                      <td className="p-4">
-                        {(() => {
-                          const displayTxHash = getLatestTxHash(transaction);
-                          return (
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm text-muted-foreground">
-                                {displayTxHash
-                                  ? `${displayTxHash.slice(0, 8)}...${displayTxHash.slice(-8)}`
-                                  : '—'}
-                              </span>
-                              {displayTxHash && <CopyButton value={displayTxHash} />}
-                            </div>
-                          );
-                        })()}
-                      </td>
-                      <td className="p-4">
-                        <TransactionAgentIdentifierCell
-                          agentIdentifier={transaction.agentIdentifier}
-                          agentName={transaction.agentName}
-                          smartContractAddress={
-                            transaction.PaymentSource?.smartContractAddress ?? null
-                          }
-                          network={transaction.PaymentSource?.network}
-                        />
-                      </td>
-                      <td className="p-4">
-                        {transaction.type === 'payment' && transaction.RequestedFunds?.length
-                          ? transaction.RequestedFunds.map((fund, index) => (
-                              <div key={index} className="text-sm">
-                                {formatAssetAmount(fund.amount, fund.unit, network)}
-                              </div>
-                            ))
-                          : transaction.type === 'purchase' && transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => (
+                        <td className="p-4">
+                          {transaction.type === 'payment' && transaction.RequestedFunds?.length
+                            ? transaction.RequestedFunds.map((fund, index) => (
                                 <div key={index} className="text-sm">
                                   {formatAssetAmount(fund.amount, fund.unit, network)}
                                 </div>
                               ))
-                            : '—'}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex flex-col gap-1">
-                          <span>{transaction.PaymentSource.network}</span>
-                          <PaymentSourceTypeBadge
-                            paymentSourceType={transaction.PaymentSource.paymentSourceType}
-                            showDefault
-                          />
-                          <div className="flex items-center gap-1.5">
-                            {getTransactionLayerLabel(transaction) ? (
-                              <Badge
-                                variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
-                                className="w-fit"
-                              >
-                                {getTransactionLayerLabel(transaction)}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                            {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
-                              <span
-                                className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"
-                                title={getHydraHeadId(transaction) ?? undefined}
-                              >
-                                {getHydraHeadId(transaction)}
-                              </span>
-                            )}
+                            : transaction.type === 'purchase' && transaction.PaidFunds?.length
+                              ? transaction.PaidFunds.map((fund, index) => (
+                                  <div key={index} className="text-sm">
+                                    {formatAssetAmount(fund.amount, fund.unit, network)}
+                                  </div>
+                                ))
+                              : '—'}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-col gap-1">
+                            <span>{transaction.PaymentSource.network}</span>
+                            <PaymentSourceTypeBadge
+                              paymentSourceType={transaction.PaymentSource.paymentSourceType}
+                              showDefault
+                            />
+                            <div className="flex items-center gap-1.5">
+                              {getTransactionLayerLabel(transaction) ? (
+                                <Badge
+                                  variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
+                                  className="w-fit"
+                                >
+                                  {getTransactionLayerLabel(transaction)}
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                              {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
+                                <span
+                                  className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"
+                                  title={getHydraHeadId(transaction) ?? undefined}
+                                >
+                                  {getHydraHeadId(transaction)}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <span
-                          className={getStatusColor(
-                            transaction.onChainState,
-                            !!transaction.NextAction?.errorType,
-                          )}
+                        </td>
+                        <td className="p-4">
+                          <span
+                            className={getStatusColor(
+                              transaction.onChainState,
+                              !!transaction.NextAction?.errorType,
+                            )}
+                          >
+                            {transaction.onChainState === 'Disputed' ? (
+                              <span className="flex items-center gap-1">
+                                <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
+                                {formatStatus(transaction.onChainState)}
+                              </span>
+                            ) : (
+                              formatStatus(transaction.onChainState)
+                            )}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          {transaction.onChainState === 'ResultSubmitted'
+                            ? formatDateTime(transaction.unlockTime)
+                            : '—'}
+                        </td>
+                        <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
+                        <td
+                          className={
+                            hasTxError
+                              ? tableActionsCellCompactDestructiveClass
+                              : isTxSelected
+                                ? tableActionsCellCompactSelectedClass
+                                : tableActionsCellCompactClass
+                          }
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {transaction.onChainState === 'Disputed' ? (
-                            <span className="flex items-center gap-1">
-                              <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
-                              {formatStatus(transaction.onChainState)}
-                            </span>
-                          ) : (
-                            formatStatus(transaction.onChainState)
-                          )}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        {transaction.onChainState === 'ResultSubmitted'
-                          ? formatDateTime(transaction.unlockTime)
-                          : '—'}
-                      </td>
-                      <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
-                      <td className={tableActionsCellCompactClass}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="More actions"
-                          className="h-8 w-8"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
+                          <div className={tableActionsInnerClass}>
+                            <TransactionRowActionsMenu
+                              transaction={transaction}
+                              canRecover={canRecoverErrors}
+                              isRecovering={isRecovering}
+                              onViewDetails={() => setSelectedTransaction(transaction)}
+                              onClearError={() => void handleRowRecoverErrors(transaction, false)}
+                              onRetryFailedAction={() =>
+                                void handleRowRecoverErrors(transaction, true)
+                              }
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

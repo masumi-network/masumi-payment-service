@@ -156,7 +156,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     }
   };
 
-  const triggerLabel =
+  const triggerValue =
     activeRail === 'x402'
       ? // Only surface a chain name once it is fully configured; a chain still mid-setup
         // reads as "Set up x402" rather than masquerading as an active payment source.
@@ -164,11 +164,20 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
         ? selectedChain.displayName
         : 'Set up x402'
       : selectedPaymentSource
-        ? `${getPaymentSourceTypeShortLabel(selectedPaymentSource.paymentSourceType)} ${shortenAddress(
-            selectedPaymentSource.smartContractAddress,
-            8,
-          )}`
+        ? selectedPaymentSource.smartContractAddress
         : 'Select source';
+
+  const triggerTypeShortLabel =
+    activeRail !== 'x402' && selectedPaymentSource
+      ? getPaymentSourceTypeShortLabel(selectedPaymentSource.paymentSourceType)
+      : null;
+
+  const triggerTitle =
+    activeRail === 'x402'
+      ? triggerValue
+      : selectedPaymentSource
+        ? `${triggerTypeShortLabel ?? ''} ${selectedPaymentSource.smartContractAddress}`.trim()
+        : triggerValue;
 
   const collapsedSourceLabel =
     activeRail === 'x402'
@@ -253,8 +262,8 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   }
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg bg-[#F4F4F5] p-1.5 pb-1 dark:bg-secondary">
-      <div className="grid grid-cols-2 gap-1 mx-0.5">
+    <div className="flex w-full min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg bg-[#F4F4F5] p-1.5 pb-1 dark:bg-secondary">
+      <div className="grid min-w-0 grid-cols-2 gap-1 mx-0.5">
         <Button
           variant="ghost"
           size="sm2"
@@ -287,13 +296,13 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
           <DropdownMenuTrigger asChild>
             <button
               type="button"
+              title={triggerTitle}
               className={cn(
-                'flex items-center gap-2 w-full rounded-md px-3 py-2 min-h-9',
+                'relative flex w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 py-2 min-h-9',
                 'border border-transparent hover:border-border/60',
                 'hover:bg-[#00000008] dark:hover:bg-[#ffffff08]',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                'transition-colors duration-150 text-left cursor-pointer',
-                'relative sidebar-active-indicator',
+                'transition-colors duration-150 text-left cursor-pointer sidebar-active-indicator',
                 isOnPaymentSourcesPage && 'is-active',
               )}
               aria-label={collapsedSourceLabel}
@@ -303,20 +312,25 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
               ) : (
                 <FileInput className="h-3.5 w-3.5 shrink-0" />
               )}
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <div className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   Payment source
                 </div>
-                <div
-                  className={cn(
-                    'text-xs truncate',
-                    activeRail !== 'x402' && selectedPaymentSource && 'font-mono',
-                  )}
-                >
-                  {triggerLabel}
+                <div className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap">
+                  {triggerTypeShortLabel ? (
+                    <span className="shrink-0 text-xs font-medium">{triggerTypeShortLabel}</span>
+                  ) : null}
+                  <span
+                    className={cn(
+                      'min-w-0 truncate text-xs',
+                      activeRail !== 'x402' && selectedPaymentSource && 'font-mono',
+                    )}
+                  >
+                    {triggerValue}
+                  </span>
                 </div>
               </div>
-              <RailBadge rail={activeRail} />
+              <RailBadge rail={activeRail} className="shrink-0" />
               <ChevronsUpDown className="h-3 w-3 shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>

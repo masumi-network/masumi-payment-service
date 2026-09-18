@@ -221,7 +221,7 @@ export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
                 <tr
                   key={rule.id}
                   className={cn(
-                    'group border-b last:border-0 hover:bg-muted/50',
+                    'group border-b last:border-0 hover:bg-row-hover',
                     !rule.enabled && 'opacity-50',
                   )}
                 >

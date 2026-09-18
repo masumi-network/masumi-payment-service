@@ -363,7 +363,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
           <div
             className={cn(
-              'w-full px-2 pt-2 pb-0',
+              'w-full min-w-0 overflow-hidden px-2 pt-2 pb-0',
               collapsed && !isHovered && 'flex justify-center',
             )}
           >

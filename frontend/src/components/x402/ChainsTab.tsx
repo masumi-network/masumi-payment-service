@@ -196,7 +196,7 @@ export function ChainsTab() {
               </tr>
             ) : (
               networks.map((network) => (
-                <tr key={network.id} className="group border-b last:border-0 hover:bg-muted/50">
+                <tr key={network.id} className="group border-b last:border-0 hover:bg-row-hover">
                   <td className="p-4">
                     <div className="font-medium">{network.displayName}</div>
                     <div className="text-xs text-muted-foreground font-mono">{network.caip2Id}</div>

@@ -201,7 +201,7 @@ export function WalletsTab() {
               </tr>
             ) : (
               wallets.map((wallet) => (
-                <tr key={wallet.id} className="group border-b last:border-0 hover:bg-muted/50">
+                <tr key={wallet.id} className="group border-b last:border-0 hover:bg-row-hover">
                   <td className="p-4">
                     <div className="flex items-center gap-1">
                       <span className="font-mono text-sm" title={wallet.address}>

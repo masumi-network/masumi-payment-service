@@ -143,7 +143,7 @@ export function QuarantineTable({
                 <tr
                   key={entry.id}
                   className={cn(
-                    'group border-b animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 hover:bg-muted/50',
+                    'group border-b animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 hover:bg-row-hover',
                     entry.needsOperator && 'bg-destructive/10 border-l-2 border-l-destructive',
                   )}
                   style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}

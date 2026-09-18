@@ -39,7 +39,7 @@ import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton'
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
-  tableActionsCellCompactLowBalanceHoverClass,
+  tableActionsCellCompactLowBalanceClass,
   tableActionsHeadCompactClass,
 } from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
@@ -296,7 +296,7 @@ export default function WalletsPage() {
                         className={`group border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
                           wallet.LowBalanceSummary?.isLow
                             ? 'bg-amber-500/5 hover:bg-amber-500/10'
-                            : 'hover:bg-muted/50'
+                            : 'hover:bg-row-hover'
                         }`}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => handleWalletClick(wallet)}
@@ -386,11 +386,11 @@ export default function WalletsPage() {
                           </div>
                         </td>
                         <td
-                          className={cn(
-                            tableActionsCellCompactClass,
-                            wallet.LowBalanceSummary?.isLow &&
-                              tableActionsCellCompactLowBalanceHoverClass,
-                          )}
+                          className={
+                            wallet.LowBalanceSummary?.isLow
+                              ? tableActionsCellCompactLowBalanceClass
+                              : tableActionsCellCompactClass
+                          }
                         >
                           <div className="flex justify-end">
                             {/* Every action here (fund, top up, transfer, swap) is an
