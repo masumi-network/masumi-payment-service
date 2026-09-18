@@ -12,6 +12,11 @@ import type { QueryClient } from '@tanstack/react-query';
 export function invalidateAgentQueries(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: ['agents'] });
   void queryClient.invalidateQueries({ queryKey: ['context-agents'] });
+  invalidateRegistryAgentCount(queryClient);
+}
+
+export function invalidateRegistryAgentCount(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: ['agents', 'count'] });
 }
 
 /**
@@ -26,4 +31,5 @@ export function invalidateAgentQueries(queryClient: QueryClient): void {
 export function resetAgentQueries(queryClient: QueryClient): void {
   void queryClient.resetQueries({ queryKey: ['agents'] });
   void queryClient.resetQueries({ queryKey: ['context-agents'] });
+  invalidateRegistryAgentCount(queryClient);
 }

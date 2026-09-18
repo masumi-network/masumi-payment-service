@@ -57,6 +57,11 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  --min-height-overview-list: var(--overview-list-scroll-max-height);
+  --max-height-overview-list: var(--overview-list-scroll-max-height);
+  --min-height-overview-panel: var(--overview-panel-max-height);
+  --max-height-overview-panel: var(--overview-panel-max-height);
 }
 
 /*
@@ -101,6 +106,15 @@
     --radius: 0.5rem;
     --accent-brand: 174 60% 51%;
     --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
+    /* py-3 + two-line row (title + secondary); × 8.5 rows peeks half a row for scroll affordance */
+    --overview-list-row-height: 4rem;
+    --overview-list-scroll-max-height: calc(var(--overview-list-row-height) * 8.5);
+    --overview-panel-header-height: 3.25rem;
+    --overview-panel-footer-height: 3.75rem;
+    --overview-panel-max-height: calc(
+      var(--overview-panel-header-height) + var(--overview-list-scroll-max-height) +
+        var(--overview-panel-footer-height)
+    );
   }
 
   .dark {
@@ -570,9 +584,14 @@ input[type='number'] {
 .card-interactive:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: hsl(var(--foreground) / 0.12);
 }
-.dark .card-interactive:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+html.dark .card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: hsl(0 0% 100% / 0.14);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.55),
+    0 0 0 1px hsl(0 0% 100% / 0.06);
 }
 
 /* Accessibility: respect reduced motion preference */
