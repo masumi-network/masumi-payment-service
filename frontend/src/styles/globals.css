@@ -106,11 +106,12 @@
     --radius: 0.5rem;
     --accent-brand: 174 60% 51%;
     --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
-    /* py-3 + two-line row (title + secondary); × 8.5 rows peeks half a row for scroll affordance */
+    /* py-3 + two-line row (title + secondary); × 9.5 rows peeks half a row for scroll affordance */
     --overview-list-row-height: 4rem;
-    --overview-list-scroll-max-height: calc(var(--overview-list-row-height) * 8.5);
+    --overview-list-scroll-max-height: calc(var(--overview-list-row-height) * 9.5);
     --overview-panel-header-height: 3.25rem;
-    --overview-panel-footer-height: 3.75rem;
+    /* sm footer button + py-3; must match panel flex layout or max-h clips the last list row */
+    --overview-panel-footer-height: 3.5rem;
     --overview-panel-max-height: calc(
       var(--overview-panel-header-height) + var(--overview-list-scroll-max-height) +
         var(--overview-panel-footer-height)

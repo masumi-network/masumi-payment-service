@@ -66,15 +66,16 @@ export function DashboardPanel({
         </div>
         <div className="flex h-8 shrink-0 items-center justify-end gap-1">{headerExtra}</div>
       </div>
-      <div className="flex min-h-0 flex-col">{children}</div>
-      {footer ? <div className="border-t px-4 py-3">{footer}</div> : null}
+      <div className={cn('flex min-h-0 flex-col', reserveListHeight && 'flex-1 overflow-hidden')}>
+        {children}
+      </div>
+      {footer ? <div className="shrink-0 border-t bg-card px-4 py-3">{footer}</div> : null}
     </section>
   );
 }
 
-/** Fixed ~8.5-row viewport; Load more lives at end of scroll. */
-export const overviewListScrollClass =
-  'min-h-overview-list max-h-overview-list overflow-y-auto overscroll-contain';
+/** Fills panel body (flex-1); ~9.5 rows via panel max-height math. Load more at end of scroll. */
+export const overviewListScrollClass = 'h-full min-h-0 overflow-y-auto overscroll-contain';
 
 export function OverviewListScroll({
   children,
@@ -87,7 +88,7 @@ export function OverviewListScroll({
 }
 
 export function OverviewList({ children, className }: { children: ReactNode; className?: string }) {
-  return <ul className={className}>{children}</ul>;
+  return <ul className={cn('m-0 list-none p-0', className)}>{children}</ul>;
 }
 
 export function OverviewListItem({ children, index }: { children: ReactNode; index: number }) {
