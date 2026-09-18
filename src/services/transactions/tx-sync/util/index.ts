@@ -297,13 +297,9 @@ export function extractOnChainTransactionData(
 		};
 	}
 	const redeemers = tx.transaction.witness_set().redeemers();
-	if (valueInputs.length == 0 && !redeemers) return { type: 'Initial', valueOutputs };
-	if (valueInputs.length == 0) {
-		return {
-			type: 'Invalid',
-			error: 'Smart Contract has redeemers but no value inputs at the contract address',
-		};
-	}
+	// Nothing is spent from the contract, so any redeemer belongs to another
+	// script, e.g. a guarded smart wallet funding the lock with AgentSpend.
+	if (valueInputs.length == 0) return { type: 'Initial', valueOutputs };
 	if (!redeemers) {
 		return {
 			type: 'Invalid',

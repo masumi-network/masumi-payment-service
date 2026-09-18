@@ -1,6 +1,25 @@
-import { OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import {
+	BigNum,
+	ExUnits,
+	PlutusData,
+	Redeemer,
+	Redeemers,
+	RedeemerTag,
+	Transaction,
+	TransactionBody,
+	TransactionInputs,
+	TransactionOutputs,
+	TransactionWitnessSet,
+} from '@emurgo/cardano-serialization-lib-nodejs';
+import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import { checkPaymentAmountsMatch, getCardanoFeesBuyer, getCardanoFeesSeller, redeemerToOnChainState } from './index';
+import {
+	checkPaymentAmountsMatch,
+	extractOnChainTransactionData,
+	getCardanoFeesBuyer,
+	getCardanoFeesSeller,
+	redeemerToOnChainState,
+} from './index';
 
 const V1 = PaymentSourceType.Web3CardanoV1;
 const V2 = PaymentSourceType.Web3CardanoV2;
@@ -278,5 +297,52 @@ describe('redeemerToOnChainState', () => {
 
 	it('returns null for unknown redeemer versions', () => {
 		expect(redeemerToOnChainState(99, noContract, valueMatches)).toBeNull();
+	});
+});
+
+describe('extractOnChainTransactionData', () => {
+	const smartContractAddress = 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g';
+	const guardedWalletAddress = 'addr_test1wr02z9ns0dnwqw5r303lj9rmuseltekrcl6gtf48jqqtrpqdxavt5';
+	const utxo = { data_hash: null, inline_datum: null, reference_script_hash: null, collateral: false };
+
+	it('classifies a lock funded by another script as Initial although the transaction carries a redeemer', () => {
+		const redeemers = Redeemers.new();
+		redeemers.add(
+			Redeemer.new(
+				RedeemerTag.new_spend(),
+				BigNum.zero(),
+				PlutusData.new_empty_constr_plutus_data(BigNum.zero()),
+				ExUnits.new(BigNum.zero(), BigNum.zero()),
+			),
+		);
+		const witnessSet = TransactionWitnessSet.new();
+		witnessSet.set_redeemers(redeemers);
+		const lock = {
+			...utxo,
+			address: smartContractAddress,
+			amount: [{ unit: 'lovelace', quantity: '19900000' }],
+			output_index: 1,
+		};
+
+		const extracted = extractOnChainTransactionData(
+			{
+				blockTime: 0,
+				tx: { tx_hash: 'aa'.repeat(32) },
+				block: { confirmations: 1 },
+				metadata: { fees: 0n } as never,
+				utxos: {
+					hash: 'aa'.repeat(32),
+					inputs: [{ ...utxo, address: guardedWalletAddress, amount: [], tx_hash: 'bb'.repeat(32), output_index: 0 }],
+					outputs: [{ ...utxo, address: guardedWalletAddress, amount: [], output_index: 0 }, lock],
+				},
+				transaction: Transaction.new(
+					TransactionBody.new_tx_body(TransactionInputs.new(), TransactionOutputs.new(), BigNum.zero()),
+					witnessSet,
+				),
+			},
+			{ smartContractAddress, network: Network.Preprod, paymentSourceType: V2 },
+		);
+
+		expect(extracted).toEqual({ type: 'Initial', valueOutputs: [lock] });
 	});
 });
