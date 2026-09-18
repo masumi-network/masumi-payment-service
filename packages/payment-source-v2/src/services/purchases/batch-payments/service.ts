@@ -38,6 +38,7 @@ import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { asV2Provider } from '../../provider-cast';
+import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { processL2PurchaseLocks, type L2LockPassResult } from './l2-lock';
 import {
 	buildAndCosignGuardedBatch,
@@ -258,6 +259,7 @@ function getNewestPurchaseRequestCreatedAt(purchaseRequests: PurchaseRequestWith
  */
 export type BatchPairingOutcome =
 	| { status: 'succeeded'; walletId: string; sharedTxId: string; txHash: string; requestIds: string[] }
+	| { status: 'collateral-deferred'; walletId: string; placeholderTransactionId: string | null; requestIds: string[] }
 	| {
 			status: 'pre-submit-failed';
 			walletId: string;
@@ -300,6 +302,29 @@ async function executeSpecificBatchPayment(
 	const walletId = walletPairing.walletId;
 	let batchedRequests = walletPairing.batchedRequests;
 	const guardedPurchases: GuardedPurchase[] = [];
+
+	if (walletPairing.guarded != null) {
+		// AgentSpend is a script spend: the agent key lends the collateral. Nothing is
+		// written for the purchases yet, so they stay FundsLockingRequested while the
+		// prep tx (which now holds the wallet lock) settles.
+		const collateralCheck = await ensureCollateralReady({
+			walletDbId: walletId,
+			walletAddress: walletPairing.changeAddress,
+			meshWallet: wallet,
+			utxos: walletPairing.utxos,
+			blockchainProvider,
+			network: convertNetwork(paymentContract.network),
+			serviceLabel: 'batch-payments-guarded',
+		});
+		if (collateralCheck.status !== 'ready') {
+			return {
+				status: 'collateral-deferred',
+				walletId,
+				placeholderTransactionId: walletPairing.placeholderTransactionId,
+				requestIds: batchedRequests.map((b) => b.paymentRequest.id),
+			};
+		}
+	}
 
 	//batch payments
 	const unsignedTx = new Transaction({
@@ -1503,6 +1528,22 @@ export async function batchLatestPaymentEntriesV2() {
 										'batch-payments post-submit DB retry also failed; reconciliation will resolve via intendedTxHash',
 										{ walletId: outcome.walletId, sharedTxId: outcome.sharedTxId, error: retryError },
 									);
+								}
+								break;
+
+							case 'collateral-deferred':
+								// ensureCollateralReady owns the wallet from here: a submitted prep tx
+								// holds the lock until it confirms, a failed one already released it.
+								// Only the lock-time placeholder it displaced is left to close.
+								logger.info('batch-payments guarded pairing deferred for collateral prep', {
+									walletId: outcome.walletId,
+									requestCount: outcome.requestIds.length,
+								});
+								if (outcome.placeholderTransactionId != null) {
+									await prisma.transaction.update({
+										where: { id: outcome.placeholderTransactionId },
+										data: { status: TransactionStatus.RolledBack },
+									});
 								}
 								break;
 

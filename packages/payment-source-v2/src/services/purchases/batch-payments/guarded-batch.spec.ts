@@ -84,6 +84,12 @@ jest.unstable_mockModule('@/services/wallets', () => ({
 	},
 }));
 
+type CollateralCheck = { status: 'ready' } | { status: 'deferred'; prepTxHash: string };
+const mockEnsureCollateralReady = jest.fn<(params: Record<string, unknown>) => Promise<CollateralCheck>>();
+jest.unstable_mockModule('../../wallet-collateral/ensure-collateral-ready', () => ({
+	ensureCollateralReady: mockEnsureCollateralReady,
+}));
+
 let provider: Record<string, unknown>;
 jest.unstable_mockModule('@/services/shared/provider-factory', () => ({
 	createMeshProvider: async () => provider,
@@ -302,6 +308,7 @@ beforeEach(async () => {
 	sellerAddress = (await seller.getUnusedAddresses())[0];
 	mockSignTx.mockImplementation((tx, partial) => agentWallet.signTx(tx, partial));
 	mockSubmitTx.mockImplementation(async (tx) => resolveTxHash(tx));
+	mockEnsureCollateralReady.mockResolvedValue({ status: 'ready' });
 
 	agentUtxos = [50n, 10n].map((ada, outputIndex) => ({
 		input: { txHash: '11'.repeat(32), outputIndex },
@@ -613,6 +620,46 @@ describe('batch-payments from a guarded wallet', () => {
 		expect(last(hotWalletUpdates)?.data).toEqual({ lockedAt: null, PendingTransaction: { disconnect: true } });
 	});
 
+	it('prepares agent collateral first and funds the batch on a later tick with no manual action', async () => {
+		mockPaymentSourceFindMany.mockResolvedValue([paymentSource([purchase(1), purchase(2)])]);
+		answerWith([allow()]);
+		const readyUtxos = agentUtxos;
+		agentUtxos = [
+			{
+				input: { txHash: '33'.repeat(32), outputIndex: 0 },
+				output: { address: agentAddress, amount: [{ unit: 'lovelace', quantity: (60n * ADA).toString() }] },
+			},
+		];
+		mockEnsureCollateralReady.mockResolvedValueOnce({ status: 'deferred', prepTxHash: '44'.repeat(32) });
+
+		await batchLatestPaymentEntriesV2();
+
+		expect(mockEnsureCollateralReady).toHaveBeenCalledTimes(1);
+		expect(mockEnsureCollateralReady.mock.calls[0][0]).toMatchObject({
+			walletDbId: 'wallet-1',
+			walletAddress: agentAddress,
+			utxos: agentUtxos,
+			network: 'preprod',
+		});
+		expect(cosignCalls).toHaveLength(0);
+		expect(mockSignTx).not.toHaveBeenCalled();
+		expect(purchaseUpdates).toHaveLength(0);
+		expect(transactionUpdates).toEqual([
+			{ where: { id: 'placeholder-tx' }, data: { status: TransactionStatus.RolledBack } },
+		]);
+		expect(hotWalletUpdates.map((update) => update.data.lockedAt)).not.toContain(null);
+
+		agentUtxos = readyUtxos;
+		await batchLatestPaymentEntriesV2();
+
+		expect(mockEnsureCollateralReady).toHaveBeenCalledTimes(2);
+		expect(cosignCalls).toHaveLength(1);
+		expect(mockSubmitTx).toHaveBeenCalledTimes(1);
+		for (const id of ['purchase-1', 'purchase-2']) {
+			expect(nextActionsOf(id)).toEqual([PurchasingAction.FundsLockingInitiated]);
+		}
+	});
+
 	it('leaves an unguarded wallet on the existing path with no co-sign call', async () => {
 		mockPaymentSourceFindMany.mockResolvedValue([paymentSource([purchase(1)], false)]);
 		answerWith([allow()]);
@@ -620,5 +667,6 @@ describe('batch-payments from a guarded wallet', () => {
 		await batchLatestPaymentEntriesV2();
 
 		expect(cosignCalls).toHaveLength(0);
+		expect(mockEnsureCollateralReady).not.toHaveBeenCalled();
 	});
 });
