@@ -100,7 +100,9 @@
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
     --accent-brand: 174 60% 51%;
-    --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
+    --table-row-hover-fill: #fafafa;
+    --row-hover: var(--table-row-hover-fill);
+    --transaction-error-row-fill: #feeeed;
   }
 
   .dark {
@@ -168,23 +170,15 @@
   .transaction-row-error {
     border-left-width: 2px;
     border-left-color: hsl(var(--destructive));
-    background-color: hsl(var(--destructive) / 0.1);
-  }
-
-  .dark .transaction-row-error {
     background-color: var(--transaction-error-row-fill);
   }
 
-  .dark .transaction-row-error:hover,
-  .dark .transaction-row-error.transaction-row-selected {
+  .transaction-row-error:hover,
+  .transaction-row-error.transaction-row-selected {
     background-color: var(--table-row-hover-fill);
   }
 
   .table-actions-cell-fill--destructive {
-    --table-actions-fill: hsl(var(--destructive) / 0.1);
-  }
-
-  .dark .table-actions-cell-fill--destructive {
     --table-actions-fill: var(--transaction-error-row-fill);
   }
 

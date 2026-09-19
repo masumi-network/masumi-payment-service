@@ -486,7 +486,6 @@ export default function Transactions() {
             selectedCount={selectedCount}
             onClear={clearSelection}
             disabled={isRecovering}
-            variant="destructive"
           >
             {!canRecoverErrors ? (
               <span className="max-w-md text-right text-sm text-muted-foreground">
@@ -506,8 +505,9 @@ export default function Transactions() {
                   </span>
                 ) : null}
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
+                  className="border-border bg-background shadow-xs hover:bg-background"
                   onClick={() => setBulkConfirmMode('clear')}
                   disabled={isRecovering}
                 >
@@ -720,10 +720,10 @@ export default function Transactions() {
                         <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
                         <td
                           className={
-                            hasTxError
-                              ? tableActionsCellCompactDestructiveClass
-                              : isTxSelected
-                                ? tableActionsCellCompactSelectedClass
+                            isTxSelected
+                              ? tableActionsCellCompactSelectedClass
+                              : hasTxError
+                                ? tableActionsCellCompactDestructiveClass
                                 : tableActionsCellCompactClass
                           }
                           onClick={(e) => e.stopPropagation()}
