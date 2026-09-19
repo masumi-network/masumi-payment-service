@@ -353,7 +353,7 @@ export default function ApiKeys() {
 
           <HorizontalScrollArea className="border rounded-lg">
             <table className="w-full">
-              <thead>
+              <thead className="table-header-surface">
                 <tr className="border-b">
                   <th className="w-12 p-4">
                     <TableSelectAllCheckbox
