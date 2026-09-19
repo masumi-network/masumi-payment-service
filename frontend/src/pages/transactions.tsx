@@ -33,8 +33,16 @@ import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSe
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
-import { getLatestTxHash } from '@/components/transactions/transaction-format.helpers';
-import { Checkbox } from '@/components/ui/checkbox';
+import {
+  getLatestTxHash,
+  isTransactionErrorRecoverable,
+} from '@/components/transactions/transaction-format.helpers';
+import { BulkActionBar } from '@/components/ui/bulk-action-bar';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  TableSelectAllCheckbox,
+  TableSelectRowCheckbox,
+} from '@/components/ui/table-select-checkbox';
 import {
   TransactionFilters,
   EMPTY_FILTERS,
@@ -45,6 +53,7 @@ import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransacti
 import { TransactionRowActionsMenu } from '@/components/transactions/TransactionRowActionsMenu';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
+import { useTableSelection } from '@/lib/hooks/useTableSelection';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -80,12 +89,8 @@ export default function Transactions() {
     [activeTab, filters, searchQuery],
   );
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
-  const isNeedsActionTab = activeTab === 'Needs Action';
-  // Error recovery posts to /payment|purchase/error-state-recovery, both
-  // pay-authenticated. Read-only sessions keep the Needs Action tab as a
-  // read-only view but get no selection column and no bulk action bar.
+  // Error recovery posts to /payment|purchase/error-state-recovery (pay-authenticated).
   const canRecoverErrors = capabilities.canPay;
-  const showSelection = isNeedsActionTab && canRecoverErrors;
 
   const filterParams = useMemo(() => {
     const params: {
@@ -131,11 +136,9 @@ export default function Transactions() {
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
-  // Multi-row selection is only offered on the Needs Action tab, where every row
-  // is in an error state that can be bulk-cleared. Keyed by transaction id.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { recoverErrors, isRecovering } = useBulkClearTransactionErrors();
   const [bulkRecoveryMode, setBulkRecoveryMode] = useState<'clear' | 'retry' | null>(null);
+  const [bulkConfirmMode, setBulkConfirmMode] = useState<'clear' | 'retry' | null>(null);
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
@@ -267,35 +270,37 @@ export default function Transactions() {
     return displayTransactions.filter((tx) => tx.NextAction?.errorType === filters.errorType);
   }, [displayTransactions, filters.errorType]);
 
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
-
   const selectableIds = useMemo(
     () => visibleTransactions.map((tx) => tx.id).filter((id): id is string => Boolean(id)),
     [visibleTransactions],
   );
-  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
-  const someSelected = selectedIds.size > 0 && !allSelected;
 
-  const toggleAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      const everySelected = selectableIds.length > 0 && selectableIds.every((id) => prev.has(id));
-      return everySelected ? new Set() : new Set(selectableIds);
-    });
-  }, [selectableIds]);
+  const {
+    selectedIds,
+    selectedCount,
+    clearSelection,
+    allSelected,
+    someSelected,
+    toggleAll,
+    toggleRow,
+    isSelected,
+    setSelectionToIds,
+  } = useTableSelection(selectableIds);
 
-  const toggleRow = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const recoverableSelectedTransactions = useMemo(
+    () =>
+      visibleTransactions.filter(
+        (tx) => tx.id && selectedIds.has(tx.id) && isTransactionErrorRecoverable(tx, network),
+      ),
+    [visibleTransactions, selectedIds, network],
+  );
+  const recoverableSelectedCount = recoverableSelectedTransactions.length;
 
   const handleBulkRecoverErrors = useCallback(
     async (retryPreviousAction: boolean) => {
-      const selected = visibleTransactions.filter((tx) => tx.id && selectedIds.has(tx.id));
-      if (selected.length === 0) return;
+      if (recoverableSelectedTransactions.length === 0) return;
+
+      const selected = recoverableSelectedTransactions;
 
       setBulkRecoveryMode(retryPreviousAction ? 'retry' : 'clear');
       try {
@@ -316,14 +321,20 @@ export default function Transactions() {
         }
 
         // Keep only the failed rows selected so the user can retry them.
-        setSelectedIds(new Set(failedIds));
+        setSelectionToIds(failedIds);
         await resync('transactions');
         refreshTransactions();
       } finally {
         setBulkRecoveryMode(null);
       }
     },
-    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions, resync],
+    [
+      recoverableSelectedTransactions,
+      recoverErrors,
+      refreshTransactions,
+      resync,
+      setSelectionToIds,
+    ],
   );
 
   const handleRowRecoverErrors = useCallback(
@@ -471,40 +482,51 @@ export default function Transactions() {
             />
           </div>
 
-          {showSelection && selectedIds.size > 0 && (
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 animate-fade-in">
-              <span className="text-sm font-medium">{selectedIds.size} selected</span>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedIds(new Set())}
-                  disabled={isRecovering}
-                >
-                  Cancel
-                </Button>
+          <BulkActionBar
+            selectedCount={selectedCount}
+            onClear={clearSelection}
+            disabled={isRecovering}
+            variant="destructive"
+          >
+            {!canRecoverErrors ? (
+              <span className="max-w-md text-right text-sm text-muted-foreground">
+                Bulk recovery requires an API key with pay access.
+              </span>
+            ) : recoverableSelectedCount === 0 ? (
+              <span className="max-w-md text-right text-sm text-muted-foreground">
+                {
+                  'No bulk actions for this selection. Pick rows with an error, or open the Needs Action tab.'
+                }
+              </span>
+            ) : (
+              <>
+                {recoverableSelectedCount < selectedCount ? (
+                  <span className="text-xs text-muted-foreground">
+                    {recoverableSelectedCount} of {selectedCount} can be recovered
+                  </span>
+                ) : null}
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => handleBulkRecoverErrors(false)}
+                  onClick={() => setBulkConfirmMode('clear')}
                   disabled={isRecovering}
                 >
                   {bulkRecoveryMode === 'clear'
                     ? 'Clearing error states...'
-                    : `Clear error state (${selectedIds.size})`}
+                    : `Clear error state (${recoverableSelectedCount})`}
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => handleBulkRecoverErrors(true)}
+                  onClick={() => setBulkConfirmMode('retry')}
                   disabled={isRecovering}
                 >
                   {bulkRecoveryMode === 'retry'
                     ? 'Queueing retries...'
-                    : `Retry failed action (${selectedIds.size})`}
+                    : `Retry failed action (${recoverableSelectedCount})`}
                 </Button>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </BulkActionBar>
 
           <HorizontalScrollArea className="border rounded-lg">
             <table
@@ -513,26 +535,18 @@ export default function Transactions() {
                 isSearchPending && 'opacity-70',
               )}
             >
-              <thead className="bg-muted/30 dark:bg-muted/15">
+              <thead className="table-header-surface">
                 <tr className="border-b">
-                  {showSelection && (
-                    <th className="p-4 pl-6 w-10">
-                      <Checkbox
-                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                        onCheckedChange={toggleAll}
-                        aria-label="Select all transactions"
-                        disabled={selectableIds.length === 0}
-                      />
-                    </th>
-                  )}
-                  <th
-                    className={cn(
-                      'p-4 text-left text-sm font-medium text-muted-foreground',
-                      !showSelection && 'pl-6',
-                    )}
-                  >
-                    Type
+                  <th className="w-10 p-4 pl-6">
+                    <TableSelectAllCheckbox
+                      allSelected={allSelected}
+                      someSelected={someSelected}
+                      onToggleAll={toggleAll}
+                      disabled={selectableIds.length === 0}
+                      aria-label="Select all transactions on this page"
+                    />
                   </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Type</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Transaction Hash
                   </th>
@@ -555,10 +569,10 @@ export default function Transactions() {
               </thead>
               <tbody>
                 {isInitialLoading || (visibleTransactions.length === 0 && isSearchPending) ? (
-                  <TransactionTableSkeleton rows={5} />
+                  <TransactionTableSkeleton rows={5} withSelectionColumn />
                 ) : visibleTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={showSelection ? 10 : 9}>
+                    <td colSpan={10}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -588,31 +602,28 @@ export default function Transactions() {
                 ) : (
                   visibleTransactions.map((transaction, index) => {
                     const hasTxError = !!transaction.NextAction?.errorType;
-                    const isTxSelected = Boolean(transaction.id && selectedIds.has(transaction.id));
+                    const isTxSelected = Boolean(transaction.id && isSelected(transaction.id));
 
                     return (
                       <tr
                         key={transaction.id}
                         className={cn(
                           'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ease-in-out',
-                          hasTxError ? 'bg-destructive/10 border-l-2 border-l-destructive' : '',
+                          hasTxError ? 'transaction-row-error' : '',
                           'cursor-pointer hover:bg-row-hover',
-                          isTxSelected && 'bg-row-hover',
+                          isTxSelected && 'transaction-row-selected bg-row-hover',
                         )}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => setSelectedTransaction(transaction)}
                       >
-                        {showSelection && (
-                          <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
-                            <Checkbox
-                              checked={transaction.id ? selectedIds.has(transaction.id) : false}
-                              onCheckedChange={() => transaction.id && toggleRow(transaction.id)}
-                              disabled={!transaction.id}
-                              aria-label="Select transaction"
-                            />
-                          </td>
-                        )}
-                        <td className={cn('p-4', !showSelection && 'pl-6')}>
+                        <td className="w-10 p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                          <TableSelectRowCheckbox
+                            checked={transaction.id ? isSelected(transaction.id) : false}
+                            onToggle={() => transaction.id && toggleRow(transaction.id)}
+                            aria-label="Select transaction"
+                          />
+                        </td>
+                        <td className="p-4">
                           <span className="capitalize">{transaction.type}</span>
                         </td>
                         <td className="p-4">
@@ -758,6 +769,27 @@ export default function Transactions() {
             viewDefaults={reportViewDefaults}
           />
         )}
+
+        <ConfirmDialog
+          open={bulkConfirmMode !== null}
+          onClose={() => setBulkConfirmMode(null)}
+          title={
+            bulkConfirmMode === 'retry' ? 'Retry failed actions' : 'Clear transaction error states'
+          }
+          description={
+            bulkConfirmMode === 'retry'
+              ? `Queue a retry of the failed action for ${recoverableSelectedCount} transaction${recoverableSelectedCount === 1 ? '' : 's'}?`
+              : `Clear the error state for ${recoverableSelectedCount} transaction${recoverableSelectedCount === 1 ? '' : 's'} so processing can continue?`
+          }
+          confirmLabel={bulkConfirmMode === 'retry' ? 'Retry failed actions' : 'Clear error states'}
+          onConfirm={() => {
+            if (!bulkConfirmMode) return;
+            void handleBulkRecoverErrors(bulkConfirmMode === 'retry').finally(() =>
+              setBulkConfirmMode(null),
+            );
+          }}
+          isLoading={isRecovering}
+        />
       </AnimatedPage>
     </MainLayout>
   );

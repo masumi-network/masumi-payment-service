@@ -124,11 +124,22 @@
     --input: 0 0% 18%;
     --ring: 0 0% 83.1%;
     --accent-brand: 174 60% 55%;
-    --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
+    --table-row-hover-fill: #212121;
+    --row-hover: var(--table-row-hover-fill);
+    --table-header-fill: #111111;
+    --transaction-error-row-fill: #190c0c;
   }
 }
 
 @layer components {
+  .table-header-surface {
+    background-color: hsl(var(--muted) / 0.3);
+  }
+
+  .dark .table-header-surface {
+    background-color: var(--table-header-fill);
+  }
+
   /* Sticky actions: fixed left fade; --table-actions-fill is rest or row-hover (not muted/50). */
   .table-actions-head-fill,
   .table-actions-cell-fill {
@@ -142,6 +153,10 @@
     );
   }
 
+  .dark .table-actions-head-fill {
+    --table-actions-fill: var(--table-header-fill);
+  }
+
   .group:hover .table-actions-cell-fill {
     --table-actions-fill: var(--row-hover);
   }
@@ -150,8 +165,27 @@
     --table-actions-fill: var(--row-hover);
   }
 
+  .transaction-row-error {
+    border-left-width: 2px;
+    border-left-color: hsl(var(--destructive));
+    background-color: hsl(var(--destructive) / 0.1);
+  }
+
+  .dark .transaction-row-error {
+    background-color: var(--transaction-error-row-fill);
+  }
+
+  .dark .transaction-row-error:hover,
+  .dark .transaction-row-error.transaction-row-selected {
+    background-color: var(--table-row-hover-fill);
+  }
+
   .table-actions-cell-fill--destructive {
     --table-actions-fill: hsl(var(--destructive) / 0.1);
+  }
+
+  .dark .table-actions-cell-fill--destructive {
+    --table-actions-fill: var(--transaction-error-row-fill);
   }
 
   .table-actions-cell-fill--low-balance {

@@ -2,7 +2,11 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+import { BulkActionBar } from '@/components/ui/bulk-action-bar';
+import {
+  TableSelectAllCheckbox,
+  TableSelectRowCheckbox,
+} from '@/components/ui/table-select-checkbox';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -36,6 +40,11 @@ import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
 import { useApiKey } from '@/lib/hooks/useApiKey';
+import {
+  BULK_ACTION_MAX_ITEMS,
+  runBulkSequential,
+  useTableSelection,
+} from '@/lib/hooks/useTableSelection';
 import { ApiKey } from '@/lib/api/generated';
 
 /**
@@ -88,11 +97,12 @@ function isSessionApiKey(listedToken: string, sessionApiKey: string | null): boo
 export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const deleteKeyMutation = useApiMutation({
     mutationFn: (body: { id: string }) => deleteApiKey({ client: apiClient, body }),
     errorMessage: 'Failed to delete API key',
@@ -142,6 +152,33 @@ export default function ApiKeys() {
     return filtered;
   }, [allApiKeys, searchQuery, activeTab, network]);
 
+  const visibleRowIds = useMemo(
+    () => filteredApiKeys.map((key) => key.id).filter((id): id is string => Boolean(id)),
+    [filteredApiKeys],
+  );
+
+  const {
+    selectedCount,
+    clearSelection,
+    allSelected,
+    someSelected,
+    toggleAll,
+    toggleRow,
+    isSelected,
+    setSelectionToIds,
+    selectedIds,
+  } = useTableSelection(visibleRowIds);
+
+  const selectedApiKeys = useMemo(
+    () => filteredApiKeys.filter((key) => selectedIds.has(key.id)),
+    [filteredApiKeys, selectedIds],
+  );
+
+  const bulkDeletableKeys = useMemo(
+    () => selectedApiKeys.filter((key) => !isSessionApiKey(key.token, apiKey)),
+    [selectedApiKeys, apiKey],
+  );
+
   // Handle action query parameter from search. Stripping the param (rather
   // than latching a once-per-mount flag) lets the same quick action fire
   // again while already on this page.
@@ -158,19 +195,6 @@ export default function ApiKeys() {
 
   const handleLoadMore = () => {
     loadMore();
-  };
-
-  // Select by id, not by token. The listed token is a mask, so every key ending in the
-  // same four characters shared one selection entry: ticking one ticked them all, and a
-  // bulk action would have hit every collider.
-  const handleSelectKey = (id: string) => {
-    setSelectedKeys((prev) => (prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id]));
-  };
-
-  const handleSelectAll = () => {
-    setSelectedKeys(
-      selectedKeys.length === filteredApiKeys.length ? [] : filteredApiKeys.map((key) => key.id),
-    );
   };
 
   const handleDeleteApiKey = async () => {
@@ -193,6 +217,58 @@ export default function ApiKeys() {
     } finally {
       isDeletingRef.current = false;
     }
+  };
+
+  const handleBulkDeleteApiKeys = async () => {
+    const ids = bulkDeletableKeys.map((key) => key.id);
+    if (ids.length === 0) return;
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
+    setIsBulkDeleting(true);
+
+    try {
+      const { succeeded, failed, failedIds, skippedLimit } = await runBulkSequential(
+        ids,
+        async (id) => {
+          const response = await deleteKeyMutation.mutateAsync({ id }).catch((error: unknown) => {
+            console.error('Error deleting API key:', error);
+            return null;
+          });
+          return Boolean(response);
+        },
+      );
+
+      setIsBulkDeleteConfirmOpen(false);
+
+      if (skippedLimit) {
+        toast.error(`Select at most ${BULK_ACTION_MAX_ITEMS} keys at a time`);
+        return;
+      }
+
+      if (succeeded > 0) {
+        toast.success(`Deleted ${succeeded} API key${succeeded === 1 ? '' : 's'} successfully`);
+        void reset();
+      }
+      if (failed > 0) {
+        toast.error(`Failed to delete ${failed} API key${failed === 1 ? '' : 's'}`);
+      }
+
+      setSelectionToIds(failedIds);
+    } finally {
+      isDeletingRef.current = false;
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const openBulkDeleteConfirm = () => {
+    if (bulkDeletableKeys.length === 0) {
+      toast.error('The current session key cannot be bulk-deleted. Deselect it and try again.');
+      return;
+    }
+    if (selectedApiKeys.length > bulkDeletableKeys.length) {
+      toast.info('Your current session key will be skipped.');
+    }
+    setIsBulkDeleteConfirmOpen(true);
   };
 
   return (
@@ -238,6 +314,7 @@ export default function ApiKeys() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
+              clearSelection();
               refetch();
             }}
           />
@@ -249,22 +326,42 @@ export default function ApiKeys() {
                 type="search"
                 placeholder="Search by name, key ID, permission, status, network, or usage"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  clearSelection();
+                }}
                 className="max-w-xs pl-10"
               />
             </div>
           </div>
+
+          <BulkActionBar
+            selectedCount={selectedCount}
+            onClear={clearSelection}
+            disabled={isBulkDeleting || isDeleting}
+          >
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={openBulkDeleteConfirm}
+              disabled={isBulkDeleting || isDeleting || bulkDeletableKeys.length === 0}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete ({bulkDeletableKeys.length})
+            </Button>
+          </BulkActionBar>
 
           <HorizontalScrollArea className="border rounded-lg">
             <table className="w-full">
               <thead>
                 <tr className="border-b">
                   <th className="w-12 p-4">
-                    <Checkbox
-                      checked={
-                        filteredApiKeys.length > 0 && selectedKeys.length === filteredApiKeys.length
-                      }
-                      onCheckedChange={handleSelectAll}
+                    <TableSelectAllCheckbox
+                      allSelected={allSelected}
+                      someSelected={someSelected}
+                      onToggleAll={toggleAll}
+                      disabled={filteredApiKeys.length === 0}
+                      aria-label="Select all API keys on this page"
                     />
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Key</th>
@@ -287,7 +384,7 @@ export default function ApiKeys() {
                 ) : (
                   filteredApiKeys.map((key) => {
                     const isCurrentKey = isSessionApiKey(key.token, apiKey);
-                    const isKeySelected = selectedKeys.includes(key.id);
+                    const isKeySelected = isSelected(key.id);
                     return (
                       <tr
                         key={key.id}
@@ -297,10 +394,10 @@ export default function ApiKeys() {
                         )}
                       >
                         <td className="p-4" onClick={(event) => event.stopPropagation()}>
-                          <Checkbox
+                          <TableSelectRowCheckbox
                             aria-label={`Select key ${key.token}`}
                             checked={isKeySelected}
-                            onCheckedChange={() => handleSelectKey(key.id)}
+                            onToggle={() => toggleRow(key.id)}
                           />
                         </td>
                         <td className="p-4 truncate">
@@ -451,6 +548,15 @@ export default function ApiKeys() {
         description="Are you sure you want to delete this API key? This action cannot be undone."
         onConfirm={handleDeleteApiKey}
         isLoading={isDeleting}
+      />
+
+      <ConfirmDialog
+        open={isBulkDeleteConfirmOpen}
+        onClose={() => setIsBulkDeleteConfirmOpen(false)}
+        title="Delete API keys"
+        description={`Delete ${bulkDeletableKeys.length} API key${bulkDeletableKeys.length === 1 ? '' : 's'}? This action cannot be undone.`}
+        onConfirm={() => void handleBulkDeleteApiKeys()}
+        isLoading={isBulkDeleting}
       />
     </MainLayout>
   );
