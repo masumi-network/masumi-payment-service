@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, ArrowUpRight, ExternalLink } from 'lucide-react';
+import { Plus, ArrowUpRight, ExternalLink, Trash2, Unlink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
@@ -30,7 +30,17 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
 import { invalidateAgentQueries, resetAgentQueries } from '@/lib/queries/agent-cache';
 import { rowActivation } from '@/lib/a11y';
-import { isDeregisterableAgentState } from '@/lib/registry-states';
+import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
+import { BulkActionBar } from '@/components/ui/bulk-action-bar';
+import {
+  TableSelectAllCheckbox,
+  TableSelectRowCheckbox,
+} from '@/components/ui/table-select-checkbox';
+import {
+  BULK_ACTION_MAX_ITEMS,
+  runBulkSequential,
+  useTableSelection,
+} from '@/lib/hooks/useTableSelection';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
@@ -136,6 +146,19 @@ const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.Smar
 const usesCombinedWallet = (agent: AIAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
 
+function isBulkDeletableAgent(agent: AIAgent, canAdmin: boolean): boolean {
+  return canAdmin && agent.relation !== 'payment' && isDbDeletableAgentState(agent.state);
+}
+
+function isBulkDeregisterableAgent(agent: AIAgent, canPay: boolean): boolean {
+  return (
+    canPay &&
+    agent.relation !== 'payment' &&
+    isDeregisterableAgentState(agent.state) &&
+    Boolean(agent.agentIdentifier?.trim())
+  );
+}
+
 export default function AIAgentsPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
@@ -238,6 +261,10 @@ export default function AIAgentsPage() {
   }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData, typeFilter]);
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  const [isBulkDeregisterConfirmOpen, setIsBulkDeregisterConfirmOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkDeregistering, setIsBulkDeregistering] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
   const deleteAgentMutation = useApiMutation({
     mutationFn: (body: { id: string }) => deleteRegistry({ client: apiClient, body }),
@@ -279,6 +306,58 @@ export default function AIAgentsPage() {
     capabilities,
   } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
+
+  const showBulkSelection =
+    activeRail === 'cardano' && (capabilities.canAdmin || capabilities.canPay);
+
+  const visibleRowIds = useMemo(() => displayAgents.map((agent) => agent.id), [displayAgents]);
+
+  const agentsById = useMemo(
+    () => new Map(displayAgents.map((agent) => [agent.id, agent])),
+    [displayAgents],
+  );
+
+  const bulkDeletableIds = useMemo(
+    () =>
+      displayAgents
+        .filter((agent) => isBulkDeletableAgent(agent, capabilities.canAdmin))
+        .map((agent) => agent.id),
+    [displayAgents, capabilities.canAdmin],
+  );
+
+  const bulkDeregisterableIds = useMemo(
+    () =>
+      displayAgents
+        .filter((agent) => isBulkDeregisterableAgent(agent, capabilities.canPay))
+        .map((agent) => agent.id),
+    [displayAgents, capabilities.canPay],
+  );
+
+  const {
+    selectedCount,
+    clearSelection,
+    allSelected,
+    someSelected,
+    toggleAll,
+    toggleRow,
+    isSelected,
+    setSelectionToIds,
+    selectedIds,
+  } = useTableSelection(visibleRowIds);
+
+  const bulkDeletableSelectedIds = useMemo(
+    () => [...selectedIds].filter((id) => bulkDeletableIds.includes(id)),
+    [selectedIds, bulkDeletableIds],
+  );
+
+  const bulkDeregisterableSelectedIds = useMemo(
+    () => [...selectedIds].filter((id) => bulkDeregisterableIds.includes(id)),
+    [selectedIds, bulkDeregisterableIds],
+  );
+
+  const isBulkActionBusy = isBulkDeleting || isBulkDeregistering;
+
+  const tableColumnCount = showBulkSelection ? 10 : 9;
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
@@ -466,6 +545,136 @@ export default function AIAgentsPage() {
     }
   };
 
+  const handleBulkDeleteAgents = async () => {
+    const ids = bulkDeletableSelectedIds;
+    if (ids.length === 0) return;
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
+    setIsBulkDeleting(true);
+
+    try {
+      const { succeeded, failed, failedIds, skippedLimit } = await runBulkSequential(
+        ids,
+        async (id) => {
+          const response = await deleteAgentMutation.mutateAsync({ id }).catch((error: unknown) => {
+            console.error('Error deleting agent:', error);
+            return null;
+          });
+          return Boolean(response);
+        },
+      );
+
+      setIsBulkDeleteConfirmOpen(false);
+
+      if (skippedLimit) {
+        toast.error(`Select at most ${BULK_ACTION_MAX_ITEMS} agents at a time`);
+        return;
+      }
+
+      if (succeeded > 0) {
+        toast.success(
+          `Deleted ${succeeded} agent registration${succeeded === 1 ? '' : 's'} successfully`,
+        );
+        refetchAfterMutation();
+      }
+      if (failed > 0) {
+        toast.error(`Failed to delete ${failed} agent registration${failed === 1 ? '' : 's'}`);
+      }
+
+      setSelectionToIds(failedIds);
+    } finally {
+      isDeletingRef.current = false;
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const openBulkDeleteConfirm = () => {
+    if (bulkDeletableSelectedIds.length === 0) {
+      toast.error(
+        'None of the selected agents can be deleted. Choose failed or deregistered rows.',
+      );
+      return;
+    }
+    if (selectedCount > bulkDeletableSelectedIds.length) {
+      toast.info('Only failed or deregistered registrations will be deleted.');
+    }
+    setIsBulkDeleteConfirmOpen(true);
+  };
+
+  const handleBulkDeregisterAgents = async () => {
+    const ids = bulkDeregisterableSelectedIds;
+    if (ids.length === 0) return;
+    if (!selectedPaymentSource?.smartContractAddress) {
+      toast.error('Cannot deregister agents: missing payment source');
+      return;
+    }
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
+    setIsBulkDeregistering(true);
+
+    const smartContractAddress = selectedPaymentSource.smartContractAddress;
+
+    try {
+      const { succeeded, failed, failedIds, skippedLimit } = await runBulkSequential(
+        ids,
+        async (id) => {
+          const agent = agentsById.get(id);
+          if (!agent?.agentIdentifier) return false;
+          const response = await deregisterAgentMutation
+            .mutateAsync({
+              agentIdentifier: agent.agentIdentifier,
+              network,
+              smartContractAddress,
+            })
+            .catch((error: unknown) => {
+              console.error('Error deregistering agent:', error);
+              return null;
+            });
+          return Boolean(response);
+        },
+      );
+
+      setIsBulkDeregisterConfirmOpen(false);
+
+      if (skippedLimit) {
+        toast.error(`Select at most ${BULK_ACTION_MAX_ITEMS} agents at a time`);
+        return;
+      }
+
+      if (succeeded > 0) {
+        toast.success(
+          `Deregistered ${succeeded} agent${succeeded === 1 ? '' : 's'}. On-chain burn may take a few minutes.`,
+        );
+        refetchAfterMutation();
+      }
+      if (failed > 0) {
+        toast.error(`Failed to deregister ${failed} agent${failed === 1 ? '' : 's'}`);
+      }
+
+      setSelectionToIds(failedIds);
+    } finally {
+      isDeletingRef.current = false;
+      setIsBulkDeregistering(false);
+    }
+  };
+
+  const openBulkDeregisterConfirm = () => {
+    if (!selectedPaymentSource?.smartContractAddress) {
+      toast.error('Cannot deregister agents: missing payment source');
+      return;
+    }
+    if (bulkDeregisterableSelectedIds.length === 0) {
+      toast.error(
+        'None of the selected agents can be deregistered. Choose registered agents with a minted ID.',
+      );
+      return;
+    }
+    if (selectedCount > bulkDeregisterableSelectedIds.length) {
+      toast.info('Only registered agents on this payment source will be deregistered.');
+    }
+    setIsBulkDeregisterConfirmOpen(true);
+  };
+
   const handleAgentClick = (agent: AIAgent) => {
     openAgentDetails(agent);
   };
@@ -547,6 +756,7 @@ export default function AIAgentsPage() {
               activeTab={activeTab}
               onTabChange={(tab) => {
                 setActiveTab(tab);
+                clearSelection();
               }}
             />
 
@@ -554,16 +764,20 @@ export default function AIAgentsPage() {
               <div className="flex-1 max-w-xs">
                 <SearchInput
                   value={searchQuery}
-                  onChange={setSearchQuery}
+                  onChange={(value) => {
+                    setSearchQuery(value);
+                    clearSelection();
+                  }}
                   placeholder="Search by name, description, tags, or wallet..."
                   isLoading={isSearchPending && !!searchQuery}
                 />
               </div>
               <Select
                 value={typeFilter}
-                onValueChange={(value) =>
-                  setTypeFilter(value as 'All' | 'Standard' | 'OpenApi' | 'X402')
-                }
+                onValueChange={(value) => {
+                  setTypeFilter(value as 'All' | 'Standard' | 'OpenApi' | 'X402');
+                  clearSelection();
+                }}
               >
                 <SelectTrigger className="w-[140px]" aria-label="Filter agents by type">
                   <SelectValue placeholder="All types" />
@@ -590,6 +804,41 @@ export default function AIAgentsPage() {
               </div>
             )}
 
+            {showBulkSelection && (
+              <BulkActionBar
+                selectedCount={selectedCount}
+                onClear={clearSelection}
+                disabled={isBulkActionBusy || isDeleting}
+              >
+                {capabilities.canPay && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openBulkDeregisterConfirm}
+                    disabled={
+                      isBulkActionBusy || isDeleting || bulkDeregisterableSelectedIds.length === 0
+                    }
+                  >
+                    <Unlink className="h-4 w-4" />
+                    Deregister ({bulkDeregisterableSelectedIds.length})
+                  </Button>
+                )}
+                {capabilities.canAdmin && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={openBulkDeleteConfirm}
+                    disabled={
+                      isBulkActionBusy || isDeleting || bulkDeletableSelectedIds.length === 0
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete ({bulkDeletableSelectedIds.length})
+                  </Button>
+                )}
+              </BulkActionBar>
+            )}
+
             <HorizontalScrollArea className="rounded-lg border">
               <table
                 className={cn(
@@ -599,9 +848,23 @@ export default function AIAgentsPage() {
               >
                 <thead className="table-header-surface">
                   <tr className="border-b">
+                    {showBulkSelection && (
+                      <th scope="col" className="w-12 p-4">
+                        <TableSelectAllCheckbox
+                          allSelected={allSelected}
+                          someSelected={someSelected}
+                          onToggleAll={toggleAll}
+                          disabled={visibleRowIds.length === 0}
+                          aria-label="Select all agents on this page"
+                        />
+                      </th>
+                    )}
                     <th
                       scope="col"
-                      className="p-4 text-left text-sm font-medium text-muted-foreground pl-6"
+                      className={cn(
+                        'p-4 text-left text-sm font-medium text-muted-foreground',
+                        !showBulkSelection && 'pl-6',
+                      )}
                     >
                       Name
                     </th>
@@ -655,10 +918,10 @@ export default function AIAgentsPage() {
                 <tbody>
                   {(isLoading && !agents.length) ||
                   (displayAgents.length === 0 && isSearchPending) ? (
-                    <AIAgentTableSkeleton rows={5} columns={9} />
+                    <AIAgentTableSkeleton rows={5} columns={tableColumnCount} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={tableColumnCount}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -691,12 +954,14 @@ export default function AIAgentsPage() {
                         agent.state === 'DeregistrationInitiated' ||
                         agent.state === 'RegistrationRequested' ||
                         agent.state === 'DeregistrationRequested';
+                      const rowIsSelected = isSelected(agent.id);
 
                       return (
                         <tr
                           key={agent.id}
                           className={cn(
                             'group border-b cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 opacity-0',
+                            rowIsSelected && 'bg-muted/50',
                             agent.state === 'DeregistrationConfirmed'
                               ? 'animate-fade-in-to-muted'
                               : 'animate-fade-in',
@@ -708,7 +973,16 @@ export default function AIAgentsPage() {
                           onClick={() => handleAgentClick(agent)}
                           {...rowActivation(() => handleAgentClick(agent))}
                         >
-                          <td className="p-4 max-w-50 truncate pl-6">
+                          {showBulkSelection && (
+                            <td className="p-4" onClick={(event) => event.stopPropagation()}>
+                              <TableSelectRowCheckbox
+                                aria-label={`Select ${agent.name}`}
+                                checked={rowIsSelected}
+                                onToggle={() => toggleRow(agent.id)}
+                              />
+                            </td>
+                          )}
+                          <td className={cn('p-4 max-w-50 truncate', !showBulkSelection && 'pl-6')}>
                             <div className="text-sm font-medium truncate" title={agent.name}>
                               {agent.name}
                             </div>
@@ -979,6 +1253,24 @@ export default function AIAgentsPage() {
               closeAgentDetails();
             }}
             isLoading={isDeleting}
+          />
+
+          <ConfirmDialog
+            open={isBulkDeleteConfirmOpen}
+            onClose={() => setIsBulkDeleteConfirmOpen(false)}
+            title="Delete agent registrations"
+            description={`Delete ${bulkDeletableSelectedIds.length} failed or deregistered agent registration${bulkDeletableSelectedIds.length === 1 ? '' : 's'} from the database? This cannot be undone.`}
+            onConfirm={() => void handleBulkDeleteAgents()}
+            isLoading={isBulkDeleting}
+          />
+
+          <ConfirmDialog
+            open={isBulkDeregisterConfirmOpen}
+            onClose={() => setIsBulkDeregisterConfirmOpen(false)}
+            title="Deregister agents"
+            description={`Deregister ${bulkDeregisterableSelectedIds.length} agent${bulkDeregisterableSelectedIds.length === 1 ? '' : 's'} on-chain? This starts a burn for each minted registration and cannot be undone.`}
+            onConfirm={() => void handleBulkDeregisterAgents()}
+            isLoading={isBulkDeregistering}
           />
 
           <WalletDetailsDialog
