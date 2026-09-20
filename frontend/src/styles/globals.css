@@ -103,6 +103,11 @@
     --table-row-hover-fill: #fafafa;
     --row-hover: var(--table-row-hover-fill);
     --transaction-error-row-fill: #feeeed;
+    --transaction-error-row-hover-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 14%,
+      var(--transaction-error-row-fill)
+    );
   }
 
   .dark {
@@ -129,7 +134,17 @@
     --table-row-hover-fill: #212121;
     --row-hover: var(--table-row-hover-fill);
     --table-header-fill: #111111;
-    --transaction-error-row-fill: #190c0c;
+    /* Visible on ~3.9% background; #190c0c was indistinguishable from the page. */
+    --transaction-error-row-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 24%,
+      hsl(var(--background))
+    );
+    --transaction-error-row-hover-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 32%,
+      hsl(var(--background))
+    );
   }
 }
 
@@ -173,13 +188,20 @@
     background-color: var(--transaction-error-row-fill);
   }
 
-  .transaction-row-error:hover,
+  .transaction-row-error:hover {
+    background-color: var(--transaction-error-row-hover-fill);
+  }
+
   .transaction-row-error.transaction-row-selected {
     background-color: var(--table-row-hover-fill);
   }
 
   .table-actions-cell-fill--destructive {
     --table-actions-fill: var(--transaction-error-row-fill);
+  }
+
+  .group:hover .table-actions-cell-fill--destructive {
+    --table-actions-fill: var(--transaction-error-row-hover-fill);
   }
 
   .table-actions-cell-fill--low-balance {

@@ -609,9 +609,12 @@ export default function Transactions() {
                         key={transaction.id}
                         className={cn(
                           'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ease-in-out',
-                          hasTxError ? 'transaction-row-error' : '',
-                          'cursor-pointer hover:bg-row-hover',
-                          isTxSelected && 'transaction-row-selected bg-row-hover',
+                          'cursor-pointer',
+                          hasTxError ? 'transaction-row-error' : 'hover:bg-row-hover',
+                          isTxSelected &&
+                            (hasTxError
+                              ? 'transaction-row-selected'
+                              : 'transaction-row-selected bg-row-hover'),
                         )}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => setSelectedTransaction(transaction)}
