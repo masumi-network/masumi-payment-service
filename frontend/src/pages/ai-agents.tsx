@@ -20,6 +20,7 @@ import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleto
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
+  tableActionsCellCompactSelectedClass,
   tableActionsHeadCompactClass,
   tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
@@ -961,7 +962,7 @@ export default function AIAgentsPage() {
                           key={agent.id}
                           className={cn(
                             'group border-b cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 opacity-0',
-                            rowIsSelected && 'bg-muted/50',
+                            rowIsSelected && 'bg-row-hover',
                             agent.state === 'DeregistrationConfirmed'
                               ? 'animate-fade-in-to-muted'
                               : 'animate-fade-in',
@@ -1118,7 +1119,9 @@ export default function AIAgentsPage() {
                           </td>
                           <td
                             className={cn(
-                              tableActionsCellCompactClass,
+                              rowIsSelected
+                                ? tableActionsCellCompactSelectedClass
+                                : tableActionsCellCompactClass,
                               !hasRowActions && 'pointer-events-none',
                             )}
                             onClick={hasRowActions ? (event) => event.stopPropagation() : undefined}
