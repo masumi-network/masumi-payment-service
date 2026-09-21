@@ -475,12 +475,13 @@ export default function Overview() {
                                 <th className="text-left py-2 px-2">Name</th>
                                 <th className="text-left py-2 px-2">Address</th>
                                 <th className="text-left py-2 px-2">Balance</th>
+                                <th className="text-left py-2 px-2 w-32">Actions</th>
                               </tr>
                             </thead>
                             <tbody>
                               {walletsList.length === 0 ? (
                                 <tr>
-                                  <td colSpan={4}>
+                                  <td colSpan={5}>
                                     <EmptyState title="No wallets found" />
                                   </td>
                                 </tr>
