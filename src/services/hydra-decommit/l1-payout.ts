@@ -22,6 +22,58 @@ import { logger } from '@masumi/payment-core/logger';
 /** What the head says landed on L1, as unit to quantity. Lovelace under ''. */
 export type DistributedValue = { lovelace: bigint; assets: Record<string, string> };
 
+/** The withdrawal row fields the search bound is taken from. */
+export interface DecommitPayoutBoundsRow {
+	createdAt: Date;
+	/**
+	 * Present in the row shape, but deliberately unused below — see
+	 * `decommitPayoutSearchBounds`. Kept here so a row can be passed straight
+	 * through without a caller stripping it first.
+	 */
+	approvedAt: Date | null;
+}
+
+/** The lower time bound and the hashes to skip for one withdrawal's payout search. */
+export interface DecommitPayoutBounds {
+	notBefore: Date;
+	exclude: Set<string>;
+}
+
+/**
+ * The search bounds for one withdrawal's payout: how far back to look, and
+ * which hashes are already spoken for.
+ *
+ * The bound is always `createdAt`, never `approvedAt`. It looks safer to bound
+ * from the approval — the decrement pays out only after the head approves it,
+ * so nothing genuine should land before that — but `approvedAt` is backfilled
+ * to "now" at finalization whenever the row's own Approved event was never
+ * observed (a restart, a replay starting mid-history, a missed frame; see
+ * `applyDecommitOutcome`/`finalizeDecommit`). A backfilled timestamp lands
+ * AFTER the payout it is meant to bound, which would exclude the genuine
+ * match on every call — including the retry pass — and leave `l1TxId` null
+ * forever. `createdAt` is written once, before the decommit transaction is
+ * even built, so it is always earlier than the payout that follows it. It
+ * still separates two identical-value withdrawals of the same head, because a
+ * head has only one withdrawal in flight at a time (the pending-decommit
+ * guard plus the in-flight claim in `execute.ts`): row N+1 is created only
+ * after row N has finalized.
+ *
+ * Sibling hashes — L1 transactions already attributed to another withdrawal
+ * of the same head — are excluded outright, `null` ones ignored, so an
+ * already-claimed payout is never attributed twice.
+ */
+export function decommitPayoutSearchBounds(
+	row: DecommitPayoutBoundsRow,
+	siblingPayouts: ReadonlyArray<{ l1TxId: string | null }>,
+): DecommitPayoutBounds {
+	return {
+		notBefore: row.createdAt,
+		exclude: new Set(
+			siblingPayouts.map((sibling) => sibling.l1TxId).filter((l1TxId): l1TxId is string => l1TxId !== null),
+		),
+	};
+}
+
 /**
  * How many pages of address history to walk back.
  *
@@ -81,36 +133,57 @@ function valuesMatch(
  * Null rather than throwing: a withdrawal whose L1 transaction has not been seen
  * is still a settled withdrawal, and the admin UI would rather say "settled,
  * transaction not identified" than lose the settlement itself.
+ *
+ * `notBefore` and `exclude` exist because several identical-amount withdrawals
+ * can land minutes apart: matching on value alone, as above, would happily
+ * return someone else's payout. `notBefore` discards history from before this
+ * withdrawal's own creation, and `exclude` discards hashes already attributed
+ * to another row. Among what is left, the OLDEST match wins — the payout
+ * closest after creation — not the newest, which is what an unbounded
+ * newest-first walk would otherwise hand back. That promise holds only while
+ * every page loads: a page read failing partway through the walk (below)
+ * returns whatever match was already found rather than throwing away a real
+ * answer, so what comes back in that case is the best match seen so far, not
+ * necessarily the oldest one that exists.
  */
 export async function findDecommitPayoutTx(params: {
 	blockfrost: BlockFrostAPI;
 	address: string;
 	expected: DistributedValue;
+	notBefore?: Date;
+	exclude?: ReadonlySet<string>;
 }): Promise<string | null> {
-	const { blockfrost, address, expected } = params;
+	const { blockfrost, address, expected, notBefore, exclude } = params;
+	const notBeforeSeconds = notBefore ? Math.floor(notBefore.getTime() / 1000) : undefined;
+
+	let oldestMatch: { tx_hash: string; block_time: number } | null = null;
 
 	for (let page = 1; page <= MAX_PAGES; page++) {
-		let history: Array<{ tx_hash: string }>;
+		let history: Array<{ tx_hash: string; block_time: number }>;
 		try {
 			history = await blockfrost.addressesTransactions(address, { page, count: PAGE_SIZE, order: 'desc' });
 		} catch (error) {
 			logger.warn(`[HydraDecommit] could not read address history while identifying a payout: ${String(error)}`);
-			return null;
+			break;
 		}
-		if (history.length === 0) return null;
+		if (history.length === 0) break;
 
 		for (const entry of history) {
+			if (exclude?.has(entry.tx_hash)) continue;
+			if (notBeforeSeconds !== undefined && entry.block_time < notBeforeSeconds) continue;
 			try {
 				const utxos = await blockfrost.txsUtxos(entry.tx_hash);
 				const match = utxos.outputs.some(
 					(output) => output.address === address && valuesMatch(output.amount, expected),
 				);
-				if (match) return entry.tx_hash;
+				if (match && (oldestMatch === null || entry.block_time < oldestMatch.block_time)) {
+					oldestMatch = entry;
+				}
 			} catch (error) {
 				// One unreadable transaction is not a reason to abandon the search.
 				logger.warn(`[HydraDecommit] could not read ${entry.tx_hash} while identifying a payout: ${String(error)}`);
 			}
 		}
 	}
-	return null;
+	return oldestMatch?.tx_hash ?? null;
 }

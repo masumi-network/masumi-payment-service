@@ -6,17 +6,20 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-const { findDecommitPayoutTx } = await import('./l1-payout');
+const { findDecommitPayoutTx, decommitPayoutSearchBounds } = await import('./l1-payout');
 
 const ADDRESS = 'addr_test1_local';
 const TOKEN = 'a'.repeat(56) + '746f6b656e';
 
 function blockfrostWith(
 	txs: Record<string, Array<{ address: string; amount: Array<{ unit: string; quantity: string }> }>>,
+	blockTimes: Record<string, number> = {},
 ) {
 	const addressesTransactions = jest.fn() as AnyMock;
 	addressesTransactions.mockImplementation((_address: string, options: { page: number }) =>
-		Promise.resolve(options.page === 1 ? Object.keys(txs).map((tx_hash) => ({ tx_hash })) : []),
+		Promise.resolve(
+			options.page === 1 ? Object.keys(txs).map((tx_hash) => ({ tx_hash, block_time: blockTimes[tx_hash] ?? 0 })) : [],
+		),
 	);
 	const txsUtxos = jest.fn() as AnyMock;
 	txsUtxos.mockImplementation((hash: string) => Promise.resolve({ outputs: txs[hash] ?? [] }));
@@ -106,5 +109,115 @@ describe('findDecommitPayoutTx', () => {
 		});
 
 		expect(found).toBeNull();
+	});
+
+	// Defect H: several identical-amount withdrawals minutes apart all match on
+	// value, so the search must land on the one closest after this withdrawal's
+	// own approval rather than whichever is newest on chain.
+	it('prefers the oldest matching payout at or after notBefore', async () => {
+		const t1 = 1_000;
+		const t2 = 2_000;
+		const t3 = 3_000;
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		// History arrives newest-first, as Blockfrost returns it with `order: 'desc'`.
+		const blockfrost = blockfrostWith(
+			{
+				p3: [{ address: ADDRESS, amount }],
+				p2: [{ address: ADDRESS, amount }],
+				p1: [{ address: ADDRESS, amount }],
+			},
+			{ p3: t3, p2: t2, p1: t1 },
+		);
+
+		const found = await findDecommitPayoutTx({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+			notBefore: new Date(((t1 + t2) / 2) * 1000),
+		});
+
+		expect(found).toBe('p2');
+	});
+
+	it('skips a transaction already attributed to another withdrawal', async () => {
+		const t1 = 1_000;
+		const t2 = 2_000;
+		const t3 = 3_000;
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith(
+			{
+				p3: [{ address: ADDRESS, amount }],
+				p2: [{ address: ADDRESS, amount }],
+				p1: [{ address: ADDRESS, amount }],
+			},
+			{ p3: t3, p2: t2, p1: t1 },
+		);
+
+		const found = await findDecommitPayoutTx({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+			notBefore: new Date(((t1 + t2) / 2) * 1000),
+			exclude: new Set(['p2']),
+		});
+
+		expect(found).toBe('p3');
+	});
+
+	// A match already in hand from an earlier page must survive a later page's
+	// read failure: the loop now walks on past the first match (to find the
+	// OLDEST one), so a failure on page 2 must not throw away what page 1 found.
+	it('keeps a match found on page 1 when page 2 fails to load', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const addressesTransactions = jest.fn() as AnyMock;
+		addressesTransactions.mockImplementation((_address: string, options: { page: number }) => {
+			if (options.page === 1) return Promise.resolve([{ tx_hash: 'payout', block_time: 1_000 }]);
+			return Promise.reject(new Error('blockfrost unavailable'));
+		});
+		const txsUtxos = jest.fn() as AnyMock;
+		txsUtxos.mockImplementation((hash: string) =>
+			Promise.resolve({ outputs: hash === 'payout' ? [{ address: ADDRESS, amount }] : [] }),
+		);
+		const blockfrost = { addressesTransactions, txsUtxos } as never;
+
+		const found = await findDecommitPayoutTx({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBe('payout');
+	});
+});
+
+describe('decommitPayoutSearchBounds', () => {
+	// The RED case for the payout-lookup bug: settle.ts backfills `approvedAt`
+	// to "now" when a decommit finalizes without ever having observed an
+	// Approved event (a restart, a replay starting mid-history, a missed
+	// frame). A bound taken from that backfilled timestamp lands AFTER the
+	// payout's own block_time, so `findDecommitPayoutTx` would exclude the
+	// genuine match on every call, including the retry pass, and `l1TxId`
+	// would never be set. The bound must always come from `createdAt`, which
+	// is written before the decommit is even built and so is always earlier
+	// than the payout that follows it.
+	it('bounds the search at createdAt even when approvedAt was backfilled later than the payout', () => {
+		const createdAt = new Date('2026-01-01T00:00:00.000Z');
+		const approvedAt = new Date('2026-01-01T00:10:00.000Z');
+
+		const bounds = decommitPayoutSearchBounds({ createdAt, approvedAt }, []);
+
+		expect(bounds.notBefore).toEqual(createdAt);
+	});
+
+	it('excludes sibling payout hashes and ignores null ones', () => {
+		const createdAt = new Date('2026-01-01T00:00:00.000Z');
+
+		const bounds = decommitPayoutSearchBounds({ createdAt, approvedAt: null }, [
+			{ l1TxId: 'sibling-1' },
+			{ l1TxId: null },
+			{ l1TxId: 'sibling-2' },
+		]);
+
+		expect(bounds.exclude).toEqual(new Set(['sibling-1', 'sibling-2']));
 	});
 });
