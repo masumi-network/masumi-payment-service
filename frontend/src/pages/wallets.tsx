@@ -60,7 +60,6 @@ import { SearchInput } from '@/components/ui/search-input';
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
-  isLoadingBalance?: boolean;
   /** True when the balance fetch failed — render "—", not 0. */
   isBalanceUnavailable?: boolean;
 }
@@ -85,6 +84,7 @@ export default function WalletsPage() {
     wallets: walletsList,
     isLoading: isLoadingWallets,
     isFetching: isFetchingWallets,
+    isRefetching: isRefreshingBalances,
     isFetchingNextPage,
     hasMore,
     loadMore,
@@ -349,7 +349,7 @@ export default function WalletsPage() {
                         <td className="p-4">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-2">
-                              {wallet.isLoadingBalance ? (
+                              {isRefreshingBalances ? (
                                 <Spinner size={16} />
                               ) : (
                                 <span>
@@ -359,7 +359,7 @@ export default function WalletsPage() {
                                 </span>
                               )}
                             </div>
-                            {!wallet.isLoadingBalance &&
+                            {!isRefreshingBalances &&
                               !wallet.isBalanceUnavailable &&
                               wallet.balance &&
                               rate && (
@@ -374,7 +374,7 @@ export default function WalletsPage() {
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-2">
-                            {wallet.isLoadingBalance ? (
+                            {isRefreshingBalances ? (
                               <Spinner size={16} />
                             ) : (
                               <span>

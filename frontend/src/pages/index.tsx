@@ -111,6 +111,7 @@ export default function Overview() {
     totalBalance: totalBalanceValue,
     totalUsdcxBalance: totalUsdcxBalanceValue,
     isLoading: isLoadingWalletsQuery,
+    isRefetching: isRefreshingBalances,
   } = useWallets({ enabled: walletsReady });
   // Keep the balance cards in their loading state during the pre-paint defer
   // window so they never flash an empty "0" before the fetch starts.
@@ -118,7 +119,6 @@ export default function Overview() {
 
   const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
   const totalUsdcxBalance = useMemo(() => totalUsdcxBalanceValue || '0', [totalUsdcxBalanceValue]);
-  const isLoadingBalances = isLoadingWallets;
   const hasFundedWallet = useMemo(
     () =>
       isWalletFundStepComplete({
@@ -456,7 +456,7 @@ export default function Overview() {
                           <ChevronRight className="h-4 w-4" />
                           <RefreshButton
                             onRefresh={() => refetchWallets()}
-                            isRefreshing={isLoadingWallets || isLoadingBalances}
+                            isRefreshing={isLoadingWallets || isRefreshingBalances}
                           />
                         </div>
                       </div>
@@ -543,7 +543,7 @@ export default function Overview() {
                                     </td>
                                     <td className="py-3 px-2 w-32">
                                       <div className="text-xs flex items-center gap-1">
-                                        {wallet.isLoadingBalance ? (
+                                        {isRefreshingBalances ? (
                                           <Spinner className="h-3 w-3" />
                                         ) : (
                                           <>
@@ -557,7 +557,7 @@ export default function Overview() {
                                         )}
                                       </div>
                                       <div className="text-xs flex items-center gap-1">
-                                        {!wallet.isLoadingBalance && (
+                                        {!isRefreshingBalances && (
                                           <>
                                             {wallet.isBalanceUnavailable
                                               ? '—'
