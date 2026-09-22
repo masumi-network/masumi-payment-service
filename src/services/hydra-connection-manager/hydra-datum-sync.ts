@@ -36,7 +36,6 @@ import {
 	type HydraOutputReference,
 } from './hydra-datum-guards';
 import { ensureObservedTransaction, releaseBlockedWallet } from './hydra-datum-observation';
-import { hasLegacyHydraAssetNames } from './hydra-legacy-value';
 
 // Re-exported so the split stays invisible to importers: this module was the
 // whole datum surface before it was broken up.
@@ -256,13 +255,6 @@ export async function applyDatumStateToLocalRequests(params: {
 				purchaseRequest.currentHydraUtxoOutputIndex === outputReference.outputIndex;
 			const purchasePersistedInputValue =
 				purchaseRequest == null ? null : parsePersistedHydraValue(purchaseRequest.currentHydraUtxoValue);
-			// Only repair metadata for this already-confirmed output, never a later reservation.
-			const purchaseHasLegacyValue =
-				purchaseIsSameAcceptedOutput &&
-				purchaseRequest?.CurrentTransaction?.txHash === txId &&
-				purchaseRequest.CurrentTransaction.status === TransactionStatus.Confirmed &&
-				purchasePersistedInputValue != null &&
-				hasLegacyHydraAssetNames(purchasePersistedInputValue, canonicalOutputAmounts);
 			const purchaseActionIsAuthorized =
 				purchaseRequest != null &&
 				(purchaseIsSameAcceptedOutput
@@ -272,7 +264,7 @@ export async function applyDatumStateToLocalRequests(params: {
 								newOnChainState === OnChainState.FundsLocked)) &&
 						(purchaseRequest.currentHydraUtxoValue == null ||
 							(purchasePersistedInputValue != null &&
-								(hydraAmountListsEqual(purchasePersistedInputValue, canonicalOutputAmounts) || purchaseHasLegacyValue)))
+								hydraAmountListsEqual(purchasePersistedInputValue, canonicalOutputAmounts)))
 					: purchaseRequest.onChainState == null
 						? newOnChainState === OnChainState.FundsLocked && purchaseRequest.currentHydraUtxoValue == null
 						: transactionEvidence != null &&
@@ -400,13 +392,6 @@ export async function applyDatumStateToLocalRequests(params: {
 				paymentRequest.currentHydraUtxoOutputIndex === outputReference.outputIndex;
 			const paymentPersistedInputValue =
 				paymentRequest == null ? null : parsePersistedHydraValue(paymentRequest.currentHydraUtxoValue);
-			// Only repair metadata for this already-confirmed output, never a later reservation.
-			const paymentHasLegacyValue =
-				paymentIsSameAcceptedOutput &&
-				paymentRequest?.CurrentTransaction?.txHash === txId &&
-				paymentRequest.CurrentTransaction.status === TransactionStatus.Confirmed &&
-				paymentPersistedInputValue != null &&
-				hasLegacyHydraAssetNames(paymentPersistedInputValue, canonicalOutputAmounts);
 			const paymentActionIsAuthorized =
 				paymentRequest != null &&
 				(paymentIsSameAcceptedOutput
@@ -416,7 +401,7 @@ export async function applyDatumStateToLocalRequests(params: {
 								newOnChainState === OnChainState.FundsLocked)) &&
 						(paymentRequest.currentHydraUtxoValue == null ||
 							(paymentPersistedInputValue != null &&
-								(hydraAmountListsEqual(paymentPersistedInputValue, canonicalOutputAmounts) || paymentHasLegacyValue)))
+								hydraAmountListsEqual(paymentPersistedInputValue, canonicalOutputAmounts)))
 					: paymentRequest.onChainState == null
 						? newOnChainState === OnChainState.FundsLocked && paymentRequest.currentHydraUtxoValue == null
 						: transactionEvidence != null &&
@@ -545,12 +530,7 @@ export async function applyDatumStateToLocalRequests(params: {
 					purchaseRequest.CurrentTransaction?.txHash === txId &&
 					purchaseRequest.CurrentTransaction.status === TransactionStatus.Confirmed;
 				if (alreadyApplied) {
-					if (purchaseHasLegacyValue) {
-						await tx.purchaseRequest.update({
-							where: { id: purchaseRequest.id },
-							data: { currentHydraUtxoValue: outputValueJson },
-						});
-					} else if (!isSameAcceptedOutput || purchaseRequest.currentHydraUtxoValue == null) {
+					if (!isSameAcceptedOutput || purchaseRequest.currentHydraUtxoValue == null) {
 						await tx.purchaseRequest.update({
 							where: { id: purchaseRequest.id },
 							data: {
@@ -622,12 +602,7 @@ export async function applyDatumStateToLocalRequests(params: {
 					paymentRequest.CurrentTransaction?.txHash === txId &&
 					paymentRequest.CurrentTransaction.status === TransactionStatus.Confirmed;
 				if (alreadyApplied) {
-					if (paymentHasLegacyValue) {
-						await tx.paymentRequest.update({
-							where: { id: paymentRequest.id },
-							data: { currentHydraUtxoValue: outputValueJson },
-						});
-					} else if (!isSameAcceptedOutput || paymentRequest.currentHydraUtxoValue == null) {
+					if (!isSameAcceptedOutput || paymentRequest.currentHydraUtxoValue == null) {
 						await tx.paymentRequest.update({
 							where: { id: paymentRequest.id },
 							data: {
