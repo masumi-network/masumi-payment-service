@@ -57,6 +57,12 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  --min-height-overview-list: var(--overview-list-scroll-max-height);
+  --max-height-overview-list: var(--overview-list-scroll-max-height);
+  --min-height-overview-panel: var(--overview-panel-max-height);
+  --max-height-overview-panel: var(--overview-panel-max-height);
+  --min-height-overview-panel-compact: var(--overview-panel-compact-min-height);
 }
 
 /*
@@ -101,6 +107,25 @@
     --radius: 0.5rem;
     --accent-brand: 174 60% 51%;
     --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
+    /* py-3 + two-line row (title + secondary); × 8 rows visible in list viewport */
+    --overview-list-row-height: 4rem;
+    --overview-list-visible-rows: 8;
+    --overview-list-scroll-max-height: calc(
+      var(--overview-list-row-height) * var(--overview-list-visible-rows)
+    );
+    --overview-panel-header-height: 4.5rem;
+    /* sm footer button + py-3; must match panel flex layout or max-h clips the last list row */
+    --overview-panel-footer-height: 3.5rem;
+    --overview-panel-max-height: calc(
+      var(--overview-panel-header-height) + var(--overview-list-scroll-max-height) +
+        var(--overview-panel-footer-height)
+    );
+    /* Empty state body (py-8 wrapper + EmptyState); keeps sparse lists aligned with empty panels */
+    --overview-panel-empty-body-min-height: 15rem;
+    --overview-panel-compact-min-height: calc(
+      var(--overview-panel-header-height) + var(--overview-panel-empty-body-min-height) +
+        var(--overview-panel-footer-height)
+    );
   }
 
   .dark {
@@ -570,9 +595,14 @@ input[type='number'] {
 .card-interactive:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: hsl(var(--foreground) / 0.12);
 }
-.dark .card-interactive:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+html.dark .card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: hsl(0 0% 100% / 0.14);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.55),
+    0 0 0 1px hsl(0 0% 100% / 0.06);
 }
 
 /* Accessibility: respect reduced motion preference */
