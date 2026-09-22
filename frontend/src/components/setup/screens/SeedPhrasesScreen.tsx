@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -37,6 +38,21 @@ export function SeedPhrasesScreen({
   // may want to reveal one and not the other.
   const [showBuyingMnemonic, setShowBuyingMnemonic] = useState(false);
   const [showSellingMnemonic, setShowSellingMnemonic] = useState(false);
+  const [pendingSeedDownload, setPendingSeedDownload] = useState<'buying' | 'selling' | null>(null);
+
+  const downloadPendingSeed = () => {
+    const walletKind = pendingSeedDownload;
+    setPendingSeedDownload(null);
+    const wallet = walletKind === 'buying' ? buyingWallet : sellingWallet;
+    if (!walletKind || !wallet) return;
+    const blob = new Blob([wallet.mnemonic], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${walletKind}-wallet-seed.txt`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6 w-full max-w-2xl">
@@ -178,25 +194,7 @@ export function SeedPhrasesScreen({
                         variant="outline"
                         size="sm"
                         className="gap-1.5 flex-1"
-                        onClick={() => {
-                          // Explicit consent before writing a plaintext
-                          // seed phrase to disk — the file persists with
-                          // no encryption and survives until the user
-                          // shreds it.
-                          const ok = window.confirm(
-                            'This downloads your seed phrase as an unencrypted .txt file. Anyone with access to the file can spend your funds. Continue?',
-                          );
-                          if (!ok) return;
-                          const blob = new Blob([buyingWallet.mnemonic], {
-                            type: 'text/plain',
-                          });
-                          const url = window.URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = 'buying-wallet-seed.txt';
-                          a.click();
-                          window.URL.revokeObjectURL(url);
-                        }}
+                        onClick={() => setPendingSeedDownload('buying')}
                       >
                         <Download className="h-3.5 w-3.5" /> Download
                       </Button>
@@ -309,24 +307,7 @@ export function SeedPhrasesScreen({
                         variant="outline"
                         size="sm"
                         className="gap-1.5 flex-1"
-                        onClick={() => {
-                          // Explicit consent before writing a plaintext
-                          // seed phrase to disk — see buying-wallet block
-                          // for full rationale.
-                          const ok = window.confirm(
-                            'This downloads your seed phrase as an unencrypted .txt file. Anyone with access to the file can spend your funds. Continue?',
-                          );
-                          if (!ok) return;
-                          const blob = new Blob([sellingWallet.mnemonic], {
-                            type: 'text/plain',
-                          });
-                          const url = window.URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = 'selling-wallet-seed.txt';
-                          a.click();
-                          window.URL.revokeObjectURL(url);
-                        }}
+                        onClick={() => setPendingSeedDownload('selling')}
                       >
                         <Download className="h-3.5 w-3.5" /> Download
                       </Button>
@@ -393,6 +374,15 @@ export function SeedPhrasesScreen({
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={pendingSeedDownload !== null}
+        onClose={() => setPendingSeedDownload(null)}
+        title="Download seed phrase file?"
+        description="This saves your seed phrase as an unencrypted .txt file. Anyone with the file can spend this wallet's funds. Continue only if you will store it securely."
+        confirmLabel="Download"
+        onConfirm={downloadPendingSeed}
+      />
     </div>
   );
 }
