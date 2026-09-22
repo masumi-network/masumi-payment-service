@@ -26,7 +26,13 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '@/components/ui/spinner';
 import { CurlResponseViewer } from './CurlResponseViewer';
-import { generatePurchaseCurl, decodeBlockchainIdentifier, extractErrorMessage } from './utils';
+import {
+  generatePurchaseCurl,
+  decodeBlockchainIdentifier,
+  extractErrorMessage,
+  getHttpStatus,
+  type HttpStatus,
+} from './utils';
 import { Search, ClipboardPaste, Wallet } from 'lucide-react';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { useWallets } from '@/lib/queries/useWallets';
@@ -163,7 +169,7 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
 }
 
 export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
-  const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
   const resync = useResync();
   // Both deferred until the dialog is open. `useAllAgents` walks every
   // inclusive-cursor page before it publishes anything, so running it on a
@@ -194,6 +200,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const [curlCommand, setCurlCommand] = useState<string>('');
   const [response, setResponse] = useState<PostPurchaseResponse['data'] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<HttpStatus | null>(null);
   const [selectedBuyerWalletId, setSelectedBuyerWalletId] = useState<string>('');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
@@ -343,6 +350,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     try {
       setIsLookingUp(true);
       setError(null);
+      setStatus(null);
 
       const decoded = decodeBlockchainIdentifier(blockchainIdentifier);
 
@@ -411,6 +419,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       try {
         setIsLoading(true);
         setError(null);
+        setStatus(null);
 
         const requestBody = {
           blockchainIdentifier: data.blockchainIdentifier,
@@ -435,13 +444,14 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePurchaseCurl(baseUrl, apiKey || '', requestBody);
+        const curl = generatePurchaseCurl(baseUrl, requestBody);
         setCurlCommand(curl);
 
         const result = await postPurchase({
           client: apiClient,
           body: requestBody,
         });
+        setStatus(getHttpStatus(result));
 
         if (result.error) {
           throw new Error(extractErrorMessage(result.error, 'Purchase creation failed'));
@@ -467,7 +477,6 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     [
       resync,
       apiClient,
-      apiKey,
       network,
       extractedAmounts,
       paymentForceLayer,
@@ -489,6 +498,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     setBuyerForceLayer('Auto');
     setResponse(null);
     setError(null);
+    setStatus(null);
     setCurlCommand('');
     onClose();
   };
@@ -830,7 +840,12 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
           </div>
 
           <div className="shrink-0">
-            <CurlResponseViewer curlCommand={curlCommand} response={response} error={error} />
+            <CurlResponseViewer
+              curlCommand={curlCommand}
+              response={response}
+              error={error}
+              status={status}
+            />
           </div>
         </DialogContent>
       </Dialog>
