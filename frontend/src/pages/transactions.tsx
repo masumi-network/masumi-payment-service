@@ -45,6 +45,7 @@ import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransacti
 import { TransactionRowActionsMenu } from '@/components/transactions/TransactionRowActionsMenu';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
+import { canUseTestPaymentTools } from '@/lib/test-payment-tools';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -70,6 +71,7 @@ const getHydraHeadId = (transaction: Transaction) =>
 
 export default function Transactions() {
   const { apiClient, selectedPaymentSourceId, network, capabilities } = useAppContext();
+  const canCreateTestPayments = capabilities.canPay && canUseTestPaymentTools(network);
   const resync = useResync();
 
   const [activeTab, setActiveTab] = useState('All');
@@ -427,9 +429,9 @@ export default function Transactions() {
                 Export report
               </Button>
               {/* Developers > Testing creates real payments/purchases via
-                  pay-authenticated endpoints, and the tab is hidden for
-                  read-only keys, so this shortcut would dead-end. */}
-              {capabilities.canPay && (
+                  pay-authenticated endpoints, is hidden for read-only keys and
+                  offers no tools off Preprod, so this shortcut would dead-end. */}
+              {canCreateTestPayments && (
                 <Link href="/developers">
                   <Button className="flex items-center gap-2 btn-hover-lift">
                     <FlaskConical className="h-4 w-4" />
@@ -572,7 +574,7 @@ export default function Transactions() {
                             : 'Transactions will appear here once payments are made.'
                         }
                         action={
-                          !searchQuery && capabilities.canPay ? (
+                          !searchQuery && canCreateTestPayments ? (
                             <Link
                               href="/developers"
                               className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"

@@ -3,7 +3,13 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
-import { ExternalLink, CreditCard, ShoppingCart, ArrowRightLeft } from 'lucide-react';
+import {
+  ExternalLink,
+  CreditCard,
+  ShoppingCart,
+  ArrowRightLeft,
+  AlertTriangle,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTheme } from '@/lib/contexts/ThemeContext';
@@ -11,6 +17,7 @@ import { GetStaticProps } from 'next';
 import { MockPaymentDialog, MockPurchaseDialog, FullCycleDialog } from '@/components/testing';
 import { InputSchemaValidator } from '@/components/developers/InputSchemaValidator';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { canUseTestPaymentTools } from '@/lib/test-payment-tools';
 
 export const getStaticProps: GetStaticProps = async () => {
   return {
@@ -26,7 +33,8 @@ const PAY_ONLY_TABS = ['Testing'];
 const TABS = [{ name: 'Testing' }, { name: 'Schema Validator' }, { name: 'OpenAPI' }];
 
 export default function Developers() {
-  const { capabilities } = useAppContext();
+  const { capabilities, network } = useAppContext();
+  const canCreateTestPayments = capabilities.canPay && canUseTestPaymentTools(network);
   const tabs = capabilities.canPay ? TABS : TABS.filter((tab) => !PAY_ONLY_TABS.includes(tab.name));
   const [activeTab, setActiveTab] = useState(tabs[0].name);
   const [isIframeLoaded, setIsIframeLoaded] = useState(false);
@@ -84,7 +92,17 @@ export default function Developers() {
 
             <Tabs tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
 
-            {activeTab === 'Testing' && capabilities.canPay && (
+            {activeTab === 'Testing' && capabilities.canPay && !canCreateTestPayments && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-800 dark:text-amber-200 animate-fade-in-up opacity-0">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <p>
+                  Test payments are only available on Preprod. On {network} they would create real
+                  payments with real funds. Switch the network to Preprod to use them.
+                </p>
+              </div>
+            )}
+
+            {activeTab === 'Testing' && canCreateTestPayments && (
               <div className="space-y-6 animate-fade-in-up opacity-0">
                 <div className="grid gap-4 md:grid-cols-3">
                   <button
@@ -179,17 +197,17 @@ export default function Developers() {
       </MainLayout>
 
       <MockPaymentDialog
-        open={capabilities.canPay && isPaymentDialogOpen}
+        open={canCreateTestPayments && isPaymentDialogOpen}
         onClose={() => setPaymentDialogOpen(false)}
       />
 
       <MockPurchaseDialog
-        open={capabilities.canPay && isPurchaseDialogOpen}
+        open={canCreateTestPayments && isPurchaseDialogOpen}
         onClose={() => setPurchaseDialogOpen(false)}
       />
 
       <FullCycleDialog
-        open={capabilities.canPay && isFullCycleDialogOpen}
+        open={canCreateTestPayments && isFullCycleDialogOpen}
         onClose={() => setFullCycleDialogOpen(false)}
       />
     </>
