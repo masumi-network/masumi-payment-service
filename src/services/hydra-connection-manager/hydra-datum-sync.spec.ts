@@ -684,6 +684,149 @@ describe('applyDatumStateToLocalRequests', () => {
 		},
 	);
 
+	// MAS-619 invariant: only the exact legacy encoding of the same confirmed
+	// output may be repaired, without changing escrow state or action history.
+	function legacyValueReplay(side: 'payment' | 'purchase') {
+		const txId = 'legacy-asset-lock';
+		const policy = 'ab'.repeat(28);
+		const rawName = '0014df105553444d';
+		const canonicalValue = [
+			{ unit: policy + rawName, quantity: '900000' },
+			{ unit: 'lovelace', quantity: '4460850' },
+		];
+		const request = {
+			...(side === 'payment' ? makePaymentRequest() : makePurchaseRequest(null)),
+			onChainState: OnChainState.FundsOrDatumInvalid,
+			layer: TransactionLayer.L2,
+			NextAction: { requestedAction: PaymentAction.WaitingForManualAction },
+			BuyerWallet: { walletVkey: 'buyer-vkey', walletAddress: 'addr-buyer' },
+			currentHydraUtxoTxHash: txId,
+			currentHydraUtxoOutputIndex: 0,
+			currentHydraUtxoValue: [
+				{ unit: policy + '48' + rawName, quantity: '900000' },
+				{ unit: 'lovelace', quantity: '4460850' },
+			],
+			unresolvedHydraTerminalTxHash: 'unresolved-terminal',
+			unresolvedHydraTerminalReason: 'preserve-existing-marker',
+			CurrentTransaction: {
+				id: 'confirmed-lock',
+				txHash: txId,
+				intendedTxHash: txId,
+				status: TransactionStatus.Confirmed as TransactionStatus,
+				layer: TransactionLayer.L2,
+				hydraHeadId: 'head-1',
+				BlocksWallet: null,
+			},
+		};
+		mockPaymentFindUnique.mockResolvedValue(side === 'payment' ? request : null);
+		mockPurchaseFindUnique.mockResolvedValue(side === 'purchase' ? request : null);
+		const observation = {
+			hydraHeadId: 'head-1',
+			txId,
+			paymentSourceId: 'source-1',
+			decoded: decodedInitialLock,
+			newOnChainState: OnChainState.FundsLocked as OnChainState,
+			outputAmounts: canonicalValue,
+			outputReference: { txHash: txId, outputIndex: 0 },
+			transactionEvidence: makeEvidence({
+				txHash: txId,
+				signerVkeys: ['buyer-vkey'],
+				outputs: [{ outputIndex: 0, address: 'addr-contract', amount: canonicalValue, plutusData: null }],
+			}),
+			confirmationTimeMs: null,
+			targetSide: side,
+		};
+		return { request, observation, canonicalValue };
+	}
+
+	it.each(['payment', 'purchase'] as const)(
+		'MAS-619: repairs only the legacy %s value and makes repeated replay a no-op',
+		async (side) => {
+			const { request, observation, canonicalValue } = legacyValueReplay(side);
+			expect(await applyDatumStateToLocalRequests(observation)).toBe('applied');
+			const update = side === 'payment' ? mockPaymentUpdate : mockPurchaseUpdate;
+			expect(update).toHaveBeenCalledTimes(1);
+			expect(update).toHaveBeenCalledWith({
+				where: { id: request.id },
+				data: { currentHydraUtxoValue: canonicalValue },
+			});
+			expect(mockTransactionUpdate).not.toHaveBeenCalled();
+			expect(mockTransactionCreate).not.toHaveBeenCalled();
+			expect(mockHotWalletUpdate).not.toHaveBeenCalled();
+			request.currentHydraUtxoValue = canonicalValue;
+			jest.clearAllMocks();
+			expect(await applyDatumStateToLocalRequests(observation)).toBe('applied');
+			expect(mockPaymentUpdate).not.toHaveBeenCalled();
+			expect(mockPurchaseUpdate).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(['payment', 'purchase'] as const)(
+		'MAS-619: refuses legacy %s recovery when evidence or request guards differ',
+		async (side) => {
+			for (const change of [
+				'token-quantity',
+				'ada-quantity',
+				'extra-asset',
+				'reference',
+				'index',
+				'pending',
+				'later-transaction',
+				'head',
+				'participant',
+				'datum',
+				'state',
+				'evidence',
+			] as const) {
+				const { request, observation } = legacyValueReplay(side);
+				switch (change) {
+					case 'token-quantity':
+						request.currentHydraUtxoValue[0].quantity = '899999';
+						break;
+					case 'ada-quantity':
+						request.currentHydraUtxoValue[1].quantity = '4460849';
+						break;
+					case 'extra-asset':
+						request.currentHydraUtxoValue.push({ unit: 'cd'.repeat(28), quantity: '1' });
+						break;
+					case 'reference':
+						request.currentHydraUtxoTxHash = 'another-output';
+						break;
+					case 'index':
+						request.currentHydraUtxoOutputIndex = 1;
+						break;
+					case 'pending':
+						request.CurrentTransaction.status = TransactionStatus.Pending;
+						break;
+					case 'later-transaction':
+						request.CurrentTransaction.txHash = 'later-tx';
+						break;
+					case 'head':
+						request.CurrentTransaction.hydraHeadId = 'different-head';
+						break;
+					case 'participant':
+						observation.decoded = { ...decodedInitialLock, sellerVkey: 'imposter' };
+						break;
+					case 'datum':
+						observation.decoded = { ...decodedInitialLock, inputHash: 'different-input' };
+						break;
+					case 'state':
+						observation.newOnChainState = OnChainState.ResultSubmitted;
+						break;
+					case 'evidence':
+						observation.transactionEvidence = makeEvidence({ txHash: 'different-tx' });
+						break;
+				}
+				jest.clearAllMocks();
+				expect(await applyDatumStateToLocalRequests(observation)).not.toBe('applied');
+				expect(mockPaymentUpdate).not.toHaveBeenCalled();
+				expect(mockPurchaseUpdate).not.toHaveBeenCalled();
+				expect(mockTransactionUpdate).not.toHaveBeenCalled();
+				expect(mockTransactionCreate).not.toHaveBeenCalled();
+			}
+		},
+	);
+
 	it('sums duplicate requested units before validating an initial lock', async () => {
 		mockPaymentFindUnique.mockResolvedValue({
 			...makePaymentRequest(),
