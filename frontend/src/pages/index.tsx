@@ -469,7 +469,7 @@ export default function Overview() {
                       ) : (
                         <HorizontalScrollArea className="animate-content-reveal mb-4 max-h-125 overflow-y-auto w-full">
                           <table className="w-full">
-                            <thead className="sticky top-0 bg-muted/30 dark:bg-muted/15 z-10">
+                            <thead className="sticky top-0 table-header-surface z-10">
                               <tr className="text-sm text-muted-foreground border-b">
                                 <th className="text-left py-2 px-2 w-20">Type</th>
                                 <th className="text-left py-2 px-2">Name</th>

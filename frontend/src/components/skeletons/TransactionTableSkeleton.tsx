@@ -4,11 +4,22 @@ import {
   tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
 
-export function TransactionTableSkeleton({ rows = 5 }: { rows?: number }) {
+export function TransactionTableSkeleton({
+  rows = 5,
+  withSelectionColumn = false,
+}: {
+  rows?: number;
+  withSelectionColumn?: boolean;
+}) {
   return (
     <>
       {Array.from({ length: rows }).map((_, index) => (
         <tr key={index} className="border-b last:border-b-0">
+          {withSelectionColumn ? (
+            <td className="w-10 p-4 pl-6">
+              <Skeleton className="h-4 w-4" />
+            </td>
+          ) : null}
           <td className="p-4">
             <Skeleton className="h-4 w-16" />
           </td>

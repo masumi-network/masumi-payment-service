@@ -100,7 +100,14 @@
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
     --accent-brand: 174 60% 51%;
-    --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
+    --table-row-hover-fill: #fafafa;
+    --row-hover: var(--table-row-hover-fill);
+    --transaction-error-row-fill: #feeeed;
+    --transaction-error-row-hover-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 14%,
+      var(--transaction-error-row-fill)
+    );
   }
 
   .dark {
@@ -124,11 +131,32 @@
     --input: 0 0% 18%;
     --ring: 0 0% 83.1%;
     --accent-brand: 174 60% 55%;
-    --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
+    --table-row-hover-fill: #212121;
+    --row-hover: var(--table-row-hover-fill);
+    --table-header-fill: #111111;
+    /* Visible on ~3.9% background; #190c0c was indistinguishable from the page. */
+    --transaction-error-row-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 24%,
+      hsl(var(--background))
+    );
+    --transaction-error-row-hover-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 32%,
+      hsl(var(--background))
+    );
   }
 }
 
 @layer components {
+  .table-header-surface {
+    background-color: hsl(var(--muted) / 0.3);
+  }
+
+  .dark .table-header-surface {
+    background-color: var(--table-header-fill);
+  }
+
   /* Sticky actions: fixed left fade; --table-actions-fill is rest or row-hover (not muted/50). */
   .table-actions-head-fill,
   .table-actions-cell-fill {
@@ -142,6 +170,10 @@
     );
   }
 
+  .dark .table-actions-head-fill {
+    --table-actions-fill: var(--table-header-fill);
+  }
+
   .group:hover .table-actions-cell-fill {
     --table-actions-fill: var(--row-hover);
   }
@@ -150,8 +182,26 @@
     --table-actions-fill: var(--row-hover);
   }
 
+  .transaction-row-error {
+    border-left-width: 2px;
+    border-left-color: hsl(var(--destructive));
+    background-color: var(--transaction-error-row-fill);
+  }
+
+  .transaction-row-error:hover {
+    background-color: var(--transaction-error-row-hover-fill);
+  }
+
+  .transaction-row-error.transaction-row-selected {
+    background-color: var(--table-row-hover-fill);
+  }
+
   .table-actions-cell-fill--destructive {
-    --table-actions-fill: hsl(var(--destructive) / 0.1);
+    --table-actions-fill: var(--transaction-error-row-fill);
+  }
+
+  .group:hover .table-actions-cell-fill--destructive {
+    --table-actions-fill: var(--transaction-error-row-hover-fill);
   }
 
   .table-actions-cell-fill--low-balance {
