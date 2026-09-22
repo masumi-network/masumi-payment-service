@@ -9,23 +9,29 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { formatAssetAmount } from '@/lib/utils';
+import { cn, formatAssetAmount } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
+import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
-import { tableActionsCellClass, tableActionsHeadClass } from '@/components/ui/table-actions-column';
+import {
+  tableActionsCellCompactClass,
+  tableActionsCellCompactSelectedClass,
+  tableActionsHeadCompactClass,
+  tableActionsInnerClass,
+} from '@/components/ui/table-actions-column';
 import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
-import { Search, Plus } from 'lucide-react';
+import { MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
@@ -48,7 +54,7 @@ function matchesPermissionTab(apiKey: ApiKey, tab: string): boolean {
   switch (tab) {
     case 'Read':
       return apiKey.canRead && !apiKey.canPay && !apiKey.canAdmin;
-    case 'ReadAndPay':
+    case 'Read and Pay':
       return apiKey.canPay && !apiKey.canAdmin;
     case 'Admin':
       return apiKey.canAdmin;
@@ -104,7 +110,7 @@ export default function ApiKeys() {
   const tabs = [
     { name: 'All', count: null },
     { name: 'Read', count: null },
-    { name: 'ReadAndPay', count: null },
+    { name: 'Read and Pay', count: null },
     { name: 'Admin', count: null },
   ];
 
@@ -266,7 +272,7 @@ export default function ApiKeys() {
                   <th className="p-4 text-left text-sm font-medium">Networks</th>
                   <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className={tableActionsHeadClass}>Actions</th>
+                  <th className={tableActionsHeadCompactClass}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -279,95 +285,133 @@ export default function ApiKeys() {
                     </td>
                   </tr>
                 ) : (
-                  filteredApiKeys.map((key) => (
-                    <tr key={key.id} className="border-b" onClick={() => {}}>
-                      <td className="p-4">
-                        <Checkbox
-                          aria-label={`Select key ${key.token}`}
-                          checked={selectedKeys.includes(key.id)}
-                          onCheckedChange={() => handleSelectKey(key.id)}
-                        />
-                      </td>
-                      <td className="p-4 truncate">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-muted-foreground">
-                            {/* A masked token is already short; running it through
+                  filteredApiKeys.map((key) => {
+                    const isCurrentKey = isSessionApiKey(key.token, apiKey);
+                    const isKeySelected = selectedKeys.includes(key.id);
+                    return (
+                      <tr
+                        key={key.id}
+                        className={cn(
+                          'group border-b transition-[background-color] duration-150 hover:bg-row-hover',
+                          isKeySelected && 'bg-row-hover',
+                        )}
+                      >
+                        <td className="p-4" onClick={(event) => event.stopPropagation()}>
+                          <Checkbox
+                            aria-label={`Select key ${key.token}`}
+                            checked={isKeySelected}
+                            onCheckedChange={() => handleSelectKey(key.id)}
+                          />
+                        </td>
+                        <td className="p-4 truncate">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-sm text-muted-foreground">
+                              {/* A masked token is already short; running it through
                                 shortenAddress elided the only four characters that
                                 identify it. */}
-                            {isRedactedApiKeyToken(key.token)
-                              ? key.token
-                              : shortenAddress(key.token)}
-                          </span>
-                          {!isRedactedApiKeyToken(key.token) && <CopyButton value={key.token} />}
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
-                      <td className="p-4 text-sm">
-                        <div className="flex gap-1">
-                          {key.NetworkLimit.map((network) => (
-                            <span
-                              key={network}
-                              className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-100/10 px-2 py-1 text-xs"
-                            >
-                              {network}
+                              {isRedactedApiKeyToken(key.token)
+                                ? key.token
+                                : shortenAddress(key.token)}
                             </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm">
-                        {key.usageLimited ? (
-                          <div className="space-y-1">
-                            {key.RemainingUsageCredits.map((credit, index) => (
-                              <div key={index}>
-                                {formatAssetAmount(credit.amount, credit.unit, network)}
-                              </div>
+                            {!isRedactedApiKeyToken(key.token) && <CopyButton value={key.token} />}
+                            {isCurrentKey && (
+                              <Badge
+                                variant="secondary"
+                                className="font-normal shrink-0"
+                                title="Signed in with this API key"
+                              >
+                                Current key
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
+                        <td className="p-4 text-sm">
+                          <div className="flex gap-1">
+                            {key.NetworkLimit.map((network) => (
+                              <span
+                                key={network}
+                                className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-100/10 px-2 py-1 text-xs"
+                              >
+                                {network}
+                              </span>
                             ))}
                           </div>
-                        ) : (
-                          'Unlimited'
-                        )}
-                      </td>
-                      <td className="p-4 text-sm">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
-                            key.status === 'Active'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                          }`}
+                        </td>
+                        <td className="p-4 text-sm">
+                          {key.usageLimited ? (
+                            <div className="space-y-1">
+                              {key.RemainingUsageCredits.map((credit, index) => (
+                                <div key={index}>
+                                  {formatAssetAmount(credit.amount, credit.unit, network)}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            'Unlimited'
+                          )}
+                        </td>
+                        <td className="p-4 text-sm">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                              key.status === 'Active'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            }`}
+                          >
+                            {key.status}
+                          </span>
+                        </td>
+                        <td
+                          className={
+                            isKeySelected
+                              ? tableActionsCellCompactSelectedClass
+                              : tableActionsCellCompactClass
+                          }
                         >
-                          {key.status}
-                        </span>
-                      </td>
-                      <td className={tableActionsCellClass}>
-                        <Select
-                          onValueChange={(value) => {
-                            if (value === 'update') {
-                              setKeyToUpdate(key);
-                            } else if (value === 'delete') {
-                              setKeyToDelete(key);
-                            }
-                          }}
-                          value=""
-                        >
-                          <SelectTrigger className="w-[100px]">
-                            <SelectValue placeholder="Actions" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="update">Update</SelectItem>
-                            <SelectItem
-                              disabled={isSessionApiKey(key.token, apiKey)}
-                              value="delete"
-                              className="text-red-600"
-                            >
-                              {isSessionApiKey(key.token, apiKey)
-                                ? 'Cannot delete current API key'
-                                : 'Delete'}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </td>
-                    </tr>
-                  ))
+                          <div className={tableActionsInnerClass}>
+                            <DropdownMenu modal={false}>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="API key actions"
+                                  className="h-8 w-8"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <DropdownMenuItem
+                                  className="cursor-pointer gap-2"
+                                  onSelect={() => setKeyToUpdate(key)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                  Update
+                                </DropdownMenuItem>
+                                {!isCurrentKey && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+                                      onSelect={() => setKeyToDelete(key)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

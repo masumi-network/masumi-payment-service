@@ -2,7 +2,7 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { Info, Plus, Trash2 } from 'lucide-react';
 import { FaRegClock } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -22,6 +22,7 @@ import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
   tableActionsHeadCompactClass,
+  tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
 import { RefreshButton } from '@/components/RefreshButton';
 import { InboxAgentDetailsDialog } from '@/components/inbox-agents/InboxAgentDetailsDialog';
@@ -385,7 +386,7 @@ export default function InboxAgentsPage() {
                         <tr
                           key={agent.id}
                           className={cn(
-                            'group border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
+                            'group border-b cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 opacity-0',
                             agent.state === 'DeregistrationConfirmed'
                               ? 'animate-fade-in-to-muted'
                               : 'animate-fade-in',
@@ -484,7 +485,7 @@ export default function InboxAgentsPage() {
                             </Badge>
                           </td>
                           <td className={tableActionsCellCompactClass}>
-                            <div className="flex items-center gap-1">
+                            <div className={tableActionsInnerClass}>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -495,7 +496,7 @@ export default function InboxAgentsPage() {
                                 className="text-primary hover:text-primary hover:bg-primary/10"
                                 title="View details"
                               >
-                                <ExternalLink className="h-4 w-4" />
+                                <Info className="h-4 w-4" />
                               </Button>
                               {canDelete ? (
                                 <Button
@@ -516,14 +517,26 @@ export default function InboxAgentsPage() {
                                 </Button>
                               ) : agent.state === 'RegistrationInitiated' ||
                                 agent.state === 'DeregistrationInitiated' ? (
-                                <div className="flex items-center justify-center w-8 h-8">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled
+                                  className="text-primary"
+                                  title="Processing on-chain"
+                                >
                                   <Spinner size={16} />
-                                </div>
+                                </Button>
                               ) : agent.state === 'RegistrationRequested' ||
                                 agent.state === 'DeregistrationRequested' ? (
-                                <div className="flex items-center justify-center w-8 h-8">
-                                  <FaRegClock size={12} />
-                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled
+                                  className="text-primary"
+                                  title="Queued on-chain"
+                                >
+                                  <FaRegClock />
+                                </Button>
                               ) : null}
                             </div>
                           </td>

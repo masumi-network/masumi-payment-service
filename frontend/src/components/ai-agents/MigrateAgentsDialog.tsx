@@ -277,7 +277,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       // Swallow the error so the spinner clears (finally below) — surfacing a
       // toast on every transient balance-fetch failure would be noisy, but we
       // still want a trace for debugging.
-      console.error('[MigrateAgentsDialog] fetchWalletBalance failed', err);
+      console.error('Failed to fetch wallet balance for migration');
     } finally {
       if (balanceFetchEpochRef.current === epoch) {
         setIsLoadingBalance(false);
