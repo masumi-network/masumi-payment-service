@@ -578,6 +578,112 @@ describe('applyDatumStateToLocalRequests', () => {
 		expect(mockTransactionCreate).not.toHaveBeenCalled();
 	});
 
+	it.each(['payment', 'purchase'] as const)(
+		'MAS-619: replays an invalid initial lock without changing the %s classification',
+		async (side) => {
+			const txId = 'underfunded-lock';
+			const amounts = [{ unit: 'lovelace', quantity: '5000000' }];
+			const request = side === 'payment' ? makePaymentRequest() : makePurchaseRequest(null);
+			mockPaymentFindUnique.mockResolvedValue(side === 'payment' ? request : null);
+			mockPurchaseFindUnique.mockResolvedValue(side === 'purchase' ? request : null);
+			const observation = {
+				hydraHeadId: 'head-1',
+				txId,
+				paymentSourceId: 'source-1',
+				decoded: decodedInitialLock,
+				newOnChainState: OnChainState.FundsLocked,
+				outputAmounts: amounts,
+				outputReference: { txHash: txId, outputIndex: 0 },
+				transactionEvidence: makeEvidence({
+					txHash: txId,
+					signerVkeys: ['buyer-vkey'],
+					outputs: [{ outputIndex: 0, address: 'addr-contract', amount: amounts, plutusData: null }],
+				}),
+				confirmationTimeMs: 49,
+				targetSide: side,
+			};
+			expect(await applyDatumStateToLocalRequests(observation)).toBe('applied');
+			const update = side === 'payment' ? mockPaymentUpdate : mockPurchaseUpdate;
+			expect(update).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						onChainState: OnChainState.FundsOrDatumInvalid,
+						currentHydraUtxoTxHash: txId,
+						currentHydraUtxoOutputIndex: 0,
+						currentHydraUtxoValue: amounts,
+						CurrentTransaction: { connect: { id: 'observed-transaction-1' } },
+					}),
+				}),
+			);
+			const persistedRequest = {
+				...request,
+				onChainState: OnChainState.FundsOrDatumInvalid,
+				layer: TransactionLayer.L2,
+				currentHydraUtxoTxHash: txId,
+				currentHydraUtxoOutputIndex: 0,
+				currentHydraUtxoValue: amounts,
+				currentTransactionId: 'observed-transaction-1',
+				CurrentTransaction: {
+					id: 'observed-transaction-1',
+					txHash: txId,
+					intendedTxHash: txId,
+					status: TransactionStatus.Confirmed,
+					layer: TransactionLayer.L2,
+					hydraHeadId: 'head-1',
+					BlocksWallet: null,
+				},
+			};
+			mockPaymentFindUnique.mockResolvedValue(side === 'payment' ? persistedRequest : null);
+			mockPurchaseFindUnique.mockResolvedValue(side === 'purchase' ? persistedRequest : null);
+			jest.clearAllMocks();
+
+			// Reconnection need not supply the original confirmation timestamp.
+			expect(await applyDatumStateToLocalRequests({ ...observation, confirmationTimeMs: null })).toBe('applied');
+			expect(mockPaymentUpdate).not.toHaveBeenCalled();
+			expect(mockPurchaseUpdate).not.toHaveBeenCalled();
+			expect(mockTransactionUpdate).not.toHaveBeenCalled();
+			expect(mockTransactionCreate).not.toHaveBeenCalled();
+			expect(mockHotWalletUpdate).not.toHaveBeenCalled();
+
+			// An invalid classification does not authorize different evidence.
+			for (const changedObservation of [
+				{
+					...observation,
+					decoded: { ...decodedInitialLock, state: SmartContractState.ResultSubmitted, resultHash: 'forged' },
+					newOnChainState: OnChainState.ResultSubmitted,
+				},
+				{
+					...observation,
+					outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+					transactionEvidence: makeEvidence({ txHash: txId, signerVkeys: ['buyer-vkey'] }),
+				},
+			]) {
+				expect(await applyDatumStateToLocalRequests(changedObservation)).toBe('retry');
+			}
+			for (const outputReference of [
+				{ txHash: 'different-lock', outputIndex: 0 },
+				{ txHash: txId, outputIndex: 1 },
+			]) {
+				expect(
+					await applyDatumStateToLocalRequests({
+						...observation,
+						txId: outputReference.txHash,
+						outputReference,
+						transactionEvidence: makeEvidence({
+							txHash: outputReference.txHash,
+							signerVkeys: ['buyer-vkey'],
+							outputs: [{ ...observation.transactionEvidence.outputs[0], outputIndex: outputReference.outputIndex }],
+						}),
+					}),
+				).toBe('irrelevant');
+			}
+			expect(mockPaymentUpdate).not.toHaveBeenCalled();
+			expect(mockPurchaseUpdate).not.toHaveBeenCalled();
+			expect(mockTransactionUpdate).not.toHaveBeenCalled();
+			expect(mockTransactionCreate).not.toHaveBeenCalled();
+		},
+	);
+
 	it('sums duplicate requested units before validating an initial lock', async () => {
 		mockPaymentFindUnique.mockResolvedValue({
 			...makePaymentRequest(),

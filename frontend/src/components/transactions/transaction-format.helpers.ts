@@ -40,6 +40,17 @@ export const formatStatus = (status: string | null) => {
   return status.replace(/([A-Z])/g, ' $1').trim();
 };
 
+/** Whether a row supports clear/retry via error-state-recovery (matches row actions menu). */
+export function isTransactionErrorRecoverable(
+  transaction: Transaction,
+  contextNetwork: string | null | undefined,
+): boolean {
+  if (!transaction.id || !transaction.NextAction?.errorType) return false;
+  if (!transaction.onChainState) return false;
+  const recoveryNetwork = transaction.PaymentSource?.network ?? contextNetwork;
+  return recoveryNetwork === 'Preprod' || recoveryNetwork === 'Mainnet';
+}
+
 /** Human-readable label for an on-chain state (e.g. `FundsLocked` -> `Funds Locked`). */
 export const formatOnChainState = (state: string | null | undefined): string => {
   switch (state?.toLowerCase()) {
