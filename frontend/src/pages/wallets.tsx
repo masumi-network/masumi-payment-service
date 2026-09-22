@@ -254,7 +254,7 @@ export default function WalletsPage() {
 
           <HorizontalScrollArea className="rounded-lg border">
             <table className="w-full">
-              <thead className="bg-muted/30 dark:bg-muted/15">
+              <thead className="table-header-surface">
                 <tr className="border-b">
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
                     Type

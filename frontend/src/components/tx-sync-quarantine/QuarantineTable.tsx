@@ -112,7 +112,7 @@ export function QuarantineTable({
   return (
     <HorizontalScrollArea className="border rounded-lg">
       <table className={cn('w-full transition-opacity duration-150', isLoading && 'opacity-70')}>
-        <thead className="bg-muted/30 dark:bg-muted/15">
+        <thead className="table-header-surface">
           <tr className="border-b">
             <th className="p-4 pl-6 w-10" />
             <th className="p-4 text-left text-sm font-medium text-muted-foreground">

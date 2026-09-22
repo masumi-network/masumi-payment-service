@@ -100,7 +100,14 @@
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
     --accent-brand: 174 60% 51%;
-    --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
+    --table-row-hover-fill: #fafafa;
+    --row-hover: var(--table-row-hover-fill);
+    --transaction-error-row-fill: #feeeed;
+    --transaction-error-row-hover-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 14%,
+      var(--transaction-error-row-fill)
+    );
   }
 
   .dark {
@@ -124,42 +131,44 @@
     --input: 0 0% 18%;
     --ring: 0 0% 83.1%;
     --accent-brand: 174 60% 55%;
-    --row-hover: color-mix(in hsl, hsl(var(--muted)) 50%, hsl(var(--background)));
+    --table-row-hover-fill: #212121;
+    --row-hover: var(--table-row-hover-fill);
+    --table-header-fill: #111111;
+    /* Visible on ~3.9% background; #190c0c was indistinguishable from the page. */
+    --transaction-error-row-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 24%,
+      hsl(var(--background))
+    );
+    --transaction-error-row-hover-fill: color-mix(
+      in srgb,
+      hsl(var(--destructive)) 32%,
+      hsl(var(--background))
+    );
   }
 }
 
 @layer components {
-  /* Sticky actions: fixed left fade; --table-actions-fill is rest or row-hover (not muted/50). */
-  .table-actions-head-fill,
-  .table-actions-cell-fill {
-    --table-actions-fill: hsl(var(--background));
-    background-color: transparent;
-    background-image: linear-gradient(
-      to right,
-      transparent,
-      color-mix(in srgb, var(--table-actions-fill) 80%, transparent) 2.5rem,
-      var(--table-actions-fill) 3.5rem
-    );
+  .table-header-surface {
+    background-color: hsl(var(--muted) / 0.3);
   }
 
-  .group:hover .table-actions-cell-fill {
-    --table-actions-fill: var(--row-hover);
+  .dark .table-header-surface {
+    background-color: var(--table-header-fill);
   }
 
-  .table-actions-cell-fill--highlight {
-    --table-actions-fill: var(--row-hover);
+  .transaction-row-error {
+    border-left-width: 2px;
+    border-left-color: hsl(var(--destructive));
+    background-color: var(--transaction-error-row-fill);
   }
 
-  .table-actions-cell-fill--destructive {
-    --table-actions-fill: hsl(var(--destructive) / 0.1);
+  .transaction-row-error:hover {
+    background-color: var(--transaction-error-row-hover-fill);
   }
 
-  .table-actions-cell-fill--low-balance {
-    --table-actions-fill: rgb(245 158 11 / 0.05);
-  }
-
-  .group:hover .table-actions-cell-fill--low-balance {
-    --table-actions-fill: rgb(245 158 11 / 0.1);
+  .transaction-row-error.transaction-row-selected {
+    background-color: var(--table-row-hover-fill);
   }
 }
 
@@ -195,10 +204,6 @@
   background-color: #000a !important;
 }
 
-#main-content {
-  overflow-y: scroll !important;
-}
-
 input[type='number']::-webkit-outer-spin-button,
 input[type='number']::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -225,7 +230,7 @@ input[type='number'] {
 }
 
 #__next {
-  overflow-y: scroll !important;
+  overflow: hidden !important;
 }
 
 @keyframes spin {
@@ -784,4 +789,45 @@ input[type='number'] {
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Sticky actions fade (unlayered — Tailwind v4 build was dropping @layer components rules). */
+.table-actions-head-fill,
+.table-actions-cell-fill {
+  --table-actions-fill: hsl(var(--background));
+  background-color: transparent;
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--table-actions-fill) 80%, transparent) 2.5rem,
+    var(--table-actions-fill) 3.5rem
+  );
+}
+
+.dark .table-actions-head-fill {
+  --table-actions-fill: var(--table-header-fill);
+}
+
+.group:hover .table-actions-cell-fill {
+  --table-actions-fill: var(--row-hover);
+}
+
+.table-actions-cell-fill--highlight {
+  --table-actions-fill: var(--row-hover);
+}
+
+.table-actions-cell-fill--destructive {
+  --table-actions-fill: var(--transaction-error-row-fill);
+}
+
+.group:hover .table-actions-cell-fill--destructive {
+  --table-actions-fill: var(--transaction-error-row-hover-fill);
+}
+
+.table-actions-cell-fill--low-balance {
+  --table-actions-fill: rgb(245 158 11 / 0.05);
+}
+
+.group:hover .table-actions-cell-fill--low-balance {
+  --table-actions-fill: rgb(245 158 11 / 0.1);
 }
