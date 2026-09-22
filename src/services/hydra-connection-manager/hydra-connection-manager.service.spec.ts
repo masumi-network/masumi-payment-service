@@ -72,6 +72,7 @@ jest.unstable_mockModule('@/utils/converter/string-datum-convert', () => ({
 }));
 
 const { HydraConnectionManager } = await import('./hydra-connection-manager.service');
+const { logger: replayLogger } = await import('@masumi/payment-core/logger');
 const { failClosedAfterStatusPersistenceFailure } = await import('./head-status-persistence');
 
 function confirmedTransaction(txId: string): HydraConfirmedTransaction {
@@ -1640,6 +1641,55 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		await expect(
 			manager.handleTxConfirmed('head-1', 'partially-applied', confirmedTransaction('partially-applied')),
 		).resolves.toBe('retry');
+	});
+
+	it.each([
+		['retry', 'irrelevant'],
+		['irrelevant', 'retry'],
+	] as const)('MAS-619: identifies replay retry from datum=%s and terminal=%s', async (datum, terminal) => {
+		const manager = new HydraConnectionManager();
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
+		mockApplyDatum.mockResolvedValue(datum);
+		mockApplyTerminal.mockResolvedValue(terminal);
+		await expect(manager.handleTxConfirmed('head-1', 'diagnostic', confirmedTransaction('diagnostic'))).resolves.toBe(
+			'retry',
+		);
+		expect(replayLogger.warn).toHaveBeenCalledWith(
+			'[HydraConnectionManager] confirmed transaction requires replay retry',
+			expect.objectContaining({
+				hydraHeadId: 'head-1',
+				txId: 'diagnostic',
+				datumOutcomes: [{ outputIndex: 2, outcome: datum }],
+				terminalOutcome: terminal,
+			}),
+		);
+	});
+
+	it('reports skipped terminal processing without inventing an outcome', async () => {
+		const manager = new HydraConnectionManager();
+		attachFabricatedHead(
+			manager,
+			'head-1',
+			{ mainNode: { getConfirmedTransaction: () => null } },
+			{ fetchUTxOs: mockFetchUtxos },
+		);
+		mockFetchUtxos.mockResolvedValue([
+			{
+				input: { txHash: 'missing-evidence', outputIndex: 0 },
+				output: {
+					address: 'addr_test1_contract',
+					plutusData: 'd87980',
+					amount: [{ unit: 'lovelace', quantity: '10000000' }],
+				},
+			},
+		]);
+		mockApplyDatum.mockResolvedValue('retry');
+		await expect(manager.handleTxConfirmed('head-1', 'missing-evidence')).resolves.toBe('retry');
+		expect(mockApplyTerminal).not.toHaveBeenCalled();
+		expect(replayLogger.warn).toHaveBeenCalledWith(
+			'[HydraConnectionManager] confirmed transaction requires replay retry',
+			expect.objectContaining({ terminalOutcome: null, datumOutcomes: [{ outputIndex: 0, outcome: 'retry' }] }),
+		);
 	});
 
 	it('still applies a terminal spend when an unrelated contract output has a malformed datum', async () => {

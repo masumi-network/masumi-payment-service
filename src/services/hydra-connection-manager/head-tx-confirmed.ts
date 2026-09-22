@@ -92,6 +92,8 @@ async function syncHydraDatumStateFromConfirmedTx(
 		if (host.isStatusQuarantined(hydraHeadId)) return 'retry';
 		let hasApplied = false;
 		let hasRetry = false;
+		const datumOutcomes: Array<{ outputIndex: number; outcome: HydraDatumApplyOutcome }> = [];
+		let terminalOutcome: HydraDatumApplyOutcome | null = null;
 		const provider = host.getProvider(hydraHeadId);
 
 		const hydraHead = await prisma.hydraHead.findUnique({
@@ -228,12 +230,13 @@ async function syncHydraDatumStateFromConfirmedTx(
 				transactionEvidence,
 				confirmationTimeMs,
 			});
+			datumOutcomes.push({ outputIndex: decodedOutput.output.input.outputIndex, outcome: datumOutcome });
 			hasApplied ||= datumOutcome === 'applied';
 			hasRetry ||= datumOutcome === 'retry';
 		}
 
 		if (transactionEvidence) {
-			const terminalOutcome = await applyTerminalHydraSpends({
+			terminalOutcome = await applyTerminalHydraSpends({
 				hydraHeadId,
 				txId,
 				paymentSourceId: paymentSource.id,
@@ -241,6 +244,14 @@ async function syncHydraDatumStateFromConfirmedTx(
 			});
 			hasApplied ||= terminalOutcome === 'applied';
 			hasRetry ||= terminalOutcome === 'retry';
+		}
+		if (hasRetry) {
+			logger.warn('[HydraConnectionManager] confirmed transaction requires replay retry', {
+				hydraHeadId,
+				txId,
+				datumOutcomes,
+				terminalOutcome,
+			});
 		}
 		return hasRetry ? 'retry' : hasApplied ? 'applied' : 'irrelevant';
 	} catch (error) {

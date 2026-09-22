@@ -318,6 +318,10 @@ describe('applyDatumStateToLocalRequests', () => {
 		});
 
 		expect(outcome).toBe('retry');
+		expect(diagnosticLogger.warn).toHaveBeenCalledWith(
+			'[HydraDatumSync] rejected unproven or mismatched datum observation',
+			expect.objectContaining({ outcome: 'retry', rejectionStage: 'admission' }),
+		);
 		expect(mockHydraHeadFindUnique).not.toHaveBeenCalled();
 		expect(mockPaymentUpdate).not.toHaveBeenCalled();
 		expect(mockTransactionCreate).not.toHaveBeenCalled();
@@ -639,6 +643,7 @@ describe('applyDatumStateToLocalRequests', () => {
 
 			// Reconnection need not supply the original confirmation timestamp.
 			expect(await applyDatumStateToLocalRequests({ ...observation, confirmationTimeMs: null })).toBe('applied');
+			expect(diagnosticLogger.warn).not.toHaveBeenCalled();
 			expect(mockPaymentUpdate).not.toHaveBeenCalled();
 			expect(mockPurchaseUpdate).not.toHaveBeenCalled();
 			expect(mockTransactionUpdate).not.toHaveBeenCalled();
@@ -659,6 +664,23 @@ describe('applyDatumStateToLocalRequests', () => {
 				},
 			]) {
 				expect(await applyDatumStateToLocalRequests(changedObservation)).toBe('retry');
+				expect(diagnosticLogger.warn).toHaveBeenLastCalledWith(
+					'[HydraDatumSync] rejected unproven or mismatched datum observation',
+					expect.objectContaining({
+						outcome: 'retry',
+						rejectionStage: 'request-checks',
+						observedState: changedObservation.newOnChainState,
+						checks: expect.objectContaining({
+							[side]: expect.objectContaining({
+								state: OnChainState.FundsOrDatumInvalid,
+								sameOutput: true,
+								lineageValid: true,
+								actionAuthorized: false,
+								permanentReject: false,
+							}),
+						}),
+					}),
+				);
 			}
 			for (const outputReference of [
 				{ txHash: 'different-lock', outputIndex: 0 },
@@ -676,6 +698,10 @@ describe('applyDatumStateToLocalRequests', () => {
 						}),
 					}),
 				).toBe('irrelevant');
+				expect(diagnosticLogger.warn).toHaveBeenLastCalledWith(
+					'[HydraDatumSync] rejected unproven or mismatched datum observation',
+					expect.objectContaining({ outcome: 'irrelevant', rejectionStage: 'request-checks' }),
+				);
 			}
 			expect(mockPaymentUpdate).not.toHaveBeenCalled();
 			expect(mockPurchaseUpdate).not.toHaveBeenCalled();

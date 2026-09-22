@@ -108,10 +108,13 @@ export async function applyDatumStateToLocalRequests(params: {
 	const blockchainIdentifier = decoded.blockchainIdentifier;
 	const acceptedSides: Array<'payment' | 'purchase'> = [];
 	let applyOutcome: HydraDatumApplyOutcome = 'retry';
+	let rejectionStage = 'admission';
+	let rejectionChecks: Prisma.InputJsonObject | undefined;
 
 	await prisma.$transaction(
 		async (tx) => {
 			if (!(await lockHydraMutationAdmission(tx, hydraHeadId))) return;
+			rejectionStage = 'head-lookup';
 			const head = await tx.hydraHead.findUnique({
 				where: { id: hydraHeadId },
 				include: {
@@ -170,6 +173,7 @@ export async function applyDatumStateToLocalRequests(params: {
 				(targetSide == null || targetSide === 'purchase') && purchaseRequest != null && purchaseRoutingAllowsHydra;
 			const hasTargetPayment =
 				(targetSide == null || targetSide === 'payment') && paymentRequest != null && paymentRoutingAllowsHydra;
+			rejectionStage = 'target-selection';
 			if (!hasTargetPurchase && !hasTargetPayment) {
 				applyOutcome = 'irrelevant';
 				return;
@@ -424,6 +428,8 @@ export async function applyDatumStateToLocalRequests(params: {
 				paymentLineageIsValid &&
 				paymentActionIsAuthorized;
 
+			rejectionStage = 'request-eligibility';
+			rejectionChecks = { shouldApplyPurchase, shouldApplyPayment, hasLegacyBackfill, hasLegacyBackfillRetry };
 			if (!shouldApplyPurchase && !shouldApplyPayment) {
 				if (hasLegacyBackfillRetry) {
 					applyOutcome = 'retry';
@@ -468,6 +474,31 @@ export async function applyDatumStateToLocalRequests(params: {
 			// this tx already applied to the other side) would wedge the head's entire
 			// ordered replay forever: 'retry' pauses the causal suffix and the cursor
 			// never advances.
+			rejectionStage = 'request-checks';
+			rejectionChecks = {
+				purchase: {
+					state: purchaseRequest?.onChainState ?? null,
+					applicable: shouldApplyPurchase,
+					sameOutput: purchaseIsSameAcceptedOutput,
+					persistedValue: purchasePersistedInputValue,
+					participantsValid: purchaseParticipantsAreValid,
+					datumValid: purchaseDatumIsValid,
+					lineageValid: purchaseLineageIsValid,
+					actionAuthorized: purchaseActionIsAuthorized,
+					permanentReject: purchaseIsPermanentReject,
+				},
+				payment: {
+					state: paymentRequest?.onChainState ?? null,
+					applicable: shouldApplyPayment,
+					sameOutput: paymentIsSameAcceptedOutput,
+					persistedValue: paymentPersistedInputValue,
+					participantsValid: paymentParticipantsAreValid,
+					datumValid: paymentDatumIsValid,
+					lineageValid: paymentLineageIsValid,
+					actionAuthorized: paymentActionIsAuthorized,
+					permanentReject: paymentIsPermanentReject,
+				},
+			};
 			const purchaseIsBlocking = shouldApplyPurchase && !purchaseIsTrusted && !purchaseIsPermanentReject;
 			const paymentIsBlocking = shouldApplyPayment && !paymentIsTrusted && !paymentIsPermanentReject;
 			if (purchaseIsBlocking || paymentIsBlocking) {
@@ -486,6 +517,7 @@ export async function applyDatumStateToLocalRequests(params: {
 					paymentIsPermanentReject,
 				});
 			}
+			rejectionStage = 'initial-lock-classification';
 			const purchaseEffectiveState =
 				purchaseIsTrusted && purchaseRequest
 					? resolveInitialLockState(
@@ -676,6 +708,7 @@ export async function applyDatumStateToLocalRequests(params: {
 				}
 				acceptedSides.push('payment');
 			}
+			rejectionStage = hasLegacyBackfillRetry ? 'legacy-backfill' : 'complete';
 			applyOutcome = hasLegacyBackfillRetry ? 'retry' : 'applied';
 		},
 		{
@@ -685,8 +718,15 @@ export async function applyDatumStateToLocalRequests(params: {
 		},
 	);
 
-	if (acceptedSides.length === 0) {
+	if (acceptedSides.length === 0 || applyOutcome === 'retry') {
 		logger.warn('[HydraDatumSync] rejected unproven or mismatched datum observation', {
+			outcome: applyOutcome,
+			rejectionStage,
+			observedState: newOnChainState,
+			observedOutput: outputReference,
+			observedValue: canonicalOutputAmounts,
+			checks: rejectionChecks,
+			acceptedSides,
 			hydraHeadId,
 			blockchainIdentifier,
 			txId,
