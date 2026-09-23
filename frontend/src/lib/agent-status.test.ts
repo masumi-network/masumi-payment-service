@@ -4,7 +4,13 @@ import {
   getAgentIdentifierPlaceholder,
   getAgentStatusHelperText,
   parseAgentStatus,
+  parseInboxAgentStatus,
 } from './agent-status';
+
+test('parseInboxAgentStatus maps update lifecycle states', () => {
+  assert.equal(parseInboxAgentStatus('UpdateRequested'), 'Update pending');
+  assert.equal(parseInboxAgentStatus('UpdateInitiated'), 'Updating');
+});
 
 test('parseAgentStatus distinguishes pending registry operations', () => {
   assert.equal(parseAgentStatus('RegistrationRequested'), 'Registering');
