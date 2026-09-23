@@ -300,7 +300,7 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 				decisionId,
 				txBodyHash: withDigestPrefix(txBodyHash),
 				requiredSigners: body.requiredSigners,
-				denied: code as CosignDeny['denied'],
+				denied: code,
 				reasonEnglish,
 				...(detail == null ? {} : { detail }),
 				members: notEvaluated(request),
