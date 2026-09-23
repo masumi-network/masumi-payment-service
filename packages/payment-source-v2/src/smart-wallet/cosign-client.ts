@@ -49,7 +49,13 @@ export function withDigestPrefix(digest: string): string {
 
 // ---------------------------------------------------------------- denial codes
 
-/** Codes that deny ONE member of the batch; the rest of the batch may still be signed. */
+/**
+ * Codes that deny ONE member of the batch; the rest of the batch may still be signed.
+ * The first eight are the `MASUMI_INTEGRATION.md` §3.4 set; the last three were added by
+ * contract 1.1. This list documents what we expect — the wire field itself is parsed as a
+ * plain string (see `memberVerdictSchema`), so a code Exchain adds later is reported rather
+ * than treated as a malformed reply.
+ */
 export const COSIGN_MEMBER_DENIAL_CODES = [
 	'per_tx_cap',
 	'hourly_outflow',
@@ -59,6 +65,9 @@ export const COSIGN_MEMBER_DENIAL_CODES = [
 	'velocity_burst',
 	'registry_gate',
 	'envelope_exhausted',
+	'per_agent_cap',
+	'price_above_published',
+	'counterparty_blocked',
 ] as const;
 
 /** Codes that deny the WHOLE batch before any member is evaluated. */
@@ -156,7 +165,9 @@ export const memberVerdictSchema = z
 		purchaseId: z.string().min(1),
 		outputIndex: z.number().int().min(0),
 		verdict: z.enum(['allowed', 'denied', 'not_evaluated']),
-		denied: z.enum(COSIGN_MEMBER_DENIAL_CODES).optional(),
+		/** A documented `COSIGN_MEMBER_DENIAL_CODES` value. Parsed loosely on purpose: nothing
+		 *  branches on the code, so an unknown one must not fail the whole reply. */
+		denied: z.string().min(1).optional(),
 		reasonEnglish: z.string().optional(),
 		bound: amount.optional(),
 		used: amount.optional(),
@@ -201,7 +212,9 @@ export const cosignDenySchema = z.object({
 	decisionId,
 	txBodyHash: blake2b256,
 	requiredSigners: z.array(hash28),
-	denied: z.enum([MEMBER_DENIED, ...COSIGN_BATCH_DENIAL_CODES]),
+	/** `member_denied` routes to the rebuild path; every other value is a batch denial, known
+	 *  code or not, so an unrecognised one stops the batch instead of being mistaken for one. */
+	denied: z.string().min(1),
 	reasonEnglish: z.string().optional(),
 	detail: z.string().optional(),
 	members: z.array(memberVerdictSchema).min(1).max(10),

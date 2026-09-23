@@ -8,19 +8,22 @@
  *
  *   init           create demo keys, synthetic purchases and state; print what to fund
  *   mint           mint the state token and fund the wallet from the owner key
+ *   register       register the live wallet and its mandate with Exchain (POST /v1/wallets)
  *   deny           build a lock above the co-sign policy cap; expect a 409; submit nothing
  *   allow-batched  lock the synthetic purchases in one guarded transaction
  *   allow-single   lock the same purchases one guarded transaction each
  *   report         read fees from chain; write evidence/<ISO>/result.json and SUMMARY.md
  *   mock           serve the mock co-signer and its decision page on SMART_WALLET_DEMO_MOCK_PORT
  *   sweep          owner sweeps the wallet and burns the state token
- *   all            mint (if needed), deny, allow-batched, allow-single, report
+ *   all            mint (if needed), register (external co-signer only), deny, allow-batched,
+ *                  allow-single, report
  *
  * With EXCHAIN_COSIGN_URL unset, every command talks to an in-process mock.
  * Preprod only. Synthetic locks stay in escrow; they are test tADA, not reclaimed here.
  */
 import {
 	config,
+	EXCHAIN_MANDATE,
 	WALLET_MIN_BALANCE_LOVELACE,
 	WALLET_PERIOD_MS,
 	AGENT_COLLATERAL_SPLIT_LOVELACE,
@@ -30,6 +33,7 @@ import { calculateMinUtxo } from '@/utils/min-utxo';
 import { decodeBlockchainIdentifier, generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { MeshTxBuilder, MeshWallet, resolvePaymentKeyHash, resolveTxHash } from '@meshsdk/core';
+import { z } from '@masumi/payment-core/zod';
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -37,6 +41,7 @@ import { performance } from 'node:perf_hooks';
 import { lovelaceFromUtxo } from '../../src/builders/batch-helpers';
 import { createDatumFromBlockchainIdentifierV2 } from '../../src/datum-builder';
 import {
+	assertSafeCosignUrl,
 	CosignTransportError,
 	mergeCosignWitnesses,
 	requestCosign,
@@ -60,6 +65,14 @@ import { memberVkhOf, startMockCosignServer } from './cosign-mock';
 
 /** A denied member costs one rebuild; a second denial on the admitted set means the mandate moved under us. */
 const MAX_COSIGN_REBUILDS = 2;
+/**
+ * Exchain reads the wallet input from its own chain view, which trails ours for
+ * a few seconds after we spend the wallet: it answers `utxo_unknown` for an
+ * output that is already on chain (measured 2026-09-23). Nothing is consumed,
+ * so rebuild on the same input and ask again, for up to a minute.
+ */
+const MAX_UTXO_UNKNOWN_RETRIES = 6;
+const UTXO_UNKNOWN_RETRY_MS = 10_000;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 import {
@@ -91,6 +104,7 @@ import {
 	smartWallet,
 	STATE_FILE,
 	waitForConfirmation,
+	waitForAgentAt,
 	waitForWalletAt,
 	wallet,
 	withCosigner,
@@ -308,6 +322,7 @@ async function guardedLock(
 	const batchId = randomUUID();
 	let rebuilds = 0;
 	let quorumRetries = 0;
+	let utxoUnknownRetries = 0;
 
 	let indexes = purchaseIndexes;
 	for (;;) {
@@ -443,6 +458,16 @@ async function guardedLock(
 				`${kind}: co-signer DENIED ${built.txHash.slice(0, 16)}… — ${denial.denied}: ${summary || denial.reasonEnglish}`,
 			);
 
+			if (kind !== 'deny' && denial.denied === 'utxo_unknown' && utxoUnknownRetries < MAX_UTXO_UNKNOWN_RETRIES) {
+				utxoUnknownRetries++;
+				log(
+					`${kind}: Exchain does not see wallet input ${walletUtxo.input.txHash.slice(0, 16)}…#${walletUtxo.input.outputIndex} yet; ` +
+						`retry ${utxoUnknownRetries}/${MAX_UTXO_UNKNOWN_RETRIES} in ${UTXO_UNKNOWN_RETRY_MS / 1000}s`,
+				);
+				await sleep(UTXO_UNKNOWN_RETRY_MS);
+				continue;
+			}
+
 			// A partial denial is a shrink constraint, not a failure: rebuild with
 			// exactly the admitted set, under the same batch id, while the hold
 			// lasts. The `deny` scenario deliberately stops at the refusal.
@@ -496,6 +521,7 @@ async function guardedLock(
 		run.chain = await waitForConfirmation(built.txHash, kind);
 		saveState(state);
 		await waitForWalletAt(script, record.tokenName, built.txHash);
+		await waitForAgentAt(agent, built.txHash);
 		event('confirmed', {
 			kind,
 			txHash: built.txHash,
@@ -512,12 +538,23 @@ function allIndexes(state: DemoState): number[] {
 }
 
 async function deny(state: DemoState): Promise<void> {
-	const total = config.denyLockLovelace * BigInt(state.purchases.length);
+	// The mock only caps the batch total, so it needs every purchase over it. Exchain's
+	// mandate caps each payment, so one purchase above per-payment is enough, and it
+	// keeps the lock within a freshly funded wallet's balance.
+	const indexes = config.cosignUrl == null ? allIndexes(state) : [0];
+	const total = config.denyLockLovelace * BigInt(indexes.length);
 	if (config.cosignUrl == null && total <= config.mockCapLovelace) {
 		throw new Error('deny total must exceed SMART_WALLET_DEMO_MOCK_CAP_LOVELACE, or the mock will approve it');
 	}
+	// Exchain would approve and sign a purchase within the cap, and a signed batch holds
+	// budget until it expires even though the scenario never submits it.
+	if (config.cosignUrl != null && config.denyLockLovelace <= BigInt(EXCHAIN_MANDATE.perTxCap)) {
+		throw new Error(
+			`SMART_WALLET_DEMO_DENY_LOCK_LOVELACE (${config.denyLockLovelace}) must exceed the mandate's per-payment cap (${EXCHAIN_MANDATE.perTxCap}), or Exchain will approve it`,
+		);
+	}
 	await withCosigner(state, async (cosign) => {
-		const run = await guardedLock(state, cosign, 'deny', allIndexes(state), config.denyLockLovelace);
+		const run = await guardedLock(state, cosign, 'deny', indexes, config.denyLockLovelace);
 		if (run.decision !== 'denied') throw new Error('expected a denial');
 	});
 }
@@ -570,6 +607,62 @@ async function mock(state: DemoState): Promise<void> {
 	await server.close();
 }
 
+/**
+ * Register the live wallet with Exchain. Idempotent on their side: the same
+ * body returns 200 with the same walletId; a different mandate returns 409.
+ */
+async function register(state: DemoState): Promise<void> {
+	const record = liveWallet(state);
+	if (config.cosignUrl == null || config.cosignApiKey == null) {
+		throw new Error('register needs EXCHAIN_COSIGN_URL and EXCHAIN_COSIGN_API_KEY');
+	}
+	if (config.cosignNodeId == null || config.cosignOrgId == null) {
+		throw new Error('register needs EXCHAIN_NODE_ID and EXCHAIN_ORG_ID');
+	}
+	if (record.periodLimitLovelace !== EXCHAIN_MANDATE.daily) {
+		throw new Error(
+			`the mandate's daily limit (${EXCHAIN_MANDATE.daily}) must equal the wallet's on-chain period limit (${record.periodLimitLovelace})`,
+		);
+	}
+	const { agentVkhs, escrowAddresses } = await mockRegistrationOf(state);
+	const body = {
+		walletAddress: record.address,
+		stateToken: `${record.policyId}.${record.tokenName}`,
+		ownerKeyHash: resolvePaymentKeyHash(await firstAddress(wallet(ownerMnemonic(state)))),
+		agentKeyHashes: agentVkhs,
+		quorumKeyHashes: state.quorumVkhs,
+		quorumThreshold: state.threshold,
+		escrowAddresses,
+		governedAsset: { id: 'lovelace', decimals: 6 },
+		constitution: { params: EXCHAIN_MANDATE },
+		network: NETWORK,
+		orgId: config.cosignOrgId,
+		nodeId: config.cosignNodeId,
+		// The demo's purchases carry synthetic agent identifiers that are not in the registry.
+		registryGate: false,
+	};
+	const baseUrl = assertSafeCosignUrl(config.cosignUrl, config.trustedPlaintextHosts);
+	const response = await fetch(`${baseUrl}/v1/wallets`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.cosignApiKey}` },
+		body: JSON.stringify(body),
+		redirect: 'error',
+		signal: AbortSignal.timeout(config.cosignTimeoutMs),
+	});
+	const text = await response.text();
+	if (response.status !== 200 && response.status !== 201) {
+		throw new Error(`Exchain refused the registration: HTTP ${response.status} ${text.slice(0, 500)}`);
+	}
+	const reply = z
+		.object({ walletId: z.string().min(1), mandateEnglish: z.string().optional() })
+		.parse(JSON.parse(text));
+	record.exchainWalletId = reply.walletId;
+	saveState(state);
+	event('registered', { walletId: reply.walletId, httpStatus: response.status });
+	log(`registered with Exchain as ${reply.walletId}${response.status === 200 ? ' (already registered)' : ''}`);
+	if (reply.mandateEnglish != null) log(`mandate: ${reply.mandateEnglish}`);
+}
+
 async function sweep(state: DemoState): Promise<void> {
 	const record = liveWallet(state);
 	const owner = wallet(ownerMnemonic(state));
@@ -601,6 +694,7 @@ const command = process.argv[2];
 const commands: Record<string, () => Promise<void>> = {
 	init,
 	mint,
+	register: () => register(loadState()),
 	deny: () => deny(loadState()),
 	'allow-batched': () => allowBatched(loadState()),
 	'allow-single': () => allowSingle(loadState()),
@@ -609,6 +703,7 @@ const commands: Record<string, () => Promise<void>> = {
 	sweep: () => sweep(loadState()),
 	all: async () => {
 		await mint();
+		if (config.cosignUrl != null) await register(loadState());
 		await deny(loadState());
 		await allowBatched(loadState());
 		await allowSingle(loadState());

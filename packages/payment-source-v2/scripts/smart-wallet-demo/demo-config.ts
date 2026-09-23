@@ -65,6 +65,22 @@ export const config = {
 	trustedPlaintextHosts: listEnv('EXCHAIN_COSIGN_TRUSTED_PLAINTEXT_HOSTS'),
 };
 
+/**
+ * The wallet's mandate as registered with Exchain (`POST /v1/wallets`), in
+ * lovelace: the console's "Default" limits, chosen by the operator on
+ * 2026-09-23. A mandate cannot change once registered; a new one needs a new
+ * wallet. `daily` must equal the validator's per-period limit
+ * (SMART_WALLET_DEMO_PERIOD_LIMIT_LOVELACE), so `register` refuses otherwise.
+ */
+export const EXCHAIN_MANDATE = {
+	perTxCap: '50000000',
+	daily: '1000000000',
+	perSeller: '200000000',
+	perAgent: '500000000',
+	envelope: '50000000000',
+	burstPerMinute: 10,
+} as const;
+
 /** The owner must choose the validator period limit before a new mint. */
 export function walletPeriodLimitLovelace(): bigint {
 	const name = 'SMART_WALLET_DEMO_PERIOD_LIMIT_LOVELACE';

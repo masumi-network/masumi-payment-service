@@ -52,6 +52,8 @@ export type WalletRecord = {
 	periodLimitLovelace?: string;
 	status: 'submitted' | 'live' | 'retired';
 	sweepTxHash?: string;
+	/** Assigned by Exchain on `POST /v1/wallets`. */
+	exchainWalletId?: string;
 };
 
 export type RunKind = 'deny' | 'allow-batched' | 'allow-single';
@@ -344,6 +346,21 @@ export async function waitForWalletAt(script: SmartWalletScript, tokenName: stri
 		await sleep(POLL_MS);
 	}
 	throw new Error(`wallet UTxO from ${txHash} did not appear within ${CONFIRM_TIMEOUT_MS / 60_000} minutes`);
+}
+
+/**
+ * Blockfrost's per-address UTxO index lags its transaction index: straight after
+ * a confirmation it can still list the inputs that transaction spent, and the
+ * next build then fails evaluation with "Unknown transaction input". Every lock
+ * returns change to the agent, so wait until that change is listed.
+ */
+export async function waitForAgentAt(agent: MeshWallet, txHash: string): Promise<void> {
+	const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		if ((await agent.getUtxos()).some((utxo) => utxo.input.txHash === txHash)) return;
+		await sleep(POLL_MS);
+	}
+	throw new Error(`agent change from ${txHash} did not appear within ${CONFIRM_TIMEOUT_MS / 60_000} minutes`);
 }
 
 export async function signAndSubmit(signer: MeshWallet, unsignedTx: string, expectedTxHash: string): Promise<void> {
