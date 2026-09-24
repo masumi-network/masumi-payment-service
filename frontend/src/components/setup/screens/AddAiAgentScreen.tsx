@@ -42,6 +42,7 @@ import {
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 import { buildAgentSchema, type AgentFormValues } from './add-ai-agent-schema';
@@ -115,23 +116,37 @@ export function AddAiAgentScreen({
     setError('');
 
     try {
-      // Fetch payment sources to get the latest data
-      const response = await getPaymentSourceExtended({
-        client: apiClient,
-        query: {
-          take: 10,
-        },
-      });
+      // Fetch every payment source for the active network (server-side filter +
+      // cursor pagination), not just the first page of all networks.
+      const filteredSources: PaymentSourceExtended[] = [];
+      let cursor: string | undefined;
+      while (true) {
+        const response = await getPaymentSourceExtended({
+          client: apiClient,
+          query: {
+            take: 10,
+            cursorId: cursor,
+            network,
+          },
+        });
 
-      if (response.error) {
-        setError(extractApiErrorMessage(response.error, 'Failed to fetch payment sources'));
-        return;
+        if (response.error) {
+          setError(extractApiErrorMessage(response.error, 'Failed to fetch payment sources'));
+          return;
+        }
+
+        const page = response.data?.data?.ExtendedPaymentSources ?? [];
+        if (page.length === 0) break;
+
+        const merged = appendInclusiveCursorPage(filteredSources, page, (source) => source.id);
+        filteredSources.length = 0;
+        filteredSources.push(...merged);
+
+        if (page.length < 10) break;
+        const lastSource = page[page.length - 1];
+        if (!lastSource?.id || lastSource.id === cursor) break;
+        cursor = lastSource.id;
       }
-
-      const paymentSources = response.data?.data?.ExtendedPaymentSources ?? [];
-      const filteredSources = paymentSources.filter(
-        (source: PaymentSourceExtended) => source.network == network,
-      );
 
       if (filteredSources.length === 0) {
         setError('No payment sources found for this network');
@@ -197,7 +212,7 @@ export function AddAiAgentScreen({
             };
           })(),
           Author: {
-            name: data.authorName || 'Setup User',
+            name: data.authorName?.trim() || data.name.trim(),
             contactEmail: data.authorEmail || '',
             organization: data.organization || '',
             contactOther: data.contactOther || '',
