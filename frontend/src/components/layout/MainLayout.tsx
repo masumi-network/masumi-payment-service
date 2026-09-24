@@ -11,6 +11,7 @@ import {
   PanelLeft,
   Bell,
   Search,
+  Command,
   AlertTriangle,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
@@ -554,12 +555,19 @@ export function MainLayout({ children }: MainLayoutProps) {
           <div className="max-w-[1400px] mx-auto w-full">
             <div className="flex h-14 min-h-14 max-h-14 items-center justify-between gap-4 px-4">
               <div
-                className="flex flex-1 max-w-[190px] justify-start gap-1 relative rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
+                className="flex flex-1 max-w-[220px] cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                 onClick={() => setIsSearchOpen(true)}
               >
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <div className="pl-2">{`Search... `}</div>
-                <div className="pl-4">{`(${isMac ? '⌘' : 'Ctrl'} + K)`}</div>
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">Search…</span>
+                <span className="pointer-events-none flex shrink-0 items-center gap-1">
+                  <kbd className="bg-muted text-muted-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-sm border border-border p-0 font-mono text-[9px] font-medium leading-none">
+                    {isMac ? <Command className="h-3 w-3" aria-hidden /> : 'Ctrl'}
+                  </kbd>
+                  <kbd className="bg-muted text-muted-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-sm border border-border p-0 font-mono text-[10px] font-medium leading-none">
+                    K
+                  </kbd>
+                </span>
               </div>
 
               <div className="flex items-center gap-4">
