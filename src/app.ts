@@ -9,6 +9,7 @@ import { generateOpenAPI } from '@/utils/generator/swagger-generator';
 import { cleanupDB, initDB, prisma } from '@masumi/payment-core/db';
 import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
+import { createConcurrencyLimitMiddleware } from '@/utils/middleware/concurrency-limit';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { robotsNoindex, serveRobotsTxt } from '@/utils/middleware/robots-noindex';
@@ -103,6 +104,7 @@ export async function startApp() {
 			// Add request logger middleware
 			app.use(requestTiming);
 			app.use(requestLogger);
+			app.use(createConcurrencyLimitMiddleware({ limit: CONFIG.MAX_CONCURRENT_REQUESTS }));
 			app.use(
 				helmet({
 					contentSecurityPolicy: {
