@@ -33,12 +33,13 @@ export function FundTransfersSection({
 }) {
   const { apiClient } = useAppContext();
 
-  const { data, isFetching, refetch } = useQuery({
+  const { data, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['fundTransfers', walletAddress],
     enabled: walletAddress !== '',
     // Keep polling while anything is still Pending so Pending → Confirmed shows
-    // up without a manual refresh; stop once every row is terminal.
+    // up without a manual refresh; stop once every row is terminal or the fetch fails.
     refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
       const rows = query.state.data ?? [];
       return rows.some((t) => !TERMINAL_STATUSES.includes(t.status)) ? 6000 : false;
     },
@@ -47,12 +48,16 @@ export function FundTransfersSection({
         client: apiClient,
         query: { walletAddress, limit: PAGE_SIZE },
       });
-      return extractApiPayload(res)?.transfers ?? [];
+      const payload = extractApiPayload(res);
+      if (!payload) {
+        throw new Error('Failed to load fund transfers');
+      }
+      return payload.transfers ?? [];
     },
   });
 
   const transfers = data ?? [];
-  if (transfers.length === 0) return null;
+  if (transfers.length === 0 && !isError) return null;
 
   return (
     <div className="bg-muted rounded-lg p-4 space-y-3">
@@ -69,6 +74,20 @@ export function FundTransfersSection({
           <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
         </Button>
       </div>
+      {isError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <p>{error instanceof Error ? error.message : 'Failed to load fund transfers'}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
       <div className="space-y-2">
         {transfers.map((transfer) => (
           <div
