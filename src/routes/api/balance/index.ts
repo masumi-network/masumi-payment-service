@@ -5,6 +5,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/p
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 
 export const getBalanceSchemaInput = z.object({
 	address: z.string().max(150).describe('The address to get the confirmed balance for'),
@@ -31,7 +32,14 @@ export const getBalanceSchemaOutput = z.object({
 	Balance: z.array(balanceAmountSchema).describe('Complete confirmed address balance aggregated across all UTXOs'),
 });
 
-export const queryBalanceEndpointGet = readAuthenticatedEndpointFactory.build({
+const balanceEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 120,
+		windowMs: 60_000,
+	}),
+);
+
+export const queryBalanceEndpointGet = balanceEndpointFactory.build({
 	method: 'get',
 	input: getBalanceSchemaInput,
 	output: getBalanceSchemaOutput,
