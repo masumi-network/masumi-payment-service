@@ -2,7 +2,6 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { encrypt, decrypt } from '@/utils/security/encryption';
@@ -28,6 +27,7 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
+import { generateApiKeyToken } from './token';
 import { resolveCreateUsageLimited } from './usage-limited';
 import {
 	consolidateUsageCredits,
@@ -296,7 +296,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		);
 		const scopeHotWalletIds = Array.from(new Set(input.WalletScopeHotWalletIds));
 		const scopeEvmWalletIds = Array.from(new Set(input.X402WalletScopeEvmWalletIds));
-		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
+		const apiKey = generateApiKeyToken();
 		const result = await prisma.apiKey.create({
 			data: {
 				encryptedToken: encrypt(apiKey),
