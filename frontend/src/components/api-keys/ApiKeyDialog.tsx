@@ -11,6 +11,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { capabilitiesFromApiKeyStatus, DEFAULT_CAPABILITIES } from '@/lib/permissions';
 import { MASUMI_API_KEY_DOCS_URL } from '@/lib/masumi-links';
+import { encryptForStorage } from '@/lib/secure-storage';
 
 interface ApiError {
   message: string;
@@ -48,8 +49,8 @@ export function ApiKeyDialog() {
 
       setCapabilities(nextCapabilities);
 
-      const hexKey = Buffer.from(key).toString('hex');
-      localStorage.setItem('payment_api_key', hexKey);
+      const encryptedKey = await encryptForStorage(key);
+      localStorage.setItem('payment_api_key', encryptedKey);
 
       const sourcesResponse = await getPaymentSource({
         client: apiClient,
