@@ -1,0 +1,23 @@
+{
+	"name": "masumi-smart-wallet",
+	"version": "1.0.0",
+	"main": "index.js",
+	"license": "MIT",
+	"type": "module",
+	"scripts": {
+		"verify": "node verify-offline.mjs",
+		"generate-wallet": "node generate-credentials.mjs",
+		"init": "node init-wallet-example.mjs",
+		"inspect": "node inspect-wallet.mjs",
+		"agent-spend": "node agent-spend-example.mjs",
+		"deposit": "node deposit-example.mjs",
+		"update-policy": "node update-policy-example.mjs",
+		"sweep": "node owner-sweep-example.mjs",
+		"e2e-negative": "node e2e-negative-tests.mjs",
+		"fuzz-e2e": "node fuzz-e2e.mjs"
+	},
+	"dependencies": {
+		"@meshsdk/core": "1.9.0-beta.102",
+		"dotenv": "^17.2.3"
+	}
+}
