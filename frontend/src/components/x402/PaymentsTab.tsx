@@ -371,7 +371,7 @@ function PaymentDetailsDialog({
                       ? 'Remote facilitator'
                       : attempt.facilitator.mode === 'self_hosted'
                         ? (attempt.facilitator.address ?? 'Self-hosted wallet')
-                        : 'Unknown (legacy attempt)'
+                        : 'Legacy facilitator'
                   }
                   mono={attempt.facilitator.mode === 'self_hosted' && !!attempt.facilitator.address}
                 />

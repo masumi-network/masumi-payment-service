@@ -80,7 +80,7 @@ function AutoTopupControl({
             <div className="text-[11px] text-destructive">{error}</div>
           ) : (
             <div className="text-[11px] text-muted-foreground">
-              Amount sent per transition. Stored raw:{' '}
+              Amount sent per transition. Stored amount (base units):{' '}
               <span className="font-mono text-foreground">{rawAmount}</span>
             </div>
           )}
