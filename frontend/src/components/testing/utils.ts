@@ -85,13 +85,29 @@ export function calculateDefaultTimes() {
   return { payByTime, submitResultTime, unlockTime, externalDisputeUnlockTime };
 }
 
-// Get proper base URL with fallback
-function getBaseUrl(baseUrl: string): string {
-  // Check if baseUrl is valid (not empty and starts with http)
-  if (baseUrl && baseUrl.startsWith('http')) {
-    return baseUrl;
-  }
-  return 'http://localhost:3001';
+// The curl examples are shown on screen and copyable, so they carry a
+// placeholder instead of the session's API key.
+const API_KEY_PLACEHOLDER = '<pay_api_key>';
+
+// The URL the app's own client calls: the configured API base (absolute, or
+// relative to this page like the default '/api/v1') plus the endpoint path.
+function getApiEndpointUrl(baseUrl: string, path: '/payment' | '/purchase'): string {
+  return new URL(`${baseUrl}${path}`, window.location.origin).toString();
+}
+
+export type HttpStatus = { code: number; text: string };
+
+// The status a generated-client call actually returned: errors carry it on
+// `response`, successes on the result itself. Null when no response arrived.
+export function getHttpStatus(result: {
+  status?: number;
+  statusText?: string;
+  response?: { status: number; statusText: string };
+}): HttpStatus | null {
+  const source = result.response ?? result;
+  return typeof source.status === 'number'
+    ? { code: source.status, text: source.statusText ?? '' }
+    : null;
 }
 
 // Escape a value for embedding inside single quotes in a POSIX shell command:
@@ -102,19 +118,17 @@ function escapeShellSingleQuotes(value: string): string {
 
 // Generate curl command for payment
 // Note: Payment API accepts dates as ISO strings
-export function generatePaymentCurl(baseUrl: string, apiKey: string, body: object): string {
-  const url = getBaseUrl(baseUrl);
-  return `curl -X POST "${url}/api/v1/payment/" \\
+export function generatePaymentCurl(baseUrl: string, body: object): string {
+  return `curl -X POST "${getApiEndpointUrl(baseUrl, '/payment')}" \\
   -H "Content-Type: application/json" \\
-  -H "token: ${apiKey}" \\
+  -H "token: ${API_KEY_PLACEHOLDER}" \\
   -d '${escapeShellSingleQuotes(JSON.stringify(body, null, 2))}'`;
 }
 
-export function generatePurchaseCurl(baseUrl: string, apiKey: string, body: object): string {
-  const url = getBaseUrl(baseUrl);
-  return `curl -X POST "${url}/api/v1/purchase/" \\
+export function generatePurchaseCurl(baseUrl: string, body: object): string {
+  return `curl -X POST "${getApiEndpointUrl(baseUrl, '/purchase')}" \\
   -H "Content-Type: application/json" \\
-  -H "token: ${apiKey}" \\
+  -H "token: ${API_KEY_PLACEHOLDER}" \\
   -d '${escapeShellSingleQuotes(JSON.stringify(body, null, 2))}'`;
 }
 
