@@ -13,6 +13,12 @@ import {
 export { fetchAddressBalance, fetchAllUtxos, fetchWalletBalance } from '@/lib/wallet-balance';
 export type { WalletBalanceResult } from '@/lib/wallet-balance';
 
+/** Scope React Query keys to the active key without storing the raw secret. */
+function walletQueryKeyScope(apiKey: string | null | undefined): string {
+  if (!apiKey) return 'none';
+  return `len-${apiKey.length}-tail-${apiKey.slice(-4)}`;
+}
+
 type Wallet = WalletListItem & {
   type: HotWalletType;
   network: 'Preprod' | 'Mainnet';
@@ -200,7 +206,7 @@ export function useAllWallets(enabled = true) {
   const { apiClient, apiKey } = useAppContext();
 
   const query = useQuery<WalletListItem[]>({
-    queryKey: ['all-wallets', apiKey],
+    queryKey: ['all-wallets', walletQueryKeyScope(apiKey)],
     queryFn: async () => {
       if (!apiKey) return [];
       let items: WalletListItem[] = [];
