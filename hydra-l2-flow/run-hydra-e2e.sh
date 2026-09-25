@@ -48,7 +48,7 @@ export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:testpass@localhost:54
 NODE1="${NODE1:-http://127.0.0.1:4001}"
 CARDANO_CONTAINER="${CARDANO_CONTAINER:-demo-cardano-node-1}"
 HYDRA_NODE_CONTAINER="${HYDRA_NODE_CONTAINER:-demo-hydra-node-1-1}"
-HYDRA_IMAGE="${HYDRA_IMAGE:-ghcr.io/cardano-scaling/hydra-node:2.3.0}"
+HYDRA_IMAGE="${HYDRA_IMAGE:-ghcr.io/cardano-scaling/hydra-node:2.4.1}"
 TSX="${TSX:-$REPO/node_modules/.bin/tsx}"
 
 # Hydra 2.2.0 added a Rust BLS accumulator (Partial Fanout). The published
@@ -121,11 +121,19 @@ preflight(){
   # NETWORK trap: with live native preprod nodes, an invocation that forgot
   # NETWORK=preprod silently takes devnet branches (tiny settle timeouts, no
   # drift restart) — 2026-07-16 this killed 13-settle mid-Close. Fail loudly.
-  if [ "$NETWORK" != preprod ] && [ -f "$NATIVE_STATE/node1.pid" ] \
+  #
+  # Which network those live nodes actually serve is read from the stamp
+  # hydra-native.sh writes beside their pids. Before that existed this could only
+  # see THAT a native node was up and had to assume preprod, so it refused every
+  # devnet run whenever any node was alive — including devnet's own.
+  if [ -f "$NATIVE_STATE/node1.pid" ] \
      && kill -0 "$(cat "$NATIVE_STATE/node1.pid" 2>/dev/null)" 2>/dev/null; then
-    c_red "NETWORK=$NETWORK but native preprod hydra-nodes are running — did you forget NETWORK=preprod?"
-    c_red "  re-run as:  NETWORK=preprod $0 $*"
-    exit 1
+    running_network="$(cat "$NATIVE_STATE/network" 2>/dev/null || echo preprod)"
+    if [ "$running_network" != "$NETWORK" ]; then
+      c_red "NETWORK=$NETWORK but the live native hydra-nodes serve '$running_network'."
+      c_red "  Stop them first, or re-run as:  NETWORK=$running_network $0 $*"
+      exit 1
+    fi
   fi
   command -v docker >/dev/null 2>&1 || { c_red "missing: docker (is Docker running?)"; ok=0; }
   command -v pnpm   >/dev/null 2>&1 || { c_red "missing: pnpm"; ok=0; }
@@ -170,6 +178,26 @@ slotenv(){
     export HYDRA_L2_SLOT_ZERO_TIME_MS=1655683200000
     export HYDRA_L2_SLOT_LENGTH_MS=1000
     export HYDRA_L2_CURRENT_SLOT="$slot"
+    # The slot above is NODE1's observed tip. Node2 polls Blockfrost on its own
+    # schedule and can sit tens of slots further behind, so a window anchored on
+    # node1 with the 20s devnet default for the lower bound starts in node2's
+    # FUTURE: node2 answers OutsideValidityIntervalUTxO, refuses to sign, and no
+    # snapshot ever forms — while node1 has already said TxValid and the service
+    # has advanced its DB on that. The tx is then silently dropped and the
+    # request is stranded pointing at a tx no node holds.
+    #
+    # Measured 2026-09-07 on a 2-party preprod head: node1 slot 133095525,
+    # node2 slot 133095481 — 44 slots of skew against a 20s buffer, which lost
+    # flow2's authorize-refund. 150s matches the L1 default
+    # (SERVICE_CONSTANTS.TRANSACTION.timeBufferMs) and covers the ~100-slot
+    # per-node Blockfrost lag described above with margin.
+    #
+    # Only the LOWER bound is widened. The upper bound stays where it is because
+    # datum cooldowns are derived from it, and pushing it out stalls the NEXT
+    # step. Contract `must_start_after` constraints are unaffected: createTxWindow
+    # takes max(defaultInvalidBefore, constrainBefore), so a wider buffer can
+    # never let a tx start before its cooldown.
+    export HYDRA_L2_BEFORE_BUFFER_MS="${HYDRA_L2_BEFORE_BUFFER_MS:-150000}"
     return
   fi
   export HYDRA_L2_SLOT_ZERO_TIME_MS="$(zero_time)"
@@ -256,6 +284,22 @@ head_tx_since(){ node1_logs 2>/dev/null | tail -n +"$(($1 + 1))" \
 # "NO HEAD TX" when nothing reached the head. (The old verdict() grepped the
 # whole log and printed a stale setup TxValid, so every step looked green even
 # when its own tx never executed — see node-log/head/DB correlation findings.)
+# Is $1 (a tx id) in the head's CONFIRMED state? `TxValid` is only node1's local
+# ledger saying yes; the head's answer is the confirmed snapshot, which is what
+# /snapshot/utxo serves. A tx can be TxValid on node1, refused by node2, and
+# then never snapshotted — seen 2026-09-07 with flow2's authorize-refund, which
+# this verdict called a pass while the escrow sat unspent at the previous tx.
+# The service now waits for confirmation before returning, so one short poll
+# is all the slack a genuinely confirmed tx needs.
+snapshotted(){
+  local txid="$1" i
+  for i in $(seq 1 15); do
+    if curl -s -m 5 "$NODE1/snapshot/utxo" 2>/dev/null | grep -q "\"${txid}#"; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
 verdict_since(){
   local from="$1"
   local new; new="$(node1_logs 2>/dev/null | tail -n +"$((from + 1))")"
@@ -263,10 +307,11 @@ verdict_since(){
     | grep -oE '"transactionId":"[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' | tail -1)"
   if [ -n "$valid" ]; then
     local db; db="$(latest_l2_hash)"
+    local snap; if snapshotted "$valid"; then snap='snapshotted ✓'; else snap='NOT IN A CONFIRMED SNAPSHOT after 15s — dropped after TxValid?'; fi
     if [ "$db" = "$valid" ]; then
-      printf 'TxValid %s…  (head id == Masumi DB hash ✓ — built by Masumi V2)' "${valid:0:16}"
+      printf 'TxValid %s…  (%s; head id == Masumi DB hash ✓ — built by Masumi V2)' "${valid:0:16}" "$snap"
     else
-      printf 'TxValid %s…  (head accepted; Masumi DB hash=%s…)' "${valid:0:16}" "${db:0:16}"
+      printf 'TxValid %s…  (%s; head accepted; Masumi DB hash=%s…)' "${valid:0:16}" "$snap" "${db:0:16}"
     fi
     return
   fi
@@ -307,6 +352,14 @@ cmd_up_preprod(){
   # submit endpoint can silently drop an accepted tx) and re-drafts on expiry —
   # allow up to ~3 confirm/redraft rounds before the watchdog fires.
   RUN_TIMEOUT=900 run_tsx hydra-l2-flow/00-open-head.mts
+  # Point the DB row at the head that is actually live. The test DB is REUSED
+  # across runs, so after rotating persistence and opening a NEW head its
+  # HydraHead row still carries the PREVIOUS head's identifier; the connection
+  # manager pins that and rejects every frame from the live head with "Hydra
+  # frame head id did not match the pinned head", killing all three flows at
+  # their first lock within seconds (observed 2026-09-07). Cheap and idempotent
+  # when the row is already correct.
+  RUN_TIMEOUT=120 run_tsx hydra-l2-flow/sync-head-row.mts "$NODE1"
   c_blu "      waiting for the in-head deposit to incorporate…"
   # Preprod: the node proposes the IncrementTx only once its (Blockfrost-lagged)
   # observed chain-time reaches deposit_inclusion + deposit-period (600s). With the
@@ -521,6 +574,9 @@ cmd_fund(){
 # cardano-scaling/hydra#2753 as of 2.3.0) and once drift exceeds --unsynced-period
 # (600s) the node rejects ALL client inputs (RejectedInputBecauseUnsynced) — with
 # no way to recover except a restart, which re-runs the startup catch-up burst.
+# (2.4.1: re-measure. 2.4 reworked the Blockfrost backend to poll verifiable
+# conditions rather than sleep fixed delays, so the ~17s/min figure above is a
+# 2.3.0 measurement and may no longer hold. The restart lever is harmless either way.)
 # Guard each step: when drift crosses DRIFT_GUARD (default 400s), restart the
 # nodes and wait for them to catch back up before proceeding.
 drift_guard(){
@@ -617,10 +673,16 @@ step(){ # step <label> <script> [extra env already exported]
   local db; db="$(latest_l2_hash)"
   local match=nomatch; [ -n "$hash" ] && [ "$hash" = "$db" ] && match=match
   if [ -n "$hash" ]; then
-    if [ "$match" = match ]; then
-      c_grn "   head verdict: TxValid ${hash:0:16}…  (head id == Masumi DB hash ✓ — built by Masumi V2)"
+    # TxValid alone is not a pass — see snapshotted(). Green only once the tx's
+    # outputs are in the head's confirmed state; a TxValid that never gets there
+    # is exactly the silent drop this verdict used to hide.
+    local tail_note
+    if [ "$match" = match ]; then tail_note="head id == Masumi DB hash ✓ — built by Masumi V2"
+    else tail_note="head accepted; Masumi DB hash=${db:0:16}…"; fi
+    if snapshotted "$hash"; then
+      c_grn "   head verdict: TxValid ${hash:0:16}…  (snapshotted ✓; ${tail_note})"
     else
-      c_grn "   head verdict: TxValid ${hash:0:16}…  (head accepted; Masumi DB hash=${db:0:16}…)"
+      c_red "   head verdict: TxValid ${hash:0:16}…  but NOT in a confirmed snapshot after 15s — dropped after TxValid? (${tail_note})"
     fi
   else
     c_red "   head verdict: $(verdict_since "$before")"
@@ -805,7 +867,9 @@ let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
 # SEPARATE, still-open bug can also produce this phantom with NO restart
 # involved (deposit UTxO usable on L2 before its L1 increment is observed —
 # reported to the Hydra team 2026-07-14/15, no upstream issue number yet), so
-# this guard stays even on 2.3.0. In-head tx fees destroy L2 value, so burning
+# this guard stays even on 2.3.0 — and on 2.4.1, whose single-claim deposit
+# validators (D09/D10) plausibly fix the second bug but have not been tested
+# against this scenario here yet. In-head tx fees destroy L2 value, so burning
 # exactly the surplus as an L2 fee restores consistency. Proven on-chain
 # 2026-07-02 (close 94f7d95f…). No-op when there is no phantom (e.g.
 # restart-free runs with neither bug triggered).

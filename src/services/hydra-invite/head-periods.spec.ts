@@ -5,6 +5,7 @@ import {
 	MIN_UNSYNCED_PERIOD_SECONDS,
 	defaultPeriodsFor,
 	defaultUnsyncedPeriodFor,
+	periodsFromInvite,
 } from './provisioning';
 
 /**
@@ -69,6 +70,22 @@ describe('default head periods', () => {
 	it.each([Network.Mainnet, Network.Preprod])('never settles faster than the floor on %s', (network) => {
 		expect(defaultPeriodsFor(network).depositPeriodSeconds).toBeGreaterThanOrEqual(120);
 	});
+
+	// hydra-node 2.4's --deposit-activation. Set equal to the deposit period so
+	// 2.4.1's usable-from (`deposit + activation`) and absorb-by
+	// (`deposit + activation + DP`) land on exactly the moments 2.3.0 already
+	// proved out (`deposit + DP` and `deposit + 2·DP`); upstream's own 3600s
+	// default would push a preprod deposit's usable-from from +10 min to +60 min.
+	it('sets deposit activation equal to the deposit period on both networks', () => {
+		expect(defaultPeriodsFor(Network.Preprod).depositActivationSeconds).toBe(600);
+		expect(defaultPeriodsFor(Network.Mainnet).depositActivationSeconds).toBe(1200);
+		expect(defaultPeriodsFor(Network.Preprod).depositActivationSeconds).toBe(
+			defaultPeriodsFor(Network.Preprod).depositPeriodSeconds,
+		);
+		expect(defaultPeriodsFor(Network.Mainnet).depositActivationSeconds).toBe(
+			defaultPeriodsFor(Network.Mainnet).depositPeriodSeconds,
+		);
+	});
 });
 
 /**
@@ -116,5 +133,50 @@ describe('period floors', () => {
 		expect(derived).toBe(expected);
 		expect(derived).toBeLessThanOrEqual(Math.floor(contestation / 2));
 		expect(derived).toBeGreaterThanOrEqual(MIN_UNSYNCED_PERIOD_SECONDS);
+	});
+});
+
+/**
+ * Both sides of a head must derive the SAME deposit activation, and neither
+ * side exchanges it — the invite deliberately does not carry it, because it is
+ * a per-node local setting.
+ *
+ * That works only while activation is derived from the deposit period both
+ * sides already agree on. Deriving it from the redeemer's own network default
+ * instead is correct exactly when the issuer used the default too, and silently
+ * wrong otherwise: each node evaluates a deposit's absorb window
+ * `[created + activation, deadline - depositPeriod]` against its own local
+ * activation, so mismatched values shrink the overlap to nothing and no deposit
+ * can ever be co-signed. Nothing reports it — both sides' `usableFrom` and
+ * `absorbBy` derive from the deadline and keep looking normal.
+ */
+describe('periods a redeemed invite opens its head with', () => {
+	const issuerOverrode = {
+		contestationPeriodSeconds: 12 * 3600,
+		// The public API's floor (min 300), and deliberately NOT the preprod
+		// default of 600 — the case where issuer and redeemer defaults diverge.
+		depositPeriodSeconds: 300,
+		unsyncedPeriodSeconds: 1800,
+	};
+
+	it("takes activation from the ISSUER's deposit period, not the local default", () => {
+		expect(periodsFromInvite(issuerOverrode).depositActivationSeconds).toBe(300);
+		expect(periodsFromInvite(issuerOverrode).depositActivationSeconds).not.toBe(
+			defaultPeriodsFor(Network.Preprod).depositActivationSeconds,
+		);
+	});
+
+	it('keeps activation equal to the deposit period for any issuer choice', () => {
+		for (const depositPeriodSeconds of [300, 600, 1200, 86_400]) {
+			const periods = periodsFromInvite({ ...issuerOverrode, depositPeriodSeconds });
+			expect(periods.depositActivationSeconds).toBe(periods.depositPeriodSeconds);
+		}
+	});
+
+	it("carries the issuer's other periods through untouched", () => {
+		const periods = periodsFromInvite(issuerOverrode);
+		expect(periods.contestationPeriodSeconds).toBe(issuerOverrode.contestationPeriodSeconds);
+		expect(periods.depositPeriodSeconds).toBe(issuerOverrode.depositPeriodSeconds);
+		expect(periods.unsyncedPeriodSeconds).toBe(issuerOverrode.unsyncedPeriodSeconds);
 	});
 });

@@ -853,6 +853,15 @@ describe('Hydra live-snapshot reconciliation', () => {
 		await reconcileHydraHeadEscrowStates();
 
 		expect(mockHandleTxConfirmed).not.toHaveBeenCalled();
+		// PostgreSQL `not: value` does not match NULL. A new head starts
+		// with both marker columns NULL and must be eligible for its first stall.
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([{ reconciliationStalledTxId: null }, { reconciliationStalledReason: null }]),
+				}),
+			}),
+		);
 		// The pause is surfaced to operators as a persisted stall marker — the ONLY
 		// HydraHead write this pass may make (the cursor must not advance).
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(1);

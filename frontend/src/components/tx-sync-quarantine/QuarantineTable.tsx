@@ -112,7 +112,7 @@ export function QuarantineTable({
   return (
     <HorizontalScrollArea className="border rounded-lg">
       <table className={cn('w-full transition-opacity duration-150', isLoading && 'opacity-70')}>
-        <thead className="bg-muted/30 dark:bg-muted/15">
+        <thead className="table-header-surface">
           <tr className="border-b">
             <th className="p-4 pl-6 w-10" />
             <th className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -143,7 +143,7 @@ export function QuarantineTable({
                 <tr
                   key={entry.id}
                   className={cn(
-                    'group border-b animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 hover:bg-muted/50',
+                    'group border-b animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 hover:bg-row-hover',
                     entry.needsOperator && 'bg-destructive/10 border-l-2 border-l-destructive',
                   )}
                   style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}

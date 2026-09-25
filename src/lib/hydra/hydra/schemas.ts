@@ -66,12 +66,17 @@ export const hydraCommandTransactionSchema = z.strictObject({
 const timedServerOutputSequenceSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
 /**
- * Head chain-clock broadcast: release hydra-nodes emit `Tick` on the API
- * websocket for every observed L1 block; Blockfrost-backed master builds emit
- * `SyncedStatusReport` (which additionally carries `drift`/`synced`). Both
- * carry the head's observed L1 time — the clock its ledger validates tx
- * validity intervals against. `chainSlot` is optional because older release
- * `Tick`s carried only `chainTime`.
+ * Head chain-clock broadcast: hydra-nodes emit `Tick` on the API websocket for
+ * every observed L1 block, carrying the head's observed L1 time — the clock its
+ * ledger validates tx validity intervals against. `chainSlot` is optional
+ * because older release `Tick`s carried only `chainTime`.
+ *
+ * `SyncedStatusReport` (which additionally carried `drift`/`synced`) was emitted
+ * by Blockfrost-backed builds up to 2.3 and was REMOVED from the WebSocket API
+ * in Hydra 2.4 — chain-sync state now arrives as `NodeSynced`/`NodeUnsynced`
+ * transitions and on `Greetings.chainSyncedStatus`. It stays in this enum
+ * because archived 2.3-era node logs still have to parse: nothing in this
+ * service asks a 2.4 node for it.
  */
 export const headClockMessageSchema = z.looseObject({
 	tag: z.enum(['Tick', 'SyncedStatusReport']),
@@ -453,6 +458,10 @@ export const snapshotConfirmedMessageSchema = z.looseObject({
 		utxo: hydraSnapshotUtxoSchema,
 		utxoToCommit: hydraSnapshotUtxoSchema.nullable(),
 		utxoToDecommit: hydraSnapshotUtxoSchema.nullable(),
+		// Hydra 2.4: the on-chain deposit this snapshot's utxoToCommit came from.
+		// Bound into the signable bytes (see hydraSnapshotSignableBytes), so a
+		// stale or absent value here would silently fail every 2.4 signature check.
+		depositTxId: canonicalHydraTransactionIdSchema.nullable().optional(),
 	}),
 });
 

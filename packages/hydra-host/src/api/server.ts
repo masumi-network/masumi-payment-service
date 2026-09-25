@@ -387,6 +387,13 @@ export function createControlPlane(deps: ServerDeps): Server {
 				const body = await readBody(request);
 				const idempotencyKey =
 					(typeof request.headers['idempotency-key'] === 'string' ? request.headers['idempotency-key'] : '') || '';
+				// Resolved once, because the activation below defaults from it.
+				const requestDepositPeriodSeconds = numberOr(body, 'depositPeriodSeconds', config.defaultDepositPeriodSeconds);
+				// Read before the override is consulted, so a malformed body still 400s.
+				// Folding this into the `??` below would skip validation entirely once an
+				// operator set the override, and a negative or non-numeric activation
+				// would be answered 201 instead of rejected.
+				const requestDepositActivationSeconds = numberOr(body, 'depositActivationSeconds', requestDepositPeriodSeconds);
 				const result = await provisionNode(
 					{
 						idempotencyKey,
@@ -396,8 +403,25 @@ export function createControlPlane(deps: ServerDeps): Server {
 							'contestationPeriodSeconds',
 							config.defaultContestationPeriodSeconds,
 						),
-						depositPeriodSeconds: numberOr(body, 'depositPeriodSeconds', config.defaultDepositPeriodSeconds),
+						depositPeriodSeconds: requestDepositPeriodSeconds,
 						unsyncedPeriodSeconds: numberOr(body, 'unsyncedPeriodSeconds', config.defaultUnsyncedPeriodSeconds),
+						// An explicit HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS wins outright.
+						// It is the operator's escape hatch, and it has to beat the request:
+						// every current payment-service build always sends this field, so an
+						// override that only filled an ABSENT field would never apply to
+						// anything. Setting it breaks the activation == depositPeriod
+						// invariant this deployment reports deadlines against — see
+						// docs/hydra-2.4.1-upgrade-runbook.md.
+						//
+						// Without an override, the request's own value, falling back to the
+						// period THIS request asked for rather than to this Host's own
+						// default period. An older payment-service build omits the field
+						// entirely, and defaulting from our own config would pair our
+						// activation against their period — e.g. a mainnet node provisioned
+						// with depositPeriod 1200 would run activation 300, cutting the
+						// maturity wait 4x. That wait is what rules out an L1 rollback
+						// before funds count on L2, and nothing would report it.
+						depositActivationSeconds: config.depositActivationSecondsOverride ?? requestDepositActivationSeconds,
 					},
 					provision,
 				);

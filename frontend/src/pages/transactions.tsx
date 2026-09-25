@@ -11,9 +11,12 @@ import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTabl
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
   tableActionsCellCompactClass,
+  tableActionsCellCompactDestructiveClass,
+  tableActionsCellCompactSelectedClass,
   tableActionsHeadCompactClass,
+  tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
-import { MoreHorizontal, FlaskConical } from 'lucide-react';
+import { FlaskConical } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -30,8 +33,16 @@ import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSe
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
-import { getLatestTxHash } from '@/components/transactions/transaction-format.helpers';
-import { Checkbox } from '@/components/ui/checkbox';
+import {
+  getLatestTxHash,
+  isTransactionErrorRecoverable,
+} from '@/components/transactions/transaction-format.helpers';
+import { BulkActionBar } from '@/components/ui/bulk-action-bar';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  TableSelectAllCheckbox,
+  TableSelectRowCheckbox,
+} from '@/components/ui/table-select-checkbox';
 import {
   TransactionFilters,
   EMPTY_FILTERS,
@@ -39,8 +50,10 @@ import {
 } from '@/components/transactions/TransactionFilters';
 import { buildTransactionReportViewDefaults } from '@/components/transactions/download-details.helpers';
 import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
+import { TransactionRowActionsMenu } from '@/components/transactions/TransactionRowActionsMenu';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
+import { useTableSelection } from '@/lib/hooks/useTableSelection';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -76,12 +89,8 @@ export default function Transactions() {
     [activeTab, filters, searchQuery],
   );
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
-  const isNeedsActionTab = activeTab === 'Needs Action';
-  // Error recovery posts to /payment|purchase/error-state-recovery, both
-  // pay-authenticated. Read-only sessions keep the Needs Action tab as a
-  // read-only view but get no selection column and no bulk action bar.
+  // Error recovery posts to /payment|purchase/error-state-recovery (pay-authenticated).
   const canRecoverErrors = capabilities.canPay;
-  const showSelection = isNeedsActionTab && canRecoverErrors;
 
   const filterParams = useMemo(() => {
     const params: {
@@ -127,11 +136,9 @@ export default function Transactions() {
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
-  // Multi-row selection is only offered on the Needs Action tab, where every row
-  // is in an error state that can be bulk-cleared. Keyed by transaction id.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { recoverErrors, isRecovering } = useBulkClearTransactionErrors();
   const [bulkRecoveryMode, setBulkRecoveryMode] = useState<'clear' | 'retry' | null>(null);
+  const [bulkConfirmMode, setBulkConfirmMode] = useState<'clear' | 'retry' | null>(null);
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
@@ -263,35 +270,37 @@ export default function Transactions() {
     return displayTransactions.filter((tx) => tx.NextAction?.errorType === filters.errorType);
   }, [displayTransactions, filters.errorType]);
 
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
-
   const selectableIds = useMemo(
     () => visibleTransactions.map((tx) => tx.id).filter((id): id is string => Boolean(id)),
     [visibleTransactions],
   );
-  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
-  const someSelected = selectedIds.size > 0 && !allSelected;
 
-  const toggleAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      const everySelected = selectableIds.length > 0 && selectableIds.every((id) => prev.has(id));
-      return everySelected ? new Set() : new Set(selectableIds);
-    });
-  }, [selectableIds]);
+  const {
+    selectedIds,
+    selectedCount,
+    clearSelection,
+    allSelected,
+    someSelected,
+    toggleAll,
+    toggleRow,
+    isSelected,
+    setSelectionToIds,
+  } = useTableSelection(selectableIds);
 
-  const toggleRow = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const recoverableSelectedTransactions = useMemo(
+    () =>
+      visibleTransactions.filter(
+        (tx) => tx.id && selectedIds.has(tx.id) && isTransactionErrorRecoverable(tx, network),
+      ),
+    [visibleTransactions, selectedIds, network],
+  );
+  const recoverableSelectedCount = recoverableSelectedTransactions.length;
 
   const handleBulkRecoverErrors = useCallback(
     async (retryPreviousAction: boolean) => {
-      const selected = visibleTransactions.filter((tx) => tx.id && selectedIds.has(tx.id));
-      if (selected.length === 0) return;
+      if (recoverableSelectedTransactions.length === 0) return;
+
+      const selected = recoverableSelectedTransactions;
 
       setBulkRecoveryMode(retryPreviousAction ? 'retry' : 'clear');
       try {
@@ -312,14 +321,48 @@ export default function Transactions() {
         }
 
         // Keep only the failed rows selected so the user can retry them.
-        setSelectedIds(new Set(failedIds));
+        setSelectionToIds(failedIds);
         await resync('transactions');
         refreshTransactions();
       } finally {
         setBulkRecoveryMode(null);
       }
     },
-    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions, resync],
+    [
+      recoverableSelectedTransactions,
+      recoverErrors,
+      refreshTransactions,
+      resync,
+      setSelectionToIds,
+    ],
+  );
+
+  const handleRowRecoverErrors = useCallback(
+    async (transaction: Transaction, retryPreviousAction: boolean) => {
+      if (!transaction.id) return;
+
+      setBulkRecoveryMode(retryPreviousAction ? 'retry' : 'clear');
+      try {
+        const { succeeded, failed } = await recoverErrors([transaction], retryPreviousAction);
+        if (succeeded > 0) {
+          toast.success(
+            retryPreviousAction
+              ? 'Queued failed action for retry'
+              : 'Cleared error state for transaction',
+          );
+        }
+        if (failed > 0) {
+          toast.error(
+            retryPreviousAction ? 'Failed to retry transaction' : 'Failed to clear error state',
+          );
+        }
+        await resync('transactions');
+        refreshTransactions();
+      } finally {
+        setBulkRecoveryMode(null);
+      }
+    },
+    [recoverErrors, refreshTransactions, resync],
   );
 
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
@@ -439,40 +482,51 @@ export default function Transactions() {
             />
           </div>
 
-          {showSelection && selectedIds.size > 0 && (
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 animate-fade-in">
-              <span className="text-sm font-medium">{selectedIds.size} selected</span>
-              <div className="flex items-center gap-2">
+          <BulkActionBar
+            selectedCount={selectedCount}
+            onClear={clearSelection}
+            disabled={isRecovering}
+          >
+            {!canRecoverErrors ? (
+              <span className="max-w-md text-right text-sm text-muted-foreground">
+                Bulk recovery requires an API key with pay access.
+              </span>
+            ) : recoverableSelectedCount === 0 ? (
+              <span className="max-w-md text-right text-sm text-muted-foreground">
+                {
+                  'No bulk actions for this selection. Pick rows with an error, or open the Needs Action tab.'
+                }
+              </span>
+            ) : (
+              <>
+                {recoverableSelectedCount < selectedCount ? (
+                  <span className="text-xs text-muted-foreground">
+                    {recoverableSelectedCount} of {selectedCount} can be recovered
+                  </span>
+                ) : null}
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  onClick={() => setSelectedIds(new Set())}
-                  disabled={isRecovering}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleBulkRecoverErrors(false)}
+                  className="border-border bg-background shadow-xs hover:bg-background"
+                  onClick={() => setBulkConfirmMode('clear')}
                   disabled={isRecovering}
                 >
                   {bulkRecoveryMode === 'clear'
                     ? 'Clearing error states...'
-                    : `Clear error state (${selectedIds.size})`}
+                    : `Clear error state (${recoverableSelectedCount})`}
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => handleBulkRecoverErrors(true)}
+                  onClick={() => setBulkConfirmMode('retry')}
                   disabled={isRecovering}
                 >
                   {bulkRecoveryMode === 'retry'
                     ? 'Queueing retries...'
-                    : `Retry failed action (${selectedIds.size})`}
+                    : `Retry failed action (${recoverableSelectedCount})`}
                 </Button>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </BulkActionBar>
 
           <HorizontalScrollArea className="border rounded-lg">
             <table
@@ -481,26 +535,18 @@ export default function Transactions() {
                 isSearchPending && 'opacity-70',
               )}
             >
-              <thead className="bg-muted/30 dark:bg-muted/15">
+              <thead className="table-header-surface">
                 <tr className="border-b">
-                  {showSelection && (
-                    <th className="p-4 pl-6 w-10">
-                      <Checkbox
-                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                        onCheckedChange={toggleAll}
-                        aria-label="Select all transactions"
-                        disabled={selectableIds.length === 0}
-                      />
-                    </th>
-                  )}
-                  <th
-                    className={cn(
-                      'p-4 text-left text-sm font-medium text-muted-foreground',
-                      !showSelection && 'pl-6',
-                    )}
-                  >
-                    Type
+                  <th className="w-10 p-4 pl-6">
+                    <TableSelectAllCheckbox
+                      allSelected={allSelected}
+                      someSelected={someSelected}
+                      onToggleAll={toggleAll}
+                      disabled={selectableIds.length === 0}
+                      aria-label="Select all transactions on this page"
+                    />
                   </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Type</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Transaction Hash
                   </th>
@@ -523,10 +569,10 @@ export default function Transactions() {
               </thead>
               <tbody>
                 {isInitialLoading || (visibleTransactions.length === 0 && isSearchPending) ? (
-                  <TransactionTableSkeleton rows={5} />
+                  <TransactionTableSkeleton rows={5} withSelectionColumn />
                 ) : visibleTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={showSelection ? 10 : 9}>
+                    <td colSpan={10}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -554,137 +600,153 @@ export default function Transactions() {
                     </td>
                   </tr>
                 ) : (
-                  visibleTransactions.map((transaction, index) => (
-                    <tr
-                      key={transaction.id}
-                      className={cn(
-                        'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
-                        transaction.NextAction?.errorType
-                          ? 'bg-destructive/10 border-l-2 border-l-destructive'
-                          : '',
-                        'cursor-pointer hover:bg-muted/50',
-                        transaction.id && selectedIds.has(transaction.id) && 'bg-muted/50',
-                      )}
-                      style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                      onClick={() => setSelectedTransaction(transaction)}
-                    >
-                      {showSelection && (
-                        <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={transaction.id ? selectedIds.has(transaction.id) : false}
-                            onCheckedChange={() => transaction.id && toggleRow(transaction.id)}
-                            disabled={!transaction.id}
+                  visibleTransactions.map((transaction, index) => {
+                    const hasTxError = !!transaction.NextAction?.errorType;
+                    const isTxSelected = Boolean(transaction.id && isSelected(transaction.id));
+
+                    return (
+                      <tr
+                        key={transaction.id}
+                        className={cn(
+                          'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ease-in-out',
+                          'cursor-pointer',
+                          hasTxError ? 'transaction-row-error' : 'hover:bg-row-hover',
+                          isTxSelected &&
+                            (hasTxError
+                              ? 'transaction-row-selected'
+                              : 'transaction-row-selected bg-row-hover'),
+                        )}
+                        style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                        onClick={() => setSelectedTransaction(transaction)}
+                      >
+                        <td className="w-10 p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                          <TableSelectRowCheckbox
+                            checked={transaction.id ? isSelected(transaction.id) : false}
+                            onToggle={() => transaction.id && toggleRow(transaction.id)}
                             aria-label="Select transaction"
                           />
                         </td>
-                      )}
-                      <td className={cn('p-4', !showSelection && 'pl-6')}>
-                        <span className="capitalize">{transaction.type}</span>
-                      </td>
-                      <td className="p-4">
-                        {(() => {
-                          const displayTxHash = getLatestTxHash(transaction);
-                          return (
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm text-muted-foreground">
-                                {displayTxHash
-                                  ? `${displayTxHash.slice(0, 8)}...${displayTxHash.slice(-8)}`
-                                  : '—'}
-                              </span>
-                              {displayTxHash && <CopyButton value={displayTxHash} />}
-                            </div>
-                          );
-                        })()}
-                      </td>
-                      <td className="p-4">
-                        <TransactionAgentIdentifierCell
-                          agentIdentifier={transaction.agentIdentifier}
-                          agentName={transaction.agentName}
-                          smartContractAddress={
-                            transaction.PaymentSource?.smartContractAddress ?? null
-                          }
-                          network={transaction.PaymentSource?.network}
-                        />
-                      </td>
-                      <td className="p-4">
-                        {transaction.type === 'payment' && transaction.RequestedFunds?.length
-                          ? transaction.RequestedFunds.map((fund, index) => (
-                              <div key={index} className="text-sm">
-                                {formatAssetAmount(fund.amount, fund.unit, network)}
+                        <td className="p-4">
+                          <span className="capitalize">{transaction.type}</span>
+                        </td>
+                        <td className="p-4">
+                          {(() => {
+                            const displayTxHash = getLatestTxHash(transaction);
+                            return (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm text-muted-foreground">
+                                  {displayTxHash
+                                    ? `${displayTxHash.slice(0, 8)}...${displayTxHash.slice(-8)}`
+                                    : '—'}
+                                </span>
+                                {displayTxHash && <CopyButton value={displayTxHash} />}
                               </div>
-                            ))
-                          : transaction.type === 'purchase' && transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => (
+                            );
+                          })()}
+                        </td>
+                        <td className="p-4">
+                          <TransactionAgentIdentifierCell
+                            agentIdentifier={transaction.agentIdentifier}
+                            agentName={transaction.agentName}
+                            smartContractAddress={
+                              transaction.PaymentSource?.smartContractAddress ?? null
+                            }
+                            network={transaction.PaymentSource?.network}
+                          />
+                        </td>
+                        <td className="p-4">
+                          {transaction.type === 'payment' && transaction.RequestedFunds?.length
+                            ? transaction.RequestedFunds.map((fund, index) => (
                                 <div key={index} className="text-sm">
                                   {formatAssetAmount(fund.amount, fund.unit, network)}
                                 </div>
                               ))
-                            : '—'}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex flex-col gap-1">
-                          <span>{transaction.PaymentSource.network}</span>
-                          <PaymentSourceTypeBadge
-                            paymentSourceType={transaction.PaymentSource.paymentSourceType}
-                            showDefault
-                          />
-                          <div className="flex items-center gap-1.5">
-                            {getTransactionLayerLabel(transaction) ? (
-                              <Badge
-                                variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
-                                className="w-fit"
-                              >
-                                {getTransactionLayerLabel(transaction)}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                            {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
-                              <span
-                                className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"
-                                title={getHydraHeadId(transaction) ?? undefined}
-                              >
-                                {getHydraHeadId(transaction)}
-                              </span>
-                            )}
+                            : transaction.type === 'purchase' && transaction.PaidFunds?.length
+                              ? transaction.PaidFunds.map((fund, index) => (
+                                  <div key={index} className="text-sm">
+                                    {formatAssetAmount(fund.amount, fund.unit, network)}
+                                  </div>
+                                ))
+                              : '—'}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-col gap-1">
+                            <span>{transaction.PaymentSource.network}</span>
+                            <PaymentSourceTypeBadge
+                              paymentSourceType={transaction.PaymentSource.paymentSourceType}
+                              showDefault
+                            />
+                            <div className="flex items-center gap-1.5">
+                              {getTransactionLayerLabel(transaction) ? (
+                                <Badge
+                                  variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
+                                  className="w-fit"
+                                >
+                                  {getTransactionLayerLabel(transaction)}
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                              {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
+                                <span
+                                  className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"
+                                  title={getHydraHeadId(transaction) ?? undefined}
+                                >
+                                  {getHydraHeadId(transaction)}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <span
-                          className={getStatusColor(
-                            transaction.onChainState,
-                            !!transaction.NextAction?.errorType,
-                          )}
+                        </td>
+                        <td className="p-4">
+                          <span
+                            className={getStatusColor(
+                              transaction.onChainState,
+                              !!transaction.NextAction?.errorType,
+                            )}
+                          >
+                            {transaction.onChainState === 'Disputed' ? (
+                              <span className="flex items-center gap-1">
+                                <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
+                                {formatStatus(transaction.onChainState)}
+                              </span>
+                            ) : (
+                              formatStatus(transaction.onChainState)
+                            )}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          {transaction.onChainState === 'ResultSubmitted'
+                            ? formatDateTime(transaction.unlockTime)
+                            : '—'}
+                        </td>
+                        <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
+                        <td
+                          className={
+                            isTxSelected
+                              ? tableActionsCellCompactSelectedClass
+                              : hasTxError
+                                ? tableActionsCellCompactDestructiveClass
+                                : tableActionsCellCompactClass
+                          }
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {transaction.onChainState === 'Disputed' ? (
-                            <span className="flex items-center gap-1">
-                              <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
-                              {formatStatus(transaction.onChainState)}
-                            </span>
-                          ) : (
-                            formatStatus(transaction.onChainState)
-                          )}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        {transaction.onChainState === 'ResultSubmitted'
-                          ? formatDateTime(transaction.unlockTime)
-                          : '—'}
-                      </td>
-                      <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
-                      <td className={tableActionsCellCompactClass}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="More actions"
-                          className="h-8 w-8"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
+                          <div className={tableActionsInnerClass}>
+                            <TransactionRowActionsMenu
+                              transaction={transaction}
+                              canRecover={canRecoverErrors}
+                              isRecovering={isRecovering}
+                              onViewDetails={() => setSelectedTransaction(transaction)}
+                              onClearError={() => void handleRowRecoverErrors(transaction, false)}
+                              onRetryFailedAction={() =>
+                                void handleRowRecoverErrors(transaction, true)
+                              }
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -710,6 +772,27 @@ export default function Transactions() {
             viewDefaults={reportViewDefaults}
           />
         )}
+
+        <ConfirmDialog
+          open={bulkConfirmMode !== null}
+          onClose={() => setBulkConfirmMode(null)}
+          title={
+            bulkConfirmMode === 'retry' ? 'Retry failed actions' : 'Clear transaction error states'
+          }
+          description={
+            bulkConfirmMode === 'retry'
+              ? `Queue a retry of the failed action for ${recoverableSelectedCount} transaction${recoverableSelectedCount === 1 ? '' : 's'}?`
+              : `Clear the error state for ${recoverableSelectedCount} transaction${recoverableSelectedCount === 1 ? '' : 's'} so processing can continue?`
+          }
+          confirmLabel={bulkConfirmMode === 'retry' ? 'Retry failed actions' : 'Clear error states'}
+          onConfirm={() => {
+            if (!bulkConfirmMode) return;
+            void handleBulkRecoverErrors(bulkConfirmMode === 'retry').finally(() =>
+              setBulkConfirmMode(null),
+            );
+          }}
+          isLoading={isRecovering}
+        />
       </AnimatedPage>
     </MainLayout>
   );

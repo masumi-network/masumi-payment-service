@@ -61,7 +61,12 @@ jest.unstable_mockModule('./node-keys', () => ({
 
 let reserveNodeForExchange: typeof import('./provisioning').reserveNodeForExchange;
 
-const PERIODS = { contestationPeriodSeconds: 120, depositPeriodSeconds: 600, unsyncedPeriodSeconds: 300 };
+const PERIODS = {
+	contestationPeriodSeconds: 120,
+	depositPeriodSeconds: 600,
+	unsyncedPeriodSeconds: 300,
+	depositActivationSeconds: 600,
+};
 
 beforeAll(async () => {
 	({ reserveNodeForExchange } = await import('./provisioning'));

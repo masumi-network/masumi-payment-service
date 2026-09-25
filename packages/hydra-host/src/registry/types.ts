@@ -101,6 +101,18 @@ export type NodeRecord = {
 	contestationPeriodSeconds: number;
 	depositPeriodSeconds: number;
 	unsyncedPeriodSeconds: number;
+	/**
+	 * hydra-node 2.4's `--deposit-activation`, LOCAL to this node (not checked
+	 * against an InitTx the way `depositPeriodSeconds` is).
+	 *
+	 * Required here even though a record written before this field existed has
+	 * none on disk: `NodeRegistryStore`'s `parseNodeRecord` back-fills it from
+	 * the record's own `depositPeriodSeconds` at read time (the same normalize-
+	 * on-read treatment `startAttempts` gets for the `restartCount` rename), so
+	 * every `NodeRecord` this module hands out — freshly provisioned or read
+	 * off disk — always carries a concrete value.
+	 */
+	depositActivationSeconds: number;
 
 	/**
 	 * Public material, safe to return from the API at any time. Both are

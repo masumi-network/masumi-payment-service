@@ -14,6 +14,7 @@
  */
 
 import { useState } from 'react';
+import { hydraAssetDecimals, parseHydraAssetAmount } from './asset-amount';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
@@ -49,15 +50,6 @@ interface HydraHeadWithdrawButtonProps {
   headId: string;
   /** Withdrawing is an incremental decommit, only possible on an Open head. */
   isOpen: boolean;
-}
-
-/** Same conversion as the top-up form: string concatenation, never floats. */
-function adaToLovelace(value: string): string | null {
-  const trimmed = value.trim();
-  if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) return null;
-  const [whole, fraction = ''] = trimmed.split('.');
-  const lovelace = `${whole}${fraction.padEnd(6, '0')}`.replace(/^0+(?=\d)/, '');
-  return lovelace === '0' ? null : lovelace;
 }
 
 function formatLovelace(lovelace: string, network: string | undefined): string {
@@ -285,24 +277,26 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
     }
   }
 
+  const amountUnit = selectedUnit === ADA_CHOICE ? '' : selectedUnit;
+  const usesDecimals = hydraAssetDecimals(amountUnit) > 0;
+  const amountLabel =
+    selectedUnit === ADA_CHOICE ? adaLabel : formatFundUnit(selectedUnit, network);
+
   const handleWithdraw = async () => {
-    if (selectedUnit !== ADA_CHOICE) {
-      // A native asset is counted in its own smallest unit, so there is no
-      // decimal conversion to do and a fraction would be meaningless.
-      const assetAmount = amount.trim();
-      if (!/^\d+$/.test(assetAmount) || assetAmount === '0') {
-        toast.error('Enter how much to take out, as a whole number');
-        return;
-      }
-      await submit({ assetUnit: selectedUnit, assetAmount });
+    const quantity = parseHydraAssetAmount(amount, amountUnit);
+    if (quantity === null) {
+      toast.error(
+        usesDecimals
+          ? `Enter a positive ${amountLabel} amount with up to 6 decimal places`
+          : 'Enter a positive whole number of base units',
+      );
       return;
     }
-    const lovelace = adaToLovelace(amount);
-    if (lovelace === null) {
-      toast.error(`Enter how much ${adaLabel} to take out of the head`);
-      return;
-    }
-    await submit({ lovelace });
+    await submit(
+      selectedUnit === ADA_CHOICE
+        ? { lovelace: quantity }
+        : { assetUnit: selectedUnit, assetAmount: quantity },
+    );
   };
 
   return (
@@ -332,7 +326,13 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
         {heldAssets.length > 0 && (
           <div className="space-y-1.5">
             <Label htmlFor={`hydra-withdraw-asset-${headId}`}>Asset</Label>
-            <Select value={selectedUnit} onValueChange={setAssetUnit}>
+            <Select
+              value={selectedUnit}
+              onValueChange={(value) => {
+                setAssetUnit(value);
+                setAmount('');
+              }}
+            >
               <SelectTrigger id={`hydra-withdraw-asset-${headId}`} className="w-[170px]">
                 <SelectValue />
               </SelectTrigger>
@@ -355,26 +355,14 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
               id={`hydra-withdraw-${headId}`}
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
-              placeholder={selectedUnit === ADA_CHOICE ? '0.00' : '0'}
-              inputMode={selectedUnit === ADA_CHOICE ? 'decimal' : 'numeric'}
+              placeholder={usesDecimals ? '0.00' : '0'}
+              inputMode={usesDecimals ? 'decimal' : 'numeric'}
               className="w-44 pr-16 font-mono"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-w-14 truncate text-xs text-muted-foreground">
               {selectedUnit === ADA_CHOICE ? adaLabel : formatFundUnit(selectedUnit, network)}
             </span>
           </div>
-          {selectedUnit !== ADA_CHOICE && (
-            /* Worth saying before the click, not after: the number is the
-               token's smallest unit even though the field is labelled with its
-               ticker, and a token cannot travel alone, so the payout arrives
-               with roughly 2 ADA carrying it and the rest of the ADA it was
-               sitting on stays in the head. */
-            <p className="max-w-sm text-xs text-muted-foreground">
-              Enter a whole number in {formatFundUnit(selectedUnit, network)}&apos;s smallest unit,
-              not {adaLabel}. The token is moved onto its own UTxO first, so about 2 {adaLabel} goes
-              out with it to carry it. Any other {adaLabel} it shares a UTxO with stays in the head.
-            </p>
-          )}
         </div>
 
         <Button onClick={() => void handleWithdraw()} disabled={isSubmitting || !isBalanceKnown}>
@@ -387,6 +375,13 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
           )}
         </Button>
       </div>
+      <p className="text-xs text-muted-foreground">
+        {usesDecimals
+          ? `Enter the amount in ${amountLabel}, with up to 6 decimal places.`
+          : 'Enter a whole number of base units for this asset.'}
+        {selectedUnit !== ADA_CHOICE &&
+          ` About 2 ${adaLabel} goes out with the token to carry it. Any other ${adaLabel} it shares a UTxO with stays in the head.`}
+      </p>
 
       {/* The first fetch is not a failure. `data` is undefined until it lands, so
           reading that alone told every operator opening the panel that the head's

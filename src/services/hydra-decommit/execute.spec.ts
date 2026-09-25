@@ -77,6 +77,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 	BlockfrostProvider: class {},
 	castProtocol: (() => undefined) as unknown as never,
 	POLICY_ID_LENGTH: 56,
+	getOutputMinLovelace: () => 1_000_000n,
 	MeshWallet: class {
 		async getUnusedAddresses() {
 			return [];
@@ -222,6 +223,13 @@ describe('executeHydraDecommit request outcomes', () => {
  * impossible: not recoverable by contesting, which enforces the same invariant.
  */
 describe('in-head transactions use the head’s own ledger parameters', () => {
+	it('rejects an undersized exact ADA withdrawal before submission', async () => {
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 34_480n })).rejects.toThrow(
+			'Withdrawal output contains 34480 lovelace but requires at least 1000000',
+		);
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+	});
+
 	it('asks the head for its parameters before building', async () => {
 		await executeHydraDecommit({ headId: 'head-1' }).catch(() => undefined);
 

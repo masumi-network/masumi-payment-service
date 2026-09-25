@@ -1,7 +1,7 @@
 import { Address, Transaction, type TransactionOutput } from '@emurgo/cardano-serialization-lib-nodejs';
 import { resolveTxHash } from '@meshsdk/core';
 
-import { HYDRA_HEAD_V2_ASSET_NAME_HEX, resolveHydraHeadScriptHash } from './head-init-validation';
+import { HYDRA_HEAD_V2_ASSET_NAME_HEX, knownHydraHeadScriptHashes } from './head-init-validation';
 import { serializeCardanoTransactionOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './schemas';
 
@@ -243,12 +243,13 @@ async function verifyFanoutStep(params: {
 	txHash: string;
 	headId: string;
 	expectedUnits: ReadonlySet<string>;
-	headScriptHash: string;
+	acceptedHeadScriptHashes: ReadonlySet<string>;
 	references: readonly VerifiedHydraFanoutReference[];
 	requiredConfirmations: number;
 	observerTimeoutMs: number;
 }): Promise<VerifiedFanoutStep> {
-	const { observer, txHash, headId, expectedUnits, headScriptHash, references, requiredConfirmations } = params;
+	const { observer, txHash, headId, expectedUnits, acceptedHeadScriptHashes, references, requiredConfirmations } =
+		params;
 
 	if (new Set(references.map(({ outputIndex }) => outputIndex)).size !== references.length) {
 		fail('Hydra finalized outputs repeated an L1 output index');
@@ -296,7 +297,7 @@ async function verifyFanoutStep(params: {
 		(input) =>
 			input.collateral !== true &&
 			input.reference !== true &&
-			paymentScriptHash(input.address) === headScriptHash &&
+			acceptedHeadScriptHashes.has(paymentScriptHash(input.address) ?? '') &&
 			hasExactTokenSet(headPolicyAmounts(input.amount, headId), expectedUnits, 1n),
 	);
 	if (headInputs.length !== 1) fail('Hydra fanout did not consume exactly one bound official vHead token output');
@@ -335,7 +336,7 @@ async function verifyFanoutStep(params: {
 		if (outputs.len() < 2) fail('Hydra partial fanout produced no continuing head output');
 		const continuingHead = outputs.get(0);
 		const continuingAddress = continuingHead.address().to_bech32();
-		if (paymentScriptHash(continuingAddress) !== headScriptHash) {
+		if (!acceptedHeadScriptHashes.has(paymentScriptHash(continuingAddress) ?? '')) {
 			fail('Hydra partial fanout did not carry the head forward at the head script address');
 		}
 		const continuingAmounts = serializeCardanoOutputAmounts(continuingHead);
@@ -457,7 +458,10 @@ export async function verifyHydraFanoutOnChain(options: {
 		`${headId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`,
 		...participantVkeys.map((vkey) => `${headId}${vkey}`),
 	]);
-	const headScriptHash = resolveHydraHeadScriptHash(options.headScriptHash);
+	// Observation, not creation: a fanout being re-verified here may belong to a
+	// head opened under an earlier hydra-node script pin, so any known (current
+	// or legacy) head script hash is accepted rather than only today's default.
+	const acceptedHeadScriptHashes = knownHydraHeadScriptHashes(options.headScriptHash);
 
 	// Verified independently; the chain they form is checked afterwards, because
 	// no single step can prove anything about the ones around it.
@@ -473,7 +477,7 @@ export async function verifyHydraFanoutOnChain(options: {
 				txHash,
 				headId,
 				expectedUnits,
-				headScriptHash,
+				acceptedHeadScriptHashes,
 				references,
 				requiredConfirmations: options.requiredConfirmations,
 				observerTimeoutMs: Math.min(observerTimeoutMs, remainingMs),

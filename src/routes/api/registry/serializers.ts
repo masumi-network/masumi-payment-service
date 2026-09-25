@@ -9,7 +9,7 @@ import {
 import { logger } from '@masumi/payment-core/logger';
 import type { RegistryListRecord } from './queries';
 
-type SupportedPaymentSourceRecord = RegistryListRecord['SupportedPaymentSources'][number];
+type SupportedPaymentSourceRecord = Omit<RegistryListRecord['SupportedPaymentSources'][number], 'id'>;
 type LegacyAgentPricingRecord = {
 	pricingType: PricingType;
 	FixedPricing: {
@@ -172,6 +172,13 @@ export function serializeVerifications(rows: AgentVerificationRow[] | null | und
 }
 
 export function serializeRegistryEntry(item: RegistryListRecord) {
+	// Node row IDs belong only to the authenticated registry list response.
+	// Serialize each row before adding its ID so omitted rows cannot shift the mapping.
+	const supportedPaymentSources = [...item.SupportedPaymentSources]
+		.sort((left, right) => left.position - right.position)
+		.flatMap((source) =>
+			(serializeSupportedPaymentSources([source]) ?? []).map((serialized) => ({ ...serialized, id: source.id })),
+		);
 	return {
 		...item,
 		Capability: {
@@ -191,7 +198,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 		},
 		AgentPricing: serializeLegacyAgentPricing(item.Pricing),
 		sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
-		supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
+		supportedPaymentSources: supportedPaymentSources.length > 0 ? supportedPaymentSources : null,
 		verifications: serializeVerifications(item.Verifications),
 		Tags: item.tags,
 		CurrentTransaction: item.CurrentTransaction

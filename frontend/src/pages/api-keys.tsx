@@ -2,34 +2,49 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+import { BulkActionBar } from '@/components/ui/bulk-action-bar';
+import {
+  TableSelectAllCheckbox,
+  TableSelectRowCheckbox,
+} from '@/components/ui/table-select-checkbox';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { formatAssetAmount } from '@/lib/utils';
+import { cn, formatAssetAmount } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
+import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
-import { tableActionsCellClass, tableActionsHeadClass } from '@/components/ui/table-actions-column';
+import {
+  tableActionsCellCompactClass,
+  tableActionsCellCompactSelectedClass,
+  tableActionsHeadCompactClass,
+  tableActionsInnerClass,
+} from '@/components/ui/table-actions-column';
 import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
-import { Search, Plus } from 'lucide-react';
+import { MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
 import { useApiKey } from '@/lib/hooks/useApiKey';
+import {
+  BULK_ACTION_MAX_ITEMS,
+  runBulkSequential,
+  useTableSelection,
+} from '@/lib/hooks/useTableSelection';
 import { ApiKey } from '@/lib/api/generated';
 
 /**
@@ -48,7 +63,7 @@ function matchesPermissionTab(apiKey: ApiKey, tab: string): boolean {
   switch (tab) {
     case 'Read':
       return apiKey.canRead && !apiKey.canPay && !apiKey.canAdmin;
-    case 'ReadAndPay':
+    case 'Read and Pay':
       return apiKey.canPay && !apiKey.canAdmin;
     case 'Admin':
       return apiKey.canAdmin;
@@ -82,11 +97,12 @@ function isSessionApiKey(listedToken: string, sessionApiKey: string | null): boo
 export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const deleteKeyMutation = useApiMutation({
     mutationFn: (body: { id: string }) => deleteApiKey({ client: apiClient, body }),
     errorMessage: 'Failed to delete API key',
@@ -104,7 +120,7 @@ export default function ApiKeys() {
   const tabs = [
     { name: 'All', count: null },
     { name: 'Read', count: null },
-    { name: 'ReadAndPay', count: null },
+    { name: 'Read and Pay', count: null },
     { name: 'Admin', count: null },
   ];
 
@@ -136,6 +152,33 @@ export default function ApiKeys() {
     return filtered;
   }, [allApiKeys, searchQuery, activeTab, network]);
 
+  const visibleRowIds = useMemo(
+    () => filteredApiKeys.map((key) => key.id).filter((id): id is string => Boolean(id)),
+    [filteredApiKeys],
+  );
+
+  const {
+    selectedCount,
+    clearSelection,
+    allSelected,
+    someSelected,
+    toggleAll,
+    toggleRow,
+    isSelected,
+    setSelectionToIds,
+    selectedIds,
+  } = useTableSelection(visibleRowIds);
+
+  const selectedApiKeys = useMemo(
+    () => filteredApiKeys.filter((key) => selectedIds.has(key.id)),
+    [filteredApiKeys, selectedIds],
+  );
+
+  const bulkDeletableKeys = useMemo(
+    () => selectedApiKeys.filter((key) => !isSessionApiKey(key.token, apiKey)),
+    [selectedApiKeys, apiKey],
+  );
+
   // Handle action query parameter from search. Stripping the param (rather
   // than latching a once-per-mount flag) lets the same quick action fire
   // again while already on this page.
@@ -152,19 +195,6 @@ export default function ApiKeys() {
 
   const handleLoadMore = () => {
     loadMore();
-  };
-
-  // Select by id, not by token. The listed token is a mask, so every key ending in the
-  // same four characters shared one selection entry: ticking one ticked them all, and a
-  // bulk action would have hit every collider.
-  const handleSelectKey = (id: string) => {
-    setSelectedKeys((prev) => (prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id]));
-  };
-
-  const handleSelectAll = () => {
-    setSelectedKeys(
-      selectedKeys.length === filteredApiKeys.length ? [] : filteredApiKeys.map((key) => key.id),
-    );
   };
 
   const handleDeleteApiKey = async () => {
@@ -187,6 +217,58 @@ export default function ApiKeys() {
     } finally {
       isDeletingRef.current = false;
     }
+  };
+
+  const handleBulkDeleteApiKeys = async () => {
+    const ids = bulkDeletableKeys.map((key) => key.id);
+    if (ids.length === 0) return;
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
+    setIsBulkDeleting(true);
+
+    try {
+      const { succeeded, failed, failedIds, skippedLimit } = await runBulkSequential(
+        ids,
+        async (id) => {
+          const response = await deleteKeyMutation.mutateAsync({ id }).catch((error: unknown) => {
+            console.error('Error deleting API key:', error);
+            return null;
+          });
+          return Boolean(response);
+        },
+      );
+
+      setIsBulkDeleteConfirmOpen(false);
+
+      if (skippedLimit) {
+        toast.error(`Select at most ${BULK_ACTION_MAX_ITEMS} keys at a time`);
+        return;
+      }
+
+      if (succeeded > 0) {
+        toast.success(`Deleted ${succeeded} API key${succeeded === 1 ? '' : 's'} successfully`);
+        void reset();
+      }
+      if (failed > 0) {
+        toast.error(`Failed to delete ${failed} API key${failed === 1 ? '' : 's'}`);
+      }
+
+      setSelectionToIds(failedIds);
+    } finally {
+      isDeletingRef.current = false;
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const openBulkDeleteConfirm = () => {
+    if (bulkDeletableKeys.length === 0) {
+      toast.error('The current session key cannot be bulk-deleted. Deselect it and try again.');
+      return;
+    }
+    if (selectedApiKeys.length > bulkDeletableKeys.length) {
+      toast.info('Your current session key will be skipped.');
+    }
+    setIsBulkDeleteConfirmOpen(true);
   };
 
   return (
@@ -232,6 +314,7 @@ export default function ApiKeys() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
+              clearSelection();
               refetch();
             }}
           />
@@ -243,22 +326,42 @@ export default function ApiKeys() {
                 type="search"
                 placeholder="Search by name, key ID, permission, status, network, or usage"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  clearSelection();
+                }}
                 className="max-w-xs pl-10"
               />
             </div>
           </div>
 
+          <BulkActionBar
+            selectedCount={selectedCount}
+            onClear={clearSelection}
+            disabled={isBulkDeleting || isDeleting}
+          >
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={openBulkDeleteConfirm}
+              disabled={isBulkDeleting || isDeleting || bulkDeletableKeys.length === 0}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete ({bulkDeletableKeys.length})
+            </Button>
+          </BulkActionBar>
+
           <HorizontalScrollArea className="border rounded-lg">
             <table className="w-full">
-              <thead>
+              <thead className="table-header-surface">
                 <tr className="border-b">
                   <th className="w-12 p-4">
-                    <Checkbox
-                      checked={
-                        filteredApiKeys.length > 0 && selectedKeys.length === filteredApiKeys.length
-                      }
-                      onCheckedChange={handleSelectAll}
+                    <TableSelectAllCheckbox
+                      allSelected={allSelected}
+                      someSelected={someSelected}
+                      onToggleAll={toggleAll}
+                      disabled={filteredApiKeys.length === 0}
+                      aria-label="Select all API keys on this page"
                     />
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Key</th>
@@ -266,7 +369,7 @@ export default function ApiKeys() {
                   <th className="p-4 text-left text-sm font-medium">Networks</th>
                   <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className={tableActionsHeadClass}>Actions</th>
+                  <th className={tableActionsHeadCompactClass}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -279,95 +382,133 @@ export default function ApiKeys() {
                     </td>
                   </tr>
                 ) : (
-                  filteredApiKeys.map((key) => (
-                    <tr key={key.id} className="border-b" onClick={() => {}}>
-                      <td className="p-4">
-                        <Checkbox
-                          aria-label={`Select key ${key.token}`}
-                          checked={selectedKeys.includes(key.id)}
-                          onCheckedChange={() => handleSelectKey(key.id)}
-                        />
-                      </td>
-                      <td className="p-4 truncate">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-muted-foreground">
-                            {/* A masked token is already short; running it through
+                  filteredApiKeys.map((key) => {
+                    const isCurrentKey = isSessionApiKey(key.token, apiKey);
+                    const isKeySelected = isSelected(key.id);
+                    return (
+                      <tr
+                        key={key.id}
+                        className={cn(
+                          'group border-b transition-[background-color] duration-150 hover:bg-row-hover',
+                          isKeySelected && 'bg-row-hover',
+                        )}
+                      >
+                        <td className="p-4" onClick={(event) => event.stopPropagation()}>
+                          <TableSelectRowCheckbox
+                            aria-label={`Select key ${key.token}`}
+                            checked={isKeySelected}
+                            onToggle={() => toggleRow(key.id)}
+                          />
+                        </td>
+                        <td className="p-4 truncate">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-sm text-muted-foreground">
+                              {/* A masked token is already short; running it through
                                 shortenAddress elided the only four characters that
                                 identify it. */}
-                            {isRedactedApiKeyToken(key.token)
-                              ? key.token
-                              : shortenAddress(key.token)}
-                          </span>
-                          {!isRedactedApiKeyToken(key.token) && <CopyButton value={key.token} />}
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
-                      <td className="p-4 text-sm">
-                        <div className="flex gap-1">
-                          {key.NetworkLimit.map((network) => (
-                            <span
-                              key={network}
-                              className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-100/10 px-2 py-1 text-xs"
-                            >
-                              {network}
+                              {isRedactedApiKeyToken(key.token)
+                                ? key.token
+                                : shortenAddress(key.token)}
                             </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm">
-                        {key.usageLimited ? (
-                          <div className="space-y-1">
-                            {key.RemainingUsageCredits.map((credit, index) => (
-                              <div key={index}>
-                                {formatAssetAmount(credit.amount, credit.unit, network)}
-                              </div>
+                            {!isRedactedApiKeyToken(key.token) && <CopyButton value={key.token} />}
+                            {isCurrentKey && (
+                              <Badge
+                                variant="secondary"
+                                className="font-normal shrink-0"
+                                title="Signed in with this API key"
+                              >
+                                Current key
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
+                        <td className="p-4 text-sm">
+                          <div className="flex gap-1">
+                            {key.NetworkLimit.map((network) => (
+                              <span
+                                key={network}
+                                className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-100/10 px-2 py-1 text-xs"
+                              >
+                                {network}
+                              </span>
                             ))}
                           </div>
-                        ) : (
-                          'Unlimited'
-                        )}
-                      </td>
-                      <td className="p-4 text-sm">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
-                            key.status === 'Active'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                          }`}
+                        </td>
+                        <td className="p-4 text-sm">
+                          {key.usageLimited ? (
+                            <div className="space-y-1">
+                              {key.RemainingUsageCredits.map((credit, index) => (
+                                <div key={index}>
+                                  {formatAssetAmount(credit.amount, credit.unit, network)}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            'Unlimited'
+                          )}
+                        </td>
+                        <td className="p-4 text-sm">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                              key.status === 'Active'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            }`}
+                          >
+                            {key.status}
+                          </span>
+                        </td>
+                        <td
+                          className={
+                            isKeySelected
+                              ? tableActionsCellCompactSelectedClass
+                              : tableActionsCellCompactClass
+                          }
                         >
-                          {key.status}
-                        </span>
-                      </td>
-                      <td className={tableActionsCellClass}>
-                        <Select
-                          onValueChange={(value) => {
-                            if (value === 'update') {
-                              setKeyToUpdate(key);
-                            } else if (value === 'delete') {
-                              setKeyToDelete(key);
-                            }
-                          }}
-                          value=""
-                        >
-                          <SelectTrigger className="w-[100px]">
-                            <SelectValue placeholder="Actions" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="update">Update</SelectItem>
-                            <SelectItem
-                              disabled={isSessionApiKey(key.token, apiKey)}
-                              value="delete"
-                              className="text-red-600"
-                            >
-                              {isSessionApiKey(key.token, apiKey)
-                                ? 'Cannot delete current API key'
-                                : 'Delete'}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </td>
-                    </tr>
-                  ))
+                          <div className={tableActionsInnerClass}>
+                            <DropdownMenu modal={false}>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="API key actions"
+                                  className="h-8 w-8"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <DropdownMenuItem
+                                  className="cursor-pointer gap-2"
+                                  onSelect={() => setKeyToUpdate(key)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                  Update
+                                </DropdownMenuItem>
+                                {!isCurrentKey && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+                                      onSelect={() => setKeyToDelete(key)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -407,6 +548,15 @@ export default function ApiKeys() {
         description="Are you sure you want to delete this API key? This action cannot be undone."
         onConfirm={handleDeleteApiKey}
         isLoading={isDeleting}
+      />
+
+      <ConfirmDialog
+        open={isBulkDeleteConfirmOpen}
+        onClose={() => setIsBulkDeleteConfirmOpen(false)}
+        title="Delete API keys"
+        description={`Delete ${bulkDeletableKeys.length} API key${bulkDeletableKeys.length === 1 ? '' : 's'}? This action cannot be undone.`}
+        onConfirm={() => void handleBulkDeleteApiKeys()}
+        isLoading={isBulkDeleting}
       />
     </MainLayout>
   );

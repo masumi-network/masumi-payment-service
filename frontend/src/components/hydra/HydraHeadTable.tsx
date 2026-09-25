@@ -96,7 +96,7 @@ export function HydraHeadTable({
   return (
     <HorizontalScrollArea className="rounded-lg border">
       <table className="w-full min-w-[720px]">
-        <thead className="bg-muted/30 dark:bg-muted/15">
+        <thead className="table-header-surface">
           <tr className="border-b">
             <th scope="col" className="p-4 pl-6 text-left text-sm font-medium">
               Head
@@ -164,7 +164,7 @@ export function HydraHeadTable({
                 role="button"
                 tabIndex={0}
                 aria-label={`Open details for Hydra head ${head.headIdentifier ?? head.id}`}
-                className="group border-b last:border-0 align-top animate-fade-in opacity-0 cursor-pointer transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                className="group border-b last:border-0 align-top animate-fade-in opacity-0 cursor-pointer transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                 style={{ animationDelay: `${Math.min(index, 9) * 35}ms` }}
                 onClick={() => onOpenHead(head)}
                 onKeyDown={(event) => {
