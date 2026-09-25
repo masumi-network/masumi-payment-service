@@ -15329,6 +15329,62 @@ export type GetRailReadinessResponses = {
 
 export type GetRailReadinessResponse = GetRailReadinessResponses[keyof GetRailReadinessResponses];
 
+export type PostExchainReadTokenData = {
+    /**
+     * No fields; the wallet is fixed by node configuration
+     */
+    body?: {
+        [key: string]: unknown;
+    };
+    path?: never;
+    query?: never;
+    url: '/exchain/read-token';
+};
+
+export type PostExchainReadTokenErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Exchain could not be reached or refused the request
+     */
+    502: unknown;
+    /**
+     * Exchain co-signing is not configured on this node
+     */
+    503: unknown;
+};
+
+export type PostExchainReadTokenResponses = {
+    /**
+     * Read token minted
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Exchain id of the guarded wallet the embedded page shows
+             */
+            walletId: string;
+            /**
+             * The embedded page URL for that wallet, read token included
+             */
+            url: string;
+            /**
+             * Read-only, wallet-scoped Exchain token. Handed to the embedded page when it asks for a refresh
+             */
+            token: string;
+            /**
+             * When the token stops working (Exchain issues 15-minute tokens)
+             */
+            expiresAt: string;
+        };
+    };
+};
+
+export type PostExchainReadTokenResponse = PostExchainReadTokenResponses[keyof PostExchainReadTokenResponses];
+
 export type DeleteTxSyncQuarantineData = {
     /**
      * Quarantine entry to delete

@@ -273,6 +273,19 @@ const exchainDashboardOrigin = parseExchainDashboardOrigin(
 	process.env.NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL,
 );
 
+/**
+ * The guarded wallet the demo page embeds, as Exchain registered it (MAS-596).
+ * Checked here so a typo fails at startup instead of as a 404 from Exchain.
+ */
+function parseExchainWalletId(rawValue: string | undefined): string | null {
+	const value = rawValue?.trim();
+	if (!value) return null;
+	if (!/^wal_[0-9A-HJKMNP-TV-Z]{26}$/.test(value)) {
+		throw new Error('EXCHAIN_WALLET_ID must be an Exchain wallet id (wal_ followed by 26 ULID characters)');
+	}
+	return value;
+}
+
 export const CONFIG = {
 	PORT: process.env.PORT ?? '3001',
 	DATABASE_URL: process.env.DATABASE_URL,
@@ -315,6 +328,9 @@ export const CONFIG = {
 	CHECK_FUND_TRANSFER_INTERVAL: checkFundTransferInterval,
 	CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL: checkFundTransferConfirmationInterval,
 	EXCHAIN_DASHBOARD_ORIGIN: exchainDashboardOrigin,
+	// Node-scoped bearer token for Exchain's API. Backend only: it must never reach a browser.
+	EXCHAIN_NODE_TOKEN: process.env.EXCHAIN_COSIGN_API_KEY?.trim() || null,
+	EXCHAIN_WALLET_ID: parseExchainWalletId(process.env.EXCHAIN_WALLET_ID),
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: parseNumberEnv(
 		'OTEL_PRISMA_OUTLIER_THRESHOLD_MS',

@@ -98,6 +98,7 @@ import {
 } from './fund-wallet';
 import { getFundDistributionEndpointGet, triggerFundDistributionEndpointPost } from './fund-distribution';
 import { railReadinessEndpointGet } from './rail-readiness';
+import { exchainReadTokenEndpointPost } from './exchain';
 import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
@@ -583,6 +584,11 @@ export const apiRouter: Routing = {
 		},
 		'rail-readiness': {
 			get: railReadinessEndpointGet,
+		},
+		exchain: {
+			'read-token': {
+				post: exchainReadTokenEndpointPost,
+			},
 		},
 		reports: {
 			facets: {
