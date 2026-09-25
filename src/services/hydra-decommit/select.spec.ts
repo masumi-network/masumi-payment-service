@@ -92,23 +92,39 @@ describe('selectDecommittableUtxos', () => {
 		expect(result.excluded.get(`${'a'.repeat(64)}#0`)).toContain('deposit');
 	});
 
-	// Anything with a datum is part of an arrangement rather than plain funds.
-	// Taking it out would remove it from whatever depends on it while leaving
-	// that thing looking intact.
-	it('refuses UTxOs carrying a datum or a script', () => {
+	// A reference script is something other transactions point at; taking it out
+	// of the head would break them while leaving them looking intact.
+	it('refuses UTxOs carrying a reference script', () => {
 		const result = selectDecommittableUtxos({
-			utxos: [
-				utxo('a'.repeat(64), 20_000_000n, { dataHash: 'd'.repeat(64) }),
-				utxo('b'.repeat(64), 20_000_000n, { scriptRef: 'ref' }),
-				utxo('c'.repeat(64), 20_000_000n),
-			],
+			utxos: [utxo('b'.repeat(64), 20_000_000n, { scriptRef: 'ref' }), utxo('c'.repeat(64), 20_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
 			drain: true,
 		});
 
 		expect(result.eligible).toHaveLength(1);
 		expect(result.eligible[0]!.input.txHash).toBe('c'.repeat(64));
-		expect(result.excluded.get(`${'a'.repeat(64)}#0`)).toContain('datum');
+		expect(result.excluded.get(`${'b'.repeat(64)}#0`)).toContain('reference script');
+	});
+
+	// The reported refusal: V2 escrow payouts tag every collection output with an
+	// inline datum, so all USDM the wallet earned in the head read as ineligible.
+	// A datum at the participant's own key address locks nothing.
+	it('accepts escrow payouts that carry an inline datum tag', () => {
+		const payout = utxo('a'.repeat(64), 2_000_000n, {
+			amount: [
+				{ unit: 'lovelace', quantity: '2000000' },
+				{ unit: 'cc'.repeat(28) + '5553444d', quantity: '20000000' },
+			],
+			plutusData: 'd8799f5820' + 'ab'.repeat(32) + '00ff',
+		});
+		const result = selectDecommittableUtxos({
+			utxos: [payout, utxo('b'.repeat(64), 20_000_000n, { dataHash: 'd'.repeat(64) })],
+			pendingIncrementRefs: NO_PENDING,
+			drain: true,
+		});
+
+		expect(result.eligible).toHaveLength(2);
+		expect(result.excluded.size).toBe(0);
 	});
 
 	it('reports nothing eligible for an empty wallet', () => {
