@@ -37,8 +37,9 @@ import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import {
 	amountOf,
-	coverAsset,
+	coverAssetForCarve,
 	coverLovelace,
+	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
 	isAlreadyCarved,
 	requiredChangeLovelace,
 	topUpCarveInputs,
@@ -318,7 +319,9 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			drain: params.drain === true,
 		});
 
-		if (selection.eligible.length === 0) {
+		// A token on the reserve can still be carved off it (see coverAssetForCarve),
+		// so an asset request goes on to the carve rather than stopping here.
+		if (selection.eligible.length === 0 && (params.asset == null || selection.reserved === null)) {
 			throw createHttpError(
 				400,
 				selection.excluded.size === 0
@@ -332,15 +335,25 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		let decommitInputs: UTxO[];
 		const requestedAsset = params.asset ?? null;
 		if (requestedAsset != null) {
-			const covering = coverAsset(selection.eligible, requestedAsset.unit, requestedAsset.amount);
-			if (covering === null) {
-				const held = selection.eligible.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
+			const cover = coverAssetForCarve({
+				eligible: selection.eligible,
+				reserved: selection.reserved,
+				unit: requestedAsset.unit,
+				amount: requestedAsset.amount,
+			});
+			if (cover === null) {
+				const usable = selection.reserved === null ? selection.eligible : [...selection.eligible, selection.reserved];
+				const held = usable.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
 				throw createHttpError(
 					400,
 					`Only ${held} of that asset is eligible to withdraw, which is less than the ${requestedAsset.amount} requested`,
 				);
 			}
-			if (isAlreadyCarved(covering, requestedAsset.unit, requestedAsset.amount, TOKEN_OUTPUT_LOVELACE)) {
+			const covering = cover.inputs;
+			if (
+				!cover.borrowsReserve &&
+				isAlreadyCarved(covering, requestedAsset.unit, requestedAsset.amount, TOKEN_OUTPUT_LOVELACE)
+			) {
 				decommitInputs = covering;
 			} else {
 				// The carve produces two outputs — the token on its carrier, and the
@@ -358,14 +371,26 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					baseLovelace: MIN_SPLIT_REMAINDER_LOVELACE,
 					perAssetLovelace: PER_ASSET_CHANGE_LOVELACE,
 				});
-				const neededLovelace = TOKEN_OUTPUT_LOVELACE + changeFloor;
+				// A borrowed reserve must come back as collateral: the change is the
+				// only output that stays in the head, so it carries the reserve's lovelace.
+				const neededLovelace =
+					TOKEN_OUTPUT_LOVELACE +
+					(cover.borrowsReserve && changeFloor < IN_HEAD_COLLATERAL_RESERVE_LOVELACE
+						? IN_HEAD_COLLATERAL_RESERVE_LOVELACE
+						: changeFloor);
 				const extra = topUpCarveInputs({ chosen: covering, eligible: selection.eligible, needed: neededLovelace });
 				if (extra === null) {
-					const available = selection.eligibleLovelace;
+					const available =
+						selection.eligibleLovelace +
+						(cover.borrowsReserve && selection.reserved !== null ? lovelaceOf(selection.reserved) : 0n);
 					throw createHttpError(
 						400,
 						`Carving that asset onto its own UTxO needs ${neededLovelace} lovelace across the inputs, and only ` +
-							`${available} is eligible in this head. Add funds, or withdraw without naming an amount to take whole UTxOs.`,
+							`${available} is eligible in this head. ` +
+							// A whole-UTxO withdrawal never takes the reserve, so it cannot reach a token on it.
+							(cover.borrowsReserve
+								? 'Add funds to the head so the collateral can stay behind.'
+								: 'Add funds, or withdraw without naming an amount to take whole UTxOs.'),
 					);
 				}
 				const split = await splitExactAmountInHead({
