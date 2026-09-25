@@ -49,6 +49,8 @@ export interface DecommitSelectionResult {
 	eligible: UTxO[];
 	/** Total lovelace across the eligible set. */
 	eligibleLovelace: bigint;
+	/** The UTxO held back as collateral, or null when none was. */
+	reserved: UTxO | null;
 	/** Why each excluded UTxO was held back, keyed by `txHash#index`. */
 	excluded: Map<string, string>;
 }
@@ -114,27 +116,24 @@ export function selectDecommittableUtxos(input: DecommitSelectionInput): Decommi
 		candidates.push(utxo);
 	}
 
+	let reserved: UTxO | null = null;
 	if (!input.drain) {
 		// Hold back the smallest UTxO that can serve as collateral on its own.
 		// Smallest, so the reserve costs the withdrawal as little as possible;
-		// whole, because that is how collateral is chosen.
+		// whole, because that is how collateral is chosen. A token that happens
+		// to sit on it is not stranded: a carve may borrow it (coverAssetForCarve).
 		const reserveIndex = candidates
 			.map((utxo, index) => ({ index, lovelace: lovelaceOf(utxo) }))
 			.filter((entry) => entry.lovelace >= IN_HEAD_COLLATERAL_RESERVE_LOVELACE)
 			.sort((left, right) => (left.lovelace === right.lovelace ? 0 : left.lovelace < right.lovelace ? -1 : 1))[0];
 
-		if (reserveIndex === undefined) {
-			// Nothing here could act as collateral even before the withdrawal, so
-			// there is nothing to protect. Say so rather than silently taking it all.
-			return {
-				eligible: candidates,
-				eligibleLovelace: candidates.reduce((total, utxo) => total + lovelaceOf(utxo), 0n),
-				excluded,
-			};
-		}
-		const [reserved] = candidates.splice(reserveIndex.index, 1);
-		if (reserved) {
-			excluded.set(utxoRef(reserved), 'kept back as collateral so this wallet can still spend escrows in the head');
+		// Nothing here could act as collateral even before the withdrawal, so
+		// there is nothing to protect and everything stays eligible.
+		if (reserveIndex !== undefined) {
+			reserved = candidates.splice(reserveIndex.index, 1)[0] ?? null;
+			if (reserved !== null) {
+				excluded.set(utxoRef(reserved), 'kept back as collateral so this wallet can still spend escrows in the head');
+			}
 		}
 	}
 
@@ -142,6 +141,7 @@ export function selectDecommittableUtxos(input: DecommitSelectionInput): Decommi
 		eligible: candidates,
 		eligibleLovelace: candidates.reduce((total, utxo) => total + lovelaceOf(utxo), 0n),
 		excluded,
+		reserved,
 	};
 }
 
@@ -206,6 +206,30 @@ export function coverAsset(utxos: readonly UTxO[], unit: string, amount: bigint)
 		total += amountOf(utxo, unit);
 	}
 	return total >= amount ? chosen : null;
+}
+
+/**
+ * Inputs for carving `amount` of `unit`, borrowing the collateral reserve only
+ * when the eligible UTxOs cannot reach it.
+ *
+ * The reserve is withheld so a withdrawal cannot take it out of the head. A
+ * carve does not: it is an in-head transaction whose change stays in the head.
+ * So when the token sits on the reserve, the reserve can be a carve input as long as the change keeps the reserve's lovelace. The caller
+ * enforces that when `borrowsReserve` is true.
+ */
+export function coverAssetForCarve(params: {
+	eligible: readonly UTxO[];
+	reserved: UTxO | null;
+	unit: string;
+	amount: bigint;
+}): { inputs: UTxO[]; borrowsReserve: boolean } | null {
+	const { eligible, reserved, unit, amount } = params;
+	const fromEligible = coverAsset(eligible, unit, amount);
+	if (fromEligible !== null) return { inputs: fromEligible, borrowsReserve: false };
+	if (reserved === null) return null;
+	const withReserve = coverAsset([...eligible, reserved], unit, amount);
+	if (withReserve === null) return null;
+	return { inputs: withReserve, borrowsReserve: withReserve.includes(reserved) };
 }
 
 /**
