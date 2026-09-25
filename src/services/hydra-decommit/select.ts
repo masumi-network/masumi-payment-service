@@ -74,18 +74,21 @@ export function amountOf(utxo: UTxO, unit: string): bigint {
 }
 
 /**
- * A UTxO that is only money, and nothing else.
+ * A UTxO whose value is money, not a script someone reads.
  *
- * Anything carrying a datum or a reference script is part of some arrangement —
- * an escrow, a reference input — and taking it out of the head would remove it
- * from whatever depends on it while leaving that thing looking intact. The
- * participant's own address should never hold one; refusing them anyway costs
- * nothing and is the difference between a bug and a broken head.
+ * A reference script at this address is something other transactions point at,
+ * and taking it out of the head would break them while leaving them looking
+ * intact.
+ *
+ * A datum is different, because this is the participant's own key address, and
+ * a datum locks nothing there. V2 escrow payouts carry one on purpose: every
+ * collection output is tagged with the escrow's output reference so the
+ * validator can tell payouts apart. Refusing datums therefore made every token
+ * earned in the head ineligible to withdraw, which is how a head holding 24.80
+ * USDM answered "Only 0 of that asset is eligible to withdraw".
  */
 function isPlainValue(utxo: UTxO): boolean {
 	return (
-		(utxo.output.dataHash === undefined || utxo.output.dataHash === null) &&
-		(utxo.output.plutusData === undefined || utxo.output.plutusData === null) &&
 		(utxo.output.scriptRef === undefined || utxo.output.scriptRef === null) &&
 		(utxo.output.scriptHash === undefined || utxo.output.scriptHash === null)
 	);
@@ -110,7 +113,7 @@ export function selectDecommittableUtxos(input: DecommitSelectionInput): Decommi
 			continue;
 		}
 		if (!isPlainValue(utxo)) {
-			excluded.set(ref, 'carries a datum or script, so it is not plain funds');
+			excluded.set(ref, 'carries a reference script, so other transactions may depend on it');
 			continue;
 		}
 		candidates.push(utxo);
