@@ -36899,6 +36899,101 @@
                 }
             }
         },
+        "/exchain/read-token": {
+            "post": {
+                "description": "Mints a read token for Exchain's embedded page for the guarded wallet configured on this node (MAS-596 demo). The node's Exchain token stays on the server; the returned token is read-only, scoped to that one wallet and valid for 15 minutes, and the returned url already carries it. Call again whenever the embedded page asks for a refresh. Answers 503 when EXCHAIN_WALLET_ID, EXCHAIN_COSIGN_API_KEY or NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL is not set.",
+                "summary": "Mint a read token for the embedded Exchain page. (admin access required)",
+                "tags": [
+                    "exchain"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "No fields; the wallet is fixed by node configuration",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {},
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Read token minted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "walletId": {
+                                                    "type": "string",
+                                                    "description": "Exchain id of the guarded wallet the embedded page shows"
+                                                },
+                                                "url": {
+                                                    "type": "string",
+                                                    "description": "The embedded page URL for that wallet, read token included"
+                                                },
+                                                "token": {
+                                                    "type": "string",
+                                                    "description": "Read-only, wallet-scoped Exchain token. Handed to the embedded page when it asks for a refresh"
+                                                },
+                                                "expiresAt": {
+                                                    "type": "string",
+                                                    "description": "When the token stops working (Exchain issues 15-minute tokens)"
+                                                }
+                                            },
+                                            "required": [
+                                                "walletId",
+                                                "url",
+                                                "token",
+                                                "expiresAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "walletId": "wal_01M366RSC4JSAS8DGKPQV9M2WZ",
+                                            "url": "https://cosign.exchain.network/protected/wal_01M366RSC4JSAS8DGKPQV9M2WZ?t=rt_example",
+                                            "token": "rt_example",
+                                            "expiresAt": "2026-09-23T04:57:40Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "502": {
+                        "description": "Exchain could not be reached or refused the request"
+                    },
+                    "503": {
+                        "description": "Exchain co-signing is not configured on this node"
+                    }
+                }
+            }
+        },
         "/tx-sync-quarantine": {
             "get": {
                 "description": "Lists transactions the chain sync could not apply. The checkpoint has already advanced past these, so anything still pending is chain state the database has NOT caught up with — some request is running on stale information until it is applied.",

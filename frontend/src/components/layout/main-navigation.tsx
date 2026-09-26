@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   Receipt,
+  ShieldCheck,
   Wallet,
   Wand2,
 } from 'lucide-react';
@@ -32,6 +33,8 @@ type MainNavigationOptions = {
   canAdmin: boolean;
   canPay: boolean;
   canShowHydraNav: boolean;
+  /** MAS-596 demo page; only when a co-sign dashboard URL was built in. */
+  canShowCosignDemo?: boolean;
   hasPaymentSources: boolean;
   isSetupMode: boolean;
   isX402Standalone: boolean;
@@ -195,6 +198,18 @@ function cardanoItems(options: MainNavigationOptions): NavItem[] {
             href: '/hydra-heads',
             name: 'Hydra',
             icon: GitBranch,
+            badge: null,
+            beta: true,
+            group: 0,
+          } satisfies NavItem,
+        ]
+      : []),
+    ...(options.canAdmin && options.canShowCosignDemo
+      ? [
+          {
+            href: '/cosign-demo',
+            name: 'Co-sign (Demo)',
+            icon: ShieldCheck,
             badge: null,
             beta: true,
             group: 0,

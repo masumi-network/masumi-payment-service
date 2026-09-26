@@ -44,6 +44,7 @@ import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { buildMainNavigation } from '@/components/layout/main-navigation';
+import { COSIGN_DASHBOARD_URL } from '@/lib/cosign-demo';
 import { railHomePath, setupPath } from '@/lib/x402-navigation';
 import { MASUMI_DOCUMENTATION_URL, MASUMI_PRESS_URL, MASUMI_SUPPORT_URL } from '@/lib/masumi-links';
 interface MainLayoutProps {
@@ -205,6 +206,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         canAdmin: capabilities.canAdmin,
         canPay: capabilities.canPay,
         canShowHydraNav,
+        canShowCosignDemo: COSIGN_DASHBOARD_URL != null,
         hasPaymentSources,
         isSetupMode,
         isX402Standalone,
