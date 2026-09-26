@@ -198,15 +198,15 @@ These settlement transactions ran on the same head before the counted series beg
 
 Every hash above is selected by the head token policy in `head-N/l1-anchors.json`; no L1 address query is involved.
 
-## Appendix B. Mainnet deposit supplement (2026-09-26)
+## Appendix B. Mainnet settlement supplement (2026-09-26)
 
-REPORTED: The operator supplied top-up API exports for the NMKR and Sokosumi nodes on 2026-09-26 and confirmed mainnet for both exports. Each record below reports `status: "Absorbed"`. This supplement extends the evidence beyond the original preprod scope stated above.
+REPORTED: The operator supplied top-up API exports for the NMKR and Sokosumi nodes on 2026-09-26 and confirmed mainnet for both exports. Each deposit below reports `status: "Absorbed"`. The operator also supplied a Sokosumi withdrawal export, with five records marked `Finalized`. This supplement extends the evidence beyond the original preprod scope stated above.
 
 VERIFIED: Filtering the supplied records for `status == "Absorbed"` and a non-null `depositTxHash` gives 14 unique deposit hashes. NMKR contributes 5 and Sokosumi contributes 9. Each deposit is counted once by `depositTxHash`.
 
-VERIFIED: The numbered settlement series in Appendix A contains 50 distinct preprod hashes. None matches the 14 hashes below. The combined count for that series and this supplement is **64 distinct listed transactions: 50 preprod settlements plus 14 mainnet deposits**. Other transactions mentioned elsewhere in this report are outside this count.
+VERIFIED: The numbered settlement series in Appendix A contains 50 distinct preprod hashes. This supplement lists 14 mainnet deposits and 5 mainnet withdrawals, each with a distinct L1 hash. Adding the withdrawals increases the earlier total of 64 to **69 distinct listed transactions: 50 preprod settlements plus 19 mainnet transactions**. Other transactions mentioned elsewhere in this report are outside this count.
 
-REPORTED evidence limit: The mainnet success classification comes from the supplied API records. These mainnet transactions were not independently checked on chain for this update. The timestamps are `createdAt`, not block confirmation times. The exports do not establish complete head history, consecutive settlement success, or fund conservation. No mainnet withdrawal records were supplied.
+REPORTED evidence limit: The mainnet success classification comes from the supplied API records. These mainnet transactions were not independently checked on chain for this update. Deposit timestamps are `createdAt`; withdrawal timestamps are `finalizedAt`. Both come from the API records. The exports do not establish complete head history, consecutive settlement success, or fund conservation.
 
 ### Successful mainnet deposits
 
@@ -231,14 +231,29 @@ REPORTED: All values in this table come from the supplied exports. Amounts retai
 
 REPORTED: Asset A1 is `c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d`, copied from `committedAssets`. A value of `0` means the record has an empty `committedAssets` object.
 
+### Successful Sokosumi mainnet withdrawals
+
+REPORTED: These five withdrawal records report `status: "Finalized"`, a non-null `l1TxId`, and a non-null `finalizedAt`. The table links each L1 payout hash on mainnet Cardanoscan. Amounts use `settledLovelace` and `settledAssets` in base units. Asset A1 is the same unit defined above.
+
+VERIFIED: The count uses five unique `l1TxId` values. The in-head `splitTxId` and `decommitTxId` are not counted as additional L1 withdrawals.
+
+| Node | Withdrawal record ID | Finalized at (UTC) | Settled lovelace | Settled asset A1 (base units) | L1 payout transaction |
+| --- | --- | --- | --- | --- | --- |
+| Sokosumi | `cmuibx6lp00cc1zsdh971j245` | 2026-09-26T11:52:37.351Z | 2000000 | 16100000 | [9b97dc1eecc92c37af158939e775244060c8bb46e5bbe14f233bd5e7133013fb](https://cardanoscan.io/transaction/9b97dc1eecc92c37af158939e775244060c8bb46e5bbe14f233bd5e7133013fb) |
+| Sokosumi | `cmui86aw300ca1zsd1p68rbrn` | 2026-09-26T10:07:25.139Z | 20000000 | 0 | [f962c3fd8ba9a75b9f4b7ab95082c722deec7986b89598ba14b43fe3505548d1](https://cardanoscan.io/transaction/f962c3fd8ba9a75b9f4b7ab95082c722deec7986b89598ba14b43fe3505548d1) |
+| Sokosumi | `cmui800yq00c91zsdwkzboswu` | 2026-09-26T10:02:39.036Z | 20000000 | 0 | [48445376836e12afa67792f61bd982efed2c42d084aa5c7aabce9f28592a97fc](https://cardanoscan.io/transaction/48445376836e12afa67792f61bd982efed2c42d084aa5c7aabce9f28592a97fc) |
+| Sokosumi | `cmui4nwdj00c11zsdwktve9qf` | 2026-09-26T08:29:02.568Z | 80000000 | 0 | [b198c40d994889761a3f7d9b0eb41cc3de28968a6a0e85f9a2c69c091f648648](https://cardanoscan.io/transaction/b198c40d994889761a3f7d9b0eb41cc3de28968a6a0e85f9a2c69c091f648648) |
+| Sokosumi | `cmuhda1rn002b1zsdrf8kb6pz` | 2026-09-25T19:42:34.443Z | 2000000 | 25000000 | [af39bdfaa4db37ae505cb8e94aa8c76a5b9946ae156c82cd6cd384fbc7ab54b0](https://cardanoscan.io/transaction/af39bdfaa4db37ae505cb8e94aa8c76a5b9946ae156c82cd6cd384fbc7ab54b0) |
+
 ### Successful transactions by network
 
-VERIFIED: Counts below cover only the numbered settlement series in Appendix A and the successful deposit records selected above.
+VERIFIED: Counts below cover only the numbered settlement series in Appendix A and the successful mainnet deposit and withdrawal records selected above.
 
 | Network | Evidence set | Successful records | Basis |
 | --- | --- | --- | --- |
 | Preprod | Settlement series | 50 | Existing Appendix A; its original chain verification is reported above |
 | Mainnet | NMKR deposits | 5 | Operator API export, `Absorbed` |
 | Mainnet | Sokosumi deposits | 9 | Operator API export, `Absorbed` |
-| Mainnet | Total deposits | **14** | Unique deposit hashes |
-| Both networks | Total across these sets | **64** | Unique transaction hashes |
+| Mainnet | Sokosumi withdrawals | 5 | Operator API export, `Finalized` |
+| Mainnet | Total deposits and withdrawals | **19** | Unique L1 transaction hashes |
+| Both networks | Total across these sets | **69** | Unique transaction hashes |
