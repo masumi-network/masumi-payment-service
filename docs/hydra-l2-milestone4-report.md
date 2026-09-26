@@ -277,14 +277,18 @@ VERIFIED: The count uses five unique `l1TxId` values. The in-head `splitTxId` an
 
 ### Successful transactions by network
 
-VERIFIED: Counts below cover only the numbered settlement series in Appendix A and the successful mainnet deposit and withdrawal records selected above.
+VERIFIED: The counts use the 50 numbered preprod transactions in Appendix A and the 40 mainnet transactions in Appendix B.
 
-| Network | Evidence set | Successful records | Basis |
-| --- | --- | --- | --- |
-| Preprod | Settlement series | 50 | Existing Appendix A; its original chain verification is reported above |
-| Mainnet | NMKR deposits | 5 | Operator API export, `Absorbed` |
-| Mainnet | Sokosumi deposits | 9 | Operator API export, `Absorbed` |
-| Mainnet | NMKR withdrawals | 21 | Operator API export, `Finalized` |
-| Mainnet | Sokosumi withdrawals | 5 | Operator API export, `Finalized` |
-| Mainnet | Total deposits and withdrawals | **40** | Unique L1 transaction hashes |
-| Both networks | Total across these sets | **90** | Unique transaction hashes |
+| Network | Node or series | Deposits | Withdrawals | Closes | Fanouts | Total |
+| --- | --- | --- | --- | --- | --- | --- |
+| Preprod | Numbered settlement series | 8 | 34 | 4 | 4 | 50 |
+| Mainnet | NMKR | 5 | 21 | 0 | 0 | 26 |
+| Mainnet | Sokosumi | 9 | 5 | 0 | 0 | 14 |
+| Mainnet | Subtotal | 14 | 26 | 0 | 0 | 40 |
+| Both networks | Total | 22 | 60 | 4 | 4 | **90** |
+
+VERIFIED: Each listed transaction has a distinct hash. Mainnet deposits use `depositTxHash`; mainnet withdrawals use the L1 payout `l1TxId`. The counts cover these evidence sets only. Other transactions mentioned elsewhere in the report are outside this count.
+
+REPORTED: Mainnet API exports mark the listed deposits as `Absorbed` and the listed withdrawals as `Finalized`. The operator confirmed mainnet. These mainnet statuses were not independently checked on chain for this update.
+
+Cardanoscan links for every counted transaction appear in [Appendix A](#appendix-a-the-50-settlement-transactions), [mainnet deposits](#successful-mainnet-deposits), [NMKR withdrawals](#successful-nmkr-mainnet-withdrawals), and [Sokosumi withdrawals](#successful-sokosumi-mainnet-withdrawals).
