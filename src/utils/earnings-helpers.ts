@@ -37,10 +37,13 @@ export async function fetchAndProcessInBatches<T extends { id: string }>(
 	fetchBatch: (cursorId: string | undefined) => Promise<T[]>,
 	batchSize: number,
 	processBatch: (rows: T[]) => void,
+	signal?: AbortSignal,
 ): Promise<void> {
 	let cursorId: string | undefined;
 	for (;;) {
+		signal?.throwIfAborted();
 		const batch = await fetchBatch(cursorId);
+		signal?.throwIfAborted();
 		if (batch.length === 0) break;
 		processBatch(batch);
 		if (batch.length < batchSize) break;

@@ -19,11 +19,15 @@ import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
-import { createEarningsRateLimitMiddleware, earningsConcurrencyMiddleware } from '@/utils/earnings-request-control';
+import {
+	createEarningsRateLimitMiddleware,
+	withEarningsConcurrency,
+	concurrencyResponseMiddleware,
+} from '@/utils/earnings-request-control';
 
 const paymentIncomeEndpointFactory = readAuthenticatedEndpointFactory
 	.addMiddleware(createEarningsRateLimitMiddleware())
-	.addMiddleware(earningsConcurrencyMiddleware);
+	.addMiddleware(concurrencyResponseMiddleware);
 
 export const postPaymentIncomeSchemaInput = z.object({
 	agentIdentifier: z
@@ -153,11 +157,16 @@ function getMonthNumberLocal(date: Date, timeZone: string): string {
 	return sp.format('{YYYY}-{MM}');
 }
 
+type PaymentIncomeHandlerArgs = {
+	input: z.infer<typeof postPaymentIncomeSchemaInput>;
+	ctx: AuthContext;
+};
+
 export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 	method: 'post',
 	input: postPaymentIncomeSchemaInput,
 	output: postPaymentIncomeSchemaOutput,
-	handler: async ({ input, ctx }: { input: z.infer<typeof postPaymentIncomeSchemaInput>; ctx: AuthContext }) => {
+	handler: withEarningsConcurrency(async ({ input, ctx }: PaymentIncomeHandlerArgs, signal) => {
 		const startTime = Date.now();
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
@@ -293,6 +302,7 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 						}
 					}
 				},
+				signal,
 			);
 
 			return {
@@ -328,5 +338,5 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 
 			throw error;
 		}
-	},
+	}),
 });

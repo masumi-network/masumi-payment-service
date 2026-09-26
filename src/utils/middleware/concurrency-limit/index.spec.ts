@@ -1,153 +1,120 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { EventEmitter } from 'node:events';
-import { testMiddleware } from 'express-zod-api';
-import { Network } from '@/generated/prisma/client';
-import type { AuthContext } from '@masumi/payment-core/auth-middleware';
-import { createConcurrencyLimitMiddleware } from './index';
+import { Middleware, testMiddleware } from 'express-zod-api';
+import createHttpError from 'http-errors';
+import { createConcurrencyLimit } from './index';
 
-const makeAuthContext = (overrides: Partial<AuthContext> = {}): AuthContext => ({
-	id: 'api-key-default',
-	canRead: true,
-	canPay: true,
-	canAdmin: false,
-	networkLimit: [Network.Mainnet, Network.Preprod],
-	caip2NetworkLimit: ['cardano:mainnet', 'cardano:preprod'],
-	usageLimited: false,
-	walletScopeIds: null,
-	x402WalletScopeIds: null,
-	...overrides,
-});
+const makeResponse = async () => {
+	const { responseMock } = await testMiddleware({
+		middleware: new Middleware({ handler: async () => ({}) }),
+		responseOptions: { eventEmitter: EventEmitter },
+	});
+	return responseMock;
+};
 
-describe('createConcurrencyLimitMiddleware', () => {
-	it('caps combined concurrency across different API keys and rejects with 503', async () => {
-		const middleware = createConcurrencyLimitMiddleware({ limit: 2, timeoutMs: 60_000 });
+const deferred = () => {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+};
 
-		const active = await Promise.all([
-			testMiddleware({
-				middleware,
-				ctx: makeAuthContext({ id: 'api-key-a' }),
-				requestProps: { method: 'POST', body: {} },
-				responseOptions: { eventEmitter: EventEmitter },
-			}),
-			testMiddleware({
-				middleware,
-				ctx: makeAuthContext({ id: 'api-key-b' }),
-				requestProps: { method: 'POST', body: {} },
-				responseOptions: { eventEmitter: EventEmitter },
-			}),
-		]);
-		expect(active.map(({ responseMock }) => responseMock.statusCode)).toEqual([200, 200]);
-
-		const blocked = await testMiddleware({
-			middleware,
-			ctx: makeAuthContext({ id: 'api-key-c' }),
-			requestProps: { method: 'POST', body: {} },
-			responseOptions: { eventEmitter: EventEmitter },
+// Invariant: a slot remains occupied until its handler settles, even after cancellation.
+describe('createConcurrencyLimit', () => {
+	it('shares capacity across handlers and admits new work after completion', async () => {
+		const withLimit = createConcurrencyLimit({ limit: 1, timeoutMs: 60_000 });
+		const gate = deferred();
+		const firstResponse = await makeResponse();
+		const secondResponse = await makeResponse();
+		const first = withLimit(async () => {
+			await gate.promise;
+			return 'first';
 		});
-		expect(blocked.responseMock.statusCode).toBe(503);
-		expect(blocked.responseMock.getHeader('retry-after')).toBe('1');
-
-		for (const { responseMock } of active) responseMock.emit('finish');
+		const secondHandler = jest.fn(async () => 'second');
+		const second = withLimit(secondHandler);
+		const running = first({ ctx: { concurrencyResponse: firstResponse } });
+		await expect(second({ ctx: { concurrencyResponse: secondResponse } })).rejects.toMatchObject({ statusCode: 503 });
+		expect(secondResponse.getHeader('retry-after')).toBe('1');
+		expect(secondHandler).not.toHaveBeenCalled();
+		gate.resolve();
+		await expect(running).resolves.toBe('first');
+		await expect(second({ ctx: { concurrencyResponse: secondResponse } })).resolves.toBe('second');
+		expect(firstResponse.listenerCount('close')).toBe(0);
 	});
 
-	it('releases a slot when the response finishes, admitting the next request', async () => {
-		const middleware = createConcurrencyLimitMiddleware({ limit: 1, timeoutMs: 60_000 });
-
-		const first = await testMiddleware({
-			middleware,
-			ctx: makeAuthContext(),
-			requestProps: { method: 'POST', body: {} },
-			responseOptions: { eventEmitter: EventEmitter },
+	it('holds the slot after disconnect until the handler settles', async () => {
+		const withLimit = createConcurrencyLimit({ limit: 1, timeoutMs: 60_000 });
+		const gate = deferred();
+		const response = await makeResponse();
+		let signal!: AbortSignal;
+		const handler = withLimit(async (_, currentSignal) => {
+			signal = currentSignal;
+			await gate.promise;
 		});
-		expect(first.responseMock.statusCode).toBe(200);
-
-		const blocked = await testMiddleware({
-			middleware,
-			ctx: makeAuthContext(),
-			requestProps: { method: 'POST', body: {} },
-			responseOptions: { eventEmitter: EventEmitter },
+		const running = handler({ ctx: { concurrencyResponse: response } });
+		response.emit('close');
+		expect(signal.aborted).toBe(true);
+		await expect(handler({ ctx: { concurrencyResponse: await makeResponse() } })).rejects.toMatchObject({
+			statusCode: 503,
 		});
-		expect(blocked.responseMock.statusCode).toBe(503);
-
-		first.responseMock.emit('finish');
-
-		const admitted = await testMiddleware({
-			middleware,
-			ctx: makeAuthContext(),
-			requestProps: { method: 'POST', body: {} },
-			responseOptions: { eventEmitter: EventEmitter },
-		});
-		expect(admitted.responseMock.statusCode).toBe(200);
-		admitted.responseMock.emit('finish');
+		gate.resolve();
+		await running;
+		await expect(handler({ ctx: { concurrencyResponse: await makeResponse() } })).resolves.toBeUndefined();
 	});
 
-	it('releases a slot when the response closes early', async () => {
-		const middleware = createConcurrencyLimitMiddleware({ limit: 1, timeoutMs: 60_000 });
-
-		const first = await testMiddleware({
-			middleware,
-			ctx: makeAuthContext(),
-			requestProps: { method: 'POST', body: {} },
-			responseOptions: { eventEmitter: EventEmitter },
-		});
-		first.responseMock.emit('close');
-
-		const admitted = await testMiddleware({
-			middleware,
-			ctx: makeAuthContext(),
-			requestProps: { method: 'POST', body: {} },
-			responseOptions: { eventEmitter: EventEmitter },
-		});
-		expect(admitted.responseMock.statusCode).toBe(200);
-		admitted.responseMock.emit('finish');
-	});
-
-	it('expires a slot that never finishes or closes, so a hung handler cannot leak it forever', async () => {
+	it('holds the slot after timeout while work is still in flight', async () => {
 		jest.useFakeTimers();
 		try {
-			const middleware = createConcurrencyLimitMiddleware({ limit: 1, timeoutMs: 60_000 });
-
-			const stalled = await testMiddleware({
-				middleware,
-				ctx: makeAuthContext(),
-				requestProps: { method: 'POST', body: {} },
-				responseOptions: { eventEmitter: EventEmitter },
+			const withLimit = createConcurrencyLimit({ limit: 1, timeoutMs: 60_000 });
+			const gate = deferred();
+			const response = await makeResponse();
+			const destroy = jest.spyOn(response, 'destroy');
+			let signal!: AbortSignal;
+			const handler = withLimit(async (_, currentSignal) => {
+				signal = currentSignal;
+				await gate.promise;
 			});
-			expect(stalled.responseMock.statusCode).toBe(200);
-
+			const running = handler({ ctx: { concurrencyResponse: response } });
 			await jest.advanceTimersByTimeAsync(60_000);
-
-			const admitted = await testMiddleware({
-				middleware,
-				ctx: makeAuthContext(),
-				requestProps: { method: 'POST', body: {} },
-				responseOptions: { eventEmitter: EventEmitter },
+			expect(destroy).toHaveBeenCalledTimes(1);
+			expect(signal.aborted).toBe(true);
+			await expect(handler({ ctx: { concurrencyResponse: await makeResponse() } })).rejects.toMatchObject({
+				statusCode: 503,
 			});
-			expect(admitted.responseMock.statusCode).toBe(200);
-			admitted.responseMock.emit('finish');
+			gate.resolve();
+			await running;
+			await expect(handler({ ctx: { concurrencyResponse: await makeResponse() } })).resolves.toBeUndefined();
+			expect(jest.getTimerCount()).toBe(0);
 		} finally {
 			jest.useRealTimers();
 		}
 	});
 
-	it('destroys the response when the timeout fires, so a stuck connection is not held open forever', async () => {
+	it('releases capacity and cleans up after handler errors', async () => {
 		jest.useFakeTimers();
 		try {
-			const middleware = createConcurrencyLimitMiddleware({ limit: 1, timeoutMs: 60_000 });
-
-			const stalled = await testMiddleware({
-				middleware,
-				ctx: makeAuthContext(),
-				requestProps: { method: 'POST', body: {} },
-				responseOptions: { eventEmitter: EventEmitter },
+			const withLimit = createConcurrencyLimit({ limit: 1, timeoutMs: 60_000 });
+			const response = await makeResponse();
+			const handler = withLimit(async () => {
+				throw createHttpError(500, 'Query failed');
 			});
-			const destroySpy = jest.spyOn(stalled.responseMock, 'destroy');
-
-			await jest.advanceTimersByTimeAsync(60_000);
-
-			expect(destroySpy).toHaveBeenCalledTimes(1);
+			await expect(handler({ ctx: { concurrencyResponse: response } })).rejects.toThrow('Query failed');
+			expect(response.listenerCount('close')).toBe(0);
+			expect(jest.getTimerCount()).toBe(0);
+			await expect(withLimit(async () => 'ok')({ ctx: { concurrencyResponse: response } })).resolves.toBe('ok');
 		} finally {
 			jest.useRealTimers();
 		}
+	});
+
+	it('does not start work when the response is already destroyed', async () => {
+		const response = await makeResponse();
+		Object.defineProperty(response, 'destroyed', { value: true });
+		const handler = jest.fn(async () => 'ok');
+		const run = createConcurrencyLimit({ limit: 1, timeoutMs: 60_000 })(handler);
+		await expect(run({ ctx: { concurrencyResponse: response } })).rejects.toMatchObject({ statusCode: 499 });
+		expect(handler).not.toHaveBeenCalled();
+		await expect(run({ ctx: { concurrencyResponse: await makeResponse() } })).resolves.toBe('ok');
 	});
 });

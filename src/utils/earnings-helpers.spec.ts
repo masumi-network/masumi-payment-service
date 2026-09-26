@@ -48,4 +48,29 @@ describe('fetchAndProcessInBatches', () => {
 		expect(fetchBatch).toHaveBeenCalledTimes(2);
 		expect(processBatch).toHaveBeenCalledTimes(1);
 	});
+	it('does not fetch when the request was already cancelled', async () => {
+		const controller = new AbortController();
+		controller.abort();
+		const fetchBatch = jest.fn(async () => [{ id: 'a' }]);
+		await expect(fetchAndProcessInBatches(fetchBatch, 1, () => {}, controller.signal)).rejects.toMatchObject({
+			name: 'AbortError',
+		});
+		expect(fetchBatch).not.toHaveBeenCalled();
+	});
+
+	it('stops before the next query when processing cancels the request', async () => {
+		const controller = new AbortController();
+		const fetchBatch = jest.fn(async () => [{ id: 'a' }]);
+		await expect(
+			fetchAndProcessInBatches(
+				fetchBatch,
+				1,
+				() => {
+					controller.abort();
+				},
+				controller.signal,
+			),
+		).rejects.toMatchObject({ name: 'AbortError' });
+		expect(fetchBatch).toHaveBeenCalledTimes(1);
+	});
 });

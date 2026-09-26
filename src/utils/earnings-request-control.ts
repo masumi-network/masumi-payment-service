@@ -1,5 +1,5 @@
 import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
-import { createConcurrencyLimitMiddleware } from '@/utils/middleware/concurrency-limit';
+import { createConcurrencyLimit } from '@/utils/middleware/concurrency-limit';
 
 /**
  * /payment/income and /purchase/spending both run unbounded, full-history
@@ -7,7 +7,7 @@ import { createConcurrencyLimitMiddleware } from '@/utils/middleware/concurrency
  * shared instance caps their COMBINED concurrency so hammering either
  * endpoint (or both at once) can't multiply into a heap-exhaustion crash.
  */
-export const earningsConcurrencyMiddleware = createConcurrencyLimitMiddleware({
+export const withEarningsConcurrency = createConcurrencyLimit({
 	limit: 4,
 	timeoutMs: 5 * 60_000,
 });
@@ -17,3 +17,5 @@ export const createEarningsRateLimitMiddleware = () =>
 		maxRequests: 30,
 		windowMs: 60_000,
 	});
+
+export { concurrencyResponseMiddleware } from '@/utils/middleware/concurrency-limit';
