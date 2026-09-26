@@ -188,7 +188,7 @@ export function PaymentsTab() {
 
       <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Direction

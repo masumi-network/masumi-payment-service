@@ -65,7 +65,7 @@ export function X402SourcesSection({
 
       <HorizontalScrollArea className="rounded-lg border">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th
                 scope="col"
@@ -125,7 +125,7 @@ export function X402SourcesSection({
                   <tr
                     key={chain.id}
                     className={cn(
-                      'group border-b last:border-b-0 hover:bg-muted/50',
+                      'group border-b last:border-b-0 hover:bg-row-hover',
                       isActive && 'bg-green-50 dark:bg-green-950/20',
                     )}
                   >

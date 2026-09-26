@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
 import {
+	coverAssetForCarve,
 	coverLovelace,
 	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
 	isAlreadyCarved,
@@ -91,23 +92,39 @@ describe('selectDecommittableUtxos', () => {
 		expect(result.excluded.get(`${'a'.repeat(64)}#0`)).toContain('deposit');
 	});
 
-	// Anything with a datum is part of an arrangement rather than plain funds.
-	// Taking it out would remove it from whatever depends on it while leaving
-	// that thing looking intact.
-	it('refuses UTxOs carrying a datum or a script', () => {
+	// A reference script is something other transactions point at; taking it out
+	// of the head would break them while leaving them looking intact.
+	it('refuses UTxOs carrying a reference script', () => {
 		const result = selectDecommittableUtxos({
-			utxos: [
-				utxo('a'.repeat(64), 20_000_000n, { dataHash: 'd'.repeat(64) }),
-				utxo('b'.repeat(64), 20_000_000n, { scriptRef: 'ref' }),
-				utxo('c'.repeat(64), 20_000_000n),
-			],
+			utxos: [utxo('b'.repeat(64), 20_000_000n, { scriptRef: 'ref' }), utxo('c'.repeat(64), 20_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
 			drain: true,
 		});
 
 		expect(result.eligible).toHaveLength(1);
 		expect(result.eligible[0]!.input.txHash).toBe('c'.repeat(64));
-		expect(result.excluded.get(`${'a'.repeat(64)}#0`)).toContain('datum');
+		expect(result.excluded.get(`${'b'.repeat(64)}#0`)).toContain('reference script');
+	});
+
+	// The reported refusal: V2 escrow payouts tag every collection output with an
+	// inline datum, so all USDM the wallet earned in the head read as ineligible.
+	// A datum at the participant's own key address locks nothing.
+	it('accepts escrow payouts that carry an inline datum tag', () => {
+		const payout = utxo('a'.repeat(64), 2_000_000n, {
+			amount: [
+				{ unit: 'lovelace', quantity: '2000000' },
+				{ unit: 'cc'.repeat(28) + '5553444d', quantity: '20000000' },
+			],
+			plutusData: 'd8799f5820' + 'ab'.repeat(32) + '00ff',
+		});
+		const result = selectDecommittableUtxos({
+			utxos: [payout, utxo('b'.repeat(64), 20_000_000n, { dataHash: 'd'.repeat(64) })],
+			pendingIncrementRefs: NO_PENDING,
+			drain: true,
+		});
+
+		expect(result.eligible).toHaveLength(2);
+		expect(result.excluded.size).toBe(0);
 	});
 
 	it('reports nothing eligible for an empty wallet', () => {
@@ -115,6 +132,16 @@ describe('selectDecommittableUtxos', () => {
 
 		expect(result.eligible).toHaveLength(0);
 		expect(result.eligibleLovelace).toBe(0n);
+	});
+
+	it('names the UTxO it held back', () => {
+		const result = selectDecommittableUtxos({
+			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 6_000_000n)],
+			pendingIncrementRefs: NO_PENDING,
+			drain: false,
+		});
+
+		expect(result.reserved?.input.txHash).toBe('b'.repeat(64));
 	});
 
 	it('names the reserve at the amount the collateral service actually needs', () => {
@@ -193,6 +220,50 @@ describe('isAlreadyCarved', () => {
 
 	it('refuses an empty set', () => {
 		expect(isAlreadyCarved([], TOKEN, 1000n, CARRIER)).toBe(false);
+	});
+});
+
+describe('coverAssetForCarve', () => {
+	const TOKEN = 'cc'.repeat(28) + '7444';
+
+	function tokenUtxo(txHash: string, lovelace: bigint, quantity: bigint): UTxO {
+		return utxo(txHash, lovelace, {
+			amount: [
+				{ unit: 'lovelace', quantity: lovelace.toString() },
+				{ unit: TOKEN, quantity: quantity.toString() },
+			],
+		});
+	}
+
+	it('covers from eligible UTxOs and leaves the reserve alone when it can', () => {
+		const holder = tokenUtxo('holder', 2_000_000n, 30n);
+		const reserve = tokenUtxo('reserve', 10_000_000n, 30n);
+
+		const result = coverAssetForCarve({ eligible: [holder], reserved: reserve, unit: TOKEN, amount: 20n });
+
+		expect(result).toEqual({ inputs: [holder], borrowsReserve: false });
+	});
+
+	// Every UTxO big enough to be collateral holds the token, so without this the
+	// token could only leave the head by draining it.
+	it('borrows the reserve when only it holds enough of the asset', () => {
+		const reserve = tokenUtxo('reserve', 10_000_000n, 20_000_000n);
+
+		const result = coverAssetForCarve({
+			eligible: [utxo('plain', 3_000_000n)],
+			reserved: reserve,
+			unit: TOKEN,
+			amount: 20_000_000n,
+		});
+
+		expect(result).toEqual({ inputs: [reserve], borrowsReserve: true });
+	});
+
+	it('returns null when even the reserve cannot reach the amount', () => {
+		const reserve = tokenUtxo('reserve', 10_000_000n, 5n);
+
+		expect(coverAssetForCarve({ eligible: [], reserved: reserve, unit: TOKEN, amount: 20n })).toBeNull();
+		expect(coverAssetForCarve({ eligible: [], reserved: null, unit: TOKEN, amount: 20n })).toBeNull();
 	});
 });
 

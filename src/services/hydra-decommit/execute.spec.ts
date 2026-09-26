@@ -328,7 +328,7 @@ describe('exact-amount withdrawals reuse an existing UTxO instead of re-splittin
 
 	/**
 	 * The bug this exists to prevent: the exact-match check compared lovelace
-	 * only. `selection.eligible` excludes datum/script UTxOs but not native
+	 * only. `selection.eligible` excludes reference scripts but not native
 	 * assets, and a decommit removes whole outputs — so an eligible UTxO that
 	 * happened to hold the exact lovelace requested, plus some unrelated native
 	 * asset (an agent's registry NFT, say), was decommitted whole and silently
@@ -381,5 +381,59 @@ describe('exact-amount withdrawals reuse an existing UTxO instead of re-splittin
 		// The final decommit spent the split's carved output, not the
 		// asset-carrying UTxO.
 		expect(mockTxIn).toHaveBeenCalledWith('f'.repeat(64), 0, expect.anything(), 'addr_test1_local');
+	});
+});
+
+/**
+ * The refusal this guards against: the wallet's only collateral-sized UTxO also
+ * held the token, the reserve withheld it, and the operator was told "Only 0 of
+ * that asset is eligible to withdraw" while the balance showed the token.
+ */
+describe('withdrawing a token that sits on the collateral reserve', () => {
+	const USDM = 'cc'.repeat(28) + '5553444d';
+
+	function reserveWithToken(lovelace: string) {
+		return {
+			input: { txHash: 'c'.repeat(64), outputIndex: 0 },
+			output: {
+				address: 'addr_test1_local',
+				amount: [
+					{ unit: 'lovelace', quantity: lovelace },
+					{ unit: USDM, quantity: '20000000' },
+				],
+			},
+		};
+	}
+
+	// The reported head: a pure-ADA UTxO beside a faucet UTxO carrying the token,
+	// which is the smaller one and so becomes the reserve.
+	it('carves the token off the reserve instead of refusing', async () => {
+		mockFetchAddressUTxOs.mockResolvedValue([
+			reserveWithToken('10000000'),
+			{
+				input: { txHash: 'd'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '50000000' }] },
+			},
+		]);
+
+		await expect(
+			executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 20_000_000n } }),
+		).rejects.not.toThrow('eligible to withdraw');
+
+		expect(mockTxIn).toHaveBeenCalledWith('c'.repeat(64), 0, expect.anything(), 'addr_test1_local');
+	});
+
+	// The carve's change is the only output left in the head, so it must still
+	// be big enough to serve as collateral once the token has gone.
+	it('refuses a carve that would leave no collateral-sized change', async () => {
+		mockFetchAddressUTxOs.mockResolvedValue([reserveWithToken('5000000')]);
+
+		await expect(
+			executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 20_000_000n } }),
+		).rejects.toThrow('needs 7000000 lovelace');
+		await expect(
+			executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 20_000_000n } }),
+		).rejects.toThrow('so the collateral can stay behind');
+		expect(mockTxIn).not.toHaveBeenCalled();
 	});
 });

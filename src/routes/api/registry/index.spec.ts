@@ -112,6 +112,7 @@ jest.unstable_mockModule('@prisma/client', async () => ({
 }));
 
 const { queryRegistryRequestGet, queryRegistryCountGet, registerAgentPost } = await import('./index');
+const { queryRegistryDiffGet } = await import('./diff');
 
 beforeEach(() => {
 	mockFindX402Networks.mockResolvedValue([{ caip2Id: 'eip155:8453' }, { caip2Id: 'eip155:84532' }]);
@@ -242,6 +243,57 @@ describe('registerAgentPost', () => {
 		mockCountRegistryRequests.mockResolvedValue(0);
 		mockValidateAssetsOnChain.mockResolvedValue({ valid: [], invalid: [] });
 	});
+
+	for (const [route, endpoint] of [
+		['list', queryRegistryRequestGet],
+		['diff', queryRegistryDiffGet],
+	] as const) {
+		it(`selects and returns source IDs through the authenticated registry ${route} pipeline`, async () => {
+			mockFindRegistryRequests.mockResolvedValue([
+				{
+					...buildRegistryRequestResponse(null),
+					SupportedPaymentSources: [
+						{
+							id: 'persisted-source-id',
+							position: 0,
+							chain: 'EVM',
+							network: 'eip155:84532',
+							paymentSourceType: null,
+							address: '0x1111111111111111111111111111111111111111',
+							scheme: 'Exact',
+							payTo: '0x1111111111111111111111111111111111111111',
+							resource: 'https://agent.example/run',
+							extra: null,
+							dynamicAsset: null,
+							dynamicDecimals: null,
+							fixedDecimals: 6,
+							Pricing: {
+								pricingType: PricingType.Fixed,
+								FixedPricing: { Amounts: [{ unit: '0x2222222222222222222222222222222222222222', amount: 100n }] },
+							},
+						},
+					],
+				},
+			]);
+			const { responseMock } = await testEndpoint({
+				endpoint,
+				requestProps: {
+					method: 'GET',
+					headers: { token: 'valid' },
+					query: { network: Network.Preprod, filterPaymentSourceType: PaymentSourceType.Web3CardanoV2 },
+				},
+			});
+			expect(responseMock.statusCode).toBe(200);
+			expect(responseMock._getJSONData().data.Assets[0].supportedPaymentSources[0].id).toBe('persisted-source-id');
+			expect(mockFindRegistryRequests).toHaveBeenCalledWith(
+				expect.objectContaining({
+					include: expect.objectContaining({
+						SupportedPaymentSources: expect.objectContaining({ select: expect.objectContaining({ id: true }) }),
+					}),
+				}),
+			);
+		});
+	}
 
 	it('scopes registry list queries to the current managed holder wallet', async () => {
 		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));

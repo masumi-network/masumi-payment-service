@@ -154,7 +154,7 @@ export function ChainsTab() {
 
       <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Chain
@@ -196,7 +196,7 @@ export function ChainsTab() {
               </tr>
             ) : (
               networks.map((network) => (
-                <tr key={network.id} className="group border-b last:border-0 hover:bg-muted/50">
+                <tr key={network.id} className="group border-b last:border-0 hover:bg-row-hover">
                   <td className="p-4">
                     <div className="font-medium">{network.displayName}</div>
                     <div className="text-xs text-muted-foreground font-mono">{network.caip2Id}</div>
