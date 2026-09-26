@@ -200,11 +200,11 @@ Every hash above is selected by the head token policy in `head-N/l1-anchors.json
 
 ## Appendix B. Mainnet settlement supplement (2026-09-26)
 
-REPORTED: The operator supplied top-up API exports for the NMKR and Sokosumi nodes on 2026-09-26 and confirmed mainnet for both exports. Each deposit below reports `status: "Absorbed"`. The operator also supplied withdrawal exports with 21 NMKR records and 5 Sokosumi records marked `Finalized`. This supplement extends the evidence beyond the original preprod scope stated above.
+REPORTED: The operator supplied top-up API exports for the NMKR and Sokosumi nodes on 2026-09-26 and confirmed mainnet for both exports. Each deposit below reports `status: "Absorbed"`. The operator also supplied initial withdrawal exports with 21 NMKR records and 5 Sokosumi records marked `Finalized`. This supplement extends the evidence beyond the original preprod scope stated above.
 
 VERIFIED: Filtering the supplied records for `status == "Absorbed"` and a non-null `depositTxHash` gives 14 unique deposit hashes. NMKR contributes 5 and Sokosumi contributes 9. Each deposit is counted once by `depositTxHash`.
 
-VERIFIED: The numbered settlement series in Appendix A contains 50 distinct preprod hashes. This supplement lists 14 mainnet deposits and 26 mainnet withdrawals, each with a distinct L1 hash. Adding the NMKR withdrawals increases the earlier total of 69 to **90 distinct listed transactions: 50 preprod settlements plus 40 mainnet transactions**. Other transactions mentioned elsewhere in this report are outside this count.
+VERIFIED: The numbered settlement series in Appendix A contains 50 distinct preprod hashes. This supplement lists 14 mainnet deposits and 35 mainnet withdrawals, each with a distinct L1 hash. Adding nine new NMKR withdrawals increases the earlier total of 90 to **99 distinct listed transactions: 50 preprod settlements plus 49 mainnet transactions**. Other transactions mentioned elsewhere in this report are outside this count.
 
 REPORTED evidence limit: The mainnet success classification comes from the supplied API records. These mainnet transactions were not independently checked on chain for this update. Deposit timestamps are `createdAt`; withdrawal timestamps are `finalizedAt`. Both come from the API records. The exports do not establish complete head history, consecutive settlement success, or fund conservation.
 
@@ -233,12 +233,25 @@ REPORTED: Asset A1 is `c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0
 
 ### Successful NMKR mainnet withdrawals
 
-REPORTED: These 21 withdrawal records report `status: "Finalized"`, a non-null `l1TxId`, and a non-null `finalizedAt`. The table links each L1 payout hash on mainnet Cardanoscan. Amounts use `settledLovelace` and `settledAssets` in base units. Asset A1 is the same unit defined above.
+REPORTED: These 30 withdrawal records report `status: "Finalized"`, a non-null `l1TxId`, and a non-null `finalizedAt`. The table links each L1 payout hash on mainnet Cardanoscan. Amounts use `settledLovelace` and `settledAssets` in base units. Asset A1 is the same unit defined above.
 
-VERIFIED: The count uses 21 unique `l1TxId` values. Each L1 payout is counted once.
+VERIFIED: The count uses 30 unique `l1TxId` values. Each L1 payout is counted once.
+
+VERIFIED update: The additional withdrawal export contains 14 unique successful L1 payout hashes. Five already appear in the NMKR table. Deduplication by `l1TxId` adds nine records and increases the combined count from 90 to 99.
+
+INFERRED: The latest export belongs to NMKR on mainnet. Five records exactly match the earlier NMKR export, and every record has the same destination address.
 
 | Node | Withdrawal record ID | Finalized at (UTC) | Settled lovelace | Settled asset A1 (base units) | L1 payout transaction |
 | --- | --- | --- | --- | --- | --- |
+| NMKR | `cmuiedvvu006l1zucil2ydgy0` | 2026-09-26T13:01:24.017Z | 5000000 | 0 | [00ef348678c9545aadafd5ebc22eab827f6cfeee72490076e9de8eb11516a849](https://cardanoscan.io/transaction/00ef348678c9545aadafd5ebc22eab827f6cfeee72490076e9de8eb11516a849) |
+| NMKR | `cmuiec2vc006k1zucywl0xlz4` | 2026-09-26T13:00:22.796Z | 5000000 | 0 | [1c7df9a1f335a0eedfb40b932c318ceaff731c01924a4ddc97d6624ef16474cd](https://cardanoscan.io/transaction/1c7df9a1f335a0eedfb40b932c318ceaff731c01924a4ddc97d6624ef16474cd) |
+| NMKR | `cmuieabu7006j1zucpiqo36pf` | 2026-09-26T12:59:01.808Z | 5000000 | 0 | [60b431ddfa350cc28ae664eecdd538050bfed10ac9679716e451116ab9b88069](https://cardanoscan.io/transaction/60b431ddfa350cc28ae664eecdd538050bfed10ac9679716e451116ab9b88069) |
+| NMKR | `cmuie8135006i1zucks56z4xj` | 2026-09-26T12:57:20.579Z | 5000000 | 0 | [70474c2c7f7ce4e79a7605492460b8b658eb3cc70e56fc9dc32bf32bce2d3d73](https://cardanoscan.io/transaction/70474c2c7f7ce4e79a7605492460b8b658eb3cc70e56fc9dc32bf32bce2d3d73) |
+| NMKR | `cmuie67np006h1zucos2ivtss` | 2026-09-26T12:54:58.994Z | 3000000 | 0 | [3c52df522d339e7d6e1f3c9c41ca539e49f2be59a5d68adf9e34b5165b24d122](https://cardanoscan.io/transaction/3c52df522d339e7d6e1f3c9c41ca539e49f2be59a5d68adf9e34b5165b24d122) |
+| NMKR | `cmuie4oec006g1zuc6fazzcr4` | 2026-09-26T12:54:18.233Z | 7000000 | 0 | [f87d056701df0932cccc62fa765a74faeedefba991afbdcc50da5027bb5867d2](https://cardanoscan.io/transaction/f87d056701df0932cccc62fa765a74faeedefba991afbdcc50da5027bb5867d2) |
+| NMKR | `cmuie2dc5006f1zuc0fu4s9yj` | 2026-09-26T12:52:57.285Z | 4000000 | 0 | [666c3a0488d97eabe744a9fe699028411328d827cce0a6532c6a6f2c8c8fd5e3](https://cardanoscan.io/transaction/666c3a0488d97eabe744a9fe699028411328d827cce0a6532c6a6f2c8c8fd5e3) |
+| NMKR | `cmuie0i45006e1zuc90kedpwl` | 2026-09-26T12:51:16.053Z | 1170000 | 0 | [33255075f1bd13a8f2f75e7b5389a65a12522401079e10b47ba090507e42b9d1](https://cardanoscan.io/transaction/33255075f1bd13a8f2f75e7b5389a65a12522401079e10b47ba090507e42b9d1) |
+| NMKR | `cmuidw9pc006d1zuc8on2x6kt` | 2026-09-26T12:47:33.590Z | 1000000 | 0 | [7d35131380617c6290489d1aab9c2764166672d0991cee772a2a7315d485ca33](https://cardanoscan.io/transaction/7d35131380617c6290489d1aab9c2764166672d0991cee772a2a7315d485ca33) |
 | NMKR | `cmuid9qct006c1zuc8v9n75dq` | 2026-09-26T12:32:00.684Z | 5000000 | 0 | [9d9c59b9790a3941917f4f952538c4700232346f03f08beb2af8a593d1c49f2f](https://cardanoscan.io/transaction/9d9c59b9790a3941917f4f952538c4700232346f03f08beb2af8a593d1c49f2f) |
 | NMKR | `cmuices5z00631zucoxer5xp2` | 2026-09-26T12:07:23.632Z | 5000000 | 0 | [e54a098e7a920be3948cc7287c7e403ff68b12dac156646e96c34c8589dbe118](https://cardanoscan.io/transaction/e54a098e7a920be3948cc7287c7e403ff68b12dac156646e96c34c8589dbe118) |
 | NMKR | `cmuic99n000621zucyo8y0vvl` | 2026-09-26T12:02:40.617Z | 5000000 | 0 | [56c9e3b304936bfe1f52a4589bc15030074e6e0be15b102fa4d303d8ab0a2cfc](https://cardanoscan.io/transaction/56c9e3b304936bfe1f52a4589bc15030074e6e0be15b102fa4d303d8ab0a2cfc) |
@@ -277,15 +290,15 @@ VERIFIED: The count uses five unique `l1TxId` values. The in-head `splitTxId` an
 
 ### Successful transactions by network
 
-VERIFIED: The counts use the 50 numbered preprod transactions in Appendix A and the 40 mainnet transactions in Appendix B.
+VERIFIED: The counts use the 50 numbered preprod transactions in Appendix A and the 49 mainnet transactions in Appendix B.
 
 | Network | Node or series | Deposits | Withdrawals | Closes | Fanouts | Total |
 | --- | --- | --- | --- | --- | --- | --- |
 | Preprod | Numbered settlement series | 8 | 34 | 4 | 4 | 50 |
-| Mainnet | NMKR | 5 | 21 | 0 | 0 | 26 |
+| Mainnet | NMKR | 5 | 30 | 0 | 0 | 35 |
 | Mainnet | Sokosumi | 9 | 5 | 0 | 0 | 14 |
-| Mainnet | Subtotal | 14 | 26 | 0 | 0 | 40 |
-| Both networks | Total | 22 | 60 | 4 | 4 | **90** |
+| Mainnet | Subtotal | 14 | 35 | 0 | 0 | 49 |
+| Both networks | Total | 22 | 69 | 4 | 4 | **99** |
 
 VERIFIED: Each listed transaction has a distinct hash. Mainnet deposits use `depositTxHash`; mainnet withdrawals use the L1 payout `l1TxId`. The counts cover these evidence sets only. Other transactions mentioned elsewhere in the report are outside this count.
 
