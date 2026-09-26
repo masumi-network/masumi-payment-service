@@ -180,6 +180,7 @@ export const paymentTransitions: TransitionTable<PaymentAction> = {
 			errorNote: ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
 		},
 		byState: {
+			[OnChainState.ResultSubmitted]: { action: PaymentAction.WithdrawRequested },
 			[OnChainState.Disputed]: { action: PaymentAction.WithdrawRequested },
 			[OnChainState.FundsLocked]: {
 				action: PaymentAction.WaitingForManualAction,
@@ -203,6 +204,7 @@ export const paymentTransitions: TransitionTable<PaymentAction> = {
 			errorNote: ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
 		},
 		byState: {
+			[OnChainState.ResultSubmitted]: { action: PaymentAction.WithdrawRequested },
 			[OnChainState.Disputed]: { action: PaymentAction.WithdrawRequested },
 			[OnChainState.FundsLocked]: {
 				action: PaymentAction.WaitingForManualAction,

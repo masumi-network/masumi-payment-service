@@ -1075,6 +1075,62 @@ describe('applyDatumStateToLocalRequests', () => {
 		expect(mockPaymentUpdate).not.toHaveBeenCalled();
 	});
 
+	it('keeps a collection retry queued when replay restores the accepted result transaction', async () => {
+		mockPaymentFindUnique.mockResolvedValue({
+			...makePaymentRequest(),
+			onChainState: OnChainState.ResultSubmitted,
+			resultHash: 'result-hash',
+			layer: TransactionLayer.L2,
+			currentHydraUtxoTxHash: 'result-tx',
+			currentHydraUtxoOutputIndex: 0,
+			currentHydraUtxoValue: [{ unit: 'lovelace', quantity: '10000000' }],
+			currentTransactionId: 'older-lock-transaction',
+			CurrentTransaction: {
+				id: 'older-lock-transaction',
+				txHash: 'lock-tx',
+				status: TransactionStatus.Confirmed,
+				layer: TransactionLayer.L2,
+				hydraHeadId: 'head-1',
+				BlocksWallet: null,
+			},
+			BuyerWallet: { walletVkey: 'buyer-vkey', walletAddress: 'addr-buyer' },
+			NextAction: { requestedAction: PaymentAction.WithdrawRequested },
+		});
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'result-tx',
+			paymentSourceId: 'source-1',
+			decoded: {
+				...decodedInitialLock,
+				state: SmartContractState.ResultSubmitted,
+				resultHash: 'result-hash',
+			},
+			newOnChainState: OnChainState.ResultSubmitted,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'result-tx', outputIndex: 0 },
+			transactionEvidence: makeEvidence({ txHash: 'result-tx' }),
+			confirmationTimeMs: null,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('applied');
+		expect(mockPaymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					onChainState: OnChainState.ResultSubmitted,
+					NextAction: {
+						create: {
+							requestedAction: PaymentAction.WithdrawRequested,
+							errorNote: null,
+							errorType: null,
+						},
+					},
+				}),
+			}),
+		);
+	});
+
 	it('rejects a state mutation that reuses the exact same immutable output reference', async () => {
 		mockPaymentFindUnique.mockResolvedValue({
 			...makePaymentRequest(),
