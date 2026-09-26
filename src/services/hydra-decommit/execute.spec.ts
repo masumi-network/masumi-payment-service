@@ -9,7 +9,10 @@ const mockDecommitFindFirst = jest.fn() as AnyMock;
 const mockHeadFindUnique = jest.fn() as AnyMock;
 const mockHeadUpdate = jest.fn() as AnyMock;
 const mockDecommitCall = jest.fn() as AnyMock;
+const mockNewTx = jest.fn() as AnyMock;
+const mockFetchPendingDecommitRefs = jest.fn() as AnyMock;
 const mockFetchAddressUTxOs = jest.fn() as AnyMock;
+/** Tracks which inputs the in-head transaction builder was given. */
 const mockTxIn = jest.fn() as AnyMock;
 /**
  * The head's own ledger parameters, which every in-head build must use.
@@ -18,6 +21,10 @@ const mockTxIn = jest.fn() as AnyMock;
  * defaults are not a safe stand-in, and using them burned ADA inside the head.
  */
 const mockFetchProtocolParameters = jest.fn() as AnyMock;
+/** Confirms the in-head split transaction, so a fallback split can complete. */
+const mockIsTxConfirmed = jest.fn() as AnyMock;
+/** Returns the split's carved output, so the decommit can spend it. */
+const mockFetchUTxOs = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -63,10 +70,19 @@ jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({
-		getHead: () => ({ decommit: mockDecommitCall, mainNode: { pendingIncrementUtxoRefs: new Set<string>() } }),
+		getHead: () => ({
+			decommit: mockDecommitCall,
+			newTx: mockNewTx,
+			mainNode: {
+				pendingIncrementUtxoRefs: new Set<string>(),
+				fetchPendingDecommitRefs: mockFetchPendingDecommitRefs,
+				isTxConfirmed: mockIsTxConfirmed,
+			},
+		}),
 		getProvider: () => ({
 			fetchAddressUTxOs: mockFetchAddressUTxOs,
 			fetchProtocolParameters: mockFetchProtocolParameters,
+			fetchUTxOs: mockFetchUTxOs,
 		}),
 	}),
 }));
@@ -139,6 +155,7 @@ beforeEach(() => {
 	mockDecommitUpdate.mockResolvedValue({});
 	mockDecommitUpdateMany.mockResolvedValue({ count: 1 });
 	mockHeadUpdate.mockResolvedValue({});
+	mockFetchPendingDecommitRefs.mockResolvedValue([]);
 	mockFetchProtocolParameters.mockResolvedValue({
 		minFeeA: 0,
 		minFeeB: 0,
@@ -158,6 +175,8 @@ beforeEach(() => {
 			output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '6000000' }] },
 		},
 	]);
+	mockIsTxConfirmed.mockReturnValue(true);
+	mockFetchUTxOs.mockResolvedValue([]);
 });
 
 describe('executeHydraDecommit request outcomes', () => {
@@ -210,6 +229,26 @@ describe('executeHydraDecommit request outcomes', () => {
 		// handler either, which only owns rows still in Preparing.
 		expect(mockDecommitUpdateMany.mock.calls.filter((call) => call[0]?.data?.status === 'Failed')).toHaveLength(0);
 	});
+
+	// Hydra produces no new snapshot while a previous decommit's utxoToDecommit
+	// is still non-empty (the node hasn't yet observed its DecrementTx), so
+	// starting another in-head split during that window gets a split that is
+	// TxValid but can never be snapshot-confirmed. Refusing up front is what the
+	// deposit side already does for the mirror case ("still being folded").
+	it('refuses a withdrawal while the head still has a pending decommit', async () => {
+		mockFetchPendingDecommitRefs.mockResolvedValue(['abc123'.repeat(10) + 'de#0']);
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('still being settled on L1'),
+		});
+
+		expect(mockDecommitUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
+		);
+		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+	});
 });
 
 /**
@@ -239,6 +278,109 @@ describe('in-head transactions use the head’s own ledger parameters', () => {
 		await executeHydraDecommit({ headId: 'head-1' }).catch(() => undefined);
 
 		expect(mockFetchProtocolParameters).toHaveBeenCalled();
+	});
+});
+
+/**
+ * The bug this exists to prevent: refusing an exact-amount withdrawal (any
+ * refusal path — undersized, node rejection, timeout) left behind the exact
+ * in-head UTxO its split had just carved. The next attempt at the same amount
+ * ignored that UTxO and carved a fresh one from a bigger UTxO instead, because
+ * `coverLovelace` picks largest-first and never looks for an exact match —
+ * three stray 3.5 ADA UTxOs accumulated on one head this way in one day.
+ */
+describe('exact-amount withdrawals reuse an existing UTxO instead of re-splitting', () => {
+	it('decommits an eligible UTxO of exactly the requested lovelace without splitting', async () => {
+		// `jest.clearAllMocks()` in `beforeEach` clears call history but not a
+		// mock's last configured implementation, and every earlier test in this
+		// file that touches `mockDecommitCall` sets it to reject — this is the
+		// one test that needs the node to actually accept the request.
+		mockDecommitCall.mockResolvedValue(undefined);
+		mockFetchAddressUTxOs.mockResolvedValue([
+			// Held back as the collateral reserve: the smallest UTxO able to serve
+			// as collateral on its own, so it never reaches `selection.eligible`.
+			{
+				input: { txHash: 'c'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '5000000' }] },
+			},
+			{
+				input: { txHash: 'd'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '40000000' }] },
+			},
+			// Exactly the requested amount — this is the one that should be spent
+			// whole, not carved out of the 40 ADA UTxO above.
+			{
+				input: { txHash: 'e'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '3500000' }] },
+			},
+		]);
+
+		await executeHydraDecommit({ headId: 'head-1', lovelace: 3_500_000n });
+
+		// No in-head split transaction: the request was answered from an existing
+		// UTxO, not by carving one down from the 40 ADA UTxO.
+		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(mockDecommitCall).toHaveBeenCalledTimes(1);
+		// The decommit transaction spent exactly the 3.5 ADA UTxO, and nothing else.
+		expect(mockTxIn).toHaveBeenCalledTimes(1);
+		expect(mockTxIn).toHaveBeenCalledWith('e'.repeat(64), 0, expect.anything(), 'addr_test1_local');
+	});
+
+	/**
+	 * The bug this exists to prevent: the exact-match check compared lovelace
+	 * only. `selection.eligible` excludes reference scripts but not native
+	 * assets, and a decommit removes whole outputs — so an eligible UTxO that
+	 * happened to hold the exact lovelace requested, plus some unrelated native
+	 * asset (an agent's registry NFT, say), was decommitted whole and silently
+	 * carried that asset out of the head.
+	 */
+	it('does not treat a UTxO carrying a native asset as the exact match, even at the exact lovelace', async () => {
+		mockDecommitCall.mockResolvedValue(undefined);
+		mockFetchAddressUTxOs.mockResolvedValue([
+			// Held back as the collateral reserve.
+			{
+				input: { txHash: 'c'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '5000000' }] },
+			},
+			// Pure ADA, large enough to cover the request by splitting — this is
+			// what the fallback split must spend instead.
+			{
+				input: { txHash: 'd'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '40000000' }] },
+			},
+			// Exactly the requested lovelace, but not pure ADA: this must be
+			// excluded from the exact-match short-circuit.
+			{
+				input: { txHash: 'e'.repeat(64), outputIndex: 0 },
+				output: {
+					address: 'addr_test1_local',
+					amount: [
+						{ unit: 'lovelace', quantity: '3500000' },
+						{ unit: 'a'.repeat(56) + '746f6b656e', quantity: '1' },
+					],
+				},
+			},
+		]);
+		// The carved output the fallback split produces.
+		mockFetchUTxOs.mockResolvedValue([
+			{
+				input: { txHash: 'f'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '3500000' }] },
+			},
+		]);
+
+		await executeHydraDecommit({ headId: 'head-1', lovelace: 3_500_000n });
+
+		// The exact match was refused, so the flow fell back to a real split.
+		expect(mockNewTx).toHaveBeenCalledTimes(1);
+		expect(mockDecommitCall).toHaveBeenCalledTimes(1);
+		// The split spent the pure 40 ADA UTxO, never the asset-carrying one that
+		// also matched on lovelace.
+		expect(mockTxIn).toHaveBeenCalledWith('d'.repeat(64), 0, expect.anything(), 'addr_test1_local');
+		expect(mockTxIn).not.toHaveBeenCalledWith('e'.repeat(64), expect.anything(), expect.anything(), expect.anything());
+		// The final decommit spent the split's carved output, not the
+		// asset-carrying UTxO.
+		expect(mockTxIn).toHaveBeenCalledWith('f'.repeat(64), 0, expect.anything(), 'addr_test1_local');
 	});
 });
 

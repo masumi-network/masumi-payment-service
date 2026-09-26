@@ -8,7 +8,7 @@ import { Protocol, UTxO, castProtocol } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { HydraProtocolError } from './errors';
-import { extractHeadOutputTxId } from './head-output-tx';
+import { extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
 import { protocolErrorToString } from './node-frames';
 import { type HydraRawCostModels } from './node-api';
 import { reportParamsDrift } from './params-drift';
@@ -124,6 +124,26 @@ export async function fetchHydraHeadOutputTxId(
 			error: protocolErrorToString(error),
 		});
 		return undefined;
+	}
+}
+
+/**
+ * Output references the head's confirmed snapshot is still waiting to
+ * decommit onto L1. See `extractPendingDecommitRefs`.
+ *
+ * Returns `[]` on any transport error: this is a pre-flight guard evaluated
+ * before every withdrawal, not the system of record on whether one is safe —
+ * a head that cannot be asked right now must not be allowed to jam every
+ * withdrawal.
+ */
+export async function fetchHydraPendingDecommitRefs(transport: HydraQueryTransport): Promise<string[]> {
+	try {
+		return extractPendingDecommitRefs(await transport.get('/head'));
+	} catch (error) {
+		logger.warn('[HydraNode] Could not read the head state for a pending decommit', {
+			error: protocolErrorToString(error),
+		});
+		return [];
 	}
 }
 
