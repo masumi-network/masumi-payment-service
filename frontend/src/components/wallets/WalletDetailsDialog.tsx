@@ -93,6 +93,7 @@ export function WalletDetailsDialog({
   );
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isDownloadConfirmOpen, setIsDownloadConfirmOpen] = useState(false);
   const [swapTransactions, setSwapTransactions] = useState<SwapTx[]>([]);
   const [swapTxLoading, setSwapTxLoading] = useState(false);
   const [swapTxCursor, setSwapTxCursor] = useState<string | undefined>(undefined);
@@ -341,6 +342,7 @@ export function WalletDetailsDialog({
       // collection-address state reset inside their hooks (fetchTokenBalances
       // resets at call start; each resetForNewWallet clears its own drafts).
       setExportedMnemonic(null);
+      setIsDownloadConfirmOpen(false);
       collectionAddressEditor.resetForNewWallet();
       setSwapTransactions([]);
       setSwapTxCursor(undefined);
@@ -401,6 +403,7 @@ export function WalletDetailsDialog({
   };
 
   const handleDownload = () => {
+    setIsDownloadConfirmOpen(false);
     if (!wallet || !exportedMnemonic) return;
     const data = {
       walletAddress: wallet.walletAddress,
@@ -423,6 +426,7 @@ export function WalletDetailsDialog({
     // Drop the plaintext seed phrase immediately on close so it never
     // lingers in state or paints for the next wallet's dialog.
     setExportedMnemonic(null);
+    setIsDownloadConfirmOpen(false);
     setSelectedWalletForSwap(null);
     setSelectedWalletForTopup(null);
     rules.setPendingDeleteRule(null);
@@ -472,7 +476,10 @@ export function WalletDetailsDialog({
           size="md"
           variant={isChild ? 'slide-from-right' : 'default'}
           isPushedBack={
-            !!selectedWalletForTopup || !!selectedWalletForSwap || !!rules.pendingDeleteRule
+            !!selectedWalletForTopup ||
+            !!selectedWalletForSwap ||
+            !!rules.pendingDeleteRule ||
+            isDownloadConfirmOpen
           }
           hideOverlay={isChild}
           onBack={isChild ? handleDialogClose : undefined}
@@ -640,7 +647,7 @@ export function WalletDetailsDialog({
                 exportedMnemonic={exportedMnemonic}
                 onClose={() => setExportedMnemonic(null)}
                 onCopyMnemonic={handleCopyMnemonic}
-                onDownload={handleDownload}
+                onDownload={() => setIsDownloadConfirmOpen(true)}
               />
             )}
 
@@ -680,6 +687,16 @@ export function WalletDetailsDialog({
         isLoading={
           rules.pendingDeleteRule != null && rules.mutatingRuleIds.has(rules.pendingDeleteRule.id)
         }
+      />
+
+      <ConfirmDialog
+        open={isDownloadConfirmOpen}
+        onClose={() => setIsDownloadConfirmOpen(false)}
+        elevatedGrandchildStack={elevatedChildStack}
+        title="Download seed phrase file?"
+        description="This saves the wallet's seed phrase as an unencrypted .json file. Anyone with the file can spend this wallet's funds. Continue only if you will store it securely."
+        confirmLabel="Download"
+        onConfirm={handleDownload}
       />
 
       <SwapDialog
