@@ -1,5 +1,36 @@
 # Masumi on Hydra L2: Milestone 4 report (preprod)
 
+## Catalyst milestone evidence update (2026-09-26)
+
+VERIFIED: The evidence sets below contain **100 unique successful transaction records: 50 preprod and 50 mainnet**. Each record has a Cardanoscan link for its network. The totals count each transaction hash once.
+
+| Network | Node or series | Deposits | Withdrawals | Closes | Fanouts | Total |
+| --- | --- | --- | --- | --- | --- | --- |
+| Preprod | Numbered settlement series | 8 | 34 | 4 | 4 | 50 |
+| Mainnet | NMKR | 5 | 31 | 0 | 0 | 36 |
+| Mainnet | Sokosumi | 9 | 5 | 0 | 0 | 14 |
+| Mainnet | Subtotal | 14 | 36 | 0 | 0 | 50 |
+| Both networks | Total | 22 | 70 | 4 | 4 | **100** |
+
+### Transaction evidence index
+
+| Evidence set | Records | Detailed records and Cardanoscan links |
+| --- | --- | --- |
+| Preprod settlements | 50 | [Appendix A](#appendix-a-the-50-settlement-transactions) |
+| Mainnet deposits: NMKR 5, Sokosumi 9 | 14 | [Deposit records](#successful-mainnet-deposits) |
+| Mainnet NMKR withdrawals | 31 | [NMKR withdrawal records](#successful-nmkr-mainnet-withdrawals) |
+| Mainnet Sokosumi withdrawals | 5 | [Sokosumi withdrawal records](#successful-sokosumi-mainnet-withdrawals) |
+
+VERIFIED: Mainnet deposits are counted by `depositTxHash`. Withdrawals are counted by the L1 payout `l1TxId`. Duplicate records in successive exports contribute one transaction. Split transactions and in-head decommit hashes do not increase these totals.
+
+REPORTED: The original preprod report records chain verification and fund conservation for its numbered settlement series. Mainnet API exports report `Absorbed` deposits and `Finalized` withdrawals. Appendix B states the source and node attribution for those records. Mainnet statuses were not independently checked on chain for this update.
+
+The mainnet supplement extends the original dated preprod report below. Its 100-record total covers the evidence sets in this index. It does not establish a 100-transaction consecutive run or mainnet fund conservation.
+
+The [original results](#results) map the preprod evidence to the milestone criteria. The [evidence archive](hydra-l2-milestone4-evidence.tar.gz) contains the original preprod artifacts. The mainnet records are in [Appendix B](#appendix-b-mainnet-settlement-supplement-2026-09-26).
+
+## Original preprod report (2026-09-18)
+
 **Date:** 2026-09-18, identity run 2026-09-19 · **Network:** Cardano preprod · **hydra-node:** 2.4.1 · **Service:** masumi-payment-service, branch `hydra/m4-preprod-evidence` at commit `610c1b5d`, plus the product fixes in Section 2, which are committed together with this report.
 
 Milestone 4 asked for the Layer 2 built in Milestone 3 to be integrated with the Masumi network so that L2 use is indistinguishable from L1 through the existing tools. This report covers the testnet evidence. Mainnet, the video, and the developer documentation were removed from scope by the project's decision. The independent security audit is performed by an external company and is out of scope here.
