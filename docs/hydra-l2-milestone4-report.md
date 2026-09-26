@@ -197,3 +197,48 @@ These settlement transactions ran on the same head before the counted series beg
 | 1    | withdrawal | [`b79b4e46148f0de9…`](https://preprod.cardanoscan.io/transaction/b79b4e46148f0de9d4dec96f250639febaa2549f328431a229bde951014e62fd) | 5190152 | yes   |
 
 Every hash above is selected by the head token policy in `head-N/l1-anchors.json`; no L1 address query is involved.
+
+## Appendix B. Mainnet deposit supplement (2026-09-26)
+
+REPORTED: The operator supplied top-up API exports for the NMKR and Sokosumi nodes on 2026-09-26 and confirmed mainnet for both exports. Each record below reports `status: "Absorbed"`. This supplement extends the evidence beyond the original preprod scope stated above.
+
+VERIFIED: Filtering the supplied records for `status == "Absorbed"` and a non-null `depositTxHash` gives 14 unique deposit hashes. NMKR contributes 5 and Sokosumi contributes 9. Each deposit is counted once by `depositTxHash`.
+
+VERIFIED: The numbered settlement series in Appendix A contains 50 distinct preprod hashes. None matches the 14 hashes below. The combined count for that series and this supplement is **64 distinct listed transactions: 50 preprod settlements plus 14 mainnet deposits**. Other transactions mentioned elsewhere in this report are outside this count.
+
+REPORTED evidence limit: The mainnet success classification comes from the supplied API records. These mainnet transactions were not independently checked on chain for this update. The timestamps are `createdAt`, not block confirmation times. The exports do not establish complete head history, consecutive settlement success, or fund conservation. No mainnet withdrawal records were supplied.
+
+### Successful mainnet deposits
+
+REPORTED: All values in this table come from the supplied exports. Amounts retain their exact base units. Each hash links to mainnet Cardanoscan.
+
+| Node | Top-up record ID | Created at (UTC) | Lovelace | Native asset A1 (base units) | Deposit transaction |
+| --- | --- | --- | --- | --- | --- |
+| NMKR | `cmui8reli005g1zucu89rwi04` | 2026-09-26T10:23:06.918Z | 100000000 | 0 | [0b0dcacb68131fb9a9ad2348f20cb684196e12c0e26767fb619b93be96288720](https://cardanoscan.io/transaction/0b0dcacb68131fb9a9ad2348f20cb684196e12c0e26767fb619b93be96288720) |
+| NMKR | `cmui3zn7b00571zuc33flpqvf` | 2026-09-26T08:09:33.239Z | 27000000 | 0 | [5b3b2d37e63f6fafc4cfd8d11d8ee033e8eb54bcf3e84fb621bf727475f59855](https://cardanoscan.io/transaction/5b3b2d37e63f6fafc4cfd8d11d8ee033e8eb54bcf3e84fb621bf727475f59855) |
+| NMKR | `cmuho3ms000101zuc2deoh7zf` | 2026-09-26T00:44:45.456Z | 150000000 | 0 | [10bbecfe7f9ad37c04a61c010e1a307151ff421cae758778e5105fc7864b3727](https://cardanoscan.io/transaction/10bbecfe7f9ad37c04a61c010e1a307151ff421cae758778e5105fc7864b3727) |
+| NMKR | `cmudzkh1700061zvkqtcxtaiu` | 2026-09-23T10:54:42.236Z | 25000000 | 0 | [37270a593fc4e2fda4dd72ca46dd292610df6974391e3cde8440587e425b9447](https://cardanoscan.io/transaction/37270a593fc4e2fda4dd72ca46dd292610df6974391e3cde8440587e425b9447) |
+| NMKR | `cmu2kmzsl000b20unqks0rvru` | 2026-09-15T11:11:17.685Z | 50000000 | 0 | [ca82fcbd43aa6baea5c36a791dd8efc3365a5b75709ee7957239239fda0509f6](https://cardanoscan.io/transaction/ca82fcbd43aa6baea5c36a791dd8efc3365a5b75709ee7957239239fda0509f6) |
+| Sokosumi | `cmuibwljp00cb1zsdf5i5uyiy` | 2026-09-26T11:51:08.053Z | 7000000 | 0 | [d19b592a912251d168740cbd28c92d8db41d4ffdc9a89ebfb7c523aeef5522ac](https://cardanoscan.io/transaction/d19b592a912251d168740cbd28c92d8db41d4ffdc9a89ebfb7c523aeef5522ac) |
+| Sokosumi | `cmui7m0zp00c21zsd3rl5x11l` | 2026-09-26T09:50:56.389Z | 2137760 | 100000000 | [758a38b3d9666bac47b605ca0e77b3dfb700b1a8a467d663b05873f06fbd9dce](https://cardanoscan.io/transaction/758a38b3d9666bac47b605ca0e77b3dfb700b1a8a467d663b05873f06fbd9dce) |
+| Sokosumi | `cmuhs22lh002f1zsdxr3az3wc` | 2026-09-26T02:35:31.109Z | 2137760 | 50000000 | [fdf0a557dfc5d4f88510756f69c590b33783a5ec7951d0b16b765a47f6443d53](https://cardanoscan.io/transaction/fdf0a557dfc5d4f88510756f69c590b33783a5ec7951d0b16b765a47f6443d53) |
+| Sokosumi | `cmuhro4mm002e1zsd80dnjocd` | 2026-09-26T02:24:40.558Z | 100000000 | 0 | [047f45fd65a4ffa233f02a5ed3b854b4c0ce5a59d1924b771decc5febbcc9eff](https://cardanoscan.io/transaction/047f45fd65a4ffa233f02a5ed3b854b4c0ce5a59d1924b771decc5febbcc9eff) |
+| Sokosumi | `cmuho35py002d1zsdem9es5w4` | 2026-09-26T00:44:23.350Z | 2137760 | 20000000 | [cf0494e17f063076f87a0717fb30df76879482df9d0ab9a181256117bc10af28](https://cardanoscan.io/transaction/cf0494e17f063076f87a0717fb30df76879482df9d0ab9a181256117bc10af28) |
+| Sokosumi | `cmuhdbmmw002c1zsd1mp6p4ra` | 2026-09-25T19:43:02.744Z | 150000000 | 0 | [52cb3db2c8ee07bd2b66a6bec3812f174295fc4fa49c938fbb0954e05f9dcee7](https://cardanoscan.io/transaction/52cb3db2c8ee07bd2b66a6bec3812f174295fc4fa49c938fbb0954e05f9dcee7) |
+| Sokosumi | `cmudzm9lf00041zsc3u2z61jo` | 2026-09-23T10:56:05.907Z | 70000000 | 0 | [b3808c887332f215bb7398a54339ec75de2a180f3221dd7f84dbbcab0ba8ba80](https://cardanoscan.io/transaction/b3808c887332f215bb7398a54339ec75de2a180f3221dd7f84dbbcab0ba8ba80) |
+| Sokosumi | `cmu2o64tt00011zvl2ghva8ae` | 2026-09-15T12:50:09.521Z | 150000000 | 0 | [d6f25d7607a6d5ee5302b9badb133e19d2361609d931a44954bbcdcd97db56f4](https://cardanoscan.io/transaction/d6f25d7607a6d5ee5302b9badb133e19d2361609d931a44954bbcdcd97db56f4) |
+| Sokosumi | `cmu2o0rey00001zvlqs7q661p` | 2026-09-15T12:45:58.915Z | 2137760 | 250000000 | [93f43706a0c99596bd3da9b036f033b916a6595a2eeb751dcd415db8c4797f40](https://cardanoscan.io/transaction/93f43706a0c99596bd3da9b036f033b916a6595a2eeb751dcd415db8c4797f40) |
+
+REPORTED: Asset A1 is `c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d`, copied from `committedAssets`. A value of `0` means the record has an empty `committedAssets` object.
+
+### Successful transactions by network
+
+VERIFIED: Counts below cover only the numbered settlement series in Appendix A and the successful deposit records selected above.
+
+| Network | Evidence set | Successful records | Basis |
+| --- | --- | --- | --- |
+| Preprod | Settlement series | 50 | Existing Appendix A; its original chain verification is reported above |
+| Mainnet | NMKR deposits | 5 | Operator API export, `Absorbed` |
+| Mainnet | Sokosumi deposits | 9 | Operator API export, `Absorbed` |
+| Mainnet | Total deposits | **14** | Unique deposit hashes |
+| Both networks | Total across these sets | **64** | Unique transaction hashes |
