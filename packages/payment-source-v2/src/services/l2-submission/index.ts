@@ -369,9 +369,13 @@ async function finalizeL2Action(
 			prisma.transaction.update({
 				where: {
 					id: reservation.transactionId,
-					status: TransactionStatus.Pending,
 					intendedTxHash,
-					txHash: null,
+					// `submitTx` now blocks on the confirmed snapshot (provider.ts), so the
+					// connection manager's TxConfirmed listener routinely stamps this exact
+					// row Confirmed before this write starts. id + intendedTxHash still pin
+					// identity, so accepting Confirmed here is a no-op re-write, not a
+					// loosened guard; RolledBack / FailedViaTimeout stay excluded.
+					status: { in: [TransactionStatus.Pending, TransactionStatus.Confirmed] },
 				},
 				data: { txHash, lastCheckedAt: new Date() },
 			}),

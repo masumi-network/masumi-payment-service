@@ -32,6 +32,7 @@ import {
 import {
 	buildHydraCommitRequest,
 	fetchHydraHeadOutputTxId,
+	fetchHydraPendingDecommitRefs,
 	fetchHydraProtocolParameters,
 	fetchHydraRawCostModels,
 	fetchHydraSnapshotUTxO,
@@ -574,6 +575,11 @@ export class HydraNode extends EventEmitter {
 		const headIdentifier = this._expectedHeadId ?? this._live.liveSessionHeadId;
 		if (!headIdentifier) return undefined;
 		return await fetchHydraHeadOutputTxId(this, headIdentifier);
+	}
+
+	/** See `fetchHydraPendingDecommitRefs`: output refs still awaiting L1 decommit. */
+	async fetchPendingDecommitRefs(): Promise<string[]> {
+		return await fetchHydraPendingDecommitRefs(this);
 	}
 
 	async fetchProtocolParameters() {

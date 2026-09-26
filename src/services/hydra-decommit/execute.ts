@@ -37,6 +37,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import {
 	amountOf,
+	countNativeAssets,
 	coverAssetForCarve,
 	coverLovelace,
 	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
@@ -313,6 +314,20 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			}
 		}
 
+		// Hydra produces no new snapshot while a previous decommit's utxoToDecommit
+		// is non-empty — the node's chain follower has not yet observed that
+		// decommit's DecrementTx on L1. Starting another in-head split during that
+		// window gets a split that is TxValid but can never be snapshot-confirmed,
+		// so this must be refused before any split is attempted, not discovered
+		// after a 60s wait. Mirror of the deposit-side pendingIncrementRefs guard.
+		const pendingDecommits = await hydraHead.mainNode.fetchPendingDecommitRefs();
+		if (pendingDecommits.length > 0) {
+			throw createHttpError(
+				409,
+				`A previous withdrawal is still being settled on L1 by the head (${pendingDecommits.length} output(s) pending); retry once it has finalized`,
+			);
+		}
+
 		const selection = selectDecommittableUtxos({
 			utxos: await provider.fetchAddressUTxOs(address),
 			pendingIncrementRefs: hydraHead.mainNode.pendingIncrementUtxoRefs,
@@ -408,23 +423,40 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 				decommitInputs = [split.exact];
 			}
 		} else if (params.lovelace != null) {
-			const covering = coverLovelace(selection.eligible, params.lovelace);
+			const requestedLovelace = params.lovelace;
+			// An eligible UTxO already holding exactly the requested amount is
+			// decommitted whole. `coverLovelace` picks largest-first, so without this
+			// check it would carve a bigger UTxO down to this amount even with an
+			// exact match sitting right there — leaving a stray exact-amount UTxO
+			// behind on every refused or retried withdrawal instead of reusing it.
+			//
+			// Pure ADA only: `selection.eligible` excludes reference scripts but not
+			// native assets, and a decommit removes the WHOLE output it spends. A UTxO
+			// that happens to hold the exact lovelace plus some unrelated token (an
+			// agent's registry NFT, say) is not what an amount-only withdrawal asked
+			// for, and taking it whole would carry that asset out of the head
+			// silently. Such a UTxO falls back to the ordinary split path instead,
+			// which carves the amount off a pure UTxO and leaves the asset behind.
+			const exactMatch = selection.eligible.find(
+				(utxo) => lovelaceOf(utxo) === requestedLovelace && countNativeAssets(utxo) === 0,
+			);
+			const covering = exactMatch != null ? [exactMatch] : coverLovelace(selection.eligible, requestedLovelace);
 			if (covering === null) {
 				throw createHttpError(
 					400,
-					`Only ${selection.eligibleLovelace} lovelace is eligible to withdraw, which is less than the ${params.lovelace} requested`,
+					`Only ${selection.eligibleLovelace} lovelace is eligible to withdraw, which is less than the ${requestedLovelace} requested`,
 				);
 			}
 			const covered = covering.reduce((total, utxo) => total + lovelaceOf(utxo), 0n);
-			if (covered === params.lovelace) {
+			if (covered === requestedLovelace) {
 				// The chosen UTxOs already come to exactly the amount, so the split
 				// would be a transaction that changes nothing.
 				decommitInputs = covering;
 			} else {
-				if (covered - params.lovelace < MIN_SPLIT_REMAINDER_LOVELACE) {
+				if (covered - requestedLovelace < MIN_SPLIT_REMAINDER_LOVELACE) {
 					throw createHttpError(
 						400,
-						`Withdrawing ${params.lovelace} lovelace would leave ${covered - params.lovelace} behind, which is below the minimum a UTxO may hold. ` +
+						`Withdrawing ${requestedLovelace} lovelace would leave ${covered - requestedLovelace} behind, which is below the minimum a UTxO may hold. ` +
 							'Withdraw a little less, or leave the amount out to take whole UTxOs.',
 					);
 				}
@@ -436,7 +468,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					network,
 					inputs: covering,
 					unit: '',
-					amount: params.lovelace,
+					amount: requestedLovelace,
 					decommitId: claim.id,
 				});
 				splitTxId = split.txId;
