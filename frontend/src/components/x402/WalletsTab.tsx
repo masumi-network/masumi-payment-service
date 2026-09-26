@@ -155,7 +155,7 @@ export function WalletsTab() {
 
       <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Address
@@ -201,7 +201,7 @@ export function WalletsTab() {
               </tr>
             ) : (
               wallets.map((wallet) => (
-                <tr key={wallet.id} className="group border-b last:border-0 hover:bg-muted/50">
+                <tr key={wallet.id} className="group border-b last:border-0 hover:bg-row-hover">
                   <td className="p-4">
                     <div className="flex items-center gap-1">
                       <span className="font-mono text-sm" title={wallet.address}>

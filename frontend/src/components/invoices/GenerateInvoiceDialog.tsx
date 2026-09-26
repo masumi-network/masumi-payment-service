@@ -953,7 +953,6 @@ export function GenerateInvoiceDialog({
       ? `Please fix ${firstError.path}: ${firstError.message}`
       : 'Please fix the highlighted form fields.';
 
-    console.warn('Generate invoice form validation failed', formErrors);
     setSubmitError(message);
     toast.error(message);
   }, []);

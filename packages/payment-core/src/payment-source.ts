@@ -51,6 +51,19 @@ export const atomicAmountSchema = z
 	}, `Atomic amount must be between 1 and ${POSTGRES_BIGINT_MAX.toString()}`)
 	.describe('Atomic token amount');
 
+export const unixTimeMsStringSchema = z
+	.string()
+	// int64 max is 19 digits; bound the string before BigInt parsing.
+	.max(19)
+	.regex(/^\d+$/)
+	.refine((value) => {
+		// Zod 4 runs refinements even when the checks above already failed, so
+		// re-guard before BigInt() — BigInt('abc') throws an uncaught SyntaxError.
+		if (!/^\d+$/.test(value)) return false;
+		return BigInt(value) <= POSTGRES_BIGINT_MAX;
+	}, `Time must be unix milliseconds between 0 and ${POSTGRES_BIGINT_MAX.toString()}`)
+	.describe('Unix timestamp in milliseconds');
+
 const supportedPaymentSourceFixedPriceSchema = z.object({
 	asset: z.string().max(250).describe('Chain-native asset identifier'),
 	amount: atomicAmountSchema,

@@ -103,6 +103,15 @@ export class HydraHistoryReplay {
 	private _partyIdentityVerified = false;
 	private _verifiedSnapshot: VerifiedHydraSnapshot | undefined;
 	/**
+	 * The exact signed payload behind `_verifiedSnapshot` (version, accumulator,
+	 * party signatures), kept only to tell an idempotent re-delivery of that same
+	 * signed snapshot — what a node side-load produces, see ADR 0015 §4 — apart
+	 * from a genuine replay/regression at the same snapshot number. Not itself
+	 * security-bearing: `_verifiedSnapshot` already reflects a frame that passed
+	 * full multi-signature and accumulator verification before this is set.
+	 */
+	private _lastVerifiedFrame: { version: number; accumulator: string; signatures: string } | undefined;
+	/**
 	 * Bumped by every rejection, and never reset.
 	 *
 	 * `_failed` cannot be used to tell whether a rejection happened during a
@@ -198,6 +207,7 @@ export class HydraHistoryReplay {
 		this._lastSequence = undefined;
 		this._partyIdentityVerified = false;
 		this._verifiedSnapshot = undefined;
+		this._lastVerifiedFrame = undefined;
 		const rotationError = this.host.persistenceRotationError;
 		if (rotationError) {
 			this._failed = true;
@@ -522,6 +532,20 @@ export class HydraHistoryReplay {
 		}
 	}
 
+	/** Adopt a verified snapshot as the anchor and remember the exact signed payload behind it. */
+	private captureVerifiedFrame(
+		verifiedSnapshot: VerifiedHydraSnapshot,
+		parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>,
+	): void {
+		this._verifiedSnapshot = verifiedSnapshot;
+		this._lastSequence = parsedMessage.seq;
+		this._lastVerifiedFrame = {
+			version: verifiedSnapshot.version,
+			accumulator: parsedMessage.snapshot.accumulator,
+			signatures: JSON.stringify(parsedMessage.signatures.multiSignature),
+		};
+	}
+
 	private recordHistorySnapshot(parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>): void {
 		if (this._lastSequence != null && parsedMessage.seq <= this._lastSequence) {
 			throw new HydraProtocolError('Hydra history sequence was duplicate or non-monotonic');
@@ -536,7 +560,38 @@ export class HydraHistoryReplay {
 		const verifiedSnapshot = verifyHydraSnapshot(parsedMessage, orderedKeys);
 		const previousSnapshot = this._verifiedSnapshot;
 		if (previousSnapshot && verifiedSnapshot.number <= previousSnapshot.number) {
-			throw new HydraProtocolError('Hydra signed snapshot number replayed or regressed');
+			// A node side-load (the documented recovery for a stranded snapshot
+			// round, ADR 0015 §4 level 2/3) re-emits the head's own already-verified
+			// snapshot with byte-identical multi-signed content. Verification above
+			// already re-proved every signature and the accumulator for THIS
+			// delivery, so an exact repeat of the last-verified payload at the same
+			// number is a duplicate frame, not a replay attack: accept it as a no-op
+			// (advance the sequence watermark, leave the anchor untouched) instead of
+			// failing the whole history closed. Anything else at an equal-or-lower
+			// number — a different payload, or a strictly lower number — is still a
+			// regression and stays rejected.
+			//
+			// The identity check below does not compare `parsedMessage.snapshot.confirmed`:
+			// Hydra's multi-signature covers the snapshot's number, version and
+			// accumulator, not its `confirmed` transaction list, so a re-delivery at
+			// the same number with a matching signed payload is accepted as identical
+			// even if `confirmed` differs. Safe here because the early return records
+			// nothing from this delivery either way — but that makes this fail-quiet
+			// rather than fail-closed: a re-delivery that changed only `confirmed`
+			// would not be caught by this check.
+			const lastVerified = this._lastVerifiedFrame;
+			const isIdenticalRedelivery =
+				lastVerified != null &&
+				verifiedSnapshot.number === previousSnapshot.number &&
+				verifiedSnapshot.version === lastVerified.version &&
+				parsedMessage.snapshot.accumulator === lastVerified.accumulator &&
+				JSON.stringify(parsedMessage.signatures.multiSignature) === lastVerified.signatures;
+			if (!isIdenticalRedelivery) {
+				throw new HydraProtocolError('Hydra signed snapshot number replayed or regressed');
+			}
+			logger.info('[HydraNode] Ignoring re-delivered signed snapshot', { number: verifiedSnapshot.number });
+			this._lastSequence = parsedMessage.seq;
+			return;
 		}
 		if (previousSnapshot == null) {
 			// The first signed snapshot is adopted as the anchor, so nothing checks
@@ -560,8 +615,7 @@ export class HydraHistoryReplay {
 					'Hydra history began with transactions or a snapshot gap and no independently verified predecessor',
 				);
 			}
-			this._verifiedSnapshot = verifiedSnapshot;
-			this._lastSequence = parsedMessage.seq;
+			this.captureVerifiedFrame(verifiedSnapshot, parsedMessage);
 			return;
 		}
 		// A decommit is a state-changing transaction that Hydra reports outside the
@@ -595,8 +649,7 @@ export class HydraHistoryReplay {
 					`${verifiedSnapshot.decommitOutputs.size} pending decommit output(s))`,
 			);
 		}
-		this._verifiedSnapshot = verifiedSnapshot;
-		this._lastSequence = parsedMessage.seq;
+		this.captureVerifiedFrame(verifiedSnapshot, parsedMessage);
 		const protectedProducerTxIds = this.ledger.resolveProtectedSnapshotProducerTxIds(verifiedSnapshot);
 		// Hydra 2.3 signatures authenticate only the TxOut multiset. Recording
 		// tx ids/CBOR therefore additionally relies on this explicitly configured
