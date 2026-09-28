@@ -284,7 +284,8 @@ export default function WalletsPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {/* A pending search with no local match is not an empty result yet. */}
+                {isLoading || (isSearchPending && filteredWallets.length === 0) ? (
                   <WalletTableSkeleton rows={2} />
                 ) : filteredWallets.length === 0 ? (
                   <tr>
@@ -467,7 +468,11 @@ export default function WalletsPage() {
 
           {hasMore && (
             <div className="flex justify-center">
-              <Button variant="outline" onClick={loadMore} disabled={isFetchingNextPage}>
+              <Button
+                variant="outline"
+                onClick={loadMore}
+                disabled={isFetchingNextPage || isShowingPreviousSearch}
+              >
                 {isFetchingNextPage ? 'Loading…' : 'Load more'}
               </Button>
             </div>
