@@ -441,6 +441,9 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
           ...(sellerReturnAddress != null ? { sellerReturnAddress } : {}),
           ...(supportedPaymentSourceIndex != null ? { supportedPaymentSourceIndex } : {}),
           ...(buyerForceLayer !== 'Auto' ? { forceLayer: buyerForceLayer } : {}),
+          ...(selectedBuyerWallet?.walletAddress
+            ? { buyerReturnAddress: selectedBuyerWallet.walletAddress }
+            : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -483,6 +486,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       sellerReturnAddress,
       supportedPaymentSourceIndex,
       buyerForceLayer,
+      selectedBuyerWallet,
     ],
   );
 
