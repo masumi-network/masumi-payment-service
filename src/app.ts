@@ -118,6 +118,7 @@ export async function startApp() {
 							frameAncestors: ["'none'"],
 							imgSrc: ["'self'", 'data:'],
 							objectSrc: ["'none'"],
+							workerSrc: ["'self'", 'blob:'],
 							// 'wasm-unsafe-eval' lets the bundled Mesh SDK (Cardano serialization) compile
 							// its WebAssembly. It permits WASM only, not arbitrary JS eval.
 							scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"],

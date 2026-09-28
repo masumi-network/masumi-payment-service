@@ -1,4 +1,6 @@
+import loader from '@monaco-editor/loader';
 import dynamic from 'next/dynamic';
+loader.config({ paths: { vs: '/admin/monaco/vs' } });
 
 const SchemaPlayground = dynamic(
   () => import('masumi-schema-validator-component').then((mod) => mod.SchemaPlayground),
