@@ -6,6 +6,7 @@
   "scripts": {
     "preinstall": "node -e \"if (!(process.env.npm_config_user_agent||'').startsWith('pnpm')) { console.error('\\nThis project uses pnpm. Use: pnpm install\\n'); process.exit(1); }\"",
     "dev": "next dev",
+    "predev": "node scripts/copy-monaco.mjs",
     "prebuild": "node scripts/copy-monaco.mjs",
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
