@@ -30,7 +30,9 @@ import {
   useX402PaymentAttempts,
   type X402PaymentFilters,
 } from '@/lib/hooks/useX402';
+import { shortenRecordId } from '@/lib/readable-reference';
 import { cn, groupDigits, shortenAddress } from '@/lib/utils';
+import { useX402Wallets } from '@/lib/hooks/useX402';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { buildX402TransactionScope } from '@/lib/x402-transactions';
@@ -320,6 +322,15 @@ function PaymentDetailsDialog({
   onClose: () => void;
   onReconciled: () => void;
 }) {
+  const { wallets } = useX402Wallets(!!attempt);
+  const walletLabel = (walletId: string | null | undefined) => {
+    if (!walletId) return null;
+    const wallet = wallets.find((w) => w.id === walletId);
+    if (wallet?.note) return wallet.note;
+    if (wallet?.address) return shortenAddress(wallet.address, 8);
+    return shortenRecordId(walletId);
+  };
+
   return (
     <Dialog open={!!attempt} onOpenChange={(value) => !value && onClose()}>
       <DialogContent>
@@ -341,7 +352,21 @@ function PaymentDetailsDialog({
               <DetailRow label="Chain" value={chainLabel} />
               <DetailRow label="Created" value={formatDateTime(attempt.createdAt)} />
               <DetailRow label="Updated" value={formatDateTime(attempt.updatedAt)} />
-              <DetailRow label="API key" value={attempt.apiKeyId} mono />
+              <DetailRow
+                label="API key"
+                value={
+                  attempt.apiKeyId ? (
+                    <span className="flex items-center justify-end gap-1">
+                      <span className="font-mono text-sm" title={attempt.apiKeyId}>
+                        {shortenRecordId(attempt.apiKeyId)}
+                      </span>
+                      <CopyButton value={attempt.apiKeyId} />
+                    </span>
+                  ) : (
+                    '—'
+                  )
+                }
+              />
             </div>
 
             <div className="rounded-lg border p-3">
@@ -361,7 +386,18 @@ function PaymentDetailsDialog({
               {attempt.direction === 'OutboundPayment' ? (
                 <DetailRow
                   label="Signing wallet"
-                  value={attempt.evmWalletId ? <CopyValue value={attempt.evmWalletId} /> : '—'}
+                  value={
+                    attempt.evmWalletId ? (
+                      <span className="flex items-center justify-end gap-1">
+                        <span className="font-mono text-sm" title={attempt.evmWalletId}>
+                          {walletLabel(attempt.evmWalletId)}
+                        </span>
+                        <CopyButton value={attempt.evmWalletId} />
+                      </span>
+                    ) : (
+                      '—'
+                    )
+                  }
                 />
               ) : attempt.facilitator ? (
                 <DetailRow
@@ -387,7 +423,14 @@ function PaymentDetailsDialog({
               {attempt.registryRequestId && (
                 <DetailRow
                   label="Registry request"
-                  value={<CopyValue value={attempt.registryRequestId} />}
+                  value={
+                    <span className="flex items-center justify-end gap-1">
+                      <span className="font-mono text-sm" title={attempt.registryRequestId}>
+                        {shortenRecordId(attempt.registryRequestId)}
+                      </span>
+                      <CopyButton value={attempt.registryRequestId} />
+                    </span>
+                  }
                 />
               )}
             </div>
