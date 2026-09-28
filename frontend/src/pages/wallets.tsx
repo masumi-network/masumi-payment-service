@@ -62,6 +62,7 @@ import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
@@ -92,6 +93,7 @@ export default function WalletsPage() {
   const [searchQuery, setSearchQuery] = useState(
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isFundWalletDialogOpen, setIsFundWalletDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
@@ -108,10 +110,11 @@ export default function WalletsPage() {
     isLoading: isLoadingWallets,
     isFetching: isFetchingWallets,
     isFetchingNextPage,
+    isPlaceholderData: isShowingPreviousSearch,
     hasMore,
     loadMore,
     refetch: refetchWalletsQuery,
-  } = usePaginatedWallets(activeWalletType);
+  } = usePaginatedWallets(activeWalletType, debouncedSearchQuery || undefined);
 
   // State-based previous value tracking for router query initialization
   // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
@@ -209,29 +212,33 @@ export default function WalletsPage() {
     }
   }, [router.isReady, router.query.action, router, capabilities.canAdmin]);
 
+  // Pending while the debounce runs or while the table shows the previous
+  // search's rows as placeholder. Load-more and refresh do not count.
+  const isSearchPending = searchQuery !== debouncedSearchQuery || isShowingPreviousSearch;
+
+  // Client-side filter for instant feedback while server results are pending.
+  // Mirror the server's searched columns so rows do not vanish and reappear.
   const filteredWallets = useMemo(() => {
-    let filtered = [...allWallets];
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((wallet) => {
-        const matchAddress =
-          wallet.walletAddress?.toLowerCase().includes(query) ||
-          wallet.collectionAddress?.toLowerCase().includes(query) ||
-          false;
-        const matchNote = wallet.note?.toLowerCase().includes(query) || false;
-        const matchType = wallet.type?.toLowerCase().includes(query) || false;
-        const matchBalance = wallet.balance
-          ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
-          : false;
-        const matchUsdcxBalance = wallet.usdcxBalance?.includes(query) || false;
-
-        return matchAddress || matchNote || matchType || matchBalance || matchUsdcxBalance;
-      });
+    const query = searchQuery.toLowerCase().trim();
+    if (
+      !query ||
+      (!isShowingPreviousSearch && query === debouncedSearchQuery.toLowerCase().trim())
+    ) {
+      return allWallets;
     }
 
-    return filtered;
-  }, [allWallets, searchQuery]);
+    return allWallets.filter((wallet) => {
+      const matchAddress =
+        wallet.walletAddress?.toLowerCase().includes(query) ||
+        wallet.collectionAddress?.toLowerCase().includes(query) ||
+        false;
+      const matchVkey = wallet.walletVkey?.toLowerCase().includes(query) || false;
+      const matchNote = wallet.note?.toLowerCase().includes(query) || false;
+      const matchType = wallet.type?.toLowerCase().includes(query) || false;
+
+      return matchAddress || matchVkey || matchNote || matchType;
+    });
+  }, [allWallets, debouncedSearchQuery, isShowingPreviousSearch, searchQuery]);
 
   // Open for every session: the dialog renders the read-visible fields and
   // omits the admin-only sections rather than erroring.
@@ -298,8 +305,9 @@ export default function WalletsPage() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by address, note, type, or balance..."
+                placeholder="Search by address, note, or type..."
                 className="max-w-xs"
+                isLoading={isSearchPending}
               />
             </div>
           </div>
@@ -328,7 +336,8 @@ export default function WalletsPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {/* A pending search with no local match is not an empty result yet. */}
+                {isLoading || (isSearchPending && filteredWallets.length === 0) ? (
                   <WalletTableSkeleton rows={2} />
                 ) : filteredWallets.length === 0 ? (
                   <tr>
@@ -523,7 +532,11 @@ export default function WalletsPage() {
 
           {hasMore && (
             <div className="flex justify-center">
-              <Button variant="outline" onClick={loadMore} disabled={isFetchingNextPage}>
+              <Button
+                variant="outline"
+                onClick={loadMore}
+                disabled={isFetchingNextPage || isShowingPreviousSearch}
+              >
                 {isFetchingNextPage ? 'Loading…' : 'Load more'}
               </Button>
             </div>
