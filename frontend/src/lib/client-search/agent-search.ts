@@ -4,7 +4,7 @@ import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 
 /**
  * Client-side agent search while server results are pending.
- * Mirrors the Prisma OR filter in src/routes/api/registry/index.ts.
+ * Mirrors the Prisma OR filter in src/routes/api/registry/queries.ts.
  */
 export function filterAgentsClientSide<T extends RegistryEntry>(
   agents: T[],
@@ -19,6 +19,8 @@ export function filterAgentsClientSide<T extends RegistryEntry>(
     const pricing = getPrimaryCardanoPricing(agent);
     if (agent.name?.toLowerCase().includes(query)) return true;
     if (agent.description?.toLowerCase().includes(query)) return true;
+    // Backend uses hasSome (exact, case-sensitive match against the tag array),
+    // not partial. This lowercases tags, so it can over-match mixed-case tags.
     if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
     if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
     if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;

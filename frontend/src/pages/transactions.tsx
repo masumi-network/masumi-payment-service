@@ -30,7 +30,10 @@ import { filterTransactionsClientSide } from '@/lib/client-search/transaction-se
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
-import { getLatestTxHash } from '@/components/transactions/transaction-format.helpers';
+import {
+  formatStatus,
+  getLatestTxHash,
+} from '@/components/transactions/transaction-format.helpers';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   TransactionFilters,
@@ -43,11 +46,6 @@ import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
-
-const formatStatus = (status: string | null) => {
-  if (!status) return '—';
-  return status.replace(/([A-Z])/g, ' $1').trim();
-};
 
 const isHydraTransaction = (transaction: Transaction) =>
   transaction.CurrentTransaction?.layer === 'L2';

@@ -1,10 +1,6 @@
+import { formatStatus } from '@/components/transactions/transaction-format.helpers';
 import { ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
 import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
-
-const formatStatus = (status: string | null) => {
-  if (!status) return '—';
-  return status.replace(/([A-Z])/g, ' $1').trim();
-};
 
 type TransactionSearchRow = {
   id?: string | null;
@@ -38,10 +34,14 @@ export function filterTransactionsClientSide<T extends TransactionSearchRow>(
   if (!query) return transactions;
 
   const amountRange = parseAmountSearchRange(query);
+  // Mirror backend looksLikeHash (HASH_QUERY_MIN_LENGTH): the hash columns and
+  // the head ID are only searched for a hex query of 5+ characters.
   const isHashQuery = query.length >= 5 && /^[0-9a-f]+$/.test(query);
+  // Mirror backend buildMatchingLayers: exact match plus the 'hydra' alias.
   const matchingLayer =
     query === 'hydra' ? 'L2' : query === 'l1' || query === 'l2' ? query.toUpperCase() : null;
-  const matchingStates = ON_CHAIN_STATES.filter(
+  // Mirror backend buildMatchingStates
+  const matchingStates: ReadonlyArray<string> = ON_CHAIN_STATES.filter(
     (s) => s.toLowerCase().includes(query) || formatStatus(s).toLowerCase().includes(query),
   );
 
@@ -57,11 +57,7 @@ export function filterTransactionsClientSide<T extends TransactionSearchRow>(
     }
     if (matchingLayer && tx.CurrentTransaction?.layer === matchingLayer) return true;
     if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-    if (
-      matchingStates.length > 0 &&
-      tx.onChainState &&
-      matchingStates.includes(tx.onChainState as (typeof ON_CHAIN_STATES)[number])
-    )
+    if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
       return true;
     if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
     if (tx.agentName?.toLowerCase().includes(query)) return true;
