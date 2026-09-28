@@ -39,6 +39,7 @@ function renderRegistration() {
         useEffect: noop,
         useMemo: (compute: () => unknown) => compute(),
         useCallback: (callback: () => unknown) => callback,
+        useRef: (initial: unknown) => ({ current: initial }),
       };
     }
     if (name === '@/lib/queries/useWallets') {

@@ -12,6 +12,7 @@
  */
 
 import { useState } from 'react';
+import { getApiErrorToastMessage } from '@/lib/api-error';
 import { formatHydraErrorType } from '@/lib/display-labels';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -56,7 +57,7 @@ export function HydraHeadErrors({
       await resync('hydra');
       await refetch();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to clear the errors');
+      toast.error(getApiErrorToastMessage(error, 'Failed to clear the errors'));
     } finally {
       setIsClearing(false);
     }

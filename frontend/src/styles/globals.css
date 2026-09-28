@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './theme.css';
 
 @source "../../node_modules/masumi-schema-validator-component/dist/index.mjs";
 
@@ -12,48 +13,6 @@
   font-weight: 100 900;
   font-display: swap;
   font-style: normal;
-}
-
-@theme {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-
-  --color-chart-1: hsl(var(--chart-1));
-  --color-chart-2: hsl(var(--chart-2));
-  --color-chart-3: hsl(var(--chart-3));
-  --color-chart-4: hsl(var(--chart-4));
-  --color-chart-5: hsl(var(--chart-5));
-
-  --color-brand: hsl(var(--accent-brand));
-
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
 }
 
 /*
@@ -74,112 +33,27 @@
   }
 }
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.5rem;
-    --accent-brand: 174 60% 51%;
-    --table-actions-row-hover-fill: color-mix(
-      in srgb,
-      hsl(var(--muted)) 50%,
-      hsl(var(--background)) 50%
-    );
-    --table-actions-row-hover-fade: color-mix(
-      in srgb,
-      var(--table-actions-row-hover-fill) 85%,
-      transparent 15%
-    );
-    --table-actions-low-balance-hover-fill: color-mix(
-      in srgb,
-      rgb(245 158 11) 10%,
-      hsl(var(--background))
-    );
-    --table-actions-low-balance-hover-fade: color-mix(
-      in srgb,
-      var(--table-actions-low-balance-hover-fill) 85%,
-      transparent 15%
-    );
-    --table-actions-destructive-row-fill: color-mix(
-      in srgb,
-      hsl(var(--destructive)) 10%,
-      hsl(var(--background)) 90%
-    );
-    --table-actions-destructive-row-fade: color-mix(
-      in srgb,
-      var(--table-actions-destructive-row-fill) 85%,
-      transparent 15%
-    );
+@layer components {
+  .table-header-surface {
+    background-color: hsl(var(--muted) / 0.3);
   }
 
-  .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 97%;
-    --card: 0 0% 5.5%;
-    --card-foreground: 0 0% 97%;
-    --popover: 0 0% 5.5%;
-    --popover-foreground: 0 0% 97%;
-    --primary: 0 0% 97%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 97%;
-    --muted: 0 0% 21.9%;
-    --muted-foreground: 0 0% 70.2%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 97%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 97%;
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
-    --ring: 0 0% 83.1%;
-    --accent-brand: 174 60% 55%;
-    --table-actions-row-hover-fill: color-mix(
-      in srgb,
-      hsl(var(--muted)) 50%,
-      hsl(var(--background)) 50%
-    );
-    --table-actions-row-hover-fade: color-mix(
-      in srgb,
-      var(--table-actions-row-hover-fill) 85%,
-      transparent 15%
-    );
-    --table-actions-low-balance-hover-fill: color-mix(
-      in srgb,
-      rgb(245 158 11) 10%,
-      hsl(var(--background))
-    );
-    --table-actions-low-balance-hover-fade: color-mix(
-      in srgb,
-      var(--table-actions-low-balance-hover-fill) 85%,
-      transparent 15%
-    );
-    --table-actions-destructive-row-fill: color-mix(
-      in srgb,
-      hsl(var(--destructive)) 10%,
-      hsl(var(--background)) 90%
-    );
-    --table-actions-destructive-row-fade: color-mix(
-      in srgb,
-      var(--table-actions-destructive-row-fill) 85%,
-      transparent 15%
-    );
+  .dark .table-header-surface {
+    background-color: var(--table-header-fill);
+  }
+
+  .transaction-row-error {
+    border-left-width: 2px;
+    border-left-color: hsl(var(--destructive));
+    background-color: var(--transaction-error-row-fill);
+  }
+
+  .transaction-row-error:hover {
+    background-color: var(--transaction-error-row-hover-fill);
+  }
+
+  .transaction-row-error.transaction-row-selected {
+    background-color: var(--table-row-hover-fill);
   }
 }
 
@@ -204,8 +78,8 @@
   }
 }
 
-/* Custom styles for light mode inputs */
-.light input {
+/* Custom styles for light mode inputs (exclude cmdk command palette) */
+.light input:not([data-slot='command-input']) {
   background-color: #ffffff;
   border: 1px solid #e5e7eb;
   color: #171717;
@@ -213,10 +87,6 @@
 
 #transakRoot {
   background-color: #000a !important;
-}
-
-#main-content {
-  overflow-y: scroll !important;
 }
 
 input[type='number']::-webkit-outer-spin-button,
@@ -245,7 +115,7 @@ input[type='number'] {
 }
 
 #__next {
-  overflow-y: scroll !important;
+  overflow: hidden !important;
 }
 
 @keyframes spin {
@@ -590,9 +460,14 @@ input[type='number'] {
 .card-interactive:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: hsl(var(--foreground) / 0.12);
 }
-.dark .card-interactive:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+html.dark .card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: hsl(0 0% 100% / 0.14);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.55),
+    0 0 0 1px hsl(0 0% 100% / 0.06);
 }
 
 /* Accessibility: respect reduced motion preference */
@@ -723,49 +598,52 @@ input[type='number'] {
   --dialog-duration: 280ms;
 }
 
-/* Default enter/exit — uses `transform` so it composes with Tailwind's
-   individual `translate` centering without overriding it. */
+/* Centered modals: bake translate(-50%, -50%) into every transform keyframe so
+   enter/exit animations do not override Tailwind centering (top-left drift). */
 @keyframes dialogEnter {
   from {
     opacity: 0;
-    transform: scale(0.96);
+    transform: translate(-50%, -50%) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 @keyframes dialogExit {
   from {
     opacity: 1;
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
   to {
     opacity: 0;
-    transform: scale(0.96);
+    transform: translate(-50%, -50%) scale(0.96);
   }
 }
 
-/* Child dialog slide from right — also uses `transform` to preserve centering */
 @keyframes dialogSlideInRight {
   from {
     opacity: 0;
-    transform: translateX(30px);
+    transform: translate(calc(-50% + 24px), -50%);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translate(-50%, -50%);
   }
 }
 @keyframes dialogSlideOutRight {
   from {
     opacity: 1;
-    transform: translateX(0);
+    transform: translate(-50%, -50%);
   }
   to {
     opacity: 0;
-    transform: translateX(30px);
+    transform: translate(calc(-50% + 24px), -50%);
   }
+}
+
+.dialog-center-anchor {
+  transform: translate(-50%, -50%);
 }
 
 /* Variant classes — toggled via data-state from Radix */
@@ -804,4 +682,45 @@ input[type='number'] {
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Sticky actions fade (unlayered — Tailwind v4 build was dropping @layer components rules). */
+.table-actions-head-fill,
+.table-actions-cell-fill {
+  --table-actions-fill: hsl(var(--background));
+  background-color: transparent;
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--table-actions-fill) 80%, transparent) 2.5rem,
+    var(--table-actions-fill) 3.5rem
+  );
+}
+
+.dark .table-actions-head-fill {
+  --table-actions-fill: var(--table-header-fill);
+}
+
+.group:hover .table-actions-cell-fill {
+  --table-actions-fill: var(--row-hover);
+}
+
+.table-actions-cell-fill--highlight {
+  --table-actions-fill: var(--row-hover);
+}
+
+.table-actions-cell-fill--destructive {
+  --table-actions-fill: var(--transaction-error-row-fill);
+}
+
+.group:hover .table-actions-cell-fill--destructive {
+  --table-actions-fill: var(--transaction-error-row-hover-fill);
+}
+
+.table-actions-cell-fill--low-balance {
+  --table-actions-fill: rgb(245 158 11 / 0.05);
+}
+
+.group:hover .table-actions-cell-fill--low-balance {
+  --table-actions-fill: rgb(245 158 11 / 0.1);
 }

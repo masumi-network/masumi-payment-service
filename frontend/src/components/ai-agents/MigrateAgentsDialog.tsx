@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDialogResetOnOpen } from '@/lib/hooks/useDialogResetOnOpen';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { toast } from 'react-toastify';
@@ -276,7 +277,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       // Swallow the error so the spinner clears (finally below) — surfacing a
       // toast on every transient balance-fetch failure would be noisy, but we
       // still want a trace for debugging.
-      console.error('[MigrateAgentsDialog] fetchWalletBalance failed', err);
+      console.error('Failed to fetch wallet balance for migration');
     } finally {
       if (balanceFetchEpochRef.current === epoch) {
         setIsLoadingBalance(false);
@@ -382,13 +383,11 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   // re-render when toggled.
   const hasPendingV1ListInvalidationRef = useRef(false);
 
-  useEffect(() => {
-    if (open) {
-      setResults({});
-      setIsDone(false);
-      setIsMigrating(false);
-    }
-  }, [open]);
+  useDialogResetOnOpen(open, () => {
+    setResults({});
+    setIsDone(false);
+    setIsMigrating(false);
+  });
 
   const handleClose = useCallback(() => {
     if (hasPendingV1ListInvalidationRef.current) {

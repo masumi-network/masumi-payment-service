@@ -62,6 +62,24 @@ export function filterX402PaymentSourceChains<
  * `POST /x402/pay` rejects it with "The wallet network is not enabled" — so it must not
  * count as a configured paying side and must not suppress the setup guide.
  */
+/** Native gas token symbol for a CAIP-2 EVM chain id. */
+export function getEvmNativeSymbol(caip2Id: string): string {
+  const chainId = caip2Id.replace(/^eip155:/, '');
+  switch (chainId) {
+    case '137':
+    case '80002':
+      return 'POL';
+    case '56':
+    case '97':
+      return 'BNB';
+    case '43114':
+    case '43113':
+      return 'AVAX';
+    default:
+      return 'ETH';
+  }
+}
+
 export function hasPurchasingWalletOnEnabledNetworks(
   wallets: X402Wallet[],
   networks: X402Network[],
