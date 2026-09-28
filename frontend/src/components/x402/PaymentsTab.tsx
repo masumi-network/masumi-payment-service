@@ -30,6 +30,7 @@ import {
   useX402PaymentAttempts,
   type X402PaymentFilters,
 } from '@/lib/hooks/useX402';
+import { formatX402PaymentStatus } from '@/lib/display-labels';
 import { shortenRecordId } from '@/lib/readable-reference';
 import { cn, groupDigits, shortenAddress } from '@/lib/utils';
 import { useX402Wallets } from '@/lib/hooks/useX402';
@@ -241,7 +242,9 @@ export function PaymentsTab() {
                 >
                   <td className="p-4 text-sm">{DIRECTION_LABEL[attempt.direction]}</td>
                   <td className="p-4">
-                    <Badge variant={STATUS_VARIANT[attempt.status]}>{attempt.status}</Badge>
+                    <Badge variant={STATUS_VARIANT[attempt.status]}>
+                      {formatX402PaymentStatus(attempt.status)}
+                    </Badge>
                   </td>
                   <td className="p-4 text-sm">{chainLabel(attempt.caip2Network)}</td>
                   <td className="p-4 text-right font-mono text-sm">
@@ -347,7 +350,11 @@ function PaymentDetailsDialog({
               <DetailRow label="Direction" value={DIRECTION_LABEL[attempt.direction]} />
               <DetailRow
                 label="Status"
-                value={<Badge variant={STATUS_VARIANT[attempt.status]}>{attempt.status}</Badge>}
+                value={
+                  <Badge variant={STATUS_VARIANT[attempt.status]}>
+                    {formatX402PaymentStatus(attempt.status)}
+                  </Badge>
+                }
               />
               <DetailRow label="Chain" value={chainLabel} />
               <DetailRow label="Created" value={formatDateTime(attempt.createdAt)} />

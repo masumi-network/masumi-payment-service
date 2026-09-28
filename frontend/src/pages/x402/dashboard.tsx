@@ -28,6 +28,7 @@ import {
   useX402DashboardRecentPayments,
   useX402Wallets,
 } from '@/lib/hooks/useX402';
+import { formatX402PaymentStatus } from '@/lib/display-labels';
 import { formatX402Amount, groupDigits, shortenAddress } from '@/lib/utils';
 
 const STATUS_VARIANT: Record<X402PaymentAttempt['status'], BadgeProps['variant']> = {
@@ -354,7 +355,7 @@ export default function X402DashboardPage() {
                                 {DIRECTION_LABEL[attempt.direction]}
                               </span>
                               <Badge variant={STATUS_VARIANT[attempt.status]}>
-                                {attempt.status}
+                                {formatX402PaymentStatus(attempt.status)}
                               </Badge>
                             </div>
                             <p className="mt-1 truncate text-xs text-muted-foreground">
