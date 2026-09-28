@@ -362,7 +362,8 @@ export function usePaymentSourceWalletList(args: {
 export function usePaginatedWallets(walletType?: HotWalletType, searchQuery?: string) {
   const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const network = selectedPaymentSource?.network;
-  const normalizedSearch = searchQuery?.trim() || undefined;
+  // The server lowercases the search, so lowercase the key too: one cache entry per result set.
+  const normalizedSearch = searchQuery?.trim().toLowerCase() || undefined;
 
   const query = useInfiniteQuery({
     queryKey: ['wallets-paginated', selectedPaymentSourceId, walletType, normalizedSearch],
@@ -422,6 +423,18 @@ export function usePaginatedWallets(walletType?: HotWalletType, searchQuery?: st
     // `network` is known means the query runs once, correctly.
     enabled: !!apiClient && !!selectedPaymentSourceId && !!network,
     staleTime: 25000,
+    // Keep the previous rows only while the search alone changes, so a new
+    // search does not drop the table to its skeleton. A different payment
+    // source or type tab must never show the old rows, and a reset of the
+    // same key must still show the skeleton.
+    placeholderData: (previousData, previousQuery) => {
+      const previousKey = previousQuery?.queryKey;
+      return previousKey?.[1] === selectedPaymentSourceId &&
+        previousKey?.[2] === walletType &&
+        previousKey?.[3] !== normalizedSearch
+        ? previousData
+        : undefined;
+    },
   });
 
   const wallets = useMemo(
@@ -434,7 +447,9 @@ export function usePaginatedWallets(walletType?: HotWalletType, searchQuery?: st
   );
 
   const loadMore = useCallback(() => {
-    if (query.hasNextPage && !query.isFetchingNextPage) {
+    // Placeholder pages belong to the previous search; their cursor is not
+    // valid for the current one.
+    if (query.hasNextPage && !query.isFetchingNextPage && !query.isPlaceholderData) {
       query.fetchNextPage();
     }
   }, [query]);
@@ -444,6 +459,7 @@ export function usePaginatedWallets(walletType?: HotWalletType, searchQuery?: st
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isRefetching: query.isRefetching,
+    isPlaceholderData: query.isPlaceholderData,
     hasMore: Boolean(query.hasNextPage),
     isFetchingNextPage: query.isFetchingNextPage,
     loadMore,

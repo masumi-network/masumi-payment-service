@@ -88,6 +88,7 @@ export default function WalletsPage() {
     isLoading: isLoadingWallets,
     isFetching: isFetchingWallets,
     isFetchingNextPage,
+    isPlaceholderData: isShowingPreviousSearch,
     hasMore,
     loadMore,
     refetch: refetchWalletsQuery,
@@ -159,13 +160,18 @@ export default function WalletsPage() {
     }
   }, [router.isReady, router.query.action, router, capabilities.canAdmin]);
 
-  const isSearchPending =
-    searchQuery !== debouncedSearchQuery || (isFetchingWallets && allWallets.length > 0);
+  // Pending while the debounce runs or while the table shows the previous
+  // search's rows as placeholder. Load-more and refresh do not count.
+  const isSearchPending = searchQuery !== debouncedSearchQuery || isShowingPreviousSearch;
 
   // Client-side filter for instant feedback while server results are pending.
+  // Mirror the server's searched columns so rows do not vanish and reappear.
   const filteredWallets = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    if (!query || query === debouncedSearchQuery.toLowerCase().trim()) {
+    if (
+      !query ||
+      (!isShowingPreviousSearch && query === debouncedSearchQuery.toLowerCase().trim())
+    ) {
       return allWallets;
     }
 
@@ -174,12 +180,13 @@ export default function WalletsPage() {
         wallet.walletAddress?.toLowerCase().includes(query) ||
         wallet.collectionAddress?.toLowerCase().includes(query) ||
         false;
+      const matchVkey = wallet.walletVkey?.toLowerCase().includes(query) || false;
       const matchNote = wallet.note?.toLowerCase().includes(query) || false;
       const matchType = wallet.type?.toLowerCase().includes(query) || false;
 
-      return matchAddress || matchNote || matchType;
+      return matchAddress || matchVkey || matchNote || matchType;
     });
-  }, [allWallets, debouncedSearchQuery, searchQuery]);
+  }, [allWallets, debouncedSearchQuery, isShowingPreviousSearch, searchQuery]);
 
   // Open for every session: the dialog renders the read-visible fields and
   // omits the admin-only sections rather than erroring.
@@ -248,7 +255,7 @@ export default function WalletsPage() {
                 onChange={setSearchQuery}
                 placeholder="Search by address, note, or type..."
                 className="max-w-xs"
-                isLoading={isSearchPending && !!searchQuery}
+                isLoading={isSearchPending}
               />
             </div>
           </div>
