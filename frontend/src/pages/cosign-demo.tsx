@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { postExchainReadToken } from '@/lib/api/generated';
-import { COSIGN_DASHBOARD_URL } from '@/lib/cosign-demo';
+import { COSIGN_DASHBOARD_URL, needsReadToken } from '@/lib/cosign-demo';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 
@@ -34,8 +34,8 @@ export default function CosignDemo() {
   const mintReadToken = useCallback(async () => {
     const response = await handleApiCall(
       () => postExchainReadToken({ client: apiClient, body: {} }),
-      // No token is expected against the local mock (it issues none), and the
-      // frame then shows the configured page directly, so stay quiet here.
+      // Exchain not configured on this node: the frame then shows the
+      // configured page directly, so no toast here.
       { onError: () => undefined },
     );
     return response?.data?.data ?? null;
@@ -46,6 +46,7 @@ export default function CosignDemo() {
   const { data: initial, isLoading } = useQuery({
     queryKey: ['exchain-read-token'],
     queryFn: mintReadToken,
+    enabled: needsReadToken(COSIGN_DASHBOARD_URL),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     retry: false,
