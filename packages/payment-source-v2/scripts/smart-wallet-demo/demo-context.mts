@@ -2,7 +2,6 @@ import { config, requiredEnv } from './demo-config';
 import { BlockFrostAPI, BlockfrostServerError } from '@blockfrost/blockfrost-js';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { BlockfrostProvider, MeshWallet, resolvePaymentKeyHash, resolveTxHash, type UTxO } from '@meshsdk/core';
-import { blake2b, HexBlob } from '@meshsdk/core-cst';
 import 'dotenv/config';
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
@@ -11,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { lovelaceFromUtxo } from '../../src/builders/batch-helpers';
 import { getPaymentScriptV2 } from '../../src/contract-generator';
 import { type CosignConfig, type CosignContext } from '../../src/smart-wallet/cosign-client';
+export { jobHashOf } from '../../src/smart-wallet/cosign-client';
 import {
 	fetchWalletUtxo,
 	loadSmartWalletScript,
@@ -271,16 +271,6 @@ export async function resolveWalletInput(ref: {
 	const utxo = utxos.find((candidate) => candidate.input.outputIndex === ref.outputIndex);
 	if (utxo == null) throw new Error(`input ${ref.txHash}#${ref.outputIndex} not found`);
 	return { address: utxo.output.address, lovelace: lovelaceFromUtxo(utxo) };
-}
-
-/**
- * `jobHash` is a required intent field and the contract only fixes its FORMAT
- * (`blake2b_256:<32-byte hex>`). Exchain has not yet told us what it hashes, so
- * the demo derives it from the purchase's input hash — deterministic, and
- * trivially re-pointed once they answer.
- */
-export function jobHashOf(inputHash: string): string {
-	return `blake2b_256:${blake2b.hash(HexBlob(Buffer.from(inputHash, 'utf8').toString('hex')), 32)}`;
 }
 
 async function lookupChainTx(txHash: string): Promise<ChainTx | null> {

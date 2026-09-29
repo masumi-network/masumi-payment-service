@@ -331,6 +331,11 @@ export const CONFIG = {
 	// Node-scoped bearer token for Exchain's API. Backend only: it must never reach a browser.
 	EXCHAIN_NODE_TOKEN: process.env.EXCHAIN_COSIGN_API_KEY?.trim() || null,
 	EXCHAIN_WALLET_ID: parseExchainWalletId(process.env.EXCHAIN_WALLET_ID),
+	// Co-sign service for guarded wallets. The batch job never spends a guarded
+	// wallet without it, so an unset URL leaves guarded purchases queued.
+	EXCHAIN_COSIGN_URL: parseExchainDashboardOrigin('EXCHAIN_COSIGN_URL', process.env.EXCHAIN_COSIGN_URL),
+	EXCHAIN_NODE_ID: process.env.EXCHAIN_NODE_ID?.trim() || null,
+	EXCHAIN_ORG_ID: process.env.EXCHAIN_ORG_ID?.trim() || null,
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: parseNumberEnv(
 		'OTEL_PRISMA_OUTLIER_THRESHOLD_MS',

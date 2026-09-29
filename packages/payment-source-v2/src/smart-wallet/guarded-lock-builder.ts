@@ -126,6 +126,8 @@ export type BuildGuardedLockParams = {
 	cosignerVkhs: string[];
 	locks: GuardedLockOutput[];
 	nowMs?: number;
+	/** Upper bound for the validity window, in POSIX ms: the earliest escrow payByTime, so a slow lock expires instead of landing late. */
+	constrainAfterMs?: bigint;
 	forceRefreshCostModels?: boolean;
 };
 
@@ -201,7 +203,7 @@ export async function buildGuardedLockTx(params: BuildGuardedLockParams): Promis
 		forceRefresh: params.forceRefreshCostModels,
 	});
 
-	const window = createTxWindow(network, { nowMs: params.nowMs });
+	const window = createTxWindow(network, { nowMs: params.nowMs, constrainAfterMs: params.constrainAfterMs });
 	const slotConfig = SLOT_CONFIG_NETWORK[network];
 	const continuingAmount = assetsMinus(
 		walletUtxo.output.amount,

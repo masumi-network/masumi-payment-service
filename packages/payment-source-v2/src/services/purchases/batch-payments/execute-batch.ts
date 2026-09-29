@@ -1,4 +1,4 @@
-import { PurchasingAction, Prisma, TransactionStatus } from '@/generated/prisma/client';
+import { type GuardedWallet, PurchasingAction, Prisma, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { UTxO, resolveTxHash } from '@meshsdk/core';
@@ -81,6 +81,7 @@ export type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 		HotWallets: {
 			include: {
 				Secret: true;
+				GuardedWallet: true;
 			};
 		};
 	};
@@ -111,6 +112,8 @@ export type WalletPairing = {
 	// pre-existed the placeholder convention (defensive fallback for the
 	// transitional upgrade window — should not occur in steady state).
 	placeholderTransactionId: string | null;
+	/** Set when the hot wallet funds its locks from an Exchain co-signed smart wallet. */
+	guarded: GuardedWallet | null;
 };
 
 /**
@@ -153,6 +156,11 @@ export type BatchPairingOutcome =
 			requestIds: string[];
 			error: unknown;
 	  }
+	/**
+	 * The quorum did not co-sign, so nothing was broadcast. The executor already
+	 * requeued or parked each purchase; the dispatcher only releases the wallet.
+	 */
+	| { status: 'cosign-refused'; walletId: string; sharedTxId: string | null; requestIds: string[] }
 	| {
 			status: 'post-submit-db-failed';
 			walletId: string;

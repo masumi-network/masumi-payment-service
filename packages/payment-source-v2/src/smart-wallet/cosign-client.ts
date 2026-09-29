@@ -12,6 +12,7 @@
 // is merged.
 import {
 	addVKeyWitnessSetToTransaction,
+	blake2b,
 	deserializeTx,
 	Ed25519PublicKey,
 	Ed25519Signature,
@@ -45,6 +46,16 @@ export function stripDigestPrefix(digest: string): string {
 
 export function withDigestPrefix(digest: string): string {
 	return digest.startsWith(BLAKE2B_PREFIX) ? digest : `${BLAKE2B_PREFIX}${digest}`;
+}
+
+/**
+ * `jobHash` is a required intent field and the contract only fixes its FORMAT
+ * (`blake2b_256:<32-byte hex>`). Exchain has not yet told us what it hashes, so
+ * it is derived from the purchase's input hash: deterministic, and trivially
+ * re-pointed once they answer.
+ */
+export function jobHashOf(inputHash: string): string {
+	return `blake2b_256:${blake2b.hash(HexBlob(Buffer.from(inputHash, 'utf8').toString('hex')), 32)}`;
 }
 
 // ---------------------------------------------------------------- denial codes
