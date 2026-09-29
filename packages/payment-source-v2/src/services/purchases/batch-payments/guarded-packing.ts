@@ -10,6 +10,9 @@ import { assetValueGet, lovelaceOf, type WalletDatum } from '../../../smart-wall
 import { fetchWalletUtxo, readWalletDatum } from '../../../smart-wallet/wallet-lifecycle';
 import { cosignConfigOrNull } from './cosign-config';
 
+// The next datum can be larger than the current one: spentInPeriod and periodStart
+// integers widen by up to 8 CBOR bytes each, and a missing lovelace entry appears.
+const NEXT_DATUM_GROWTH_BYTES = 32;
 // The validator keys lovelace as the empty policy and the empty asset name.
 const LOVELACE_POLICY = '';
 const LOVELACE_NAME = '';
@@ -122,12 +125,13 @@ export async function guardedWalletAmounts(params: {
 		const datum = readWalletDatum(walletUtxo);
 		const protocolParameters =
 			getCachedChainProtocolParameters(params.rpcApiKey) ?? (await provider.fetchProtocolParameters());
-		// The next datum has the same shape as this one, so its size is the estimate.
-		const continuingMin = guardedContinuingMinLovelace(
+		const continuingMin = guardedContinuingMinLovelace({
+			address: guarded.scriptAddress,
 			datum,
-			walletUtxo.output.amount,
-			coinsPerUtxoSizeOf(protocolParameters),
-		);
+			amount: walletUtxo.output.amount,
+			coinsPerUtxoSize: coinsPerUtxoSizeOf(protocolParameters),
+			extraBytes: NEXT_DATUM_GROWTH_BYTES,
+		});
 		const window = createTxWindow(network);
 		const windowLowerMs = BigInt(slotToBeginUnixTime(window.invalidBefore, SLOT_CONFIG_NETWORK[network]));
 		const spendable = guardedSpendableLovelace(datum, walletUtxo, windowLowerMs, continuingMin);

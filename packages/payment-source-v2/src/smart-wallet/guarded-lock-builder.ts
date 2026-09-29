@@ -10,7 +10,9 @@
 import {
 	MeshTxBuilder,
 	resolvePaymentKeyHash,
+	getOutputMinLovelace,
 	resolveTxHash,
+	serializeData,
 	SLOT_CONFIG_NETWORK,
 	slotToBeginUnixTime,
 	type Asset,
@@ -22,7 +24,6 @@ import { deserializeTx } from '@meshsdk/core-cst';
 import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
 import { createTxWindow } from '@/services/shared/tx-window';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
-// Byte-size estimate only: it serializes the datum to count bytes and builds nothing, so the root mesh line is safe here.
 import { calculateMinUtxo } from '@/utils/min-utxo';
 import {
 	deriveTotalCollateral,
@@ -85,14 +86,42 @@ export function coinsPerUtxoSizeOf(protocolParameters: object): number {
 	return value;
 }
 
-/** Min-UTxO of the wallet's continuing output, which carries the state token and the inline datum. */
-export function guardedContinuingMinLovelace(datum: WalletDatum, amount: Asset[], coinsPerUtxoSize: number): bigint {
-	return calculateMinUtxo({
-		datum: walletDatumData(datum),
-		nativeTokenCount: amount.filter((asset) => asset.unit !== 'lovelace' && asset.unit !== '').length,
-		coinsPerUtxoSize,
+// Measured with the widest coin (an 8-byte CBOR uint), so the lovelace field is never undercounted.
+const MAX_COIN_LOVELACE = '18446744073709551615';
+
+/**
+ * Min-UTxO of the wallet's continuing output, which carries the state token,
+ * any other assets and the inline datum. Same rule as the L2 escrow output:
+ * the larger of Mesh's serialized minimum (exact for many long-named tokens)
+ * and the buffered estimate. `extraBytes` covers a datum that will grow before
+ * the output is built (packing sizes from the current datum, not the next one).
+ */
+export function guardedContinuingMinLovelace(params: {
+	address: string;
+	datum: WalletDatum;
+	amount: Asset[];
+	coinsPerUtxoSize: number;
+	extraBytes?: number;
+}): bigint {
+	const data = walletDatumData(params.datum);
+	const tokens = params.amount.filter((asset) => asset.unit !== 'lovelace' && asset.unit !== '');
+	const serialized =
+		getOutputMinLovelace(
+			{
+				address: params.address,
+				amount: [...tokens, { unit: 'lovelace', quantity: MAX_COIN_LOVELACE }],
+				// Pre-serialized: Mesh's min-UTxO helper cannot take the datum's Map values in Mesh form.
+				datum: { type: 'Inline', data: { type: 'CBOR', content: serializeData(data) } },
+			},
+			params.coinsPerUtxoSize,
+		) + BigInt((params.extraBytes ?? 0) * params.coinsPerUtxoSize);
+	const buffered = calculateMinUtxo({
+		datum: data,
+		nativeTokenCount: tokens.length,
+		coinsPerUtxoSize: params.coinsPerUtxoSize,
 		includeBuffers: true,
 	}).minUtxoLovelace;
+	return serialized > buffered ? serialized : buffered;
 }
 
 /** Raised when the frozen body exceeds MAX_SAFE_TX_BYTES, so a caller can shrink the batch and rebuild. */
@@ -252,11 +281,12 @@ export async function buildGuardedLockTx(params: BuildGuardedLockParams): Promis
 			upperMs: BigInt(slotToBeginUnixTime(window.invalidAfter, slotConfig)),
 		},
 	});
-	const continuingMin = guardedContinuingMinLovelace(
-		nextDatum,
-		continuingAmount,
-		coinsPerUtxoSizeOf(protocolParameters),
-	);
+	const continuingMin = guardedContinuingMinLovelace({
+		address: wallet.address,
+		datum: nextDatum,
+		amount: continuingAmount,
+		coinsPerUtxoSize: coinsPerUtxoSizeOf(protocolParameters),
+	});
 	if (lovelaceOf(continuingAmount) < continuingMin) {
 		throw new GuardedContinuingOutputTooSmallError(lovelaceOf(continuingAmount), continuingMin);
 	}
