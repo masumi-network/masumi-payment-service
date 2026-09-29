@@ -27,6 +27,7 @@ import {
 	WALLET_MIN_BALANCE_LOVELACE,
 	WALLET_PERIOD_MS,
 	AGENT_COLLATERAL_SPLIT_LOVELACE,
+	assertPeriodLimitCoversRun,
 	walletPeriodLimitLovelace,
 } from './demo-config';
 import { calculateMinUtxo } from '@/utils/min-utxo';
@@ -229,6 +230,7 @@ async function mint(): Promise<void> {
 		throw new Error('this demo wallet was retired; delete the .state directory to start over');
 	}
 	const periodLimitLovelace = walletPeriodLimitLovelace();
+	assertPeriodLimitCoversRun(periodLimitLovelace);
 	const owner = wallet(ownerMnemonic(state));
 	const agent = wallet(agentMnemonic(state));
 	const ownerAddress = await firstAddress(owner);

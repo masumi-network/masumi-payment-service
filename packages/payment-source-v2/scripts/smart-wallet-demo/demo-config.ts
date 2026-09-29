@@ -90,3 +90,17 @@ export function walletPeriodLimitLovelace(): bigint {
 	}
 	return BigInt(raw);
 }
+
+/**
+ * Refuse, before mint, a period limit that would stop the run partway: in one
+ * period `allow-batched` and then `allow-single` each lock every purchase once
+ * (denials lock nothing), and only the owner's key can change the limit later.
+ */
+export function assertPeriodLimitCoversRun(periodLimitLovelace: bigint): void {
+	const neededLovelace = 2n * BigInt(config.purchases) * config.lockLovelace;
+	if (periodLimitLovelace < neededLovelace) {
+		throw new Error(
+			`SMART_WALLET_DEMO_PERIOD_LIMIT_LOVELACE (${periodLimitLovelace}) is below the ${neededLovelace} lovelace the batched and single-item runs lock in one period`,
+		);
+	}
+}
