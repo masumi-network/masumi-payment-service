@@ -53,6 +53,7 @@ import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransacti
 import { TransactionRowActionsMenu } from '@/components/transactions/TransactionRowActionsMenu';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
+import { useTransactionTabCounts } from '@/lib/hooks/useTransactionTabCounts';
 import { useTableSelection } from '@/lib/hooks/useTableSelection';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
@@ -131,8 +132,10 @@ export default function Transactions() {
     isPlaceholderData,
   } = useTransactions(filterParams, { trackVisit: false });
 
-  // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
-  const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
+  // Unfiltered instance for the "new transactions" watermark (shares the layout's
+  // cache); only this instance updates localStorage.
+  const { markAllAsRead } = useTransactions();
+  const { data: tabCounts, refetch: refetchTabCounts } = useTransactionTabCounts();
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
@@ -142,47 +145,29 @@ export default function Transactions() {
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
-  const tabs = useMemo(() => {
-    const seenIds = new Set<string>();
-    const dedupedTransactions = allTransactionsForCounts.filter((tx) => {
-      if (!tx.id) return true;
-      if (seenIds.has(tx.id)) return false;
-      seenIds.add(tx.id);
-      return true;
-    });
-
-    const refundCount = dedupedTransactions.filter(
-      (t) => t.onChainState === 'RefundRequested',
-    ).length;
-    const disputeCount = dedupedTransactions.filter((t) => t.onChainState === 'Disputed').length;
-    // Mirrors the backend filterNeedsManualAction predicate (buildNeedsManualActionFilter):
-    // parked in WaitingForManualAction or a recorded NextAction error.
-    const needsActionCount = dedupedTransactions.filter(
-      (t) =>
-        t.NextAction?.requestedAction === 'WaitingForManualAction' || !!t.NextAction?.errorType,
-    ).length;
-
-    return [
+  const tabs = useMemo(
+    () => [
       { name: 'All', count: null },
       { name: 'Payments', count: null },
       { name: 'Purchases', count: null },
       {
         name: 'Refund Requests',
-        count: refundCount || null,
+        count: tabCounts?.refundRequests || null,
         variant: 'alert' as const,
       },
       {
         name: 'Disputes',
-        count: disputeCount || null,
+        count: tabCounts?.disputes || null,
         variant: 'alert' as const,
       },
       {
         name: 'Needs Action',
-        count: needsActionCount || null,
+        count: tabCounts?.needsAction || null,
         variant: 'alert' as const,
       },
-    ];
-  }, [allTransactionsForCounts]);
+    ],
+    [tabCounts],
+  );
 
   // Dedup only — server handles filtering
   const filteredTransactions = useMemo(() => {
@@ -220,7 +205,8 @@ export default function Transactions() {
 
   const refreshTransactions = useCallback(() => {
     void refetchTransactions?.();
-  }, [refetchTransactions]);
+    void refetchTabCounts();
+  }, [refetchTransactions, refetchTabCounts]);
 
   // Error type has no server-side param, so narrow it client-side. Pagination-limited.
   const visibleTransactions = useMemo(() => {
