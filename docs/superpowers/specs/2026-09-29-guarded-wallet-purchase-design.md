@@ -213,3 +213,7 @@ Each item changes what the sections above say. VERIFIED = in the committed code.
 5. `velocity_burst` as next-tick retry. The tick can come before `retryAfterSec` ends and spend one more denied round trip.
 6. The mandate as request input on attach. v1.3.0 requires `constitution` on `POST /v1/wallets`, but a console-only mandate may be the intended flow.
 7. `body_mismatch` mapped to `Unknown`, not `PolicyDenied`.
+8. A guarded wallet held back by a partly used period budget is not counted as evaluated. A purchase larger than the whole period limit then waits until `payByTime` instead of parking as InsufficientFunds.
+9. A node with no Exchain config, or an agent that cannot pay the fee, counts its guarded wallets as evaluated with nothing to spend. Purchases can then park as InsufficientFunds with the note "Not enough funds in wallets", which names the wrong cause.
+10. The continuing-output min-UTxO is the larger of Mesh's serialized minimum and the buffered estimate, plus 32 bytes in packing for datum growth. A scratch sweep (1 to 15 tokens, 3 address kinds) found 0 cases below the ledger minimum. That sweep is REPORTED by a review agent and re-run once in this session; it is not a committed test.
+11. The L2 claim filter `GuardedWallet: { is: null }` and the `service.ts` wiring of unevaluated wallets have no committed test. Both are checked by type and by code reading only.
