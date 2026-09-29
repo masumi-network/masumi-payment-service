@@ -22,6 +22,8 @@ import { deserializeTx } from '@meshsdk/core-cst';
 import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
 import { createTxWindow } from '@/services/shared/tx-window';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
+// Byte-size estimate only: it serializes the datum to count bytes and builds nothing, so the root mesh line is safe here.
+import { calculateMinUtxo } from '@/utils/min-utxo';
 import {
 	deriveTotalCollateral,
 	getSpendableWalletUtxos,
@@ -59,6 +61,38 @@ function withExUnitsSafetyMargin(budget: ExUnits): ExUnits {
 		mem: Number((BigInt(Math.ceil(budget.mem)) * EX_UNITS_SAFETY_NUM) / EX_UNITS_SAFETY_DEN),
 		steps: Number((BigInt(Math.ceil(budget.steps)) * EX_UNITS_SAFETY_NUM) / EX_UNITS_SAFETY_DEN),
 	};
+}
+
+/**
+ * Raised when a lock would leave the wallet's continuing output below min-UTxO.
+ * Mesh builds such an output without complaint and evaluation passes, so only
+ * the ledger would refuse it, after Exchain had co-signed.
+ */
+export class GuardedContinuingOutputTooSmallError extends Error {
+	constructor(
+		readonly lovelace: bigint,
+		readonly minLovelace: bigint,
+	) {
+		super(`the smart wallet would keep ${lovelace} lovelace, below its ${minLovelace} lovelace min-UTxO`);
+		this.name = 'GuardedContinuingOutputTooSmallError';
+	}
+}
+
+/** `coinsPerUtxoSize` from protocol parameters that may come from an untyped cache. */
+export function coinsPerUtxoSizeOf(protocolParameters: object): number {
+	const value = 'coinsPerUtxoSize' in protocolParameters ? protocolParameters.coinsPerUtxoSize : undefined;
+	if (typeof value !== 'number') throw new Error('protocol parameters carry no coinsPerUtxoSize');
+	return value;
+}
+
+/** Min-UTxO of the wallet's continuing output, which carries the state token and the inline datum. */
+export function guardedContinuingMinLovelace(datum: WalletDatum, amount: Asset[], coinsPerUtxoSize: number): bigint {
+	return calculateMinUtxo({
+		datum: walletDatumData(datum),
+		nativeTokenCount: amount.filter((asset) => asset.unit !== 'lovelace' && asset.unit !== '').length,
+		coinsPerUtxoSize,
+		includeBuffers: true,
+	}).minUtxoLovelace;
 }
 
 /** Raised when the frozen body exceeds MAX_SAFE_TX_BYTES, so a caller can shrink the batch and rebuild. */
@@ -218,6 +252,14 @@ export async function buildGuardedLockTx(params: BuildGuardedLockParams): Promis
 			upperMs: BigInt(slotToBeginUnixTime(window.invalidAfter, slotConfig)),
 		},
 	});
+	const continuingMin = guardedContinuingMinLovelace(
+		nextDatum,
+		continuingAmount,
+		coinsPerUtxoSizeOf(protocolParameters),
+	);
+	if (lovelaceOf(continuingAmount) < continuingMin) {
+		throw new GuardedContinuingOutputTooSmallError(lovelaceOf(continuingAmount), continuingMin);
+	}
 
 	const collateral = pickBatchCollateral(agentUtxos, [walletUtxo.input]);
 	if (collateral == null) {

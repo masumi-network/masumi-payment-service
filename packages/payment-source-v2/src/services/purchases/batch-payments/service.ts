@@ -400,8 +400,8 @@ export async function batchLatestPaymentEntriesV2() {
 
 					const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
-					// Guarded wallets that cannot take a purchase this tick for a reason that may
-					// clear. They are not "evaluated", so they never park a purchase as InsufficientFunds.
+					// Guarded wallets held back this tick by a state that clears on its own (a failed
+					// read, a partly used period budget). They never park a purchase as InsufficientFunds.
 					const unevaluatedWalletIds = new Set<string>();
 					const walletAmounts = await Promise.all(
 						potentialWallets.map(async (wallet) => {
@@ -430,7 +430,7 @@ export async function batchLatestPaymentEntriesV2() {
 											overheadLovelace: BATCH_TX_LOVELACE_OVERHEAD,
 										})
 									: null;
-							if (wallet.GuardedWallet != null && guardedAmounts == null) unevaluatedWalletIds.add(wallet.id);
+							if (guardedAmounts?.evaluated === false) unevaluatedWalletIds.add(wallet.id);
 							return {
 								wallet: meshWallet,
 								walletId: wallet.id,
@@ -441,7 +441,7 @@ export async function batchLatestPaymentEntriesV2() {
 								scriptAddress: paymentContract.smartContractAddress,
 								amounts:
 									wallet.GuardedWallet != null
-										? (guardedAmounts ?? [])
+										? (guardedAmounts?.amounts ?? [])
 										: Array.from(balanceMap.entries()).map(([unit, quantity]) => ({
 												unit: unit === 'lovelace' ? '' : unit,
 												quantity,

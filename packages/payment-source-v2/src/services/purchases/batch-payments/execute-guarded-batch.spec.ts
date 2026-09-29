@@ -17,6 +17,7 @@ const config = {
 };
 
 class MockTransportError extends Error {}
+class MockContinuingTooSmallError extends Error {}
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: { purchaseRequest: { update: mockPurchaseUpdate } },
@@ -45,6 +46,7 @@ jest.unstable_mockModule('../../../smart-wallet/wallet-lifecycle', () => ({
 jest.unstable_mockModule('../../../smart-wallet/guarded-lock-builder', () => ({
 	buildGuardedLockTx: mockBuild,
 	GuardedTxTooLargeError: class extends Error {},
+	GuardedContinuingOutputTooSmallError: MockContinuingTooSmallError,
 }));
 jest.unstable_mockModule('../../../smart-wallet/cosign-client', () => ({
 	CosignTransportError: MockTransportError,
@@ -205,6 +207,20 @@ describe('executeGuardedBatch', () => {
 		expect(nextActionOf('p2')).toEqual(expect.objectContaining({ errorType: PurchaseErrorType.PolicyDenied }));
 		const [firstCall, secondCall] = mockRequestCosign.mock.calls as unknown as Array<[unknown, { batchId: string }]>;
 		expect(secondCall[1].batchId).toBe(firstCall[1].batchId);
+	});
+
+	it('drops the last purchase when the batch would leave the wallet below min-UTxO', async () => {
+		mockBuild
+			.mockRejectedValueOnce(new MockContinuingTooSmallError('too small'))
+			.mockResolvedValueOnce(built('tx1', 1));
+		mockRequestCosign.mockResolvedValue({ httpStatus: 200, approved: { witnessSetHex: 'ws' } });
+		await run(pairing(['p1', 'p2']));
+
+		expect(mockRequestCosign).toHaveBeenCalledTimes(1);
+		expect(mockSubmit).toHaveBeenCalledWith(expect.objectContaining({ requestIds: ['p1'] }));
+		expect(nextActionOf('p2')).toEqual(
+			expect.objectContaining({ requestedAction: PurchasingAction.FundsLockingRequested, errorType: null }),
+		);
 	});
 
 	it('does not build when co-signing is not configured', async () => {

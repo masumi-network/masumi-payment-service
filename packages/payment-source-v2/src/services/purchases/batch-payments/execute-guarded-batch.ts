@@ -17,6 +17,7 @@ import {
 } from '../../../smart-wallet/cosign-client';
 import {
 	buildGuardedLockTx,
+	GuardedContinuingOutputTooSmallError,
 	GuardedTxTooLargeError,
 	type GuardedLockBuild,
 	type GuardedLockOutput,
@@ -205,11 +206,18 @@ export async function executeGuardedBatch(
 				}),
 			);
 		} catch (error) {
-			if (error instanceof GuardedTxTooLargeError && batched.length > 1) {
+			// Both shrink with the batch: fewer locks mean a smaller body and more left in the wallet.
+			const shrinkNote =
+				error instanceof GuardedTxTooLargeError
+					? 'Guarded batch too large; retrying'
+					: error instanceof GuardedContinuingOutputTooSmallError
+						? 'Guarded batch would leave the smart wallet below min-UTxO; retrying'
+						: null;
+			if (shrinkNote != null && batched.length > 1) {
 				const dropped = batched[batched.length - 1];
 				await recordCosignDispositions(
 					[dropped],
-					new Map([[dropped.paymentRequest.id, { kind: 'retry', note: 'Guarded batch too large; retrying' }]]),
+					new Map([[dropped.paymentRequest.id, { kind: 'retry', note: shrinkNote }]]),
 				);
 				walletPairing.batchedRequests = batched.slice(0, -1);
 				continue;

@@ -19,6 +19,14 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
+jest.unstable_mockModule('@/utils/mesh-cost-model-sync', () => ({
+	getCachedChainProtocolParameters: () => ({ coinsPerUtxoSize: 4310 }),
+}));
+jest.unstable_mockModule('../../../smart-wallet/guarded-lock-builder', () => ({
+	coinsPerUtxoSizeOf: (protocolParameters: { coinsPerUtxoSize: number }) => protocolParameters.coinsPerUtxoSize,
+	// About 1.3 ADA, the order of the real continuing output.
+	guardedContinuingMinLovelace: () => 1_300_000n,
+}));
 jest.unstable_mockModule('../../../smart-wallet/wallet-lifecycle', () => ({
 	fetchWalletUtxo: mockFetchWalletUtxo,
 	readWalletDatum: mockReadWalletDatum,
@@ -73,22 +81,39 @@ beforeEach(() => {
 
 describe('guardedWalletAmounts', () => {
 	it('offers the period budget plus the batch overhead', async () => {
-		await expect(guardedWalletAmounts(params)).resolves.toEqual([{ unit: '', quantity: 53n * ADA }]);
+		await expect(guardedWalletAmounts(params)).resolves.toEqual({
+			amounts: [{ unit: '', quantity: 53n * ADA }],
+			evaluated: true,
+		});
 	});
 
-	it('is unknown, not empty, when the smart wallet cannot be read', async () => {
+	it('holds back the continuing output min-UTxO when the datum reserve is 0', async () => {
+		mockFetchWalletUtxo.mockResolvedValue({
+			input: { txHash: 'c'.repeat(64), outputIndex: 0 },
+			output: { address: 'addr_test1script', amount: [{ unit: 'lovelace', quantity: (10n * ADA).toString() }] },
+		});
+		const result = await guardedWalletAmounts(params);
+		const spendable = result.amounts[0]!.quantity - params.overheadLovelace;
+		expect(spendable).toBeLessThan(9n * ADA);
+		expect(spendable).toBeGreaterThan(0n);
+	});
+
+	it('is not evaluated when the smart wallet cannot be read', async () => {
 		mockFetchWalletUtxo.mockRejectedValue(new Error('Blockfrost 429'));
-		await expect(guardedWalletAmounts(params)).resolves.toBeNull();
+		await expect(guardedWalletAmounts(params)).resolves.toEqual({ amounts: [], evaluated: false });
 	});
 
-	it('is unknown while the period budget is spent, because it resets', async () => {
-		mockReadWalletDatum.mockReturnValue(datum(50n * ADA));
-		await expect(guardedWalletAmounts(params)).resolves.toBeNull();
+	it('is not evaluated while a partly used period budget holds it back', async () => {
+		mockReadWalletDatum.mockReturnValue(datum(45n * ADA));
+		await expect(guardedWalletAmounts(params)).resolves.toEqual({
+			amounts: [{ unit: '', quantity: 8n * ADA }],
+			evaluated: false,
+		});
 	});
 
-	it('takes no purchase while co-signing is not configured', async () => {
+	it('counts as evaluated, with nothing to spend, while co-signing is not configured', async () => {
 		config.EXCHAIN_COSIGN_URL = null;
-		await expect(guardedWalletAmounts(params)).resolves.toBeNull();
+		await expect(guardedWalletAmounts(params)).resolves.toEqual({ amounts: [], evaluated: true });
 		expect(mockFetchWalletUtxo).not.toHaveBeenCalled();
 	});
 });
