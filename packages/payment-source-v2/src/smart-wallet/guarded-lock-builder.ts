@@ -105,23 +105,24 @@ export function guardedContinuingMinLovelace(params: {
 }): bigint {
 	const data = walletDatumData(params.datum);
 	const tokens = params.amount.filter((asset) => asset.unit !== 'lovelace' && asset.unit !== '');
-	const serialized =
-		getOutputMinLovelace(
-			{
-				address: params.address,
-				amount: [...tokens, { unit: 'lovelace', quantity: MAX_COIN_LOVELACE }],
-				// Pre-serialized: Mesh's min-UTxO helper cannot take the datum's Map values in Mesh form.
-				datum: { type: 'Inline', data: { type: 'CBOR', content: serializeData(data) } },
-			},
-			params.coinsPerUtxoSize,
-		) + BigInt((params.extraBytes ?? 0) * params.coinsPerUtxoSize);
+	const serialized = getOutputMinLovelace(
+		{
+			address: params.address,
+			amount: [...tokens, { unit: 'lovelace', quantity: MAX_COIN_LOVELACE }],
+			// Pre-serialized: Mesh's min-UTxO helper cannot take the datum's Map values in Mesh form.
+			datum: { type: 'Inline', data: { type: 'CBOR', content: serializeData(data) } },
+		},
+		params.coinsPerUtxoSize,
+	);
 	const buffered = calculateMinUtxo({
 		datum: data,
 		nativeTokenCount: tokens.length,
 		coinsPerUtxoSize: params.coinsPerUtxoSize,
 		includeBuffers: true,
 	}).minUtxoLovelace;
-	return serialized > buffered ? serialized : buffered;
+	// The margin goes on the result: either term can be the larger one, and both grow with the datum.
+	const margin = BigInt((params.extraBytes ?? 0) * params.coinsPerUtxoSize);
+	return (serialized > buffered ? serialized : buffered) + margin;
 }
 
 /** Raised when the frozen body exceeds MAX_SAFE_TX_BYTES, so a caller can shrink the batch and rebuild. */

@@ -10,8 +10,8 @@ import { assetValueGet, lovelaceOf, type WalletDatum } from '../../../smart-wall
 import { fetchWalletUtxo, readWalletDatum } from '../../../smart-wallet/wallet-lifecycle';
 import { cosignConfigOrNull } from './cosign-config';
 
-// The next datum can be larger than the current one: spentInPeriod and periodStart
-// integers widen by up to 8 CBOR bytes each, and a missing lovelace entry appears.
+// The next datum can be larger than the current one: the lovelace spentInPeriod and
+// periodStart integers widen by up to 8 CBOR bytes each (16 in all). 32 leaves headroom.
 const NEXT_DATUM_GROWTH_BYTES = 32;
 // The validator keys lovelace as the empty policy and the empty asset name.
 const LOVELACE_POLICY = '';

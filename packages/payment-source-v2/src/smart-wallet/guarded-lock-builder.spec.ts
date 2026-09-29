@@ -56,8 +56,13 @@ describe('guardedContinuingMinLovelace', () => {
 		expect(minFor(tokens)).toBeGreaterThan(buffered);
 	});
 
-	it('adds the datum growth margin on top of the serialized size', () => {
-		const tokens = [STATE_TOKEN, ...Array.from({ length: 8 }, (_, i) => longToken(i + 1))];
+	it.each([
+		['the state token only, where the buffered estimate decides', [STATE_TOKEN]],
+		[
+			'many long-named tokens, where the serialized size decides',
+			[STATE_TOKEN, ...Array.from({ length: 8 }, (_, i) => longToken(i + 1))],
+		],
+	])('adds the datum growth margin for %s', (_label, tokens) => {
 		expect(minFor(tokens, 32) - minFor(tokens)).toBe(32n * BigInt(PREPROD_COINS_PER_UTXO_SIZE));
 	});
 });
