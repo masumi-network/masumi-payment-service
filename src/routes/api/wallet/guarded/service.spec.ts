@@ -5,6 +5,7 @@ type AsyncFn = (...args: never[]) => Promise<unknown>;
 const mockFindFirst = jest.fn<AsyncFn>();
 const mockCreate = jest.fn<(args: { data: Record<string, unknown> }) => Promise<unknown>>();
 const mockDelete = jest.fn<(args: unknown) => Promise<unknown>>();
+const mockUpdateMany = jest.fn<(args: unknown) => Promise<{ count: number }>>();
 const mockInspect = jest.fn<(params: unknown, rpcApiKey: string) => Promise<unknown>>();
 const mockRegister = jest.fn<(args: Record<string, unknown>) => Promise<unknown>>();
 const config = {
@@ -15,7 +16,15 @@ const config = {
 };
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hotWallet: { findFirst: mockFindFirst }, guardedWallet: { create: mockCreate, delete: mockDelete } },
+	prisma: {
+		hotWallet: { findFirst: mockFindFirst },
+		guardedWallet: { create: mockCreate, delete: mockDelete },
+		$transaction: (run: (tx: unknown) => Promise<unknown>) =>
+			run({ hotWallet: { updateMany: mockUpdateMany }, guardedWallet: { create: mockCreate } }),
+	},
+}));
+jest.unstable_mockModule('@masumi/payment-core/db-retry', () => ({
+	retryOnSerializationConflict: (run: () => Promise<unknown>) => run(),
 }));
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({ CONFIG: config }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -74,6 +83,7 @@ beforeEach(() => {
 		agentVkh: AGENT,
 		periodLimitLovelace: 1_000_000_000n,
 	});
+	mockUpdateMany.mockResolvedValue({ count: 1 });
 	mockCreate.mockImplementation(({ data }) => Promise.resolve({ id: 'gw-1', ...data }));
 	mockRegister.mockResolvedValue({ walletId: 'wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ', mandateEnglish: 'up to 50 ADA' });
 });
@@ -110,6 +120,12 @@ describe('attachGuardedWallet', () => {
 		mockFindFirst.mockResolvedValue(hotWallet({ lockedAt: new Date() }));
 		await expect(attachGuardedWallet(input, scope)).rejects.toMatchObject({ status: 409 });
 		expect(mockInspect).not.toHaveBeenCalled();
+		expect(mockCreate).not.toHaveBeenCalled();
+	});
+
+	it('refuses when a batch locks the hot wallet before the guard is written', async () => {
+		mockUpdateMany.mockResolvedValue({ count: 0 });
+		await expect(attachGuardedWallet(input, scope)).rejects.toMatchObject({ status: 409 });
 		expect(mockCreate).not.toHaveBeenCalled();
 	});
 
