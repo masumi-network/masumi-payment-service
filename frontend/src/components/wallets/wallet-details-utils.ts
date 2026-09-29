@@ -2,6 +2,7 @@ import { shortenAddress, hexToAscii } from '@/lib/utils';
 import formatBalance from '@/lib/formatBalance';
 import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import type { DisplayWalletType } from '@/lib/wallet-type';
+import type { WalletListItem } from '@/lib/api/generated';
 
 export interface TokenBalance {
   unit: string;
@@ -71,6 +72,23 @@ export interface WalletWithBalance {
   /** True when purchases lock through a guarded smart wallet. */
   isGuarded?: boolean;
   LowBalanceSummary?: LowBalanceSummary;
+}
+
+/** The list-item fields of a loaded wallet, without its balances. */
+export function toWalletListItem(
+  wallet: Omit<WalletListItem, 'isGuarded'> & { isGuarded?: boolean },
+): WalletListItem {
+  return {
+    id: wallet.id,
+    paymentSourceId: wallet.paymentSourceId,
+    type: wallet.type,
+    walletVkey: wallet.walletVkey,
+    walletAddress: wallet.walletAddress,
+    collectionAddress: wallet.collectionAddress,
+    note: wallet.note,
+    isGuarded: wallet.isGuarded ?? false,
+    LowBalanceSummary: wallet.LowBalanceSummary,
+  };
 }
 
 export const EMPTY_LOW_BALANCE_SUMMARY: LowBalanceSummary = {

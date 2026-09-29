@@ -124,15 +124,26 @@ export function guardedWalletQueryKey(hotWalletId: string | undefined) {
 export function useGuardedWallet({
   hotWalletId,
   enabled,
+  invalidateWalletQueries,
 }: {
   hotWalletId: string | undefined;
   enabled: boolean;
+  /** Refreshes every wallet list, so the Guarded badge follows attach and detach. */
+  invalidateWalletQueries: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
   const { apiClient } = useAppContext();
   const [form, setForm] = useState<GuardedAttachForm>(EMPTY_GUARDED_ATTACH_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmingDetach, setIsConfirmingDetach] = useState(false);
+  // The dialog stays mounted across wallets. A half-filled form must not carry
+  // one wallet's owner, quorum and mandate over to the next.
+  const [formWalletId, setFormWalletId] = useState(hotWalletId);
+  if (formWalletId !== hotWalletId) {
+    setFormWalletId(hotWalletId);
+    setForm(EMPTY_GUARDED_ATTACH_FORM);
+    setIsConfirmingDetach(false);
+  }
 
   const query = useQuery({
     queryKey: guardedWalletQueryKey(hotWalletId),
@@ -152,7 +163,7 @@ export function useGuardedWallet({
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: guardedWalletQueryKey(hotWalletId) }),
-      queryClient.invalidateQueries({ queryKey: ['wallets'] }),
+      invalidateWalletQueries(),
     ]);
   };
 

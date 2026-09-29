@@ -131,6 +131,7 @@ export function WalletDetailsDialog({
   const guardedWallet = useGuardedWallet({
     hotWalletId: wallet?.id,
     enabled: isOpen && canGuardWallet,
+    invalidateWalletQueries,
   });
 
   const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {

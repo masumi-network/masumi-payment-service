@@ -20,6 +20,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { shortenAddress } from '@/lib/utils';
 import { useWallets } from '@/lib/queries/useWallets';
 import type { WalletListItem } from '@/lib/api/generated';
+import { toWalletListItem } from '@/components/wallets/wallet-details-utils';
 import {
   INBOX_REGISTRY_LIMITS,
   REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN,
@@ -119,17 +120,7 @@ export function RegisterInboxAgentDialog({
       wallets
         .filter((wallet) => wallet.type === 'Selling')
         .map((wallet) => ({
-          wallet: {
-            id: wallet.id,
-            paymentSourceId: wallet.paymentSourceId,
-            type: wallet.type,
-            walletVkey: wallet.walletVkey,
-            walletAddress: wallet.walletAddress,
-            collectionAddress: wallet.collectionAddress,
-            note: wallet.note,
-            isGuarded: wallet.isGuarded ?? false,
-            LowBalanceSummary: wallet.LowBalanceSummary,
-          },
+          wallet: toWalletListItem(wallet),
           balance: parseInt(wallet.balance, 10),
         })),
     );
