@@ -45,6 +45,7 @@ import {
 	CosignTransportError,
 	mergeCosignWitnesses,
 	requestCosign,
+	velocityBurstRetryMs,
 	type CosignConfig,
 	type CosignIntent,
 } from '../../src/smart-wallet/cosign-client';
@@ -73,6 +74,8 @@ const MAX_COSIGN_REBUILDS = 2;
  */
 const MAX_UTXO_UNKNOWN_RETRIES = 6;
 const UTXO_UNKNOWN_RETRY_MS = 10_000;
+/** `velocity_burst` right after the batched phase (measured 2026-09-29): its 10 locks fill Exchain's minute. */
+const MAX_BURST_RETRIES = 2;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 import {
@@ -319,10 +322,11 @@ async function guardedLock(
 	const cosignerVkhs = state.quorumVkhs.slice(0, state.threshold);
 	// One batch id for the whole attempt: a rebuild under `rebuild.keep`
 	// supersedes the earlier decision instead of counting as a second one.
-	const batchId = randomUUID();
+	let batchId = randomUUID();
 	let rebuilds = 0;
 	let quorumRetries = 0;
 	let utxoUnknownRetries = 0;
+	let burstRetries = 0;
 
 	let indexes = purchaseIndexes;
 	for (;;) {
@@ -465,6 +469,17 @@ async function guardedLock(
 						`retry ${utxoUnknownRetries}/${MAX_UTXO_UNKNOWN_RETRIES} in ${UTXO_UNKNOWN_RETRY_MS / 1000}s`,
 				);
 				await sleep(UTXO_UNKNOWN_RETRY_MS);
+				continue;
+			}
+
+			// A full payment-rate minute is not a spent budget: wait as long as Exchain says,
+			// then ask again for the same purchases as a new batch (the old one was decided).
+			const burstWaitMs = velocityBurstRetryMs(denial.members);
+			if (kind !== 'deny' && burstWaitMs != null && burstRetries < MAX_BURST_RETRIES) {
+				burstRetries++;
+				log(`${kind}: payment rate limit; retry ${burstRetries}/${MAX_BURST_RETRIES} in ${burstWaitMs / 1000}s`);
+				await sleep(burstWaitMs);
+				batchId = randomUUID();
 				continue;
 			}
 

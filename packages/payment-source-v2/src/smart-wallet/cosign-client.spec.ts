@@ -1,4 +1,10 @@
-import { decodeCosignBody, decodeCosignBodyEcho, parseCosignResponse, withDigestPrefix } from './cosign-client';
+import {
+	decodeCosignBody,
+	decodeCosignBodyEcho,
+	parseCosignResponse,
+	velocityBurstRetryMs,
+	withDigestPrefix,
+} from './cosign-client';
 
 const txBodyHash = 'a'.repeat(64);
 const agent = 'b'.repeat(56);
@@ -142,5 +148,28 @@ describe('decoded co-sign body', () => {
 		expect(body.txBodyHex).toBe(`a40080018002000e82581c${agent}581c${quorum}`);
 		expect(txCbor).toBe(`84${body.txBodyHex}a0f5f6`);
 		expect(body.txBodyHash).toBe('b04decbe16e050c029e980afca83b951f3d4d08e26340c8c491ab2705716add1');
+	});
+});
+
+describe('payment-rate retry', () => {
+	const allowed = { purchaseId: 'pur-1', outputIndex: 0, verdict: 'allowed' as const };
+	const burst = (retryAfterSec?: number) => ({
+		purchaseId: 'pur-2',
+		outputIndex: 1,
+		verdict: 'denied' as const,
+		denied: 'velocity_burst',
+		retryAfterSec,
+	});
+
+	it('waits past the longest retryAfterSec when only the burst window denied', () => {
+		expect(velocityBurstRetryMs([allowed, burst(25)])).toBe(26_000);
+		expect(velocityBurstRetryMs([burst(3), { ...burst(40), purchaseId: 'pur-3' }])).toBe(41_000);
+	});
+
+	it('does not wait when another limit also denied, or no wait was given', () => {
+		const capped = { purchaseId: 'pur-3', outputIndex: 2, verdict: 'denied' as const, denied: 'per_tx_cap' };
+		expect(velocityBurstRetryMs([burst(25), capped])).toBeNull();
+		expect(velocityBurstRetryMs([burst(undefined)])).toBeNull();
+		expect(velocityBurstRetryMs([allowed])).toBeNull();
 	});
 });

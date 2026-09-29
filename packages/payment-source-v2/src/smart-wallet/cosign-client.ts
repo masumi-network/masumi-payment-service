@@ -186,6 +186,22 @@ export const memberVerdictSchema = z
 	});
 export type CosignMemberVerdict = z.infer<typeof memberVerdictSchema>;
 
+/** Past `retryAfterSec`, so the rolling minute has fully moved on when we ask again. */
+const BURST_RETRY_MARGIN_SEC = 1;
+
+/**
+ * How long to wait before asking again for the same purchases, when the only
+ * reason for the denial is the per-minute payment rate (`velocity_burst`). A
+ * burst denial consumes no budget and always carries `retryAfterSec`. Any other
+ * denied member makes the answer `null`: waiting does not help there.
+ */
+export function velocityBurstRetryMs(members: CosignMemberVerdict[]): number | null {
+	const denied = members.filter((member) => member.verdict === 'denied');
+	if (denied.length === 0) return null;
+	if (denied.some((member) => member.denied !== 'velocity_burst' || member.retryAfterSec == null)) return null;
+	return (Math.max(...denied.map((member) => member.retryAfterSec ?? 0)) + BURST_RETRY_MARGIN_SEC) * 1000;
+}
+
 const witnessSchema = z.object({
 	member: z.string().min(1),
 	vkeyHex: hash32,
