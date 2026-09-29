@@ -106,6 +106,13 @@ describe('attachGuardedWallet', () => {
 		expect(mockCreate).not.toHaveBeenCalled();
 	});
 
+	it('refuses while a batch packed as unguarded holds the hot wallet', async () => {
+		mockFindFirst.mockResolvedValue(hotWallet({ lockedAt: new Date() }));
+		await expect(attachGuardedWallet(input, scope)).rejects.toMatchObject({ status: 409 });
+		expect(mockInspect).not.toHaveBeenCalled();
+		expect(mockCreate).not.toHaveBeenCalled();
+	});
+
 	it('refuses a smart wallet that does not verify on chain', async () => {
 		mockInspect.mockRejectedValue(new Error('Expected exactly one UTxO carrying the token, found 0'));
 		await expect(attachGuardedWallet(input, scope)).rejects.toMatchObject({ status: 409 });

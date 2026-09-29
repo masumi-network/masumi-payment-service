@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { CONFIG } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 // V2 mesh line: the guarded builder and its signer must never mix with the root (V1) provider or wallet.
@@ -14,7 +13,6 @@ import {
 	jobHashOf,
 	mergeCosignWitnesses,
 	requestCosign,
-	type CosignConfig,
 	type CosignIntent,
 } from '../../../smart-wallet/cosign-client';
 import {
@@ -34,17 +32,10 @@ import {
 	type WalletPairing,
 } from './execute-batch';
 import { classifyCosignResult, type CosignDisposition, type CosignOutcome } from './cosign-disposition';
+import { cosignConfigOrNull } from './cosign-config';
 
 /** One rebuild with the admitted set per tick; a second denial goes back to the queue. */
 const MAX_COSIGN_REBUILDS = 1;
-
-function cosignConfigOrNull(): (CosignConfig & { nodeId: string; orgId: string }) | null {
-	const { EXCHAIN_COSIGN_URL, EXCHAIN_NODE_TOKEN, EXCHAIN_NODE_ID, EXCHAIN_ORG_ID } = CONFIG;
-	if (EXCHAIN_COSIGN_URL == null || EXCHAIN_NODE_TOKEN == null || EXCHAIN_NODE_ID == null || EXCHAIN_ORG_ID == null) {
-		return null;
-	}
-	return { url: EXCHAIN_COSIGN_URL, apiKey: EXCHAIN_NODE_TOKEN, nodeId: EXCHAIN_NODE_ID, orgId: EXCHAIN_ORG_ID };
-}
 
 /** A guarded wallet governs lovelace only, so packing never hands it a purchase with native tokens. */
 function lockLovelaceOf(request: BatchedRequest): bigint {

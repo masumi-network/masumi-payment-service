@@ -1,10 +1,12 @@
 import type { GuardedWallet } from '@/generated/prisma/client';
 import { logger } from '@masumi/payment-core/logger';
-import { SLOT_CONFIG_NETWORK, slotToBeginUnixTime, type BlockfrostProvider, type UTxO } from '@meshsdk/core';
+// V2 mesh line: the smart wallet read must not go through the root (V1) provider.
+import { BlockfrostProvider, SLOT_CONFIG_NETWORK, slotToBeginUnixTime, type UTxO } from '@meshsdk/core';
 import { createTxWindow } from '@/services/shared/tx-window';
 import { pickBatchCollateral } from '../../../builders/batch-helpers';
 import { assetValueGet, lovelaceOf, type WalletDatum } from '../../../smart-wallet/wallet';
 import { fetchWalletUtxo, readWalletDatum } from '../../../smart-wallet/wallet-lifecycle';
+import { cosignConfigOrNull } from './cosign-config';
 
 // The validator keys lovelace as the empty policy and the empty asset name.
 const LOVELACE_POLICY = '';
@@ -21,12 +23,17 @@ const LOVELACE_NAME = '';
  */
 export function guardedSpendableLovelace(datum: WalletDatum, walletUtxo: UTxO, windowLowerMs: bigint): bigint {
 	const aboveReserve = lovelaceOf(walletUtxo.output.amount) - datum.minBalanceLovelace;
+	const budgetLeft = guardedBudgetLeftLovelace(datum, windowLowerMs);
+	const spendable = aboveReserve < budgetLeft ? aboveReserve : budgetLeft;
+	return spendable > 0n ? spendable : 0n;
+}
+
+/** What the period budget still allows, after the validator's period rollover. */
+export function guardedBudgetLeftLovelace(datum: WalletDatum, windowLowerMs: bigint): bigint {
 	const limit = assetValueGet(datum.limit, LOVELACE_POLICY, LOVELACE_NAME) ?? 0n;
 	const rolledOver = windowLowerMs >= datum.periodStart + datum.periodLength;
 	const spent = rolledOver ? 0n : (assetValueGet(datum.spentInPeriod, LOVELACE_POLICY, LOVELACE_NAME) ?? 0n);
-	const budgetLeft = limit - spent;
-	const spendable = aboveReserve < budgetLeft ? aboveReserve : budgetLeft;
-	return spendable > 0n ? spendable : 0n;
+	return limit - spent;
 }
 
 /**
@@ -47,39 +54,53 @@ export function agentCanFundGuardedLock(agentUtxos: UTxO[]): boolean {
  * overhead (fee headroom + splitter) to the first request, but a guarded lock
  * pays its fee from the agent key, not from the smart wallet's budget.
  *
- * Returns no amounts, so the loop skips the wallet, when the agent cannot pay
- * the fee and collateral or the smart wallet cannot be read.
+ * Returns null when the wallet cannot take a purchase this tick for a reason
+ * that may clear: co-signing is not configured, the agent cannot pay the fee
+ * and collateral, the smart wallet cannot be read, or the period budget is
+ * spent. The caller must not count such a wallet as evaluated, or it parks
+ * purchases as InsufficientFunds for a state that fixes itself.
  */
 export async function guardedWalletAmounts(params: {
 	guarded: GuardedWallet;
 	network: string;
-	provider: Pick<BlockfrostProvider, 'fetchAddressUTxOs'>;
+	rpcApiKey: string;
 	agentUtxos: UTxO[];
 	overheadLovelace: bigint;
-}): Promise<Array<{ unit: string; quantity: bigint }>> {
+}): Promise<Array<{ unit: string; quantity: bigint }> | null> {
 	const { guarded, network } = params;
-	if (network !== 'preprod' && network !== 'mainnet') return [];
+	if (network !== 'preprod' && network !== 'mainnet') return null;
+	if (cosignConfigOrNull() == null) {
+		logger.warn('guarded hot wallet skipped: Exchain co-signing is not configured', {
+			hotWalletId: guarded.hotWalletId,
+		});
+		return null;
+	}
 	if (!agentCanFundGuardedLock(params.agentUtxos)) {
 		logger.warn('guarded hot wallet cannot fund the fee and collateral; skipping it', {
 			hotWalletId: guarded.hotWalletId,
 		});
-		return [];
+		return null;
 	}
 	try {
 		const walletUtxo = await fetchWalletUtxo(
-			params.provider,
+			new BlockfrostProvider(params.rpcApiKey),
 			{ address: guarded.scriptAddress, policyId: guarded.policyId },
 			guarded.stateTokenName,
 		);
+		const datum = readWalletDatum(walletUtxo);
 		const window = createTxWindow(network);
 		const windowLowerMs = BigInt(slotToBeginUnixTime(window.invalidBefore, SLOT_CONFIG_NETWORK[network]));
-		const spendable = guardedSpendableLovelace(readWalletDatum(walletUtxo), walletUtxo, windowLowerMs);
+		if (guardedBudgetLeftLovelace(datum, windowLowerMs) <= 0n) {
+			logger.info('guarded hot wallet skipped: period budget spent', { hotWalletId: guarded.hotWalletId });
+			return null;
+		}
+		const spendable = guardedSpendableLovelace(datum, walletUtxo, windowLowerMs);
 		return [{ unit: '', quantity: spendable + params.overheadLovelace }];
 	} catch (error) {
 		logger.warn('guarded smart wallet could not be read; skipping it', {
 			hotWalletId: guarded.hotWalletId,
 			error: error instanceof Error ? error.message : String(error),
 		});
-		return [];
+		return null;
 	}
 }

@@ -47,6 +47,10 @@ export async function attachGuardedWallet(input: AttachInput, scope: Scope) {
 		throw createHttpError(400, 'Guarded wallets need a V2 payment source');
 	}
 	if (hotWallet.GuardedWallet != null) throw createHttpError(409, 'This hot wallet is already guarded');
+	// A batch in flight was packed as unguarded; attaching now would not stop it locking from the hot wallet key.
+	if (hotWallet.lockedAt != null || hotWallet.pendingTransactionId != null) {
+		throw createHttpError(409, 'The hot wallet is busy with a transaction; retry once it is unlocked');
+	}
 
 	const params: GuardedWalletParams = {
 		ownerAddress: input.ownerAddress,

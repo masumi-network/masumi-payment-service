@@ -25,6 +25,7 @@ import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { processL2PurchaseLocks, type L2LockPassResult } from './l2-lock';
 import { executeGuardedBatch } from './execute-guarded-batch';
+import { parkUnfundedPurchases } from './park-unfunded';
 import { guardedWalletAmounts } from './guarded-packing';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import {
@@ -399,6 +400,9 @@ export async function batchLatestPaymentEntriesV2() {
 
 					const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
+					// Guarded wallets that cannot take a purchase this tick for a reason that may
+					// clear. They are not "evaluated", so they never park a purchase as InsufficientFunds.
+					const unevaluatedWalletIds = new Set<string>();
 					const walletAmounts = await Promise.all(
 						potentialWallets.map(async (wallet) => {
 							const {
@@ -415,6 +419,18 @@ export async function batchLatestPaymentEntriesV2() {
 								wallet.id,
 								'submission',
 							);
+							// A guarded wallet locks from its smart wallet, within the period budget.
+							const guardedAmounts =
+								wallet.GuardedWallet != null
+									? await guardedWalletAmounts({
+											guarded: wallet.GuardedWallet,
+											network: convertNetwork(paymentContract.network),
+											rpcApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+											agentUtxos: utxos,
+											overheadLovelace: BATCH_TX_LOVELACE_OVERHEAD,
+										})
+									: null;
+							if (wallet.GuardedWallet != null && guardedAmounts == null) unevaluatedWalletIds.add(wallet.id);
 							return {
 								wallet: meshWallet,
 								walletId: wallet.id,
@@ -423,16 +439,9 @@ export async function batchLatestPaymentEntriesV2() {
 								utxos,
 								currentBalanceMap,
 								scriptAddress: paymentContract.smartContractAddress,
-								// A guarded wallet locks from its smart wallet, within the period budget.
 								amounts:
 									wallet.GuardedWallet != null
-										? await guardedWalletAmounts({
-												guarded: wallet.GuardedWallet,
-												network: convertNetwork(paymentContract.network),
-												provider: blockchainProvider,
-												agentUtxos: utxos,
-												overheadLovelace: BATCH_TX_LOVELACE_OVERHEAD,
-											})
+										? (guardedAmounts ?? [])
 										: Array.from(balanceMap.entries()).map(([unit, quantity]) => ({
 												unit: unit === 'lovelace' ? '' : unit,
 												quantity,
@@ -730,61 +739,11 @@ export async function batchLatestPaymentEntriesV2() {
 					}
 					//only go into error state if we did not reach max batch size, as otherwise we might have enough funds in other wallets
 					if (paymentRequestsRemaining.length > 0 && maxBatchSizeReached == false) {
-						//count all existing wallets, including ones busy with a pending transaction or locked by
-						//a concurrent run: a busy wallet frees up with its funds intact, so it must suppress the
-						//permanent error state instead of being treated as nonexistent
-						const allWalletCount = await prisma.hotWallet.count({
-							where: {
-								deletedAt: null,
-								type: HotWalletType.Purchasing,
-								PaymentSource: {
-									id: paymentContract.id,
-								},
-							},
+						await parkUnfundedPurchases({
+							paymentSourceId: paymentContract.id,
+							purchases: paymentRequestsRemaining,
+							evaluatedWalletIds: potentialWallets.map((w) => w.id).filter((id) => !unevaluatedWalletIds.has(id)),
 						});
-						//only go into error state if all eligible wallets were evaluated this run, otherwise we might have enough funds in busy wallets
-						for (const paymentRequest of paymentRequestsRemaining) {
-							const eligibleWalletCount = paymentRequest.isLimitedToHotWallets
-								? await prisma.hotWallet.count({
-										where: {
-											deletedAt: null,
-											type: HotWalletType.Purchasing,
-											PaymentSource: { id: paymentContract.id },
-											id: { in: paymentRequest.HotWalletLimit.map((hw) => hw.id) },
-										},
-									})
-								: allWalletCount;
-							const eligiblePotentialCount = paymentRequest.isLimitedToHotWallets
-								? potentialWallets.filter((w) => paymentRequest.HotWalletLimit.some((hw) => hw.id === w.id)).length
-								: potentialWallets.length;
-							if (eligibleWalletCount == eligiblePotentialCount) {
-								logger.warn('No wallets with funds found, going into error state for', {
-									purchaseRequestId: paymentRequest.id,
-									eligibleWalletCount,
-									eligiblePotentialCount,
-								});
-								await prisma.purchaseRequest.update({
-									where: { id: paymentRequest.id },
-									data: {
-										ActionHistory: {
-											connect: {
-												id: paymentRequest.nextActionId,
-											},
-										},
-										NextAction: {
-											create: {
-												requestedAction: PurchasingAction.WaitingForManualAction,
-												errorType: PurchaseErrorType.InsufficientFunds,
-												errorNote:
-													paymentRequest.inputHash == null
-														? 'Purchase request has no input hash and not enough funds in wallets'
-														: 'Not enough funds in wallets',
-											},
-										},
-									},
-								});
-							}
-						}
 					}
 
 					await unlockUnusedPurchasingWallets(
