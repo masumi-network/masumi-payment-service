@@ -1,6 +1,12 @@
 import { z } from '@masumi/payment-core/zod';
 
-export const exchainReadTokenSchemaInput = z.object({});
+export const exchainReadTokenSchemaInput = z.object({
+	hotWalletId: z
+		.string()
+		.min(1)
+		.optional()
+		.describe("A guarded hot wallet; its registered Exchain wallet is shown. Omit to use the node's EXCHAIN_WALLET_ID"),
+});
 
 export const exchainReadTokenSchemaOutput = z.object({
 	walletId: z.string().describe('Exchain id of the guarded wallet the embedded page shows'),

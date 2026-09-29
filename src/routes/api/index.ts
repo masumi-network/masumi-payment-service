@@ -100,6 +100,11 @@ import { getFundDistributionEndpointGet, triggerFundDistributionEndpointPost } f
 import { railReadinessEndpointGet } from './rail-readiness';
 import { exchainReadTokenEndpointPost } from './exchain';
 import {
+	deleteGuardedWalletEndpointDelete,
+	getGuardedWalletEndpointGet,
+	postGuardedWalletEndpointPost,
+} from './wallet/guarded';
+import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
 	getSwapTransactionsEndpointGet,
@@ -341,6 +346,11 @@ export const apiRouter: Routing = {
 			'transfer-funds': {
 				get: getWalletFundEndpointGet,
 				post: postWalletFundEndpointPost,
+			},
+			guarded: {
+				get: getGuardedWalletEndpointGet,
+				post: postGuardedWalletEndpointPost,
+				delete: deleteGuardedWalletEndpointDelete,
 			},
 		},
 		'payment-source-extended': {

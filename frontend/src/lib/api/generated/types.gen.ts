@@ -820,7 +820,7 @@ export type Purchase = {
         /**
          * Type of error that occurred, if any
          */
-        errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+        errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | 'PolicyDenied' | null;
         /**
          * Additional details about the error, if any
          */
@@ -849,7 +849,7 @@ export type Purchase = {
         /**
          * Type of error that occurred, if any
          */
-        errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+        errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | 'PolicyDenied' | null;
         /**
          * Additional details about the error, if any
          */
@@ -6979,7 +6979,7 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                 /**
                  * Type of error that occurred, if any
                  */
-                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | 'PolicyDenied' | null;
                 /**
                  * Additional details about the error, if any
                  */
@@ -8144,7 +8144,7 @@ export type PostPurchaseErrors = {
                 /**
                  * Type of error that occurred, if any
                  */
-                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | 'PolicyDenied' | null;
                 /**
                  * Additional details about the error, if any
                  */
@@ -8399,7 +8399,7 @@ export type PostPurchaseResponses = {
                 /**
                  * Type of error that occurred, if any
                  */
-                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | 'PolicyDenied' | null;
                 /**
                  * Additional details about the error, if any
                  */
@@ -8933,7 +8933,7 @@ export type PostPurchaseRequestRefundResponses = {
                 /**
                  * Type of error that occurred, if any
                  */
-                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | 'PolicyDenied' | null;
                 /**
                  * Additional details about the error, if any
                  */
@@ -9224,7 +9224,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 /**
                  * Type of error that occurred, if any
                  */
-                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | 'PolicyDenied' | null;
                 /**
                  * Additional details about the error, if any
                  */
@@ -15476,10 +15476,13 @@ export type GetRailReadinessResponse = GetRailReadinessResponses[keyof GetRailRe
 
 export type PostExchainReadTokenData = {
     /**
-     * No fields; the wallet is fixed by node configuration
+     * Optionally, the guarded hot wallet whose Exchain page to show
      */
     body?: {
-        [key: string]: unknown;
+        /**
+         * A guarded hot wallet; its registered Exchain wallet is shown. Omit to use the node's EXCHAIN_WALLET_ID
+         */
+        hotWalletId?: string;
     };
     path?: never;
     query?: never;
@@ -15491,6 +15494,10 @@ export type PostExchainReadTokenErrors = {
      * Unauthorized
      */
     401: unknown;
+    /**
+     * The hot wallet is not found or has no registered Exchain wallet
+     */
+    404: unknown;
     /**
      * Exchain could not be reached or refused the request
      */
@@ -15529,6 +15536,287 @@ export type PostExchainReadTokenResponses = {
 };
 
 export type PostExchainReadTokenResponse = PostExchainReadTokenResponses[keyof PostExchainReadTokenResponses];
+
+export type DeleteWalletGuardedData = {
+    /**
+     * The hot wallet to detach
+     */
+    body?: {
+        /**
+         * The Purchasing hot wallet to detach
+         */
+        hotWalletId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guarded';
+};
+
+export type DeleteWalletGuardedErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hot wallet not found or not guarded
+     */
+    404: unknown;
+    /**
+     * The hot wallet is busy with a transaction
+     */
+    409: unknown;
+};
+
+export type DeleteWalletGuardedResponses = {
+    /**
+     * Guarded wallet detached
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            hotWalletId: string;
+            ownerAddress: string;
+            quorumVkhs: Array<string>;
+            threshold: number;
+            stateTokenName: string;
+            /**
+             * The smart wallet address
+             */
+            scriptAddress: string;
+            /**
+             * Policy id of the state token
+             */
+            policyId: string;
+            exchainWalletId: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+        };
+    };
+};
+
+export type DeleteWalletGuardedResponse = DeleteWalletGuardedResponses[keyof DeleteWalletGuardedResponses];
+
+export type GetWalletGuardedData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Purchasing hot wallet
+         */
+        hotWalletId: string;
+    };
+    url: '/wallet/guarded';
+};
+
+export type GetWalletGuardedErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hot wallet not found
+     */
+    404: unknown;
+};
+
+export type GetWalletGuardedResponses = {
+    /**
+     * Guarded wallet state
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Null when the hot wallet is not guarded
+             */
+            guardedWallet: {
+                id: string;
+                hotWalletId: string;
+                ownerAddress: string;
+                quorumVkhs: Array<string>;
+                threshold: number;
+                stateTokenName: string;
+                /**
+                 * The smart wallet address
+                 */
+                scriptAddress: string;
+                /**
+                 * Policy id of the state token
+                 */
+                policyId: string;
+                exchainWalletId: string | null;
+                createdAt: Date;
+                updatedAt: Date;
+            } | null;
+            /**
+             * Null when not guarded or the chain read failed
+             */
+            chain: {
+                /**
+                 * Smart wallet balance, in lovelace
+                 */
+                lovelace: string;
+                /**
+                 * On-chain limit per period, in lovelace
+                 */
+                periodLimitLovelace: string;
+                /**
+                 * Spent in the period the datum last recorded, in lovelace
+                 */
+                spentInPeriodLovelace: string;
+                /**
+                 * Start of that period
+                 */
+                periodStart: Date;
+                /**
+                 * Period length, in milliseconds
+                 */
+                periodLengthMs: string;
+                /**
+                 * Reserve the wallet never spends below, in lovelace
+                 */
+                minBalanceLovelace: string;
+            } | null;
+            /**
+             * Why the chain read failed
+             */
+            chainError: string | null;
+        };
+    };
+};
+
+export type GetWalletGuardedResponse = GetWalletGuardedResponses[keyof GetWalletGuardedResponses];
+
+export type PostWalletGuardedData = {
+    /**
+     * The smart wallet parameters and its Exchain registration
+     */
+    body?: {
+        /**
+         * The Purchasing hot wallet whose key is the smart wallet agent
+         */
+        hotWalletId: string;
+        /**
+         * The owner's base address. The owner key never reaches the node
+         */
+        ownerAddress: string;
+        /**
+         * Quorum key hashes baked into the script
+         */
+        quorumVkhs: Array<string>;
+        /**
+         * How many quorum keys must sign
+         */
+        threshold: number;
+        /**
+         * Asset name of the wallet state token (32-byte hex)
+         */
+        stateTokenName: string;
+        /**
+         * Set when the wallet is already registered with Exchain
+         */
+        exchainWalletId?: string;
+        /**
+         * Register the wallet with Exchain now, with this mandate
+         */
+        register?: {
+            /**
+             * The mandate Exchain enforces. It cannot change once registered
+             */
+            mandate: {
+                /**
+                 * Largest single lock Exchain co-signs, in lovelace
+                 */
+                perTxCap: string;
+                /**
+                 * Daily limit, in lovelace. Must equal the wallet's on-chain period limit
+                 */
+                daily: string;
+                /**
+                 * Daily limit per seller, in lovelace
+                 */
+                perSeller: string;
+                /**
+                 * Daily limit per agent, in lovelace
+                 */
+                perAgent: string;
+                /**
+                 * Lifetime limit, in lovelace
+                 */
+                envelope: string;
+                /**
+                 * Most payments Exchain co-signs per minute
+                 */
+                burstPerMinute: number;
+            };
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guarded';
+};
+
+export type PostWalletGuardedErrors = {
+    /**
+     * Not a Purchasing wallet on a V2 source, or the mandate does not match the chain
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hot wallet not found
+     */
+    404: unknown;
+    /**
+     * Already guarded, or the smart wallet does not verify on chain
+     */
+    409: unknown;
+    /**
+     * Exchain refused or could not be reached
+     */
+    502: unknown;
+    /**
+     * Exchain co-signing is not configured on this node
+     */
+    503: unknown;
+};
+
+export type PostWalletGuardedResponses = {
+    /**
+     * Guarded wallet attached
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            hotWalletId: string;
+            ownerAddress: string;
+            quorumVkhs: Array<string>;
+            threshold: number;
+            stateTokenName: string;
+            /**
+             * The smart wallet address
+             */
+            scriptAddress: string;
+            /**
+             * Policy id of the state token
+             */
+            policyId: string;
+            exchainWalletId: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            /**
+             * Exchain's plain-English reading of the mandate, when it registered one
+             */
+            mandateEnglish: string | null;
+        };
+    };
+};
+
+export type PostWalletGuardedResponse = PostWalletGuardedResponses[keyof PostWalletGuardedResponses];
 
 export type DeleteTxSyncQuarantineData = {
     /**

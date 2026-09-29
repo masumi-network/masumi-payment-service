@@ -34,7 +34,6 @@ import { calculateMinUtxo } from '@/utils/min-utxo';
 import { decodeBlockchainIdentifier, generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { MeshTxBuilder, MeshWallet, resolvePaymentKeyHash, resolveTxHash } from '@meshsdk/core';
-import { z } from '@masumi/payment-core/zod';
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -42,7 +41,6 @@ import { performance } from 'node:perf_hooks';
 import { lovelaceFromUtxo } from '../../src/builders/batch-helpers';
 import { createDatumFromBlockchainIdentifierV2 } from '../../src/datum-builder';
 import {
-	assertSafeCosignUrl,
 	CosignTransportError,
 	mergeCosignWitnesses,
 	requestCosign,
@@ -57,6 +55,7 @@ import {
 	type GuardedLockBuild,
 } from '../../src/smart-wallet/guarded-lock-builder';
 import { assetValueData } from '../../src/smart-wallet/wallet';
+import { registerGuardedWalletWithExchain } from '../../src/smart-wallet/guarded-wallet';
 import {
 	buildMintWalletTx,
 	buildOwnerSweepTx,
@@ -642,41 +641,32 @@ async function register(state: DemoState): Promise<void> {
 		);
 	}
 	const { agentVkhs, escrowAddresses } = await mockRegistrationOf(state);
-	const body = {
-		walletAddress: record.address,
-		stateToken: `${record.policyId}.${record.tokenName}`,
-		ownerKeyHash: resolvePaymentKeyHash(await firstAddress(wallet(ownerMnemonic(state)))),
-		agentKeyHashes: agentVkhs,
-		quorumKeyHashes: state.quorumVkhs,
-		quorumThreshold: state.threshold,
-		escrowAddresses,
-		governedAsset: { id: 'lovelace', decimals: 6 },
-		constitution: { params: EXCHAIN_MANDATE },
-		network: NETWORK,
-		orgId: config.cosignOrgId,
+	const reply = await registerGuardedWalletWithExchain({
+		baseUrl: config.cosignUrl,
+		token: config.cosignApiKey,
 		nodeId: config.cosignNodeId,
+		orgId: config.cosignOrgId,
+		wallet: {
+			ownerAddress: await firstAddress(wallet(ownerMnemonic(state))),
+			quorumVkhs: state.quorumVkhs,
+			threshold: state.threshold,
+			stateTokenName: record.tokenName,
+			network: NETWORK,
+			scriptAddress: record.address,
+			policyId: record.policyId,
+		},
+		agentVkhs,
+		escrowAddresses,
+		mandate: EXCHAIN_MANDATE,
 		// The demo's purchases carry synthetic agent identifiers that are not in the registry.
 		registryGate: false,
-	};
-	const baseUrl = assertSafeCosignUrl(config.cosignUrl, config.trustedPlaintextHosts);
-	const response = await fetch(`${baseUrl}/v1/wallets`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.cosignApiKey}` },
-		body: JSON.stringify(body),
-		redirect: 'error',
-		signal: AbortSignal.timeout(config.cosignTimeoutMs),
+		trustedPlaintextHosts: config.trustedPlaintextHosts,
+		timeoutMs: config.cosignTimeoutMs,
 	});
-	const text = await response.text();
-	if (response.status !== 200 && response.status !== 201) {
-		throw new Error(`Exchain refused the registration: HTTP ${response.status} ${text.slice(0, 500)}`);
-	}
-	const reply = z
-		.object({ walletId: z.string().min(1), mandateEnglish: z.string().optional() })
-		.parse(JSON.parse(text));
 	record.exchainWalletId = reply.walletId;
 	saveState(state);
-	event('registered', { walletId: reply.walletId, httpStatus: response.status });
-	log(`registered with Exchain as ${reply.walletId}${response.status === 200 ? ' (already registered)' : ''}`);
+	event('registered', { walletId: reply.walletId, alreadyRegistered: reply.alreadyRegistered });
+	log(`registered with Exchain as ${reply.walletId}${reply.alreadyRegistered ? ' (already registered)' : ''}`);
 	if (reply.mandateEnglish != null) log(`mandate: ${reply.mandateEnglish}`);
 }
 

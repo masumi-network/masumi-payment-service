@@ -11,17 +11,18 @@ const exchainReadTokenReply = z.object({
 });
 
 /**
- * Mint a read token for the embedded Exchain page (MAS-596 demo).
+ * Mint a read token for the embedded Exchain page (MAS-596 demo). The wallet is
+ * the guarded hot wallet's registered one when given, else EXCHAIN_WALLET_ID.
  *
  * The node token authenticates us to Exchain and stays on this server. What
  * leaves it is Exchain's read token: read-only, scoped to one wallet, valid for
  * 15 minutes, and meant to sit in the frame URL. The API base is the same
  * origin the CSP allows the admin UI to frame, so the two cannot drift apart.
  */
-export async function mintExchainReadToken() {
+export async function mintExchainReadToken(walletIdOverride: string | null = null) {
 	const origin = CONFIG.EXCHAIN_DASHBOARD_ORIGIN;
 	const nodeToken = CONFIG.EXCHAIN_NODE_TOKEN;
-	const walletId = CONFIG.EXCHAIN_WALLET_ID;
+	const walletId = walletIdOverride ?? CONFIG.EXCHAIN_WALLET_ID;
 	if (origin == null || nodeToken == null || walletId == null) {
 		throw createHttpError(503, 'Exchain co-signing is not configured on this node');
 	}

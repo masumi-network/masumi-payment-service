@@ -1438,6 +1438,7 @@ export const PurchaseSchema = {
                         'NetworkError',
                         'InsufficientFunds',
                         'Unknown',
+                        'PolicyDenied',
                         null
                     ],
                     description: 'Type of error that occurred, if any'
@@ -1502,6 +1503,7 @@ export const PurchaseSchema = {
                             'NetworkError',
                             'InsufficientFunds',
                             'Unknown',
+                            'PolicyDenied',
                             null
                         ],
                         description: 'Type of error that occurred, if any'
