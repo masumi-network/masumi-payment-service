@@ -58,6 +58,7 @@ export const listWalletsResponseExample = {
 			walletAddress: 'wallet_address',
 			collectionAddress: null,
 			note: 'note',
+			isGuarded: false,
 			LowBalanceSummary: {
 				isLow: false,
 				lowRuleCount: 0,

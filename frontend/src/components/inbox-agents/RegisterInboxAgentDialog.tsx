@@ -127,6 +127,7 @@ export function RegisterInboxAgentDialog({
             walletAddress: wallet.walletAddress,
             collectionAddress: wallet.collectionAddress,
             note: wallet.note,
+            isGuarded: wallet.isGuarded ?? false,
             LowBalanceSummary: wallet.LowBalanceSummary,
           },
           balance: parseInt(wallet.balance, 10),

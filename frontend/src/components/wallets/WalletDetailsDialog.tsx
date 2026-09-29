@@ -57,6 +57,9 @@ import { WalletExportSection } from '@/components/wallets/sections/WalletExportS
 import { CollectionAddressSection } from '@/components/wallets/sections/CollectionAddressSection';
 import { FundTransfersSection } from '@/components/wallets/sections/FundTransfersSection';
 import { useCollectionAddressEditor } from '@/components/wallets/useCollectionAddressEditor';
+import { GuardedWalletSection } from '@/components/wallets/sections/GuardedWalletSection';
+import { useGuardedWallet } from '@/components/wallets/useGuardedWallet';
+import { isV2PaymentSource } from '@/lib/payment-source-type';
 
 // Re-exported for the many call sites that import these types from this module.
 export type { TokenBalance, WalletWithBalance } from '@/components/wallets/wallet-details-utils';
@@ -78,7 +81,7 @@ export function WalletDetailsDialog({
   elevatedChildStack,
 }: WalletDetailsDialogProps) {
   const queryClient = useQueryClient();
-  const { apiClient, network, capabilities } = useAppContext();
+  const { apiClient, network, capabilities, selectedPaymentSource } = useAppContext();
   // Everything beyond the list payload and the read-level balance lookups is
   // admin-only: GET /wallet (rules + pending tx + mnemonic), the swap history,
   // the fund transfers, and every mutation. Non-admins still get the dialog —
@@ -122,6 +125,12 @@ export function WalletDetailsDialog({
   const collectionAddressEditor = useCollectionAddressEditor({
     wallet,
     invalidateWalletQueries,
+  });
+  const canGuardWallet =
+    wallet?.type === 'Purchasing' && canManageWallet && isV2PaymentSource(selectedPaymentSource);
+  const guardedWallet = useGuardedWallet({
+    hotWalletId: wallet?.id,
+    enabled: isOpen && canGuardWallet,
   });
 
   const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {
@@ -658,6 +667,19 @@ export function WalletDetailsDialog({
                 onStartEdit={collectionAddressEditor.startEdit}
               />
             )}
+            {canGuardWallet && (
+              <GuardedWalletSection
+                network={network}
+                state={guardedWallet.state}
+                isLoading={guardedWallet.isLoading}
+                loadError={guardedWallet.loadError}
+                form={guardedWallet.form}
+                onFormChange={guardedWallet.setForm}
+                isSubmitting={guardedWallet.isSubmitting}
+                onAttach={guardedWallet.attach}
+                onDetach={() => guardedWallet.setIsConfirmingDetach(true)}
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -680,6 +702,17 @@ export function WalletDetailsDialog({
         isLoading={
           rules.pendingDeleteRule != null && rules.mutatingRuleIds.has(rules.pendingDeleteRule.id)
         }
+      />
+
+      <ConfirmDialog
+        open={guardedWallet.isConfirmingDetach}
+        onClose={() => guardedWallet.setIsConfirmingDetach(false)}
+        elevatedGrandchildStack={elevatedChildStack}
+        title="Remove the guard from this wallet?"
+        description="Purchases will lock straight from the hot wallet, without Exchain co-signing. The smart wallet and its funds stay on chain."
+        confirmLabel="Remove guard"
+        onConfirm={guardedWallet.detach}
+        isLoading={guardedWallet.isSubmitting}
       />
 
       <SwapDialog

@@ -68,6 +68,8 @@ export interface WalletWithBalance {
   usdcxBalance: string;
   /** True when the balance fetch failed — render "unknown", not 0. */
   isBalanceUnavailable?: boolean;
+  /** True when purchases lock through a guarded smart wallet. */
+  isGuarded?: boolean;
   LowBalanceSummary?: LowBalanceSummary;
 }
 

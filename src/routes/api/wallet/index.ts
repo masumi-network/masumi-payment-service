@@ -102,6 +102,7 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 				type: true,
 				collectionAddress: true,
 				note: true,
+				GuardedWallet: { select: { id: true } },
 				LowBalanceRules: {
 					where: { enabled: true },
 					select: {
@@ -121,8 +122,9 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 		});
 
 		return {
-			Wallets: wallets.map(({ LowBalanceRules, ...wallet }) => ({
+			Wallets: wallets.map(({ LowBalanceRules, GuardedWallet, ...wallet }) => ({
 				...wallet,
+				isGuarded: GuardedWallet != null,
 				LowBalanceSummary: serializeLowBalanceSummary(LowBalanceRules),
 			})),
 		};

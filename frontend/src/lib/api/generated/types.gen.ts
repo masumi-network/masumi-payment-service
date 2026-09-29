@@ -235,6 +235,10 @@ export type WalletListItem = {
      */
     note: string | null;
     /**
+     * True when purchases from this wallet lock through a guarded smart wallet
+     */
+    isGuarded: boolean;
+    /**
      * Aggregated low-balance status for the wallet
      */
     LowBalanceSummary: {
