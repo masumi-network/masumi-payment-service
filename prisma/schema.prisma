@@ -164,6 +164,27 @@ model HotWallet {
   hydraRelations                          HydraRelation[]
   hydraLocalParticipants                  HydraLocalParticipant[]
   hydraHeadInvites                        HydraHeadInvite[]
+  GuardedWallet                           GuardedWallet?
+}
+
+/// An Exchain quorum co-signed smart wallet that funds this Purchasing hot
+/// wallet's V2 escrow locks. The hot wallet key is the smart wallet's agent key
+/// and the escrow buyer; the owner key never reaches the node. A row means the
+/// hot wallet is guarded: the batch job never spends for it without the quorum.
+model GuardedWallet {
+  id              String    @id @default(cuid())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  hotWalletId     String    @unique
+  ownerAddress    String
+  quorumVkhs      String[]
+  threshold       Int
+  stateTokenName  String
+  /// Cached from loadSmartWalletScript at attach; attach refuses a mismatch.
+  scriptAddress   String
+  policyId        String
+  exchainWalletId String?
+  HotWallet       HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
 }
 
 model HotWalletLowBalanceRule {
@@ -1252,6 +1273,8 @@ enum PurchaseErrorType {
   NetworkError
   InsufficientFunds
   Unknown
+  /// The Exchain quorum refused to co-sign under the wallet's mandate.
+  PolicyDenied
 }
 
 enum TransactionStatus {
