@@ -2,7 +2,7 @@
 
 VERIFIED by source inspection: this runner uses Cardano preprod and synthetic purchases with lovelace amounts.
 It creates escrow locks through a demo command, outside the production purchase queue.
-Sources: [network](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-context.mts#L20), [purchase creation](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L122), [lock flow](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L272).
+Sources: [network](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-context.mts#L21), [purchase creation](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L153), [lock flow](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L309).
 This guide records source behavior. It does not attest to a successful chain run or compatibility with Exchain's final API.
 
 ## Prepare the environment
@@ -26,7 +26,7 @@ SMART_WALLET_DEMO_PERIOD_LIMIT_LOVELACE="your chosen positive integer"
 Replace each placeholder before use. Keep an existing encryption key unchanged.
 VERIFIED: the period limit has no default. Mint stores this limit for a 24-hour validator period.
 Changing the environment afterward does not update an existing wallet's policy.
-Sources: [limit validation](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-config.ts#L57), [mint datum and existing-wallet check](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L195).
+Sources: [limit validation](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-config.ts#L85), [mint datum and existing-wallet check](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L219).
 
 For the local mock, leave `EXCHAIN_COSIGN_URL` unset.
 VERIFIED defaults: 10 purchases, 6 tADA per allowed lock, 8 tADA per denied lock, and a 70 tADA mock transaction cap.
@@ -46,12 +46,12 @@ Source: [demo defaults](../packages/payment-source-v2/scripts/smart-wallet-demo/
 
 VERIFIED: `init` generates demo keys and synthetic purchases. It does not submit a transaction.
 It prints owner funding plus 15 tADA and agent funding of at least 30 tADA.
-Sources: [init](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L99), [funding output](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L157).
+Sources: [init](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L123), [funding output](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L181).
 
 ## Run commands
 
 Use `pnpm exec tsx packages/payment-source-v2/scripts/smart-wallet-demo/run.mts COMMAND`.
-VERIFIED command behavior comes from the [runner](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L545):
+VERIFIED command behavior comes from the [runner](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L711):
 
 | Command         | Submits to preprod?  | Effect                                                                                 |
 | --------------- | -------------------- | -------------------------------------------------------------------------------------- |
@@ -67,12 +67,12 @@ VERIFIED command behavior comes from the [runner](../packages/payment-source-v2/
 
 Run individual commands in this order: `mint`, `deny`, `allow-batched`, `allow-single`, `report`.
 Use `sweep` only when you intend to retire the wallet. It does not recover earlier escrow locks.
-VERIFIED sources: [collateral split](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L171), [single purchases](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L484), [sweep inputs](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L518).
+VERIFIED sources: [collateral split](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L195), [single purchases](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L591), [sweep inputs](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L683).
 
 ## View the local decision feed
 
 VERIFIED: `mock` serves the decision page on port 4600 by default and binds to `127.0.0.1`.
-Sources: [port](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-config.ts#L45), [bind address](../packages/payment-source-v2/scripts/smart-wallet-demo/cosign-mock.ts#L375).
+Sources: [port](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-config.ts#L45), [bind address](../packages/payment-source-v2/scripts/smart-wallet-demo/cosign-mock.ts#L478).
 
 ```sh
 pnpm exec tsx packages/payment-source-v2/scripts/smart-wallet-demo/run.mts mock
@@ -87,21 +87,61 @@ NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL="http://127.0.0.1:4600/"
 Build the frontend with `pnpm -C frontend run build`. Start the configured backend with `pnpm run dev`.
 Sign in at <http://localhost:3001/admin/cosign-demo> when using the default backend port.
 VERIFIED: the backend serves the built frontend. The frontend URL is a build-time value. Restart the backend after configuration changes.
-Sources: [startup](../README.md#getting-started), [URL configuration](../.env.example#L82), [iframe](../frontend/src/pages/cosign-demo.tsx#L55).
+Sources: [startup](../README.md#getting-started), [URL configuration](../.env.example#L82), [iframe](../frontend/src/pages/cosign-demo.tsx#L112).
 
 VERIFIED: runner commands start their own temporary mock when `EXCHAIN_COSIGN_URL` is unset.
 The standalone mock reads the same decision file. Each process has separate in-memory reservations and cached responses.
 The feed therefore does not establish shared reservation state between commands.
-Sources: [temporary mock](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-context.mts#L207), [feed reader](../packages/payment-source-v2/scripts/smart-wallet-demo/cosign-mock.ts#L126), [process state](../packages/payment-source-v2/scripts/smart-wallet-demo/cosign-mock.ts#L204).
+Sources: [temporary mock](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-context.mts#L240), [feed reader](../packages/payment-source-v2/scripts/smart-wallet-demo/cosign-mock.ts#L170), [process state](../packages/payment-source-v2/scripts/smart-wallet-demo/cosign-mock.ts#L250).
 
 ## State, reports, and external service
 
 VERIFIED: `.state/demo-state.json` contains demo mnemonics and a mock API key.
 Keep it private. Keep `.state/` and `evidence/` ignored by Git.
 The report writes timestamped evidence beneath the demo's `evidence/` directory.
-Sources: [state fields](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-context.mts#L84), [ignore rules](../.gitignore#L85), [report files](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-report.mts#L194).
+Sources: [state fields](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-context.mts#L92), [ignore rules](../.gitignore#L85), [report files](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-report.mts#L196).
 
 VERIFIED: external mode requires `EXCHAIN_COSIGN_URL`, `EXCHAIN_COSIGN_API_KEY`, and `EXCHAIN_COSIGN_QUORUM_VKHS`.
 Configure quorum hashes before `init`. The runner checks them against the stored quorum before co-signing.
-Sources: [initial quorum](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L105), [external configuration](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-context.mts#L190).
-Compatibility with Exchain's frozen API and the iframe read-token flow remains unverified here.
+Sources: [initial quorum](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L136), [external configuration](../packages/payment-source-v2/scripts/smart-wallet-demo/demo-context.mts#L198).
+
+## Run against Exchain
+
+The Exchain console gives the address, the access token, and the quorum keys.
+Set these values in your root `.env` before `init`:
+
+| Variable                                  | Value                                                                                   |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| `EXCHAIN_COSIGN_URL`                      | The Exchain address. The token selects the network.                                     |
+| `EXCHAIN_COSIGN_API_KEY`                  | The access token. Keep it private.                                                      |
+| `EXCHAIN_COSIGN_QUORUM_VKHS`              | All quorum keys, comma-separated.                                                       |
+| `SMART_WALLET_DEMO_QUORUM_THRESHOLD`      | The number of keys that must sign. The console asks for all of them.                    |
+| `EXCHAIN_NODE_ID`, `EXCHAIN_ORG_ID`       | Your node and organisation identifiers. `register` and every co-sign request send them. |
+| `SMART_WALLET_DEMO_PERIOD_LIMIT_LOVELACE` | The mandate's daily limit. `register` refuses any other value.                          |
+| `SMART_WALLET_DEMO_DENY_LOCK_LOVELACE`    | More than the mandate's per-payment cap, or Exchain approves the deny scenario.         |
+
+VERIFIED sources: [node and organisation identifiers](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L637), [daily limit](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L641), [deny amount](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L570).
+`mint` also refuses a period limit below the total that `allow-batched` and `allow-single` lock.
+Source: [coverage check](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L233).
+
+`all` registers the wallet after `mint`. It prints the Exchain wallet id (`wal_…`).
+To embed Exchain's wallet page, set `EXCHAIN_WALLET_ID` to that id and `NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL` to the Exchain address.
+Rebuild the frontend and restart the backend.
+VERIFIED on 2026-09-29: Exchain sends `frame-ancestors https://admin.masumi.network https://localhost:3001 http://localhost:3001`.
+Locally, the frame loads only when the backend serves the admin UI on port 3001.
+Sources: [wallet id](../packages/payment-core/src/config.ts#L333), [read token](../src/routes/api/exchain/service.ts#L21).
+
+VERIFIED on 2026-09-29, preprod, against the live Exchain API (`openapi.yaml` version 1.3.0).
+The client code names contract 1.1. The request fields that version 1.3.0 requires match the fields the client sends.
+One run did these steps: `mint`, `register`, `deny`, `allow-batched`, `allow-single`, `report`.
+
+- `register` returned a wallet id and the mandate in plain English.
+- `deny` got `per_tx_cap` for one 60 tADA lock against a 50 tADA cap.
+- `allow-batched` locked 10 purchases in one transaction.
+- `allow-single` locked the same 10 purchases in 10 transactions.
+- The embedded page loaded with a read token from the backend.
+
+The first single lock got `velocity_burst` because the batch's 10 locks filled the 10-per-minute window.
+The runner now waits for the `retryAfterSec` that Exchain returns and asks again.
+Unit tests cover this retry. The live run above completed before the change, with a manual rerun of `allow-single`.
+Source: [burst retry](../packages/payment-source-v2/scripts/smart-wallet-demo/run.mts#L479).
