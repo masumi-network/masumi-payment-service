@@ -1,6 +1,6 @@
 # Guarded wallet purchases (Exchain co-sign in the V2 purchase flow)
 
-Status: design approved section by section on 2026-09-29. Not implemented.
+Status: design approved section by section on 2026-09-29. Implemented on the PR 878 branch; live preprod acceptance not yet run.
 Parent: MAS-596, PR 878 (`mas-596-featsmart-wallet-exchain-quorum-co-signing-integration`).
 
 Provenance tags: VERIFIED = read in the code or run in this session. INFERRED = reasoned from verified facts. DECIDED = a design choice the user approved.
@@ -179,7 +179,9 @@ The classification is a pure function `classifyCosignResult(decision)` returning
 3. `POST /purchase` at 6 tADA: reaches FundsLocked on the Transactions page; the tx carries 3 quorum signatures.
 4. `POST /purchase` at 60 tADA: `WaitingForManualAction` + `PolicyDenied`, note `Exchain per_tx_cap: ...`.
 
-## Delivery (gh stack on top of the PR 878 branch)
+## Delivery (sequential commits on the PR 878 branch)
+
+DECIDED: no gh stack. The user asked for all layers in the existing PR 878.
 
 1. Schema: `GuardedWallet`, `PolicyDenied`, migration.
 2. Refactor: step 0 pure move.
@@ -187,9 +189,20 @@ The classification is a pure function `classifyCosignResult(decision)` returning
 4. Job: packing, fork, executor, classifier.
 5. UI.
 
+## Implementation deviations
+
+Each item changes what the sections above say. VERIFIED = in the committed code.
+
+1. VERIFIED: the co-sign runs before `recordBatchPresubmit`, not after a pre-submit write. A refusal leaves the purchases with no shared transaction, and `executeGuardedBatch` writes the per-purchase NextAction itself.
+2. VERIFIED: the hot wallet signs after `mergeCosignWitnesses`, not before `requestCosign` (step 3.4). The executor builds its own V2 `BlockfrostProvider` and `MeshWallet`, because the root shared provider and wallet are on the V1 Mesh line.
+3. VERIFIED: no `buildLockOutputs` extraction. `execute-batch.ts` exports `batchLockDatum`, `recordBatchPresubmit` and `submitBatchTx`.
+4. VERIFIED: `registerGuardedWalletWithExchain` takes `registryGate` as a parameter. The node sends `true`; the demo runner sends `false`.
+5. VERIFIED: `GET /wallet/list` returns `isGuarded`, so the Wallets page can badge rows without one request per wallet.
+6. VERIFIED: `batch-payments/service.ts` is 1170 lines after the job layer, not 1280.
+
 ## Follow-up (out of scope)
 
-- `batch-payments/service.ts` stays at about 1280 lines after step 0. A full split is separate work.
+- `batch-payments/service.ts` stays at 1170 lines, over the 750-line limit. A full split is separate work.
 
 ## Least confident decisions
 
