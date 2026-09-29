@@ -55,6 +55,8 @@ jest.unstable_mockModule('@meshsdk/core-cst', () => ({
 	// module mock must cover every symbol the file graph imports.
 	Ed25519PublicKey: { fromHex: () => ({ hash: () => ({ hex: () => '' }), verify: () => false }) },
 	Ed25519Signature: { fromHex: (value: string) => value },
+	// cosign-client also derives the intent job hash with it.
+	blake2b: { hash: () => '' },
 }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), error: jest.fn() },
