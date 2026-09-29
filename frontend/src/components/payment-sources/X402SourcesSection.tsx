@@ -65,7 +65,7 @@ export function X402SourcesSection({
 
       <HorizontalScrollArea className="rounded-lg border">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th
                 scope="col"

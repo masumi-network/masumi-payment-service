@@ -37,8 +37,10 @@ import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import {
 	amountOf,
-	coverAsset,
+	countNativeAssets,
+	coverAssetForCarve,
 	coverLovelace,
+	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
 	isAlreadyCarved,
 	requiredChangeLovelace,
 	topUpCarveInputs,
@@ -312,13 +314,29 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			}
 		}
 
+		// Hydra produces no new snapshot while a previous decommit's utxoToDecommit
+		// is non-empty — the node's chain follower has not yet observed that
+		// decommit's DecrementTx on L1. Starting another in-head split during that
+		// window gets a split that is TxValid but can never be snapshot-confirmed,
+		// so this must be refused before any split is attempted, not discovered
+		// after a 60s wait. Mirror of the deposit-side pendingIncrementRefs guard.
+		const pendingDecommits = await hydraHead.mainNode.fetchPendingDecommitRefs();
+		if (pendingDecommits.length > 0) {
+			throw createHttpError(
+				409,
+				`A previous withdrawal is still being settled on L1 by the head (${pendingDecommits.length} output(s) pending); retry once it has finalized`,
+			);
+		}
+
 		const selection = selectDecommittableUtxos({
 			utxos: await provider.fetchAddressUTxOs(address),
 			pendingIncrementRefs: hydraHead.mainNode.pendingIncrementUtxoRefs,
 			drain: params.drain === true,
 		});
 
-		if (selection.eligible.length === 0) {
+		// A token on the reserve can still be carved off it (see coverAssetForCarve),
+		// so an asset request goes on to the carve rather than stopping here.
+		if (selection.eligible.length === 0 && (params.asset == null || selection.reserved === null)) {
 			throw createHttpError(
 				400,
 				selection.excluded.size === 0
@@ -332,15 +350,25 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		let decommitInputs: UTxO[];
 		const requestedAsset = params.asset ?? null;
 		if (requestedAsset != null) {
-			const covering = coverAsset(selection.eligible, requestedAsset.unit, requestedAsset.amount);
-			if (covering === null) {
-				const held = selection.eligible.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
+			const cover = coverAssetForCarve({
+				eligible: selection.eligible,
+				reserved: selection.reserved,
+				unit: requestedAsset.unit,
+				amount: requestedAsset.amount,
+			});
+			if (cover === null) {
+				const usable = selection.reserved === null ? selection.eligible : [...selection.eligible, selection.reserved];
+				const held = usable.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
 				throw createHttpError(
 					400,
 					`Only ${held} of that asset is eligible to withdraw, which is less than the ${requestedAsset.amount} requested`,
 				);
 			}
-			if (isAlreadyCarved(covering, requestedAsset.unit, requestedAsset.amount, TOKEN_OUTPUT_LOVELACE)) {
+			const covering = cover.inputs;
+			if (
+				!cover.borrowsReserve &&
+				isAlreadyCarved(covering, requestedAsset.unit, requestedAsset.amount, TOKEN_OUTPUT_LOVELACE)
+			) {
 				decommitInputs = covering;
 			} else {
 				// The carve produces two outputs — the token on its carrier, and the
@@ -358,14 +386,26 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					baseLovelace: MIN_SPLIT_REMAINDER_LOVELACE,
 					perAssetLovelace: PER_ASSET_CHANGE_LOVELACE,
 				});
-				const neededLovelace = TOKEN_OUTPUT_LOVELACE + changeFloor;
+				// A borrowed reserve must come back as collateral: the change is the
+				// only output that stays in the head, so it carries the reserve's lovelace.
+				const neededLovelace =
+					TOKEN_OUTPUT_LOVELACE +
+					(cover.borrowsReserve && changeFloor < IN_HEAD_COLLATERAL_RESERVE_LOVELACE
+						? IN_HEAD_COLLATERAL_RESERVE_LOVELACE
+						: changeFloor);
 				const extra = topUpCarveInputs({ chosen: covering, eligible: selection.eligible, needed: neededLovelace });
 				if (extra === null) {
-					const available = selection.eligibleLovelace;
+					const available =
+						selection.eligibleLovelace +
+						(cover.borrowsReserve && selection.reserved !== null ? lovelaceOf(selection.reserved) : 0n);
 					throw createHttpError(
 						400,
 						`Carving that asset onto its own UTxO needs ${neededLovelace} lovelace across the inputs, and only ` +
-							`${available} is eligible in this head. Add funds, or withdraw without naming an amount to take whole UTxOs.`,
+							`${available} is eligible in this head. ` +
+							// A whole-UTxO withdrawal never takes the reserve, so it cannot reach a token on it.
+							(cover.borrowsReserve
+								? 'Add funds to the head so the collateral can stay behind.'
+								: 'Add funds, or withdraw without naming an amount to take whole UTxOs.'),
 					);
 				}
 				const split = await splitExactAmountInHead({
@@ -383,23 +423,40 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 				decommitInputs = [split.exact];
 			}
 		} else if (params.lovelace != null) {
-			const covering = coverLovelace(selection.eligible, params.lovelace);
+			const requestedLovelace = params.lovelace;
+			// An eligible UTxO already holding exactly the requested amount is
+			// decommitted whole. `coverLovelace` picks largest-first, so without this
+			// check it would carve a bigger UTxO down to this amount even with an
+			// exact match sitting right there — leaving a stray exact-amount UTxO
+			// behind on every refused or retried withdrawal instead of reusing it.
+			//
+			// Pure ADA only: `selection.eligible` excludes reference scripts but not
+			// native assets, and a decommit removes the WHOLE output it spends. A UTxO
+			// that happens to hold the exact lovelace plus some unrelated token (an
+			// agent's registry NFT, say) is not what an amount-only withdrawal asked
+			// for, and taking it whole would carry that asset out of the head
+			// silently. Such a UTxO falls back to the ordinary split path instead,
+			// which carves the amount off a pure UTxO and leaves the asset behind.
+			const exactMatch = selection.eligible.find(
+				(utxo) => lovelaceOf(utxo) === requestedLovelace && countNativeAssets(utxo) === 0,
+			);
+			const covering = exactMatch != null ? [exactMatch] : coverLovelace(selection.eligible, requestedLovelace);
 			if (covering === null) {
 				throw createHttpError(
 					400,
-					`Only ${selection.eligibleLovelace} lovelace is eligible to withdraw, which is less than the ${params.lovelace} requested`,
+					`Only ${selection.eligibleLovelace} lovelace is eligible to withdraw, which is less than the ${requestedLovelace} requested`,
 				);
 			}
 			const covered = covering.reduce((total, utxo) => total + lovelaceOf(utxo), 0n);
-			if (covered === params.lovelace) {
+			if (covered === requestedLovelace) {
 				// The chosen UTxOs already come to exactly the amount, so the split
 				// would be a transaction that changes nothing.
 				decommitInputs = covering;
 			} else {
-				if (covered - params.lovelace < MIN_SPLIT_REMAINDER_LOVELACE) {
+				if (covered - requestedLovelace < MIN_SPLIT_REMAINDER_LOVELACE) {
 					throw createHttpError(
 						400,
-						`Withdrawing ${params.lovelace} lovelace would leave ${covered - params.lovelace} behind, which is below the minimum a UTxO may hold. ` +
+						`Withdrawing ${requestedLovelace} lovelace would leave ${covered - requestedLovelace} behind, which is below the minimum a UTxO may hold. ` +
 							'Withdraw a little less, or leave the amount out to take whole UTxOs.',
 					);
 				}
@@ -411,7 +468,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					network,
 					inputs: covering,
 					unit: '',
-					amount: params.lovelace,
+					amount: requestedLovelace,
 					decommitId: claim.id,
 				});
 				splitTxId = split.txId;

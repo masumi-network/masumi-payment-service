@@ -437,9 +437,9 @@
   [
    "WithdrawRequested",
    "ResultSubmitted",
-   "WaitingForManualAction",
-   "Unexpected state change detected. Possible a action could not be executed in time",
-   "Unknown"
+   "WithdrawRequested",
+   null,
+   null
   ],
   [
    "WithdrawRequested",
@@ -507,9 +507,9 @@
   [
    "WithdrawInitiated",
    "ResultSubmitted",
-   "WaitingForManualAction",
-   "Unexpected state change detected. Possible a action could not be executed in time",
-   "Unknown"
+   "WithdrawRequested",
+   null,
+   null
   ],
   [
    "WithdrawInitiated",

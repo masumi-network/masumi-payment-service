@@ -8,13 +8,18 @@ import {
   Send,
   MoreHorizontal,
   Settings2,
+  Trash2,
 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { patchPaymentSourceExtended } from '@/lib/api/generated';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -57,12 +62,30 @@ import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
+  /** Carried over from the list item; the source this wallet actually belongs to. */
+  paymentSourceId: string;
   isLoadingBalance?: boolean;
   /** True when the balance fetch failed — render "—", not 0. */
   isBalanceUnavailable?: boolean;
+}
+
+// Deleting is a soft delete: nothing moves on chain, but the wallet and its
+// mnemonic are no longer reachable through the API afterwards.
+function getDeleteWalletDescription(wallet: WalletWithBalance | null): string {
+  const consequence =
+    'This does not move funds. After deletion the mnemonic can no longer be exported, so back it up first with Export Wallet in the wallet details.';
+  if (!wallet) return consequence;
+  if (wallet.isBalanceUnavailable) {
+    return `This wallet's balance could not be loaded, so check it before deleting.\n\n${consequence}`;
+  }
+  const holdsFunds = Number(wallet.balance || 0) > 0 || Number(wallet.usdcxBalance || 0) > 0;
+  return holdsFunds
+    ? `This wallet still holds funds. Transfer them out first.\n\n${consequence}`
+    : consequence;
 }
 
 export default function WalletsPage() {
@@ -70,6 +93,7 @@ export default function WalletsPage() {
   const [searchQuery, setSearchQuery] = useState(
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isFundWalletDialogOpen, setIsFundWalletDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
@@ -86,17 +110,18 @@ export default function WalletsPage() {
     isLoading: isLoadingWallets,
     isFetching: isFetchingWallets,
     isFetchingNextPage,
+    isPlaceholderData: isShowingPreviousSearch,
     hasMore,
     loadMore,
     refetch: refetchWalletsQuery,
-  } = usePaginatedWallets(activeWalletType);
+  } = usePaginatedWallets(activeWalletType, debouncedSearchQuery || undefined);
 
   // State-based previous value tracking for router query initialization
   // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
   const routerSearched = typeof router.query.searched === 'string' ? router.query.searched : '';
   const [prevRouterSearched, setPrevRouterSearched] = useState(routerSearched);
 
-  const { network, selectedPaymentSource, capabilities } = useAppContext();
+  const { apiClient, network, selectedPaymentSource, capabilities } = useAppContext();
   const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -108,6 +133,36 @@ export default function WalletsPage() {
     useState<WalletWithBalance | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
+  const [selectedWalletForDeletion, setSelectedWalletForDeletion] =
+    useState<WalletWithBalance | null>(null);
+
+  // Selling and buying wallets are removed through their payment source, which
+  // refuses while the wallet has a transaction in flight. Fund wallets have their
+  // own guarded delete under "Manage funding". The request names the wallet's own
+  // source, not the selected one: the selection can change in the background, and
+  // the server answers a mismatched pair with success while removing nothing.
+  const deleteWallet = useApiMutation({
+    mutationFn: (wallet: WalletWithBalance) =>
+      patchPaymentSourceExtended({
+        client: apiClient,
+        body: {
+          id: wallet.paymentSourceId,
+          ...(wallet.type === 'Selling'
+            ? { RemoveSellingWallets: [{ id: wallet.id }] }
+            : { RemovePurchasingWallets: [{ id: wallet.id }] }),
+        },
+      }),
+    invalidateKeys: [
+      ['wallets'],
+      ['wallets-paginated'],
+      ['all-wallets'],
+      ['payment-source-wallets-all'],
+      ['payment-source-wallet-list'],
+      ['payment-sources-all'],
+    ],
+    errorMessage: 'Failed to delete wallet',
+    successMessage: 'Wallet deleted',
+  });
 
   const tabs = [
     { name: 'All', count: null },
@@ -157,29 +212,33 @@ export default function WalletsPage() {
     }
   }, [router.isReady, router.query.action, router, capabilities.canAdmin]);
 
+  // Pending while the debounce runs or while the table shows the previous
+  // search's rows as placeholder. Load-more and refresh do not count.
+  const isSearchPending = searchQuery !== debouncedSearchQuery || isShowingPreviousSearch;
+
+  // Client-side filter for instant feedback while server results are pending.
+  // Mirror the server's searched columns so rows do not vanish and reappear.
   const filteredWallets = useMemo(() => {
-    let filtered = [...allWallets];
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((wallet) => {
-        const matchAddress =
-          wallet.walletAddress?.toLowerCase().includes(query) ||
-          wallet.collectionAddress?.toLowerCase().includes(query) ||
-          false;
-        const matchNote = wallet.note?.toLowerCase().includes(query) || false;
-        const matchType = wallet.type?.toLowerCase().includes(query) || false;
-        const matchBalance = wallet.balance
-          ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
-          : false;
-        const matchUsdcxBalance = wallet.usdcxBalance?.includes(query) || false;
-
-        return matchAddress || matchNote || matchType || matchBalance || matchUsdcxBalance;
-      });
+    const query = searchQuery.toLowerCase().trim();
+    if (
+      !query ||
+      (!isShowingPreviousSearch && query === debouncedSearchQuery.toLowerCase().trim())
+    ) {
+      return allWallets;
     }
 
-    return filtered;
-  }, [allWallets, searchQuery]);
+    return allWallets.filter((wallet) => {
+      const matchAddress =
+        wallet.walletAddress?.toLowerCase().includes(query) ||
+        wallet.collectionAddress?.toLowerCase().includes(query) ||
+        false;
+      const matchVkey = wallet.walletVkey?.toLowerCase().includes(query) || false;
+      const matchNote = wallet.note?.toLowerCase().includes(query) || false;
+      const matchType = wallet.type?.toLowerCase().includes(query) || false;
+
+      return matchAddress || matchVkey || matchNote || matchType;
+    });
+  }, [allWallets, debouncedSearchQuery, isShowingPreviousSearch, searchQuery]);
 
   // Open for every session: the dialog renders the read-visible fields and
   // omits the admin-only sections rather than erroring.
@@ -246,15 +305,16 @@ export default function WalletsPage() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by address, note, type, or balance..."
+                placeholder="Search by address, note, or type..."
                 className="max-w-xs"
+                isLoading={isSearchPending}
               />
             </div>
           </div>
 
           <HorizontalScrollArea className="rounded-lg border">
             <table className="w-full">
-              <thead className="bg-muted/30 dark:bg-muted/15">
+              <thead className="table-header-surface">
                 <tr className="border-b">
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
                     Type
@@ -276,7 +336,8 @@ export default function WalletsPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {/* A pending search with no local match is not an empty result yet. */}
+                {isLoading || (isSearchPending && filteredWallets.length === 0) ? (
                   <WalletTableSkeleton rows={2} />
                 ) : filteredWallets.length === 0 ? (
                   <tr>
@@ -393,8 +454,8 @@ export default function WalletsPage() {
                           }
                         >
                           <div className="flex justify-end">
-                            {/* Every action here (fund, top up, transfer, swap) is an
-                                admin-only endpoint, so the whole menu is admin-gated. */}
+                            {/* Every action here (fund, top up, transfer, swap, delete) is
+                                an admin-only endpoint, so the whole menu is admin-gated. */}
                             {capabilities.canAdmin && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -444,6 +505,18 @@ export default function WalletsPage() {
                                       Swap tokens
                                     </DropdownMenuItem>
                                   )}
+                                  {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+                                        onSelect={() => setSelectedWalletForDeletion(wallet)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                        Delete wallet
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             )}
@@ -459,7 +532,11 @@ export default function WalletsPage() {
 
           {hasMore && (
             <div className="flex justify-center">
-              <Button variant="outline" onClick={loadMore} disabled={isFetchingNextPage}>
+              <Button
+                variant="outline"
+                onClick={loadMore}
+                disabled={isFetchingNextPage || isShowingPreviousSearch}
+              >
                 {isFetchingNextPage ? 'Loading…' : 'Load more'}
               </Button>
             </div>
@@ -507,6 +584,30 @@ export default function WalletsPage() {
           isOpen={!!selectedWalletForDetails}
           onClose={() => setSelectedWalletForDetails(null)}
           wallet={selectedWalletForDetails}
+        />
+
+        <ConfirmDialog
+          open={!!selectedWalletForDeletion}
+          onClose={() => setSelectedWalletForDeletion(null)}
+          title={
+            selectedWalletForDeletion
+              ? `Delete ${getWalletTypeLabel(selectedWalletForDeletion.type).toLowerCase()} wallet?`
+              : 'Delete wallet?'
+          }
+          description={getDeleteWalletDescription(selectedWalletForDeletion)}
+          onConfirm={() => {
+            if (!selectedWalletForDeletion) return;
+            // On success close the confirm; on failure (e.g. a transaction still in
+            // flight) keep it open so the toast is read. The mutation already toasted.
+            void deleteWallet
+              .mutateAsync(selectedWalletForDeletion)
+              .then(() => setSelectedWalletForDeletion(null))
+              .catch(() => {});
+          }}
+          isLoading={deleteWallet.isPending}
+          requireConfirmation
+          confirmationText="DELETE"
+          confirmLabel="Delete wallet"
         />
       </AnimatedPage>
     </MainLayout>

@@ -66,15 +66,13 @@ import {
 } from '@/lib/api/generated';
 import { EditWalletNoteDialog } from '@/components/x402/WalletExtras';
 import { WalletDetailsDialog, WalletLowBalanceBadge } from '@/components/x402/WalletDetailsDialog';
+import { formatX402WalletType } from '@/lib/display-labels';
 
 const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
 type WalletType = X402Wallet['type'];
 
-const WALLET_TYPE_LABEL: Record<WalletType, string> = {
-  Purchasing: 'Purchasing · outbound',
-  Selling: 'Selling · facilitator',
-};
+const walletTypeLabel = (type: WalletType) => formatX402WalletType(type);
 
 const WALLET_TYPE_OPTIONS: Array<{
   value: WalletType;
@@ -155,7 +153,7 @@ export function WalletsTab() {
 
       <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Address
@@ -210,7 +208,7 @@ export function WalletsTab() {
                       <CopyButton value={wallet.address} />
                     </div>
                   </td>
-                  <td className="p-4 text-sm">{WALLET_TYPE_LABEL[wallet.type]}</td>
+                  <td className="p-4 text-sm">{walletTypeLabel(wallet.type)}</td>
                   <td className="p-4 text-sm">{chainLabel(wallet.caip2Network)}</td>
                   <td className="p-4 text-sm text-muted-foreground">
                     {wallet.note || <span className="italic opacity-60">—</span>}
@@ -636,7 +634,7 @@ function BackupKeyStep({
             <CheckCircle2 className="h-3 w-3 text-green-600 dark:text-green-500" />
             Wallet created
           </Badge>
-          <span className="text-xs text-muted-foreground">{WALLET_TYPE_LABEL[type]}</span>
+          <span className="text-xs text-muted-foreground">{walletTypeLabel(type)}</span>
         </div>
 
         <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">

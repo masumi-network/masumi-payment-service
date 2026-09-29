@@ -44,6 +44,19 @@ function isPureLovelace(utxo: UTxO): boolean {
 }
 
 /**
+ * True when this output carries none of a datum hash, an inline datum, a
+ * reference script or a script hash.
+ *
+ * A carve is a plain self-payment, so it never produces any of these. A UTxO
+ * that carries one — an old fanout output, say — matches on amount and asset
+ * purity alone but is not what a carve would have produced, and hydra-node's
+ * `/commit` refuses it outright.
+ */
+function hasNoScriptOrDatum(utxo: UTxO): boolean {
+	return !utxo.output.dataHash && !utxo.output.plutusData && !utxo.output.scriptRef && !utxo.output.scriptHash;
+}
+
+/**
  * Whether this UTxO is exactly what a carve of `amount` `unit` would produce.
  *
  * The purity half matters as much as the amount: Hydra commits WHOLE UTxOs, so
@@ -56,6 +69,7 @@ function isPureLovelace(utxo: UTxO): boolean {
 function isCarveOf(utxo: UTxO, walletAddress: string, unit: string, amount: bigint): boolean {
 	if (utxo.output.address !== walletAddress) return false;
 	if (unitAmount(utxo, unit) !== amount) return false;
+	if (!hasNoScriptOrDatum(utxo)) return false;
 	if (unit === 'lovelace') return isPureLovelace(utxo);
 	return utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === unit);
 }

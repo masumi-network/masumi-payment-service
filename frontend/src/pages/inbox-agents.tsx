@@ -39,7 +39,8 @@ import { useInboxAgents } from '@/lib/queries/useInboxAgents';
 import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { formatDate } from '@/lib/format-date';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { cn, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
+import { formatLovelaceAsAda } from '@/lib/format-lovelace-display';
+import { cn, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 
 type InboxAgent = RegistryInboxEntry;
@@ -71,14 +72,6 @@ const parseInboxAgentStatus = (status: InboxAgent['state']): string => {
       return status;
   }
 };
-
-function formatLovelaceToAda(amount: string | null) {
-  if (!amount) {
-    return 'Default minimum';
-  }
-
-  return `${formatSixDecimalAmount(amount)} ADA`;
-}
 
 export default function InboxAgentsPage() {
   const router = useRouter();
@@ -317,7 +310,7 @@ export default function InboxAgentsPage() {
                   isSearchPending && 'opacity-70',
                 )}
               >
-                <thead className="bg-muted/30 dark:bg-muted/15">
+                <thead className="table-header-surface">
                   <tr className="border-b">
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
                       Name
@@ -477,7 +470,7 @@ export default function InboxAgentsPage() {
                           </td>
                           <td className="p-4 text-sm font-mono">{agent.agentSlug}</td>
                           <td className="p-4 text-sm">
-                            {formatLovelaceToAda(agent.sendFundingLovelace)}
+                            {formatLovelaceAsAda(agent.sendFundingLovelace)}
                           </td>
                           <td className="p-4">
                             <Badge variant={getAgentStatusBadgeVariant(agent.state)}>

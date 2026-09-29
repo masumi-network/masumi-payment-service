@@ -383,7 +383,7 @@ export async function executeL2Lock(
 			hydraHeadId,
 			transactionId: reservation.transactionId,
 			txHash,
-			error: error instanceof Error ? error.message : error,
+			error,
 		});
 		return { status: 'accepted-db-pending', txHash, error };
 	}
@@ -497,14 +497,37 @@ async function finalizeAcceptedL2Lock(params: {
 }): Promise<void> {
 	const { request, reservation, txHash } = params;
 	await prisma.$transaction(async (tx) => {
-		await tx.transaction.update({
+		const updated = await tx.transaction.update({
 			where: {
 				id: reservation.transactionId,
-				status: TransactionStatus.Pending,
 				intendedTxHash: txHash,
+				// `submitTx` now blocks on the confirmed snapshot, so the connection
+				// manager's TxConfirmed listener routinely stamps this exact row
+				// Confirmed before this write starts. id + intendedTxHash still pin
+				// identity, so accepting Confirmed here is a no-op re-write, not a
+				// loosened guard; RolledBack / FailedViaTimeout stay excluded.
+				status: { in: [TransactionStatus.Pending, TransactionStatus.Confirmed] },
 			},
 			data: { txHash, lastCheckedAt: new Date() },
+			select: { status: true },
 		});
+
+		if (updated.status === TransactionStatus.Confirmed) {
+			// The confirmation listener got there first, which means it already made
+			// the payment-pairing decision for this body — including a refusal to
+			// pair, for its own datum-trust reasons. Finalize must not second-guess
+			// that decision by running the pairing block below on a row it did not
+			// write. On a Pending row (the normal case) this never triggers and the
+			// block below runs exactly as before.
+			//
+			// The pairing the block below would have done is not dead code: the
+			// listener path performs the equivalent pairing itself, in
+			// `applyDatumStateToLocalRequests`
+			// (`src/services/hydra-connection-manager/hydra-datum-sync.ts`) — the
+			// `paymentRoutingAllowsHydra`-gated update that sets `layer: L2` and
+			// connects `CurrentTransaction`.
+			return;
+		}
 
 		// Pair only the SAME payment source's seller row (blockchainIdentifier is
 		// globally unique, so an unscoped lookup could grab a different source's

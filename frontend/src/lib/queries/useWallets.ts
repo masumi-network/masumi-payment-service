@@ -13,6 +13,12 @@ import {
 export { fetchAddressBalance, fetchAllUtxos, fetchWalletBalance } from '@/lib/wallet-balance';
 export type { WalletBalanceResult } from '@/lib/wallet-balance';
 
+/** Scope React Query keys to the active key without storing the raw secret. */
+function walletQueryKeyScope(apiKey: string | null | undefined): string {
+  if (!apiKey) return 'none';
+  return `len-${apiKey.length}-tail-${apiKey.slice(-4)}`;
+}
+
 type Wallet = WalletListItem & {
   type: HotWalletType;
   network: 'Preprod' | 'Mainnet';
@@ -200,7 +206,7 @@ export function useAllWallets(enabled = true) {
   const { apiClient, apiKey } = useAppContext();
 
   const query = useQuery<WalletListItem[]>({
-    queryKey: ['all-wallets', apiKey],
+    queryKey: ['all-wallets', walletQueryKeyScope(apiKey)],
     queryFn: async () => {
       if (!apiKey) return [];
       let items: WalletListItem[] = [];
@@ -359,12 +365,14 @@ export function usePaymentSourceWalletList(args: {
  * this does NOT eagerly load every wallet, so it must not be used where an
  * aggregate over all wallets is required (e.g. dashboard totals).
  */
-export function usePaginatedWallets(walletType?: HotWalletType) {
+export function usePaginatedWallets(walletType?: HotWalletType, searchQuery?: string) {
   const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const network = selectedPaymentSource?.network;
+  // The server lowercases the search, so lowercase the key too: one cache entry per result set.
+  const normalizedSearch = searchQuery?.trim().toLowerCase() || undefined;
 
   const query = useInfiniteQuery({
-    queryKey: ['wallets-paginated', selectedPaymentSourceId, walletType],
+    queryKey: ['wallets-paginated', selectedPaymentSourceId, walletType, normalizedSearch],
     queryFn: async ({ pageParam }) => {
       if (!selectedPaymentSourceId || !network) {
         return {
@@ -383,6 +391,7 @@ export function usePaginatedWallets(walletType?: HotWalletType) {
               cursorId: pageParam ?? undefined,
               paymentSourceId: selectedPaymentSourceId,
               walletType,
+              searchQuery: normalizedSearch,
             },
           }),
         { errorMessage: 'Failed to load wallets' },
@@ -420,6 +429,18 @@ export function usePaginatedWallets(walletType?: HotWalletType) {
     // `network` is known means the query runs once, correctly.
     enabled: !!apiClient && !!selectedPaymentSourceId && !!network,
     staleTime: 25000,
+    // Keep the previous rows only while the search alone changes, so a new
+    // search does not drop the table to its skeleton. A different payment
+    // source or type tab must never show the old rows, and a reset of the
+    // same key must still show the skeleton.
+    placeholderData: (previousData, previousQuery) => {
+      const previousKey = previousQuery?.queryKey;
+      return previousKey?.[1] === selectedPaymentSourceId &&
+        previousKey?.[2] === walletType &&
+        previousKey?.[3] !== normalizedSearch
+        ? previousData
+        : undefined;
+    },
   });
 
   const wallets = useMemo(
@@ -432,7 +453,9 @@ export function usePaginatedWallets(walletType?: HotWalletType) {
   );
 
   const loadMore = useCallback(() => {
-    if (query.hasNextPage && !query.isFetchingNextPage) {
+    // Placeholder pages belong to the previous search; their cursor is not
+    // valid for the current one.
+    if (query.hasNextPage && !query.isFetchingNextPage && !query.isPlaceholderData) {
       query.fetchNextPage();
     }
   }, [query]);
@@ -442,6 +465,7 @@ export function usePaginatedWallets(walletType?: HotWalletType) {
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isRefetching: query.isRefetching,
+    isPlaceholderData: query.isPlaceholderData,
     hasMore: Boolean(query.hasNextPage),
     isFetchingNextPage: query.isFetchingNextPage,
     loadMore,
