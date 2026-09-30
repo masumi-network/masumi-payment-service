@@ -13,7 +13,7 @@ import { isTestnetEnv, isX402ChainUsable, walletsForNetworks, X402_ACCENT } from
 import { useRailReadiness } from '@/lib/hooks/useRailReadiness';
 import { checkDetail } from '@/lib/rail-readiness';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
-import { CreateWalletDialog } from '@/components/x402/WalletsTab';
+import { CreateWalletDialog } from '@/components/x402/wallet-setup/CreateWalletDialog';
 import { ChainForm } from '@/components/x402/ChainsTab';
 import { initialX402SetupStep, type X402SetupStep } from '@/lib/x402-setup';
 import {

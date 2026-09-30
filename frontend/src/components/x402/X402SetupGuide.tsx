@@ -13,7 +13,7 @@ import {
   X402_ACCENT,
 } from '@/lib/x402-rail';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
-import { CreateWalletDialog } from './WalletsTab';
+import { CreateWalletDialog } from '@/components/x402/wallet-setup/CreateWalletDialog';
 import { ChainDialog } from './ChainsTab';
 
 type DialogKind = 'wallet' | 'chain' | null;
