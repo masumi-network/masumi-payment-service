@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildEnableReceivingBody,
   getX402ChainSetupStatus,
+  getX402SetupProgress,
   inferX402ReceiveMode,
   initialX402SetupStep,
   pickInitialX402Chain,
@@ -150,5 +151,28 @@ test('enable body for a remote facilitator trims input and omits blank auth', ()
       facilitatorAuth: 'Bearer t',
     }).facilitatorAuth,
     'Bearer t',
+  );
+});
+
+test('setup progress counts receiving and paying', () => {
+  assert.deepEqual(getX402SetupProgress({ isReceivingReady: false, isPayingReady: false }), {
+    completedCount: 0,
+    totalCount: 2,
+    isComplete: false,
+    actionLabel: 'Set up x402',
+  });
+  const payingOnly = getX402SetupProgress({ isReceivingReady: false, isPayingReady: true });
+  assert.equal(payingOnly.completedCount, 1);
+  assert.equal(payingOnly.actionLabel, 'Continue setup');
+});
+
+test('setup progress stays open after receiving until paying is done', () => {
+  const receivingOnly = getX402SetupProgress({ isReceivingReady: true, isPayingReady: false });
+  assert.equal(receivingOnly.completedCount, 1);
+  assert.equal(receivingOnly.isComplete, false);
+  assert.equal(receivingOnly.actionLabel, 'Set up paying');
+  assert.equal(
+    getX402SetupProgress({ isReceivingReady: true, isPayingReady: true }).isComplete,
+    true,
   );
 });

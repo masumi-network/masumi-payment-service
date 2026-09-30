@@ -16,7 +16,6 @@ import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
 import { StatCard } from '@/components/ui/stat-card';
-import { X402SetupGuide } from '@/components/x402/X402SetupGuide';
 import type { X402PaymentAttempt } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { formatDateTime } from '@/lib/format-date';
@@ -120,8 +119,6 @@ export default function X402DashboardPage() {
               disabled={!selectedChain}
             />
           </div>
-
-          {capabilities.canAdmin && <X402SetupGuide />}
 
           {isLoadingNetworks ? (
             <div className="flex justify-center py-16">

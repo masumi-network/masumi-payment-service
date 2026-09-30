@@ -104,3 +104,36 @@ export function buildEnableReceivingBody(
     ...(facilitatorAuth ? { facilitatorAuth } : {}),
   };
 }
+
+export type X402SetupProgress = {
+  completedCount: number;
+  totalCount: number;
+  isComplete: boolean;
+  /** Label for the single call to action that opens the wizard at its first open step. */
+  actionLabel: string;
+};
+
+/**
+ * Progress of the x402 setup prompt. Receiving is the required part; paying is optional but
+ * still counted, so the prompt stays up (showing "1 of 2") until both are done or dismissed.
+ */
+export function getX402SetupProgress({
+  isReceivingReady,
+  isPayingReady,
+}: {
+  isReceivingReady: boolean;
+  isPayingReady: boolean;
+}): X402SetupProgress {
+  const completedCount = Number(isReceivingReady) + Number(isPayingReady);
+  const totalCount = 2;
+  return {
+    completedCount,
+    totalCount,
+    isComplete: completedCount === totalCount,
+    actionLabel: !isReceivingReady
+      ? completedCount === 0
+        ? 'Set up x402'
+        : 'Continue setup'
+      : 'Set up paying',
+  };
+}
