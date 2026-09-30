@@ -47,6 +47,7 @@ import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 import { buildAgentSchema, type AgentFormValues } from './add-ai-agent-schema';
 import type { SetupWallet } from '@/components/setup/setup-helpers';
+import { SetupStepHeader } from '@/components/setup/wizard/SetupStepParts';
 
 export function AddAiAgentScreen({
   onNext,
@@ -266,19 +267,16 @@ export function AddAiAgentScreen({
 
   return (
     <div className="space-y-6 w-full max-w-2xl">
-      <div className="text-center space-y-3 animate-fade-in-up">
-        <div className="inline-flex items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5 p-3 ring-1 ring-primary/20">
-          <Bot className="h-6 w-6 text-primary" />
-        </div>
-        <h1 className="text-2xl font-bold">Register your AI agent</h1>
-        <Badge variant="outline" className="mx-auto text-xs">
-          Optional
-        </Badge>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          This step is optional. Add your first agent to the registry so users can discover and pay
-          for it, or skip this and register agents later from the AI Agents page.
-        </p>
-      </div>
+      <SetupStepHeader
+        icon={Bot}
+        title="Register your AI agent"
+        badge={
+          <Badge variant="outline" className="text-xs">
+            Optional
+          </Badge>
+        }
+        description="Add your first agent to the registry so users can find and pay for it. You can also skip this and register agents later from the AI Agents page."
+      />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {error && (
@@ -527,16 +525,16 @@ export function AddAiAgentScreen({
               {tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {tags.map((tag: string) => (
-                    <Badge
-                      key={tag}
-                      variant="secondary"
-                      className="cursor-pointer gap-1.5 pr-1.5 hover:bg-destructive/10 hover:text-destructive transition-colors"
-                      onClick={() => handleRemoveTag(tag)}
-                    >
+                    <Badge key={tag} variant="secondary" className="gap-1 pe-0.5">
                       {tag}
-                      <span className="rounded-full bg-muted p-0.5">
-                        <Trash2 className="h-2.5 w-2.5" />
-                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove tag ${tag}`}
+                        onClick={() => handleRemoveTag(tag)}
+                        className="rounded-full p-1 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <Trash2 className="size-3" aria-hidden />
+                      </button>
                     </Badge>
                   ))}
                 </div>

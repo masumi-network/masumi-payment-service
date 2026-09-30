@@ -23,6 +23,6 @@ export const STEP_LABELS = [
   'Welcome',
   'Seed phrases',
   'Payment source',
-  'AI Agent (Optional)',
+  'AI agent (optional)',
   'Complete',
 ];
