@@ -9,6 +9,7 @@ export const X402_ACCENT = {
   badge:
     'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300',
   icon: 'text-indigo-600 dark:text-indigo-400',
+  iconRing: 'from-indigo-500/20 to-indigo-500/5 ring-indigo-500/30',
 } as const;
 
 /**

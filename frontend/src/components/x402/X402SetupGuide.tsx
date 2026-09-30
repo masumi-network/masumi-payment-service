@@ -14,7 +14,7 @@ import {
 } from '@/lib/x402-rail';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from '@/components/x402/wallet-setup/CreateWalletDialog';
-import { ChainDialog } from './ChainsTab';
+import { ChainDialog } from '@/components/x402/ChainForm';
 
 type DialogKind = 'wallet' | 'chain' | null;
 
