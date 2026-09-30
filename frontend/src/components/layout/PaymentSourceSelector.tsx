@@ -503,7 +503,7 @@ function SourceDropdown({
               >
                 <Coins className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <span className="text-sm">
-                  {usableEvmChains.length === 0 ? 'Set up x402 (EVM)' : 'Set up another chain'}
+                  {usableEvmChains.length === 0 ? 'Set up x402' : 'Set up another chain'}
                 </span>
               </DropdownMenuItem>
             )}
