@@ -4,160 +4,21 @@ import { Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { getRegistryScriptFromNetworkHandler } from '@/utils/generator/contract-generator';
-import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { logger } from '@masumi/payment-core/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { verificationsSchema } from '@/types/verification';
 import {
-	SupportedPaymentSourceChain,
-	parseSupportedPaymentSourcesFromMetadata,
-	supportedPaymentSourceMetadataSchema,
-	supportedPaymentSourcesSchema,
-} from '@/types/payment-source';
-import { parseVerificationsFromMetadata, verificationMetadataSchema, verificationsSchema } from '@/types/verification';
+	mapParsedRegistryMetadataToApi,
+	metadataSchema,
+	resolveAgentPricingFromMetadata,
+} from '@/routes/api/registry/metadata-schema';
 
-export const metadataSchema = z.object({
-	name: z
-		.string()
-		.min(1)
-		.or(z.array(z.string().min(1))),
-	description: z.string().or(z.array(z.string())).optional(),
-	api_base_url: z
-		.string()
-		.min(1)
-		.or(z.array(z.string().min(1))),
-	example_output: z
-		.array(
-			z.object({
-				name: z
-					.string()
-					.max(60)
-					.or(z.array(z.string().max(60)).min(1).max(1)),
-				mime_type: z
-					.string()
-					.min(1)
-					.max(60)
-					.or(z.array(z.string().min(1).max(60)).min(1).max(1)),
-				url: z.string().or(z.array(z.string())),
-			}),
-		)
-		.optional(),
-	capability: z
-		.object({
-			name: z.string().or(z.array(z.string())),
-			version: z
-				.string()
-				.max(60)
-				.or(z.array(z.string().max(60)).min(1).max(1)),
-		})
-		.optional(),
-	author: z.object({
-		name: z
-			.string()
-			.min(1)
-			.or(z.array(z.string().min(1))),
-		contact_email: z.string().or(z.array(z.string())).optional(),
-		contact_other: z.string().or(z.array(z.string())).optional(),
-		organization: z.string().or(z.array(z.string())).optional(),
-	}),
-	legal: z
-		.object({
-			privacy_policy: z.string().or(z.array(z.string())).optional(),
-			terms: z.string().or(z.array(z.string())).optional(),
-			other: z.string().or(z.array(z.string())).optional(),
-		})
-		.optional(),
-	tags: z.array(z.string().min(1)).min(1),
-	agentPricing: z
-		.object({
-			pricingType: z.enum([PricingType.Fixed]),
-			fixedPricing: z
-				.array(
-					z.object({
-						amount: z.coerce.bigint().refine((amount) => amount > 0n, 'Amount must be greater than zero'),
-						unit: z
-							.string()
-							.min(1)
-							.or(z.array(z.string().min(1))),
-					}),
-				)
-				.min(1)
-				.max(25),
-		})
-		.or(
-			z.object({
-				pricingType: z.enum([PricingType.Free]),
-			}),
-		)
-		.or(
-			z.object({
-				pricingType: z.enum([PricingType.Dynamic]),
-			}),
-		)
-		// Optional: current metadata folds pricing into each Cardano supported
-		// payment source and drops this top-level block. Legacy entries still carry it.
-		.optional(),
-	image: z.string().or(z.array(z.string())),
-	metadata_version: z.coerce.number().int().min(1).max(2),
-	supported_payment_sources: z.array(supportedPaymentSourceMetadataSchema).optional(),
-	verifications: z.array(verificationMetadataSchema).optional(),
-});
-
-type MetadataAgentPricing = NonNullable<z.infer<typeof metadataSchema>['agentPricing']>;
-
-// Current metadata folds pricing into each Cardano supported payment source and no
-// longer emits a top-level `agentPricing` block. Resolve the effective agent pricing,
-// preferring the per-source Cardano pricing and falling back to the legacy top-level
-// block for entries minted before the move. Returns null only for malformed metadata
-// that carries neither.
-export function resolveAgentPricingFromMetadata(
-	parsed: Pick<z.infer<typeof metadataSchema>, 'agentPricing' | 'supported_payment_sources'>,
-	supportedPaymentSourceIndex?: number,
-): MetadataAgentPricing | null {
-	const cardanoSource =
-		supportedPaymentSourceIndex == null
-			? parsed.supported_payment_sources?.find(
-					(source) => metadataToString(source.chain) === SupportedPaymentSourceChain.Cardano,
-				)
-			: parsed.supported_payment_sources?.[supportedPaymentSourceIndex];
-	// An explicit index that resolves to no source is a caller/metadata
-	// mismatch — never fall through to the legacy top-level pricing block,
-	// which would price a different payment option than the one selected.
-	if (supportedPaymentSourceIndex != null && cardanoSource == null) {
-		return null;
-	}
-	if (cardanoSource != null && metadataToString(cardanoSource.chain) !== SupportedPaymentSourceChain.Cardano) {
-		return null;
-	}
-	const sourcePricing = cardanoSource?.pricing;
-	if (sourcePricing != null) {
-		const pricingType = metadataToString(sourcePricing.pricingType);
-		if (pricingType === PricingType.Fixed) {
-			const fixedPricing: Array<{ amount: bigint; unit: string | string[] }> = [];
-			for (const entry of sourcePricing.fixed ?? []) {
-				const amount = metadataToString(entry.amount);
-				// Metadata is seller-authored: a malformed amount must not throw
-				// (BigInt SyntaxError -> 500) and a negative one must not be
-				// summed into the price, so treat both as unpriceable metadata.
-				if (amount == null || !/^\d+$/.test(amount)) {
-					return null;
-				}
-				fixedPricing.push({ amount: BigInt(amount), unit: entry.asset });
-			}
-			return {
-				pricingType: PricingType.Fixed,
-				fixedPricing,
-			};
-		}
-		if (pricingType === PricingType.Free) return { pricingType: PricingType.Free };
-		if (pricingType === PricingType.Dynamic) return { pricingType: PricingType.Dynamic };
-		return null;
-	}
-	return parsed.agentPricing ?? null;
-}
+export { metadataSchema, resolveAgentPricingFromMetadata, mapParsedRegistryMetadataToApi };
 
 export const queryAgentFromWalletSchemaInput = z.object({
 	walletVkey: z.string().max(250).describe('The payment key of the wallet to be queried'),
@@ -186,7 +47,26 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								.nullable()
 								.optional()
 								.describe('Description of the agent. Null if not provided'),
-							apiBaseUrl: z.string().max(250).describe('Base URL of the agent API for interactions'),
+							apiBaseUrl: z
+								.string()
+								.max(250)
+								.describe(
+									'Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL',
+								),
+							type: z
+								.enum(['Standard', 'OpenApi', 'X402'])
+								.optional()
+								.describe('Registry entry type when encoded on-chain'),
+							openApiSpecUrl: z
+								.string()
+								.max(250)
+								.optional()
+								.describe('OpenAPI spec URL for OpenApi registry entries'),
+							x402ResourcesUrl: z
+								.string()
+								.max(250)
+								.optional()
+								.describe('x402 manifest URL for X402 registry entries'),
 							ExampleOutputs: z
 								.array(
 									z.object({
@@ -390,59 +270,16 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 					logger.error('Agent metadata does not advertise any pricing', { unit: asset.unit });
 					return;
 				}
+				const metadataApi = mapParsedRegistryMetadataToApi(parsedMetadata.data, {
+					filterPaymentSourcesForNetwork: input.network,
+				});
+				if (metadataApi == null) {
+					logger.error('Agent metadata is missing an interaction URL', { unit: asset.unit });
+					return;
+				}
 				detailedAssets.push({
 					unit: asset.unit,
-					Metadata: {
-						name: metadataToString(parsedMetadata.data.name)!,
-						description: metadataToString(parsedMetadata.data.description),
-						apiBaseUrl: metadataToString(parsedMetadata.data.api_base_url)!,
-						ExampleOutputs:
-							parsedMetadata.data.example_output?.map((exampleOutput) => ({
-								name: metadataToString(exampleOutput.name)!,
-								mimeType: metadataToString(exampleOutput.mime_type)!,
-								url: metadataToString(exampleOutput.url)!,
-							})) ?? [],
-						Capability: parsedMetadata.data.capability
-							? {
-									name: metadataToString(parsedMetadata.data.capability.name)!,
-									version: metadataToString(parsedMetadata.data.capability.version)!,
-								}
-							: undefined,
-						Author: {
-							name: metadataToString(parsedMetadata.data.author.name)!,
-							contactEmail: metadataToString(parsedMetadata.data.author.contact_email),
-							contactOther: metadataToString(parsedMetadata.data.author.contact_other),
-							organization: metadataToString(parsedMetadata.data.author.organization),
-						},
-						Legal: parsedMetadata.data.legal
-							? {
-									privacyPolicy: metadataToString(parsedMetadata.data.legal.privacy_policy),
-									terms: metadataToString(parsedMetadata.data.legal.terms),
-									other: metadataToString(parsedMetadata.data.legal.other),
-								}
-							: undefined,
-						Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
-						AgentPricing:
-							parsedMetadata.data.metadata_version >= 2 || resolvedAgentPricing == null
-								? null
-								: resolvedAgentPricing.pricingType == PricingType.Fixed
-									? {
-											pricingType: resolvedAgentPricing.pricingType,
-											Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
-												amount: price.amount.toString(),
-												unit: metadataToString(price.unit)!,
-											})),
-										}
-									: {
-											pricingType: resolvedAgentPricing.pricingType,
-										},
-						image: metadataToString(parsedMetadata.data.image)!,
-						metadataVersion: parsedMetadata.data.metadata_version,
-						supportedPaymentSources: parseSupportedPaymentSourcesFromMetadata(
-							parsedMetadata.data.supported_payment_sources,
-						),
-						verifications: parseVerificationsFromMetadata(parsedMetadata.data.verifications),
-					},
+					Metadata: metadataApi,
 				});
 			}),
 		);
