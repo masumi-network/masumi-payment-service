@@ -1,9 +1,4 @@
-import {
-	PaymentSourceType,
-	PricingType,
-	RegistryEntryType,
-	X402PaymentScheme,
-} from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, RegistryEntryType, X402PaymentScheme } from '@/generated/prisma/client';
 import { buildAgentMetadata } from '../../../../packages/payment-source-v2/src/services/registry/register/service';
 import {
 	mapParsedRegistryMetadataToApi,
@@ -62,9 +57,7 @@ describe('registry metadata schema', () => {
 		if (!parsed.success) return;
 
 		expect(resolveRegistryEntryTypeApi(parsed.data)).toBe('X402');
-		expect(resolveRegistryInteractionUrl(parsed.data)).toBe(
-			'https://saas.example/api/x402/manifest/agent-1',
-		);
+		expect(resolveRegistryInteractionUrl(parsed.data)).toBe('https://saas.example/api/x402/manifest/agent-1');
 
 		const api = mapParsedRegistryMetadataToApi(parsed.data, {
 			filterPaymentSourcesForNetwork: 'Preprod',
