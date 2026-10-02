@@ -5,6 +5,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/p
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { ez } from 'express-zod-api';
 import { listX402AgentPaymentActivity } from '@masumi/payment-source-x402/service';
+import { assertRegistryAgentInWalletScope } from '../x402-agent-access';
 import {
 	createEarningsRateLimitMiddleware,
 	withEarningsConcurrency,
@@ -73,6 +74,8 @@ export const getX402AgentPaymentActivity = x402ActivityEndpointFactory.build({
 		if (input.agentIdentifier.trim() === '') {
 			throw createHttpError(400, 'agentIdentifier is required');
 		}
+
+		await assertRegistryAgentInWalletScope(ctx, input.network, input.agentIdentifier);
 
 		return listX402AgentPaymentActivity({
 			network: input.network,

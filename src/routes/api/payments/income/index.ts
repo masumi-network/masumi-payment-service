@@ -18,6 +18,7 @@ import {
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
+import { assertRegistryAgentInWalletScope } from '../x402-agent-access';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { getX402AgentPaymentIncome } from '@masumi/payment-source-x402/service';
 import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
@@ -184,6 +185,7 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 				if (input.agentIdentifier == null || input.agentIdentifier.trim() === '') {
 					throw createHttpError(400, 'agentIdentifier is required when paymentRail is x402');
 				}
+				await assertRegistryAgentInWalletScope(ctx, input.network, input.agentIdentifier);
 				return getX402AgentPaymentIncome({
 					network: input.network,
 					agentIdentifier: input.agentIdentifier,
