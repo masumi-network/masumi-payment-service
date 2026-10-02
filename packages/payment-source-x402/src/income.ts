@@ -109,8 +109,65 @@ function receiveAddressFromSupportedSource(source: { payTo: string | null; addre
 type X402AgentEarningsScope = {
 	registryRequestIds: string[];
 	supportedPaymentSourceIds: string[];
-	registeredPayTos: string[];
+	/** Masumi hire outbound match when this agent is the only registry row for the payTo. */
+	soleOwnerOutboundPayTos: string[];
+	/** Shared payTo rows: match outbound attempts by registered resource URL as well. */
+	sharedOutboundPayTos: string[];
+	protectedResources: string[];
 };
+
+async function resolveOutboundPayToScope(
+	agentIdentifier: string,
+	network: Network,
+	candidatePayTos: string[],
+): Promise<Pick<X402AgentEarningsScope, 'soleOwnerOutboundPayTos' | 'sharedOutboundPayTos'>> {
+	if (candidatePayTos.length === 0) {
+		return { soleOwnerOutboundPayTos: [], sharedOutboundPayTos: [] };
+	}
+
+	const sources = await prisma.supportedPaymentSource.findMany({
+		where: {
+			chain: 'EVM',
+			RegistryRequest: {
+				PaymentSource: { network, deletedAt: null },
+				agentIdentifier: { not: null },
+			},
+		},
+		select: {
+			payTo: true,
+			address: true,
+			RegistryRequest: { select: { agentIdentifier: true } },
+		},
+	});
+
+	const ownersByReceiveAddress = new Map<string, Set<string>>();
+	for (const source of sources) {
+		const receiveAddress = receiveAddressFromSupportedSource(source);
+		if (receiveAddress == null || !candidatePayTos.includes(receiveAddress)) {
+			continue;
+		}
+		const ownerId = source.RegistryRequest.agentIdentifier;
+		if (ownerId == null) {
+			continue;
+		}
+		const owners = ownersByReceiveAddress.get(receiveAddress) ?? new Set<string>();
+		owners.add(ownerId);
+		ownersByReceiveAddress.set(receiveAddress, owners);
+	}
+
+	const soleOwnerOutboundPayTos: string[] = [];
+	const sharedOutboundPayTos: string[] = [];
+	for (const payTo of candidatePayTos) {
+		const owners = ownersByReceiveAddress.get(payTo);
+		if (owners?.size === 1 && owners.has(agentIdentifier)) {
+			soleOwnerOutboundPayTos.push(payTo);
+		} else if (owners != null && owners.has(agentIdentifier)) {
+			sharedOutboundPayTos.push(payTo);
+		}
+	}
+
+	return { soleOwnerOutboundPayTos, sharedOutboundPayTos };
+}
 
 async function resolveX402AgentEarningsScope(input: {
 	network: Network;
@@ -123,7 +180,9 @@ async function resolveX402AgentEarningsScope(input: {
 		},
 		select: {
 			id: true,
-			SupportedPaymentSources: { select: { id: true, payTo: true, address: true } },
+			SupportedPaymentSources: {
+				select: { id: true, payTo: true, address: true, resource: true },
+			},
 		},
 	});
 
@@ -135,18 +194,51 @@ async function resolveX402AgentEarningsScope(input: {
 	const supportedPaymentSourceIds = registryRows.flatMap((row) =>
 		row.SupportedPaymentSources.map((source) => source.id),
 	);
-	const registeredPayTos = [
+	const candidatePayTos = [
 		...new Set(
 			registryRows
 				.flatMap((row) => row.SupportedPaymentSources.map((source) => receiveAddressFromSupportedSource(source)))
 				.filter((payTo): payTo is string => payTo != null),
 		),
 	];
+	const protectedResources = [
+		...new Set(
+			registryRows
+				.flatMap((row) => row.SupportedPaymentSources.map((source) => source.resource?.trim() ?? ''))
+				.filter((resource) => resource !== ''),
+		),
+	];
+	const outboundPayToScope = await resolveOutboundPayToScope(input.agentIdentifier, input.network, candidatePayTos);
 
-	return { registryRequestIds, supportedPaymentSourceIds, registeredPayTos };
+	return {
+		registryRequestIds,
+		supportedPaymentSourceIds,
+		protectedResources,
+		...outboundPayToScope,
+	};
 }
 
 function x402AgentAttemptsWhere(scope: X402AgentEarningsScope, periodStart: Date, periodEnd: Date) {
+	const outboundClauses = [
+		...(scope.soleOwnerOutboundPayTos.length > 0
+			? [
+					{
+						direction: X402PaymentDirection.OutboundPayment,
+						payTo: { in: scope.soleOwnerOutboundPayTos },
+					},
+				]
+			: []),
+		...(scope.sharedOutboundPayTos.length > 0 && scope.protectedResources.length > 0
+			? [
+					{
+						direction: X402PaymentDirection.OutboundPayment,
+						payTo: { in: scope.sharedOutboundPayTos },
+						resource: { in: scope.protectedResources },
+					},
+				]
+			: []),
+	];
+
 	return {
 		createdAt: { gte: periodStart, lte: periodEnd },
 		OR: [
@@ -154,14 +246,7 @@ function x402AgentAttemptsWhere(scope: X402AgentEarningsScope, periodStart: Date
 			...(scope.supportedPaymentSourceIds.length > 0
 				? [{ supportedPaymentSourceId: { in: scope.supportedPaymentSourceIds } }]
 				: []),
-			...(scope.registeredPayTos.length > 0
-				? [
-						{
-							direction: X402PaymentDirection.OutboundPayment,
-							payTo: { in: scope.registeredPayTos },
-						},
-					]
-				: []),
+			...outboundClauses,
 		],
 	};
 }
