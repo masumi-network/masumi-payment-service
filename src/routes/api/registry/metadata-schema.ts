@@ -12,7 +12,10 @@ import { parseVerificationsFromMetadata, verificationMetadataSchema } from '@/ty
 import { z } from '@masumi/payment-core/zod';
 
 /** CIP-25 text: single string or multiple <64-byte chunks joined by {@link metadataToString}. */
-const cip25String = z.string().min(1).or(z.array(z.string().min(1)).min(1));
+const cip25String = z
+	.string()
+	.min(1)
+	.or(z.array(z.string().min(1)).min(1));
 
 /** Fields shared by Standard, OpenApi, and X402 registry metadata (CIP-25 on-chain). */
 const metadataBaseSchema = z.object({
@@ -118,16 +121,14 @@ export type ParsedRegistryMetadata = z.infer<typeof metadataSchema>;
 type MetadataAgentPricing = NonNullable<ParsedRegistryMetadata['agentPricing']>;
 
 export function resolveRegistryInteractionUrl(parsed: ParsedRegistryMetadata): string | null {
-	return (
+	const url =
 		metadataToString('api_base_url' in parsed ? parsed.api_base_url : undefined) ??
 		metadataToString('x402_resources_url' in parsed ? parsed.x402_resources_url : undefined) ??
-		metadataToString('openapi_spec_url' in parsed ? parsed.openapi_spec_url : undefined)
-	);
+		metadataToString('openapi_spec_url' in parsed ? parsed.openapi_spec_url : undefined);
+	return url ?? null;
 }
 
-export function resolveRegistryEntryTypeApi(
-	parsed: ParsedRegistryMetadata,
-): 'Standard' | 'OpenApi' | 'X402' {
+export function resolveRegistryEntryTypeApi(parsed: ParsedRegistryMetadata): 'Standard' | 'OpenApi' | 'X402' {
 	const onChainType = metadataToString(parsed.type);
 	if (onChainType === 'x402V1' || 'x402_resources_url' in parsed) {
 		return 'X402';
@@ -208,11 +209,11 @@ export type RegistryMetadataApiShape = {
 	Tags: string[];
 	AgentPricing:
 		| {
-				pricingType: PricingType.Fixed;
+				pricingType: Extract<PricingType, 'Fixed'>;
 				Pricing: Array<{ amount: string; unit: string }>;
 		  }
 		| {
-				pricingType: PricingType.Free | PricingType.Dynamic;
+				pricingType: Extract<PricingType, 'Free' | 'Dynamic'>;
 		  }
 		| null;
 	image: string;
@@ -257,14 +258,9 @@ export function mapParsedRegistryMetadataToApi(
 		description: metadataToString(parsed.description),
 		apiBaseUrl: interactionUrl,
 		type: entryType,
-		openApiSpecUrl:
-			'openapi_spec_url' in parsed
-				? (metadataToString(parsed.openapi_spec_url) ?? undefined)
-				: undefined,
+		openApiSpecUrl: 'openapi_spec_url' in parsed ? (metadataToString(parsed.openapi_spec_url) ?? undefined) : undefined,
 		x402ResourcesUrl:
-			'x402_resources_url' in parsed
-				? (metadataToString(parsed.x402_resources_url) ?? undefined)
-				: undefined,
+			'x402_resources_url' in parsed ? (metadataToString(parsed.x402_resources_url) ?? undefined) : undefined,
 		ExampleOutputs:
 			parsed.example_output?.map((exampleOutput) => ({
 				name: metadataToString(exampleOutput.name)!,

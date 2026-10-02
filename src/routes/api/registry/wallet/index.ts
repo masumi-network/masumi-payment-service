@@ -50,23 +50,13 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 							apiBaseUrl: z
 								.string()
 								.max(250)
-								.describe(
-									'Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL',
-								),
+								.describe('Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL'),
 							type: z
 								.enum(['Standard', 'OpenApi', 'X402'])
 								.optional()
 								.describe('Registry entry type when encoded on-chain'),
-							openApiSpecUrl: z
-								.string()
-								.max(250)
-								.optional()
-								.describe('OpenAPI spec URL for OpenApi registry entries'),
-							x402ResourcesUrl: z
-								.string()
-								.max(250)
-								.optional()
-								.describe('x402 manifest URL for X402 registry entries'),
+							openApiSpecUrl: z.string().max(250).optional().describe('OpenAPI spec URL for OpenApi registry entries'),
+							x402ResourcesUrl: z.string().max(250).optional().describe('x402 manifest URL for X402 registry entries'),
 							ExampleOutputs: z
 								.array(
 									z.object({
