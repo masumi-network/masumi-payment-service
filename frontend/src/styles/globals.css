@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './theme.css';
 
 @source "../../node_modules/masumi-schema-validator-component/dist/index.mjs";
 
@@ -12,51 +13,6 @@
   font-weight: 100 900;
   font-display: swap;
   font-style: normal;
-}
-
-@theme {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-
-  --color-chart-1: hsl(var(--chart-1));
-  --color-chart-2: hsl(var(--chart-2));
-  --color-chart-3: hsl(var(--chart-3));
-  --color-chart-4: hsl(var(--chart-4));
-  --color-chart-5: hsl(var(--chart-5));
-
-  --color-brand: hsl(var(--accent-brand));
-
-  /* Opaque mix of muted + background; same target as hover:bg-muted/50 on table rows (~#212121 dark). */
-  --color-row-hover: var(--row-hover);
-
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
 }
 
 /*
@@ -74,77 +30,6 @@
   ::backdrop,
   ::file-selector-button {
     border-color: var(--color-gray-200, currentcolor);
-  }
-}
-
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.5rem;
-    --accent-brand: 174 60% 51%;
-    --table-row-hover-fill: #fafafa;
-    --row-hover: var(--table-row-hover-fill);
-    --transaction-error-row-fill: #feeeed;
-    --transaction-error-row-hover-fill: color-mix(
-      in srgb,
-      hsl(var(--destructive)) 14%,
-      var(--transaction-error-row-fill)
-    );
-  }
-
-  .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 97%;
-    --card: 0 0% 5.5%;
-    --card-foreground: 0 0% 97%;
-    --popover: 0 0% 5.5%;
-    --popover-foreground: 0 0% 97%;
-    --primary: 0 0% 97%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 97%;
-    --muted: 0 0% 21.9%;
-    --muted-foreground: 0 0% 70.2%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 97%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 97%;
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
-    --ring: 0 0% 83.1%;
-    --accent-brand: 174 60% 55%;
-    --table-row-hover-fill: #212121;
-    --row-hover: var(--table-row-hover-fill);
-    --table-header-fill: #111111;
-    /* Visible on ~3.9% background; #190c0c was indistinguishable from the page. */
-    --transaction-error-row-fill: color-mix(
-      in srgb,
-      hsl(var(--destructive)) 24%,
-      hsl(var(--background))
-    );
-    --transaction-error-row-hover-fill: color-mix(
-      in srgb,
-      hsl(var(--destructive)) 32%,
-      hsl(var(--background))
-    );
   }
 }
 
@@ -575,9 +460,14 @@ input[type='number'] {
 .card-interactive:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: hsl(var(--foreground) / 0.12);
 }
-.dark .card-interactive:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+html.dark .card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: hsl(0 0% 100% / 0.14);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.55),
+    0 0 0 1px hsl(0 0% 100% / 0.06);
 }
 
 /* Accessibility: respect reduced motion preference */

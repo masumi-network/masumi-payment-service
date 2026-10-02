@@ -42,10 +42,12 @@ import {
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 import { buildAgentSchema, type AgentFormValues } from './add-ai-agent-schema';
 import type { SetupWallet } from '@/components/setup/setup-helpers';
+import { SetupStepHeader } from '@/components/setup/wizard/SetupStepParts';
 
 export function AddAiAgentScreen({
   onNext,
@@ -115,23 +117,37 @@ export function AddAiAgentScreen({
     setError('');
 
     try {
-      // Fetch payment sources to get the latest data
-      const response = await getPaymentSourceExtended({
-        client: apiClient,
-        query: {
-          take: 10,
-        },
-      });
+      // Fetch every payment source for the active network (server-side filter +
+      // cursor pagination), not just the first page of all networks.
+      const filteredSources: PaymentSourceExtended[] = [];
+      let cursor: string | undefined;
+      while (true) {
+        const response = await getPaymentSourceExtended({
+          client: apiClient,
+          query: {
+            take: 10,
+            cursorId: cursor,
+            network,
+          },
+        });
 
-      if (response.error) {
-        setError(extractApiErrorMessage(response.error, 'Failed to fetch payment sources'));
-        return;
+        if (response.error) {
+          setError(extractApiErrorMessage(response.error, 'Failed to fetch payment sources'));
+          return;
+        }
+
+        const page = response.data?.data?.ExtendedPaymentSources ?? [];
+        if (page.length === 0) break;
+
+        const merged = appendInclusiveCursorPage(filteredSources, page, (source) => source.id);
+        filteredSources.length = 0;
+        filteredSources.push(...merged);
+
+        if (page.length < 10) break;
+        const lastSource = page[page.length - 1];
+        if (!lastSource?.id || lastSource.id === cursor) break;
+        cursor = lastSource.id;
       }
-
-      const paymentSources = response.data?.data?.ExtendedPaymentSources ?? [];
-      const filteredSources = paymentSources.filter(
-        (source: PaymentSourceExtended) => source.network == network,
-      );
 
       if (filteredSources.length === 0) {
         setError('No payment sources found for this network');
@@ -197,7 +213,7 @@ export function AddAiAgentScreen({
             };
           })(),
           Author: {
-            name: data.authorName || 'Setup User',
+            name: data.authorName?.trim() || data.name.trim(),
             contactEmail: data.authorEmail || '',
             organization: data.organization || '',
             contactOther: data.contactOther || '',
@@ -251,19 +267,16 @@ export function AddAiAgentScreen({
 
   return (
     <div className="space-y-6 w-full max-w-2xl">
-      <div className="text-center space-y-3 animate-fade-in-up">
-        <div className="inline-flex items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5 p-3 ring-1 ring-primary/20">
-          <Bot className="h-6 w-6 text-primary" />
-        </div>
-        <h1 className="text-2xl font-bold">Register your AI agent</h1>
-        <Badge variant="outline" className="mx-auto text-xs">
-          Optional
-        </Badge>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          This step is optional. Add your first agent to the registry so users can discover and pay
-          for it, or skip this and register agents later from the AI Agents page.
-        </p>
-      </div>
+      <SetupStepHeader
+        icon={Bot}
+        title="Register your AI agent"
+        badge={
+          <Badge variant="outline" className="text-xs">
+            Optional
+          </Badge>
+        }
+        description="Add your first agent to the registry so users can find and pay for it. You can also skip this and register agents later from the AI Agents page."
+      />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {error && (
@@ -512,16 +525,16 @@ export function AddAiAgentScreen({
               {tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {tags.map((tag: string) => (
-                    <Badge
-                      key={tag}
-                      variant="secondary"
-                      className="cursor-pointer gap-1.5 pr-1.5 hover:bg-destructive/10 hover:text-destructive transition-colors"
-                      onClick={() => handleRemoveTag(tag)}
-                    >
+                    <Badge key={tag} variant="secondary" className="gap-1 pe-0.5">
                       {tag}
-                      <span className="rounded-full bg-muted p-0.5">
-                        <Trash2 className="h-2.5 w-2.5" />
-                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove tag ${tag}`}
+                        onClick={() => handleRemoveTag(tag)}
+                        className="rounded-full p-1 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <Trash2 className="size-3" aria-hidden />
+                      </button>
                     </Badge>
                   ))}
                 </div>
