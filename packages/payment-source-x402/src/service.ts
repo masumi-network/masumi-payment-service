@@ -96,6 +96,7 @@ export { listAvailableX402Networks, listX402Networks, upsertX402Network } from '
 export { listX402PaymentAttempts, listX402Settlements } from './queries';
 export { reconcileX402PaymentAttempt } from './reconcile';
 export { createX402Payment } from './pay';
+export { getX402AgentPaymentIncome } from './income';
 export { MAX_X402_TIMEOUT_SECONDS } from './requirements';
 export { hashX402PaymentPayload };
 
