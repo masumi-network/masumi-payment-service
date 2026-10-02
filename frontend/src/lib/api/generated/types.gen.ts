@@ -11149,6 +11149,10 @@ export type PostPaymentIncomeData = {
          * Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node.
+         */
+        paymentRail?: 'cardano' | 'x402';
     };
     path?: never;
     query?: never;
