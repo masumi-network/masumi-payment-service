@@ -28,7 +28,6 @@ import {
 } from '@/lib/agent-status';
 import { getAgentTypeLabel } from '@/lib/agent-type';
 import { canEditAgentMetadata } from '@/lib/can-edit-agent-metadata';
-import { supportsAgentMetadataUpdate } from '@/lib/agent-update';
 import { formatDate } from '@/lib/format-date';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 export type AIAgent = RegistryEntry & { relation?: AgentRelation };
@@ -303,14 +302,12 @@ export function AIAgentRow({
           {isDeregisterableAgentState(agent.state) ? (
             <AIAgentRowActionsMenu
               showVerifyPublish={agent.relation !== 'payment'}
-              showUpdateMetadata={
-                supportsAgentMetadataUpdate(agent) &&
-                canEditAgentMetadata({
-                  relation: agent.relation,
-                  canPay: capabilities.canPay,
-                  selectedPaymentSource,
-                })
-              }
+              showUpdateMetadata={canEditAgentMetadata({
+                agent,
+                relation: agent.relation,
+                canPay: capabilities.canPay,
+                selectedPaymentSource,
+              })}
               showDeleteOrDeregister={
                 agent.relation !== 'payment' &&
                 (agent.state === 'RegistrationFailed' || agent.state === 'DeregistrationConfirmed'
