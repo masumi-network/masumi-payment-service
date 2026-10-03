@@ -1,7 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  tableActionsCellClass,
   tableActionsCellCompactClass,
+  tableActionsInnerClass,
 } from '@/components/ui/table-actions-column';
 
 // Placeholder bar widths for the leading data columns, in order. Shorter than
@@ -13,7 +13,7 @@ const CELL_WIDTHS = ['w-32', 'w-24', 'w-48', 'w-40', 'w-20', 'w-24', 'w-24'];
 /**
  * Loading rows for the AI-agents and inbox-agents tables. `columns` must match
  * the host table's header cell count or the shimmer sits offset from the real
- * rows; it counts the trailing narrow actions column too. Defaults to 8 for the
+ * rows; it counts the trailing compact actions column too. Defaults to 8 for the
  * inbox table, while the AI-agents table passes 9 (it also renders Type).
  */
 export function AIAgentTableSkeleton({
@@ -23,8 +23,6 @@ export function AIAgentTableSkeleton({
   rows?: number;
   columns?: number;
 }) {
-  const actionsCellClass = columns >= 9 ? tableActionsCellClass : tableActionsCellCompactClass;
-
   return (
     <>
       {Array.from({ length: rows }).map((_, rowIndex) => (
@@ -34,8 +32,10 @@ export function AIAgentTableSkeleton({
               <Skeleton className={`h-4 ${CELL_WIDTHS[cellIndex] ?? 'w-24'}`} />
             </td>
           ))}
-          <td className={actionsCellClass}>
-            <Skeleton className="h-4 w-8" />
+          <td className={tableActionsCellCompactClass}>
+            <div className={tableActionsInnerClass}>
+              <Skeleton className="h-8 w-8 rounded-md" />
+            </div>
           </td>
         </tr>
       ))}

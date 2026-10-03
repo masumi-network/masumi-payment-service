@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
-import { fetchHostCapabilities } from './client';
+import { logger } from '@masumi/payment-core/logger';
+import { fetchHostCapabilities, provisionNodeOnHost } from './client';
 
 const originalFetch = global.fetch;
 
@@ -57,5 +58,67 @@ describe('Hydra Host transport security', () => {
 		await expect(
 			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
 		).resolves.toMatchObject({ exchangeUrl: null });
+	});
+});
+
+describe('provisioning against a Host that overrides the deposit activation', () => {
+	afterEach(() => {
+		jest.restoreAllMocks();
+	});
+
+	function hostResponse(depositActivationSeconds: number): Response {
+		return new Response(
+			JSON.stringify({
+				nodeId: 'node-1',
+				advertise: 'hydra1.example.com:5001',
+				peerPort: 5001,
+				hydraVerificationKey: 'hydra-vk',
+				cardanoVerificationKey: 'cardano-vk',
+				depositPeriodSeconds: 900,
+				depositActivationSeconds,
+			}),
+			{ status: 201, headers: { 'Content-Type': 'application/json' } },
+		);
+	}
+
+	// Nothing else on the wire reports this: Capabilities does not carry the
+	// activation and the signed invite deliberately excludes it. If the two
+	// Hosts of a head disagree, no top-up can be co-signed, and both sides still
+	// render usableFrom and absorbBy normally.
+	it('warns when the effective activation is not the one asked for', async () => {
+		global.fetch = jest.fn<() => Promise<Response>>().mockResolvedValue(hostResponse(777)) as unknown as typeof fetch;
+		const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+		await provisionNodeOnHost(
+			'https://hydra.example.com',
+			'admin-token',
+			'idem-1',
+			{ depositPeriodSeconds: 900, depositActivationSeconds: 900 },
+			{ allowInsecureHttp: false },
+		);
+
+		// Through `mock.calls`, not `toHaveBeenCalledWith`: winston's `warn` is
+		// overloaded and the spy infers the single-argument form, so the
+		// two-argument matcher does not type-check even when it is right at
+		// runtime. Same pattern as l2-reservation-recovery.spec.ts.
+		expect(warn.mock.calls[0]).toEqual([
+			expect.stringContaining('overrode the deposit activation'),
+			expect.objectContaining({ requested: 900, effective: 777 }),
+		]);
+	});
+
+	it('stays quiet when the Host honoured the request', async () => {
+		global.fetch = jest.fn<() => Promise<Response>>().mockResolvedValue(hostResponse(900)) as unknown as typeof fetch;
+		const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+		await provisionNodeOnHost(
+			'https://hydra.example.com',
+			'admin-token',
+			'idem-2',
+			{ depositPeriodSeconds: 900, depositActivationSeconds: 900 },
+			{ allowInsecureHttp: false },
+		);
+
+		expect(warn).not.toHaveBeenCalled();
 	});
 });

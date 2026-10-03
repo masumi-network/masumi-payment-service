@@ -33,6 +33,8 @@ type FixtureSnapshot = {
 	utxo: Record<string, FixtureOutput>;
 	utxoToCommit: Record<string, FixtureOutput> | null;
 	utxoToDecommit: Record<string, FixtureOutput> | null;
+	/** hydra-node 2.4: the deposit `utxoToCommit` came from. Absent from 2.3 recordings. */
+	depositTxId?: string | null;
 	confirmed: Array<{ txId: string; cborHex: string }>;
 };
 
@@ -40,10 +42,25 @@ type FixtureSnapshot = {
 // paths, and this file is data the runner does not resolve.
 const FIXTURE_PATH = path.join(process.cwd(), 'src/lib/hydra/hydra/__fixtures__/recorded-head-history.json');
 
-const fixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8')) as {
+type HistoryFixture = {
+	description: string;
 	snapshots: FixtureSnapshot[];
 	decommitTransactions: Array<{ txId: string; cborHex: string }>;
 };
+const loadFixture = (file: string): HistoryFixture =>
+	JSON.parse(
+		readFileSync(path.join(process.cwd(), 'src/lib/hydra/hydra/__fixtures__', file), 'utf8'),
+	) as HistoryFixture;
+
+// Two recordings, kept side by side on purpose. The 2.3 one holds a decommit
+// whose output is smaller than its input — a burned in-head fee, the H65 bug
+// the service has since fixed — and is the only recording that can guard the
+// verifier's tolerance of it, because a fixed service never produces one. The
+// 2.4.1 one is the first with `depositTxId` and the new on-chain deposit
+// period, recorded from a full preprod lifecycle. Each is evidence of what one
+// node version actually signed; neither replaces the other.
+const fixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8')) as HistoryFixture;
+const fixture241 = loadFixture('recorded-head-history-2.4.1.json');
 
 const HEAD_ID = 'recorded-head';
 
@@ -91,13 +108,13 @@ function toVerified(snapshot: FixtureSnapshot): VerifiedHydraSnapshot {
  * in the partition, never in `confirmed`, so the conservation walk has to be
  * handed it or the value it moves has nothing accounting for it.
  */
-function decommitTransactionsFor(snapshot: FixtureSnapshot): FixtureTransaction[] {
+function decommitTransactionsFor(snapshot: FixtureSnapshot, source: HistoryFixture = fixture): FixtureTransaction[] {
 	const wanted = new Set(
 		Object.keys(snapshot.utxoToDecommit ?? {}).map((reference) =>
 			reference.slice(0, reference.indexOf('#')).toLowerCase(),
 		),
 	);
-	return fixture.decommitTransactions
+	return source.decommitTransactions
 		.filter((transaction) => wanted.has(transaction.txId.toLowerCase()))
 		.map(withEnvelope);
 }
@@ -153,5 +170,59 @@ describe('recorded hydra-node history', () => {
 				current.confirmed.map(withEnvelope),
 			),
 		).toBe(false);
+	});
+});
+
+describe('recorded hydra-node 2.4.1 history', () => {
+	const snapshots = [...fixture241.snapshots].sort((left, right) => left.number - right.number);
+
+	it('is the 2.4.1 preprod recording and covers the 2.4 shapes', () => {
+		expect(fixture241.description).toContain('2.4.1');
+		expect(snapshots.length).toBeGreaterThanOrEqual(4);
+		// The incremental commit that 2.4 binds to its L1 deposit transaction.
+		const commit = snapshots.find((snapshot) => Object.keys(snapshot.utxoToCommit ?? {}).length > 0);
+		expect(commit?.depositTxId).toMatch(/^[0-9a-f]{64}$/);
+		// A withdrawal, declared in the partition and carried by DecommitRequested.
+		expect(snapshots.some((snapshot) => Object.keys(snapshot.utxoToDecommit ?? {}).length > 0)).toBe(true);
+		expect(snapshots.some((snapshot) => snapshot.confirmed.length > 0)).toBe(true);
+	});
+
+	it('names every decommit transaction its partitions declare', () => {
+		for (const snapshot of snapshots) {
+			const declared = Object.keys(snapshot.utxoToDecommit ?? {}).length;
+			expect(decommitTransactionsFor(snapshot, fixture241)).toHaveLength(declared > 0 ? 1 : 0);
+		}
+	});
+
+	it.each(fixture241.snapshots.slice(1).map((snapshot, index) => [index + 1, snapshot.number] as const))(
+		'accepts the transition into snapshot %s (number %s)',
+		(index) => {
+			const previous = snapshots[index - 1]!;
+			const current = snapshots[index]!;
+			const transactions = [...current.confirmed.map(withEnvelope), ...decommitTransactionsFor(current, fixture241)];
+
+			expect(doesHydraTransactionTransitionReachSnapshot(toVerified(previous), toVerified(current), transactions)).toBe(
+				true,
+			);
+		},
+	);
+
+	// The 2.3 recording's "withheld transaction is rejected" property does not
+	// transfer here, and the reason is worth pinning: this head charges no fee,
+	// so the withdrawn output is byte-for-byte the output it replaces. The
+	// canonical set is a multiset of serialized outputs, so moving one from
+	// `utxo` to `utxoToDecommit` changes nothing the conservation walk can see,
+	// and a withheld transaction looks like a no-op. That is why the 2.3
+	// recording — a decommit that burned an in-head fee — stays beside this one:
+	// it is the only recording that binds the decommit transaction.
+	it('moves a fee-free decommit byte-for-byte, which is why the 2.3 recording is kept', () => {
+		const withDecommit = snapshots.findIndex((snapshot) => Object.keys(snapshot.utxoToDecommit ?? {}).length > 0);
+		expect(withDecommit).toBeGreaterThan(0);
+		const previous = snapshots[withDecommit - 1]!;
+		const current = snapshots[withDecommit]!;
+		const [leaving] = Object.values(current.utxoToDecommit ?? {});
+		const replaced = Object.entries(previous.utxo).filter(([reference]) => !(reference in current.utxo));
+		expect(replaced).toHaveLength(1);
+		expect(serializeHydraSnapshotOutput(leaving!)).toBe(serializeHydraSnapshotOutput(replaced[0]![1]));
 	});
 });

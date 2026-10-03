@@ -7,8 +7,7 @@
  * whether that needs a dedicated UTxO split first is the service's problem, and
  * it already solves it: an exact amount pre-splits an L1 UTxO and commits that.
  *
- * Denominated in ADA rather than lovelace for the same reason. Every other
- * amount an operator types in this admin is in ADA.
+ * ADA and known stablecoins use decimal amounts. Unknown assets use base units.
  *
  * Native assets stay first-class rather than hidden: the stablecoin an operator
  * is most likely to move is a preset, and anything else is one field away. The
@@ -35,7 +34,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { TxLink } from '@/components/hydra/TxLink';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { adaToLovelace } from '@/components/hydra/ada-amount';
+import { hydraAssetDecimals, parseHydraAssetAmount } from './asset-amount';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { DepositPeriodHint } from '@/components/hydra/hydra-hints';
@@ -430,9 +429,12 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
   const isAda = asset === 'ada';
   const isCustom = asset === 'custom';
   const selectedUnit = isCustom ? customUnit.trim() : isAda ? '' : asset;
+  const usesDecimals = (!isCustom || selectedUnit !== '') && hydraAssetDecimals(selectedUnit) > 0;
   const unitLabel = isAda
     ? adaLabel
-    : (presets.find((preset) => preset.unit === asset)?.label ?? 'tokens');
+    : (Object.values(PRESET_ASSETS)
+        .flat()
+        .find((preset) => preset.unit === selectedUnit.toLowerCase())?.label ?? 'tokens');
 
   const handleTopup = async () => {
     if (!isAda && !/^[0-9a-fA-F]{56,120}$/.test(selectedUnit)) {
@@ -440,23 +442,14 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
       return;
     }
 
-    // An amount is the whole point of the control, whichever asset it is in.
-    // Native assets have their own decimals, so the ADA conversion applies only
-    // to ADA; a token amount is taken as its own base unit.
-    let exact: string | null;
-    if (isAda) {
-      exact = adaToLovelace(amount);
-      if (exact === null) {
-        toast.error(`Enter how much ${adaLabel} to move into the head`);
-        return;
-      }
-    } else {
-      const trimmed = amount.trim();
-      if (!/^\d+$/.test(trimmed) || trimmed === '0') {
-        toast.error(`Enter how many ${unitLabel} to move into the head, as a whole number`);
-        return;
-      }
-      exact = trimmed;
+    const exact = parseHydraAssetAmount(amount, selectedUnit);
+    if (exact === null) {
+      toast.error(
+        usesDecimals
+          ? `Enter a positive ${unitLabel} amount with up to 6 decimal places`
+          : 'Enter a positive whole number of base units',
+      );
+      return;
     }
 
     const payload: HydraTopupRequest = isAda
@@ -508,7 +501,13 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1.5">
           <Label htmlFor={`hydra-topup-asset-${headId}`}>Asset</Label>
-          <Select value={asset} onValueChange={setAsset}>
+          <Select
+            value={asset}
+            onValueChange={(value) => {
+              setAsset(value);
+              setAmount('');
+            }}
+          >
             <SelectTrigger id={`hydra-topup-asset-${headId}`} className="w-[160px]">
               <SelectValue />
             </SelectTrigger>
@@ -531,24 +530,14 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
               id={`hydra-topup-${headId}`}
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
-              placeholder={isAda ? '0.00' : '0'}
-              inputMode={isAda ? 'decimal' : 'numeric'}
+              placeholder={usesDecimals ? '0.00' : '0'}
+              inputMode={usesDecimals ? 'decimal' : 'numeric'}
               className="w-44 pr-16 font-mono"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-w-14 truncate text-xs text-muted-foreground">
               {unitLabel}
             </span>
           </div>
-          {!isAda && (
-            /* The ticker beside the field is the token's display name, but the
-               number sent is its smallest unit — 1 tUSDM is 1000000 here, and
-               the balances above are shown converted. Said for every token, not
-               only the hand-typed ones: a preset is exactly as easy to get
-               wrong by a factor of a million. */
-            <p className="max-w-sm text-xs text-muted-foreground">
-              Enter a whole number in {unitLabel}&apos;s smallest unit, not {adaLabel}.
-            </p>
-          )}
         </div>
 
         <Button onClick={() => void handleTopup()} disabled={isSubmitting}>
@@ -562,18 +551,28 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
         </Button>
       </div>
 
-      {isCustom && (
-        <div className="space-y-1.5">
-          <Label htmlFor={`hydra-topup-unit-${headId}`}>Asset unit</Label>
-          <Input
-            id={`hydra-topup-unit-${headId}`}
-            value={customUnit}
-            onChange={(event) => setCustomUnit(event.target.value)}
-            placeholder="policyId + assetName, in hex"
-            className="w-full max-w-md font-mono text-xs"
-          />
-        </div>
-      )}
+      <p className="min-h-8 text-xs text-muted-foreground">
+        {usesDecimals
+          ? `Enter the amount in ${unitLabel}, with up to 6 decimal places.`
+          : 'Enter a whole number of base units for this asset.'}
+      </p>
+      <div className="min-h-[80px]">
+        {isCustom && (
+          <div className="space-y-1.5">
+            <Label htmlFor={`hydra-topup-unit-${headId}`}>Asset unit</Label>
+            <Input
+              id={`hydra-topup-unit-${headId}`}
+              value={customUnit}
+              onChange={(event) => {
+                setCustomUnit(event.target.value);
+                setAmount('');
+              }}
+              placeholder="policyId + assetName, in hex"
+              className="w-full max-w-md font-mono text-xs"
+            />
+          </div>
+        )}
+      </div>
 
       <HydraTopupList
         headId={headId}

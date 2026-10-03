@@ -19,6 +19,7 @@ function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
 		contestationPeriodSeconds: 220,
 		depositPeriodSeconds: 300,
 		unsyncedPeriodSeconds: 1800,
+		depositActivationSeconds: 300,
 		hydraVerificationKey: '5820aa',
 		cardanoVerificationKey: 'bb'.repeat(28),
 		escrowAckedAt: null,
@@ -197,6 +198,25 @@ describe('NodeRegistryStore legacy records', () => {
 		await fs.writeFile(path.join(nodeDir, 'node.json'), JSON.stringify({ ...legacy, nodeId: 'node-2' }), 'utf8');
 
 		expect((await store.read('node-2'))?.startAttempts).toBe(0);
+	});
+
+	/**
+	 * A Host upgraded in place also reads records written before hydra 2.4's
+	 * --deposit-activation existed. Left `undefined`, the idempotency-replay
+	 * equality check in provision.ts would compare it against the concrete
+	 * number every request carries and 409 an otherwise-identical replay —
+	 * which, for a redeem-invite retry, burns the invite's nonce and strands a
+	 * funded node on both sides of the exchange.
+	 */
+	it('defaults a legacy record with no depositActivationSeconds to its own depositPeriodSeconds', async () => {
+		const legacy = { ...record(), depositPeriodSeconds: 654 } as unknown as Record<string, unknown>;
+		delete legacy.depositActivationSeconds;
+
+		const nodeDir = path.join(dataDir, 'nodes', 'node-3');
+		await fs.mkdir(nodeDir, { recursive: true });
+		await fs.writeFile(path.join(nodeDir, 'node.json'), JSON.stringify({ ...legacy, nodeId: 'node-3' }), 'utf8');
+
+		expect((await store.read('node-3'))?.depositActivationSeconds).toBe(654);
 	});
 });
 

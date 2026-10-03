@@ -71,7 +71,7 @@ export class ExchangeStore {
 
 	private async read(): Promise<ExchangeState> {
 		if (this.state !== undefined) {
-			return this.state;
+			return { invites: this.state.invites.map(copyInvite) };
 		}
 		try {
 			this.state = parseState(await fs.readFile(this.file, 'utf8'));
@@ -82,12 +82,15 @@ export class ExchangeStore {
 				throw error;
 			}
 		}
-		return this.state;
+		return { invites: this.state.invites.map(copyInvite) };
 	}
 
 	private async write(state: ExchangeState): Promise<void> {
 		await fs.mkdir(path.dirname(this.file), { recursive: true });
 		await writeFileAtomic(this.file, `${JSON.stringify(state, null, 2)}\n`);
+		// Publish only durable changes. Copies also keep caller-owned records
+		// and redemption results from changing the cache after the write.
+		this.state = { invites: state.invites.map(copyInvite) };
 	}
 
 	async listInvites(): Promise<InviteRecord[]> {

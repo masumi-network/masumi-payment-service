@@ -82,7 +82,10 @@ function flattenPages(pages: readonly { items: RegistryEntry[] }[] | undefined) 
 export function useContextAgents(params?: {
   filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
   searchQuery?: string;
+  /** When false, skips registry fetches (e.g. command palette with no query yet). */
+  enabled?: boolean;
 }) {
+  const callerEnabled = params?.enabled ?? true;
   const {
     apiClient,
     authorized,
@@ -148,7 +151,7 @@ export function useContextAgents(params?: {
       ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: !!apiClient && authorized && hasPaymentScope,
+    enabled: callerEnabled && !!apiClient && authorized && hasPaymentScope,
     staleTime: 15000,
     // Keep showing the previous results while a status/search change refetches, so the
     // table can dim (isPlaceholderData) rather than flashing empty mid-search.
@@ -179,7 +182,8 @@ export function useContextAgents(params?: {
       ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: !!apiClient && authorized && activeRail === 'cardano' && !!sourceAddress,
+    enabled:
+      callerEnabled && !!apiClient && authorized && activeRail === 'cardano' && !!sourceAddress,
     staleTime: 15000,
     placeholderData: keepPreviousData,
   });

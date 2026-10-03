@@ -24,14 +24,6 @@ export async function copyToClipboard(text: string) {
   }
 }
 
-export function parseError(error: unknown): string {
-  return extractApiErrorMessage(error, 'An error occurred');
-}
-
-export function parseFetchError(errorData: unknown, response: Response): string {
-  return extractApiErrorMessage(errorData, `HTTP ${response.status}: ${response.statusText}`);
-}
-
 export async function handleApiCall<T>(
   apiCall: () => Promise<T>,
   options: {
@@ -46,7 +38,7 @@ export async function handleApiCall<T>(
 
     // Check for API errors (response.error pattern)
     if (response && typeof response === 'object' && 'error' in response && response.error) {
-      console.error('API Error:', response.error);
+      console.error('API Error:', extractApiErrorMessage(response.error, 'API call failed'));
 
       if (options.onError) {
         options.onError(response.error);
@@ -67,7 +59,7 @@ export async function handleApiCall<T>(
     return response;
   } catch (error) {
     // Handle unexpected errors (network, etc.)
-    console.error('Unexpected error:', error);
+    console.error('Unexpected error:', extractApiErrorMessage(error, 'Unexpected error'));
 
     if (options.onError) {
       options.onError(error);
@@ -115,71 +107,6 @@ export function formatCount(count: number, maxValue: number = 999): string {
 
   return count.toString();
 }
-
-/**
- * Date range utilities for transaction filtering
- */
-export const dateRangeUtils = {
-  /**
-   * Get date range for preset options
-   */
-  getPresetRange(preset: '24h' | '7d' | '30d' | '90d'): {
-    start: Date;
-    end: Date;
-  } {
-    const now = new Date();
-    const end = now;
-
-    let start: Date;
-    switch (preset) {
-      case '24h':
-        start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        break;
-      case '7d':
-        start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case '30d':
-        start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      case '90d':
-        start = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-        break;
-      default:
-        start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    }
-
-    return { start, end };
-  },
-
-  /**
-   * Format date range for display
-   */
-  formatDateRange(start: Date, end: Date): string {
-    const formatDate = (date: Date) => {
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-      });
-    };
-
-    return `${formatDate(start)} - ${formatDate(end)}`;
-  },
-
-  /**
-   * Check if a date is within range
-   */
-  isDateInRange(date: Date, start: Date, end: Date): boolean {
-    return date >= start && date <= end;
-  },
-
-  /**
-   * Get ISO string for API calls
-   */
-  toISOString(date: Date): string {
-    return date.toISOString();
-  },
-};
 
 /**
  * Validates a Cardano wallet address based on network type using MeshJS

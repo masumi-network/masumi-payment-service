@@ -7,6 +7,9 @@ const mockGenerateWalletExtended = jest.fn() as AnyMock;
 const mockConvertNetwork = jest.fn() as AnyMock;
 const mockCreateTxWindow = jest.fn() as AnyMock;
 const mockResolveTxHash = jest.fn() as AnyMock;
+const mockGetOutputMinLovelace = jest.fn() as AnyMock;
+const mockFetchProtocolParameters = jest.fn() as AnyMock;
+const mockProtocolParams = jest.fn() as AnyMock;
 
 const mockSendAssets = jest.fn() as AnyMock;
 const mockSetMetadata = jest.fn() as AnyMock;
@@ -25,6 +28,7 @@ const constructorCalls: unknown[] = [];
 
 class FakeTransaction {
 	txBuilder = {
+		protocolParams: mockProtocolParams,
 		invalidBefore: (...args: unknown[]) => {
 			callOrder.push('invalidBefore');
 			return mockInvalidBefore(...args);
@@ -72,7 +76,10 @@ jest.unstable_mockModule('@/services/shared', () => ({
 	createTxWindow: mockCreateTxWindow,
 }));
 
-jest.unstable_mockModule('@meshsdk/core', () => ({ resolveTxHash: mockResolveTxHash }));
+jest.unstable_mockModule('@meshsdk/core', () => ({
+	resolveTxHash: mockResolveTxHash,
+	getOutputMinLovelace: mockGetOutputMinLovelace,
+}));
 
 let buildAndSignFundTransferTx: typeof import('./transaction-builder').buildAndSignFundTransferTx;
 
@@ -90,7 +97,7 @@ const wallet = {
 		return mockSubmitTx(...args);
 	},
 };
-const blockchainProvider = { tag: 'provider' };
+const blockchainProvider = { tag: 'provider', fetchProtocolParameters: mockFetchProtocolParameters };
 
 // Above Number.MAX_SAFE_INTEGER: proves amounts reach mesh as exact
 // BigInt-derived strings, never routed through a lossy Number.
@@ -120,9 +127,42 @@ beforeEach(() => {
 	mockSignTx.mockResolvedValue('signed-cbor');
 	mockResolveTxHash.mockReturnValue('a'.repeat(64));
 	mockSubmitTx.mockResolvedValue('node-hash');
+	mockFetchProtocolParameters.mockResolvedValue({ coinsPerUtxoSize: 4310 });
+	mockGetOutputMinLovelace.mockReturnValue(3_254_050n);
 });
 
 describe('buildAndSignFundTransferTx', () => {
+	it('rejects token output below its live minimum before building or signing', async () => {
+		await expect(
+			buildAndSignFundTransferTx({
+				...baseParams,
+				assets: [
+					{ unit: 'lovelace', quantity: 2_000_000n },
+					...Array.from({ length: 8 }, (_, i) => ({
+						unit: i.toString(16).padStart(56, '0') + 'ab'.repeat(32),
+						quantity: 1n,
+					})),
+				],
+			}),
+		).rejects.toThrow('Transfer output requires at least 3254050 lovelace; requested 2000000');
+		expect(mockBuild).not.toHaveBeenCalled();
+		expect(mockSignTx).not.toHaveBeenCalled();
+		expect(mockSubmitTx).not.toHaveBeenCalled();
+	});
+
+	it('uses the same live protocol parameters for validation and construction', async () => {
+		await buildAndSignFundTransferTx(baseParams);
+		expect(mockFetchProtocolParameters).toHaveBeenCalledWith(Number.NaN);
+		expect(mockGetOutputMinLovelace).toHaveBeenCalledWith(
+			{
+				address: baseParams.toAddress,
+				amount: baseParams.assets.map((asset) => ({ unit: asset.unit, quantity: asset.quantity.toString() })),
+			},
+			4310,
+		);
+		expect(mockProtocolParams).toHaveBeenCalledWith({ coinsPerUtxoSize: 4310 });
+	});
+
 	it('derives the wallet from the mnemonic and tags the tx as a fund transfer', async () => {
 		await buildAndSignFundTransferTx(baseParams);
 		expect(mockGenerateWalletExtended).toHaveBeenCalledWith('Preprod', 'rpc-key', 'enc-mnemonic');
@@ -173,5 +213,11 @@ describe('buildAndSignFundTransferTx', () => {
 		await expect(buildAndSignFundTransferTx(baseParams)).rejects.toThrow('UTxO Balance Insufficient');
 		expect(mockSignTx).not.toHaveBeenCalled();
 		expect(mockSubmitTx).not.toHaveBeenCalled();
+	});
+	it.each([undefined, 0, -1, NaN, 1.5])('rejects invalid byte cost %s before signing', async (coinsPerUtxoSize) => {
+		mockFetchProtocolParameters.mockResolvedValue({ coinsPerUtxoSize });
+		await expect(buildAndSignFundTransferTx(baseParams)).rejects.toThrow('invalid coinsPerUtxoSize');
+		expect(mockBuild).not.toHaveBeenCalled();
+		expect(mockSignTx).not.toHaveBeenCalled();
 	});
 });
