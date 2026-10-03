@@ -18,6 +18,9 @@ export const registryEntryExample = {
 	apiBaseUrl: 'https://api.example.com',
 	openApiSpecUrl: null,
 	x402ResourcesUrl: null,
+	a2aAgentCardUrl: null,
+	a2aProtocolVersions: [],
+	paymentSourceType: PaymentSourceType.Web3CardanoV1,
 	Capability: { name: 'Capability Name', version: '1.0.0' },
 	Author: {
 		name: 'Author Name',

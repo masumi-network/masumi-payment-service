@@ -19,7 +19,7 @@ import {
 } from '@masumi/payment-core/collateral';
 
 export type RegistryMetadata = {
-	[key: string]: string | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
+	[key: string]: string | number | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
 };
 
 const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);

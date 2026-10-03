@@ -25,7 +25,7 @@ const V2_UPDATE_REDEEMER_ALTERNATIVE = 1;
 const V2_BURN_REDEEMER_ALTERNATIVE = 2;
 
 export type RegistryMetadata = {
-	[key: string]: string | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
+	[key: string]: string | number | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
 };
 
 /**

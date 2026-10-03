@@ -13,6 +13,7 @@ import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { supportedPaymentSourcesSchema } from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
 import {
+	isRegistryMetadataAllowedForPaymentSource,
 	mapParsedRegistryMetadataToApi,
 	metadataSchema,
 	resolveAgentPricingFromMetadata,
@@ -53,11 +54,13 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								.max(250)
 								.describe('Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL'),
 							type: z
-								.enum(['Standard', 'OpenApi', 'X402'])
+								.enum(['Standard', 'OpenApi', 'X402', 'A2A'])
 								.optional()
 								.describe('Registry entry type when encoded on-chain'),
 							openApiSpecUrl: z.string().max(250).optional().describe('OpenAPI spec URL for OpenApi registry entries'),
 							x402ResourcesUrl: z.string().max(250).optional().describe('x402 manifest URL for X402 registry entries'),
+							a2aAgentCardUrl: z.string().max(250).optional().describe('Agent Card URL for A2A registry entries'),
+							a2aProtocolVersions: z.array(z.string()).optional().describe('Declared A2A protocol versions'),
 							ExampleOutputs: z
 								.array(
 									z.object({
@@ -261,6 +264,10 @@ export const queryAgentFromWalletGet = agentFromWalletEndpointFactory.build({
 				if (!parsedMetadata.success) {
 					const error = parsedMetadata.error;
 					logger.error('Error parsing metadata', { error });
+					return;
+				}
+				if (!isRegistryMetadataAllowedForPaymentSource(parsedMetadata.data, paymentSource.paymentSourceType)) {
+					logger.error('A2A metadata requires a V2 payment source', { unit: asset.unit });
 					return;
 				}
 				const resolvedAgentPricing = resolveAgentPricingFromMetadata(parsedMetadata.data);

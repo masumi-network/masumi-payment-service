@@ -55,6 +55,7 @@ ruvector.db
 **/ruvector.db
 agentdb.rvf
 agentdb.rvf.lock
+.claude-flow
 .remember/
 
 # Hydra L2 E2E harness — generated seller mnemonic (never commit)

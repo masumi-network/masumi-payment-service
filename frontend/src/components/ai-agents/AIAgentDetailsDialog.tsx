@@ -123,6 +123,7 @@ export function AIAgentDetailsDialog({
     [currentNetworkPaymentSources, selectedPaymentSourceId],
   );
   const showEditMetadata = canEditAgentMetadata({
+    agent,
     relation: agent?.relation,
     canPay: capabilities.canPay,
     selectedPaymentSource: activePaymentSource,

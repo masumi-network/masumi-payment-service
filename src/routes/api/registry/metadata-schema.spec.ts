@@ -1,5 +1,5 @@
 import { PaymentSourceType, PricingType, RegistryEntryType, X402PaymentScheme } from '@/generated/prisma/client';
-import { buildAgentMetadata } from '../../../../packages/payment-source-v2/src/services/registry/register/service';
+import { buildAgentMetadata } from '../../../../packages/payment-source-v2/src/services/registry/register/metadata';
 import {
 	mapParsedRegistryMetadataToApi,
 	metadataSchema,
@@ -35,6 +35,7 @@ describe('registry metadata schema', () => {
 			type: RegistryEntryType.X402,
 			apiBaseUrl: null,
 			openApiSpecUrl: null,
+			A2ADetail: null,
 			x402ResourcesUrl: 'https://saas.example/api/x402/manifest/agent-1',
 			ExampleOutputs: [],
 			capabilityName: null,
@@ -77,6 +78,7 @@ describe('registry metadata schema', () => {
 			type: RegistryEntryType.Standard,
 			apiBaseUrl: 'https://agent.example/mip',
 			openApiSpecUrl: null,
+			A2ADetail: null,
 			x402ResourcesUrl: null,
 			ExampleOutputs: [],
 			capabilityName: null,
@@ -117,5 +119,57 @@ describe('registry metadata schema', () => {
 		if (!parsed.success) return;
 		expect(resolveRegistryEntryTypeApi(parsed.data)).toBe('Standard');
 		expect(resolveRegistryInteractionUrl(parsed.data)).toBe('https://agent.example/mip');
+	});
+});
+
+describe('A2A metadata shared reader', () => {
+	const metadata = {
+		name: 'A2A',
+		type: 'a2aV1',
+		author: { name: 'Author' },
+		tags: ['ai'],
+		image: 'ipfs://image',
+		metadata_version: 2,
+		agent_card_url: ['https://agent.example/', 'card.json'],
+		a2a_protocol_versions: ['1.0'],
+	};
+	it.each(['api_url', 'api_base_url'] as const)('projects A2A %s and preserves its card descriptor', (field) => {
+		const parsed = metadataSchema.parse({ ...metadata, [field]: ['https://agent.example/', 'a2a'] });
+		expect(mapParsedRegistryMetadataToApi(parsed)).toEqual(
+			expect.objectContaining({
+				type: 'A2A',
+				apiBaseUrl: 'https://agent.example/a2a',
+				a2aAgentCardUrl: 'https://agent.example/card.json',
+				a2aProtocolVersions: ['1.0'],
+			}),
+		);
+	});
+	it('rejects conflicting A2A aliases even if a legacy schema could accept api_base_url', () => {
+		expect(
+			metadataSchema.safeParse({
+				...metadata,
+				api_url: 'https://agent.example/a2a',
+				api_base_url: 'https://other.example/a2a',
+			}).success,
+		).toBe(false);
+	});
+});
+
+describe('A2A metadata version boundary', () => {
+	it('rejects V1 metadata and missing A2A descriptors', () => {
+		const metadata = {
+			name: 'A2A',
+			type: 'a2aV1',
+			author: { name: 'Author' },
+			tags: ['ai'],
+			image: 'ipfs://image',
+			metadata_version: 2,
+			api_url: 'https://agent.example/a2a',
+			agent_card_url: 'https://agent.example/card',
+			a2a_protocol_versions: ['1.0'],
+		};
+		expect(metadataSchema.safeParse({ ...metadata, metadata_version: 1 }).success).toBe(false);
+		expect(metadataSchema.safeParse({ ...metadata, agent_card_url: undefined }).success).toBe(false);
+		expect(metadataSchema.safeParse({ ...metadata, a2a_protocol_versions: [] }).success).toBe(false);
 	});
 });

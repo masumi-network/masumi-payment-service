@@ -43,7 +43,7 @@ import {
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { describeAmbiguousRegistrySubmit } from '../submit-failure';
 import { asV2Provider } from '../../provider-cast';
-import { buildAgentMetadata, validateRegistrationPricing } from '../register/service';
+import { buildAgentMetadata, validateRegistrationPricing } from '../register/metadata';
 
 // One UpdateAction tx can atomically burn+remint several assets (see
 // smart-contracts/registry-v2/validators/mint.ak). When more than one
