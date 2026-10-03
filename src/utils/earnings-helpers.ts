@@ -21,6 +21,28 @@ export function parseDateRange(
 	return { periodStart, periodEnd };
 }
 
+/** Page size for the income/spending aggregation queries below. */
+export const EARNINGS_QUERY_BATCH_SIZE = 1000;
+
+/** Process one page at a time. The caller must use a stable, unique cursor. */
+export async function fetchAndProcessInBatches<T extends { id: string }>(
+	fetchBatch: (cursorId: string | undefined) => Promise<T[]>,
+	batchSize: number,
+	processBatch: (rows: T[]) => void,
+	signal?: AbortSignal,
+): Promise<void> {
+	let cursorId: string | undefined;
+	for (;;) {
+		signal?.throwIfAborted();
+		const batch = await fetchBatch(cursorId);
+		signal?.throwIfAborted();
+		if (batch.length === 0) break;
+		processBatch(batch);
+		if (batch.length < batchSize) break;
+		cursorId = batch[batch.length - 1].id;
+	}
+}
+
 export function filterByAgentIdentifier<T extends { blockchainIdentifier: string }>(
 	transactions: T[],
 	agentIdentifier: string | null,

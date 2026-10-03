@@ -6,6 +6,8 @@ import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import {
 	parseDateRange,
 	filterByAgentIdentifier,
+	fetchAndProcessInBatches,
+	EARNINGS_QUERY_BATCH_SIZE,
 	Fund,
 	addToAllFundsMaps,
 	mapDailyFundsOutput,
@@ -17,7 +19,7 @@ import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchasePaymentSourceTypeFilter } from '../queries';
-import { earningsConcurrencyLimitMiddleware } from '@/utils/earnings-request-control';
+import { withEarningsConcurrency, concurrencyResponseMiddleware } from '@/utils/earnings-request-control';
 
 export const postPurchaseSpendingSchemaInput = z.object({
 	agentIdentifier: z
@@ -147,52 +149,41 @@ function getMonthNumberLocal(date: Date, timeZone: string): string {
 	return sp.format('{YYYY}-{MM}');
 }
 
-const purchaseSpendingEndpointFactory = readAuthenticatedEndpointFactory.addExpressMiddleware(
-	earningsConcurrencyLimitMiddleware,
-);
+type PurchaseSpendingHandlerArgs = {
+	input: z.infer<typeof postPurchaseSpendingSchemaInput>;
+	ctx: AuthContext;
+};
+
+const purchaseSpendingEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(concurrencyResponseMiddleware);
 
 export const postPurchaseSpending = purchaseSpendingEndpointFactory.build({
 	method: 'post',
 	input: postPurchaseSpendingSchemaInput,
 	output: postPurchaseSpendingSchemaOutput,
-	handler: async ({ input, ctx }: { input: z.infer<typeof postPurchaseSpendingSchemaInput>; ctx: AuthContext }) => {
+	handler: withEarningsConcurrency(async ({ input, ctx }: PurchaseSpendingHandlerArgs, signal) => {
 		const startTime = Date.now();
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
 
-			const allPurchases = await prisma.purchaseRequest.findMany({
-				where: {
-					payByTime: {
-						gte: periodStart.getTime(),
-						lte: periodEnd.getTime(),
-					},
-					onChainState: { not: null },
-					PaymentSource: {
-						network: input.network,
-						paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
-						deletedAt: null,
-					},
-					...buildWalletScopeFilter(ctx.walletScopeIds),
+			const where = {
+				payByTime: {
+					gte: periodStart.getTime(),
+					lte: periodEnd.getTime(),
 				},
-				orderBy: [
-					{
-						payByTime: 'asc',
-					},
-					{
-						id: 'asc',
-					},
-				],
-				include: {
-					PaidFunds: true,
-					WithdrawnForBuyer: true,
-					WithdrawnForSeller: true,
-					PaymentSource: true,
+				onChainState: { not: null },
+				PaymentSource: {
+					network: input.network,
+					paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
+					deletedAt: null,
 				},
-			});
-
-			const allPurchasesFiltered = filterByAgentIdentifier(allPurchases, input.agentIdentifier);
+				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...(input.agentIdentifier
+					? { OR: [{ agentIdentifier: input.agentIdentifier }, { agentIdentifierSyncedAt: null }] }
+					: {}),
+			};
+			let totalTransactions = 0;
 
 			const totalRefundedMap: Fund = {
 				units: new Map<string, bigint>(),
@@ -215,76 +206,105 @@ export const postPurchaseSpending = purchaseSpendingEndpointFactory.build({
 			const monthlySpendMap = new Map<string, Fund>();
 			const monthlyPendingMap = new Map<string, Fund>();
 
-			for (const purchase of allPurchasesFiltered) {
-				//get the day number in the local time zone of the user
-				const dayDateLocal = getDayNumberLocal(new Date(Number(purchase.payByTime)), input.timeZone ?? 'Etc/UTC');
-				const monthDateLocal = getMonthNumberLocal(new Date(Number(purchase.payByTime)), input.timeZone ?? 'Etc/UTC');
+			await fetchAndProcessInBatches(
+				(cursorId) =>
+					prisma.purchaseRequest.findMany({
+						where,
+						orderBy: [{ payByTime: 'asc' }, { id: 'asc' }],
+						select: {
+							id: true,
+							blockchainIdentifier: true,
+							payByTime: true,
+							onChainState: true,
+							totalBuyerCardanoFees: true,
+							PaidFunds: { select: { unit: true, amount: true } },
+							WithdrawnForBuyer: { select: { unit: true, amount: true } },
+							WithdrawnForSeller: { select: { unit: true, amount: true } },
+						},
+						take: EARNINGS_QUERY_BATCH_SIZE,
+						// Internal aggregation excludes the cursor row to count each row once.
+						...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+					}),
+				EARNINGS_QUERY_BATCH_SIZE,
+				(batch) => {
+					const filteredBatch = filterByAgentIdentifier(batch, input.agentIdentifier);
+					totalTransactions += filteredBatch.length;
+					for (const purchase of filteredBatch) {
+						//get the day number in the local time zone of the user
+						const dayDateLocal = getDayNumberLocal(new Date(Number(purchase.payByTime)), input.timeZone ?? 'Etc/UTC');
+						const monthDateLocal = getMonthNumberLocal(
+							new Date(Number(purchase.payByTime)),
+							input.timeZone ?? 'Etc/UTC',
+						);
 
-				if (purchase.onChainState === OnChainState.Withdrawn) {
-					addToAllFundsMaps(
-						totalSpendMap,
-						daySpendMap,
-						monthlySpendMap,
-						dayDateLocal,
-						monthDateLocal,
-						purchase.PaidFunds,
-						purchase.totalBuyerCardanoFees,
-					);
-				} else if (purchase.onChainState === OnChainState.RefundWithdrawn) {
-					addToAllFundsMaps(
-						totalRefundedMap,
-						dayRefundedMap,
-						monthlyRefundedMap,
-						dayDateLocal,
-						monthDateLocal,
-						purchase.PaidFunds,
-						purchase.totalBuyerCardanoFees,
-					);
-				} else if (purchase.onChainState === OnChainState.DisputedWithdrawn) {
-					if (purchase.WithdrawnForBuyer.length > 0) {
-						addToAllFundsMaps(
-							totalRefundedMap,
-							dayRefundedMap,
-							monthlyRefundedMap,
-							dayDateLocal,
-							monthDateLocal,
-							purchase.WithdrawnForBuyer,
-							purchase.totalBuyerCardanoFees,
-						);
+						if (purchase.onChainState === OnChainState.Withdrawn) {
+							addToAllFundsMaps(
+								totalSpendMap,
+								daySpendMap,
+								monthlySpendMap,
+								dayDateLocal,
+								monthDateLocal,
+								purchase.PaidFunds,
+								purchase.totalBuyerCardanoFees,
+							);
+						} else if (purchase.onChainState === OnChainState.RefundWithdrawn) {
+							addToAllFundsMaps(
+								totalRefundedMap,
+								dayRefundedMap,
+								monthlyRefundedMap,
+								dayDateLocal,
+								monthDateLocal,
+								purchase.PaidFunds,
+								purchase.totalBuyerCardanoFees,
+							);
+						} else if (purchase.onChainState === OnChainState.DisputedWithdrawn) {
+							if (purchase.WithdrawnForBuyer.length > 0) {
+								addToAllFundsMaps(
+									totalRefundedMap,
+									dayRefundedMap,
+									monthlyRefundedMap,
+									dayDateLocal,
+									monthDateLocal,
+									purchase.WithdrawnForBuyer,
+									purchase.totalBuyerCardanoFees,
+								);
+							}
+							if (purchase.WithdrawnForSeller.length > 0) {
+								addToAllFundsMaps(
+									totalSpendMap,
+									daySpendMap,
+									monthlySpendMap,
+									dayDateLocal,
+									monthDateLocal,
+									purchase.WithdrawnForSeller,
+									purchase.WithdrawnForBuyer.length === 0 ? purchase.totalBuyerCardanoFees : 0n,
+								);
+							}
+						} else if (purchase.onChainState !== OnChainState.FundsOrDatumInvalid) {
+							// Mirror the income endpoint: purchases whose funds-lock timed out
+							// (tx-sync marks them FundsOrDatumInvalid; the money never left the
+							// buyer wallet) must NOT be counted as pending spend, or they inflate
+							// TotalPending/DailyPending/MonthlyPending forever.
+							addToAllFundsMaps(
+								totalPendingMap,
+								dayPendingMap,
+								monthlyPendingMap,
+								dayDateLocal,
+								monthDateLocal,
+								purchase.PaidFunds,
+								purchase.totalBuyerCardanoFees,
+							);
+						}
 					}
-					if (purchase.WithdrawnForSeller.length > 0) {
-						addToAllFundsMaps(
-							totalSpendMap,
-							daySpendMap,
-							monthlySpendMap,
-							dayDateLocal,
-							monthDateLocal,
-							purchase.WithdrawnForSeller,
-							purchase.WithdrawnForBuyer.length === 0 ? purchase.totalBuyerCardanoFees : 0n,
-						);
-					}
-				} else if (purchase.onChainState !== OnChainState.FundsOrDatumInvalid) {
-					// Mirror the income endpoint: purchases whose funds-lock timed out
-					// (tx-sync marks them FundsOrDatumInvalid; the money never left the
-					// buyer wallet) must NOT be counted as pending spend, or they inflate
-					// TotalPending/DailyPending/MonthlyPending forever.
-					addToAllFundsMaps(
-						totalPendingMap,
-						dayPendingMap,
-						monthlyPendingMap,
-						dayDateLocal,
-						monthDateLocal,
-						purchase.PaidFunds,
-						purchase.totalBuyerCardanoFees,
-					);
-				}
-			}
+				},
+				signal,
+			);
 
 			return {
 				agentIdentifier: input.agentIdentifier,
 				periodStart,
 				periodEnd,
-				totalTransactions: allPurchasesFiltered.length,
+				totalTransactions,
 				TotalSpend: mapTotalFundsOutput(totalSpendMap),
 				TotalRefunded: mapTotalFundsOutput(totalRefundedMap),
 				TotalPending: mapTotalFundsOutput(totalPendingMap),
@@ -313,5 +333,5 @@ export const postPurchaseSpending = purchaseSpendingEndpointFactory.build({
 
 			throw error;
 		}
-	},
+	}),
 });

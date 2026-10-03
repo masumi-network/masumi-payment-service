@@ -6,6 +6,8 @@ import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import {
 	parseDateRange,
 	filterByAgentIdentifier,
+	fetchAndProcessInBatches,
+	EARNINGS_QUERY_BATCH_SIZE,
 	Fund,
 	addToAllFundsMaps,
 	mapDailyFundsOutput,
@@ -17,7 +19,7 @@ import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
-import { earningsConcurrencyLimitMiddleware } from '@/utils/earnings-request-control';
+import { withEarningsConcurrency, concurrencyResponseMiddleware } from '@/utils/earnings-request-control';
 
 export const postPaymentIncomeSchemaInput = z.object({
 	agentIdentifier: z
@@ -147,52 +149,41 @@ function getMonthNumberLocal(date: Date, timeZone: string): string {
 	return sp.format('{YYYY}-{MM}');
 }
 
-const paymentIncomeEndpointFactory = readAuthenticatedEndpointFactory.addExpressMiddleware(
-	earningsConcurrencyLimitMiddleware,
-);
+type PaymentIncomeHandlerArgs = {
+	input: z.infer<typeof postPaymentIncomeSchemaInput>;
+	ctx: AuthContext;
+};
+
+const paymentIncomeEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(concurrencyResponseMiddleware);
 
 export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 	method: 'post',
 	input: postPaymentIncomeSchemaInput,
 	output: postPaymentIncomeSchemaOutput,
-	handler: async ({ input, ctx }: { input: z.infer<typeof postPaymentIncomeSchemaInput>; ctx: AuthContext }) => {
+	handler: withEarningsConcurrency(async ({ input, ctx }: PaymentIncomeHandlerArgs, signal) => {
 		const startTime = Date.now();
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
 
-			const allPayments = await prisma.paymentRequest.findMany({
-				where: {
-					payByTime: {
-						gte: periodStart.getTime(),
-						lte: periodEnd.getTime(),
-					},
-					onChainState: { not: null },
-					PaymentSource: {
-						network: input.network,
-						paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
-						deletedAt: null,
-					},
-					...buildWalletScopeFilter(ctx.walletScopeIds),
+			const where = {
+				payByTime: {
+					gte: periodStart.getTime(),
+					lte: periodEnd.getTime(),
 				},
-				orderBy: [
-					{
-						payByTime: 'asc',
-					},
-					{
-						id: 'asc',
-					},
-				],
-				include: {
-					RequestedFunds: true,
-					WithdrawnForBuyer: true,
-					WithdrawnForSeller: true,
-					PaymentSource: true,
+				onChainState: { not: null },
+				PaymentSource: {
+					network: input.network,
+					paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
+					deletedAt: null,
 				},
-			});
-
-			const allPaymentsFiltered = filterByAgentIdentifier(allPayments, input.agentIdentifier);
+				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...(input.agentIdentifier
+					? { OR: [{ agentIdentifier: input.agentIdentifier }, { agentIdentifierSyncedAt: null }] }
+					: {}),
+			};
+			let totalTransactions = 0;
 
 			const totalRefundedMap: Fund = {
 				units: new Map<string, bigint>(),
@@ -215,72 +206,101 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 			const monthlyIncomeMap = new Map<string, Fund>();
 			const monthlyPendingMap = new Map<string, Fund>();
 
-			for (const payment of allPaymentsFiltered) {
-				//get the day number in the local time zone of the user
-				const dayDateLocal = getDayNumberLocal(new Date(Number(payment.payByTime)), input.timeZone ?? 'Etc/UTC');
-				const monthDateLocal = getMonthNumberLocal(new Date(Number(payment.payByTime)), input.timeZone ?? 'Etc/UTC');
+			await fetchAndProcessInBatches(
+				(cursorId) =>
+					prisma.paymentRequest.findMany({
+						where,
+						orderBy: [{ payByTime: 'asc' }, { id: 'asc' }],
+						select: {
+							id: true,
+							blockchainIdentifier: true,
+							payByTime: true,
+							onChainState: true,
+							totalSellerCardanoFees: true,
+							RequestedFunds: { select: { unit: true, amount: true } },
+							WithdrawnForBuyer: { select: { unit: true, amount: true } },
+							WithdrawnForSeller: { select: { unit: true, amount: true } },
+						},
+						take: EARNINGS_QUERY_BATCH_SIZE,
+						// Internal aggregation excludes the cursor row to count each row once.
+						...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+					}),
+				EARNINGS_QUERY_BATCH_SIZE,
+				(batch) => {
+					const filteredBatch = filterByAgentIdentifier(batch, input.agentIdentifier);
+					totalTransactions += filteredBatch.length;
+					for (const payment of filteredBatch) {
+						//get the day number in the local time zone of the user
+						const dayDateLocal = getDayNumberLocal(new Date(Number(payment.payByTime)), input.timeZone ?? 'Etc/UTC');
+						const monthDateLocal = getMonthNumberLocal(
+							new Date(Number(payment.payByTime)),
+							input.timeZone ?? 'Etc/UTC',
+						);
 
-				if (payment.onChainState === OnChainState.Withdrawn) {
-					addToAllFundsMaps(
-						totalIncomeMap,
-						dayIncomeMap,
-						monthlyIncomeMap,
-						dayDateLocal,
-						monthDateLocal,
-						payment.RequestedFunds,
-						payment.totalSellerCardanoFees,
-					);
-				} else if (payment.onChainState === OnChainState.RefundWithdrawn) {
-					addToAllFundsMaps(
-						totalRefundedMap,
-						dayRefundedMap,
-						monthlyRefundedMap,
-						dayDateLocal,
-						monthDateLocal,
-						payment.RequestedFunds,
-						payment.totalSellerCardanoFees,
-					);
-				} else if (payment.onChainState === OnChainState.DisputedWithdrawn) {
-					if (payment.WithdrawnForSeller.length > 0) {
-						addToAllFundsMaps(
-							totalIncomeMap,
-							dayIncomeMap,
-							monthlyIncomeMap,
-							dayDateLocal,
-							monthDateLocal,
-							payment.WithdrawnForSeller,
-							payment.totalSellerCardanoFees,
-						);
+						if (payment.onChainState === OnChainState.Withdrawn) {
+							addToAllFundsMaps(
+								totalIncomeMap,
+								dayIncomeMap,
+								monthlyIncomeMap,
+								dayDateLocal,
+								monthDateLocal,
+								payment.RequestedFunds,
+								payment.totalSellerCardanoFees,
+							);
+						} else if (payment.onChainState === OnChainState.RefundWithdrawn) {
+							addToAllFundsMaps(
+								totalRefundedMap,
+								dayRefundedMap,
+								monthlyRefundedMap,
+								dayDateLocal,
+								monthDateLocal,
+								payment.RequestedFunds,
+								payment.totalSellerCardanoFees,
+							);
+						} else if (payment.onChainState === OnChainState.DisputedWithdrawn) {
+							if (payment.WithdrawnForSeller.length > 0) {
+								addToAllFundsMaps(
+									totalIncomeMap,
+									dayIncomeMap,
+									monthlyIncomeMap,
+									dayDateLocal,
+									monthDateLocal,
+									payment.WithdrawnForSeller,
+									payment.totalSellerCardanoFees,
+								);
+							}
+							if (payment.WithdrawnForBuyer.length > 0) {
+								addToAllFundsMaps(
+									totalRefundedMap,
+									dayRefundedMap,
+									monthlyRefundedMap,
+									dayDateLocal,
+									monthDateLocal,
+									payment.WithdrawnForBuyer,
+									payment.WithdrawnForSeller.length === 0 ? payment.totalSellerCardanoFees : 0n,
+								);
+							}
+						} else if (payment.onChainState !== OnChainState.FundsOrDatumInvalid) {
+							addToAllFundsMaps(
+								totalPendingMap,
+								dayPendingMap,
+								monthlyPendingMap,
+								dayDateLocal,
+								monthDateLocal,
+								payment.RequestedFunds,
+								payment.totalSellerCardanoFees,
+							);
+						}
 					}
-					if (payment.WithdrawnForBuyer.length > 0) {
-						addToAllFundsMaps(
-							totalRefundedMap,
-							dayRefundedMap,
-							monthlyRefundedMap,
-							dayDateLocal,
-							monthDateLocal,
-							payment.WithdrawnForBuyer,
-							payment.WithdrawnForSeller.length === 0 ? payment.totalSellerCardanoFees : 0n,
-						);
-					}
-				} else if (payment.onChainState !== OnChainState.FundsOrDatumInvalid) {
-					addToAllFundsMaps(
-						totalPendingMap,
-						dayPendingMap,
-						monthlyPendingMap,
-						dayDateLocal,
-						monthDateLocal,
-						payment.RequestedFunds,
-						payment.totalSellerCardanoFees,
-					);
-				}
-			}
+				},
+				signal,
+			);
 
 			return {
 				agentIdentifier: input.agentIdentifier,
 				periodStart,
 				periodEnd,
-				totalTransactions: allPaymentsFiltered.length,
+				totalTransactions,
 				TotalIncome: mapTotalFundsOutput(totalIncomeMap),
 				TotalRefunded: mapTotalFundsOutput(totalRefundedMap),
 				TotalPending: mapTotalFundsOutput(totalPendingMap),
@@ -309,5 +329,5 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 
 			throw error;
 		}
-	},
+	}),
 });

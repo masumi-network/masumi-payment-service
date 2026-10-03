@@ -1,50 +1,54 @@
-import type { NextFunction, Request, Response } from 'express';
+import type { Response } from 'express';
 import createHttpError from 'http-errors';
+import { Middleware } from 'express-zod-api';
 
-export type ConcurrencyLimitOptions = {
-	/** Maximum number of requests allowed to be in flight at once. */
+// Endpoint handlers receive HTTP objects through middleware context.
+export const concurrencyResponseMiddleware = new Middleware({
+	handler: async ({ response }) => ({ concurrencyResponse: response }),
+});
+
+type ConcurrencyLimitOptions = {
 	limit: number;
-	/** Hard ceiling on how long one request may hold a slot before it is force-released. */
-	responseTimeoutMs?: number;
-	retryAfterSeconds?: number;
+	timeoutMs: number;
 };
 
-const DEFAULT_RESPONSE_TIMEOUT_MS = 5 * 60_000;
-const DEFAULT_RETRY_AFTER_SECONDS = 1;
-
-export function createConcurrencyLimitMiddleware({
-	limit,
-	responseTimeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS,
-	retryAfterSeconds = DEFAULT_RETRY_AFTER_SECONDS,
-}: ConcurrencyLimitOptions) {
+/**
+ * Share one wrapper across handlers that use the same resource.
+ * Disconnects and timeouts signal cancellation, but the slot stays occupied
+ * until the handler settles, including any database query already in flight.
+ */
+export const createConcurrencyLimit = ({ limit, timeoutMs }: ConcurrencyLimitOptions) => {
 	let active = 0;
 
-	return (_req: Request, res: Response, next: NextFunction) => {
-		if (active >= limit) {
-			res.setHeader('Retry-After', String(retryAfterSeconds));
-			next(createHttpError(503, 'Server capacity reached. Retry later.'));
-			return;
-		}
+	return <Args, Result>(handler: (args: Args, signal: AbortSignal) => Promise<Result>) =>
+		async (args: Args & { ctx: { concurrencyResponse: Response } }): Promise<Result> => {
+			const { concurrencyResponse: response } = args.ctx;
+			if (active >= limit) {
+				response.setHeader('Retry-After', '1');
+				throw createHttpError(503, 'Server capacity reached. Retry later.');
+			}
+			if (response.destroyed) {
+				throw createHttpError(499, 'Client disconnected.');
+			}
 
-		active += 1;
-		let released = false;
-		const release = () => {
-			if (released) return;
-			released = true;
-			active -= 1;
-			clearTimeout(deadline);
+			active += 1;
+			const controller = new AbortController();
+			const abort = () => controller.abort(createHttpError(499, 'Client disconnected.'));
+			response.once('close', abort);
+			const deadline = setTimeout(() => {
+				controller.abort(createHttpError(504, 'Request timed out.'));
+				response.destroy();
+			}, timeoutMs);
+			deadline.unref();
+
+			try {
+				const result = await handler(args, controller.signal);
+				controller.signal.throwIfAborted();
+				return result;
+			} finally {
+				active -= 1;
+				clearTimeout(deadline);
+				response.off('close', abort);
+			}
 		};
-
-		// A hung or dropped response would otherwise hold this slot forever and
-		// permanently shrink the effective limit by one.
-		const deadline = setTimeout(() => {
-			res.destroy();
-			release();
-		}, responseTimeoutMs);
-		deadline.unref();
-
-		res.once('finish', release);
-		res.once('close', release);
-		next();
-	};
-}
+};
