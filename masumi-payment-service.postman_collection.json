@@ -855,9 +855,9 @@
                     "item": [
                         {
                             "id": "2b197ccb-7964-4888-8d7f-d7cb4ded1861",
-                            "name": "List wallet low-balance rules. (read access required)",
+                            "name": "List wallet low-balance rules. (admin access required)",
                             "request": {
-                                "name": "List wallet low-balance rules. (read access required)",
+                                "name": "List wallet low-balance rules. (admin access required)",
                                 "description": {
                                     "content": "Lists low-balance monitoring rules for wallets",
                                     "type": "text/plain"
