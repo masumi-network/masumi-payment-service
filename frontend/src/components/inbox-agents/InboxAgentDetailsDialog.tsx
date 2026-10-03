@@ -11,10 +11,11 @@ import {
   RegistryInboxEntry,
 } from '@/lib/api/generated';
 import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { formatMetadataVersion, formatTxStatus } from '@/lib/display-labels';
 import { formatDateTime } from '@/lib/format-date';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import formatBalance from '@/lib/formatBalance';
+import { formatLovelaceAsAda } from '@/lib/format-lovelace-display';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
@@ -49,10 +50,6 @@ const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): string => {
       return status;
   }
 };
-
-function formatLovelaceToAda(amount: string) {
-  return `${formatBalance((parseInt(amount, 10) / 1000000).toFixed(2))} ADA`;
-}
 
 export function InboxAgentDetailsDialog({
   agent,
@@ -237,13 +234,15 @@ export function InboxAgentDetailsDialog({
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <div className="font-medium mb-1">Metadata version</div>
-                        <div className="text-muted-foreground">{agent.metadataVersion}</div>
+                        <div className="text-muted-foreground">
+                          {formatMetadataVersion(agent.metadataVersion)}
+                        </div>
                       </div>
                       <div>
                         <div className="font-medium mb-1">Holding wallet funding</div>
                         <div className="text-muted-foreground">
                           {agent.sendFundingLovelace
-                            ? formatLovelaceToAda(agent.sendFundingLovelace)
+                            ? formatLovelaceAsAda(agent.sendFundingLovelace)
                             : 'Default minimum'}
                         </div>
                       </div>
@@ -345,7 +344,7 @@ export function InboxAgentDetailsDialog({
                         <div>
                           <div className="font-medium mb-1">Status</div>
                           <div className="text-muted-foreground">
-                            {agent.CurrentTransaction.status}
+                            {formatTxStatus(agent.CurrentTransaction.status)}
                           </div>
                         </div>
                         <div>
@@ -358,7 +357,7 @@ export function InboxAgentDetailsDialog({
                           <div className="font-medium mb-1">Fees</div>
                           <div className="text-muted-foreground">
                             {agent.CurrentTransaction.fees
-                              ? formatLovelaceToAda(agent.CurrentTransaction.fees)
+                              ? formatLovelaceAsAda(agent.CurrentTransaction.fees, '—')
                               : '—'}
                           </div>
                         </div>

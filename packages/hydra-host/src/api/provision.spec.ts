@@ -13,6 +13,7 @@ const REQUEST = {
 	contestationPeriodSeconds: 220,
 	depositPeriodSeconds: 300,
 	unsyncedPeriodSeconds: 1800,
+	depositActivationSeconds: 300,
 };
 
 let dataDir: string;
@@ -129,6 +130,41 @@ describe('provisionNode', () => {
 		await expect(provisionNode({ ...REQUEST, idempotencyKey: 'one-too-many' }, deps)).rejects.toThrow(
 			/add another host/,
 		);
+	});
+
+	// A replay must be a replay of the SAME request. Silently returning a node
+	// provisioned with a different deposit-activation window would leave the
+	// caller believing it configured something it did not — same reasoning as
+	// the other three periods, extended to this one.
+	it('409s a replayed idempotency key carrying a different depositActivationSeconds', async () => {
+		await provisionNode(REQUEST, deps);
+		await expect(
+			provisionNode({ ...REQUEST, depositActivationSeconds: REQUEST.depositActivationSeconds + 1 }, deps),
+		).rejects.toThrow(/depositActivationSeconds/);
+	});
+
+	// I-1 regression: a node record persisted by a Host build from before
+	// depositActivationSeconds existed has none on disk. Without normalizing it
+	// at read time, the mismatch check above would compare `undefined` against
+	// the concrete number every request always carries and 409 EVERY replay of
+	// such a record — and for a redeem-invite retry the idempotency key is the
+	// invite nonce itself (fixed by the invite, not chosen per attempt), so a
+	// downstream failure after a successful-but-legacy provision could never be
+	// retried: it would burn the nonce and strand a funded node on both sides.
+	it('replays successfully against a legacy record persisted without depositActivationSeconds', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+
+		// Simulate a record written before this field existed.
+		const nodeFile = path.join(deps.store.nodeDir(record.nodeId), 'node.json');
+		const raw = JSON.parse(await fs.readFile(nodeFile, 'utf8')) as Record<string, unknown>;
+		delete raw.depositActivationSeconds;
+		await fs.writeFile(nodeFile, JSON.stringify(raw), 'utf8');
+
+		const replay = await provisionNode(REQUEST, deps);
+
+		expect(replay.replayed).toBe(true);
+		expect(replay.record.nodeId).toBe(record.nodeId);
+		expect(replay.record.depositActivationSeconds).toBe(REQUEST.depositActivationSeconds);
 	});
 });
 

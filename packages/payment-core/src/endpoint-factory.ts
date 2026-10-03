@@ -15,12 +15,11 @@ const getPublicErrorMessage = (error: HttpError): string =>
 		? createHttpError(error.statusCode).message // default message for that code
 		: error.message;
 
-// Request payloads reach this logger verbatim on any 5xx, and several endpoints
-// (e.g. payment-source-extended create/patch) carry plaintext wallet mnemonics
-// and other secrets. Redact sensitive-looking keys before logging so seed
-// phrases never land in log storage / the OpenTelemetry log bridge.
+// Request payloads reach this logger verbatim on any 5xx, and several endpoints carry
+// credentials in the body: wallet mnemonics (payment-source-extended create/patch),
+
 const SENSITIVE_KEY_PATTERN =
-	/mnemonic|passphrase|password|secret|private[_-]?key|signing[_-]?key|seed|encryption[_-]?key|api[_-]?key|token/i;
+	/mnemonic|passphrase|password|secret|private[_-]?key|signing[_-]?key|seed|encryption[_-]?key|api[_-]?key|token|signature|authoriz|auth(?!or)|credential|bearer|x[_-]?payment[_-]?header/i;
 
 const redactSensitive = (value: RuntimePropertyValue): RuntimePropertyValue => {
 	if (Array.isArray(value)) {
