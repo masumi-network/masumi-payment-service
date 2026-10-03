@@ -15,6 +15,8 @@ import { registerFundWalletPaths } from '@/routes/api/fund-wallet/docs';
 import { registerFundDistributionPaths } from '@/routes/api/fund-distribution/docs';
 import { registerHydraPaths } from '@/routes/api/hydra/docs';
 import { registerRailReadinessPaths } from '@/routes/api/rail-readiness/docs';
+import { registerExchainPaths } from '@/routes/api/exchain/docs';
+import { registerGuardedWalletPaths } from '@/routes/api/wallet/guarded/docs';
 import { registerTxSyncQuarantinePaths } from '@/routes/api/tx-sync-quarantine/docs';
 import { registerRequestRepairPaths } from '@/routes/api/request-repair/docs';
 import { registerReportPaths } from '@/routes/api/reports/docs';
@@ -43,6 +45,8 @@ export function generateOpenAPI() {
 	registerFundDistributionPaths({ registry, apiKeyAuth });
 	registerHydraPaths({ registry, apiKeyAuth });
 	registerRailReadinessPaths({ registry, apiKeyAuth });
+	registerExchainPaths({ registry, apiKeyAuth });
+	registerGuardedWalletPaths({ registry, apiKeyAuth });
 	registerTxSyncQuarantinePaths({ registry, apiKeyAuth });
 	registerRequestRepairPaths({ registry, apiKeyAuth });
 	registerReportPaths({ registry, apiKeyAuth });

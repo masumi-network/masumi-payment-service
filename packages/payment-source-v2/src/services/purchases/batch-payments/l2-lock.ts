@@ -93,6 +93,8 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				where: {
 					type: HotWalletType.Purchasing,
 					deletedAt: null,
+					// A guarded wallet locks only through Exchain co-signing on L1; never from its own key in a head.
+					GuardedWallet: null,
 				},
 				include: {
 					Secret: true,

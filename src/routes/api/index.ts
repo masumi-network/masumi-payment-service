@@ -99,6 +99,12 @@ import {
 } from './fund-wallet';
 import { getFundDistributionEndpointGet, triggerFundDistributionEndpointPost } from './fund-distribution';
 import { railReadinessEndpointGet } from './rail-readiness';
+import { exchainReadTokenEndpointPost } from './exchain';
+import {
+	deleteGuardedWalletEndpointDelete,
+	getGuardedWalletEndpointGet,
+	postGuardedWalletEndpointPost,
+} from './wallet/guarded';
 import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
@@ -346,6 +352,11 @@ export const apiRouter: Routing = {
 				get: getWalletFundEndpointGet,
 				post: postWalletFundEndpointPost,
 			},
+			guarded: {
+				get: getGuardedWalletEndpointGet,
+				post: postGuardedWalletEndpointPost,
+				delete: deleteGuardedWalletEndpointDelete,
+			},
 		},
 		'payment-source-extended': {
 			get: paymentSourceExtendedEndpointGet,
@@ -588,6 +599,11 @@ export const apiRouter: Routing = {
 		},
 		'rail-readiness': {
 			get: railReadinessEndpointGet,
+		},
+		exchain: {
+			'read-token': {
+				post: exchainReadTokenEndpointPost,
+			},
 		},
 		reports: {
 			facets: {

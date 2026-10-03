@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   PlusCircle,
   AlertTriangle,
+  ShieldCheck,
   Send,
   MoreHorizontal,
   Settings2,
@@ -346,6 +347,12 @@ export default function WalletsPage() {
                               </span>
                             ) : (
                               <WalletTypeBadge type={wallet.type} />
+                            )}
+                            {wallet.isGuarded && (
+                              <Badge variant="secondary" className="w-fit gap-1">
+                                <ShieldCheck className="h-3 w-3" />
+                                Guarded
+                              </Badge>
                             )}
                             {wallet.LowBalanceSummary?.isLow && (
                               <Badge variant="destructive" className="w-fit gap-1">

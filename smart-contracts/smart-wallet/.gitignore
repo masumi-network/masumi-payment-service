@@ -1,0 +1,12 @@
+# Aiken build artifacts
+build/
+artifacts/
+
+# Wallet secrets used by the off-chain examples — never commit
+*.sk
+
+# Local example configuration
+.env
+
+# Local deployment state: identifies which wallet these scripts talk to
+wallet-seed.json

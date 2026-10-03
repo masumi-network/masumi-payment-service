@@ -185,3 +185,14 @@ describe('processL2PurchaseLocks wallet waiting', () => {
 		expect(mockHotWalletFindUnique).toHaveBeenCalled();
 	});
 });
+
+describe('processL2PurchaseLocks guarded wallets', () => {
+	it('never loads a guarded hot wallet, so it cannot lock in a head without Exchain', async () => {
+		mockPaymentSourceFindMany.mockResolvedValueOnce([]);
+		await processL2PurchaseLocks();
+		const [args] = mockPaymentSourceFindMany.mock.calls[mockPaymentSourceFindMany.mock.calls.length - 1] as [
+			{ include: { HotWallets: { where: Record<string, unknown> } } },
+		];
+		expect(args.include.HotWallets.where).toEqual(expect.objectContaining({ GuardedWallet: null }));
+	});
+});

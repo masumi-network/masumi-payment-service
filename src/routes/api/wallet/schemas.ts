@@ -17,6 +17,7 @@ export const walletListItemSchema = z
 		walletAddress: z.string().describe('Cardano address of the wallet'),
 		collectionAddress: z.string().nullable().describe('Optional collection address for this wallet. Null if not set'),
 		note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
+		isGuarded: z.boolean().describe('True when purchases from this wallet lock through a guarded smart wallet'),
 		LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance status for the wallet'),
 	})
 	.openapi('WalletListItem');

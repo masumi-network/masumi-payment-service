@@ -449,6 +449,9 @@ async function reserveL2LockBeforeSubmit(params: {
 					deletedAt: null,
 					lockedAt: null,
 					pendingTransactionId: null,
+					// Re-checked here, not only at the pass's read: a guard attached since then must win,
+					// or this lock would leave the hot wallet key without Exchain co-signing.
+					GuardedWallet: { is: null },
 				},
 				data: {
 					lockedAt: new Date(),
@@ -456,7 +459,7 @@ async function reserveL2LockBeforeSubmit(params: {
 				},
 			});
 			if (claimedWallet.count !== 1) {
-				throw new Error(`L2 purchasing wallet ${hotWallet.id} was claimed concurrently`);
+				throw new Error(`L2 purchasing wallet ${hotWallet.id} was claimed or guarded concurrently`);
 			}
 
 			const updatedRequest = await tx.purchaseRequest.update({
