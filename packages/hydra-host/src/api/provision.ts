@@ -273,7 +273,12 @@ export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Pr
  * Set the counterparty's peers. Only permitted while the node is stopped: the
  * peer set becomes etcd's `--initial-cluster`, which is fixed at process start.
  */
-export async function setPeers(nodeId: string, peers: PeerRecord[], deps: ProvisionDeps): Promise<NodeRecord> {
+export async function setPeers(
+	nodeId: string,
+	peers: PeerRecord[],
+	deps: ProvisionDeps,
+	options: { onlyIfUnconfigured?: boolean } = {},
+): Promise<NodeRecord> {
 	if (peers.length === 0) {
 		throw new ProvisionError('at least one peer is required', 400);
 	}
@@ -301,6 +306,13 @@ export async function setPeers(nodeId: string, peers: PeerRecord[], deps: Provis
 	// writes 0 and prunes 1, and whichever record write lands last leaves the
 	// directory disagreeing with it.
 	const updated = await deps.store.updateAsync(nodeId, async (current) => {
+		// Recovery must not replace a peer change or removal that won this queue.
+		if (
+			options.onlyIfUnconfigured &&
+			(current.peers.length > 0 || current.removalRequested || current.state === 'Removing')
+		) {
+			return current;
+		}
 		// Enforced, not merely documented: the peer set becomes --initial-cluster,
 		// which is fixed at process start and determines the content-addressed etcd
 		// data directory.

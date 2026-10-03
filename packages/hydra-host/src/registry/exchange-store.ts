@@ -18,6 +18,7 @@ import path from 'node:path';
 import { writeFileAtomic } from './atomic-write.js';
 import { isPlainObject } from './json.js';
 import type { ExchangeMaterial, ExchangeSignature, InviteRecord } from './exchange-types.js';
+import type { NodeRegistryStore } from './store.js';
 
 const EXCHANGE_FILE = 'exchange.json';
 /** Replay tombstones need not live forever after the invite can no longer be used. */
@@ -186,7 +187,7 @@ export class ExchangeStore {
 	}
 
 	/** Note that starting the node after a redemption failed, so the poll can surface it. */
-	async recordStartError(nonce: string, message: string): Promise<void> {
+	async recordStartError(nonce: string, message: string | null): Promise<void> {
 		await this.enqueue(async () => {
 			const state = await this.read();
 			const invite = state.invites.find((candidate) => candidate.nonce === nonce);
@@ -198,11 +199,21 @@ export class ExchangeStore {
 		});
 	}
 
-	async forgetInvite(nonce: string): Promise<void> {
-		await this.enqueue(async () => {
+	async forgetInvite(nonce: string, nodes?: NodeRegistryStore): Promise<boolean> {
+		return await this.enqueue(async () => {
 			const state = await this.read();
+			const invite = state.invites.find((candidate) => candidate.nonce === nonce);
+			// Adoption can arrive before the exchange handler configures peers.
+			// Keep the durable material until setup no longer needs a retry.
+			if (nodes !== undefined && invite !== undefined && invite.redeemedAt !== null) {
+				const node = await nodes.read(invite.hostNodeId);
+				if (node !== null && !node.removalRequested && node.state !== 'Removing' && node.peers.length === 0) {
+					return false;
+				}
+			}
 			state.invites = state.invites.filter((candidate) => candidate.nonce !== nonce);
 			await this.write(state);
+			return true;
 		});
 	}
 }
