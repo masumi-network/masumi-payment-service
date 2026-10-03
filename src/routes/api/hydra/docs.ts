@@ -1,6 +1,5 @@
-// Colocated OpenAPI docs for the Hydra route area. When you add or change a Hydra
-// endpoint, update THIS file in the same PR — CI regenerates openapi-docs.json and
-// fails on drift. All Hydra endpoints require admin access.
+// OpenAPI docs for Hydra routes. Node funding docs live in docs-node-funding.ts.
+import { registerHydraNodeFundingPaths } from './docs-node-funding';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 import {
 	getHeadSchemaInput,
@@ -51,12 +50,6 @@ import {
 	getRemoteParticipantOutput,
 	deleteRemoteParticipantInput,
 	deleteRemoteParticipantOutput,
-	fundParticipantNodeInput,
-	fundParticipantNodeOutput,
-	participantFundingSchemaInput,
-	participantFundingSchemaOutput,
-	withdrawParticipantNodeInput,
-	withdrawParticipantNodeOutput,
 } from '@/routes/api/hydra/participant';
 import {
 	getRelationSchemaInput,
@@ -611,56 +604,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		},
 	});
 
-	// ---- participant: node fuel ----
-	registry.registerPath({
-		method: 'get',
-		path: '/hydra/participant/local/fund',
-		summary: "Read a node's own balance and funding history. (admin access required)",
-		description:
-			"A hydra-node posts its head's L1 transactions from a Cardano key of its own, so it needs ADA that is not the head's. This reports what it holds and what has been sent to it.",
-		tags: TAG,
-		security: secured,
-		request: { query: participantFundingSchemaInput },
-		responses: {
-			200: successResponse('Node funding', participantFundingSchemaOutput, { id: 'cuid_v2_auto_generated' }),
-			...unauthorized,
-			...notFound,
-		},
-	});
-	registry.registerPath({
-		method: 'post',
-		path: '/hydra/participant/local/fund',
-		summary: "Send ADA to a node's own Cardano key. (admin access required)",
-		description:
-			'Tops the node up now rather than waiting for the funding cycle. Without this balance the node cannot post an Init, a Close or a Fanout.',
-		tags: TAG,
-		security: secured,
-		request: { body: jsonBody(fundParticipantNodeInput, { id: 'cuid_v2_auto_generated' }) },
-		responses: {
-			200: successResponse('Node funding result', fundParticipantNodeOutput, { id: 'cuid_v2_auto_generated' }),
-			...unauthorized,
-			...notFound,
-			// No 409 for a node that needs nothing, or for one whose earlier transfer
-			// is still unconfirmed: both answer 200 and say which in `outcome`.
-			// Reporting them as refusals told the operator to go and fix something.
-		},
-	});
-	registry.registerPath({
-		method: 'post',
-		path: '/hydra/participant/local/withdraw',
-		summary: 'Sweep what a node did not spend back to its wallet. (admin access required)',
-		description:
-			"Returns the node's remaining ADA once its head is final. Refused while the head is still live or an invite still holds the node, because the node would need those funds.",
-		tags: TAG,
-		security: secured,
-		request: { body: jsonBody(withdrawParticipantNodeInput, { id: 'cuid_v2_auto_generated' }) },
-		responses: {
-			200: successResponse('Node sweep result', withdrawParticipantNodeOutput, { id: 'cuid_v2_auto_generated' }),
-			...unauthorized,
-			...notFound,
-			409: { description: 'The node is still needed, so its funds are kept' },
-		},
-	});
+	registerHydraNodeFundingPaths({ registry, apiKeyAuth });
 
 	// ---- low-balance rules ----
 	registry.registerPath({

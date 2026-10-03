@@ -14993,7 +14993,7 @@ export type GetHydraParticipantLocalFundErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
 };
@@ -15005,6 +15005,16 @@ export type GetHydraParticipantLocalFundResponses = {
     200: {
         status: 'success';
         data: {
+            autoFund: boolean;
+            /**
+             * Lifetime node funding limit in lovelace. Null means unlimited.
+             */
+            automaticFundingLimitLovelace: string | null;
+            /**
+             * Queued or confirmed funding to this address, including historical and manual transfers.
+             */
+            fundedLovelace: string;
+            remainingFundingLovelace: string | null;
             address: string;
             balanceLovelace: string;
             isUnderfunded: boolean;
@@ -15027,6 +15037,47 @@ export type GetHydraParticipantLocalFundResponses = {
 
 export type GetHydraParticipantLocalFundResponse = GetHydraParticipantLocalFundResponses[keyof GetHydraParticipantLocalFundResponses];
 
+export type PatchHydraParticipantLocalFundData = {
+    body?: {
+        id: string;
+        autoFund?: boolean;
+        /**
+         * Null removes the limit. Zero blocks automatic funding.
+         */
+        automaticFundingLimitLovelace?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local/fund';
+};
+
+export type PatchHydraParticipantLocalFundErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Local participant not found
+     */
+    404: unknown;
+};
+
+export type PatchHydraParticipantLocalFundResponses = {
+    /**
+     * Automatic funding settings
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            autoFund: boolean;
+            automaticFundingLimitLovelace: string | null;
+        };
+    };
+};
+
+export type PatchHydraParticipantLocalFundResponse = PatchHydraParticipantLocalFundResponses[keyof PatchHydraParticipantLocalFundResponses];
+
 export type PostHydraParticipantLocalFundData = {
     body?: {
         /**
@@ -15045,7 +15096,7 @@ export type PostHydraParticipantLocalFundErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
 };
@@ -15067,7 +15118,7 @@ export type PostHydraParticipantLocalFundResponses = {
              */
             transferredLovelace: string | null;
             /**
-             * `sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one.
+             * `sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent. The balance below is still the pre-transfer one.
              */
             outcome: 'sent' | 'sufficient' | 'in-flight';
         };
@@ -15094,7 +15145,7 @@ export type PostHydraParticipantLocalWithdrawErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
     /**

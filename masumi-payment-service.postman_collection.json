@@ -9495,7 +9495,7 @@
                             "request": {
                                 "name": "Build an unsigned x402 funds-locking transaction for a payment. (+READ access required)",
                                 "description": {
-                                    "content": "Builds an unsigned Cardano funds-locking transaction for an existing payment request. The seller calls this on behalf of the buyer (x402 protocol). No state is saved — the returned CBOR must be signed by the buyer and submitted to the network.",
+                                    "content": "Builds an unsigned Cardano funds-locking transaction for an existing payment request. The seller calls this on behalf of the buyer (x402 protocol). No state is saved \u2014 the returned CBOR must be signed by the buyer and submitted to the network.",
                                     "type": "text/plain"
                                 },
                                 "url": {
@@ -27108,7 +27108,7 @@
                     "request": {
                         "name": "Delete a fund wallet. (admin access required)",
                         "description": {
-                            "content": "Soft-deletes a fund wallet and disables its distribution config. Unclaimed source-level requests continue through another enabled fund wallet, or are cancelled when none remains. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds ADA or native assets, because deletion makes the mnemonic unexportable through the API — withdraw every asset first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.",
+                            "content": "Soft-deletes a fund wallet and disables its distribution config. Unclaimed source-level requests continue through another enabled fund wallet, or are cancelled when none remains. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds ADA or native assets, because deletion makes the mnemonic unexportable through the API \u2014 withdraw every asset first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.",
                             "type": "text/plain"
                         },
                         "url": {
@@ -28086,7 +28086,7 @@
                             "request": {
                                 "name": "Mint a head invite. (admin access required)",
                                 "description": {
-                                    "content": "Provisions a node on a Hydra Host and signs its full public material with the given wallet, producing a code to hand a counterparty out of band. The node and its peer port are reserved from this moment and cannot be re-pointed, because --peer is fixed at boot — so an invite that is never redeemed must be revoked or left to expire. Redeeming it is what supplies the counterparty's material and lets the node start.",
+                                    "content": "Provisions a node on a Hydra Host and signs its full public material with the given wallet, producing a code to hand a counterparty out of band. The node and its peer port are reserved from this moment and cannot be re-pointed, because --peer is fixed at boot \u2014 so an invite that is never redeemed must be revoked or left to expire. Redeeming it is what supplies the counterparty's material and lets the node start.",
                                     "type": "text/plain"
                                 },
                                 "url": {
@@ -30613,7 +30613,7 @@
                             "request": {
                                 "name": "List Hydra relations. (admin access required)",
                                 "description": {
-                                    "content": "Lists the local↔remote wallet pairings that Hydra heads are created from.",
+                                    "content": "Lists the local\u2194remote wallet pairings that Hydra heads are created from.",
                                     "type": "text/plain"
                                 },
                                 "url": {
@@ -32864,7 +32864,7 @@
                                     "request": {
                                         "name": "Top up additional funds into an open head. (admin access required)",
                                         "description": {
-                                            "content": "Repeatable incremental commit into an already-Open head, reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit. With `exactAmount`, that amount is first carved into its own L1 UTxO and only that UTxO is deposited, so everything else in the wallet — an agent's registry NFT included — stays on L1; this is the way to top up from a mixed wallet. Without it, Hydra commits WHOLE UTxOs, so every wallet UTxO matching `assetFilter`/`assetUnit` goes into the head.",
+                                            "content": "Repeatable incremental commit into an already-Open head, reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit. With `exactAmount`, that amount is first carved into its own L1 UTxO and only that UTxO is deposited, so everything else in the wallet \u2014 an agent's registry NFT included \u2014 stays on L1; this is the way to top up from a mixed wallet. Without it, Hydra commits WHOLE UTxOs, so every wallet UTxO matching `assetFilter`/`assetUnit` goes into the head.",
                                             "type": "text/plain"
                                         },
                                         "url": {
@@ -33760,7 +33760,7 @@
                                     "request": {
                                         "name": "Withdraw funds from an open head back to L1. (admin access required)",
                                         "description": {
-                                            "content": "Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head — the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
+                                            "content": "Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head \u2014 free, and about a second \u2014 while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head \u2014 the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
                                             "type": "text/plain"
                                         },
                                         "url": {
@@ -35338,7 +35338,7 @@
                                     "request": {
                                         "name": "Clear the recorded errors for a head. (admin access required)",
                                         "description": {
-                                            "content": "Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.",
+                                            "content": "Acknowledges the errors recorded against a head. It changes nothing about the head itself \u2014 it only clears what the operator has already read.",
                                             "type": "text/plain"
                                         },
                                         "url": {
@@ -35731,8 +35731,8 @@
                                                     "_postman_previewlanguage": "text"
                                                 },
                                                 {
-                                                    "id": "fe8a1206-00de-4633-9de9-52cb190aeee0",
-                                                    "name": "Hydra head not found",
+                                                    "id": "a15e6664-b4b4-4a67-a2d9-4953aa1433bc",
+                                                    "name": "Local participant not found",
                                                     "originalRequest": {
                                                         "url": {
                                                             "path": [
@@ -35953,8 +35953,8 @@
                                                     "_postman_previewlanguage": "text"
                                                 },
                                                 {
-                                                    "id": "be5102ca-6590-40b5-8c6e-aec63ff9f12a",
-                                                    "name": "Hydra head not found",
+                                                    "id": "3b591620-497b-4705-9065-ae19b815e972",
+                                                    "name": "Local participant not found",
                                                     "originalRequest": {
                                                         "url": {
                                                             "path": [
@@ -35987,6 +35987,231 @@
                                                         "body": {
                                                             "mode": "raw",
                                                             "raw": "{\n  \"id\": \"cuid_v2_auto_generated\"\n}",
+                                                            "options": {
+                                                                "raw": {
+                                                                    "headerFamily": "json",
+                                                                    "language": "json"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "status": "Not Found",
+                                                    "code": 404,
+                                                    "header": [],
+                                                    "cookie": [],
+                                                    "_postman_previewlanguage": "text"
+                                                }
+                                            ],
+                                            "event": [],
+                                            "protocolProfileBehavior": {
+                                                "disableBodyPruning": true
+                                            }
+                                        },
+                                        {
+                                            "id": "34695e24-5419-471c-8277-45285f034c93",
+                                            "name": "Set optional automatic node funding limits. (admin access required)",
+                                            "request": {
+                                                "name": "Set optional automatic node funding limits. (admin access required)",
+                                                "description": {
+                                                    "content": "Automatic funding is unlimited by default. A lifetime limit counts pending and confirmed transfers to the node address, including manual and historical transfers. A refill is skipped if it would exceed the limit. Explicit admin funding remains available.",
+                                                    "type": "text/plain"
+                                                },
+                                                "url": {
+                                                    "path": [
+                                                        "hydra",
+                                                        "participant",
+                                                        "local",
+                                                        "fund"
+                                                    ],
+                                                    "host": [
+                                                        "{{baseUrl}}"
+                                                    ],
+                                                    "query": [],
+                                                    "variable": []
+                                                },
+                                                "header": [
+                                                    {
+                                                        "key": "Content-Type",
+                                                        "value": "application/json"
+                                                    },
+                                                    {
+                                                        "key": "Accept",
+                                                        "value": "application/json"
+                                                    }
+                                                ],
+                                                "method": "PATCH",
+                                                "body": {
+                                                    "mode": "raw",
+                                                    "raw": "{\n  \"id\": \"cuid_v2_auto_generated\",\n  \"automaticFundingLimitLovelace\": null\n}",
+                                                    "options": {
+                                                        "raw": {
+                                                            "headerFamily": "json",
+                                                            "language": "json"
+                                                        }
+                                                    }
+                                                },
+                                                "auth": {
+                                                    "type": "apikey",
+                                                    "apikey": [
+                                                        {
+                                                            "key": "key",
+                                                            "value": "token"
+                                                        },
+                                                        {
+                                                            "key": "value",
+                                                            "value": "{{apiKey}}"
+                                                        },
+                                                        {
+                                                            "key": "in",
+                                                            "value": "header"
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "response": [
+                                                {
+                                                    "id": "85be90c8-02af-4581-a6af-9343a28a6645",
+                                                    "name": "Automatic funding settings",
+                                                    "originalRequest": {
+                                                        "url": {
+                                                            "path": [
+                                                                "hydra",
+                                                                "participant",
+                                                                "local",
+                                                                "fund"
+                                                            ],
+                                                            "host": [
+                                                                "{{baseUrl}}"
+                                                            ],
+                                                            "query": [],
+                                                            "variable": []
+                                                        },
+                                                        "header": [
+                                                            {
+                                                                "key": "Content-Type",
+                                                                "value": "application/json"
+                                                            },
+                                                            {
+                                                                "key": "Accept",
+                                                                "value": "application/json"
+                                                            },
+                                                            {
+                                                                "description": {
+                                                                    "content": "Added as a part of security scheme: apikey",
+                                                                    "type": "text/plain"
+                                                                },
+                                                                "key": "token",
+                                                                "value": "<API Key>"
+                                                            }
+                                                        ],
+                                                        "method": "PATCH",
+                                                        "body": {
+                                                            "mode": "raw",
+                                                            "raw": "{\n  \"id\": \"cuid_v2_auto_generated\",\n  \"automaticFundingLimitLovelace\": null\n}",
+                                                            "options": {
+                                                                "raw": {
+                                                                    "headerFamily": "json",
+                                                                    "language": "json"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "status": "OK",
+                                                    "code": 200,
+                                                    "header": [
+                                                        {
+                                                            "key": "Content-Type",
+                                                            "value": "application/json"
+                                                        }
+                                                    ],
+                                                    "body": "{\n  \"status\": \"success\",\n  \"data\": {\n    \"id\": \"cuid_v2_auto_generated\",\n    \"autoFund\": true,\n    \"automaticFundingLimitLovelace\": null\n  }\n}",
+                                                    "cookie": [],
+                                                    "_postman_previewlanguage": "json"
+                                                },
+                                                {
+                                                    "id": "e7a62e89-30fe-415f-8da2-feb1eaf28c6a",
+                                                    "name": "Unauthorized",
+                                                    "originalRequest": {
+                                                        "url": {
+                                                            "path": [
+                                                                "hydra",
+                                                                "participant",
+                                                                "local",
+                                                                "fund"
+                                                            ],
+                                                            "host": [
+                                                                "{{baseUrl}}"
+                                                            ],
+                                                            "query": [],
+                                                            "variable": []
+                                                        },
+                                                        "header": [
+                                                            {
+                                                                "key": "Content-Type",
+                                                                "value": "application/json"
+                                                            },
+                                                            {
+                                                                "description": {
+                                                                    "content": "Added as a part of security scheme: apikey",
+                                                                    "type": "text/plain"
+                                                                },
+                                                                "key": "token",
+                                                                "value": "<API Key>"
+                                                            }
+                                                        ],
+                                                        "method": "PATCH",
+                                                        "body": {
+                                                            "mode": "raw",
+                                                            "raw": "{\n  \"id\": \"cuid_v2_auto_generated\",\n  \"automaticFundingLimitLovelace\": null\n}",
+                                                            "options": {
+                                                                "raw": {
+                                                                    "headerFamily": "json",
+                                                                    "language": "json"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "status": "Unauthorized",
+                                                    "code": 401,
+                                                    "header": [],
+                                                    "cookie": [],
+                                                    "_postman_previewlanguage": "text"
+                                                },
+                                                {
+                                                    "id": "483bad25-64cf-4bd0-a14d-7577d365fa32",
+                                                    "name": "Local participant not found",
+                                                    "originalRequest": {
+                                                        "url": {
+                                                            "path": [
+                                                                "hydra",
+                                                                "participant",
+                                                                "local",
+                                                                "fund"
+                                                            ],
+                                                            "host": [
+                                                                "{{baseUrl}}"
+                                                            ],
+                                                            "query": [],
+                                                            "variable": []
+                                                        },
+                                                        "header": [
+                                                            {
+                                                                "key": "Content-Type",
+                                                                "value": "application/json"
+                                                            },
+                                                            {
+                                                                "description": {
+                                                                    "content": "Added as a part of security scheme: apikey",
+                                                                    "type": "text/plain"
+                                                                },
+                                                                "key": "token",
+                                                                "value": "<API Key>"
+                                                            }
+                                                        ],
+                                                        "method": "PATCH",
+                                                        "body": {
+                                                            "mode": "raw",
+                                                            "raw": "{\n  \"id\": \"cuid_v2_auto_generated\",\n  \"automaticFundingLimitLovelace\": null\n}",
                                                             "options": {
                                                                 "raw": {
                                                                     "headerFamily": "json",
@@ -38205,7 +38430,7 @@
                     "request": {
                         "name": "Get payment rail readiness. (read access required)",
                         "description": {
-                            "content": "Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with a usable RPC URL and exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while the purchasing wallet is reported but optional. Only configuration presence is exposed — no keys or private wallet data.",
+                            "content": "Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with a usable RPC URL and exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while the purchasing wallet is reported but optional. Only configuration presence is exposed \u2014 no keys or private wallet data.",
                             "type": "text/plain"
                         },
                         "url": {
@@ -38304,7 +38529,7 @@
                                     "value": "application/json"
                                 }
                             ],
-                            "body": "{\n  \"status\": \"success\",\n  \"data\": {\n    \"network\": \"Preprod\",\n    \"Rails\": [\n      {\n        \"rail\": \"CardanoV2\",\n        \"isReady\": false,\n        \"PurchaseSources\": [\n          {\n            \"policyId\": \"ffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\n            \"smartContractAddress\": \"addr_test1_v2_contract\",\n            \"isPurchaseReady\": true,\n            \"Checks\": [\n              {\n                \"id\": \"cardano.payment_source\",\n                \"label\": \"Payment source\",\n                \"isComplete\": true,\n                \"detail\": \"Active Web3CardanoV2 source found\"\n              },\n              {\n                \"id\": \"cardano.contract_current\",\n                \"label\": \"Current contract\",\n                \"isComplete\": true,\n                \"detail\": null\n              },\n              {\n                \"id\": \"cardano.rpc_provider\",\n                \"label\": \"Blockfrost API key\",\n                \"isComplete\": true,\n                \"detail\": null\n              },\n              {\n                \"id\": \"cardano.admin_signatures\",\n                \"label\": \"Admin wallets\",\n                \"isComplete\": true,\n                \"detail\": null\n              },\n              {\n                \"id\": \"cardano.purchasing_wallet\",\n                \"label\": \"Purchasing wallet\",\n                \"isComplete\": true,\n                \"detail\": null\n              },\n              {\n                \"id\": \"cardano.payments_enabled\",\n                \"label\": \"Payments enabled\",\n                \"isComplete\": true,\n                \"detail\": null\n              }\n            ]\n          }\n        ],\n        \"Checks\": [\n          {\n            \"id\": \"cardano.payment_source\",\n            \"label\": \"Payment source\",\n            \"isComplete\": true,\n            \"detail\": \"Active Web3CardanoV2 source found\"\n          },\n          {\n            \"id\": \"cardano.contract_current\",\n            \"label\": \"Current contract\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"cardano.rpc_provider\",\n            \"label\": \"Blockfrost API key\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"cardano.admin_signatures\",\n            \"label\": \"Admin wallets\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"cardano.selling_wallet\",\n            \"label\": \"Selling wallet\",\n            \"isComplete\": false,\n            \"detail\": \"No selling wallet — the source cannot receive payments\"\n          },\n          {\n            \"id\": \"cardano.purchasing_wallet\",\n            \"label\": \"Purchasing wallet\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"cardano.payments_enabled\",\n            \"label\": \"Payments enabled\",\n            \"isComplete\": true,\n            \"detail\": null\n          }\n        ]\n      },\n      {\n        \"rail\": \"X402\",\n        \"isReady\": true,\n        \"Checks\": [\n          {\n            \"id\": \"x402.enabled_chain\",\n            \"label\": \"Enabled chain\",\n            \"isComplete\": true,\n            \"detail\": \"eip155:84532\"\n          },\n          {\n            \"id\": \"x402.rpc_url\",\n            \"label\": \"RPC endpoint\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"x402.facilitator\",\n            \"label\": \"Facilitator\",\n            \"isComplete\": true,\n            \"detail\": \"Self-hosted facilitator wallet\"\n          },\n          {\n            \"id\": \"x402.selling_wallet\",\n            \"label\": \"Selling wallet\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"x402.purchasing_wallet\",\n            \"label\": \"Purchasing wallet\",\n            \"isComplete\": false,\n            \"detail\": \"Optional — needed only to pay other agents\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+                            "body": "{\n  \"status\": \"success\",\n  \"data\": {\n    \"network\": \"Preprod\",\n    \"Rails\": [\n      {\n        \"rail\": \"CardanoV2\",\n        \"isReady\": false,\n        \"PurchaseSources\": [\n          {\n            \"policyId\": \"ffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\n            \"smartContractAddress\": \"addr_test1_v2_contract\",\n            \"isPurchaseReady\": true,\n            \"Checks\": [\n              {\n                \"id\": \"cardano.payment_source\",\n                \"label\": \"Payment source\",\n                \"isComplete\": true,\n                \"detail\": \"Active Web3CardanoV2 source found\"\n              },\n              {\n                \"id\": \"cardano.contract_current\",\n                \"label\": \"Current contract\",\n                \"isComplete\": true,\n                \"detail\": null\n              },\n              {\n                \"id\": \"cardano.rpc_provider\",\n                \"label\": \"Blockfrost API key\",\n                \"isComplete\": true,\n                \"detail\": null\n              },\n              {\n                \"id\": \"cardano.admin_signatures\",\n                \"label\": \"Admin wallets\",\n                \"isComplete\": true,\n                \"detail\": null\n              },\n              {\n                \"id\": \"cardano.purchasing_wallet\",\n                \"label\": \"Purchasing wallet\",\n                \"isComplete\": true,\n                \"detail\": null\n              },\n              {\n                \"id\": \"cardano.payments_enabled\",\n                \"label\": \"Payments enabled\",\n                \"isComplete\": true,\n                \"detail\": null\n              }\n            ]\n          }\n        ],\n        \"Checks\": [\n          {\n            \"id\": \"cardano.payment_source\",\n            \"label\": \"Payment source\",\n            \"isComplete\": true,\n            \"detail\": \"Active Web3CardanoV2 source found\"\n          },\n          {\n            \"id\": \"cardano.contract_current\",\n            \"label\": \"Current contract\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"cardano.rpc_provider\",\n            \"label\": \"Blockfrost API key\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"cardano.admin_signatures\",\n            \"label\": \"Admin wallets\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"cardano.selling_wallet\",\n            \"label\": \"Selling wallet\",\n            \"isComplete\": false,\n            \"detail\": \"No selling wallet \u2014 the source cannot receive payments\"\n          },\n          {\n            \"id\": \"cardano.purchasing_wallet\",\n            \"label\": \"Purchasing wallet\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"cardano.payments_enabled\",\n            \"label\": \"Payments enabled\",\n            \"isComplete\": true,\n            \"detail\": null\n          }\n        ]\n      },\n      {\n        \"rail\": \"X402\",\n        \"isReady\": true,\n        \"Checks\": [\n          {\n            \"id\": \"x402.enabled_chain\",\n            \"label\": \"Enabled chain\",\n            \"isComplete\": true,\n            \"detail\": \"eip155:84532\"\n          },\n          {\n            \"id\": \"x402.rpc_url\",\n            \"label\": \"RPC endpoint\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"x402.facilitator\",\n            \"label\": \"Facilitator\",\n            \"isComplete\": true,\n            \"detail\": \"Self-hosted facilitator wallet\"\n          },\n          {\n            \"id\": \"x402.selling_wallet\",\n            \"label\": \"Selling wallet\",\n            \"isComplete\": true,\n            \"detail\": null\n          },\n          {\n            \"id\": \"x402.purchasing_wallet\",\n            \"label\": \"Purchasing wallet\",\n            \"isComplete\": false,\n            \"detail\": \"Optional \u2014 needed only to pay other agents\"\n          }\n        ]\n      }\n    ]\n  }\n}",
                             "cookie": [],
                             "_postman_previewlanguage": "json"
                         },
@@ -38369,7 +38594,7 @@
                     "request": {
                         "name": "List quarantined sync transactions. (admin access required)",
                         "description": {
-                            "content": "Lists transactions the chain sync could not apply. The checkpoint has already advanced past these, so anything still pending is chain state the database has NOT caught up with — some request is running on stale information until it is applied.",
+                            "content": "Lists transactions the chain sync could not apply. The checkpoint has already advanced past these, so anything still pending is chain state the database has NOT caught up with \u2014 some request is running on stale information until it is applied.",
                             "type": "text/plain"
                         },
                         "url": {
@@ -38635,7 +38860,7 @@
                     "request": {
                         "name": "Delete a quarantine entry without applying it. (admin access required)",
                         "description": {
-                            "content": "Permanently removes a quarantine entry. Deleting does NOT apply the transaction — the database stays behind the chain for whatever that transaction would have changed. Intended for entries that are genuinely irrelevant, or ones already repaired by hand.",
+                            "content": "Permanently removes a quarantine entry. Deleting does NOT apply the transaction \u2014 the database stays behind the chain for whatever that transaction would have changed. Intended for entries that are genuinely irrelevant, or ones already repaired by hand.",
                             "type": "text/plain"
                         },
                         "url": {

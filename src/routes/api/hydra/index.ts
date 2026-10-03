@@ -41,6 +41,7 @@ export {
 	fundParticipantNodePost,
 	withdrawParticipantNodePost,
 	participantFundingGet,
+	participantFundingPatch,
 	getRemoteParticipantGet,
 	deleteRemoteParticipantDelete,
 } from './participant';
