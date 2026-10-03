@@ -9,6 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 import { useWallets } from '@/lib/queries/useWallets';
 import type { WalletListItem } from '@/lib/api/generated';
+import { toWalletListItem } from '@/components/wallets/wallet-details-utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { findX402ValidationError } from '@/lib/x402-registration';
@@ -166,16 +167,7 @@ export function RegisterAIAgentDialog({
       wallets
         .filter((w) => w.type === 'Selling')
         .map((w) => ({
-          wallet: {
-            id: w.id,
-            paymentSourceId: w.paymentSourceId,
-            type: w.type,
-            walletVkey: w.walletVkey,
-            walletAddress: w.walletAddress,
-            collectionAddress: w.collectionAddress,
-            note: w.note,
-            LowBalanceSummary: w.LowBalanceSummary,
-          },
+          wallet: toWalletListItem(w),
           balance: parseInt(w.balance, 10),
         })),
     );

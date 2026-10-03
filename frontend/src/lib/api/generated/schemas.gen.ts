@@ -373,6 +373,10 @@ export const WalletListItemSchema = {
             nullable: true,
             description: 'Optional note about this wallet. Null if not set'
         },
+        isGuarded: {
+            type: 'boolean',
+            description: 'True when purchases from this wallet lock through a guarded smart wallet'
+        },
         LowBalanceSummary: {
             type: 'object',
             properties: {
@@ -408,6 +412,7 @@ export const WalletListItemSchema = {
         'walletAddress',
         'collectionAddress',
         'note',
+        'isGuarded',
         'LowBalanceSummary'
     ]
 } as const;
@@ -1438,6 +1443,7 @@ export const PurchaseSchema = {
                         'NetworkError',
                         'InsufficientFunds',
                         'Unknown',
+                        'PolicyDenied',
                         null
                     ],
                     description: 'Type of error that occurred, if any'
@@ -1502,6 +1508,7 @@ export const PurchaseSchema = {
                             'NetworkError',
                             'InsufficientFunds',
                             'Unknown',
+                            'PolicyDenied',
                             null
                         ],
                         description: 'Type of error that occurred, if any'

@@ -81,6 +81,10 @@ hydra-l2-flow/preprod/protocol-parameters*.json
 hydra-l2-flow/evidence/*
 !hydra-l2-flow/evidence/2026-08-31-settled/
 
+# Guarded smart wallet demo (MAS-596): demo keys, run state and local evidence
+packages/payment-source-v2/scripts/smart-wallet-demo/.state/
+packages/payment-source-v2/scripts/smart-wallet-demo/evidence/
+
 # Hydra Host build output
 packages/*/dist/
 

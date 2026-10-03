@@ -391,6 +391,10 @@
                         "nullable": true,
                         "description": "Optional note about this wallet. Null if not set"
                     },
+                    "isGuarded": {
+                        "type": "boolean",
+                        "description": "True when purchases from this wallet lock through a guarded smart wallet"
+                    },
                     "LowBalanceSummary": {
                         "type": "object",
                         "properties": {
@@ -426,6 +430,7 @@
                     "walletAddress",
                     "collectionAddress",
                     "note",
+                    "isGuarded",
                     "LowBalanceSummary"
                 ]
             },
@@ -1451,6 +1456,7 @@
                                     "NetworkError",
                                     "InsufficientFunds",
                                     "Unknown",
+                                    "PolicyDenied",
                                     null
                                 ],
                                 "description": "Type of error that occurred, if any"
@@ -1515,6 +1521,7 @@
                                         "NetworkError",
                                         "InsufficientFunds",
                                         "Unknown",
+                                        "PolicyDenied",
                                         null
                                     ],
                                     "description": "Type of error that occurred, if any"
@@ -7946,6 +7953,7 @@
                                                     "walletAddress": "wallet_address",
                                                     "collectionAddress": null,
                                                     "note": "note",
+                                                    "isGuarded": false,
                                                     "LowBalanceSummary": {
                                                         "isLow": false,
                                                         "lowRuleCount": 0,
@@ -14744,6 +14752,7 @@
                                                                 "NetworkError",
                                                                 "InsufficientFunds",
                                                                 "Unknown",
+                                                                "PolicyDenied",
                                                                 null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
@@ -17632,6 +17641,7 @@
                                                                 "NetworkError",
                                                                 "InsufficientFunds",
                                                                 "Unknown",
+                                                                "PolicyDenied",
                                                                 null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
@@ -18236,6 +18246,7 @@
                                                                 "NetworkError",
                                                                 "InsufficientFunds",
                                                                 "Unknown",
+                                                                "PolicyDenied",
                                                                 null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
@@ -19426,6 +19437,7 @@
                                                                 "NetworkError",
                                                                 "InsufficientFunds",
                                                                 "Unknown",
+                                                                "PolicyDenied",
                                                                 null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
@@ -20071,6 +20083,7 @@
                                                                 "NetworkError",
                                                                 "InsufficientFunds",
                                                                 "Unknown",
+                                                                "PolicyDenied",
                                                                 null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
@@ -37079,6 +37092,723 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/exchain/read-token": {
+            "post": {
+                "description": "Mints a read token for Exchain's embedded page. With hotWalletId, the page shows that guarded hot wallet's registered Exchain wallet (404 when it has none); without it, the wallet configured on this node (MAS-596 demo). The node's Exchain token stays on the server; the returned token is read-only, scoped to that one wallet and valid for 15 minutes, and the returned url already carries it. Call again whenever the embedded page asks for a refresh. Answers 503 when EXCHAIN_WALLET_ID, EXCHAIN_COSIGN_API_KEY or NEXT_PUBLIC_EXCHAIN_DASHBOARD_URL is not set.",
+                "summary": "Mint a read token for the embedded Exchain page. (admin access required)",
+                "tags": [
+                    "exchain"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Optionally, the guarded hot wallet whose Exchain page to show",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "A guarded hot wallet; its registered Exchain wallet is shown. Omit to use the node's EXCHAIN_WALLET_ID"
+                                    }
+                                },
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Read token minted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "walletId": {
+                                                    "type": "string",
+                                                    "description": "Exchain id of the guarded wallet the embedded page shows"
+                                                },
+                                                "url": {
+                                                    "type": "string",
+                                                    "description": "The embedded page URL for that wallet, read token included"
+                                                },
+                                                "token": {
+                                                    "type": "string",
+                                                    "description": "Read-only, wallet-scoped Exchain token. Handed to the embedded page when it asks for a refresh"
+                                                },
+                                                "expiresAt": {
+                                                    "type": "string",
+                                                    "description": "When the token stops working (Exchain issues 15-minute tokens)"
+                                                }
+                                            },
+                                            "required": [
+                                                "walletId",
+                                                "url",
+                                                "token",
+                                                "expiresAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "walletId": "wal_01M366RSC4JSAS8DGKPQV9M2WZ",
+                                            "url": "https://cosign.exchain.network/protected/wal_01M366RSC4JSAS8DGKPQV9M2WZ?t=rt_example",
+                                            "token": "rt_example",
+                                            "expiresAt": "2026-09-23T04:57:40Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "The hot wallet is not found or has no registered Exchain wallet"
+                    },
+                    "502": {
+                        "description": "Exchain could not be reached or refused the request"
+                    },
+                    "503": {
+                        "description": "Exchain co-signing is not configured on this node"
+                    }
+                }
+            }
+        },
+        "/wallet/guarded": {
+            "get": {
+                "description": "Returns the guarded smart wallet bound to a Purchasing hot wallet, with its live balance and period budget read from chain. guardedWallet is null when the hot wallet is not guarded; chain is null and chainError is set when the chain read fails.",
+                "summary": "Get the guarded wallet of a hot wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The Purchasing hot wallet"
+                        },
+                        "required": true,
+                        "description": "The Purchasing hot wallet",
+                        "name": "hotWalletId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Guarded wallet state",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "guardedWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "hotWalletId": {
+                                                            "type": "string"
+                                                        },
+                                                        "ownerAddress": {
+                                                            "type": "string"
+                                                        },
+                                                        "quorumVkhs": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "threshold": {
+                                                            "type": "number"
+                                                        },
+                                                        "stateTokenName": {
+                                                            "type": "string"
+                                                        },
+                                                        "scriptAddress": {
+                                                            "type": "string",
+                                                            "description": "The smart wallet address"
+                                                        },
+                                                        "policyId": {
+                                                            "type": "string",
+                                                            "description": "Policy id of the state token"
+                                                        },
+                                                        "exchainWalletId": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        },
+                                                        "updatedAt": {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "hotWalletId",
+                                                        "ownerAddress",
+                                                        "quorumVkhs",
+                                                        "threshold",
+                                                        "stateTokenName",
+                                                        "scriptAddress",
+                                                        "policyId",
+                                                        "exchainWalletId",
+                                                        "createdAt",
+                                                        "updatedAt"
+                                                    ],
+                                                    "description": "Null when the hot wallet is not guarded"
+                                                },
+                                                "chain": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "lovelace": {
+                                                            "type": "string",
+                                                            "description": "Smart wallet balance, in lovelace"
+                                                        },
+                                                        "periodLimitLovelace": {
+                                                            "type": "string",
+                                                            "description": "On-chain limit per period, in lovelace"
+                                                        },
+                                                        "spentInPeriodLovelace": {
+                                                            "type": "string",
+                                                            "description": "Spent in the period the datum last recorded, in lovelace"
+                                                        },
+                                                        "periodStart": {
+                                                            "type": "string",
+                                                            "format": "date-time",
+                                                            "description": "Start of that period"
+                                                        },
+                                                        "periodLengthMs": {
+                                                            "type": "string",
+                                                            "description": "Period length, in milliseconds"
+                                                        },
+                                                        "minBalanceLovelace": {
+                                                            "type": "string",
+                                                            "description": "Reserve the wallet never spends below, in lovelace"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "lovelace",
+                                                        "periodLimitLovelace",
+                                                        "spentInPeriodLovelace",
+                                                        "periodStart",
+                                                        "periodLengthMs",
+                                                        "minBalanceLovelace"
+                                                    ],
+                                                    "description": "Null when not guarded or the chain read failed"
+                                                },
+                                                "chainError": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Why the chain read failed"
+                                                }
+                                            },
+                                            "required": [
+                                                "guardedWallet",
+                                                "chain",
+                                                "chainError"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "guardedWallet": {
+                                                "id": "cmg1guarded0000example",
+                                                "hotWalletId": "cmg1hotwallet000example",
+                                                "ownerAddress": "addr_test1_owner_base_address_example",
+                                                "quorumVkhs": [
+                                                    "11111111111111111111111111111111111111111111111111111111",
+                                                    "22222222222222222222222222222222222222222222222222222222",
+                                                    "33333333333333333333333333333333333333333333333333333333"
+                                                ],
+                                                "threshold": 3,
+                                                "stateTokenName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                                "scriptAddress": "addr_test1_smart_wallet_address_example",
+                                                "policyId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                                                "exchainWalletId": "wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ",
+                                                "createdAt": "2026-09-29T12:00:00.000Z",
+                                                "updatedAt": "2026-09-29T12:00:00.000Z"
+                                            },
+                                            "chain": {
+                                                "lovelace": "200000000",
+                                                "periodLimitLovelace": "1000000000",
+                                                "spentInPeriodLovelace": "120000000",
+                                                "periodStart": "2026-09-29T09:00:00.000Z",
+                                                "periodLengthMs": "86400000",
+                                                "minBalanceLovelace": "5000000"
+                                            },
+                                            "chainError": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hot wallet not found"
+                    }
+                }
+            },
+            "post": {
+                "description": "Binds a Purchasing hot wallet on a V2 payment source to an Exchain quorum co-signed smart wallet the owner minted. The node derives the script from the owner address, quorum and threshold, requires exactly one state-token UTxO at it, and requires the datum's agent to be the hot wallet key. From then on the batch job locks that hot wallet's purchases from the smart wallet, and only with the quorum's co-signature. Pass exchainWalletId for a wallet already registered with Exchain, or register to register it now (the mandate's daily limit must equal the on-chain period limit).",
+                "summary": "Attach a guarded smart wallet to a hot wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The smart wallet parameters and its Exchain registration",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The Purchasing hot wallet whose key is the smart wallet agent"
+                                    },
+                                    "ownerAddress": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200,
+                                        "description": "The owner's base address. The owner key never reaches the node"
+                                    },
+                                    "quorumVkhs": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "pattern": "^[0-9a-f]{56}$",
+                                            "description": "Quorum member key hash (28-byte hex)"
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 16,
+                                        "description": "Quorum key hashes baked into the script"
+                                    },
+                                    "threshold": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 16,
+                                        "description": "How many quorum keys must sign"
+                                    },
+                                    "stateTokenName": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{64}$",
+                                        "description": "Asset name of the wallet state token (32-byte hex)"
+                                    },
+                                    "exchainWalletId": {
+                                        "type": "string",
+                                        "pattern": "^wal_[0-9A-HJKMNP-TV-Z]{26}$",
+                                        "description": "Set when the wallet is already registered with Exchain"
+                                    },
+                                    "register": {
+                                        "type": "object",
+                                        "properties": {
+                                            "mandate": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "perTxCap": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$",
+                                                        "description": "Largest single lock Exchain co-signs, in lovelace"
+                                                    },
+                                                    "daily": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$",
+                                                        "description": "Daily limit, in lovelace. Must equal the wallet's on-chain period limit"
+                                                    },
+                                                    "perSeller": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$",
+                                                        "description": "Daily limit per seller, in lovelace"
+                                                    },
+                                                    "perAgent": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$",
+                                                        "description": "Daily limit per agent, in lovelace"
+                                                    },
+                                                    "envelope": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$",
+                                                        "description": "Lifetime limit, in lovelace"
+                                                    },
+                                                    "burstPerMinute": {
+                                                        "type": "integer",
+                                                        "minimum": 1,
+                                                        "description": "Most payments Exchain co-signs per minute"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "perTxCap",
+                                                    "daily",
+                                                    "perSeller",
+                                                    "perAgent",
+                                                    "envelope",
+                                                    "burstPerMinute"
+                                                ],
+                                                "description": "The mandate Exchain enforces. It cannot change once registered"
+                                            }
+                                        },
+                                        "required": [
+                                            "mandate"
+                                        ],
+                                        "description": "Register the wallet with Exchain now, with this mandate"
+                                    }
+                                },
+                                "required": [
+                                    "hotWalletId",
+                                    "ownerAddress",
+                                    "quorumVkhs",
+                                    "threshold",
+                                    "stateTokenName"
+                                ],
+                                "example": {
+                                    "hotWalletId": "cmg1hotwallet000example",
+                                    "ownerAddress": "addr_test1_owner_base_address_example",
+                                    "quorumVkhs": [
+                                        "11111111111111111111111111111111111111111111111111111111",
+                                        "22222222222222222222222222222222222222222222222222222222",
+                                        "33333333333333333333333333333333333333333333333333333333"
+                                    ],
+                                    "threshold": 3,
+                                    "stateTokenName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                    "exchainWalletId": "wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Guarded wallet attached",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "hotWalletId": {
+                                                    "type": "string"
+                                                },
+                                                "ownerAddress": {
+                                                    "type": "string"
+                                                },
+                                                "quorumVkhs": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "threshold": {
+                                                    "type": "number"
+                                                },
+                                                "stateTokenName": {
+                                                    "type": "string"
+                                                },
+                                                "scriptAddress": {
+                                                    "type": "string",
+                                                    "description": "The smart wallet address"
+                                                },
+                                                "policyId": {
+                                                    "type": "string",
+                                                    "description": "Policy id of the state token"
+                                                },
+                                                "exchainWalletId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "createdAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "mandateEnglish": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Exchain's plain-English reading of the mandate, when it registered one"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "hotWalletId",
+                                                "ownerAddress",
+                                                "quorumVkhs",
+                                                "threshold",
+                                                "stateTokenName",
+                                                "scriptAddress",
+                                                "policyId",
+                                                "exchainWalletId",
+                                                "createdAt",
+                                                "updatedAt",
+                                                "mandateEnglish"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cmg1guarded0000example",
+                                            "hotWalletId": "cmg1hotwallet000example",
+                                            "ownerAddress": "addr_test1_owner_base_address_example",
+                                            "quorumVkhs": [
+                                                "11111111111111111111111111111111111111111111111111111111",
+                                                "22222222222222222222222222222222222222222222222222222222",
+                                                "33333333333333333333333333333333333333333333333333333333"
+                                            ],
+                                            "threshold": 3,
+                                            "stateTokenName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                            "scriptAddress": "addr_test1_smart_wallet_address_example",
+                                            "policyId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                                            "exchainWalletId": "wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ",
+                                            "createdAt": "2026-09-29T12:00:00.000Z",
+                                            "updatedAt": "2026-09-29T12:00:00.000Z",
+                                            "mandateEnglish": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Not a Purchasing wallet on a V2 source, or the mandate does not match the chain"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hot wallet not found"
+                    },
+                    "409": {
+                        "description": "Already guarded, or the smart wallet does not verify on chain"
+                    },
+                    "502": {
+                        "description": "Exchain refused or could not be reached"
+                    },
+                    "503": {
+                        "description": "Exchain co-signing is not configured on this node"
+                    }
+                }
+            },
+            "delete": {
+                "description": "Unbinds the guarded smart wallet from a hot wallet. Refused while the hot wallet holds a lock or a pending transaction. The funds stay in the smart wallet (the owner recovers them outside the node) and Exchain keeps its record.",
+                "summary": "Detach a guarded smart wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The hot wallet to detach",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The Purchasing hot wallet to detach"
+                                    }
+                                },
+                                "required": [
+                                    "hotWalletId"
+                                ],
+                                "example": {
+                                    "hotWalletId": "cmg1hotwallet000example"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Guarded wallet detached",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "hotWalletId": {
+                                                    "type": "string"
+                                                },
+                                                "ownerAddress": {
+                                                    "type": "string"
+                                                },
+                                                "quorumVkhs": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "threshold": {
+                                                    "type": "number"
+                                                },
+                                                "stateTokenName": {
+                                                    "type": "string"
+                                                },
+                                                "scriptAddress": {
+                                                    "type": "string",
+                                                    "description": "The smart wallet address"
+                                                },
+                                                "policyId": {
+                                                    "type": "string",
+                                                    "description": "Policy id of the state token"
+                                                },
+                                                "exchainWalletId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "createdAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "hotWalletId",
+                                                "ownerAddress",
+                                                "quorumVkhs",
+                                                "threshold",
+                                                "stateTokenName",
+                                                "scriptAddress",
+                                                "policyId",
+                                                "exchainWalletId",
+                                                "createdAt",
+                                                "updatedAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cmg1guarded0000example",
+                                            "hotWalletId": "cmg1hotwallet000example",
+                                            "ownerAddress": "addr_test1_owner_base_address_example",
+                                            "quorumVkhs": [
+                                                "11111111111111111111111111111111111111111111111111111111",
+                                                "22222222222222222222222222222222222222222222222222222222",
+                                                "33333333333333333333333333333333333333333333333333333333"
+                                            ],
+                                            "threshold": 3,
+                                            "stateTokenName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                            "scriptAddress": "addr_test1_smart_wallet_address_example",
+                                            "policyId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                                            "exchainWalletId": "wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ",
+                                            "createdAt": "2026-09-29T12:00:00.000Z",
+                                            "updatedAt": "2026-09-29T12:00:00.000Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hot wallet not found or not guarded"
+                    },
+                    "409": {
+                        "description": "The hot wallet is busy with a transaction"
                     }
                 }
             }

@@ -47,6 +47,8 @@ export const ADMIN_ONLY_PATHS = [
   '/hydra-heads',
   // Chain config (RPC/facilitator) remains admin-only under Payment Sources.
   '/x402/chains',
+  // MAS-596 demo: partner dashboard for the operator's guarded treasury wallet.
+  '/cosign-demo',
 ] as const;
 
 export function isAdminOnlyPath(pathname: string): boolean {

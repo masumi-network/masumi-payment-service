@@ -17,6 +17,7 @@ function setup() {
     walletAddress: `addr_test1_${index + 1}`,
     collectionAddress: null,
     type: 'Selling',
+    isGuarded: false,
     note: index >= 5 ? 'Treasury' : 'Ordinary',
     LowBalanceSummary: { isLow: false, lowRuleCount: 0, lastCheckedAt: null },
   }));

@@ -40,8 +40,6 @@ import { useLowBalanceRules } from '@/lib/hooks/useLowBalanceRules';
 import {
   EMPTY_LOW_BALANCE_SUMMARY,
   getAssetUnitBreakdown,
-  getDeleteRuleDialogDescription,
-  getRuleAssetLabel,
   getRuleAssetMetaFromPreset,
   parseThresholdInputToRaw,
   validateRuleTopupInput,
@@ -57,6 +55,10 @@ import { WalletExportSection } from '@/components/wallets/sections/WalletExportS
 import { CollectionAddressSection } from '@/components/wallets/sections/CollectionAddressSection';
 import { FundTransfersSection } from '@/components/wallets/sections/FundTransfersSection';
 import { useCollectionAddressEditor } from '@/components/wallets/useCollectionAddressEditor';
+import { LowBalanceRuleDeleteDialog } from './LowBalanceRuleDeleteDialog';
+import { GuardedWalletSection } from '@/components/wallets/sections/GuardedWalletSection';
+import { useGuardedWallet } from '@/components/wallets/useGuardedWallet';
+import { isV2PaymentSource } from '@/lib/payment-source-type';
 
 // Re-exported for the many call sites that import these types from this module.
 export type { TokenBalance, WalletWithBalance } from '@/components/wallets/wallet-details-utils';
@@ -78,7 +80,7 @@ export function WalletDetailsDialog({
   elevatedChildStack,
 }: WalletDetailsDialogProps) {
   const queryClient = useQueryClient();
-  const { apiClient, network, capabilities } = useAppContext();
+  const { apiClient, network, capabilities, selectedPaymentSource } = useAppContext();
   // Everything beyond the list payload and the read-level balance lookups is
   // admin-only: GET /wallet (rules + pending tx + mnemonic), the swap history,
   // the fund transfers, and every mutation. Non-admins still get the dialog —
@@ -122,6 +124,13 @@ export function WalletDetailsDialog({
   const rules = useLowBalanceRules({ wallet, invalidateWalletQueries });
   const collectionAddressEditor = useCollectionAddressEditor({
     wallet,
+    invalidateWalletQueries,
+  });
+  const canGuardWallet =
+    wallet?.type === 'Purchasing' && canManageWallet && isV2PaymentSource(selectedPaymentSource);
+  const guardedWallet = useGuardedWallet({
+    hotWalletId: wallet?.id,
+    enabled: isOpen && canGuardWallet,
     invalidateWalletQueries,
   });
 
@@ -665,28 +674,27 @@ export function WalletDetailsDialog({
                 onStartEdit={collectionAddressEditor.startEdit}
               />
             )}
+            {canGuardWallet && (
+              <GuardedWalletSection
+                network={network}
+                state={guardedWallet.state}
+                isLoading={guardedWallet.isLoading}
+                loadError={guardedWallet.loadError}
+                form={guardedWallet.form}
+                onFormChange={guardedWallet.setForm}
+                isSubmitting={guardedWallet.isSubmitting}
+                onAttach={guardedWallet.attach}
+                onDetach={() => guardedWallet.setIsConfirmingDetach(true)}
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        open={!!rules.pendingDeleteRule}
-        onClose={() => rules.setPendingDeleteRule(null)}
-        elevatedGrandchildStack={elevatedChildStack}
-        title={
-          rules.pendingDeleteRule
-            ? `Delete ${getRuleAssetLabel(rules.pendingDeleteRule.assetUnit, network)} rule?`
-            : 'Delete low-balance rule?'
-        }
-        description={
-          rules.pendingDeleteRule
-            ? getDeleteRuleDialogDescription(rules.pendingDeleteRule, network)
-            : 'Remove this low-balance rule?'
-        }
-        onConfirm={rules.handleConfirmDeleteLowBalanceRule}
-        isLoading={
-          rules.pendingDeleteRule != null && rules.mutatingRuleIds.has(rules.pendingDeleteRule.id)
-        }
+      <LowBalanceRuleDeleteDialog
+        rules={rules}
+        network={network}
+        elevatedChildStack={elevatedChildStack}
       />
 
       <ConfirmDialog
@@ -697,6 +705,17 @@ export function WalletDetailsDialog({
         description="This saves the wallet's seed phrase as an unencrypted .json file. Anyone with the file can spend this wallet's funds. Continue only if you will store it securely."
         confirmLabel="Download"
         onConfirm={handleDownload}
+      />
+
+      <ConfirmDialog
+        open={guardedWallet.isConfirmingDetach}
+        onClose={() => guardedWallet.setIsConfirmingDetach(false)}
+        elevatedGrandchildStack={elevatedChildStack}
+        title="Remove the guard from this wallet?"
+        description="Purchases will lock straight from the hot wallet, without Exchain co-signing. The smart wallet and its funds stay on chain."
+        confirmLabel="Remove guard"
+        onConfirm={guardedWallet.detach}
+        isLoading={guardedWallet.isSubmitting}
       />
 
       <SwapDialog
