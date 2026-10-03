@@ -6,6 +6,8 @@ import {
 	type ResolvedAddress,
 } from '@masumi/payment-core/ssrf-guard';
 
+export type { ResolvedAddress } from '@masumi/payment-core/ssrf-guard';
+
 export const WEBHOOK_DESTINATION_NOT_ALLOWED_MESSAGE = 'Webhook destination is not allowed';
 export const WEBHOOK_DELIVERY_BLOCKED_MESSAGE = 'Delivery blocked by policy';
 
@@ -21,7 +23,9 @@ export const isWebhookDestinationPolicyError = (error: unknown): error is Webhoo
 
 const isBlockedAddress = ({ address, family }: ResolvedAddress): boolean => isBlockedIpAddress(address, family);
 
-export const assertWebhookDestinationAllowed = async (rawUrl: string): Promise<URL> => {
+export const resolveWebhookDestinationAllowed = async (
+	rawUrl: string,
+): Promise<{ url: URL; addresses: ResolvedAddress[] }> => {
 	let parsedUrl: URL;
 	try {
 		parsedUrl = new URL(rawUrl);
@@ -55,8 +59,11 @@ export const assertWebhookDestinationAllowed = async (rawUrl: string): Promise<U
 		throw new WebhookDestinationPolicyError('Webhook destination resolved to a blocked address');
 	}
 
-	return parsedUrl;
+	return { url: parsedUrl, addresses: resolvedAddresses };
 };
+
+export const assertWebhookDestinationAllowed = async (rawUrl: string): Promise<URL> =>
+	(await resolveWebhookDestinationAllowed(rawUrl)).url;
 
 export const redactWebhookDestination = (rawUrl: string): string => {
 	const suffix = createHash('sha256').update(rawUrl).digest('hex').slice(0, 8);

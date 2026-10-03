@@ -1986,7 +1986,8 @@ export const AgentMetadataSchema = {
                     enum: [
                         'Standard',
                         'OpenApi',
-                        'X402'
+                        'X402',
+                        'A2A'
                     ],
                     description: 'Registry entry type when encoded on-chain'
                 },
@@ -1999,6 +2000,18 @@ export const AgentMetadataSchema = {
                     type: 'string',
                     maxLength: 250,
                     description: 'x402 manifest URL for X402 registry entries'
+                },
+                a2aAgentCardUrl: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'Agent Card URL for A2A registry entries'
+                },
+                a2aProtocolVersions: {
+                    type: 'array',
+                    items: {
+                        type: 'string'
+                    },
+                    description: 'Declared A2A protocol versions'
                 },
                 ExampleOutputs: {
                     type: 'array',
@@ -2719,7 +2732,8 @@ export const AgentIdentifierMetadataSchema = {
                     enum: [
                         'Standard',
                         'OpenApi',
-                        'X402'
+                        'X402',
+                        'A2A'
                     ],
                     description: 'Registry entry type when encoded on-chain'
                 },
@@ -2732,6 +2746,18 @@ export const AgentIdentifierMetadataSchema = {
                     type: 'string',
                     maxLength: 250,
                     description: 'x402 manifest URL for X402 registry entries'
+                },
+                a2aAgentCardUrl: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'Agent Card URL for A2A registry entries'
+                },
+                a2aProtocolVersions: {
+                    type: 'array',
+                    items: {
+                        type: 'string'
+                    },
+                    description: 'Declared A2A protocol versions'
                 },
                 ExampleOutputs: {
                     type: 'array',
@@ -3792,14 +3818,15 @@ export const RegistryEntrySchema = {
             enum: [
                 'Standard',
                 'OpenApi',
-                'X402'
+                'X402',
+                'A2A'
             ],
-            description: 'The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise'
+            description: 'The agent access model. Standard for legacy/untyped entries; OpenApi, X402, or A2A otherwise'
         },
         apiBaseUrl: {
             type: 'string',
             nullable: true,
-            description: 'Base URL of the agent API for interactions. Null for OpenApi/X402 agents'
+            description: 'Base URL of the agent API for interactions. Null for OpenApi/X402 agents; required for A2A agents alongside a2aAgentCardUrl'
         },
         openApiSpecUrl: {
             type: 'string',
@@ -3810,6 +3837,26 @@ export const RegistryEntrySchema = {
             type: 'string',
             nullable: true,
             description: 'URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type'
+        },
+        a2aAgentCardUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type'
+        },
+        a2aProtocolVersions: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'A2A protocol versions this agent declares support for. Empty for non-A2A agents'
+        },
+        paymentSourceType: {
+            type: 'string',
+            enum: [
+                'Web3CardanoV1',
+                'Web3CardanoV2'
+            ],
+            description: 'Which payment source version (V1/V2) this registry entry is registered under'
         },
         Capability: {
             type: 'object',
@@ -4599,6 +4646,9 @@ export const RegistryEntrySchema = {
         'apiBaseUrl',
         'openApiSpecUrl',
         'x402ResourcesUrl',
+        'a2aAgentCardUrl',
+        'a2aProtocolVersions',
+        'paymentSourceType',
         'Capability',
         'Author',
         'Legal',

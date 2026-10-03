@@ -15,11 +15,13 @@ export const REGISTRY_ENTRY_ON_CHAIN_TYPE: Record<RegistryEntryType, string | un
 	[RegistryEntryType.Standard]: undefined,
 	[RegistryEntryType.OpenApi]: 'OpenAPI',
 	[RegistryEntryType.X402]: 'x402V1',
+	[RegistryEntryType.A2A]: 'a2aV1',
 };
 
 const ON_CHAIN_TO_ENTRY_TYPE: Record<string, RegistryEntryType> = {
 	OpenAPI: RegistryEntryType.OpenApi,
 	x402V1: RegistryEntryType.X402,
+	a2aV1: RegistryEntryType.A2A,
 };
 
 /**

@@ -9,6 +9,7 @@ import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-ident
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import {
+	isRegistryMetadataAllowedForPaymentSource,
 	mapParsedRegistryMetadataToApi,
 	metadataSchema,
 	resolveAgentPricingFromMetadata,
@@ -30,9 +31,11 @@ const agentMetadataObjectSchema = z.object({
 		.string()
 		.max(250)
 		.describe('Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL'),
-	type: z.enum(['Standard', 'OpenApi', 'X402']).optional().describe('Registry entry type when encoded on-chain'),
+	type: z.enum(['Standard', 'OpenApi', 'X402', 'A2A']).optional().describe('Registry entry type when encoded on-chain'),
 	openApiSpecUrl: z.string().max(250).optional().describe('OpenAPI spec URL for OpenApi registry entries'),
 	x402ResourcesUrl: z.string().max(250).optional().describe('x402 manifest URL for X402 registry entries'),
+	a2aAgentCardUrl: z.string().max(250).optional().describe('Agent Card URL for A2A registry entries'),
+	a2aProtocolVersions: z.array(z.string()).optional().describe('Declared A2A protocol versions'),
 	ExampleOutputs: z
 		.array(
 			z.object({
@@ -256,6 +259,10 @@ export const queryAgentByIdentifierGet = agentIdentifierEndpointFactory.build({
 				error: parsedMetadata.error,
 				agentIdentifier: input.agentIdentifier,
 			});
+			throw createHttpError(422, 'Agent metadata is invalid or malformed');
+		}
+
+		if (!isRegistryMetadataAllowedForPaymentSource(parsedMetadata.data, paymentSource.paymentSourceType)) {
 			throw createHttpError(422, 'Agent metadata is invalid or malformed');
 		}
 

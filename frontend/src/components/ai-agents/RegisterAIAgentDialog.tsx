@@ -1,3 +1,5 @@
+import type { RegisterAIAgentDialogProps } from './register-agent-dialog-props';
+import { assertAgentMetadataUpdateSupported } from '@/lib/agent-update';
 import { RegisterAgentDialogView } from './RegisterAgentDialogView';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -39,38 +41,6 @@ import { usePaymentOptions } from './usePaymentOptions';
 import { MIN_MINT_BALANCE_LOVELACE } from '@/lib/agent-mint';
 import type { RegisterAgentDialogStep } from '@/lib/register-agent-review';
 import { getHoldingWalletLabel, getMintingWalletLabel } from '@/lib/register-agent-wallet-labels';
-
-interface RegisterAIAgentDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-  /**
-   * When set, the dialog operates in update mode for the given agent: the
-   * form pre-fills with the agent's current metadata, the selling wallet
-   * picker is hidden (the asset's current managed holder signs the update),
-   * and submission calls the V2 update endpoint. Leave undefined for the
-   * default register flow.
-   */
-  editingAgent?: RegistryEntry | null;
-  /**
-   * Smart contract address of the payment source `editingAgent` belongs to.
-   * Threaded through to the update call so the V2 lookup hits the right
-   * source (the backend default fallback resolves to V1). Required when
-   * `editingAgent` is provided.
-   */
-  editingAgentSmartContractAddress?: string;
-  /**
-   * When set (and `editingAgent` is not), the dialog operates in re-register
-   * mode: it pre-fills from the given agent exactly like update mode, but
-   * stays a fresh registration — the minting-wallet picker is shown and
-   * submission calls the register endpoint, minting a BRAND-NEW asset with a
-   * NEW agent identifier on the active payment source. Used to re-register a
-   * previously deregistered agent.
-   */
-  prefillAgent?: RegistryEntry | null;
-  /** Stack above an elevated parent (e.g. opened from the agent details dialog). */
-  elevatedChildStack?: boolean;
-}
 
 export function RegisterAIAgentDialog({
   open,
@@ -237,6 +207,8 @@ export function RegisterAIAgentDialog({
         apiUrl: editingAgent.apiBaseUrl ?? '',
         openApiSpecUrl: editingAgent.openApiSpecUrl ?? '',
         x402ResourcesUrl: editingAgent.x402ResourcesUrl ?? '',
+        a2aAgentCardUrl: editingAgent.a2aAgentCardUrl ?? '',
+        a2aProtocolVersions: (editingAgent.a2aProtocolVersions ?? []).join(', '),
         name: editingAgent.name,
         description: editingAgent.description ?? '',
         // Selling wallet is fixed in update mode — the asset's managed
@@ -357,6 +329,7 @@ export function RegisterAIAgentDialog({
       if (isSubmittingRef.current) return;
       isSubmittingRef.current = true;
       try {
+        if (editingAgent) assertAgentMetadataUpdateSupported(editingAgent);
         setIsLoading(true);
         const selectedWalletVkey = data.selectedWallet;
         // Register requires the user to pick a wallet with funds. Update
@@ -562,6 +535,18 @@ export function RegisterAIAgentDialog({
             ...(data.agentType === 'Standard' ? { apiBaseUrl: data.apiUrl } : {}),
             ...(data.agentType === 'OpenApi' ? { openApiSpecUrl: data.openApiSpecUrl } : {}),
             ...(data.agentType === 'X402' ? { x402ResourcesUrl: data.x402ResourcesUrl } : {}),
+            ...(data.agentType === 'A2A'
+              ? {
+                  apiBaseUrl: data.apiUrl,
+                  a2aAgentCardUrl: data.a2aAgentCardUrl,
+                  a2aProtocolVersions: (data.a2aProtocolVersions ?? '')
+                    .split(',')
+                    .map((version) => version.trim())
+                    .filter((version) => version.length > 0),
+                  ...(data.skipAgentCardValidation ? { skipAgentCardValidation: true } : {}),
+                }
+              : {}),
+
             Tags: data.tags,
             Capability: capability,
             Author: author,
@@ -680,6 +665,7 @@ export function RegisterAIAgentDialog({
         watch,
         setValue,
         typeLocked: isUpdateMode,
+        isV2Target,
       }}
       wallet={{
         isUpdateMode,
