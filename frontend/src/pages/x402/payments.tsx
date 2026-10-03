@@ -4,6 +4,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { PaymentsTab } from '@/components/x402/PaymentsTab';
 import { X402AdminPageExtras } from '@/components/x402/X402AdminPageExtras';
+import { MASUMI_DEV_HUB_URL } from '@/lib/masumi-links';
 
 export default function X402PaymentsPage() {
   return (
@@ -18,7 +19,7 @@ export default function X402PaymentsPage() {
             <p className="max-w-2xl text-sm text-muted-foreground">
               Transaction activity for the x402 (EVM) rail.{' '}
               <a
-                href="https://www.masumi.network/dev/masumi"
+                href={MASUMI_DEV_HUB_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"
