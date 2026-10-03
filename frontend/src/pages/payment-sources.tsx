@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { formatDateTime } from '@/lib/format-date';
+import { MASUMI_PAYMENT_SOURCE_DOCS_URL } from '@/lib/masumi-links';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
@@ -283,7 +284,7 @@ export default function PaymentSourcesPage() {
               <p className="text-sm text-muted-foreground">
                 Manage your payment sources.{' '}
                 <Link
-                  href="https://www.masumi.network/dev/masumi/api-reference/payment-service/get-payment-source"
+                  href={MASUMI_PAYMENT_SOURCE_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
@@ -522,7 +523,7 @@ export default function PaymentSourcesPage() {
                           className={tableActionsCellCompactClass}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <div className="flex gap-2">
+                          <div className="flex justify-end gap-2">
                             <Button
                               variant="ghost"
                               size="sm"

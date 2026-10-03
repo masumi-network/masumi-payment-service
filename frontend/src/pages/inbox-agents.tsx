@@ -36,10 +36,11 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useInboxAgents } from '@/lib/queries/useInboxAgents';
-import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { getAgentStatusBadgeVariant, parseInboxAgentStatus } from '@/lib/agent-status';
 import { formatDate } from '@/lib/format-date';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { cn, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
+import { formatLovelaceAsAda } from '@/lib/format-lovelace-display';
+import { cn, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 
 type InboxAgent = RegistryInboxEntry;
@@ -48,37 +49,6 @@ const getHoldingWallet = (agent: InboxAgent) => agent.RecipientWallet ?? agent.S
 
 const usesCombinedWallet = (agent: InboxAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
-
-const parseInboxAgentStatus = (status: InboxAgent['state']): string => {
-  switch (status) {
-    case 'RegistrationRequested':
-      return 'Pending';
-    case 'RegistrationInitiated':
-      return 'Registering';
-    case 'RegistrationConfirmed':
-      return 'Registered';
-    case 'RegistrationFailed':
-      return 'Registration Failed';
-    case 'DeregistrationRequested':
-      return 'Pending';
-    case 'DeregistrationInitiated':
-      return 'Deregistering';
-    case 'DeregistrationConfirmed':
-      return 'Deregistered';
-    case 'DeregistrationFailed':
-      return 'Deregistration Failed';
-    default:
-      return status;
-  }
-};
-
-function formatLovelaceToAda(amount: string | null) {
-  if (!amount) {
-    return 'Default minimum';
-  }
-
-  return `${formatSixDecimalAmount(amount)} ADA`;
-}
 
 export default function InboxAgentsPage() {
   const router = useRouter();
@@ -160,6 +130,7 @@ export default function InboxAgentsPage() {
       if (agent.SmartContractWallet.walletAddress.toLowerCase().includes(query)) return true;
       if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state.toLowerCase().includes(query)) return true;
+      if (parseInboxAgentStatus(agent.state).toLowerCase().includes(query)) return true;
       return false;
     });
   }, [debouncedSearchQuery, inboxAgents, isPlaceholderData, searchQuery]);
@@ -317,7 +288,7 @@ export default function InboxAgentsPage() {
                   isSearchPending && 'opacity-70',
                 )}
               >
-                <thead className="bg-muted/30 dark:bg-muted/15">
+                <thead className="table-header-surface">
                   <tr className="border-b">
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
                       Name
@@ -477,7 +448,7 @@ export default function InboxAgentsPage() {
                           </td>
                           <td className="p-4 text-sm font-mono">{agent.agentSlug}</td>
                           <td className="p-4 text-sm">
-                            {formatLovelaceToAda(agent.sendFundingLovelace)}
+                            {formatLovelaceAsAda(agent.sendFundingLovelace)}
                           </td>
                           <td className="p-4">
                             <Badge variant={getAgentStatusBadgeVariant(agent.state)}>

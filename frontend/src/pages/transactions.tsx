@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
+import { MASUMI_PAYMENTS_DOCS_URL } from '@/lib/masumi-links';
 import { cn, formatAssetAmount } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -29,12 +30,20 @@ import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
+import { filterTransactionsClientSide } from '@/lib/client-search/transaction-search';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
-import { getLatestTxHash } from '@/components/transactions/transaction-format.helpers';
-import { Checkbox } from '@/components/ui/checkbox';
+import {
+  getLatestTxHash,
+  isTransactionErrorRecoverable,
+} from '@/components/transactions/transaction-format.helpers';
+import { BulkActionBar } from '@/components/ui/bulk-action-bar';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  TableSelectAllCheckbox,
+  TableSelectRowCheckbox,
+} from '@/components/ui/table-select-checkbox';
 import {
   TransactionFilters,
   EMPTY_FILTERS,
@@ -45,6 +54,8 @@ import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransacti
 import { TransactionRowActionsMenu } from '@/components/transactions/TransactionRowActionsMenu';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
+import { useTransactionTabCounts } from '@/lib/hooks/useTransactionTabCounts';
+import { useTableSelection } from '@/lib/hooks/useTableSelection';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -80,12 +91,8 @@ export default function Transactions() {
     [activeTab, filters, searchQuery],
   );
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
-  const isNeedsActionTab = activeTab === 'Needs Action';
-  // Error recovery posts to /payment|purchase/error-state-recovery, both
-  // pay-authenticated. Read-only sessions keep the Needs Action tab as a
-  // read-only view but get no selection column and no bulk action bar.
+  // Error recovery posts to /payment|purchase/error-state-recovery (pay-authenticated).
   const canRecoverErrors = capabilities.canPay;
-  const showSelection = isNeedsActionTab && canRecoverErrors;
 
   const filterParams = useMemo(() => {
     const params: {
@@ -126,60 +133,42 @@ export default function Transactions() {
     isPlaceholderData,
   } = useTransactions(filterParams, { trackVisit: false });
 
-  // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
-  const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
+  // Unfiltered instance for the "new transactions" watermark (shares the layout's
+  // cache); only this instance updates localStorage.
+  const { markAllAsRead } = useTransactions();
+  const { data: tabCounts, refetch: refetchTabCounts } = useTransactionTabCounts();
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
-  // Multi-row selection is only offered on the Needs Action tab, where every row
-  // is in an error state that can be bulk-cleared. Keyed by transaction id.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { recoverErrors, isRecovering } = useBulkClearTransactionErrors();
   const [bulkRecoveryMode, setBulkRecoveryMode] = useState<'clear' | 'retry' | null>(null);
+  const [bulkConfirmMode, setBulkConfirmMode] = useState<'clear' | 'retry' | null>(null);
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
-  const tabs = useMemo(() => {
-    const seenIds = new Set<string>();
-    const dedupedTransactions = allTransactionsForCounts.filter((tx) => {
-      if (!tx.id) return true;
-      if (seenIds.has(tx.id)) return false;
-      seenIds.add(tx.id);
-      return true;
-    });
-
-    const refundCount = dedupedTransactions.filter(
-      (t) => t.onChainState === 'RefundRequested',
-    ).length;
-    const disputeCount = dedupedTransactions.filter((t) => t.onChainState === 'Disputed').length;
-    // Mirrors the backend filterNeedsManualAction predicate (buildNeedsManualActionFilter):
-    // parked in WaitingForManualAction or a recorded NextAction error.
-    const needsActionCount = dedupedTransactions.filter(
-      (t) =>
-        t.NextAction?.requestedAction === 'WaitingForManualAction' || !!t.NextAction?.errorType,
-    ).length;
-
-    return [
+  const tabs = useMemo(
+    () => [
       { name: 'All', count: null },
       { name: 'Payments', count: null },
       { name: 'Purchases', count: null },
       {
         name: 'Refund Requests',
-        count: refundCount || null,
+        count: tabCounts?.refundRequests || null,
         variant: 'alert' as const,
       },
       {
         name: 'Disputes',
-        count: disputeCount || null,
+        count: tabCounts?.disputes || null,
         variant: 'alert' as const,
       },
       {
         name: 'Needs Action',
-        count: needsActionCount || null,
+        count: tabCounts?.needsAction || null,
         variant: 'alert' as const,
       },
-    ];
-  }, [allTransactionsForCounts]);
+    ],
+    [tabCounts],
+  );
 
   // Dedup only — server handles filtering
   const filteredTransactions = useMemo(() => {
@@ -212,54 +201,13 @@ export default function Transactions() {
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return filteredTransactions;
 
-    const amountRange = parseAmountSearchRange(query);
-    // Mirror backend looksLikeHash (HASH_QUERY_MIN_LENGTH): the hash columns and
-    // the head ID are only searched for a hex query of 5+ characters.
-    const isHashQuery = query.length >= 5 && /^[0-9a-f]+$/.test(query);
-    // Mirror backend buildMatchingLayers: exact match plus the 'hydra' alias.
-    const matchingLayer =
-      query === 'hydra' ? 'L2' : query === 'l1' || query === 'l2' ? query.toUpperCase() : null;
-
-    // Mirror backend buildMatchingStates
-    const matchingStates = ON_CHAIN_STATES.filter(
-      (s) => s.toLowerCase().includes(query) || formatStatus(s).toLowerCase().includes(query),
-    );
-
-    return filteredTransactions.filter((tx) => {
-      if (tx.id?.toLowerCase().includes(query)) return true;
-      if (tx.blockchainIdentifier?.toLowerCase() === query) return true;
-      if (isHashQuery) {
-        if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
-        if (tx.TransactionHistory?.some((h) => h.txHash?.toLowerCase().includes(query)))
-          return true;
-        if (tx.inputHash?.toLowerCase().includes(query)) return true;
-        if (tx.resultHash?.toLowerCase().includes(query)) return true;
-        if (tx.CurrentTransaction?.hydraHeadId?.toLowerCase().includes(query)) return true;
-      }
-      if (matchingLayer && tx.CurrentTransaction?.layer === matchingLayer) return true;
-      if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
-        return true;
-      if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
-      if (tx.agentName?.toLowerCase().includes(query)) return true;
-      if (amountRange) {
-        const funds =
-          tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
-        if (
-          funds?.some((f) => {
-            const amt = parseAmountToBigInt(f.amount);
-            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
-          })
-        )
-          return true;
-      }
-      return false;
-    });
+    return filterTransactionsClientSide(filteredTransactions, searchQuery);
   }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
   const refreshTransactions = useCallback(() => {
     void refetchTransactions?.();
-  }, [refetchTransactions]);
+    void refetchTabCounts();
+  }, [refetchTransactions, refetchTabCounts]);
 
   // Error type has no server-side param, so narrow it client-side. Pagination-limited.
   const visibleTransactions = useMemo(() => {
@@ -267,35 +215,37 @@ export default function Transactions() {
     return displayTransactions.filter((tx) => tx.NextAction?.errorType === filters.errorType);
   }, [displayTransactions, filters.errorType]);
 
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
-
   const selectableIds = useMemo(
     () => visibleTransactions.map((tx) => tx.id).filter((id): id is string => Boolean(id)),
     [visibleTransactions],
   );
-  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
-  const someSelected = selectedIds.size > 0 && !allSelected;
 
-  const toggleAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      const everySelected = selectableIds.length > 0 && selectableIds.every((id) => prev.has(id));
-      return everySelected ? new Set() : new Set(selectableIds);
-    });
-  }, [selectableIds]);
+  const {
+    selectedIds,
+    selectedCount,
+    clearSelection,
+    allSelected,
+    someSelected,
+    toggleAll,
+    toggleRow,
+    isSelected,
+    setSelectionToIds,
+  } = useTableSelection(selectableIds);
 
-  const toggleRow = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const recoverableSelectedTransactions = useMemo(
+    () =>
+      visibleTransactions.filter(
+        (tx) => tx.id && selectedIds.has(tx.id) && isTransactionErrorRecoverable(tx, network),
+      ),
+    [visibleTransactions, selectedIds, network],
+  );
+  const recoverableSelectedCount = recoverableSelectedTransactions.length;
 
   const handleBulkRecoverErrors = useCallback(
     async (retryPreviousAction: boolean) => {
-      const selected = visibleTransactions.filter((tx) => tx.id && selectedIds.has(tx.id));
-      if (selected.length === 0) return;
+      if (recoverableSelectedTransactions.length === 0) return;
+
+      const selected = recoverableSelectedTransactions;
 
       setBulkRecoveryMode(retryPreviousAction ? 'retry' : 'clear');
       try {
@@ -316,14 +266,20 @@ export default function Transactions() {
         }
 
         // Keep only the failed rows selected so the user can retry them.
-        setSelectedIds(new Set(failedIds));
+        setSelectionToIds(failedIds);
         await resync('transactions');
         refreshTransactions();
       } finally {
         setBulkRecoveryMode(null);
       }
     },
-    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions, resync],
+    [
+      recoverableSelectedTransactions,
+      recoverErrors,
+      refreshTransactions,
+      resync,
+      setSelectionToIds,
+    ],
   );
 
   const handleRowRecoverErrors = useCallback(
@@ -404,7 +360,7 @@ export default function Transactions() {
               <p className="text-sm text-muted-foreground">
                 View and manage your transaction history.{' '}
                 <a
-                  href="https://www.masumi.network/dev/masumi/core-concepts/agent-to-agent-payments"
+                  href={MASUMI_PAYMENTS_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
@@ -471,40 +427,51 @@ export default function Transactions() {
             />
           </div>
 
-          {showSelection && selectedIds.size > 0 && (
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 animate-fade-in">
-              <span className="text-sm font-medium">{selectedIds.size} selected</span>
-              <div className="flex items-center gap-2">
+          <BulkActionBar
+            selectedCount={selectedCount}
+            onClear={clearSelection}
+            disabled={isRecovering}
+          >
+            {!canRecoverErrors ? (
+              <span className="max-w-md text-right text-sm text-muted-foreground">
+                Bulk recovery requires an API key with pay access.
+              </span>
+            ) : recoverableSelectedCount === 0 ? (
+              <span className="max-w-md text-right text-sm text-muted-foreground">
+                {
+                  'No bulk actions for this selection. Pick rows with an error, or open the Needs Action tab.'
+                }
+              </span>
+            ) : (
+              <>
+                {recoverableSelectedCount < selectedCount ? (
+                  <span className="text-xs text-muted-foreground">
+                    {recoverableSelectedCount} of {selectedCount} can be recovered
+                  </span>
+                ) : null}
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  onClick={() => setSelectedIds(new Set())}
-                  disabled={isRecovering}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleBulkRecoverErrors(false)}
+                  className="border-border bg-background shadow-xs hover:bg-background"
+                  onClick={() => setBulkConfirmMode('clear')}
                   disabled={isRecovering}
                 >
                   {bulkRecoveryMode === 'clear'
                     ? 'Clearing error states...'
-                    : `Clear error state (${selectedIds.size})`}
+                    : `Clear error state (${recoverableSelectedCount})`}
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => handleBulkRecoverErrors(true)}
+                  onClick={() => setBulkConfirmMode('retry')}
                   disabled={isRecovering}
                 >
                   {bulkRecoveryMode === 'retry'
                     ? 'Queueing retries...'
-                    : `Retry failed action (${selectedIds.size})`}
+                    : `Retry failed action (${recoverableSelectedCount})`}
                 </Button>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </BulkActionBar>
 
           <HorizontalScrollArea className="border rounded-lg">
             <table
@@ -513,26 +480,18 @@ export default function Transactions() {
                 isSearchPending && 'opacity-70',
               )}
             >
-              <thead className="bg-muted/30 dark:bg-muted/15">
+              <thead className="table-header-surface">
                 <tr className="border-b">
-                  {showSelection && (
-                    <th className="p-4 pl-6 w-10">
-                      <Checkbox
-                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                        onCheckedChange={toggleAll}
-                        aria-label="Select all transactions"
-                        disabled={selectableIds.length === 0}
-                      />
-                    </th>
-                  )}
-                  <th
-                    className={cn(
-                      'p-4 text-left text-sm font-medium text-muted-foreground',
-                      !showSelection && 'pl-6',
-                    )}
-                  >
-                    Type
+                  <th className="w-10 p-4 pl-6">
+                    <TableSelectAllCheckbox
+                      allSelected={allSelected}
+                      someSelected={someSelected}
+                      onToggleAll={toggleAll}
+                      disabled={selectableIds.length === 0}
+                      aria-label="Select all transactions on this page"
+                    />
                   </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Type</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Transaction Hash
                   </th>
@@ -555,10 +514,10 @@ export default function Transactions() {
               </thead>
               <tbody>
                 {isInitialLoading || (visibleTransactions.length === 0 && isSearchPending) ? (
-                  <TransactionTableSkeleton rows={5} />
+                  <TransactionTableSkeleton rows={5} withSelectionColumn />
                 ) : visibleTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={showSelection ? 10 : 9}>
+                    <td colSpan={10}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -588,31 +547,31 @@ export default function Transactions() {
                 ) : (
                   visibleTransactions.map((transaction, index) => {
                     const hasTxError = !!transaction.NextAction?.errorType;
-                    const isTxSelected = Boolean(transaction.id && selectedIds.has(transaction.id));
+                    const isTxSelected = Boolean(transaction.id && isSelected(transaction.id));
 
                     return (
                       <tr
                         key={transaction.id}
                         className={cn(
                           'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ease-in-out',
-                          hasTxError ? 'bg-destructive/10 border-l-2 border-l-destructive' : '',
-                          'cursor-pointer hover:bg-row-hover',
-                          isTxSelected && 'bg-row-hover',
+                          'cursor-pointer',
+                          hasTxError ? 'transaction-row-error' : 'hover:bg-row-hover',
+                          isTxSelected &&
+                            (hasTxError
+                              ? 'transaction-row-selected'
+                              : 'transaction-row-selected bg-row-hover'),
                         )}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => setSelectedTransaction(transaction)}
                       >
-                        {showSelection && (
-                          <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
-                            <Checkbox
-                              checked={transaction.id ? selectedIds.has(transaction.id) : false}
-                              onCheckedChange={() => transaction.id && toggleRow(transaction.id)}
-                              disabled={!transaction.id}
-                              aria-label="Select transaction"
-                            />
-                          </td>
-                        )}
-                        <td className={cn('p-4', !showSelection && 'pl-6')}>
+                        <td className="w-10 p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                          <TableSelectRowCheckbox
+                            checked={transaction.id ? isSelected(transaction.id) : false}
+                            onToggle={() => transaction.id && toggleRow(transaction.id)}
+                            aria-label="Select transaction"
+                          />
+                        </td>
+                        <td className="p-4">
                           <span className="capitalize">{transaction.type}</span>
                         </td>
                         <td className="p-4">
@@ -709,10 +668,10 @@ export default function Transactions() {
                         <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
                         <td
                           className={
-                            hasTxError
-                              ? tableActionsCellCompactDestructiveClass
-                              : isTxSelected
-                                ? tableActionsCellCompactSelectedClass
+                            isTxSelected
+                              ? tableActionsCellCompactSelectedClass
+                              : hasTxError
+                                ? tableActionsCellCompactDestructiveClass
                                 : tableActionsCellCompactClass
                           }
                           onClick={(e) => e.stopPropagation()}
@@ -758,6 +717,27 @@ export default function Transactions() {
             viewDefaults={reportViewDefaults}
           />
         )}
+
+        <ConfirmDialog
+          open={bulkConfirmMode !== null}
+          onClose={() => setBulkConfirmMode(null)}
+          title={
+            bulkConfirmMode === 'retry' ? 'Retry failed actions' : 'Clear transaction error states'
+          }
+          description={
+            bulkConfirmMode === 'retry'
+              ? `Queue a retry of the failed action for ${recoverableSelectedCount} transaction${recoverableSelectedCount === 1 ? '' : 's'}?`
+              : `Clear the error state for ${recoverableSelectedCount} transaction${recoverableSelectedCount === 1 ? '' : 's'} so processing can continue?`
+          }
+          confirmLabel={bulkConfirmMode === 'retry' ? 'Retry failed actions' : 'Clear error states'}
+          onConfirm={() => {
+            if (!bulkConfirmMode) return;
+            void handleBulkRecoverErrors(bulkConfirmMode === 'retry').finally(() =>
+              setBulkConfirmMode(null),
+            );
+          }}
+          isLoading={isRecovering}
+        />
       </AnimatedPage>
     </MainLayout>
   );

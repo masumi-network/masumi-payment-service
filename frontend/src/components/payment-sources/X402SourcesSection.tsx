@@ -14,7 +14,7 @@ import {
   tableActionsCellWideClass,
   tableActionsHeadWideClass,
 } from '@/components/ui/table-actions-column';
-import { ChainDialog } from '@/components/x402/ChainsTab';
+import { ChainDialog } from '@/components/x402/ChainForm';
 import { X402Network } from '@/lib/api/generated';
 
 /**
@@ -65,7 +65,7 @@ export function X402SourcesSection({
 
       <HorizontalScrollArea className="rounded-lg border">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th
                 scope="col"
