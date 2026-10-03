@@ -325,7 +325,7 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 	// transfer the scheduled cycle skips and it must skip it too. The operator's
 	// own "Fund now" still works: that is an explicit request, not this.
 	if (participant.autoFund) {
-		void fundHydraNodeNow(participant.id).catch((error: unknown) => {
+		void fundHydraNodeNow(participant.id, true).catch((error: unknown) => {
 			logger.warn(`hydra: could not fund the node for head ${head.hydraHeadId}: ${(error as Error).message}`);
 		});
 	}

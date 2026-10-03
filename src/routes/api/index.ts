@@ -115,6 +115,7 @@ import {
 	fundParticipantNodePost,
 	withdrawParticipantNodePost,
 	participantFundingGet,
+	participantFundingPatch,
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
 	fanoutHeadPost,
@@ -570,7 +571,7 @@ export const apiRouter: Routing = {
 					// One-time backup of the node's signing keys; seals after first use.
 					keys: { post: revealParticipantKeysPost },
 					// Fund the node's own Cardano key, without which Init cannot post.
-					fund: { post: fundParticipantNodePost, get: participantFundingGet },
+					fund: { post: fundParticipantNodePost, get: participantFundingGet, patch: participantFundingPatch },
 					// Return what the node did not spend, once its head is final.
 					withdraw: { post: withdrawParticipantNodePost },
 				},

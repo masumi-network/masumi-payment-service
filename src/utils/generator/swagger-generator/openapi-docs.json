@@ -35699,6 +35699,22 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
+                                                "autoFund": {
+                                                    "type": "boolean"
+                                                },
+                                                "automaticFundingLimitLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Lifetime node funding limit in lovelace. Null means unlimited."
+                                                },
+                                                "fundedLovelace": {
+                                                    "type": "string",
+                                                    "description": "Queued or confirmed funding to this address, including historical and manual transfers."
+                                                },
+                                                "remainingFundingLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
                                                 "address": {
                                                     "type": "string"
                                                 },
@@ -35738,6 +35754,10 @@
                                                 }
                                             },
                                             "required": [
+                                                "autoFund",
+                                                "automaticFundingLimitLovelace",
+                                                "fundedLovelace",
+                                                "remainingFundingLovelace",
                                                 "address",
                                                 "balanceLovelace",
                                                 "isUnderfunded",
@@ -35765,7 +35785,7 @@
                         "description": "Unauthorized"
                     },
                     "404": {
-                        "description": "Hydra head not found"
+                        "description": "Local participant not found"
                     }
                 }
             },
@@ -35838,7 +35858,7 @@
                                                         "sufficient",
                                                         "in-flight"
                                                     ],
-                                                    "description": "`sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one."
+                                                    "description": "`sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent. The balance below is still the pre-transfer one."
                                                 }
                                             },
                                             "required": [
@@ -35867,7 +35887,109 @@
                         "description": "Unauthorized"
                     },
                     "404": {
-                        "description": "Hydra head not found"
+                        "description": "Local participant not found"
+                    }
+                }
+            },
+            "patch": {
+                "summary": "Set optional automatic node funding limits. (admin access required)",
+                "description": "Automatic funding is unlimited by default. A lifetime limit counts pending and confirmed transfers to the node address, including manual and historical transfers. A refill is skipped if it would exceed the limit. Explicit admin funding remains available.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "autoFund": {
+                                        "type": "boolean"
+                                    },
+                                    "automaticFundingLimitLovelace": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "maxLength": 19,
+                                        "pattern": "^(0|[1-9][0-9]*)$",
+                                        "description": "Null removes the limit. Zero blocks automatic funding."
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated",
+                                    "automaticFundingLimitLovelace": null
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Automatic funding settings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "autoFund": {
+                                                    "type": "boolean"
+                                                },
+                                                "automaticFundingLimitLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "autoFund",
+                                                "automaticFundingLimitLovelace"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated",
+                                            "autoFund": true,
+                                            "automaticFundingLimitLovelace": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Local participant not found"
                     }
                 }
             }
@@ -35965,7 +36087,7 @@
                         "description": "Unauthorized"
                     },
                     "404": {
-                        "description": "Hydra head not found"
+                        "description": "Local participant not found"
                     },
                     "409": {
                         "description": "The node is still needed, so its funds are kept"
