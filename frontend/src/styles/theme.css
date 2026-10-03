@@ -80,7 +80,7 @@
       hsl(var(--destructive)) 14%,
       var(--transaction-error-row-fill)
     );
-    /* py-3 + two-line row (title + secondary); × 8 rows visible in list viewport */
+    /* py-3 + two-line row (title + secondary); skeleton / stagger row cap */
     --overview-list-row-height: 4rem;
     --overview-list-visible-rows: 8;
     --overview-list-scroll-max-height: calc(

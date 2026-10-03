@@ -16,7 +16,7 @@ import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { RefreshButton } from '@/components/RefreshButton';
 import { cn, formatAssetAmount, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents, useRegistryAgentCount } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
@@ -40,7 +40,6 @@ import {
   overviewAgentPriceColumnClass,
   overviewWalletListRowClass,
   overviewListSecondaryLineClass,
-  overviewPanelEmptyBodyClass,
 } from '@/components/dashboard/dashboard-overview-section';
 import { DashboardWalletListSection } from '@/components/dashboard/dashboard-wallet-list-section';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
@@ -58,6 +57,7 @@ import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 import { FinancialReportSection } from '@/components/dashboard/FinancialReportSection';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
+import { useViewportRemainingHeight } from '@/lib/hooks/useViewportRemainingHeight';
 
 // The dashboard carries two unrelated jobs: what exists (agents, wallets,
 // transactions) and what it earned. Stacking both in one scroll buried the
@@ -202,6 +202,12 @@ export default function Overview() {
 
   const totalBalanceUsd = formatUsdValue(totalBalance);
 
+  const overviewSectionRef = useRef<HTMLDivElement>(null);
+  const overviewSectionHeight = useViewportRemainingHeight(overviewSectionRef, {
+    bottomInset: 32,
+    enabled: activeDashboardTab === OVERVIEW_TAB,
+  });
+
   return (
     <>
       <Head>
@@ -209,8 +215,8 @@ export default function Overview() {
       </Head>
       <MainLayout>
         <AnimatedPage>
-          <div className="space-y-6">
-            <div>
+          <div className="flex flex-col gap-6">
+            <div className="shrink-0">
               <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
               <p className="text-sm text-muted-foreground">
                 Overview of your AI agents, wallets, and transactions.
@@ -276,8 +282,16 @@ export default function Overview() {
             />
 
             {activeDashboardTab === OVERVIEW_TAB && (
-              <div className="space-y-6">
-                <div>
+              <div
+                ref={overviewSectionRef}
+                className="flex min-h-0 flex-col gap-6 overflow-hidden"
+                style={
+                  overviewSectionHeight !== undefined
+                    ? { height: overviewSectionHeight }
+                    : undefined
+                }
+              >
+                <div className="shrink-0">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {agentsSectionLoading || isLoadingAgentCount ? (
                       <StatCardSkeleton />
@@ -355,15 +369,14 @@ export default function Overview() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch">
+                <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch">
                   <DashboardPanel
                     title="AI agents"
                     titleHref="/ai-agents"
                     description="Recent agents on this payment source."
                     reserveListHeight
-                    fillListViewport={
-                      agentsSectionLoading || agents.length >= OVERVIEW_LIST_VISIBLE_ROWS
-                    }
+                    stretchToViewport
+                    fillListViewport
                     footer={
                       capabilities.canPay ? (
                         <Button
@@ -379,7 +392,7 @@ export default function Overview() {
                   >
                     {agentsSectionLoading ? (
                       <OverviewListScroll>
-                        <AgentListSkeleton items={8} />
+                        <AgentListSkeleton items={OVERVIEW_LIST_VISIBLE_ROWS} />
                       </OverviewListScroll>
                     ) : agents.length > 0 ? (
                       <OverviewListScroll>
@@ -426,12 +439,7 @@ export default function Overview() {
                         />
                       </OverviewListScroll>
                     ) : (
-                      <div
-                        className={cn(
-                          'flex flex-col justify-center px-4 py-8 lg:min-h-0 lg:flex-1',
-                          overviewPanelEmptyBodyClass,
-                        )}
-                      >
+                      <div className="flex min-h-0 flex-1 flex-col justify-center px-4 py-8">
                         <EmptyState
                           title="No agents yet"
                           description={
@@ -449,9 +457,8 @@ export default function Overview() {
                     titleHref="/wallets"
                     description="Balances for buying and selling wallets."
                     reserveListHeight
-                    fillListViewport={
-                      walletsSectionLoading || walletsList.length >= OVERVIEW_LIST_VISIBLE_ROWS
-                    }
+                    stretchToViewport
+                    fillListViewport
                     headerExtra={
                       <RefreshButton
                         onRefresh={() => refetchWallets()}
@@ -473,7 +480,7 @@ export default function Overview() {
                   >
                     {walletsSectionLoading ? (
                       <OverviewListScroll className="overflow-auto">
-                        <WalletListSkeleton rows={8} />
+                        <WalletListSkeleton rows={OVERVIEW_LIST_VISIBLE_ROWS} />
                       </OverviewListScroll>
                     ) : walletsList.length > 0 ? (
                       <DashboardWalletListSection
@@ -486,12 +493,7 @@ export default function Overview() {
                         onTopUp={setSelectedWalletForTopup}
                       />
                     ) : (
-                      <div
-                        className={cn(
-                          'flex flex-col justify-center px-4 py-8 lg:min-h-0 lg:flex-1',
-                          overviewPanelEmptyBodyClass,
-                        )}
-                      >
+                      <div className="flex min-h-0 flex-1 flex-col justify-center px-4 py-8">
                         <EmptyState
                           title="No wallets yet"
                           description="Add a wallet to fund agents."

@@ -106,7 +106,7 @@ const DialogContent = React.forwardRef<
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            'dialog-center-anchor fixed left-1/2 top-1/2 z-1000 grid w-full max-w-lg max-h-[80vh] overflow-y-auto gap-4 border bg-background px-6 pb-6 pt-10 shadow-lg sm:rounded-lg',
+            'fixed inset-0 z-1000 m-auto grid h-fit w-full max-w-lg max-h-[80vh] overflow-y-auto gap-4 border bg-background px-6 pb-6 pt-10 shadow-lg sm:rounded-lg',
             stackContentClass,
             variantClass,
             isPushedBack !== undefined && 'dialog-content-stackable',
