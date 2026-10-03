@@ -1,12 +1,13 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network, RegistrationState } from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindApiKey = jest.fn() as AnyMock;
 const mockFindPaymentSource = jest.fn() as AnyMock;
+const mockFindInboxRegistrations = jest.fn() as AnyMock;
 const mockAddresses = jest.fn() as AnyMock;
 const mockAccountsAddressesAssetsAll = jest.fn() as AnyMock;
 const mockAssetsById = jest.fn() as AnyMock;
@@ -19,6 +20,9 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 		paymentSource: {
 			findUnique: mockFindPaymentSource,
+		},
+		inboxAgentRegistrationRequest: {
+			findMany: mockFindInboxRegistrations,
 		},
 	},
 }));
@@ -82,6 +86,7 @@ describe('queryInboxAgentFromWalletGet', () => {
 		mockGetRegistryScript.mockResolvedValue({ policyId: 'p'.repeat(56) });
 		mockFindPaymentSource.mockResolvedValue({
 			id: 'payment-source-1',
+			paymentSourceType: 'Web3CardanoV1',
 			PaymentSourceConfig: {
 				rpcProviderApiKey: 'provider-key',
 			},
@@ -100,6 +105,11 @@ describe('queryInboxAgentFromWalletGet', () => {
 		mockAccountsAddressesAssetsAll.mockResolvedValue([
 			{
 				unit: 'p'.repeat(56) + 'asset',
+			},
+		]);
+		mockFindInboxRegistrations.mockResolvedValue([
+			{
+				agentIdentifier: 'p'.repeat(56) + 'asset',
 			},
 		]);
 		mockAssetsById.mockResolvedValue({
@@ -136,5 +146,49 @@ describe('queryInboxAgentFromWalletGet', () => {
 				}),
 			}),
 		]);
+		expect(mockFindInboxRegistrations).toHaveBeenCalledWith({
+			where: {
+				paymentSourceId: 'payment-source-1',
+				state: RegistrationState.RegistrationConfirmed,
+				agentIdentifier: { in: ['p'.repeat(56) + 'asset'] },
+				AND: [
+					{
+						OR: [
+							{ deregistrationHotWalletId: { in: ['recipient-wallet-id'] } },
+							{
+								deregistrationHotWalletId: null,
+								recipientHotWalletId: { in: ['recipient-wallet-id'] },
+							},
+							{
+								deregistrationHotWalletId: null,
+								recipientHotWalletId: null,
+								smartContractWalletId: { in: ['recipient-wallet-id'] },
+							},
+						],
+					},
+				],
+			},
+			select: { agentIdentifier: true },
+		});
+	});
+
+	it('does not return policy assets without a confirmed registration', async () => {
+		mockFindInboxRegistrations.mockResolvedValue([]);
+
+		const { responseMock } = await testEndpoint({
+			endpoint: queryInboxAgentFromWalletGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					walletVkey: 'recipient-wallet-vkey',
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(responseMock._getJSONData().data.Assets).toEqual([]);
+		expect(mockAssetsById).not.toHaveBeenCalled();
 	});
 });

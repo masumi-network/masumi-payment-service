@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { Network, PaymentSourceType } from '@/generated/prisma/client';
+import { Network, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { getRegistryScriptFromNetworkHandler } from '@/utils/generator/contract-generator';
@@ -9,7 +9,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/p
 import { logger } from '@masumi/payment-core/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { assertHotWalletInScope, buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV1 } from '@masumi/payment-source-v1/services/registry-inbox/metadata';
 import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV2 } from '@masumi/payment-source-v2/services/registry-inbox/metadata';
 
@@ -113,7 +113,20 @@ export const queryInboxAgentFromWalletGet = readAuthenticatedEndpointFactory.bui
 		if (!holderWallet || holderWallet.length == 0) {
 			throw createHttpError(404, 'Asset not found');
 		}
-		const assets = holderWallet.filter((asset) => asset.unit.startsWith(policyId));
+		const policyAssets = holderWallet.filter((asset) => asset.unit.startsWith(policyId));
+		const registrations = await prisma.inboxAgentRegistrationRequest.findMany({
+			where: {
+				paymentSourceId: paymentSource.id,
+				state: RegistrationState.RegistrationConfirmed,
+				agentIdentifier: { in: policyAssets.map((asset) => asset.unit) },
+				...buildManagedHolderWalletScopeFilter([wallet.id]),
+			},
+			select: { agentIdentifier: true },
+		});
+		const registeredAgentIdentifiers = new Set(
+			registrations.flatMap(({ agentIdentifier }) => (agentIdentifier == null ? [] : [agentIdentifier])),
+		);
+		const assets = policyAssets.filter((asset) => registeredAgentIdentifiers.has(asset.unit));
 		const detailedAssets: Array<{
 			unit: string;
 			Metadata: z.infer<typeof queryInboxAgentFromWalletSchemaOutput>['Assets'][0]['Metadata'];

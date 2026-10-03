@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network, RegistrationState } from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -79,6 +79,7 @@ describe('queryInboxAgentByIdentifierGet', () => {
 		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));
 		mockFindPaymentSource.mockResolvedValue({
 			id: 'payment-source-1',
+			paymentSourceType: 'Web3CardanoV1',
 			PaymentSourceConfig: { rpcProviderApiKey: 'provider-key' },
 		});
 		mockFindInboxRegistration.mockResolvedValue(null);
@@ -101,10 +102,8 @@ describe('queryInboxAgentByIdentifierGet', () => {
 		expect(mockFindInboxRegistration).toHaveBeenCalledWith({
 			where: {
 				agentIdentifier: validAgentIdentifier,
-				PaymentSource: {
-					network: Network.Preprod,
-					deletedAt: null,
-				},
+				paymentSourceId: 'payment-source-1',
+				state: RegistrationState.RegistrationConfirmed,
 				SmartContractWallet: {
 					deletedAt: null,
 				},
@@ -124,6 +123,38 @@ describe('queryInboxAgentByIdentifierGet', () => {
 						],
 					},
 				],
+			},
+			select: {
+				id: true,
+			},
+		});
+		expect(mockGetBlockfrostInstance).not.toHaveBeenCalled();
+	});
+
+	it('rejects unscoped lookups without a confirmed registration', async () => {
+		mockFindApiKey.mockResolvedValue(asApiKey());
+
+		const { responseMock } = await testEndpoint({
+			endpoint: queryInboxAgentByIdentifierGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					agentIdentifier: validAgentIdentifier,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(404);
+		expect(mockFindInboxRegistration).toHaveBeenCalledWith({
+			where: {
+				agentIdentifier: validAgentIdentifier,
+				paymentSourceId: 'payment-source-1',
+				state: RegistrationState.RegistrationConfirmed,
+				SmartContractWallet: {
+					deletedAt: null,
+				},
 			},
 			select: {
 				id: true,

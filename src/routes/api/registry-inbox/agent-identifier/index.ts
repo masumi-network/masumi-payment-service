@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { Network } from '@/generated/prisma/client';
+import { Network, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
@@ -10,7 +10,6 @@ import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV1 } from '@masumi/payment-source-v1/services/registry-inbox/metadata';
 import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV2 } from '@masumi/payment-source-v2/services/registry-inbox/metadata';
-import { PaymentSourceType } from '@/generated/prisma/client';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const queryInboxAgentByIdentifierSchemaInput = z.object({
@@ -76,27 +75,23 @@ export const queryInboxAgentByIdentifierGet = readAuthenticatedEndpointFactory.b
 			throw createHttpError(404, 'Network and policyId combination not supported');
 		}
 
-		if (ctx.walletScopeIds !== null) {
-			const ownedInboxRegistration = await prisma.inboxAgentRegistrationRequest.findFirst({
-				where: {
-					agentIdentifier: input.agentIdentifier,
-					PaymentSource: {
-						network: input.network,
-						deletedAt: null,
-					},
-					SmartContractWallet: {
-						deletedAt: null,
-					},
-					...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
+		const inboxRegistration = await prisma.inboxAgentRegistrationRequest.findFirst({
+			where: {
+				agentIdentifier: input.agentIdentifier,
+				paymentSourceId: paymentSource.id,
+				state: RegistrationState.RegistrationConfirmed,
+				SmartContractWallet: {
+					deletedAt: null,
 				},
-				select: {
-					id: true,
-				},
-			});
+				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
+			},
+			select: {
+				id: true,
+			},
+		});
 
-			if (ownedInboxRegistration == null) {
-				throw createHttpError(404, 'Agent not found');
-			}
+		if (inboxRegistration == null) {
+			throw createHttpError(404, 'Agent not found');
 		}
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
