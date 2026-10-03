@@ -409,6 +409,10 @@ export type HydraWithdrawal = {
 };
 
 export type HydraNodeFunding = {
+  autoFund: boolean;
+  automaticFundingLimitLovelace: string | null;
+  fundedLovelace: string;
+  remainingFundingLovelace: string | null;
   address: string;
   balanceLovelace: string;
   isUnderfunded: boolean;
