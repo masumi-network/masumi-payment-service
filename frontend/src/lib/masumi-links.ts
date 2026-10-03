@@ -5,6 +5,9 @@ export const MASUMI_PRESS_URL = 'https://www.masumi.network/press';
 export const MASUMI_SUPPORT_URL = 'https://www.masumi.network/contact';
 export const MASUMI_API_KEY_DOCS_URL =
   'https://www.masumi.network/dev/masumi/documentation/technical-documentation/environment-variables';
+/** Permission flags and presets (Read-only, Read and Pay, Admin). */
+export const MASUMI_API_KEY_PERMISSIONS_DOCS_URL =
+  'https://www.masumi.network/dev/masumi/api-reference/payment-service/post-api-key';
 export const MASUMI_API_REFERENCE_URL = 'https://www.masumi.network/dev/masumi/api-reference';
 export const MASUMI_WALLETS_DOCS_URL =
   'https://www.masumi.network/dev/masumi/core-concepts/wallets';
