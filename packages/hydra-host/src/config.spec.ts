@@ -8,6 +8,7 @@ function env(overrides: Record<string, string> = {}): EnvSource {
 	const values = new Map<string, string>(
 		Object.entries({
 			HYDRA_HOST_PUBLIC_HOST: 'hydra1.example.com',
+			HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'https://exchange.hydra1.example.com:8444/exchange',
 			HYDRA_HOST_ADMIN_TOKEN: TOKEN_A,
 			HYDRA_HOST_USER_TOKEN: TOKEN_B,
 			...overrides,
@@ -23,6 +24,19 @@ describe('loadHostConfig', () => {
 		expect(config.network).toBe('preprod');
 		expect(config.ports.capacity).toBe(32);
 		expect(config.listenPort).toBe(8443);
+		expect(config.hydraScriptsTxIds).toEqual([]);
+	});
+
+	it('parses HYDRA_HOST_SCRIPTS_TX_IDS as a trimmed, lowercased list', () => {
+		const a = 'b88df0c62f9734f0a6dba0faa7636ed51699cbe21706ce4a9736684daf418d67';
+		const b = '40AB074125B4734939CD45A00B2CFE1B20D679B2A1C52D6472ACA193F637A2BC';
+		const config = loadHostConfig(env({ HYDRA_HOST_SCRIPTS_TX_IDS: ` ${a} , ${b} ` }));
+		expect(config.hydraScriptsTxIds).toEqual([a, b.toLowerCase()]);
+	});
+
+	it('rejects a malformed HYDRA_HOST_SCRIPTS_TX_IDS at startup, not at first node launch', () => {
+		expect(() => loadHostConfig(env({ HYDRA_HOST_SCRIPTS_TX_IDS: 'deadbeef' }))).toThrow(ConfigError);
+		expect(() => loadHostConfig(env({ HYDRA_HOST_SCRIPTS_TX_IDS: ',' }))).toThrow(ConfigError);
 	});
 
 	it('requires the public host, since it becomes every node advertise address', () => {
@@ -30,6 +44,41 @@ describe('loadHostConfig', () => {
 		expect(() => loadHostConfig({ get: (k) => (k === 'HYDRA_HOST_PUBLIC_HOST' ? undefined : values.get(k)) })).toThrow(
 			/HYDRA_HOST_PUBLIC_HOST is required/,
 		);
+	});
+
+	it('requires a secure public Exchange Plane URL', () => {
+		const values = env();
+		expect(() =>
+			loadHostConfig({ get: (key) => (key === 'HYDRA_HOST_PUBLIC_EXCHANGE_URL' ? undefined : values.get(key)) }),
+		).toThrow(/HYDRA_HOST_PUBLIC_EXCHANGE_URL is required/);
+		expect(() =>
+			loadHostConfig(env({ HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'http://exchange.example.com:8444/exchange' })),
+		).toThrow(/must use HTTPS/);
+		expect(loadHostConfig(env()).publicExchangeUrl).toBe('https://exchange.hydra1.example.com:8444/exchange');
+	});
+
+	it('allows plaintext Exchange Plane URLs only on loopback', () => {
+		expect(
+			loadHostConfig(env({ HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'http://127.0.0.1:8444/exchange' })).publicExchangeUrl,
+		).toBe('http://127.0.0.1:8444/exchange');
+		expect(
+			loadHostConfig(env({ HYDRA_HOST_PUBLIC_EXCHANGE_URL: 'http://[::1]:8444/exchange' })).publicExchangeUrl,
+		).toBe('http://[::1]:8444/exchange');
+	});
+
+	it('rejects public Exchange Plane URLs with credentials or a wrong path', () => {
+		for (const bad of [
+			'https://user:pass@exchange.example.com:8444/exchange',
+			'https://exchange.example.com:8444/',
+			'https://exchange.example.com:8444/exchange?token=secret',
+		]) {
+			expect(() => loadHostConfig(env({ HYDRA_HOST_PUBLIC_EXCHANGE_URL: bad }))).toThrow(ConfigError);
+		}
+	});
+
+	it('trusts proxy client headers only after an explicit opt-in', () => {
+		expect(loadHostConfig(env()).exchangeTrustProxy).toBe(false);
+		expect(loadHostConfig(env({ HYDRA_HOST_EXCHANGE_TRUST_PROXY: 'true' })).exchangeTrustProxy).toBe(true);
 	});
 
 	// The advertise string must be a bare host:port; a scheme or path here would
@@ -102,9 +151,28 @@ describe('numbers that must be above zero', () => {
 		'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS',
 		'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS',
 		'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS',
+		'HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS',
 	])('refuses %s of zero', (key) => {
 		expect(() => loadHostConfig(env({ [key]: '0' }))).toThrow(ConfigError);
 		expect(() => loadHostConfig(env({ [key]: '-1' }))).toThrow(ConfigError);
+	});
+
+	// An override, never a Host-wide default: every comment in this upgrade
+	// asserts activation == depositPeriod, and a Host serving an older
+	// payment-service build that omits the field entirely must not silently
+	// break that invariant by pairing a Host-wide activation (say, 600) against
+	// a differently-configured deposit period on the request. `undefined` is
+	// what carries "this Host has no opinion" through to the provision handler.
+	it('leaves deposit activation unset unless an operator configured one', () => {
+		expect(loadHostConfig(env()).depositActivationSecondsOverride).toBeUndefined();
+
+		const custom = env({ HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS: '654' });
+		expect(loadHostConfig(custom).depositActivationSecondsOverride).toBe(654);
+
+		// Independent of the deposit period, which keeps its own default.
+		const period = env({ HYDRA_HOST_DEPOSIT_PERIOD_SECONDS: '654' });
+		expect(loadHostConfig(period).depositActivationSecondsOverride).toBeUndefined();
+		expect(loadHostConfig(period).defaultDepositPeriodSeconds).toBe(654);
 	});
 
 	// A port of zero binds an ephemeral one while `/v1/capabilities` still

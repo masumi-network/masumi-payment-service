@@ -38,6 +38,9 @@ const DialogContent = React.forwardRef<
     isPushedBack?: boolean;
     hideOverlay?: boolean;
     onBack?: () => void;
+    /** Where the back control renders when `onBack` is set. Default: leading (top-left). */
+    onBackPosition?: 'leading' | 'trailing';
+    backDisabled?: boolean;
     /**
      * Standard modal width scale. Prefer this over ad-hoc `max-w-[...]` classes
      * so dialogs stay visually consistent: sm=480 (compact forms/confirms),
@@ -61,6 +64,8 @@ const DialogContent = React.forwardRef<
       isPushedBack,
       hideOverlay,
       onBack,
+      onBackPosition = 'leading',
+      backDisabled,
       size,
       elevatedStack,
       elevatedChildStack,
@@ -77,18 +82,8 @@ const DialogContent = React.forwardRef<
           xl: 'sm:max-w-[800px]',
         }[size]
       : undefined;
-    const useCustomAnimation = variant !== undefined || isPushedBack !== undefined;
-
     const variantClass =
-      variant === 'slide-from-right'
-        ? 'dialog-slide-variant'
-        : useCustomAnimation
-          ? 'dialog-default-variant'
-          : undefined;
-
-    const defaultAnimationClasses = useCustomAnimation
-      ? ''
-      : 'duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]';
+      variant === 'slide-from-right' ? 'dialog-slide-variant' : 'dialog-default-variant';
 
     const stackOverlayClass = elevatedGrandchildStack
       ? '!z-[1104]'
@@ -111,23 +106,35 @@ const DialogContent = React.forwardRef<
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            'fixed left-[50%] top-[50%] z-1000 grid w-full max-w-lg max-h-[80vh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background px-6 pb-6 pt-10 shadow-lg sm:rounded-lg',
+            'fixed inset-0 z-1000 m-auto grid h-fit w-full max-w-lg max-h-[80vh] overflow-y-auto gap-4 border bg-background px-6 pb-6 pt-10 shadow-lg sm:rounded-lg',
             stackContentClass,
-            defaultAnimationClasses,
             variantClass,
             isPushedBack !== undefined && 'dialog-content-stackable',
             isPushedBack && 'is-pushed-back',
-            onBack && 'pt-12',
+            onBack && onBackPosition === 'leading' && 'pt-12',
             sizeClass,
             className,
           )}
           {...props}
         >
           {children}
-          {onBack && (
+          {onBack && onBackPosition === 'leading' && (
             <button
+              type="button"
               onClick={onBack}
-              className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              disabled={backDisabled}
+              className="absolute left-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-40"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span className="sr-only">Back</span>
+            </button>
+          )}
+          {onBack && onBackPosition === 'trailing' && (
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={backDisabled}
+              className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-40"
             >
               <ArrowLeft className="h-4 w-4" />
               <span className="sr-only">Back</span>

@@ -55,6 +55,14 @@ describe('protocol drift', () => {
 	// snapshot carries. Decide whether the transition check accounts for the new
 	// field, add a case to transition-shapes.spec.ts either way, and only then
 	// add it to MODELLED_SNAPSHOT_FIELDS.
+	//
+	// Exact equality, deliberately (not `modelled ⊇ recorded`, which the
+	// still-active 'reports nothing for the frames a real node emits' test
+	// already guarantees): this fails closed for any new field the node emits
+	// AND for any speculative addition to MODELLED_SNAPSHOT_FIELDS that no real
+	// frame carries. The fixture is a recording of hydra-node 2.4.1 on preprod,
+	// which is where `depositTxId` first appeared. See ADR 0012: "an added
+	// protocol field is a warning and a failing test at review time".
 	it('models exactly the fields the recorded frames carry', () => {
 		const recorded = new Set<string>();
 		for (const frame of fixture.frames) {
@@ -96,5 +104,26 @@ describe('protocol drift', () => {
 		const drift = detectSnapshotDrift({ tag: 'SnapshotConfirmed', snapshot: {}, epoch: 4 });
 
 		expect(drift.some((entry) => entry.location === 'frame' && entry.fields.includes('epoch'))).toBe(true);
+	});
+
+	// Hydra 2.4: depositTxId is modelled (see transition-shapes.spec.ts), so its
+	// presence on a snapshot must not raise the drift alarm this exists to
+	// reserve for fields nothing here accounts for yet.
+	it('does not warn about a Hydra 2.4 depositTxId on the snapshot', () => {
+		const drift = detectSnapshotDrift({
+			tag: 'SnapshotConfirmed',
+			snapshot: { number: 1, depositTxId: 'a'.repeat(64) },
+		});
+
+		expect(drift).toEqual([]);
+	});
+
+	it('still warns about a genuinely unknown field alongside depositTxId', () => {
+		const drift = detectSnapshotDrift({
+			tag: 'SnapshotConfirmed',
+			snapshot: { number: 1, depositTxId: 'a'.repeat(64), utxoToRefund: {} },
+		});
+
+		expect(drift).toEqual([{ location: 'snapshot', fields: ['utxoToRefund'] }]);
 	});
 });

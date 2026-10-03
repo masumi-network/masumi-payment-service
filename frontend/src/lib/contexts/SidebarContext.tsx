@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 
 interface SidebarContextType {
   collapsed: boolean;
@@ -21,6 +22,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     return false;
   });
   const [isHovered, setIsHovered] = useState(false);
+  const isNarrowScreen = useIsNarrowScreen();
   const [shouldAnimateIcon, setShouldAnimateIcon] = useState(false);
   const [hasAnimatedNav, setHasAnimatedNav] = useState(false);
   const prevCollapsedRef = useRef(collapsed);
@@ -60,9 +62,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value: SidebarContextType = {
-    collapsed,
+    collapsed: collapsed || isNarrowScreen,
     setCollapsed,
-    isHovered,
+    isHovered: isHovered && !isNarrowScreen,
     setIsHovered,
     shouldAnimateIcon,
     hasAnimatedNav,

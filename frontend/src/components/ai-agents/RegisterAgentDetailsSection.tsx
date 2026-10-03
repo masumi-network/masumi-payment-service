@@ -42,7 +42,7 @@ export function RegisterAgentDetailsSection({
     }
 
     if (tag && !tags.includes(tag)) {
-      setValue('tags', [...tags, tag]);
+      setValue('tags', [...tags, tag], { shouldValidate: true });
     }
     setTagInput('');
   };
@@ -51,6 +51,7 @@ export function RegisterAgentDetailsSection({
     setValue(
       'tags',
       tags.filter((tag) => tag !== tagToRemove),
+      { shouldValidate: true },
     );
   };
 

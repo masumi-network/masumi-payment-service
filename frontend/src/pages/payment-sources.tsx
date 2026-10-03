@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { formatDateTime } from '@/lib/format-date';
+import { MASUMI_PAYMENT_SOURCE_DOCS_URL } from '@/lib/masumi-links';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
@@ -24,6 +25,11 @@ import { toast } from 'react-toastify';
 import { shortenAddress, cn } from '@/lib/utils';
 import Head from 'next/head';
 import { PaymentSourceTableSkeleton } from '@/components/skeletons/PaymentSourceTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
+} from '@/components/ui/table-actions-column';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
@@ -278,7 +284,7 @@ export default function PaymentSourcesPage() {
               <p className="text-sm text-muted-foreground">
                 Manage your payment sources.{' '}
                 <Link
-                  href="https://www.masumi.network/dev/masumi/api-reference/payment-service/get-payment-source"
+                  href={MASUMI_PAYMENT_SOURCE_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
@@ -395,7 +401,7 @@ export default function PaymentSourcesPage() {
               </Badge>
             </div>
 
-            <div className="rounded-lg border overflow-x-auto">
+            <HorizontalScrollArea className="rounded-lg border">
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
@@ -420,7 +426,9 @@ export default function PaymentSourcesPage() {
                     <th scope="col" className="p-4 text-left text-sm font-medium">
                       Wallets
                     </th>
-                    <th scope="col" className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className={tableActionsHeadCompactClass}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -449,7 +457,7 @@ export default function PaymentSourcesPage() {
                       <tr
                         key={source.id}
                         className={cn(
-                          'border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 animate-fade-in opacity-0',
+                          'group border-b last:border-b-0 cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 animate-fade-in opacity-0',
                           selectedPaymentSourceId === source.id &&
                             'bg-green-50 dark:bg-green-950/20',
                         )}
@@ -511,8 +519,11 @@ export default function PaymentSourcesPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="p-4 pr-8" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex gap-2">
+                        <td
+                          className={tableActionsCellCompactClass}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex justify-end gap-2">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -525,9 +536,9 @@ export default function PaymentSourcesPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => setSourceToDelete(source)}
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
                             >
-                              <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                              <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
                             </Button>
 
                             {selectedPaymentSourceId === source.id ? (
@@ -564,7 +575,7 @@ export default function PaymentSourcesPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
 
             <X402SourcesSection network={network} searchQuery={searchQuery} />
           </div>

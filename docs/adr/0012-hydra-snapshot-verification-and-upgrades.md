@@ -112,6 +112,34 @@ Do this **before** rolling a new node version to anything that holds funds.
 4. Check the release notes for changes to `utxoToCommit` / `utxoToDecommit`
    semantics, to what `confirmed` contains, and to which messages carry a
    transaction body. Those three are what this check depends on.
+5. Check whether the signable bytes changed. If they did, every snapshot signed
+   by the old version stops verifying, and that has no code fix: every open
+   head must be settled on the old version first. See below.
+
+## When the signable bytes change: settle first
+
+2.4.1 is the first upgrade this service has hit it on. Hydra 2.4 hashes the commit partition a
+second time, together with the id of the deposit it came from, so the bytes a
+party signs are not the 2.3 bytes (`src/lib/hydra/hydra/snapshot-signable.ts`).
+
+The consequence is structural. This service replays a head's whole
+authenticated history on every reconnect. A head carrying old-version snapshots
+therefore does not degrade gracefully across such an upgrade. It fails closed
+exactly as the two bugs above did: no verified session, no head clock, every L2
+operation refused, and the head still reporting Open.
+
+There is no compatibility shim to add here, and one would be worse than the
+problem. Accepting two signature formulas at once loses the ability to say
+which one a given head is actually protected by. The rule is operational
+instead: close and fan out every head on the old version, confirm each is Final
+and reconciled, and only then upgrade. The procedure is in
+[../hydra-2.4.1-upgrade-runbook.md](../hydra-2.4.1-upgrade-runbook.md). The
+same reasoning applies in reverse to a rollback.
+
+Observing an old head is a different thing and stays supported. An InitTx can
+still be re-verified against a legacy head script hash
+(`LEGACY_HYDRA_HEAD_SCRIPT_HASHES`), so audit and history paths keep working on
+heads that will never transact again.
 
 ## Consequences
 

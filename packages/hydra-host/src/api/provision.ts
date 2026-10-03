@@ -40,6 +40,14 @@ export type ProvisionRequest = {
 	contestationPeriodSeconds: number;
 	depositPeriodSeconds: number;
 	unsyncedPeriodSeconds: number;
+	/**
+	 * hydra-node 2.4's `--deposit-activation`, LOCAL to this node — not one of
+	 * the on-chain-checked `HeadParameters` (contestationPeriod, depositPeriod,
+	 * parties), so unlike `depositPeriodSeconds` it is never compared against an
+	 * InitTx. Still checked for idempotency-replay consistency below, same as
+	 * the other periods.
+	 */
+	depositActivationSeconds: number;
 };
 
 export type ProvisionSecrets = {
@@ -146,6 +154,7 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
 				['contestationPeriodSeconds', existing.contestationPeriodSeconds, request.contestationPeriodSeconds],
 				['depositPeriodSeconds', existing.depositPeriodSeconds, request.depositPeriodSeconds],
 				['unsyncedPeriodSeconds', existing.unsyncedPeriodSeconds, request.unsyncedPeriodSeconds],
+				['depositActivationSeconds', existing.depositActivationSeconds, request.depositActivationSeconds],
 			] as const
 		).filter(([, stored, requested]) => stored !== requested);
 
@@ -196,6 +205,7 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
 			contestationPeriodSeconds: request.contestationPeriodSeconds,
 			depositPeriodSeconds: request.depositPeriodSeconds,
 			unsyncedPeriodSeconds: request.unsyncedPeriodSeconds,
+			depositActivationSeconds: request.depositActivationSeconds,
 			hydraVerificationKey: hydra.verificationKey.cborHex,
 			cardanoVerificationKey: cardano.verificationKey.cborHex,
 			escrowAckedAt: null,
@@ -243,21 +253,16 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
  * would bootstrap a cluster the counterparty cannot join.
  */
 export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Promise<NodeRecord> {
-	const record = await deps.store.read(nodeId);
-	if (record === null) {
-		throw new ProvisionError(`no such node: ${nodeId}`, 404);
-	}
-	if (record.escrowAckedAt !== null) {
-		// Idempotent: acknowledging twice is not an error, it just does nothing.
-		return record;
-	}
-
-	const updated = await deps.store.update(nodeId, (current) => ({
-		...current,
-		state: 'Stopped',
-		desired: 'Running',
-		escrowAckedAt: deps.now().toISOString(),
-	}));
+	const updated = await deps.store.update(nodeId, (current) => {
+		// Check under the write queue so a delayed duplicate cannot reset a live node.
+		if (current.escrowAckedAt !== null) return current;
+		return {
+			...current,
+			state: 'Stopped',
+			desired: 'Running',
+			escrowAckedAt: deps.now().toISOString(),
+		};
+	});
 	if (updated === null) {
 		throw new ProvisionError(`no such node: ${nodeId}`, 404);
 	}
@@ -268,7 +273,12 @@ export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Pr
  * Set the counterparty's peers. Only permitted while the node is stopped: the
  * peer set becomes etcd's `--initial-cluster`, which is fixed at process start.
  */
-export async function setPeers(nodeId: string, peers: PeerRecord[], deps: ProvisionDeps): Promise<NodeRecord> {
+export async function setPeers(
+	nodeId: string,
+	peers: PeerRecord[],
+	deps: ProvisionDeps,
+	options: { onlyIfUnconfigured?: boolean } = {},
+): Promise<NodeRecord> {
 	if (peers.length === 0) {
 		throw new ProvisionError('at least one peer is required', 400);
 	}
@@ -296,6 +306,13 @@ export async function setPeers(nodeId: string, peers: PeerRecord[], deps: Provis
 	// writes 0 and prunes 1, and whichever record write lands last leaves the
 	// directory disagreeing with it.
 	const updated = await deps.store.updateAsync(nodeId, async (current) => {
+		// Recovery must not replace a peer change or removal that won this queue.
+		if (
+			options.onlyIfUnconfigured &&
+			(current.peers.length > 0 || current.removalRequested || current.state === 'Removing')
+		) {
+			return current;
+		}
 		// Enforced, not merely documented: the peer set becomes --initial-cluster,
 		// which is fixed at process start and determines the content-addressed etcd
 		// data directory.

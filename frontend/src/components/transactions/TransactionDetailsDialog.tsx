@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { shortenRecordId } from '@/lib/readable-reference';
 import { cn, shortenAddress, getExplorerUrl, formatAssetAmount } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -33,7 +34,6 @@ import { RequestRepairDialog } from './RequestRepairDialog';
 import {
   formatOnChainState,
   formatRequestedAction,
-  formatStatus,
   getLatestTxHash,
   getStatusColor,
   type Transaction,
@@ -392,7 +392,9 @@ export default function TransactionDetailsDialog({
               <div className="col-span-2">
                 <h4 className="font-semibold mb-1">Transaction ID</h4>
                 <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
-                  <p className="text-sm font-mono break-all">{transaction.id}</p>
+                  <p className="text-sm font-mono break-all" title={transaction.id}>
+                    {shortenRecordId(transaction.id)}
+                  </p>
                   <CopyButton value={transaction.id} />
                 </div>
               </div>
@@ -483,20 +485,6 @@ export default function TransactionDetailsDialog({
             )}
 
             <div className="space-y-2">
-              <h4 className="font-semibold">Onchain state</h4>
-              <div className="rounded-md border p-4 bg-muted/10">
-                <p className="text-sm font-medium">
-                  {formatOnChainState(transaction.onChainState)}
-                </p>
-                {transaction.NextAction?.requestedAction && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Next action: {formatRequestedAction(transaction.NextAction.requestedAction)}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
               <h4 className="font-semibold">Transaction Details</h4>
               <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
                 <div>
@@ -507,8 +495,13 @@ export default function TransactionDetailsDialog({
                       getStatusColor(transaction.onChainState, !!transaction.NextAction?.errorType),
                     )}
                   >
-                    {formatStatus(transaction.onChainState)}
+                    {formatOnChainState(transaction.onChainState)}
                   </p>
+                  {transaction.NextAction?.requestedAction && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Next action: {formatRequestedAction(transaction.NextAction.requestedAction)}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -593,10 +586,6 @@ export default function TransactionDetailsDialog({
             <div className="space-y-2">
               <h4 className="font-semibold">Time Information</h4>
               <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
-                <div>
-                  <h5 className="text-sm font-medium mb-1">Created</h5>
-                  <p className="text-sm">{formatDateTime(transaction.createdAt)}</p>
-                </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Last Updated</h5>
                   <p className="text-sm">{formatDateTime(transaction.updatedAt)}</p>

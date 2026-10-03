@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { Spinner } from '@/components/ui/spinner';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -29,7 +30,10 @@ import {
   useX402PaymentAttempts,
   type X402PaymentFilters,
 } from '@/lib/hooks/useX402';
+import { formatX402PaymentStatus } from '@/lib/display-labels';
+import { shortenRecordId } from '@/lib/readable-reference';
 import { cn, groupDigits, shortenAddress } from '@/lib/utils';
+import { useX402Wallets } from '@/lib/hooks/useX402';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { buildX402TransactionScope } from '@/lib/x402-transactions';
@@ -185,9 +189,9 @@ export function PaymentsTab() {
         <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
       </div>
 
-      <div className="border rounded-lg overflow-x-auto">
+      <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Direction
@@ -238,7 +242,9 @@ export function PaymentsTab() {
                 >
                   <td className="p-4 text-sm">{DIRECTION_LABEL[attempt.direction]}</td>
                   <td className="p-4">
-                    <Badge variant={STATUS_VARIANT[attempt.status]}>{attempt.status}</Badge>
+                    <Badge variant={STATUS_VARIANT[attempt.status]}>
+                      {formatX402PaymentStatus(attempt.status)}
+                    </Badge>
                   </td>
                   <td className="p-4 text-sm">{chainLabel(attempt.caip2Network)}</td>
                   <td className="p-4 text-right font-mono text-sm">
@@ -253,7 +259,7 @@ export function PaymentsTab() {
             )}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
 
       {hasMore && (
         <div className="flex justify-center">
@@ -319,6 +325,15 @@ function PaymentDetailsDialog({
   onClose: () => void;
   onReconciled: () => void;
 }) {
+  const { wallets } = useX402Wallets(!!attempt);
+  const walletLabel = (walletId: string | null | undefined) => {
+    if (!walletId) return null;
+    const wallet = wallets.find((w) => w.id === walletId);
+    if (wallet?.note) return wallet.note;
+    if (wallet?.address) return shortenAddress(wallet.address, 8);
+    return shortenRecordId(walletId);
+  };
+
   return (
     <Dialog open={!!attempt} onOpenChange={(value) => !value && onClose()}>
       <DialogContent>
@@ -335,12 +350,30 @@ function PaymentDetailsDialog({
               <DetailRow label="Direction" value={DIRECTION_LABEL[attempt.direction]} />
               <DetailRow
                 label="Status"
-                value={<Badge variant={STATUS_VARIANT[attempt.status]}>{attempt.status}</Badge>}
+                value={
+                  <Badge variant={STATUS_VARIANT[attempt.status]}>
+                    {formatX402PaymentStatus(attempt.status)}
+                  </Badge>
+                }
               />
               <DetailRow label="Chain" value={chainLabel} />
               <DetailRow label="Created" value={formatDateTime(attempt.createdAt)} />
               <DetailRow label="Updated" value={formatDateTime(attempt.updatedAt)} />
-              <DetailRow label="API key" value={attempt.apiKeyId} mono />
+              <DetailRow
+                label="API key"
+                value={
+                  attempt.apiKeyId ? (
+                    <span className="flex items-center justify-end gap-1">
+                      <span className="font-mono text-sm" title={attempt.apiKeyId}>
+                        {shortenRecordId(attempt.apiKeyId)}
+                      </span>
+                      <CopyButton value={attempt.apiKeyId} />
+                    </span>
+                  ) : (
+                    '—'
+                  )
+                }
+              />
             </div>
 
             <div className="rounded-lg border p-3">
@@ -360,7 +393,18 @@ function PaymentDetailsDialog({
               {attempt.direction === 'OutboundPayment' ? (
                 <DetailRow
                   label="Signing wallet"
-                  value={attempt.evmWalletId ? <CopyValue value={attempt.evmWalletId} /> : '—'}
+                  value={
+                    attempt.evmWalletId ? (
+                      <span className="flex items-center justify-end gap-1">
+                        <span className="font-mono text-sm" title={attempt.evmWalletId}>
+                          {walletLabel(attempt.evmWalletId)}
+                        </span>
+                        <CopyButton value={attempt.evmWalletId} />
+                      </span>
+                    ) : (
+                      '—'
+                    )
+                  }
                 />
               ) : attempt.facilitator ? (
                 <DetailRow
@@ -370,7 +414,7 @@ function PaymentDetailsDialog({
                       ? 'Remote facilitator'
                       : attempt.facilitator.mode === 'self_hosted'
                         ? (attempt.facilitator.address ?? 'Self-hosted wallet')
-                        : 'Unknown (legacy attempt)'
+                        : 'Legacy facilitator'
                   }
                   mono={attempt.facilitator.mode === 'self_hosted' && !!attempt.facilitator.address}
                 />
@@ -386,7 +430,14 @@ function PaymentDetailsDialog({
               {attempt.registryRequestId && (
                 <DetailRow
                   label="Registry request"
-                  value={<CopyValue value={attempt.registryRequestId} />}
+                  value={
+                    <span className="flex items-center justify-end gap-1">
+                      <span className="font-mono text-sm" title={attempt.registryRequestId}>
+                        {shortenRecordId(attempt.registryRequestId)}
+                      </span>
+                      <CopyButton value={attempt.registryRequestId} />
+                    </span>
+                  }
                 />
               )}
             </div>

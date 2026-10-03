@@ -37,7 +37,11 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	HydraHostRequestError: class extends Error {},
 	acknowledgeEscrowOnHost: mockAcknowledge,
-	fetchHostCapabilities: jest.fn(async () => ({ exchangePort: 4600, ledgerParamsHash: 'params-hash' })),
+	fetchHostCapabilities: jest.fn(async () => ({
+		exchangePort: 4600,
+		exchangeUrl: 'https://exchange.example.com:4600/exchange',
+		ledgerParamsHash: 'params-hash',
+	})),
 	hostNodeUrls: () => ({ nodeUrl: 'https://host/node', nodeHttpUrl: 'https://host/node/http' }),
 	provisionNodeOnHost: mockProvision,
 }));
@@ -57,7 +61,12 @@ jest.unstable_mockModule('./node-keys', () => ({
 
 let reserveNodeForExchange: typeof import('./provisioning').reserveNodeForExchange;
 
-const PERIODS = { contestationPeriodSeconds: 120, depositPeriodSeconds: 600, unsyncedPeriodSeconds: 300 };
+const PERIODS = {
+	contestationPeriodSeconds: 120,
+	depositPeriodSeconds: 600,
+	unsyncedPeriodSeconds: 300,
+	depositActivationSeconds: 600,
+};
 
 beforeAll(async () => {
 	({ reserveNodeForExchange } = await import('./provisioning'));
@@ -92,10 +101,11 @@ beforeEach(() => {
 
 describe('reserveNodeForExchange', () => {
 	it('acknowledges escrow on the node it just recorded', async () => {
-		await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+		const reserved = await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
 
 		expect(mockCreate).toHaveBeenCalled();
 		expect(mockAcknowledge).toHaveBeenCalledWith('https://host', 'admin-token', 'node-1', expect.anything());
+		expect(reserved.hostExchangeUrl).toBe('https://exchange.example.com:4600/exchange');
 	});
 
 	// The Host discloses key material exactly once, so a replayed provision

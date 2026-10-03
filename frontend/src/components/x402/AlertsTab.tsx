@@ -10,6 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellWideClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
 import {
   Dialog,
@@ -31,8 +36,9 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402LowBalanceRules, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import { formatX402WalletType } from '@/lib/display-labels';
 import { cn, formatX402Amount, groupDigits, shortenAddress } from '@/lib/utils';
-import { walletsForNetworks } from '@/lib/x402-rail';
+import { getEvmNativeSymbol, walletsForNetworks } from '@/lib/x402-rail';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import {
   deleteX402LowBalance,
@@ -50,11 +56,16 @@ const STATUS_VARIANT: Record<X402LowBalanceRule['status'], BadgeProps['variant']
   Unknown: 'secondary',
 };
 
-// The native gas token has known 18 decimals, so show it in ETH; an ERC-20 threshold's
-// decimals aren't stored on the rule, so label the grouped value explicitly as base units
-// rather than render a misleading bare number that reads like a whole-token amount.
-const formatRuleAmount = (amount: string | null | undefined, asset: string) =>
-  asset === NATIVE ? `${formatX402Amount(amount, 18)} ETH` : `${groupDigits(amount)} base units`;
+// Native gas tokens use 18 decimals on EVM chains; ERC-20 thresholds keep base units
+// because decimals are not stored on the rule.
+const formatRuleAmount = (
+  amount: string | null | undefined,
+  asset: string,
+  caip2Network: string,
+) =>
+  asset === NATIVE
+    ? `${formatX402Amount(amount, 18)} ${getEvmNativeSymbol(caip2Network)}`
+    : `${groupDigits(amount)} base units`;
 
 const ruleFormSchema = z
   .object({
@@ -155,9 +166,9 @@ export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
         </div>
       </div>
 
-      <div className="border rounded-lg overflow-x-auto">
+      <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Wallet
@@ -177,7 +188,7 @@ export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Status
               </th>
-              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className={tableActionsHeadWideClass}>
                 Actions
               </th>
             </tr>
@@ -215,7 +226,10 @@ export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
               visibleRules.map((rule) => (
                 <tr
                   key={rule.id}
-                  className={cn('border-b last:border-0', !rule.enabled && 'opacity-50')}
+                  className={cn(
+                    'group border-b last:border-0 hover:bg-row-hover',
+                    !rule.enabled && 'opacity-50',
+                  )}
                 >
                   <td className="p-4">
                     <div className="flex items-center gap-1">
@@ -228,17 +242,17 @@ export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
                   <td className="p-4 text-sm">{chainLabel(rule.caip2Network)}</td>
                   <td className="p-4 font-mono text-sm">{assetLabel(rule.asset)}</td>
                   <td className="p-4 text-right font-mono text-sm">
-                    {formatRuleAmount(rule.thresholdAmount, rule.asset)}
+                    {formatRuleAmount(rule.thresholdAmount, rule.asset, rule.caip2Network)}
                   </td>
                   <td className="p-4 text-right font-mono text-sm text-muted-foreground">
                     {rule.lastKnownAmount != null
-                      ? formatRuleAmount(rule.lastKnownAmount, rule.asset)
+                      ? formatRuleAmount(rule.lastKnownAmount, rule.asset, rule.caip2Network)
                       : '—'}
                   </td>
                   <td className="p-4">
                     <Badge variant={STATUS_VARIANT[rule.status]}>{rule.status}</Badge>
                   </td>
-                  <td className="p-4 text-right">
+                  <td className={tableActionsCellWideClass}>
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
@@ -276,7 +290,7 @@ export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
             )}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
 
       <AlertDialog
         key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
@@ -441,7 +455,7 @@ function AlertDialog({
                           <span className="ml-2 text-muted-foreground">
                             {networks.find((network) => network.id === wallet.networkId)
                               ?.displayName ?? wallet.caip2Network}{' '}
-                            · {wallet.type}
+                            · {formatX402WalletType(wallet.type)}
                           </span>
                         </SelectItem>
                       ))}

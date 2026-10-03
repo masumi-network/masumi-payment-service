@@ -92,6 +92,11 @@ export function assertHostCompatible(capabilities: HostCapabilities, expected: E
 			`the hydra host could not describe itself (${capabilities.probeError}); refusing to place a head on it`,
 		);
 	}
+	if (capabilities.exchangeUrl === null) {
+		throw new HostIncompatibleError(
+			'the hydra host reports no public exchange URL. Upgrade the Host before placing another head',
+		);
+	}
 
 	if (capabilities.network !== expected.network) {
 		throw new HostIncompatibleError(

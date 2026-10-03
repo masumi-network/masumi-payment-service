@@ -30,6 +30,10 @@
 export const MODELLED_SNAPSHOT_FIELDS: ReadonlySet<string> = new Set([
 	'accumulator',
 	'confirmed',
+	// Hydra 2.4: the on-chain deposit `utxoToCommit` came from. The transition
+	// check's handling of it is enumerated in transition-shapes.spec.ts, and
+	// the recorded 2.4.1 frames carry it.
+	'depositTxId',
 	'headId',
 	'number',
 	'utxo',

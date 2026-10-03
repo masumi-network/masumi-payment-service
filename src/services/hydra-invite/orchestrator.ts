@@ -37,6 +37,7 @@ import {
 	MIN_UNSYNCED_PERIOD_SECONDS,
 	assertContestationPeriodAllowed,
 	defaultPeriodsFor,
+	periodsFromInvite,
 	reserveNodeForExchange,
 	type HeadPeriods,
 } from './provisioning';
@@ -89,38 +90,19 @@ async function loadWallet(hotWalletId: string): Promise<WalletContext> {
 }
 
 /**
- * Where our own invites are redeemed.
+ * The Host's own public exchange URL, or a refusal.
  *
- * The host comes from the Host's control-plane URL — same deployment, so the
- * same machine — and the port from what that Host reported about itself when it
- * was connected. Never from a service-wide setting: an invite carries this URL
- * to a counterparty, and with two Hosts a single shared value can only be right
- * for one of them. The other's invites advertise the wrong exchange, the
- * redemption reaches a Host that never issued the nonce, and the counterparty is
- * told 404 for something they did nothing wrong with.
+ * The Control Plane may be private while the Exchange Plane is public, so the
+ * URL cannot be derived from the control URL without breaking that boundary.
  */
-export function exchangeUrlForHost(baseUrl: string, exchangePort: number): string {
-	const url = new URL(baseUrl);
-	url.port = String(exchangePort);
-	url.pathname = '/exchange';
-	url.search = '';
-	return url.toString().replace(/\/+$/, '');
-}
-
-/**
- * The Host's own exchange port, or a refusal.
- *
- * Refusing beats guessing: a wrong port is baked into a signed invite and only
- * fails at the counterparty, minutes later, as a 404 they cannot act on.
- */
-function requireExchangePort(node: { hostExchangePort: number | null; hostBaseUrl: string }): number {
-	if (node.hostExchangePort === null) {
+function requireExchangeUrl(node: { hostExchangeUrl: string | null; hostBaseUrl: string }): string {
+	if (node.hostExchangeUrl === null) {
 		throw createHttpError(
 			409,
-			`the hydra host at ${node.hostBaseUrl} has not reported its exchange port yet. Press Check on the node and try again`,
+			`the hydra host at ${node.hostBaseUrl} has not reported its public exchange URL. Upgrade the Host and press Check`,
 		);
 	}
-	return node.hostExchangePort;
+	return node.hostExchangeUrl;
 }
 
 export type MintedInvite = {
@@ -159,7 +141,15 @@ export async function mintHeadInvite(input: {
 	// it means a new head.
 	const periods = input.periods ?? {
 		...defaultPeriodsFor(wallet.network),
-		...(input.depositPeriodSeconds != null ? { depositPeriodSeconds: input.depositPeriodSeconds } : {}),
+		// depositActivationSeconds rides along with an explicit depositPeriodSeconds
+		// override, not just the default: every comment on HeadPeriods asserts
+		// activation == depositPeriod, and leaving activation at the network
+		// default while a caller overrode DP would break that invariant for any
+		// head opened through this public knob (see the invite route's
+		// depositPeriodSeconds input).
+		...(input.depositPeriodSeconds != null
+			? { depositPeriodSeconds: input.depositPeriodSeconds, depositActivationSeconds: input.depositPeriodSeconds }
+			: {}),
 		...(input.contestationPeriodSeconds != null ? { contestationPeriodSeconds: input.contestationPeriodSeconds } : {}),
 		...(input.unsyncedPeriodSeconds != null ? { unsyncedPeriodSeconds: input.unsyncedPeriodSeconds } : {}),
 	};
@@ -200,7 +190,7 @@ export async function mintHeadInvite(input: {
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
 
 	const node = await reserveNodeForExchange(wallet.network, wallet.id, nonce, periods, input.autoFund !== false);
-	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, requireExchangePort(node));
+	const exchangeUrl = requireExchangeUrl(node);
 
 	const payload: HydraHeadInvitePayloadInput = {
 		nonce,
@@ -212,7 +202,17 @@ export async function mintHeadInvite(input: {
 		cardanoVerificationKey: node.cardanoVerificationKey,
 		advertise: node.advertise,
 		exchangeUrl,
-		...periods,
+		// Explicit, not `...periods`: `periods` also carries `depositActivationSeconds`
+		// (hydra-node 2.4's LOCAL-only `--deposit-activation`, see `HeadPeriods`),
+		// which must never enter the signed invite payload — it is not one of the
+		// on-chain-checked `HeadParameters`, so signing it would misrepresent it as
+		// something the counterparty needs to agree to. `HydraHeadInvitePayloadInput`
+		// has no such field at all, so listing keys here (matching this file's own
+		// `buildHydraHeadInvitePayload` convention) is what keeps a field added to
+		// `HeadPeriods` from silently slipping into the exchange.
+		contestationPeriodSeconds: periods.contestationPeriodSeconds,
+		depositPeriodSeconds: periods.depositPeriodSeconds,
+		unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
 		ledgerParamsHash: node.ledgerParamsHash,
 	};
 	const signature = await signHydraHeadInvite(payload, {
@@ -259,7 +259,14 @@ export async function mintHeadInvite(input: {
 			issuerExchangeUrl: exchangeUrl,
 			issuerSignature: signature.signature,
 			issuerSignerKey: signature.key,
-			...periods,
+			// Explicit for the same reason as the signed payload above: `periods`
+			// also carries the LOCAL-only `depositActivationSeconds`, and
+			// `HydraHeadInvite` has no column for it (no migration for this field —
+			// see `HeadPeriods`). A blind `...periods` here would make Prisma throw
+			// "Unknown argument" the moment this ran against the real schema.
+			contestationPeriodSeconds: periods.contestationPeriodSeconds,
+			depositPeriodSeconds: periods.depositPeriodSeconds,
+			unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
 			ledgerParamsHash: node.ledgerParamsHash,
 		},
 	});
@@ -377,11 +384,7 @@ export async function redeemHeadInvite(input: {
 		throw createHttpError(409, 'the invite ledger protocol parameters do not match this service');
 	}
 
-	const periods: HeadPeriods = {
-		contestationPeriodSeconds: payload.contestationPeriodSeconds,
-		depositPeriodSeconds: payload.depositPeriodSeconds,
-		unsyncedPeriodSeconds: payload.unsyncedPeriodSeconds,
-	};
+	const periods: HeadPeriods = periodsFromInvite(payload);
 	// The issuer's periods, judged against our own network's floor before a node
 	// is reserved for them. An invite that cannot become a head on mainnet must
 	// not cost this side a node and its fuel to discover that.
@@ -407,9 +410,7 @@ export async function redeemHeadInvite(input: {
 	if (node.ledgerParamsHash !== payload.ledgerParamsHash) {
 		throw createHttpError(409, 'the selected local Hydra Host does not match the invite ledger protocol parameters');
 	}
-	// The port comes from the Host's own capabilities, never from the caller: a
-	// redeemer that guesses it points the exchange at whatever is listening.
-	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, requireExchangePort(node));
+	const exchangeUrl = requireExchangeUrl(node);
 
 	const redemptionPayload = buildHydraRedemptionPayload({
 		nonce: payload.nonce,
@@ -522,7 +523,12 @@ export async function redeemHeadInvite(input: {
 			redeemerExchangeUrl: exchangeUrl,
 			redeemerSignature: redemptionSignature.signature,
 			redeemerSignerKey: redemptionSignature.key,
-			...periods,
+			// Explicit, not `...periods`: see the matching comment on the issuer
+			// side. `periods` here also carries the LOCAL-only
+			// `depositActivationSeconds`, which `HydraHeadInvite` has no column for.
+			contestationPeriodSeconds: periods.contestationPeriodSeconds,
+			depositPeriodSeconds: periods.depositPeriodSeconds,
+			unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
 			ledgerParamsHash: payload.ledgerParamsHash,
 			HydraHead: { connect: { id: head.hydraHeadId } },
 		},

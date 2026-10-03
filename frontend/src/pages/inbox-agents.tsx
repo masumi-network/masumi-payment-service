@@ -2,7 +2,7 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { Info, Plus, Trash2 } from 'lucide-react';
 import { FaRegClock } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -18,6 +18,12 @@ import { Spinner } from '@/components/ui/spinner';
 import { Tabs } from '@/components/ui/tabs';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
+  tableActionsInnerClass,
+} from '@/components/ui/table-actions-column';
 import { RefreshButton } from '@/components/RefreshButton';
 import { InboxAgentDetailsDialog } from '@/components/inbox-agents/InboxAgentDetailsDialog';
 import { RegisterInboxAgentDialog } from '@/components/inbox-agents/RegisterInboxAgentDialog';
@@ -30,10 +36,11 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useInboxAgents } from '@/lib/queries/useInboxAgents';
-import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { getAgentStatusBadgeVariant, parseInboxAgentStatus } from '@/lib/agent-status';
 import { formatDate } from '@/lib/format-date';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { cn, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
+import { formatLovelaceAsAda } from '@/lib/format-lovelace-display';
+import { cn, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 
 type InboxAgent = RegistryInboxEntry;
@@ -42,37 +49,6 @@ const getHoldingWallet = (agent: InboxAgent) => agent.RecipientWallet ?? agent.S
 
 const usesCombinedWallet = (agent: InboxAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
-
-const parseInboxAgentStatus = (status: InboxAgent['state']): string => {
-  switch (status) {
-    case 'RegistrationRequested':
-      return 'Pending';
-    case 'RegistrationInitiated':
-      return 'Registering';
-    case 'RegistrationConfirmed':
-      return 'Registered';
-    case 'RegistrationFailed':
-      return 'Registration Failed';
-    case 'DeregistrationRequested':
-      return 'Pending';
-    case 'DeregistrationInitiated':
-      return 'Deregistering';
-    case 'DeregistrationConfirmed':
-      return 'Deregistered';
-    case 'DeregistrationFailed':
-      return 'Deregistration Failed';
-    default:
-      return status;
-  }
-};
-
-function formatLovelaceToAda(amount: string | null) {
-  if (!amount) {
-    return 'Default minimum';
-  }
-
-  return `${formatSixDecimalAmount(amount)} ADA`;
-}
 
 export default function InboxAgentsPage() {
   const router = useRouter();
@@ -154,6 +130,7 @@ export default function InboxAgentsPage() {
       if (agent.SmartContractWallet.walletAddress.toLowerCase().includes(query)) return true;
       if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state.toLowerCase().includes(query)) return true;
+      if (parseInboxAgentStatus(agent.state).toLowerCase().includes(query)) return true;
       return false;
     });
   }, [debouncedSearchQuery, inboxAgents, isPlaceholderData, searchQuery]);
@@ -304,14 +281,14 @@ export default function InboxAgentsPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border overflow-x-auto">
+            <HorizontalScrollArea className="rounded-lg border">
               <table
                 className={cn(
                   'w-full transition-opacity duration-150',
                   isSearchPending && 'opacity-70',
                 )}
               >
-                <thead className="bg-muted/30 dark:bg-muted/15">
+                <thead className="table-header-surface">
                   <tr className="border-b">
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
                       Name
@@ -334,7 +311,7 @@ export default function InboxAgentsPage() {
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Status
                     </th>
-                    <th className="w-24 p-4 pr-8"></th>
+                    <th className={tableActionsHeadCompactClass}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -380,7 +357,7 @@ export default function InboxAgentsPage() {
                         <tr
                           key={agent.id}
                           className={cn(
-                            'border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
+                            'group border-b cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 opacity-0',
                             agent.state === 'DeregistrationConfirmed'
                               ? 'animate-fade-in-to-muted'
                               : 'animate-fade-in',
@@ -471,15 +448,15 @@ export default function InboxAgentsPage() {
                           </td>
                           <td className="p-4 text-sm font-mono">{agent.agentSlug}</td>
                           <td className="p-4 text-sm">
-                            {formatLovelaceToAda(agent.sendFundingLovelace)}
+                            {formatLovelaceAsAda(agent.sendFundingLovelace)}
                           </td>
                           <td className="p-4">
                             <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
                               {parseInboxAgentStatus(agent.state)}
                             </Badge>
                           </td>
-                          <td className="p-4 pr-8">
-                            <div className="flex items-center gap-1">
+                          <td className={tableActionsCellCompactClass}>
+                            <div className={tableActionsInnerClass}>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -490,7 +467,7 @@ export default function InboxAgentsPage() {
                                 className="text-primary hover:text-primary hover:bg-primary/10"
                                 title="View details"
                               >
-                                <ExternalLink className="h-4 w-4" />
+                                <Info className="h-4 w-4" />
                               </Button>
                               {canDelete ? (
                                 <Button
@@ -500,25 +477,37 @@ export default function InboxAgentsPage() {
                                     event.stopPropagation();
                                     handleDeleteClick(agent);
                                   }}
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
                                   title={
                                     agent.state === 'RegistrationConfirmed'
                                       ? 'Deregister inbox agent'
                                       : 'Delete inbox agent'
                                   }
                                 >
-                                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
                                 </Button>
                               ) : agent.state === 'RegistrationInitiated' ||
                                 agent.state === 'DeregistrationInitiated' ? (
-                                <div className="flex items-center justify-center w-8 h-8">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled
+                                  className="text-primary"
+                                  title="Processing on-chain"
+                                >
                                   <Spinner size={16} />
-                                </div>
+                                </Button>
                               ) : agent.state === 'RegistrationRequested' ||
                                 agent.state === 'DeregistrationRequested' ? (
-                                <div className="flex items-center justify-center w-8 h-8">
-                                  <FaRegClock size={12} />
-                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled
+                                  className="text-primary"
+                                  title="Queued on-chain"
+                                >
+                                  <FaRegClock />
+                                </Button>
                               ) : null}
                             </div>
                           </td>
@@ -528,7 +517,7 @@ export default function InboxAgentsPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
 
             <div className="flex flex-col gap-4 items-center">
               {!((isLoading || isSourceResolving) && !inboxAgents.length) && (
@@ -543,9 +532,7 @@ export default function InboxAgentsPage() {
               setIsRegisterDialogOpen(false);
             }}
             onSuccess={() => {
-              setTimeout(() => {
-                refetchAfterMutation();
-              }, 250);
+              void refetchAfterMutation();
             }}
           />
 
@@ -554,9 +541,7 @@ export default function InboxAgentsPage() {
             onClose={() => setSelectedInboxAgent(null)}
             onSuccess={() => {
               setSelectedInboxAgent(null);
-              setTimeout(() => {
-                refetchAfterMutation();
-              }, 250);
+              void refetchAfterMutation();
             }}
           />
 

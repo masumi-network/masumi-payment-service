@@ -1,4 +1,5 @@
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { MASUMI_PRESS_URL } from '@/lib/masumi-links';
 
 export function Footer() {
   const { theme, setThemePreference } = useTheme();
@@ -8,12 +9,12 @@ export function Footer() {
       <div className="max-w-[1400px] mx-auto w-full flex justify-between items-center">
         <div className="flex gap-4">
           <a
-            href="https://www.masumi.network/about"
+            href={MASUMI_PRESS_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-muted-foreground hover:text-foreground"
           >
-            About
+            Press
           </a>
           <a
             href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"

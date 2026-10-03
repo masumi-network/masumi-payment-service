@@ -3,7 +3,13 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
-import { ExternalLink, CreditCard, ShoppingCart, ArrowRightLeft } from 'lucide-react';
+import {
+  ExternalLink,
+  CreditCard,
+  ShoppingCart,
+  ArrowRightLeft,
+  AlertTriangle,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTheme } from '@/lib/contexts/ThemeContext';
@@ -26,7 +32,7 @@ const PAY_ONLY_TABS = ['Testing'];
 const TABS = [{ name: 'Testing' }, { name: 'Schema Validator' }, { name: 'OpenAPI' }];
 
 export default function Developers() {
-  const { capabilities } = useAppContext();
+  const { capabilities, network } = useAppContext();
   const tabs = capabilities.canPay ? TABS : TABS.filter((tab) => !PAY_ONLY_TABS.includes(tab.name));
   const [activeTab, setActiveTab] = useState(tabs[0].name);
   const [isIframeLoaded, setIsIframeLoaded] = useState(false);
@@ -86,6 +92,20 @@ export default function Developers() {
 
             {activeTab === 'Testing' && capabilities.canPay && (
               <div className="space-y-6 animate-fade-in-up opacity-0">
+                {/* The test tools submit through the regular POST /payment and
+                    POST /purchase, so off Preprod they move real funds. */}
+                {network !== 'Preprod' && (
+                  <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                    <div className="space-y-1">
+                      <p className="font-medium">You are on {network}</p>
+                      <p className="opacity-85">
+                        These tools create real payments and purchases with real funds. Switch to
+                        Preprod to test without spending real funds.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="grid gap-4 md:grid-cols-3">
                   <button
                     type="button"
@@ -154,7 +174,7 @@ export default function Developers() {
                     Interactive API documentation powered by Swagger UI.
                   </p>
                   <Button variant="outline" size="sm" asChild>
-                    <a href="/docs" target="_blank" rel="noopener noreferrer">
+                    <a href="/docs/" target="_blank" rel="noopener noreferrer">
                       Open in new tab
                       <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
                     </a>
@@ -166,7 +186,7 @@ export default function Developers() {
                   )}
                   <iframe
                     ref={iframeRef}
-                    src="/docs"
+                    src="/docs/"
                     className="w-full h-full"
                     title="OpenAPI Documentation"
                     onLoad={handleIframeLoad}

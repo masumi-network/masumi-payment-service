@@ -2,7 +2,7 @@ import { useCallback, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Sparkles, Wand2, ShieldCheck, X } from 'lucide-react';
+import { ArrowRight, Info, Wand2, X } from 'lucide-react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
@@ -49,7 +49,7 @@ export function SetupV2Banner({ onMigrateClick: _onMigrateClick }: SetupV2Banner
   const hasLegacyOnly = hasAnySource && !hasV2;
 
   if (isLoading) return null;
-  if (hasV2) return null;
+  if (!hasLegacyOnly) return null;
   if (isDismissedFromStorage || dismissed) return null;
 
   const handleDismiss = () => {
@@ -69,9 +69,7 @@ export function SetupV2Banner({ onMigrateClick: _onMigrateClick }: SetupV2Banner
     <div
       className={cn(
         'relative overflow-hidden rounded-xl border-2 shadow-md animate-fade-in-up',
-        hasLegacyOnly
-          ? 'border-amber-300/60 bg-gradient-to-br from-amber-50 via-amber-50 to-background dark:border-amber-900/50 dark:from-amber-950/30 dark:via-amber-950/15 dark:to-background'
-          : 'border-primary/30 bg-gradient-to-br from-primary/5 via-primary/[0.03] to-background',
+        'border-border/80 bg-gradient-to-br from-muted/40 via-background to-background',
       )}
     >
       <button
@@ -83,28 +81,17 @@ export function SetupV2Banner({ onMigrateClick: _onMigrateClick }: SetupV2Banner
         <X className="h-4 w-4" />
       </button>
 
-      <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+      <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
 
       <div className="relative px-6 py-6 sm:px-8 sm:py-7 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex gap-4 flex-1 min-w-0">
-          <div
-            className={cn(
-              'shrink-0 flex h-12 w-12 items-center justify-center rounded-xl ring-1',
-              hasLegacyOnly ? 'bg-amber-500/15 ring-amber-500/30' : 'bg-primary/15 ring-primary/30',
-            )}
-          >
-            {hasLegacyOnly ? (
-              <ShieldCheck className="h-6 w-6 text-amber-600 dark:text-amber-400" />
-            ) : (
-              <Sparkles className="h-6 w-6 text-primary" />
-            )}
+          <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl ring-1 bg-muted/60 ring-border/60">
+            <Info className="h-6 w-6 text-muted-foreground" />
           </div>
           <div className="space-y-2 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold tracking-tight">
-                {hasLegacyOnly
-                  ? `Set up V2 to keep going on ${network}`
-                  : `One-time setup for ${network}`}
+                Optional V2 upgrade for {network}
               </h2>
               <Badge variant="outline" className="font-medium">
                 V2
@@ -114,15 +101,15 @@ export function SetupV2Banner({ onMigrateClick: _onMigrateClick }: SetupV2Banner
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground max-w-2xl">
-              {hasLegacyOnly
-                ? 'V2 is the default for new agents: zero fees, updated registry metadata, and weighted admin signatures. Run the quick setup, then migrate your existing agents below.'
-                : 'A guided 3-step wizard generates wallets, configures Blockfrost, and creates the V2 payment source so you can register your first AI agent in minutes.'}
+              Your existing V1 payment source stays active. V2 adds updated registry metadata, zero
+              fees, and weighted admin signatures — run the guided setup when you are ready to
+              migrate agents.
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2 shrink-0">
-          <Button asChild size="lg" className="gap-2 btn-hover-lift group">
+          <Button asChild size="lg" variant="outline" className="gap-2 btn-hover-lift group">
             <Link href={setupHref}>
               <Wand2 className="h-4 w-4" />
               Start V2 setup

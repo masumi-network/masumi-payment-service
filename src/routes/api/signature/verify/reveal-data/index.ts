@@ -63,8 +63,6 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 					wallet_address: input.walletAddress,
 					blockchain_identifier: input.blockchainIdentifier,
 					valid_until: input.validUntil,
-					signature: input.signature,
-					key: input.key,
 				});
 				throw createHttpError(404, 'Payment not found');
 			}
@@ -78,8 +76,6 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 					wallet_address: input.walletAddress,
 					blockchain_identifier: input.blockchainIdentifier,
 					valid_until: input.validUntil,
-					signature: input.signature,
-					key: input.key,
 				});
 				throw createHttpError(400, 'Payment is not disputed state');
 			}
@@ -93,8 +89,6 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 					wallet_address: input.walletAddress,
 					blockchain_identifier: input.blockchainIdentifier,
 					valid_until: input.validUntil,
-					signature: input.signature,
-					key: input.key,
 				});
 				throw createHttpError(400, 'Wallet is not an admin wallet');
 			}
@@ -104,8 +98,6 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 					wallet_address: input.walletAddress,
 					blockchain_identifier: input.blockchainIdentifier,
 					valid_until: input.validUntil,
-					signature: input.signature,
-					key: input.key,
 				});
 				throw createHttpError(400, 'Signature is expired');
 			}
@@ -146,8 +138,6 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 				wallet_id: input.walletAddress,
 				blockchain_identifier: input.blockchainIdentifier,
 				valid_until: input.validUntil,
-				signature: input.signature,
-				key: input.key,
 				duration: Date.now() - startTime,
 			});
 			throw error;

@@ -185,9 +185,14 @@ jobs:
         # are present (the seed gates V2 separately and skips cleanly when the
         # V2 env vars are missing). Downstream V1 and V2 suites run against
         # this one DB + one API server.
+        #
+        # Web3CardanoV2 is the default for new installs (MAS-487), so V1 is
+        # opt-in via SEED_V1_LEGACY. CI still runs V1 and V2 e2e in parallel,
+        # so the seed step must enable legacy V1 here.
         run: pnpm exec prisma db seed --config prisma/prisma.config.ts
         env:
           DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
+          SEED_V1_LEGACY: 'true'
           PURCHASE_WALLET_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}'
           SELLING_WALLET_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}'
           # Optional extra selling wallets. globalSetup registers one agent per

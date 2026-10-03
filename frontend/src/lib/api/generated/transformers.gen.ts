@@ -386,8 +386,13 @@ export const deleteRegistryResponseTransformer = async (data: any): Promise<Dele
     return data;
 };
 
+const registryListEntrySchemaResponseTransformer = (data: any) => {
+    data = registryEntrySchemaResponseTransformer(data);
+    return data;
+};
+
 export const getRegistryResponseTransformer = async (data: any): Promise<GetRegistryResponse> => {
-    data.data.Assets = data.data.Assets.map((item: any) => registryEntrySchemaResponseTransformer(item));
+    data.data.Assets = data.data.Assets.map((item: any) => registryListEntrySchemaResponseTransformer(item));
     return data;
 };
 
@@ -397,7 +402,7 @@ export const postRegistryResponseTransformer = async (data: any): Promise<PostRe
 };
 
 export const getRegistryDiffResponseTransformer = async (data: any): Promise<GetRegistryDiffResponse> => {
-    data.data.Assets = data.data.Assets.map((item: any) => registryEntrySchemaResponseTransformer(item));
+    data.data.Assets = data.data.Assets.map((item: any) => registryListEntrySchemaResponseTransformer(item));
     return data;
 };
 
