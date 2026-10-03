@@ -55,11 +55,13 @@ describe('createConcurrencyLimit', () => {
 		const running = handler({ ctx: { concurrencyResponse: response } });
 		response.emit('close');
 		expect(signal.aborted).toBe(true);
-		await expect(handler({ ctx: { concurrencyResponse: await makeResponse() } })).rejects.toMatchObject({
+		await expect(
+			withLimit(async () => 'new')({ ctx: { concurrencyResponse: await makeResponse() } }),
+		).rejects.toMatchObject({
 			statusCode: 503,
 		});
 		gate.resolve();
-		await running;
+		await expect(running).rejects.toMatchObject({ statusCode: 499 });
 		await expect(handler({ ctx: { concurrencyResponse: await makeResponse() } })).resolves.toBeUndefined();
 	});
 
@@ -79,11 +81,13 @@ describe('createConcurrencyLimit', () => {
 			await jest.advanceTimersByTimeAsync(60_000);
 			expect(destroy).toHaveBeenCalledTimes(1);
 			expect(signal.aborted).toBe(true);
-			await expect(handler({ ctx: { concurrencyResponse: await makeResponse() } })).rejects.toMatchObject({
+			await expect(
+				withLimit(async () => 'new')({ ctx: { concurrencyResponse: await makeResponse() } }),
+			).rejects.toMatchObject({
 				statusCode: 503,
 			});
 			gate.resolve();
-			await running;
+			await expect(running).rejects.toMatchObject({ statusCode: 504 });
 			await expect(handler({ ctx: { concurrencyResponse: await makeResponse() } })).resolves.toBeUndefined();
 			expect(jest.getTimerCount()).toBe(0);
 		} finally {

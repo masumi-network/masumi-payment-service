@@ -1,4 +1,5 @@
 import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import createHttpError from 'http-errors';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
@@ -17,7 +18,9 @@ import {
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
+import { assertRegistryAgentInWalletScope } from '../x402-agent-access';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { getX402AgentPaymentIncome } from '@masumi/payment-source-x402/service';
 import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
 import {
 	createEarningsRateLimitMiddleware,
@@ -65,6 +68,13 @@ export const postPaymentIncomeSchemaInput = z.object({
 		.optional()
 		.describe(
 			'Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.',
+		),
+	paymentRail: z
+		.enum(['cardano', 'x402'])
+		.optional()
+		.default('cardano')
+		.describe(
+			'cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node.',
 		),
 });
 
@@ -171,6 +181,21 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
+			if (input.paymentRail === 'x402') {
+				if (input.agentIdentifier == null || input.agentIdentifier.trim() === '') {
+					throw createHttpError(400, 'agentIdentifier is required when paymentRail is x402');
+				}
+				await assertRegistryAgentInWalletScope(ctx, input.network, input.agentIdentifier);
+				return getX402AgentPaymentIncome({
+					network: input.network,
+					agentIdentifier: input.agentIdentifier,
+					startDate: input.startDate,
+					endDate: input.endDate,
+					timeZone: input.timeZone ?? 'Etc/UTC',
+					signal,
+				});
+			}
+
 			const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
 
 			// Denormalized column mirroring decodeBlockchainIdentifier(...).agentIdentifier
@@ -224,11 +249,15 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 					prisma.paymentRequest.findMany({
 						where,
 						orderBy: [{ payByTime: 'asc' }, { id: 'asc' }],
-						include: {
-							RequestedFunds: true,
-							WithdrawnForBuyer: true,
-							WithdrawnForSeller: true,
-							PaymentSource: true,
+						select: {
+							id: true,
+							blockchainIdentifier: true,
+							payByTime: true,
+							onChainState: true,
+							totalSellerCardanoFees: true,
+							RequestedFunds: { select: { unit: true, amount: true } },
+							WithdrawnForBuyer: { select: { unit: true, amount: true } },
+							WithdrawnForSeller: { select: { unit: true, amount: true } },
 						},
 						take: EARNINGS_QUERY_BATCH_SIZE,
 						...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),

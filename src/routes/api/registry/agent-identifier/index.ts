@@ -16,6 +16,7 @@ import {
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { supportedPaymentSourcesSchema } from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 
 export const queryAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full agent identifier (policy ID + asset name in hex)'),
@@ -148,7 +149,14 @@ export const queryAgentByIdentifierSchemaOutput = z
 	})
 	.openapi('AgentIdentifierMetadata');
 
-export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build({
+const agentIdentifierEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 60,
+		windowMs: 60_000,
+	}),
+);
+
+export const queryAgentByIdentifierGet = agentIdentifierEndpointFactory.build({
 	method: 'get',
 	input: queryAgentByIdentifierSchemaInput,
 	output: queryAgentByIdentifierSchemaOutput,

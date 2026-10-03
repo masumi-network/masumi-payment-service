@@ -11,6 +11,7 @@ import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentCountGet, queryPaymentEntryGet } from './payments';
 import { buildX402TxPost } from './payments/x402';
 import { getPaymentIncome } from './payments/income';
+import { getX402AgentPaymentActivity } from './payments/x402-activity';
 import { deleteAgentRegistration, queryRegistryCountGet, queryRegistryRequestGet, registerAgentPost } from './registry';
 import {
 	deleteInboxAgentRegistration,
@@ -247,6 +248,9 @@ export const apiRouter: Routing = {
 			},
 			income: {
 				post: getPaymentIncome,
+			},
+			'x402-activity': {
+				post: getX402AgentPaymentActivity,
 			},
 			count: {
 				get: queryPaymentCountGet,

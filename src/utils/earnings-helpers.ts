@@ -2,13 +2,30 @@ import createHttpError from 'http-errors';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { logger } from '@masumi/payment-core/logger';
 
+function isStartOfUtcDay(date: Date): boolean {
+	return (
+		date.getUTCHours() === 0 &&
+		date.getUTCMinutes() === 0 &&
+		date.getUTCSeconds() === 0 &&
+		date.getUTCMilliseconds() === 0
+	);
+}
+
+/** Inclusive end instant for a calendar date passed as midnight UTC (ez.dateIn). */
+function inclusiveUtcEndOfDay(date: Date): Date {
+	return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
 export function parseDateRange(
 	startDate: Date | null | undefined,
 	endDate: Date | null | undefined,
 ): { periodStart: Date; periodEnd: Date } {
 	const now = new Date();
 	const periodStart = startDate ? startDate : new Date('2020-01-01');
-	const periodEnd = endDate ? endDate : now;
+	let periodEnd = endDate ? endDate : now;
+	if (endDate != null && isStartOfUtcDay(endDate)) {
+		periodEnd = inclusiveUtcEndOfDay(endDate);
+	}
 
 	if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
 		throw createHttpError(400, 'Invalid date format. Use YYYY-MM-DD format.');

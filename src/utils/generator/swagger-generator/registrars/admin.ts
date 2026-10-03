@@ -207,7 +207,7 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		method: 'get',
 		path: '/wallet/low-balance',
 		description: 'Lists low-balance monitoring rules for wallets',
-		summary: 'List wallet low-balance rules. (read access required)',
+		summary: 'List wallet low-balance rules. (admin access required)',
 		tags: ['wallet'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

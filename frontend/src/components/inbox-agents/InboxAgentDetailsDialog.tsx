@@ -10,7 +10,7 @@ import {
   postInboxAgentsDeregister,
   RegistryInboxEntry,
 } from '@/lib/api/generated';
-import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { getAgentStatusBadgeVariant, parseInboxAgentStatus } from '@/lib/agent-status';
 import { formatMetadataVersion, formatTxStatus } from '@/lib/display-labels';
 import { formatDateTime } from '@/lib/format-date';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -27,29 +27,6 @@ interface InboxAgentDetailsDialogProps {
   onClose: () => void;
   onSuccess?: () => void;
 }
-
-const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): string => {
-  switch (status) {
-    case 'RegistrationRequested':
-      return 'Pending';
-    case 'RegistrationInitiated':
-      return 'Registering';
-    case 'RegistrationConfirmed':
-      return 'Registered';
-    case 'RegistrationFailed':
-      return 'Registration Failed';
-    case 'DeregistrationRequested':
-      return 'Pending';
-    case 'DeregistrationInitiated':
-      return 'Deregistering';
-    case 'DeregistrationConfirmed':
-      return 'Deregistered';
-    case 'DeregistrationFailed':
-      return 'Deregistration Failed';
-    default:
-      return status;
-  }
-};
 
 export function InboxAgentDetailsDialog({
   agent,

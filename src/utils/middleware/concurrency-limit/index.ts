@@ -42,7 +42,9 @@ export const createConcurrencyLimit = ({ limit, timeoutMs }: ConcurrencyLimitOpt
 			deadline.unref();
 
 			try {
-				return await handler(args, controller.signal);
+				const result = await handler(args, controller.signal);
+				controller.signal.throwIfAborted();
+				return result;
 			} finally {
 				active -= 1;
 				clearTimeout(deadline);

@@ -5,6 +5,7 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { WalletsTab } from '@/components/x402/WalletsTab';
 import { X402AdminPageExtras } from '@/components/x402/X402AdminPageExtras';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { MASUMI_DEV_HUB_URL } from '@/lib/masumi-links';
 
 export default function X402WalletsPage() {
   const { capabilities } = useAppContext();
@@ -23,7 +24,7 @@ export default function X402WalletsPage() {
                 ? 'Managed EVM wallets for the x402 payment rail. Keys are encrypted at rest.'
                 : 'EVM wallets for chains your key can access.'}{' '}
               <a
-                href="https://www.masumi.network/dev/masumi"
+                href={MASUMI_DEV_HUB_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"

@@ -17,6 +17,7 @@ import {
 	metadataSchema,
 	resolveAgentPricingFromMetadata,
 } from '@/routes/api/registry/metadata-schema';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 
 export { metadataSchema, resolveAgentPricingFromMetadata, mapParsedRegistryMetadataToApi };
 
@@ -186,7 +187,14 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 		.describe('List of agent assets registered to this wallet'),
 });
 
-export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
+const agentFromWalletEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 15,
+		windowMs: 60_000,
+	}),
+);
+
+export const queryAgentFromWalletGet = agentFromWalletEndpointFactory.build({
 	method: 'get',
 	input: queryAgentFromWalletSchemaInput,
 	output: queryAgentFromWalletSchemaOutput,
@@ -260,9 +268,7 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 					logger.error('Agent metadata does not advertise any pricing', { unit: asset.unit });
 					return;
 				}
-				const metadataApi = mapParsedRegistryMetadataToApi(parsedMetadata.data, {
-					filterPaymentSourcesForNetwork: input.network,
-				});
+				const metadataApi = mapParsedRegistryMetadataToApi(parsedMetadata.data);
 				if (metadataApi == null) {
 					logger.error('Agent metadata is missing an interaction URL', { unit: asset.unit });
 					return;

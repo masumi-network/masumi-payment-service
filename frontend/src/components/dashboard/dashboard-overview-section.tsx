@@ -27,6 +27,8 @@ export const OVERVIEW_LIST_VISIBLE_ROWS = 8;
 export const overviewPanelMaxHeightClass = 'max-h-overview-panel';
 export const overviewPanelMinHeightClass = 'min-h-overview-panel';
 export const overviewPanelCompactMinHeightClass = 'min-h-overview-panel-compact';
+/** Fill available column height up to the 8-row list cap (`--overview-panel-max-height`). */
+export const overviewPanelViewportStretchClass = cn('h-full min-h-0', overviewPanelMaxHeightClass);
 
 /** List body min height when panel matches empty-state size (see globals.css token). */
 export const overviewPanelEmptyBodyClass = 'min-h-[var(--overview-panel-empty-body-min-height)]';
@@ -43,6 +45,7 @@ export function DashboardPanel({
   footer,
   reserveListHeight = false,
   fillListViewport = false,
+  stretchToViewport = false,
 }: {
   title: string;
   titleHref: string;
@@ -54,15 +57,23 @@ export function DashboardPanel({
   reserveListHeight?: boolean;
   /** Reserve full list viewport (min height); use while loading or when row count >= visible rows. */
   fillListViewport?: boolean;
+  /** Grow panel to fill dashboard column height; list scrolls inside. */
+  stretchToViewport?: boolean;
 }) {
+  const listFillsViewport = fillListViewport || stretchToViewport;
+
   return (
     <section
       className={cn(
         'flex flex-col overflow-hidden rounded-lg border bg-card',
         overviewPanelEqualHeightClass,
-        reserveListHeight && overviewPanelMaxHeightClass,
-        fillListViewport && overviewPanelMinHeightClass,
-        reserveListHeight && !fillListViewport && overviewPanelCompactMinHeightClass,
+        stretchToViewport
+          ? overviewPanelViewportStretchClass
+          : cn(
+              reserveListHeight && overviewPanelMaxHeightClass,
+              fillListViewport && overviewPanelMinHeightClass,
+              reserveListHeight && !fillListViewport && overviewPanelCompactMinHeightClass,
+            ),
       )}
     >
       <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
@@ -83,8 +94,8 @@ export function DashboardPanel({
       <div
         className={cn(
           'flex min-h-0 flex-col lg:flex-1',
-          reserveListHeight && !fillListViewport && overviewPanelEmptyBodyClass,
-          reserveListHeight && fillListViewport && 'flex-1 overflow-hidden',
+          reserveListHeight && !listFillsViewport && overviewPanelEmptyBodyClass,
+          reserveListHeight && listFillsViewport && 'flex-1 overflow-hidden',
         )}
       >
         {children}

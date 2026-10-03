@@ -4453,7 +4453,7 @@ export type PostApiKeyData = {
          */
         ChainIdLimit?: Array<string>;
         /**
-         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
+         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected.
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
         /**
@@ -11173,6 +11173,10 @@ export type PostPaymentIncomeData = {
          * Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node.
+         */
+        paymentRail?: 'cardano' | 'x402';
     };
     path?: never;
     query?: never;
@@ -11465,7 +11469,7 @@ export type PatchWebhooksData = {
          */
         url: string;
         /**
-         * Authentication token for extended webhook requests. Required when format is EXTENDED
+         * Authentication token for extended webhook requests. Omit to keep the stored token; required when changing a webhook to EXTENDED
          */
         authToken?: string | null;
         /**

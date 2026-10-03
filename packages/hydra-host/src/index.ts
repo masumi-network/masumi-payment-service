@@ -12,8 +12,7 @@ import { existsSync } from 'node:fs';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
 import { createExchangePlane } from './api/exchange-server.js';
-import { setPeers } from './api/provision.js';
-import { requestStart } from './api/transitions.js';
+import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
 import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
@@ -139,11 +138,6 @@ async function main(): Promise<void> {
 	} finally {
 		clearInterval(bootKeepAlive);
 	}
-	const tickSupervisor = (source: string): void => {
-		void supervisor.tick().catch((error: unknown) => {
-			logger.error(`[host] supervisor tick from ${source} failed: ${(error as Error).message}`);
-		});
-	};
 
 	const provisionDeps = {
 		store,
@@ -157,6 +151,16 @@ async function main(): Promise<void> {
 		// that rollback failure was logged to an optional logger nothing supplied.
 		logger,
 	};
+
+	const recoverRedemptions = createRedemptionRecovery(exchange, provisionDeps, logger);
+	const tickSupervisor = (source: string): void => {
+		void recoverRedemptions()
+			.then(() => supervisor.tick())
+			.catch((error: unknown) => {
+				logger.error(`[host] supervisor tick from ${source} failed: ${(error as Error).message}`);
+			});
+	};
+	await recoverRedemptions();
 
 	const server = createControlPlane({
 		config,
@@ -191,29 +195,9 @@ async function main(): Promise<void> {
 		store: exchange,
 		logger,
 		trustProxy: config.exchangeTrustProxy,
-		onRedeemed: async (nonce, hostNodeId) => {
-			const invite = (await exchange.listInvites()).find((candidate) => candidate.nonce === nonce);
-			if (invite?.redeemer == null) {
-				throw new Error(`invite ${nonce} has no redeemer material`);
-			}
-			// Same path the control plane uses: record the peers, express the
-			// intent to run, and let the supervisor do the work. Driving the
-			// process directly from here would bypass the guarded transitions
-			// that keep `state` and `desired` honest.
-			await setPeers(
-				hostNodeId,
-				[
-					{
-						advertise: invite.redeemer.advertise,
-						hydraVerificationKey: invite.redeemer.hydraVerificationKey,
-						cardanoVerificationKey: invite.redeemer.cardanoVerificationKey,
-					},
-				],
-				provisionDeps,
-			);
-			await requestStart(store, hostNodeId);
+		onRedeemed: async () => {
+			await recoverRedemptions();
 			tickSupervisor('exchange redemption');
-			logger.info(`[exchange] invite ${nonce} redeemed; node ${hostNodeId} starting`);
 		},
 	});
 	exchangePlane.on('error', (error: NodeJS.ErrnoException) => {

@@ -7965,7 +7965,7 @@
         "/wallet/low-balance": {
             "get": {
                 "description": "Lists low-balance monitoring rules for wallets",
-                "summary": "List wallet low-balance rules. (read access required)",
+                "summary": "List wallet low-balance rules. (admin access required)",
                 "tags": [
                     "wallet"
                 ],
@@ -9044,8 +9044,7 @@
                                             "ReadAndPay",
                                             "Admin"
                                         ],
-                                        "default": "Read",
-                                        "description": "[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version."
+                                        "description": "[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected."
                                     },
                                     "canRead": {
                                         "type": "boolean",
@@ -25570,6 +25569,15 @@
                                             "Web3CardanoV2"
                                         ],
                                         "description": "Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility."
+                                    },
+                                    "paymentRail": {
+                                        "type": "string",
+                                        "enum": [
+                                            "cardano",
+                                            "x402"
+                                        ],
+                                        "default": "cardano",
+                                        "description": "cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node."
                                     }
                                 },
                                 "required": [
@@ -26607,7 +26615,7 @@
                                         "nullable": true,
                                         "minLength": 10,
                                         "maxLength": 200,
-                                        "description": "Authentication token for extended webhook requests. Required when format is EXTENDED"
+                                        "description": "Authentication token for extended webhook requests. Omit to keep the stored token; required when changing a webhook to EXTENDED"
                                     },
                                     "format": {
                                         "type": "string",
