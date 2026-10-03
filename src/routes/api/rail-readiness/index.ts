@@ -17,8 +17,8 @@ export { railReadinessSchemaInput, railReadinessSchemaOutput };
  * evaluateX402Readiness — but keeping both rails behind one definition stops
  * the next consumer from inventing a third one.
  *
- * Read auth: this exposes configuration presence, not secrets — no keys,
- * addresses or URLs are returned, only booleans and short explanations.
+ * Read auth: this exposes configuration presence plus public on-chain policy
+ * ids and contract addresses, never keys, wallet addresses, or private URLs.
  */
 export const railReadinessEndpointGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',

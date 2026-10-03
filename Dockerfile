@@ -16,7 +16,10 @@ COPY eslint.config.mjs .
 COPY frontend/package.json ./frontend/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm run build
+# pkgroll bundles both Mesh SDK lines, two @cardano-sdk/core versions, and the
+# x402 packages' viem/@x402 graphs (per-importer bundling is intentional — see
+# docs/adr/0005), which exceeds Node's default ~2GB heap on CI builders.
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 RUN pnpm run swagger-json
 
 #RUN pnpm run prisma:migrate

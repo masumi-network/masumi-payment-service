@@ -36,6 +36,15 @@ const railReadinessCheckSchema = z.object({
 		.describe('Why the check is incomplete, or extra context when it passes. Null when there is nothing to add'),
 });
 
+const cardanoPurchaseSourceReadinessSchema = z.object({
+	policyId: z.string().nullable().describe('Registry policy id this configured V2 source can purchase from'),
+	smartContractAddress: z.string().describe('V2 escrow contract address this configured source can purchase through'),
+	isPurchaseReady: z.boolean().describe('Whether this exact policy and contract source can execute outbound purchases'),
+	Checks: z
+		.array(railReadinessCheckSchema)
+		.describe('Buyer-direction checks for this source; selling-wallet readiness is intentionally excluded'),
+});
+
 const railReadinessSchema = z.object({
 	rail: z.enum(RAIL_IDS).describe('Which payment rail this readiness block describes'),
 	isReady: z
@@ -44,6 +53,12 @@ const railReadinessSchema = z.object({
 			'Whether the rail can actually take payments right now. True only when every blocking check is complete — optional checks (e.g. outbound spending) do not affect it',
 		),
 	Checks: z.array(railReadinessCheckSchema).describe('Individual checks, in setup order'),
+	PurchaseSources: z
+		.array(cardanoPurchaseSourceReadinessSchema)
+		.optional()
+		.describe(
+			'Per-source outbound purchase readiness for CardanoV2. Policy ids and contract addresses are public on-chain identifiers; secrets are never returned',
+		),
 });
 
 export const railReadinessSchemaInput = z.object({
