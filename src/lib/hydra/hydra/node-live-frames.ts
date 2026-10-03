@@ -59,6 +59,16 @@ export class LiveFrameProcessor {
 	private _liveSessionHeadId: string | undefined;
 	private _livePartyIdentityVerified = false;
 	private _headClock: HydraHeadClock | undefined;
+	/**
+	 * Whether the node says it is caught up with its chain, from
+	 * `Greetings.chainSyncedStatus` and the `NodeSynced`/`NodeUnsynced`
+	 * transitions. `undefined` until the node has said either way.
+	 *
+	 * Kept because a node that is behind parks lifecycle commands rather than
+	 * refusing them, and a parked Init was seen to never run (2026-09-07) —
+	 * the one outcome no frame reports. Callers gate on this before sending.
+	 */
+	private _chainSynced: boolean | undefined;
 	private readonly _heldBack = new HeldBackEmissions();
 
 	/**
@@ -101,6 +111,11 @@ export class LiveFrameProcessor {
 		return this._pendingIncrementCount > 0;
 	}
 
+	/** See `_chainSynced`. `undefined` means the node has not said yet. */
+	get chainSynced(): boolean | undefined {
+		return this._chainSynced;
+	}
+
 	get pendingIncrementUtxoRefs(): ReadonlySet<string> {
 		return this._pendingIncrementUtxos;
 	}
@@ -127,6 +142,9 @@ export class LiveFrameProcessor {
 		this._liveSessionHeadId = undefined;
 		this._livePartyIdentityVerified = false;
 		this._headClock = undefined;
+		// A closed transport says nothing about whether the node is still caught
+		// up; the next Greetings re-establishes it.
+		this._chainSynced = undefined;
 		this.clearPendingIncrements();
 	}
 
@@ -245,6 +263,30 @@ export class LiveFrameProcessor {
 			if (envelope.tag === 'NetworkDisconnected' || envelope.tag === 'PeerDisconnected') {
 				this.host.setNetworkConnected(false);
 			}
+			// Hydra 2.4 removed the `SyncedStatusReport` server output and reports
+			// chain-sync as these two transitions instead (the same state is also on
+			// `Greetings.chainSyncedStatus`, which is what the head-clock probe and
+			// the Host's drift watchdog actually read).
+			//
+			// Reported, never gated on. A node that has fallen behind the chain
+			// rejects client input on its own (`RejectedInputBecauseUnsynced`), and
+			// the guards that matter — the head clock's freshness check and the
+			// Host's drift watchdog — already fail closed without this frame. Acting
+			// on it here would add a second, weaker path to the same decision. What
+			// it is worth is telling an operator why a head went quiet, which
+			// otherwise leaves no trace in this service's logs at all.
+			if (envelope.tag === 'NodeUnsynced') {
+				this._chainSynced = false;
+				logger.warn('[HydraNode] Node reports it has fallen behind the chain', {
+					headId: this.host.expectedHeadId,
+				});
+			}
+			if (envelope.tag === 'NodeSynced') {
+				this._chainSynced = true;
+				logger.info('[HydraNode] Node reports it has caught up with the chain', {
+					headId: this.host.expectedHeadId,
+				});
+			}
 			if (envelope.tag === 'HeadIsAborted') {
 				headWasAborted = true;
 			}
@@ -262,6 +304,11 @@ export class LiveFrameProcessor {
 				if (suppliedHeadId) this._liveSessionHeadId = suppliedHeadId;
 			}
 			if (envelope.tag === 'Greetings') {
+				// A Greetings that carries the field settles the sync state either way;
+				// one that omits it (older node, offline head) leaves it unknown rather
+				// than guessing.
+				const syncedStatus = (message as { chainSyncedStatus?: unknown }).chainSyncedStatus;
+				if (typeof syncedStatus === 'string') this._chainSynced = syncedStatus === 'InSync';
 				const isHeadlessIdle =
 					this.host.expectedHeadId != null && suppliedHeadId == null && envelope.headStatus === HydraHeadStatus.Idle;
 				if (this.host.expectedHeadId && !suppliedHeadId && !isHeadlessIdle) {

@@ -8,6 +8,8 @@ interface WalletTypeBadgeProps {
   type: HotWalletType;
   className?: string;
   showTooltip?: boolean;
+  /** Icon-only square for dense lists (no pill hover). */
+  variant?: 'default' | 'icon';
 }
 
 function getTooltipText(type: HotWalletType): string {
@@ -21,19 +23,48 @@ function getTooltipText(type: HotWalletType): string {
   }
 }
 
-function WalletTypeIcon({ type }: { type: HotWalletType }) {
+export function WalletTypeIcon({ type, className }: { type: HotWalletType; className?: string }) {
   switch (type) {
     case 'Purchasing':
-      return <ShoppingCart className="h-3 w-3" />;
+      return <ShoppingCart className={cn('h-3 w-3', className)} aria-hidden />;
     case 'Funding':
-      return <Landmark className="h-3 w-3" />;
+      return <Landmark className={cn('h-3 w-3', className)} aria-hidden />;
     case 'Selling':
-      return <Store className="h-3 w-3" />;
+      return <Store className={cn('h-3 w-3', className)} aria-hidden />;
   }
 }
 
-export function WalletTypeBadge({ type, className, showTooltip = true }: WalletTypeBadgeProps) {
+export function WalletTypeBadge({
+  type,
+  className,
+  showTooltip = true,
+  variant = 'default',
+}: WalletTypeBadgeProps) {
   const displayName = getWalletTypeLabel(type);
+
+  if (variant === 'icon') {
+    const iconBadge = (
+      <span
+        className={cn(
+          'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/30 text-muted-foreground',
+          className,
+        )}
+        aria-label={displayName}
+      >
+        <WalletTypeIcon type={type} />
+      </span>
+    );
+    if (!showTooltip) return iconBadge;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{iconBadge}</TooltipTrigger>
+        <TooltipContent className="max-w-sm p-3">
+          <p className="text-sm whitespace-pre-line">{getTooltipText(type)}</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
   const badge = (
     <span
       className={cn(

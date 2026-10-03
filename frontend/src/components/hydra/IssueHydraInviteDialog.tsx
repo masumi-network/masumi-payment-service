@@ -298,9 +298,9 @@ export function IssueHydraInviteDialog({
         {issued === null && !isHeadCapableSource ? (
           <HydraNotice tone="warn">
             <p>
-              The selected payment source is not a Web3CardanoV2 source. Payments on it settle on
-              chain and never enter a head, so an invite issued from its wallets would open a head
-              nothing would use. Switch to a V2 payment source first.
+              The selected payment source does not support Hydra L2 heads. Payments on it settle on
+              L1 only, so an invite from its wallets would open a head nothing would use. Switch to
+              a V2 Cardano payment source first.
             </p>
           </HydraNotice>
         ) : issued === null ? (
