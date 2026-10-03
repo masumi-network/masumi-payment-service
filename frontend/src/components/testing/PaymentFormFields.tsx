@@ -19,6 +19,7 @@ import {
   Controller,
   FieldErrors,
 } from 'react-hook-form';
+import { MASUMI_MIP_004_URL } from '@/lib/masumi-links';
 import { generateRandomHex, generateMIP004InputHash } from './utils';
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import type { PaidAgentOption } from './payment-options';
@@ -319,7 +320,7 @@ export function PaymentFormFields({
             <p className="text-xs text-muted-foreground">
               Input hashed per{' '}
               <a
-                href="https://www.masumi.network/dev/masumi/mips/_mip-004"
+                href={MASUMI_MIP_004_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline inline-flex items-center gap-0.5 hover:text-foreground transition-colors duration-150"

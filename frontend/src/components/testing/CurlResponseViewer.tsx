@@ -4,19 +4,28 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ChevronDown, ChevronRight, Terminal } from 'lucide-react';
+import type { HttpStatus } from './utils';
 
 interface CurlResponseViewerProps {
   curlCommand?: string;
   response?: object | null;
   error?: string | null;
+  /** The status the request actually returned; null when no response arrived. */
+  status?: HttpStatus | null;
 }
 
-export function CurlResponseViewer({ curlCommand, response, error }: CurlResponseViewerProps) {
+export function CurlResponseViewer({
+  curlCommand,
+  response,
+  error,
+  status,
+}: CurlResponseViewerProps) {
   const [curlExpanded, setCurlExpanded] = useState(false);
 
   const hasCurl = curlCommand && curlCommand.length > 0;
   const hasResponse = response !== null && response !== undefined;
   const hasError = error !== null && error !== undefined && error.length > 0;
+  const statusLabel = status ? `${status.code} ${status.text}`.trim() : null;
 
   if (!hasCurl && !hasResponse && !hasError) {
     return null;
@@ -68,12 +77,14 @@ export function CurlResponseViewer({ curlCommand, response, error }: CurlRespons
               <span className="text-xs font-medium text-muted-foreground">Response</span>
               {hasError ? (
                 <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                  Error
+                  {statusLabel ?? 'Error'}
                 </Badge>
               ) : (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                  200 OK
-                </Badge>
+                statusLabel && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                    {statusLabel}
+                  </Badge>
+                )
               )}
             </div>
             {hasResponse && !hasError && <CopyButton value={JSON.stringify(response, null, 2)} />}

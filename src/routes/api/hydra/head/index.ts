@@ -265,6 +265,10 @@ const hydraHeadOnChainVerificationSelect = {
 	headIdentifier: true,
 	contestationPeriod: true,
 	initChainSlot: true,
+	// The deposit period this head was opened with lives on its redeemed
+	// invite, not on the head row. hydra-node 2.4 fixes it on chain in the Open
+	// datum, so the on-chain verification below checks the two agree.
+	Invite: { select: { depositPeriodSeconds: true } },
 	LocalParticipant: {
 		select: {
 			walletId: true,
@@ -373,6 +377,9 @@ export async function verifyPersistedHydraHeadOnChain(
 		// participants' cardanoVkey, not LocalHotWallet/RemoteWallet.walletVkey.
 		expectedParticipantVkeys: [head.LocalParticipant.cardanoVkey, head.RemoteParticipants[0].cardanoVkey],
 		contestationPeriodSeconds: head.contestationPeriod,
+		// A head without an invite row predates the service keeping the value;
+		// the verifier then reports the on-chain figure without comparing it.
+		depositPeriodSeconds: head.Invite ? BigInt(head.Invite.depositPeriodSeconds) : undefined,
 	});
 	if (options.persist === false) {
 		return { headIdentifier: head.headIdentifier, initTxHash: verified.initTxHash };

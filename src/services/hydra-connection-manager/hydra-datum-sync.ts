@@ -258,7 +258,10 @@ export async function applyDatumStateToLocalRequests(params: {
 			const purchaseActionIsAuthorized =
 				purchaseRequest != null &&
 				(purchaseIsSameAcceptedOutput
-					? purchaseRequest.onChainState === newOnChainState &&
+					? (purchaseRequest.onChainState === newOnChainState ||
+							// Replay preserves a prior invalid initial-lock classification.
+							(purchaseRequest.onChainState === OnChainState.FundsOrDatumInvalid &&
+								newOnChainState === OnChainState.FundsLocked)) &&
 						(purchaseRequest.currentHydraUtxoValue == null ||
 							(purchasePersistedInputValue != null &&
 								hydraAmountListsEqual(purchasePersistedInputValue, canonicalOutputAmounts)))
@@ -392,7 +395,10 @@ export async function applyDatumStateToLocalRequests(params: {
 			const paymentActionIsAuthorized =
 				paymentRequest != null &&
 				(paymentIsSameAcceptedOutput
-					? paymentRequest.onChainState === newOnChainState &&
+					? (paymentRequest.onChainState === newOnChainState ||
+							// Replay preserves a prior invalid initial-lock classification.
+							(paymentRequest.onChainState === OnChainState.FundsOrDatumInvalid &&
+								newOnChainState === OnChainState.FundsLocked)) &&
 						(paymentRequest.currentHydraUtxoValue == null ||
 							(paymentPersistedInputValue != null &&
 								hydraAmountListsEqual(paymentPersistedInputValue, canonicalOutputAmounts)))

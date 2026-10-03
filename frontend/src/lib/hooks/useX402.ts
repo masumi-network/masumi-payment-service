@@ -50,10 +50,9 @@ export function useX402Networks(options?: {
   const enabled = options?.enabled ?? true;
 
   const query = useQuery({
-    // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
-    // not share one cache entry and race on which onError handler runs, and by env so
-    // switching the top selector refetches the right environment's chains.
-    queryKey: ['x402-networks', silentErrors, allEnvironments ? 'all' : isTestnet],
+    // Keyed by env only. silentErrors must not split the cache: the same chain list
+    // was fetched twice on pages that mount both a silent selector and a toasting tab.
+    queryKey: ['x402-networks', allEnvironments ? 'all' : isTestnet],
     queryFn: async () => {
       const response = await handleApiCall(
         () =>
@@ -100,7 +99,7 @@ export function useAvailableX402Networks(options?: {
   const query = useQuery({
     // Keep this under the shared x402-networks prefix so chain mutations invalidate
     // both the admin projection and this pay-authenticated safe projection.
-    queryKey: ['x402-networks', 'available', silentErrors, allEnvironments ? 'all' : isTestnet],
+    queryKey: ['x402-networks', 'available', allEnvironments ? 'all' : isTestnet],
     queryFn: async () => {
       const response = await handleApiCall(
         () =>

@@ -12,6 +12,7 @@ import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
+import { logger } from '@masumi/payment-core/logger';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -210,7 +211,12 @@ export async function provisionNodeOnHost(
 	baseUrl: string,
 	adminToken: string,
 	idempotencyKey: string,
-	options: { contestationPeriodSeconds?: number; depositPeriodSeconds?: number; unsyncedPeriodSeconds?: number },
+	options: {
+		contestationPeriodSeconds?: number;
+		depositPeriodSeconds?: number;
+		unsyncedPeriodSeconds?: number;
+		depositActivationSeconds?: number;
+	},
 	transport: HostTransportOptions,
 ): Promise<ProvisionedNode> {
 	const body = await request(baseUrl, '/v1/nodes', adminToken, transport, {
@@ -229,6 +235,27 @@ export async function provisionNodeOnHost(
 				cardanoSigningKey: requireString(secretsValue, 'cardanoSigningKey'),
 			}
 		: null;
+
+	// The Host may override the activation we asked for
+	// (HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS). It is a deliberate operator
+	// escape hatch, so this does not refuse the provision. It must not pass
+	// silently either: each side evaluates a deposit's absorb window against
+	// its OWN activation, so an override on one Host of a head makes the two
+	// windows stop overlapping and no top-up can ever be co-signed, while both
+	// sides keep rendering usableFrom/absorbBy normally because those derive
+	// from the deadline. Nothing else on the wire reports this.
+	const effectiveActivation = getOwnValue(body, 'depositActivationSeconds');
+	if (
+		options.depositActivationSeconds !== undefined &&
+		typeof effectiveActivation === 'number' &&
+		effectiveActivation !== options.depositActivationSeconds
+	) {
+		logger.warn('[HydraHost] host overrode the deposit activation it was asked for', {
+			baseUrl,
+			requested: options.depositActivationSeconds,
+			effective: effectiveActivation,
+		});
+	}
 
 	const peerPort = getOwnValue(body, 'peerPort');
 	return {

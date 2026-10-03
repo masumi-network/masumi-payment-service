@@ -565,9 +565,9 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
               {isReadOnly && (
                 <div className="rounded-md border border-muted bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">
-                    Read-only keys are always usage-limited. They receive a default allowance of
-                    1000 ADA for read operations. This limit is applied automatically and cannot be
-                    changed here.{' '}
+                    Read-only keys created here have usage limits enabled and receive 1000 ADA in
+                    usage credits. Read operations do not spend these credits. This default cannot
+                    be changed here.{' '}
                     <a
                       href={MASUMI_API_KEY_PERMISSIONS_DOCS_URL}
                       target="_blank"
