@@ -2,6 +2,8 @@ import createHttpError from 'http-errors';
 import { Network, X402PaymentDirection, X402PaymentStatus, prisma } from '@masumi/payment-core/db';
 import {
 	addToAllFundsMaps,
+	EARNINGS_QUERY_BATCH_SIZE,
+	fetchAndProcessInBatches,
 	type Fund,
 	mapDailyFundsOutput,
 	mapMonthlyFundsOutput,
@@ -45,21 +47,13 @@ function isSettledIncome(attempt: {
 	status: X402PaymentStatus;
 	Settlement: { success: boolean } | null;
 }): boolean {
-	if (attempt.direction === X402PaymentDirection.OutboundPayment) {
-		// Masumi hire (POST /x402/pay): successful sign is Verified on the payment node.
-		return (
-			attempt.status === X402PaymentStatus.Verified ||
-			attempt.status === X402PaymentStatus.Settled ||
-			attempt.status === X402PaymentStatus.Replayed
-		);
-	}
-	if (attempt.direction !== X402PaymentDirection.InboundSettle) {
-		return false;
-	}
-	if (attempt.status === X402PaymentStatus.Settled || attempt.status === X402PaymentStatus.Replayed) {
-		return attempt.Settlement?.success === true;
-	}
-	return false;
+	// Only an on-chain settlement proves the money arrived. A Replayed row carries no
+	// Settlement of its own (the original attempt holds it), so it is never counted twice.
+	return (
+		attempt.direction === X402PaymentDirection.InboundSettle &&
+		attempt.status === X402PaymentStatus.Settled &&
+		attempt.Settlement?.success === true
+	);
 }
 
 function isPendingIncome(attempt: {
@@ -67,35 +61,26 @@ function isPendingIncome(attempt: {
 	status: X402PaymentStatus;
 	Settlement: { success: boolean } | null;
 }): boolean {
-	if (attempt.direction === X402PaymentDirection.InboundVerify) {
-		return attempt.status === X402PaymentStatus.Verified;
-	}
-	if (attempt.direction === X402PaymentDirection.InboundSettle) {
-		if (attempt.status === X402PaymentStatus.Verified) {
-			return true;
-		}
-		if (attempt.status === X402PaymentStatus.Settled && attempt.Settlement == null) {
-			return true;
-		}
-	}
-	if (attempt.direction === X402PaymentDirection.OutboundPayment) {
-		return attempt.status === X402PaymentStatus.PaymentRequired;
-	}
-	return false;
+	// InboundVerify is excluded: Verified is its terminal state and the settle is a separate row.
+	return (
+		attempt.direction === X402PaymentDirection.InboundSettle &&
+		(attempt.status === X402PaymentStatus.Verified ||
+			(attempt.status === X402PaymentStatus.Settled && attempt.Settlement == null))
+	);
 }
 
-function isRefundedIncome(attempt: { status: X402PaymentStatus }): boolean {
-	return attempt.status === X402PaymentStatus.Failed;
-}
-
-/** @internal Unit tests for inbound settle vs Masumi hire outbound classification. */
+/**
+ * Only inbound settles count. OutboundPayment (Masumi hire) Verified only means an
+ * authorization was signed and handed to the caller; nothing tracks whether the seller
+ * settled it, and any pay-scoped key could sign one to an agent's payTo. x402 has no
+ * refunds, and Failed attempts moved no funds, so nothing is classified as refunded.
+ */
 export function classifyX402AttemptForEarnings(attempt: {
 	direction: X402PaymentDirection;
 	status: X402PaymentStatus;
 	Settlement: { success: boolean } | null;
-}): 'income' | 'refunded' | 'pending' | null {
+}): 'income' | 'pending' | null {
 	if (isSettledIncome(attempt)) return 'income';
-	if (isRefundedIncome(attempt)) return 'refunded';
 	if (isPendingIncome(attempt)) return 'pending';
 	return null;
 }
@@ -322,9 +307,9 @@ export async function listX402AgentPaymentActivity(input: {
 
 /**
  * x402 earnings for one registry agent (`RegistryRequest.agentIdentifier`) on this node.
- * Includes seller inbound settle and Masumi hire/pay (outbound Verified) when payTo
- * matches a registered supported payment source. Fully external pays with no row here
- * do not appear.
+ * Counts seller inbound settles only. Masumi hire/pay outbound attempts appear in
+ * {@link listX402AgentPaymentActivity} but are not income (see classifyX402AttemptForEarnings).
+ * Fully external pays with no row here do not appear.
  */
 export async function getX402AgentPaymentIncome(input: {
 	network: Network;
@@ -348,50 +333,57 @@ export async function getX402AgentPaymentIncome(input: {
 		return emptyX402IncomeResponse(input.agentIdentifier, periodStart, periodEnd);
 	}
 
-	const attempts = await prisma.x402PaymentAttempt.findMany({
-		where: x402AgentAttemptsWhere(scope, periodStart, periodEnd),
-		orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-		select: {
-			id: true,
-			createdAt: true,
-			direction: true,
-			status: true,
-			asset: true,
-			amount: true,
-			Network: { select: { caip2Id: true } },
-			Settlement: { select: { success: true, amount: true } },
-		},
-	});
-
 	const totalIncomeMap: Fund = { units: new Map(), blockchainFees: 0n };
-	const totalRefundedMap: Fund = { units: new Map(), blockchainFees: 0n };
 	const totalPendingMap: Fund = { units: new Map(), blockchainFees: 0n };
 	const dayIncomeMap = new Map<string, Fund>();
-	const dayRefundedMap = new Map<string, Fund>();
 	const dayPendingMap = new Map<string, Fund>();
 	const monthlyIncomeMap = new Map<string, Fund>();
-	const monthlyRefundedMap = new Map<string, Fund>();
 	const monthlyPendingMap = new Map<string, Fund>();
 
 	let incomeTxCount = 0;
 
-	for (const attempt of attempts) {
-		const dayDateLocal = getDayNumberLocal(attempt.createdAt, input.timeZone);
-		const monthDateLocal = getMonthNumberLocal(attempt.createdAt, input.timeZone);
-		const unit = x402IncomeUnit(attempt.Network.caip2Id, attempt.asset);
-		const amount = attemptAmount(attempt);
-		const units = [{ unit, amount }];
-
-		const bucket = classifyX402AttemptForEarnings(attempt);
-		if (bucket === 'income') {
-			incomeTxCount += 1;
-			addToAllFundsMaps(totalIncomeMap, dayIncomeMap, monthlyIncomeMap, dayDateLocal, monthDateLocal, units, 0n);
-		} else if (bucket === 'refunded') {
-			addToAllFundsMaps(totalRefundedMap, dayRefundedMap, monthlyRefundedMap, dayDateLocal, monthDateLocal, units, 0n);
-		} else if (bucket === 'pending') {
-			addToAllFundsMaps(totalPendingMap, dayPendingMap, monthlyPendingMap, dayDateLocal, monthDateLocal, units, 0n);
-		}
-	}
+	// Only inbound settles can be income or pending (see classifyX402AttemptForEarnings).
+	const where = {
+		...x402AgentAttemptsWhere(scope, periodStart, periodEnd),
+		direction: X402PaymentDirection.InboundSettle,
+	};
+	await fetchAndProcessInBatches(
+		(cursorId) =>
+			prisma.x402PaymentAttempt.findMany({
+				where,
+				orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+				select: {
+					id: true,
+					createdAt: true,
+					direction: true,
+					status: true,
+					asset: true,
+					amount: true,
+					Network: { select: { caip2Id: true } },
+					Settlement: { select: { success: true, amount: true } },
+				},
+				take: EARNINGS_QUERY_BATCH_SIZE,
+				...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+			}),
+		EARNINGS_QUERY_BATCH_SIZE,
+		(attempts) => {
+			for (const attempt of attempts) {
+				const bucket = classifyX402AttemptForEarnings(attempt);
+				if (bucket == null) continue;
+				const dayDateLocal = getDayNumberLocal(attempt.createdAt, input.timeZone);
+				const monthDateLocal = getMonthNumberLocal(attempt.createdAt, input.timeZone);
+				const units = [
+					{ unit: x402IncomeUnit(attempt.Network.caip2Id, attempt.asset), amount: attemptAmount(attempt) },
+				];
+				if (bucket === 'income') {
+					incomeTxCount += 1;
+					addToAllFundsMaps(totalIncomeMap, dayIncomeMap, monthlyIncomeMap, dayDateLocal, monthDateLocal, units, 0n);
+				} else {
+					addToAllFundsMaps(totalPendingMap, dayPendingMap, monthlyPendingMap, dayDateLocal, monthDateLocal, units, 0n);
+				}
+			}
+		},
+	);
 
 	return {
 		agentIdentifier: input.agentIdentifier,
@@ -399,13 +391,13 @@ export async function getX402AgentPaymentIncome(input: {
 		periodEnd,
 		totalTransactions: incomeTxCount,
 		TotalIncome: mapTotalFundsOutput(totalIncomeMap),
-		TotalRefunded: mapTotalFundsOutput(totalRefundedMap),
+		TotalRefunded: mapTotalFundsOutput({ units: new Map(), blockchainFees: 0n }),
 		TotalPending: mapTotalFundsOutput(totalPendingMap),
 		DailyIncome: mapDailyFundsOutput(dayIncomeMap),
-		DailyRefunded: mapDailyFundsOutput(dayRefundedMap),
+		DailyRefunded: [],
 		DailyPending: mapDailyFundsOutput(dayPendingMap),
 		MonthlyIncome: mapMonthlyFundsOutput(monthlyIncomeMap),
-		MonthlyRefunded: mapMonthlyFundsOutput(monthlyRefundedMap),
+		MonthlyRefunded: [],
 		MonthlyPending: mapMonthlyFundsOutput(monthlyPendingMap),
 	};
 }

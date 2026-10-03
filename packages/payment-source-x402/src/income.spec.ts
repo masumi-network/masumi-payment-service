@@ -12,23 +12,42 @@ describe('x402IncomeUnit', () => {
 });
 
 describe('classifyX402AttemptForEarnings', () => {
-	it('treats verified outbound pay as income (Masumi hire)', () => {
-		expect(
-			classifyX402AttemptForEarnings({
-				direction: X402PaymentDirection.OutboundPayment,
-				status: X402PaymentStatus.Verified,
-				Settlement: null,
-			}),
-		).toBe('income');
+	const classify = (
+		direction: X402PaymentDirection,
+		status: X402PaymentStatus,
+		Settlement: { success: boolean } | null = null,
+	) => classifyX402AttemptForEarnings({ direction, status, Settlement });
+
+	it('counts a successfully settled inbound attempt as income', () => {
+		expect(classify(X402PaymentDirection.InboundSettle, X402PaymentStatus.Settled, { success: true })).toBe('income');
 	});
 
-	it('treats payment-required outbound as pending', () => {
-		expect(
-			classifyX402AttemptForEarnings({
-				direction: X402PaymentDirection.OutboundPayment,
-				status: X402PaymentStatus.PaymentRequired,
-				Settlement: null,
-			}),
-		).toBe('pending');
+	it('does not count a failed settlement as income', () => {
+		expect(classify(X402PaymentDirection.InboundSettle, X402PaymentStatus.Settled, { success: false })).toBeNull();
+	});
+
+	it('does not re-count a replayed settle (no Settlement of its own)', () => {
+		expect(classify(X402PaymentDirection.InboundSettle, X402PaymentStatus.Replayed)).toBeNull();
+	});
+
+	it('treats in-flight inbound settles as pending', () => {
+		expect(classify(X402PaymentDirection.InboundSettle, X402PaymentStatus.Verified)).toBe('pending');
+		expect(classify(X402PaymentDirection.InboundSettle, X402PaymentStatus.Settled)).toBe('pending');
+	});
+
+	it('ignores InboundVerify, whose terminal state is Verified', () => {
+		expect(classify(X402PaymentDirection.InboundVerify, X402PaymentStatus.Verified)).toBeNull();
+	});
+
+	it('never counts outbound pay (signed authorization, settlement untracked)', () => {
+		for (const status of Object.values(X402PaymentStatus)) {
+			expect(classify(X402PaymentDirection.OutboundPayment, status)).toBeNull();
+		}
+	});
+
+	it('does not classify Failed attempts as refunds', () => {
+		for (const direction of Object.values(X402PaymentDirection)) {
+			expect(classify(direction, X402PaymentStatus.Failed)).toBeNull();
+		}
 	});
 });
