@@ -224,11 +224,15 @@ export const postPurchaseSpending = purchaseSpendingEndpointFactory.build({
 					prisma.purchaseRequest.findMany({
 						where,
 						orderBy: [{ payByTime: 'asc' }, { id: 'asc' }],
-						include: {
-							PaidFunds: true,
-							WithdrawnForBuyer: true,
-							WithdrawnForSeller: true,
-							PaymentSource: true,
+						select: {
+							id: true,
+							blockchainIdentifier: true,
+							payByTime: true,
+							onChainState: true,
+							totalBuyerCardanoFees: true,
+							PaidFunds: { select: { unit: true, amount: true } },
+							WithdrawnForBuyer: { select: { unit: true, amount: true } },
+							WithdrawnForSeller: { select: { unit: true, amount: true } },
 						},
 						take: EARNINGS_QUERY_BATCH_SIZE,
 						...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
