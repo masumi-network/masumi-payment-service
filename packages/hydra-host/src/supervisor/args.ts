@@ -28,6 +28,8 @@ export const API_BIND_HOST = '127.0.0.1';
 
 /** `SLOT.HEADER_HASH`, the chain point `--start-chain-from` accepts. */
 const CHAIN_POINT_PATTERN = /^\d{1,20}\.[0-9a-fA-F]{64}$/;
+/** A Cardano transaction id: 32 bytes as hex. */
+const TX_ID_PATTERN = /^[0-9a-fA-F]{64}$/;
 
 export type HydraNodeLaunchSpec = {
 	nodeId: string;
@@ -47,9 +49,29 @@ export type HydraNodeLaunchSpec = {
 	peerCardanoVerificationKeyFiles: string[];
 	ledgerProtocolParametersFile: string;
 	blockfrostProjectFile: string;
+	/**
+	 * Transactions that published the Hydra scripts as reference scripts.
+	 *
+	 * Empty (the default) means `--network`, which resolves upstream's
+	 * pre-published scripts from networks.json. Set when an operator has
+	 * published the scripts themselves with `hydra-node publish-scripts` —
+	 * necessary on 2.4.1, whose official preprod publication cannot be read
+	 * through Blockfrost (its change output carries empty-asset-name tokens the
+	 * reworked client rejects with `AssetNameMissing`). hydra-node treats the
+	 * two flags as alternatives, so exactly one is emitted.
+	 */
+	hydraScriptsTxIds?: string[];
 	contestationPeriodSeconds: number;
 	depositPeriodSeconds: number;
 	unsyncedPeriodSeconds: number;
+	/**
+	 * hydra-node 2.4's `--deposit-activation`. Required, not optional: a
+	 * `NodeRecord` read off disk always carries a concrete value — a record
+	 * provisioned before this field existed is back-filled from its own
+	 * `depositPeriodSeconds` by `NodeRegistryStore`'s `parseNodeRecord` at read
+	 * time, so there is no legacy gap left for this builder to paper over.
+	 */
+	depositActivationSeconds: number;
 	useSystemEtcd?: boolean;
 };
 
@@ -93,6 +115,7 @@ export function buildHydraNodeArgs(spec: HydraNodeLaunchSpec): string[] {
 	assertPositiveSeconds(spec.contestationPeriodSeconds, 'contestationPeriodSeconds');
 	assertPositiveSeconds(spec.depositPeriodSeconds, 'depositPeriodSeconds');
 	assertPositiveSeconds(spec.unsyncedPeriodSeconds, 'unsyncedPeriodSeconds');
+	assertPositiveSeconds(spec.depositActivationSeconds, 'depositActivationSeconds');
 
 	if (spec.peers.length === 0) {
 		throw new LaunchSpecError('a node cannot start before its peers are known; --initial-cluster is fixed at boot');
@@ -167,8 +190,7 @@ export function buildHydraNodeArgs(spec: HydraNodeLaunchSpec): string[] {
 		path.join(keysDir, 'cardano.sk'),
 		'--ledger-protocol-parameters',
 		spec.ledgerProtocolParametersFile,
-		'--network',
-		spec.network,
+		...scriptSourceArgs(spec),
 		'--blockfrost',
 		spec.blockfrostProjectFile,
 		'--persistence-dir',
@@ -177,6 +199,8 @@ export function buildHydraNodeArgs(spec: HydraNodeLaunchSpec): string[] {
 		`${spec.contestationPeriodSeconds}s`,
 		'--deposit-period',
 		`${spec.depositPeriodSeconds}s`,
+		'--deposit-activation',
+		`${spec.depositActivationSeconds}s`,
 		'--unsynced-period',
 		`${spec.unsyncedPeriodSeconds}s`,
 	);
@@ -188,4 +212,22 @@ export function buildHydraNodeArgs(spec: HydraNodeLaunchSpec): string[] {
 	}
 
 	return args;
+}
+
+function scriptSourceArgs(spec: HydraNodeLaunchSpec): string[] {
+	const ids = spec.hydraScriptsTxIds ?? [];
+	if (ids.length === 0) {
+		return ['--network', spec.network];
+	}
+	for (const id of ids) {
+		if (!TX_ID_PATTERN.test(id)) {
+			throw new LaunchSpecError(
+				`hydraScriptsTxIds entry is not a 64-character hex transaction id: ${JSON.stringify(id)}`,
+			);
+		}
+	}
+	// One comma-joined flag. hydra-node rejects the flag repeated
+	// ("Invalid option `--hydra-scripts-tx-id'"), observed against the 2.4.1
+	// binary, even though its --help lists both forms.
+	return ['--hydra-scripts-tx-id', ids.join(',')];
 }

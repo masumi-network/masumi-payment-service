@@ -6,7 +6,12 @@ import {
 	RegistryEntryType,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { atomicAmountSchema, supportedPaymentSourcesSchema } from '@/types/payment-source';
+import {
+	MAX_SUPPORTED_PAYMENT_SOURCES,
+	atomicAmountSchema,
+	supportedPaymentSourceSchema,
+	supportedPaymentSourcesSchema,
+} from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
 import { z } from '@masumi/payment-core/zod';
 
@@ -203,8 +208,26 @@ export const registryRequestOutputSchema = z
 	})
 	.openapi('RegistryEntry');
 
+const registryListEntryOutputSchema = registryRequestOutputSchema
+	.extend({
+		supportedPaymentSources: z
+			.array(
+				supportedPaymentSourceSchema.and(
+					z.object({
+						id: z
+							.string()
+							.describe('Payment-node source row ID for x402 verify/settle. May change when sources are replaced.'),
+					}),
+				),
+			)
+			.min(1)
+			.max(MAX_SUPPORTED_PAYMENT_SOURCES)
+			.nullable(),
+	})
+	.openapi('RegistryListEntry');
+
 export const queryRegistryRequestSchemaOutput = z.object({
-	Assets: z.array(registryRequestOutputSchema),
+	Assets: z.array(registryListEntryOutputSchema),
 });
 
 export const queryRegistryCountSchemaInput = z.object({

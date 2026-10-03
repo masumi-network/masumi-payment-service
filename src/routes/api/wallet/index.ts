@@ -4,7 +4,7 @@ import {
 	AuthContext,
 	checkIsAllowedNetworkOrThrowUnauthorized,
 } from '@masumi/payment-core/auth';
-import { cursorPaginationArgs } from '@/utils/shared/queries';
+import { cursorPaginationArgs, escapeLikePattern, normalizeSearchQuery } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
@@ -14,6 +14,8 @@ import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source'
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { logger } from '@masumi/payment-core/logger';
+import { createRateLimiter } from '@/utils/middleware/rate-limit';
 import {
 	getWalletListSchemaInput,
 	getWalletListSchemaOutput,
@@ -77,6 +79,11 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 							? input.walletType
 							: { in: [HotWalletType.Selling, HotWalletType.Purchasing] },
 				};
+		const searchLower = normalizeSearchQuery(input.searchQuery);
+		const searchPattern = searchLower ? escapeLikePattern(searchLower) : undefined;
+		const matchingTypes = searchLower
+			? Object.values(HotWalletType).filter((walletType) => walletType.toLowerCase().includes(searchLower))
+			: undefined;
 		const wallets = await prisma.hotWallet.findMany({
 			orderBy: { createdAt: 'desc' },
 			...cursorPaginationArgs(input.cursorId, input.take),
@@ -86,6 +93,17 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 				...(input.paymentSourceId != null ? { paymentSourceId: input.paymentSourceId } : {}),
 				...(input.walletVkey != null ? { walletVkey: input.walletVkey } : {}),
 				...(input.walletAddress != null ? { walletAddress: input.walletAddress } : {}),
+				...(searchPattern
+					? {
+							OR: [
+								{ walletAddress: { contains: searchPattern, mode: 'insensitive' as const } },
+								{ collectionAddress: { contains: searchPattern, mode: 'insensitive' as const } },
+								{ walletVkey: { contains: searchPattern, mode: 'insensitive' as const } },
+								{ note: { contains: searchPattern, mode: 'insensitive' as const } },
+								...(matchingTypes != null && matchingTypes.length > 0 ? [{ type: { in: matchingTypes } }] : []),
+							],
+						}
+					: {}),
 				PaymentSource: {
 					network: { in: ctx.networkLimit },
 					deletedAt: null,
@@ -126,6 +144,8 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 		};
 	},
 });
+
+const walletSecretRevealRateLimiter = createRateLimiter({ maxRequests: 5, windowMs: 5 * 60_000 });
 
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
@@ -211,6 +231,13 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 			};
 
 			if (input.includeSecret == true) {
+				const rateLimit = walletSecretRevealRateLimiter.consume(ctx.id);
+				if (!rateLimit.allowed) {
+					throw createHttpError(429, 'Too many wallet secret reveals; try again later.');
+				}
+
+				logger.warn(`Wallet secret disclosed for ${walletTypeLabel} wallet ${result.id} (admin key ${ctx.id})`);
+
 				return {
 					...base,
 					Secret: {

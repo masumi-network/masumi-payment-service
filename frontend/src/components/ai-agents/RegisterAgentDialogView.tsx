@@ -139,7 +139,11 @@ export function RegisterAgentDialogView({
                   onClick={onReview}
                 >
                   {isLoadingWallets && !isUpdateMode && <Spinner size={14} />}
-                  {getRegisterAgentReviewStepButtonLabel({ isUpdateMode, isReRegisterMode })}
+                  {getRegisterAgentReviewStepButtonLabel({
+                    isUpdateMode,
+                    isReRegisterMode,
+                    isLoadingWallets,
+                  })}
                   <ArrowRight
                     className="h-4 w-4 transition-transform group-hover:translate-x-1"
                     aria-hidden

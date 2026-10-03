@@ -202,7 +202,8 @@ export function parseHydraTransactionEvidence(cborHex: string): HydraTransaction
 						const quantity = assets.get(assetName);
 						if (!quantity) continue;
 						amount.push({
-							unit: `${policyId.to_hex()}${assetName.to_hex()}`,
+							// AssetName.to_hex() includes the CBOR bytestring header; units use raw name bytes.
+							unit: `${policyId.to_hex()}${Buffer.from(assetName.name()).toString('hex')}`,
 							quantity: quantity.to_str(),
 						});
 					}

@@ -48,6 +48,9 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 jest.unstable_mockModule('@masumi/payment-core/blockchain-identifier', () => ({
 	decodeBlockchainIdentifier: (blockchainIdentifier: string) => ({ agentIdentifier: blockchainIdentifier }),
 }));
+jest.unstable_mockModule('@masumi/payment-source-x402/service', () => ({
+	getX402AgentPaymentIncome: jest.fn(),
+}));
 const { getPaymentIncome } = await import('./payments/income');
 const { postPurchaseSpending } = await import('./purchases/spending');
 const { EARNINGS_QUERY_BATCH_SIZE } = await import('@/utils/earnings-helpers');

@@ -5,10 +5,14 @@ import type { NetworkType } from '@/lib/contexts/AppContext';
 
 export type RegisterAgentDialogStep = 'form' | 'review';
 
-export function getRegisterAgentReviewStepButtonLabel(_input: {
+export function getRegisterAgentReviewStepButtonLabel(input: {
   isUpdateMode: boolean;
   isReRegisterMode: boolean;
+  isLoadingWallets?: boolean;
 }): string {
+  if (input.isLoadingWallets && !input.isUpdateMode) {
+    return 'Loading wallets...';
+  }
   return 'Continue';
 }
 

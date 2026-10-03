@@ -10,7 +10,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
-import { isCardanoAddressForNetwork } from '@/types/payment-source';
+import { atomicAmountSchema, isCardanoAddressForNetwork } from '@/types/payment-source';
 import { agentIdentifierFilterSchema, searchQuerySchema } from '@/routes/api/shared/transaction-query-params';
 import { FORCE_LAYER_API_VALUES } from '@/utils/logic/force-layer';
 
@@ -328,7 +328,7 @@ export const createPaymentsSchemaInput = z
 		RequestedFunds: z
 			.array(
 				z.object({
-					amount: z.string().max(25).describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
+					amount: atomicAmountSchema.describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
 					unit: z
 						.string()
 						.max(150)

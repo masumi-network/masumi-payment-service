@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from '@jest/globals';
 import {
 	Address,
@@ -13,7 +15,9 @@ import {
 	Value,
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { resolveTxHash } from '@meshsdk/core';
+import { createHash, createPrivateKey, createPublicKey, sign as signEd25519 } from 'node:crypto';
 
+import { HydraProtocolError } from './errors';
 import {
 	deriveHydraVerificationKeyCborHex,
 	computeHydraAccumulatorHash,
@@ -43,6 +47,45 @@ function output(value: Record<string, number | Record<string, number>>) {
 		inlineDatum: null,
 		inlineDatumRaw: null,
 		datum: null,
+	};
+}
+
+// Self-signed parties for tests that must survive a formula change: unlike
+// `PARTY_KEYS` above (verification keys for a real Hydra node's signature —
+// we hold no matching private key, only the derived public one), these are
+// generated locally and signed at run time over whatever
+// `hydraSnapshotSignableBytes` currently produces, exactly as
+// `node.spec.ts`'s `signedSnapshotFrame` does. That keeps a test's SIGNATURE
+// verifying regardless of which commit-slot formula is current, so tests that
+// exercise ordering or structural checks *after* the signature gate don't
+// need a real recorded fixture at all.
+const ED25519_PKCS8_SEED_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
+
+function selfSignedParty(seedByte: number) {
+	const privateKey = createPrivateKey({
+		key: Buffer.concat([ED25519_PKCS8_SEED_PREFIX, Buffer.alloc(32, seedByte)]),
+		format: 'der',
+		type: 'pkcs8',
+	});
+	const rawVerificationKey = Buffer.from(createPublicKey(privateKey).export({ format: 'der', type: 'spki' }))
+		.subarray(-32)
+		.toString('hex');
+	return { privateKey, rawVerificationKey };
+}
+
+const SELF_SIGNED_PARTIES = [selfSignedParty(1), selfSignedParty(2)];
+const SELF_SIGNED_KEYS = SELF_SIGNED_PARTIES.map(({ rawVerificationKey }) => rawVerificationKey);
+
+/** Sign `frame` for `SELF_SIGNED_KEYS` under whatever formula is current. */
+function selfSign(frame: HydraSnapshotVerificationFrame): HydraSnapshotVerificationFrame {
+	const signableBytes = hydraSnapshotSignableBytes(frame);
+	return {
+		...frame,
+		signatures: {
+			multiSignature: SELF_SIGNED_PARTIES.map(({ privateKey }) =>
+				signEd25519(null, signableBytes, privateKey).toString('hex'),
+			),
+		},
 	};
 }
 
@@ -82,14 +125,19 @@ function realHydra230SnapshotOne(): HydraSnapshotVerificationFrame {
 }
 
 describe('Hydra 2.3 snapshot verification', () => {
-	it('recomputes the real accumulator and verifies ordered party signatures', () => {
-		const frame = realHydra230SnapshotOne();
-		const verified = verifyHydraSnapshot(frame, PARTY_KEYS);
+	// The signature half of this vector is 2.3-signed and can no longer verify
+	// under the 2.4 formula (see the 2.4.1 recording below for the signed
+	// cases); what survives is the formula-only byte assertion that follows.
 
-		expect(verified.number).toBe(1);
-		expect(verified.outputs.size).toBe(3);
-		expect(hydraSnapshotSignableBytes(frame).toString('hex')).toContain(
-			'58204675209cc40bd9df9188ed214c4679c5be233f560c57ea93e07e27553bc7de7c',
+	// Formula-only assertion — verifyHydraSnapshot/signatures are not involved,
+	// so this needs no 2.4.1 recording. This is the only REAL (non-empty)
+	// utxoToCommit vector in the file: it independently confirms the outer
+	// sha256 wraps the genuine bare commit hash 4675209c… (the exact value the
+	// pre-2.4 formula produced for this vector), not a hash built from an
+	// empty or placeholder input.
+	it('re-hashes a real non-empty utxoToCommit through the 2.4 formula', () => {
+		expect(hydraSnapshotSignableBytes(realHydra230SnapshotOne()).toString('hex')).toContain(
+			'5820390418a3d92aba540d7ad7817c0642a308e38c2e128db39daf351fd35b4a6a33',
 		);
 	});
 
@@ -107,42 +155,121 @@ describe('Hydra 2.3 snapshot verification', () => {
 		);
 	});
 
-	it('fails closed for accumulator, state, signature, and party-order changes', () => {
-		const badAccumulator = realHydra230SnapshotOne();
-		badAccumulator.snapshot.accumulator = '00'.repeat(32);
-		expect(() => verifyHydraSnapshot(badAccumulator, PARTY_KEYS)).toThrow(/signature/);
-
-		const badState = realHydra230SnapshotOne();
-		badState.snapshot.utxoToCommit![
-			'a6fcca277c6ff7595131b6112b1ec6ccbff8a16b8c5db1e1a86b4fa7ccd23ab4#1'
-		]!.value.lovelace = 5_000_001;
-		expect(() => verifyHydraSnapshot(badState, PARTY_KEYS)).toThrow(/signature/);
-
-		const badSettledState = realHydra230SnapshotOne();
-		badSettledState.snapshot.utxo[`${'33'.repeat(32)}#0`] = output({ lovelace: 5_000_000 });
-		expect(() => verifyHydraSnapshot(badSettledState, PARTY_KEYS)).toThrow(/accumulator/);
-
-		const badSignature = realHydra230SnapshotOne();
-		badSignature.signatures.multiSignature[0] = '00'.repeat(64);
-		expect(() => verifyHydraSnapshot(badSignature, PARTY_KEYS)).toThrow(/signature/);
-
-		expect(() => verifyHydraSnapshot(realHydra230SnapshotOne(), [...PARTY_KEYS].reverse())).toThrow(/signature/);
-	});
-
+	// Rebuilt on a self-signed frame rather than `realHydra230SnapshotOne()`:
+	// under the 2.4 formula every frame derived from that helper already fails
+	// signature verification regardless of what else is mutated (its signature
+	// was made over the 2.3 formula), which made this test vacuous — it kept
+	// passing for a reason unrelated to the ordering property it exists to
+	// pin. A self-signed frame's signature tracks whatever formula is current,
+	// so mutating it to garbage here is what actually drives the assertion.
 	it('rejects unauthenticated state before expensive accumulator work', () => {
-		const frame = realHydra230SnapshotOne();
-		frame.signatures.multiSignature[0] = '00'.repeat(64);
-		frame.snapshot.accumulator = '00'.repeat(32);
+		const reference = `${'33'.repeat(32)}#0`;
+		const committed = output({ lovelace: 5_000_000 });
+		const frame: HydraSnapshotVerificationFrame = {
+			headId: HEAD_ID,
+			signatures: { multiSignature: [] },
+			snapshot: {
+				headId: HEAD_ID,
+				version: 0,
+				number: 1,
+				accumulator: computeHydraAccumulatorHash([serializeHydraSnapshotOutput(committed)]),
+				confirmed: [],
+				utxo: {},
+				utxoToCommit: { [reference]: committed },
+				utxoToDecommit: null,
+			},
+		};
+		const signed = selfSign(frame);
+		signed.signatures.multiSignature[0] = '00'.repeat(64);
+		signed.snapshot.accumulator = '00'.repeat(32);
 
-		expect(() => verifyHydraSnapshot(frame, PARTY_KEYS)).toThrow(/signature/);
+		expect(() => verifyHydraSnapshot(signed, SELF_SIGNED_KEYS)).toThrow(/signature/);
 	});
 
+	// Rebuilt on a self-signed frame: this is a formula-independent security
+	// guard (two partitions naming the same UTxO reference under different hex
+	// casing), unrelated to the commit-slot formula, so it needs no 2.4.1
+	// recording and should not stay dark until one exists.
 	it('rejects case-variant output references across signed state partitions', () => {
-		const frame = realHydra230SnapshotOne();
-		const reference = 'a6fcca277c6ff7595131b6112b1ec6ccbff8a16b8c5db1e1a86b4fa7ccd23ab4#1';
-		frame.snapshot.utxo[reference.toUpperCase()] = frame.snapshot.utxoToCommit![reference]!;
+		const reference = `${'44'.repeat(32)}#0`;
+		const committed = output({ lovelace: 5_000_000 });
+		const frame: HydraSnapshotVerificationFrame = {
+			headId: HEAD_ID,
+			signatures: { multiSignature: [] },
+			snapshot: {
+				headId: HEAD_ID,
+				version: 0,
+				number: 1,
+				accumulator: computeHydraAccumulatorHash([serializeHydraSnapshotOutput(committed)]),
+				confirmed: [],
+				utxo: {},
+				utxoToCommit: { [reference]: committed },
+				utxoToDecommit: null,
+			},
+		};
+		const signed = selfSign(frame);
+		// Mutating `utxo` after signing does not change the signable bytes — only
+		// the already-computed `accumulator` is signed, not `utxo` itself — so
+		// the signature above still verifies and execution reaches
+		// `canonicalSnapshotOutputs`, which must still refuse the same reference
+		// appearing in two partitions under different casing.
+		signed.snapshot.utxo[reference.toUpperCase()] = committed;
 
-		expect(() => verifyHydraSnapshot(frame, PARTY_KEYS)).toThrow(/repeated one output reference/);
+		expect(() => verifyHydraSnapshot(signed, SELF_SIGNED_KEYS)).toThrow(/repeated one output reference/);
+	});
+
+	// The three checks below were bundled into the quarantined
+	// 'fails closed for accumulator, state, signature, and party-order changes'
+	// test above, which verifies a REAL recorded 2.3 multisignature and so cannot
+	// run under the 2.4 formula. Only the garbage-signature assertion of that
+	// bundle is covered elsewhere; these three were left with no active coverage
+	// at all, including `verifyHydraSnapshot`'s accumulator-conservation check and
+	// its ordered per-index party verification. None of them needs a recorded
+	// fixture — they are structural checks that run *after* the signature gate, so
+	// a self-signed frame reaches them under whatever formula is current.
+	function selfSignedFrameWith(utxo: Record<string, ReturnType<typeof output>>): HydraSnapshotVerificationFrame {
+		return selfSign({
+			headId: HEAD_ID,
+			signatures: { multiSignature: [] },
+			snapshot: {
+				headId: HEAD_ID,
+				version: 0,
+				number: 1,
+				accumulator: computeHydraAccumulatorHash(
+					Object.values(utxo).map((entry) => serializeHydraSnapshotOutput(entry)),
+				),
+				confirmed: [],
+				utxo,
+				utxoToCommit: null,
+				utxoToDecommit: null,
+			},
+		});
+	}
+
+	it('refuses a snapshot whose signed accumulator does not commit to its own outputs', () => {
+		const signed = selfSignedFrameWith({ [`${'55'.repeat(32)}#0`]: output({ lovelace: 5_000_000 }) });
+		// Added after signing, so the signature still verifies and the accumulator
+		// is the only thing that can catch it — which is the property under test:
+		// a party cannot smuggle an output past a correctly signed snapshot.
+		signed.snapshot.utxo[`${'66'.repeat(32)}#0`] = output({ lovelace: 1_000_000 });
+
+		expect(() => verifyHydraSnapshot(signed, SELF_SIGNED_KEYS)).toThrow(/accumulator/);
+	});
+
+	it('refuses a snapshot whose output value was altered after signing', () => {
+		const reference = `${'77'.repeat(32)}#0`;
+		const signed = selfSignedFrameWith({ [reference]: output({ lovelace: 5_000_000 }) });
+		signed.snapshot.utxo[reference]!.value.lovelace = 5_000_001;
+
+		expect(() => verifyHydraSnapshot(signed, SELF_SIGNED_KEYS)).toThrow(/accumulator/);
+	});
+
+	it('refuses a valid multisignature presented in the wrong party order', () => {
+		const signed = selfSignedFrameWith({ [`${'88'.repeat(32)}#0`]: output({ lovelace: 5_000_000 }) });
+		// Every signature is genuine; only the party order is reversed. Signatures
+		// are verified per index against the bound order, so this must still fail —
+		// otherwise a re-ordered multisignature would authenticate.
+		expect(() => verifyHydraSnapshot(signed, [...SELF_SIGNED_KEYS].reverse())).toThrow(/signature/);
 	});
 
 	it('derives the verification key from a Hydra text-envelope signing seed', () => {
@@ -495,6 +622,76 @@ describe('Hydra 2.3 snapshot verification', () => {
 	});
 });
 
+// Recorded from two real hydra-node 2.4.1 nodes on preprod (see the fixture's
+// description for the head and date). These are the only frames in this file
+// whose signatures were made over the 2.4 formula, so they are what proves the
+// formula — the synthetic vectors above can only prove the bytes.
+const RECORDED_241 = JSON.parse(
+	readFileSync(
+		path.join(process.cwd(), 'src/lib/hydra/hydra/__fixtures__/recorded-signed-snapshots-2.4.1.json'),
+		'utf8',
+	),
+) as {
+	headId: string;
+	partyKeys: string[];
+	withDeposit: HydraSnapshotVerificationFrame;
+	withoutDeposit: HydraSnapshotVerificationFrame;
+	withDecommit: HydraSnapshotVerificationFrame;
+};
+const recorded241 = (which: 'withDeposit' | 'withoutDeposit' | 'withDecommit'): HydraSnapshotVerificationFrame =>
+	JSON.parse(JSON.stringify(RECORDED_241[which])) as HydraSnapshotVerificationFrame;
+
+describe('Hydra 2.4.1 recorded snapshot verification', () => {
+	it('verifies a real 2.4.1 multisignature over a snapshot that binds a depositTxId', () => {
+		const frame = recorded241('withDeposit');
+		expect(frame.snapshot.depositTxId).toMatch(/^[0-9a-f]{64}$/);
+		expect(Object.keys(frame.snapshot.utxoToCommit ?? {})).toHaveLength(1);
+		const verified = verifyHydraSnapshot(frame, RECORDED_241.partyKeys);
+		expect(verified.number).toBe(1);
+		expect(verified.committedOutputs.size).toBe(1);
+	});
+
+	it('verifies a real 2.4.1 multisignature over a snapshot with no deposit (the outer sha256 still applies)', () => {
+		const frame = recorded241('withoutDeposit');
+		expect(frame.snapshot.depositTxId ?? null).toBeNull();
+		const verified = verifyHydraSnapshot(frame, RECORDED_241.partyKeys);
+		expect(verified.number).toBe(2);
+		expect(verified.outputs.size).toBe(2);
+	});
+
+	it('verifies a real 2.4.1 multisignature over a snapshot that declares a decommit', () => {
+		const verified = verifyHydraSnapshot(recorded241('withDecommit'), RECORDED_241.partyKeys);
+		expect(verified.decommitOutputs.size).toBe(1);
+	});
+
+	it('fails closed for accumulator, state, signature, and party-order changes', () => {
+		const keys = RECORDED_241.partyKeys;
+
+		const badAccumulator = recorded241('withDeposit');
+		badAccumulator.snapshot.accumulator = '00'.repeat(32);
+		expect(() => verifyHydraSnapshot(badAccumulator, keys)).toThrow(/signature/);
+
+		const badCommit = recorded241('withDeposit');
+		const committed = Object.values(badCommit.snapshot.utxoToCommit ?? {})[0]!;
+		committed.value.lovelace = Number(committed.value.lovelace) + 1;
+		expect(() => verifyHydraSnapshot(badCommit, keys)).toThrow(/signature/);
+
+		const badDepositTxId = recorded241('withDeposit');
+		badDepositTxId.snapshot.depositTxId = 'ff'.repeat(32);
+		expect(() => verifyHydraSnapshot(badDepositTxId, keys)).toThrow(/signature/);
+
+		const badSettledState = recorded241('withoutDeposit');
+		badSettledState.snapshot.utxo[`${'33'.repeat(32)}#0`] = output({ lovelace: 5_000_000 });
+		expect(() => verifyHydraSnapshot(badSettledState, keys)).toThrow(/accumulator/);
+
+		const badSignature = recorded241('withDeposit');
+		badSignature.signatures.multiSignature[0] = '00'.repeat(64);
+		expect(() => verifyHydraSnapshot(badSignature, keys)).toThrow(/signature/);
+
+		expect(() => verifyHydraSnapshot(recorded241('withDeposit'), [...keys].reverse())).toThrow(/signature/);
+	});
+});
+
 describe('doesHydraTransactionTransitionReachSnapshot conservation solver', () => {
 	/**
 	 * The transition equation has a free variable per value, and picking a point
@@ -610,5 +807,69 @@ describe('doesHydraTransactionTransitionReachSnapshot conservation solver', () =
 		};
 
 		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(false);
+	});
+});
+
+describe('hydraSnapshotSignableBytes (Hydra 2.4 commit slot)', () => {
+	// Minimal frame in this file's existing inline style; only fields the builder reads.
+	const base = {
+		headId: '11'.repeat(16),
+		signatures: { multiSignature: [] },
+		snapshot: {
+			headId: '11'.repeat(16),
+			version: 1,
+			number: 2,
+			accumulator: '22'.repeat(48),
+			confirmed: [],
+			utxo: {},
+			utxoToCommit: null,
+			utxoToDecommit: null,
+		},
+	};
+	const withDeposit = (depositTxId: string | null) => ({
+		...base,
+		snapshot: { ...base.snapshot, depositTxId },
+	});
+
+	it('re-hashes the commit slot with sha256 even without a deposit, leaving the decommit slot untouched', () => {
+		const bytes = hydraSnapshotSignableBytes(base);
+		// Pin the decommit slot — the 34 bytes immediately before the commit slot
+		// — as the bare (non-re-hashed) sha256(empty). Both partitions are empty
+		// here, so both slots would hash to the SAME bytes if the commit-slot
+		// re-hash were accidentally applied to the wrong slot, or to both: this
+		// assertion is what catches that "symmetry is tempting" mistake, which
+		// the commit-slot assertion alone cannot.
+		expect(bytes.subarray(bytes.length - 68, bytes.length - 34).toString('hex')).toBe(
+			'5820e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+		);
+		const commitSlot = bytes.subarray(bytes.length - 34); // 0x58 0x20 + 32 bytes
+		expect(commitSlot.subarray(0, 2)).toEqual(Buffer.from([0x58, 0x20]));
+		// Empty utxoToCommit: expected = sha256( sha256(empty concat) ) per the 2.4 formula.
+		const inner = createHash('sha256').update(Buffer.alloc(0)).digest();
+		const expected = createHash('sha256').update(inner).digest();
+		expect(commitSlot.subarray(2)).toEqual(expected);
+	});
+
+	it('binds the deposit tx id into the commit-slot hash', () => {
+		const depositTxId = 'b'.repeat(64);
+		const bytes = hydraSnapshotSignableBytes(withDeposit(depositTxId));
+		const inner = createHash('sha256').update(Buffer.alloc(0)).digest();
+		const expected = createHash('sha256')
+			.update(Buffer.concat([inner, Buffer.from(depositTxId, 'hex')]))
+			.digest();
+		expect(bytes.subarray(bytes.length - 32)).toEqual(expected);
+		expect(bytes.length).toBe(hydraSnapshotSignableBytes(base).length); // slot size unchanged
+	});
+
+	it('treats an explicit null depositTxId like an absent one', () => {
+		expect(hydraSnapshotSignableBytes(withDeposit(null))).toEqual(hydraSnapshotSignableBytes(base));
+	});
+
+	it('rejects a malformed depositTxId', () => {
+		// Two independent ways the check can fail — pinned separately so a broken
+		// length check and a broken hex-content check can't hide each other the
+		// way a single too-short, non-hex value like 'zz' would.
+		expect(() => hydraSnapshotSignableBytes(withDeposit('g'.repeat(64)))).toThrow(HydraProtocolError); // right length, not hex
+		expect(() => hydraSnapshotSignableBytes(withDeposit('a'.repeat(63)))).toThrow(HydraProtocolError); // valid hex, wrong length
 	});
 });

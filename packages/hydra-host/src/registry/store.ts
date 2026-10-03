@@ -53,6 +53,19 @@ function parseNodeRecord(raw: string, source: string): NodeRecord {
 		record.startAttempts = getOwnInteger(parsed, 'restartCount') ?? 0;
 	}
 
+	// Records written before hydra 2.4's --deposit-activation existed carry no
+	// depositActivationSeconds at all. Defaulting it here, at read time, to this
+	// record's own depositPeriodSeconds — the same value a fresh provision on
+	// this Host defaults to, see config.ts — is what keeps every downstream
+	// consumer honest: the idempotency-replay equality check in provision.ts
+	// (`existing.X !== request.X`) would otherwise compare `undefined` against
+	// the concrete number every request always carries and 409 a replay that is
+	// otherwise identical, and `buildHydraNodeArgs` would otherwise need its own
+	// fallback for the same gap.
+	if (typeof record.depositActivationSeconds !== 'number') {
+		record.depositActivationSeconds = record.depositPeriodSeconds;
+	}
+
 	return record;
 }
 

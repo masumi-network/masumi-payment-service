@@ -40,6 +40,14 @@ export type ProvisionRequest = {
 	contestationPeriodSeconds: number;
 	depositPeriodSeconds: number;
 	unsyncedPeriodSeconds: number;
+	/**
+	 * hydra-node 2.4's `--deposit-activation`, LOCAL to this node — not one of
+	 * the on-chain-checked `HeadParameters` (contestationPeriod, depositPeriod,
+	 * parties), so unlike `depositPeriodSeconds` it is never compared against an
+	 * InitTx. Still checked for idempotency-replay consistency below, same as
+	 * the other periods.
+	 */
+	depositActivationSeconds: number;
 };
 
 export type ProvisionSecrets = {
@@ -146,6 +154,7 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
 				['contestationPeriodSeconds', existing.contestationPeriodSeconds, request.contestationPeriodSeconds],
 				['depositPeriodSeconds', existing.depositPeriodSeconds, request.depositPeriodSeconds],
 				['unsyncedPeriodSeconds', existing.unsyncedPeriodSeconds, request.unsyncedPeriodSeconds],
+				['depositActivationSeconds', existing.depositActivationSeconds, request.depositActivationSeconds],
 			] as const
 		).filter(([, stored, requested]) => stored !== requested);
 
@@ -196,6 +205,7 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
 			contestationPeriodSeconds: request.contestationPeriodSeconds,
 			depositPeriodSeconds: request.depositPeriodSeconds,
 			unsyncedPeriodSeconds: request.unsyncedPeriodSeconds,
+			depositActivationSeconds: request.depositActivationSeconds,
 			hydraVerificationKey: hydra.verificationKey.cborHex,
 			cardanoVerificationKey: cardano.verificationKey.cborHex,
 			escrowAckedAt: null,

@@ -1,4 +1,5 @@
 import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import createHttpError from 'http-errors';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
@@ -17,9 +18,19 @@ import {
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
+import { assertRegistryAgentInWalletScope } from '../x402-agent-access';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { getX402AgentPaymentIncome } from '@masumi/payment-source-x402/service';
 import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
-import { withEarningsConcurrency, concurrencyResponseMiddleware } from '@/utils/earnings-request-control';
+import {
+	createEarningsRateLimitMiddleware,
+	withEarningsConcurrency,
+	concurrencyResponseMiddleware,
+} from '@/utils/earnings-request-control';
+
+const paymentIncomeEndpointFactory = readAuthenticatedEndpointFactory
+	.addMiddleware(createEarningsRateLimitMiddleware())
+	.addMiddleware(concurrencyResponseMiddleware);
 
 export const postPaymentIncomeSchemaInput = z.object({
 	agentIdentifier: z
@@ -57,6 +68,13 @@ export const postPaymentIncomeSchemaInput = z.object({
 		.optional()
 		.describe(
 			'Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.',
+		),
+	paymentRail: z
+		.enum(['cardano', 'x402'])
+		.optional()
+		.default('cardano')
+		.describe(
+			'cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node.',
 		),
 });
 
@@ -154,8 +172,6 @@ type PaymentIncomeHandlerArgs = {
 	ctx: AuthContext;
 };
 
-const paymentIncomeEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(concurrencyResponseMiddleware);
-
 export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 	method: 'post',
 	input: postPaymentIncomeSchemaInput,
@@ -165,7 +181,31 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
+			if (input.paymentRail === 'x402') {
+				if (input.agentIdentifier == null || input.agentIdentifier.trim() === '') {
+					throw createHttpError(400, 'agentIdentifier is required when paymentRail is x402');
+				}
+				await assertRegistryAgentInWalletScope(ctx, input.network, input.agentIdentifier);
+				return getX402AgentPaymentIncome({
+					network: input.network,
+					agentIdentifier: input.agentIdentifier,
+					startDate: input.startDate,
+					endDate: input.endDate,
+					timeZone: input.timeZone ?? 'Etc/UTC',
+					signal,
+				});
+			}
+
 			const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
+
+			// Denormalized column mirroring decodeBlockchainIdentifier(...).agentIdentifier
+			// (see PaymentRequest.agentIdentifier in schema.prisma). Pre-filtering on it
+			// lets the DB exclude confirmed non-matches; rows not yet backfilled
+			// (agentIdentifierSyncedAt: null) are still fetched so the JS-side
+			// filterByAgentIdentifier below can decode them as a fallback.
+			const agentIdentifierFilter = input.agentIdentifier
+				? { OR: [{ agentIdentifier: input.agentIdentifier }, { agentIdentifierSyncedAt: null }] }
+				: {};
 
 			const where = {
 				payByTime: {
@@ -179,12 +219,10 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 					deletedAt: null,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...(input.agentIdentifier
-					? { OR: [{ agentIdentifier: input.agentIdentifier }, { agentIdentifierSyncedAt: null }] }
-					: {}),
+				...agentIdentifierFilter,
 			};
-			let totalTransactions = 0;
 
+			let totalTransactions = 0;
 			const totalRefundedMap: Fund = {
 				units: new Map<string, bigint>(),
 				blockchainFees: 0n,
@@ -222,13 +260,13 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 							WithdrawnForSeller: { select: { unit: true, amount: true } },
 						},
 						take: EARNINGS_QUERY_BATCH_SIZE,
-						// Internal aggregation excludes the cursor row to count each row once.
 						...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
 					}),
 				EARNINGS_QUERY_BATCH_SIZE,
 				(batch) => {
 					const filteredBatch = filterByAgentIdentifier(batch, input.agentIdentifier);
 					totalTransactions += filteredBatch.length;
+
 					for (const payment of filteredBatch) {
 						//get the day number in the local time zone of the user
 						const dayDateLocal = getDayNumberLocal(new Date(Number(payment.payByTime)), input.timeZone ?? 'Etc/UTC');

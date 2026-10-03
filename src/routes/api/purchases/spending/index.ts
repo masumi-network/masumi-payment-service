@@ -19,7 +19,15 @@ import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchasePaymentSourceTypeFilter } from '../queries';
-import { withEarningsConcurrency, concurrencyResponseMiddleware } from '@/utils/earnings-request-control';
+import {
+	createEarningsRateLimitMiddleware,
+	withEarningsConcurrency,
+	concurrencyResponseMiddleware,
+} from '@/utils/earnings-request-control';
+
+const purchaseSpendingEndpointFactory = readAuthenticatedEndpointFactory
+	.addMiddleware(createEarningsRateLimitMiddleware())
+	.addMiddleware(concurrencyResponseMiddleware);
 
 export const postPurchaseSpendingSchemaInput = z.object({
 	agentIdentifier: z
@@ -154,8 +162,6 @@ type PurchaseSpendingHandlerArgs = {
 	ctx: AuthContext;
 };
 
-const purchaseSpendingEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(concurrencyResponseMiddleware);
-
 export const postPurchaseSpending = purchaseSpendingEndpointFactory.build({
 	method: 'post',
 	input: postPurchaseSpendingSchemaInput,
@@ -166,6 +172,15 @@ export const postPurchaseSpending = purchaseSpendingEndpointFactory.build({
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
+
+			// Denormalized column mirroring decodeBlockchainIdentifier(...).agentIdentifier
+			// (see PurchaseRequest.agentIdentifier in schema.prisma). Pre-filtering on it
+			// lets the DB exclude confirmed non-matches; rows not yet backfilled
+			// (agentIdentifierSyncedAt: null) are still fetched so the JS-side
+			// filterByAgentIdentifier below can decode them as a fallback.
+			const agentIdentifierFilter = input.agentIdentifier
+				? { OR: [{ agentIdentifier: input.agentIdentifier }, { agentIdentifierSyncedAt: null }] }
+				: {};
 
 			const where = {
 				payByTime: {
@@ -179,12 +194,10 @@ export const postPurchaseSpending = purchaseSpendingEndpointFactory.build({
 					deletedAt: null,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...(input.agentIdentifier
-					? { OR: [{ agentIdentifier: input.agentIdentifier }, { agentIdentifierSyncedAt: null }] }
-					: {}),
+				...agentIdentifierFilter,
 			};
-			let totalTransactions = 0;
 
+			let totalTransactions = 0;
 			const totalRefundedMap: Fund = {
 				units: new Map<string, bigint>(),
 				blockchainFees: 0n,
@@ -222,13 +235,13 @@ export const postPurchaseSpending = purchaseSpendingEndpointFactory.build({
 							WithdrawnForSeller: { select: { unit: true, amount: true } },
 						},
 						take: EARNINGS_QUERY_BATCH_SIZE,
-						// Internal aggregation excludes the cursor row to count each row once.
 						...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
 					}),
 				EARNINGS_QUERY_BATCH_SIZE,
 				(batch) => {
 					const filteredBatch = filterByAgentIdentifier(batch, input.agentIdentifier);
 					totalTransactions += filteredBatch.length;
+
 					for (const purchase of filteredBatch) {
 						//get the day number in the local time zone of the user
 						const dayDateLocal = getDayNumberLocal(new Date(Number(purchase.payByTime)), input.timeZone ?? 'Etc/UTC');

@@ -19,6 +19,7 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { isIP } from 'node:net';
 import type { ExchangeStore } from '../registry/exchange-store.js';
 import { isExchangeMaterial, isExchangeSignature } from '../registry/exchange-types.js';
 import type { SupervisorLogger } from '../supervisor/supervisor.js';
@@ -77,6 +78,20 @@ export function rateLimitKey(remote: string, tracked: ReadonlySet<string> | Map<
 	return tracked.has(remote) || tracked.size < cap ? remote : OVERFLOW_SOURCE;
 }
 
+export function exchangeRequestSource(
+	remote: string | undefined,
+	forwarded: string | string[] | undefined,
+	trustProxy: boolean,
+): string {
+	const socketAddress = remote ?? 'unknown';
+	if (!trustProxy || forwarded === undefined) {
+		return socketAddress;
+	}
+	const parts = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded).split(',');
+	const candidate = parts[parts.length - 1]?.trim();
+	return candidate !== undefined && isIP(candidate) !== 0 ? candidate : socketAddress;
+}
+
 export type ExchangeDeps = {
 	store: ExchangeStore;
 	logger: SupervisorLogger;
@@ -88,6 +103,8 @@ export type ExchangeDeps = {
 	 * counterparty who can do nothing about it.
 	 */
 	onRedeemed: (nonce: string, hostNodeId: string) => Promise<void>;
+	/** Read X-Forwarded-For only when a trusted HTTP proxy is the sole caller. */
+	trustProxy?: boolean;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
 	limits?: { maxInFlight?: number; requestsPerMinute?: number; maxTrackedSources?: number };
 };
@@ -174,7 +191,11 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			requestsInWindow.clear();
 			failuresInWindow.clear();
 		}
-		const remote = request.socket.remoteAddress ?? 'unknown';
+		const remote = exchangeRequestSource(
+			request.socket.remoteAddress,
+			request.headers['x-forwarded-for'],
+			deps.trustProxy === true,
+		);
 		const source = rateLimitKey(remote, requestsInWindow, maxTrackedSources);
 		const seen = (requestsInWindow.get(source) ?? 0) + 1;
 		requestsInWindow.set(source, seen);
