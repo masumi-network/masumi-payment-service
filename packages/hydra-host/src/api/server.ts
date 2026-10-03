@@ -355,7 +355,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'forgetInvite': {
-				await exchange.forgetInvite(nonce ?? '');
+				if (!(await exchange.forgetInvite(nonce ?? '', store))) {
+					throw new HostApiError('redemption peer setup is still pending; retry after setup completes', 409);
+				}
 				send(response, 200, { forgotten: true });
 				return;
 			}

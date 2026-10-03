@@ -185,7 +185,6 @@ async function discardUnadoptableRedemption(
 	const adminToken = decrypt(invite.HydraHost.encryptedAdminToken);
 	const transport = { allowInsecureHttp: invite.HydraHost.allowInsecureHttp };
 	try {
-		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
 		if (removeNode) {
 			const { removeHostNode } = await import('@/services/hydra-host/client');
 			try {
@@ -198,6 +197,8 @@ async function discardUnadoptableRedemption(
 				if (!(error instanceof HydraHostRequestError && error.status === 404)) throw error;
 			}
 		}
+		// Cancellation stops setup retries before discarding their durable material.
+		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
 	} catch (error) {
 		// Never rethrown. The invite is already terminal, so the operator is
 		// unblocked either way, and a throw here would be reported as an adoption
