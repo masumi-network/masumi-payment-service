@@ -205,3 +205,31 @@ test('malformed and altered ciphertext return null', async (t) => {
   bytes[bytes.length - 1] ^= 1;
   assert.equal(await storage.decryptFromStorage(btoa(String.fromCharCode(...bytes))), null);
 });
+
+test('legacy hex decoding preserves the exact UTF-8 token', async () => {
+  const storage = await freshStorage();
+  for (const token of ['legacy-admin', 'Admin-Key', '\uFEFFadmin', 'admin-ä']) {
+    assert.equal(storage.decodeLegacyStoredKey(Buffer.from(token).toString('hex')), token);
+    assert.equal(
+      storage.decodeLegacyStoredKey(Buffer.from(token).toString('hex').toUpperCase()),
+      token,
+    );
+  }
+});
+
+test('legacy decoding rejects malformed hex and invalid UTF-8', async () => {
+  const storage = await freshStorage();
+  for (const value of ['', 'abc', 'zz', '61\n', '61 ', '!base64!', 'ff', 'c328']) {
+    assert.equal(storage.decodeLegacyStoredKey(value), null, value);
+  }
+});
+
+test('encryption preserves a legacy token with a leading UTF-8 byte-order mark', async (t) => {
+  const db = createDatabase();
+  installDatabase(t, db);
+  const storage = await freshStorage();
+  const token = '\uFEFFadmin';
+  const encrypted = await storage.encryptForStorage(token);
+  const reloaded = await freshStorage();
+  assert.equal(await reloaded.decryptFromStorage(encrypted), token);
+});

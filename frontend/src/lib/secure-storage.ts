@@ -2,6 +2,27 @@ const DB_NAME = 'masumi-secure-storage';
 const STORE_NAME = 'keys';
 const KEY_ID = 'api-key-encryption-key';
 const IV_LENGTH_BYTES = 12;
+const HEX_CHARACTERS_PER_BYTE = 2;
+
+export function decodeLegacyStoredKey(stored: string): string | null {
+  if (
+    stored.length === 0 ||
+    stored.length % HEX_CHARACTERS_PER_BYTE !== 0 ||
+    /[^0-9a-f]/i.test(stored)
+  ) {
+    return null;
+  }
+  const bytes = new Uint8Array(stored.length / HEX_CHARACTERS_PER_BYTE);
+  for (let index = 0; index < bytes.length; index += 1) {
+    const offset = index * HEX_CHARACTERS_PER_BYTE;
+    bytes[index] = Number.parseInt(stored.slice(offset, offset + HEX_CHARACTERS_PER_BYTE), 16);
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -108,7 +129,7 @@ export async function decryptWithKey(key: CryptoKey, stored: string): Promise<st
     const iv = combined.slice(0, IV_LENGTH_BYTES);
     const ciphertext = combined.slice(IV_LENGTH_BYTES);
     const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
-    return new TextDecoder().decode(plaintext);
+    return new TextDecoder('utf-8', { ignoreBOM: true }).decode(plaintext);
   } catch {
     return null;
   }

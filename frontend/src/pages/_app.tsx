@@ -24,7 +24,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { capabilitiesFromApiKeyStatus, isAdminOnlyPath, isPayOnlyPath } from '@/lib/permissions';
-import { decryptFromStorage } from '@/lib/secure-storage';
+import { decodeLegacyStoredKey, decryptFromStorage, encryptForStorage } from '@/lib/secure-storage';
 import { hasLegacyOnlyPaymentSources, isV2PaymentSource } from '@/lib/payment-source-type';
 import { MASUMI_DOCUMENTATION_URL } from '@/lib/masumi-links';
 import {
@@ -309,7 +309,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     // the user with the key they just signed out of.
     let cancelled = false;
 
-    const init = async () => {
+    const init = async (): Promise<void> => {
       const response = await handleApiCall(() => getHealth({ client: apiClient }), {
         onError: (error: any) => {
           console.error('Health check failed:', error);
@@ -331,17 +331,28 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         return;
       }
 
-      let storedApiKey: string | null;
+      const legacyApiKey = decodeLegacyStoredKey(storedEncryptedKey);
+      let storedApiKey: string | null = null;
       try {
         storedApiKey = await decryptFromStorage(storedEncryptedKey);
       } catch {
-        if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) return;
-        toast.error('Unable to read saved API key. Please try signing in again.');
-        setIsHealthy(true);
-        setAuthorized(false);
+        if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+          if (!cancelled) await init();
+          return;
+        }
+        if (legacyApiKey == null) {
+          toast.error('Unable to read saved API key. Please try signing in again.');
+          setIsHealthy(true);
+          setAuthorized(false);
+          return;
+        }
+      }
+      if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+        if (!cancelled) await init();
         return;
       }
-      if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) return;
+      const shouldMigrate = storedApiKey == null && legacyApiKey != null;
+      storedApiKey ??= legacyApiKey;
       if (!storedApiKey) {
         localStorage.removeItem('payment_api_key');
         setIsHealthy(true);
@@ -366,7 +377,10 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       // Re-read the stored key: signOut() clears it without changing this
       // effect's deps, and authorizing from the stale value would sign the
       // user straight back in.
-      if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) return;
+      if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+        if (!cancelled) await init();
+        return;
+      }
 
       if (!apiKeyStatus) {
         setIsHealthy(true);
@@ -380,6 +394,22 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         toast.error('Unauthorized access');
         signOut();
         return;
+      }
+      if (shouldMigrate) {
+        try {
+          const encryptedKey = await encryptForStorage(storedApiKey);
+          if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+            if (!cancelled) await init();
+            return;
+          }
+          localStorage.setItem('payment_api_key', encryptedKey);
+        } catch {
+          if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+            if (!cancelled) await init();
+            return;
+          }
+          toast.error('Unable to upgrade saved API key. The app will retry after reload.');
+        }
       }
       setCapabilities(nextCapabilities);
       setAuthorized(true);
