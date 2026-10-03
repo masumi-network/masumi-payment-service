@@ -443,7 +443,7 @@ export async function redeemHeadInvite(input: {
 	// cycle would put a chain confirmation between redeeming and being able to
 	// open the head.
 	if (input.autoFund !== false) {
-		void fundHydraNodeNow(node.localParticipantId).catch((error: unknown) => {
+		void fundHydraNodeNow(node.localParticipantId, true).catch((error: unknown) => {
 			logger.warn(`hydra: could not pre-fund node ${node.nodeId}: ${(error as Error).message}`);
 		});
 	}

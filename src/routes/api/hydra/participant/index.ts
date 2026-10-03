@@ -1,9 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
-import { fundHydraNodeNow, readNodeFundingState } from '@/services/hydra-node-funding/service';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
-import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { decrypt } from '@/utils/security/encryption';
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
@@ -610,96 +608,17 @@ export const revealParticipantKeysPost = adminAuthenticatedEndpointFactory.build
 	},
 });
 
-// --- POST: fund this node's Cardano key ---
-
-export const fundParticipantNodeInput = z.object({
-	id: z.string().min(1).describe('Local participant whose node should be funded'),
-});
-
-export const fundParticipantNodeOutput = z.object({
-	address: z.string().describe("The node's own Cardano address, derived from its key hash"),
-	balanceLovelace: z.string(),
-	transferredLovelace: z
-		.string()
-		.nullable()
-		.describe('Null unless this request started a transfer; read `outcome` for why'),
-	outcome: z
-		.enum(['sent', 'sufficient', 'in-flight'])
-		.describe(
-			'`sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one.',
-		),
-});
-
-// --- GET: is this node funded enough to act on chain? ---
-
-export const participantFundingSchemaInput = z.object({ id: z.string().min(1) });
-
-export const participantFundingSchemaOutput = z.object({
-	address: z.string(),
-	balanceLovelace: z.string(),
-	isUnderfunded: z.boolean(),
-	shortfallLovelace: z.string(),
-	checked: z.boolean().describe('False when the chain could not be consulted — unknown, not zero'),
-	/**
-	 * Whether the node can be driven right now.
-	 *
-	 * Provisioned is not the same as ready: a node has to start and catch up on
-	 * chain first, and an L1 action attempted in that window fails as
-	 * "unreachable", which names the symptom rather than the cause.
-	 */
-	node: z.object({
-		state: z.string(),
-		isReady: z.boolean(),
-		reason: z.string().nullable().describe('Why it is not ready, when it is not'),
-	}),
-});
-
-/**
- * Read before an L1 action rather than after it fails.
- *
- * Init that fails for want of funds fails slowly and says nothing about money:
- * the node posts nothing, the service waits out its timeout, and the operator
- * sees a gateway timeout. Asking first turns that into a sentence with a number
- * in it.
- */
-export const participantFundingGet = adminAuthenticatedEndpointFactory.build({
-	method: 'get',
-	input: participantFundingSchemaInput,
-	output: participantFundingSchemaOutput,
-	handler: async ({ input }) => {
-		const [state, node] = await Promise.all([readNodeFundingState(input.id), readParticipantNodeState(input.id)]);
-		return {
-			address: state.address,
-			balanceLovelace: state.balanceLovelace.toString(),
-			isUnderfunded: state.isUnderfunded,
-			shortfallLovelace: state.shortfallLovelace.toString(),
-			checked: state.checked,
-			node,
-		};
-	},
-});
-
-/**
- * Top up the node's Cardano key now, rather than waiting for the funding cycle.
- *
- * A node cannot open a head from an empty address: Init consumes a seed UTxO
- * there and pays its fee from the same key, so a freshly provisioned node fails
- * with `NoSeedInput`. The scheduled cycle covers this, but the wait is worst on
- * the first head an operator opens — when the failure is least legible and the
- * fix is invisible.
- *
- * Queues a transfer rather than performing one: the existing fund-transfer
- * lifecycle owns building, signing, submitting and confirming, and duplicating
- * that here would mean a second path to get wrong.
- */
-export const fundParticipantNodePost = adminAuthenticatedEndpointFactory.build({
-	method: 'post',
-	input: fundParticipantNodeInput,
-	output: fundParticipantNodeOutput,
-	handler: async ({ input }) => {
-		return await fundHydraNodeNow(input.id);
-	},
-});
+export {
+	fundParticipantNodeInput,
+	fundParticipantNodeOutput,
+	fundParticipantNodePost,
+	participantFundingSchemaInput,
+	participantFundingSchemaOutput,
+	participantFundingGet,
+	participantFundingSettingsInput,
+	participantFundingSettingsOutput,
+	participantFundingPatch,
+} from './funding';
 
 // --- POST: return this node's remaining fuel to its wallet ---
 
