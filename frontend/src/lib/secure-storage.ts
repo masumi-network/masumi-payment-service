@@ -16,22 +16,41 @@ function openDb(): Promise<IDBDatabase> {
 
 async function loadStoredKey(): Promise<CryptoKey | null> {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const request = tx.objectStore(STORE_NAME).get(KEY_ID);
-    request.onsuccess = () => resolve((request.result as CryptoKey | undefined) ?? null);
-    request.onerror = () => reject(request.error);
-  });
+  try {
+    return await new Promise<CryptoKey | null>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const request = tx.objectStore(STORE_NAME).get(KEY_ID);
+      tx.oncomplete = () => resolve((request.result as CryptoKey | undefined) ?? null);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
 }
 
-async function saveKey(key: CryptoKey): Promise<void> {
+async function saveKeyIfAbsent(key: CryptoKey): Promise<CryptoKey> {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(key, KEY_ID);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  try {
+    return await new Promise<CryptoKey>((resolve, reject) => {
+      // IndexedDB serializes read/write transactions across tabs. Recheck
+      // inside this transaction so a competing tab's key is never replaced.
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(KEY_ID);
+      let selectedKey = key;
+      request.onsuccess = () => {
+        const existing = request.result as CryptoKey | undefined;
+        if (existing) selectedKey = existing;
+        else store.put(key, KEY_ID);
+      };
+      tx.oncomplete = () => resolve(selectedKey);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
 }
 
 let keyPromise: Promise<CryptoKey> | null = null;
@@ -47,9 +66,11 @@ function getOrCreateKey(): Promise<CryptoKey> {
         'encrypt',
         'decrypt',
       ]);
-      await saveKey(key);
-      return key;
-    })();
+      return saveKeyIfAbsent(key);
+    })().catch((error: unknown) => {
+      keyPromise = null;
+      throw error;
+    });
   }
   return keyPromise;
 }
@@ -99,10 +120,8 @@ export async function encryptForStorage(plaintext: string): Promise<string> {
 }
 
 export async function decryptFromStorage(stored: string): Promise<string | null> {
-  try {
-    const key = await getOrCreateKey();
-    return await decryptWithKey(key, stored);
-  } catch {
-    return null;
-  }
+  // Storage errors must reach the caller. Only invalid ciphertext returns
+  // null, so a temporary IndexedDB failure does not discard a saved token.
+  const key = await getOrCreateKey();
+  return decryptWithKey(key, stored);
 }

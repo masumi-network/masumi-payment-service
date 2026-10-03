@@ -331,7 +331,17 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         return;
       }
 
-      const storedApiKey = await decryptFromStorage(storedEncryptedKey);
+      let storedApiKey: string | null;
+      try {
+        storedApiKey = await decryptFromStorage(storedEncryptedKey);
+      } catch {
+        if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) return;
+        toast.error('Unable to read saved API key. Please try signing in again.');
+        setIsHealthy(true);
+        setAuthorized(false);
+        return;
+      }
+      if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) return;
       if (!storedApiKey) {
         localStorage.removeItem('payment_api_key');
         setIsHealthy(true);
