@@ -145,4 +145,46 @@ describe('queryAgentFromWalletGet', () => {
 			}),
 		]);
 	});
+	it('preserves on-chain payment source positions for metadata with multiple networks', async () => {
+		mockAssetsById.mockResolvedValue({
+			onchain_metadata: {
+				name: 'External agent',
+				api_base_url: 'https://example.com/agent',
+				author: { name: 'Author' },
+				tags: ['demo'],
+				image: 'ipfs://image',
+				metadata_version: 2,
+				supported_payment_sources: [Network.Mainnet, Network.Preprod].map((network) => ({
+					chain: 'Cardano',
+					network,
+					settlement: {
+						paymentSourceType: 'Web3CardanoV2',
+						address:
+							network === Network.Mainnet
+								? 'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df'
+								: 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g',
+					},
+					pricing: { pricingType: PricingType.Free },
+				})),
+			},
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: queryAgentFromWalletGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					walletVkey: 'recipient-wallet-vkey',
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(responseMock._getJSONData().data.Assets[0].Metadata.supportedPaymentSources).toEqual([
+			expect.objectContaining({ network: Network.Mainnet }),
+			expect.objectContaining({ network: Network.Preprod }),
+		]);
+	});
 });
