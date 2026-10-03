@@ -317,6 +317,7 @@ export async function getX402AgentPaymentIncome(input: {
 	startDate: Date | null | undefined;
 	endDate: Date | null | undefined;
 	timeZone: string;
+	signal?: AbortSignal;
 }) {
 	if (!input.agentIdentifier.trim()) {
 		throw createHttpError(400, 'agentIdentifier is required for x402 income');
@@ -383,6 +384,7 @@ export async function getX402AgentPaymentIncome(input: {
 				}
 			}
 		},
+		input.signal,
 	);
 
 	return {

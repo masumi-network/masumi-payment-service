@@ -192,6 +192,7 @@ export const getPaymentIncome = paymentIncomeEndpointFactory.build({
 					startDate: input.startDate,
 					endDate: input.endDate,
 					timeZone: input.timeZone ?? 'Etc/UTC',
+					signal,
 				});
 			}
 
