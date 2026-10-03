@@ -69,8 +69,9 @@ describe('GET /wallet/list searchQuery', () => {
 		expect(args.where.OR).toEqual([
 			{ walletAddress: { contains: 'sell', mode: 'insensitive' } },
 			{ collectionAddress: { contains: 'sell', mode: 'insensitive' } },
-			{ walletVkey: { contains: 'sell', mode: 'insensitive' } },
 			{ note: { contains: 'sell', mode: 'insensitive' } },
+			{ walletVkey: { contains: 'sell', mode: 'insensitive' } },
+			{ id: { contains: 'sell', mode: 'insensitive' } },
 			{ type: { in: [HotWalletType.Selling] } },
 		]);
 	});
@@ -80,8 +81,9 @@ describe('GET /wallet/list searchQuery', () => {
 		expect(args.where.OR).toEqual([
 			{ walletAddress: { contains: '50\\%\\_x', mode: 'insensitive' } },
 			{ collectionAddress: { contains: '50\\%\\_x', mode: 'insensitive' } },
-			{ walletVkey: { contains: '50\\%\\_x', mode: 'insensitive' } },
 			{ note: { contains: '50\\%\\_x', mode: 'insensitive' } },
+			{ walletVkey: { contains: '50\\%\\_x', mode: 'insensitive' } },
+			{ id: { contains: '50\\%\\_x', mode: 'insensitive' } },
 		]);
 	});
 

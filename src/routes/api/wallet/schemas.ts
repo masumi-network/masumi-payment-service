@@ -1,8 +1,8 @@
 import { HotWalletType, Network, TransactionStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { CARDANO_NATIVE_ASSET_UNIT_PATTERN } from '@/utils/cardano/asset-unit';
-import { searchQuerySchema } from '@/routes/api/shared/transaction-query-params';
 import { lowBalanceRuleSchema, lowBalanceSummarySchema } from './low-balance.schemas';
+import { searchQuerySchema } from '@/routes/api/shared/transaction-query-params';
 
 export const walletListItemSchema = z
 	.object({
@@ -36,7 +36,7 @@ export const getWalletListSchemaInput = z.object({
 	walletVkey: z.string().max(250).optional().describe('Filter to the single wallet with this payment key hash'),
 	walletAddress: z.string().max(250).optional().describe('Filter to wallets with this Cardano address'),
 	searchQuery: searchQuerySchema.describe(
-		'Free-text search over wallet address, collection address, payment key hash, note, and wallet type. Matching is case-insensitive.',
+		'Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name ("Purchasing") or the label the admin UI renders ("Buying"). "%" and "_" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND.',
 	),
 });
 
