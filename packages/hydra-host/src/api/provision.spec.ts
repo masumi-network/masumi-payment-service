@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,6 +33,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	jest.restoreAllMocks();
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
 
@@ -195,6 +196,33 @@ describe('acknowledgeEscrow', () => {
 		const first = await acknowledgeEscrow(record.nodeId, deps);
 		const second = await acknowledgeEscrow(record.nodeId, deps);
 		expect(second.escrowAckedAt).toBe(first.escrowAckedAt);
+	});
+
+	it('preserves a live node when an acknowledgment completes before a queued duplicate', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		const update = deps.store.update.bind(deps.store);
+		const acknowledgedAt = '2026-07-28T12:00:01.000Z';
+		jest.spyOn(deps.store, 'update').mockImplementationOnce(async (nodeId, mutate) => {
+			// Another acknowledgment and the supervisor claim land before this mutation.
+			await update(nodeId, (current) => ({
+				...current,
+				escrowAckedAt: acknowledgedAt,
+				state: 'Starting',
+				desired: 'Running',
+				pid: 1234,
+			}));
+			return update(nodeId, mutate);
+		});
+
+		const duplicate = await acknowledgeEscrow(record.nodeId, deps);
+		expect(duplicate).toMatchObject({ state: 'Starting', pid: 1234, escrowAckedAt: acknowledgedAt });
+		await expect(
+			setPeers(
+				record.nodeId,
+				[{ advertise: 'other.example.com:5001', hydraVerificationKey: '5820aa', cardanoVerificationKey: '5820bb' }],
+				deps,
+			),
+		).rejects.toMatchObject({ status: 409 });
 	});
 
 	it('404s for an unknown node', async () => {

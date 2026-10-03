@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
+import { planNodeAction } from '../supervisor/plan.js';
 import {
 	requestRemoval,
 	requestRestart,
@@ -86,6 +87,28 @@ describe('requestStop', () => {
 	it('marks the node as wanted stopped', async () => {
 		await store.write(record({ desired: 'Running', state: 'Running' }));
 		expect((await requestStop(store, 'node-1')).desired).toBe('Stopped');
+	});
+
+	it.each([false, true])('cancels a failed node restart when its process is running: %s', async (processRunning) => {
+		await store.write(record({ state: 'Failed', desired: 'Running' }));
+		await requestRestart(store, 'node-1');
+		const stopped = await requestStop(store, 'node-1');
+
+		expect(
+			planNodeAction(
+				stopped,
+				{
+					processRunning,
+					responsive: false,
+					chainSynced: false,
+					drift: null,
+					driftSeconds: null,
+					nowMs: Date.parse('2026-07-28T12:00:00.000Z'),
+				},
+				{ maxStartAttempts: 5, escrowTtlSeconds: 3600 },
+			).kind,
+		).toBe(processRunning ? 'Stop' : 'Idle');
+		expect(stopped.restartRequested).toBe(false);
 	});
 });
 
