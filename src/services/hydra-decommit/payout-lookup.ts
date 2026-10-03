@@ -11,7 +11,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { DecommitDistributedValue } from '@/lib/hydra';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { findDecommitPayoutTx } from './l1-payout';
+import { decommitPayoutSearchBounds, findDecommitPayoutTx } from './l1-payout';
 
 /**
  * How long a settled withdrawal stays worth looking for.
@@ -51,6 +51,17 @@ export async function resolveDecommitPayoutTx(params: {
 	});
 	if (!row || row.l1TxId !== null) return;
 
+	// Other withdrawals of the same head can pay the same address the same
+	// amount minutes apart (Defect H); bound the search to this row's own
+	// creation and rule out hashes already claimed by a sibling withdrawal.
+	// See `decommitPayoutSearchBounds` for why the bound is createdAt and not
+	// approvedAt.
+	const siblingPayouts = await prisma.hydraDecommit.findMany({
+		where: { hydraHeadId: row.hydraHeadId, id: { not: decommitId }, l1TxId: { not: null } },
+		select: { l1TxId: true },
+	});
+	const { notBefore, exclude } = decommitPayoutSearchBounds(row, siblingPayouts);
+
 	const paymentSource = row.LocalParticipant?.Wallet?.PaymentSource;
 	const apiKey = paymentSource?.PaymentSourceConfig?.rpcProviderApiKey;
 	if (!paymentSource || !apiKey) {
@@ -63,6 +74,8 @@ export async function resolveDecommitPayoutTx(params: {
 		blockfrost,
 		address: row.destinationAddress,
 		expected: distributed,
+		notBefore,
+		exclude,
 	});
 	if (!txId) {
 		logger.warn(`[HydraDecommit] could not identify the payout transaction for ${decommitId}`);

@@ -16,7 +16,6 @@ import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
 import { StatCard } from '@/components/ui/stat-card';
-import { X402SetupGuide } from '@/components/x402/X402SetupGuide';
 import type { X402PaymentAttempt } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { formatDateTime } from '@/lib/format-date';
@@ -28,6 +27,8 @@ import {
   useX402DashboardRecentPayments,
   useX402Wallets,
 } from '@/lib/hooks/useX402';
+import { MASUMI_DEV_HUB_URL } from '@/lib/masumi-links';
+import { formatX402PaymentStatus } from '@/lib/display-labels';
 import { formatX402Amount, groupDigits, shortenAddress } from '@/lib/utils';
 
 const STATUS_VARIANT: Record<X402PaymentAttempt['status'], BadgeProps['variant']> = {
@@ -88,7 +89,7 @@ export default function X402DashboardPage() {
               <p className="max-w-2xl text-sm text-muted-foreground">
                 Overview of x402 wallets, balances, and transactions.{' '}
                 <a
-                  href="https://www.masumi.network/dev/masumi"
+                  href={MASUMI_DEV_HUB_URL}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"
@@ -119,8 +120,6 @@ export default function X402DashboardPage() {
               disabled={!selectedChain}
             />
           </div>
-
-          {capabilities.canAdmin && <X402SetupGuide />}
 
           {isLoadingNetworks ? (
             <div className="flex justify-center py-16">
@@ -354,7 +353,7 @@ export default function X402DashboardPage() {
                                 {DIRECTION_LABEL[attempt.direction]}
                               </span>
                               <Badge variant={STATUS_VARIANT[attempt.status]}>
-                                {attempt.status}
+                                {formatX402PaymentStatus(attempt.status)}
                               </Badge>
                             </div>
                             <p className="mt-1 truncate text-xs text-muted-foreground">

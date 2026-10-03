@@ -131,6 +131,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 				Verifications: true,
 				SupportedPaymentSources: {
 					select: {
+						id: true,
 						chain: true,
 						network: true,
 						position: true,

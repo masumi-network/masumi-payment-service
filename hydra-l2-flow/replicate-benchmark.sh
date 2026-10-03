@@ -141,8 +141,8 @@ cmd_head(){
   NETWORK=preprod ./hydra-l2-flow/hydra-native.sh wait-sync 2>&1 | tail -1
 
   HYDRA_FLOW_NETWORK=preprod pnpm exec tsx hydra-l2-flow/00-open-head.mts 2>&1 | tail -2
-  blue "  waiting for the commit deposit to incorporate (~4 min on preprod)…"
-  for i in $(seq 1 60); do
+  blue "  waiting for the commit deposit to incorporate (up to ~15 min with a 600 s deposit period)…"
+  for i in $(seq 1 180); do
     local n; n="$(curl -s --max-time 8 "$NODE1/snapshot/utxo" | jq 'length' 2>/dev/null)"
     if [ "${n:-0}" -ge 1 ]; then
       green "  head funded: $(head_ada) ADA"

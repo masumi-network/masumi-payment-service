@@ -193,6 +193,40 @@ function normalizeInvoiceLocale(
   return undefined;
 }
 
+const INVOICE_FIELD_LABELS: Record<string, string> = {
+  month: 'Invoice month',
+  buyerWalletVkey: 'Buyer wallet',
+  sellerWalletVkey: 'Seller wallet',
+  'seller.name': 'Seller name',
+  'seller.companyName': 'Seller company name',
+  'seller.vatNumber': 'Seller VAT number',
+  'seller.country': 'Seller country',
+  'seller.city': 'Seller city',
+  'seller.zipCode': 'Seller zip code',
+  'seller.street': 'Seller street',
+  'seller.streetNumber': 'Seller street number',
+  'seller.email': 'Seller email',
+  'seller.phone': 'Seller phone',
+  'buyer.name': 'Buyer name',
+  'buyer.companyName': 'Buyer company name',
+  'buyer.vatNumber': 'Buyer VAT number',
+  'buyer.country': 'Buyer country',
+  'buyer.city': 'Buyer city',
+  'buyer.zipCode': 'Buyer zip code',
+  'buyer.street': 'Buyer street',
+  'buyer.streetNumber': 'Buyer street number',
+  'buyer.email': 'Buyer email',
+  'buyer.phone': 'Buyer phone',
+  invoice: 'Invoice options',
+};
+
+function formatValidationFieldLabel(path: string): string {
+  return (
+    INVOICE_FIELD_LABELS[path] ??
+    path.replace(/\./g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+  );
+}
+
 function findFirstValidationError(
   errors: FieldErrors<FormValues>,
   path = '',
@@ -950,10 +984,9 @@ export function GenerateInvoiceDialog({
 
     const firstError = findFirstValidationError(formErrors);
     const message = firstError
-      ? `Please fix ${firstError.path}: ${firstError.message}`
+      ? `${formatValidationFieldLabel(firstError.path)}: ${firstError.message}`
       : 'Please fix the highlighted form fields.';
 
-    console.warn('Generate invoice form validation failed', formErrors);
     setSubmitError(message);
     toast.error(message);
   }, []);

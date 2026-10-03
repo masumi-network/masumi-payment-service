@@ -9,6 +9,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolveTxHash } from '@meshsdk/core';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 
@@ -95,6 +96,48 @@ async function bfSubmit(cborHex: string): Promise<{ ok: boolean; body: string }>
 	return { ok: res.ok, body: await res.text() };
 }
 
+/** Collects every `pendingDeposits` map's keys out of an arbitrarily-nested node reply. */
+function collectPendingDepositKeys(value: unknown, keys: Set<string>): void {
+	if (Array.isArray(value)) {
+		for (const item of value) collectPendingDepositKeys(item, keys);
+		return;
+	}
+	if (value === null || typeof value !== 'object') return;
+	const obj = value as Record<string, unknown>;
+	const pendingDeposits = obj.pendingDeposits;
+	if (pendingDeposits !== null && typeof pendingDeposits === 'object' && !Array.isArray(pendingDeposits)) {
+		for (const key of Object.keys(pendingDeposits)) keys.add(key.toLowerCase());
+	}
+	for (const nested of Object.values(obj)) collectPendingDepositKeys(nested, keys);
+}
+
+/**
+ * Whether the node itself already knows about this deposit — either as a
+ * pending deposit or as an output already folded into the head's snapshot.
+ *
+ * Blockfrost's view of L1 can lag behind the node's own observed chain state
+ * (the false "never appeared" this guards against), so before re-drafting a
+ * fresh deposit, ask the node directly rather than trusting Blockfrost alone.
+ */
+async function nodeAlreadyHasDeposit(txId: string): Promise<boolean> {
+	const wanted = txId.toLowerCase();
+	try {
+		const head = await (await fetch('http://127.0.0.1:4001/head')).json();
+		const pendingKeys = new Set<string>();
+		collectPendingDepositKeys(head, pendingKeys);
+		if (pendingKeys.has(wanted)) return true;
+	} catch {
+		// Node unreachable or reply unparsable — fall through to the snapshot check.
+	}
+	try {
+		const snapshot = (await (await fetch('http://127.0.0.1:4001/snapshot/utxo')).json()) as Record<string, unknown>;
+		if (Object.keys(snapshot).some((ref) => ref.toLowerCase().startsWith(`${wanted}#`))) return true;
+	} catch {
+		// Node unreachable — cannot confirm either way.
+	}
+	return false;
+}
+
 async function httpPost(url: string, body: unknown): Promise<unknown> {
 	const res = await fetch(url, {
 		method: 'POST',
@@ -129,7 +172,15 @@ async function main() {
 	// Minimum lovelace the committed UTxO must carry: enough for buyer (40 ADA) +
 	// seller (20 ADA) in-head funding plus margin. Kept well below any reasonable
 	// fuel-UTxO size (see selection note below).
-	const MIN_COMMIT_LOVELACE = 100_000_000;
+	//
+	// Overridable because the default collides with devnet's seed: seed-devnet.sh
+	// funds this address with exactly 100 ADA, which equals the default and leaves
+	// nothing larger behind for fuel, so the run dies at the check below with no
+	// way forward that does not involve editing this file.
+	const MIN_COMMIT_LOVELACE = Number(process.env.COMMIT_LOVELACE ?? 100_000_000);
+	if (!Number.isSafeInteger(MIN_COMMIT_LOVELACE) || MIN_COMMIT_LOVELACE <= 0) {
+		throw new Error(`COMMIT_LOVELACE must be a positive integer, got ${process.env.COMMIT_LOVELACE}`);
+	}
 
 	// The node's own cardano wallet (the SAME address as the funds address, since
 	// hydra-native.sh passes purchasing-cardano.sk as --cardano-signing-key) is also
@@ -153,12 +204,20 @@ async function main() {
 			.sort((a, b) => utxos[a].value.lovelace - utxos[b].value.lovelace);
 		const utxoKey = candidates[0];
 		if (!utxoKey)
-			throw new Error(`no UTxO ≥ ${MIN_COMMIT_LOVELACE} lovelace found at ${fundsAddr} — fund it via faucet first`);
+			throw new Error(
+				`no UTxO >= ${MIN_COMMIT_LOVELACE} lovelace found at ${fundsAddr} — fund it via faucet first, ` +
+					'or lower the commit with COMMIT_LOVELACE=<lovelace>',
+			);
 		const lovelace = utxos[utxoKey].value.lovelace;
 		const hasLargerFuelUtxo = Object.keys(utxos).some((k) => k !== utxoKey && utxos[k].value.lovelace > lovelace);
 		if (!hasLargerFuelUtxo) {
 			throw new Error(
-				`no UTxO at ${fundsAddr} is larger than the ${lovelace}-lovelace commit candidate — need a bigger fuel UTxO left over for the node's own wallet (see NotEnoughFuel note above)`,
+				`no UTxO at ${fundsAddr} is larger than the ${lovelace}-lovelace commit candidate — the node's own ` +
+					'wallet needs a bigger UTxO left over to pay the deposit fee (see the NotEnoughFuel note above). ' +
+					'Two ways out: send that address a second, LARGER UTxO from the faucet, or commit less with ' +
+					`COMMIT_LOVELACE=<lovelace> (must stay under the largest UTxO, currently ${Math.max(
+						...Object.keys(utxos).map((k) => utxos[k].value.lovelace),
+					)}).`,
 			);
 		}
 
@@ -231,30 +290,17 @@ async function main() {
 		// Confirm the tx actually lands; resubmit the SAME signed tx (same txid) if
 		// it goes missing; if it never appears (validity expired), loop back and
 		// re-draft a fresh deposit.
-		const txId = execFileSync(
-			'docker',
-			[
-				'run',
-				'--rm',
-				'-i',
-				'--entrypoint',
-				'sh',
-				CARDANO_NODE_IMAGE,
-				'-c',
-				'cat > /tmp/commit.signed && cardano-cli conway transaction txid --tx-file /tmp/commit.signed',
-			],
-			{ input: signedJson, encoding: 'utf-8' },
-		).trim();
+		const txId = String(resolveTxHash(signed.cborHex)).toLowerCase();
 		log(`deposit tx ${txId} — waiting for it to appear on L1…`);
 		let known = false;
-		for (let i = 0; i < 12 && !known; i++) {
+		for (let i = 0; i < 30 && !known; i++) {
 			await new Promise((r) => setTimeout(r, 10000));
 			known = await bfTxKnown(txId);
 		}
 		if (!known) {
 			const re = await bfSubmit(signed.cborHex);
 			log(
-				`deposit tx not visible after 120s — resubmitted via Blockfrost: ${re.ok ? 'accepted' : re.body.slice(0, 140)}`,
+				`deposit tx not visible after 300s — resubmitted via Blockfrost: ${re.ok ? 'accepted' : re.body.slice(0, 140)}`,
 			);
 			for (let i = 0; i < 9 && !known; i++) {
 				await new Promise((r) => setTimeout(r, 10000));
@@ -263,6 +309,9 @@ async function main() {
 		}
 		if (known) {
 			log(`deposit tx ${txId} CONFIRMED on L1`);
+			submitted = true;
+		} else if (await nodeAlreadyHasDeposit(txId)) {
+			log(`deposit tx ${txId} not visible on Blockfrost, but the node already recorded it — not re-drafting`);
 			submitted = true;
 		} else {
 			log('deposit tx never appeared (validity likely expired) — re-drafting a fresh deposit…');

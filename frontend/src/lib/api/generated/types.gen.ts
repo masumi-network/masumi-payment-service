@@ -1738,6 +1738,151 @@ export type AgentIdentifierMetadata = {
     };
 };
 
+export type RegistryListEntry = RegistryEntry & {
+    supportedPaymentSources?: Array<({
+        /**
+         * The blockchain this payment source is available on
+         */
+        chain: 'Cardano';
+        /**
+         * The Cardano network this payment source is available on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The configured payment source type
+         */
+        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * The escrow smart contract address for this payment source
+         */
+        address: string;
+        pricing: {
+            /**
+             * A fixed amount is advertised for this payment source
+             */
+            pricingType: 'Fixed';
+            fixed: Array<{
+                /**
+                 * Chain-native asset identifier
+                 */
+                asset: string;
+                /**
+                 * Atomic token amount
+                 */
+                amount: string;
+                /**
+                 * Asset decimals when required by the rail
+                 */
+                decimals?: number;
+            }>;
+        } | {
+            /**
+             * The exact positive amount is supplied dynamically for each payment request
+             */
+            pricingType: 'Dynamic';
+            dynamic?: [
+                {
+                    /**
+                     * Optional accepted asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }
+            ];
+        } | {
+            /**
+             * This payment source does not require payment
+             */
+            pricingType: 'Free';
+        };
+    } | {
+        /**
+         * The chain family used by standard x402
+         */
+        chain: 'EVM';
+        /**
+         * CAIP-2 EVM network id, for example eip155:8453
+         */
+        network: string;
+        /**
+         * The configured payment source type
+         */
+        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+        /**
+         * Alias for payTo, kept for existing payment-source shape
+         */
+        address?: string;
+        /**
+         * x402 payment scheme
+         */
+        scheme: 'Exact';
+        /**
+         * EVM address receiving the x402 payment
+         */
+        payTo: string;
+        /**
+         * Optional absolute resource URL this x402 option protects
+         */
+        resource?: string;
+        /**
+         * Additional x402 metadata
+         */
+        extra?: {
+            [key: string]: unknown;
+        };
+        pricing: {
+            /**
+             * A fixed amount is advertised for this payment source
+             */
+            pricingType: 'Fixed';
+            fixed: Array<{
+                /**
+                 * Chain-native asset identifier
+                 */
+                asset: string;
+                /**
+                 * Atomic token amount
+                 */
+                amount: string;
+                /**
+                 * Asset decimals when required by the rail
+                 */
+                decimals?: number;
+            }>;
+        } | {
+            /**
+             * The exact positive amount is supplied dynamically for each payment request
+             */
+            pricingType: 'Dynamic';
+            dynamic?: [
+                {
+                    /**
+                     * Optional accepted asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }
+            ];
+        } | {
+            /**
+             * This payment source does not require payment
+             */
+            pricingType: 'Free';
+        };
+    }) & {
+        /**
+         * Payment-node source row ID for x402 verify/settle. May change when sources are replaced.
+         */
+        id: string;
+    }> | null;
+};
+
 export type RegistryEntry = {
     /**
      * Error message if registration failed. Null if no error
@@ -4284,7 +4429,7 @@ export type PostApiKeyData = {
          */
         ChainIdLimit?: Array<string>;
         /**
-         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
+         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected.
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
         /**
@@ -9514,7 +9659,7 @@ export type GetRegistryResponses = {
     200: {
         status: string;
         data: {
-            Assets: Array<RegistryEntry>;
+            Assets: Array<RegistryListEntry>;
         };
     };
 };
@@ -9952,7 +10097,7 @@ export type GetRegistryDiffResponses = {
     200: {
         status: string;
         data: {
-            Assets: Array<RegistryEntry>;
+            Assets: Array<RegistryListEntry>;
         };
     };
 };
@@ -11004,6 +11149,10 @@ export type PostPaymentIncomeData = {
          * Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node.
+         */
+        paymentRail?: 'cardano' | 'x402';
     };
     path?: never;
     query?: never;
@@ -11296,7 +11445,7 @@ export type PatchWebhooksData = {
          */
         url: string;
         /**
-         * Authentication token for extended webhook requests. Required when format is EXTENDED
+         * Authentication token for extended webhook requests. Omit to keep the stored token; required when changing a webhook to EXTENDED
          */
         authToken?: string | null;
         /**
@@ -13365,7 +13514,7 @@ export type PostHydraInviteData = {
          */
         autoFund?: boolean;
         /**
-         * How long a deposit must settle before this head will take it. Both nodes run the value signed here. A top-up is unusable for one period and cannot be recovered for three. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.
+         * How long a deposit must settle before this head will take it — and, since this service always keeps hydra-node 2.4's deposit-activation equal to this same value, also how long before the deposit matures. Both nodes run the value signed here. A top-up is unusable until it matures, absorbable for one period after that, and cannot be recovered until two periods after it matures. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.
          */
         depositPeriodSeconds?: number;
         /**
