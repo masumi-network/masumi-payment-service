@@ -523,7 +523,7 @@ export default function PaymentSourcesPage() {
                           className={tableActionsCellCompactClass}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <div className="flex gap-2">
+                          <div className="flex justify-end gap-2">
                             <Button
                               variant="ghost"
                               size="sm"
