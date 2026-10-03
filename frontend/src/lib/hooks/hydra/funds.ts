@@ -227,6 +227,22 @@ export async function readHydraNodeFunding(apiClient: Client, payload: { id: str
   return ensureData(response?.data?.data, 'The node balance was not returned by the API');
 }
 
+export async function updateHydraNodeFunding(
+  apiClient: Client,
+  payload: { id: string; autoFund: boolean; automaticFundingLimitLovelace: string | null },
+) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.patch<{ 200: ApiEnvelope<typeof payload> }>({
+        responseType: 'json',
+        url: '/hydra/participant/local/fund',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to save automatic funding settings' },
+  );
+  return ensureData(response?.data?.data, 'The funding settings were not returned by the API');
+}
+
 export async function fundHydraNode(apiClient: Client, payload: { id: string }) {
   const response = await handleApiCall(
     () =>
