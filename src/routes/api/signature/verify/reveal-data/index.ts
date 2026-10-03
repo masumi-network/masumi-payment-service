@@ -8,6 +8,7 @@ import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
+import { isCardanoAddress } from '@/utils/shared/cardano-address';
 
 export const postVerifyDataRevealSchemaInput = z.object({
 	signature: z.string().max(7500).describe('Cryptographic signature from the admin wallet'),
@@ -17,6 +18,7 @@ export const postVerifyDataRevealSchemaInput = z.object({
 		.min(58)
 		.max(250)
 		.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'walletAddress must be a bech32 Cardano address')
+		.refine(isCardanoAddress, 'walletAddress must be a valid Cardano address')
 		.describe('Cardano address of the admin wallet signing the request'),
 	validUntil: z
 		.number()
