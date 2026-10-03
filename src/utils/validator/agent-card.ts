@@ -18,6 +18,27 @@ export const AGENT_CARD_MAX_BYTES = 1_048_576; // 1 MB
 // not paraphrased. `.superRefine` enforces the spec's cross-field rule that
 // every supportedInterfaces[].protocolVersion must appear in the top-level
 // protocolVersions list.
+// Stop on the first invalid item. Untrusted arrays must not multiply validation errors.
+function agentCardArray<T>(schema: z.ZodType<T>, minLength = 0) {
+	return z
+		.array(z.unknown())
+		.min(minLength)
+		.transform((items, ctx) => {
+			const values: T[] = [];
+			for (const [index, item] of items.entries()) {
+				const parsed = schema.safeParse(item);
+				if (!parsed.success) {
+					for (const issue of parsed.error.issues) {
+						ctx.addIssue({ ...issue, path: [index, ...issue.path], fatal: true });
+					}
+					return z.NEVER;
+				}
+				values.push(parsed.data);
+			}
+			return values;
+		});
+}
+
 const agentCardInterfaceSchema = z.object({
 	url: z
 		.string()
@@ -31,10 +52,10 @@ const agentCardSkillSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	description: z.string(),
-	tags: z.array(z.string()),
-	inputModes: z.array(z.string()),
-	outputModes: z.array(z.string()),
-	examples: z.array(z.string()).optional(),
+	tags: agentCardArray(z.string()),
+	inputModes: agentCardArray(z.string()),
+	outputModes: agentCardArray(z.string()),
+	examples: agentCardArray(z.string()).optional(),
 });
 
 const agentCardExtensionSchema = z.object({
@@ -47,21 +68,21 @@ const agentCardCapabilitiesSchema = z
 	.object({
 		streaming: z.boolean().optional(),
 		pushNotifications: z.boolean().optional(),
-		extensions: z.array(agentCardExtensionSchema).optional(),
+		extensions: agentCardArray(agentCardExtensionSchema).optional(),
 	})
 	.passthrough();
 
 export const agentCardSchema = z
 	.object({
-		protocolVersions: z.array(a2aProtocolVersionSchema).min(1),
+		protocolVersions: agentCardArray(a2aProtocolVersionSchema, 1),
 		name: z.string(),
 		description: z.string(),
 		version: z.string(),
-		supportedInterfaces: z.array(agentCardInterfaceSchema).min(1),
+		supportedInterfaces: agentCardArray(agentCardInterfaceSchema, 1),
 		capabilities: agentCardCapabilitiesSchema,
-		defaultInputModes: z.array(z.string()),
-		defaultOutputModes: z.array(z.string()),
-		skills: z.array(agentCardSkillSchema).min(1),
+		defaultInputModes: agentCardArray(z.string()),
+		defaultOutputModes: agentCardArray(z.string()),
+		skills: agentCardArray(agentCardSkillSchema, 1),
 		provider: z
 			.object({
 				organization: z.string().optional(),
@@ -75,24 +96,26 @@ export const agentCardSchema = z
 	.superRefine((card, ctx) => {
 		const protocolVersions = new Set(card.protocolVersions);
 		const interfaceVersions = new Set(card.supportedInterfaces.map((iface) => iface.protocolVersion));
-		card.protocolVersions.forEach((version, index) => {
+		for (const [index, version] of card.protocolVersions.entries()) {
 			if (!interfaceVersions.has(version)) {
 				ctx.addIssue({
 					code: 'custom',
 					path: ['protocolVersions', index],
 					message: `protocolVersion "${version}" has no supported interface`,
 				});
+				break;
 			}
-		});
-		card.supportedInterfaces.forEach((iface, index) => {
+		}
+		for (const [index, iface] of card.supportedInterfaces.entries()) {
 			if (!protocolVersions.has(iface.protocolVersion)) {
 				ctx.addIssue({
 					code: 'custom',
 					path: ['supportedInterfaces', index, 'protocolVersion'],
 					message: `protocolVersion "${iface.protocolVersion}" is not listed in protocolVersions`,
 				});
+				break;
 			}
-		});
+		}
 	});
 
 export type AgentCard = z.infer<typeof agentCardSchema>;

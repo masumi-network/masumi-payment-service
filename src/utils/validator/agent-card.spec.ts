@@ -78,6 +78,42 @@ function mockResponse(
 }
 
 describe('agentCardSchema', () => {
+	it.each(['skills', 'supportedInterfaces', 'protocolVersions', 'defaultInputModes'])(
+		'limits validation errors for a large malformed %s array',
+		(field) => {
+			const parsed = agentCardSchema.safeParse({ ...VALID_CARD, [field]: Array.from({ length: 10_000 }, () => ({})) });
+			expect(parsed.success).toBe(false);
+			if (!parsed.success) expect(parsed.error.issues.length).toBeLessThanOrEqual(8);
+		},
+	);
+
+	it('limits validation errors within a skill array field', () => {
+		const parsed = agentCardSchema.safeParse({
+			...VALID_CARD,
+			skills: [{ ...VALID_CARD.skills[0], tags: Array.from({ length: 10_000 }, () => ({})) }],
+		});
+		expect(parsed.success).toBe(false);
+		if (!parsed.success) expect(parsed.error.issues.length).toBe(1);
+	});
+
+	it('limits version mismatch errors to the first mismatch in each direction', () => {
+		const parsed = agentCardSchema.safeParse({
+			...VALID_CARD,
+			protocolVersions: Array.from({ length: 512 }, (_, index) => `${index}.0`),
+			supportedInterfaces: Array.from({ length: 512 }, () => ({
+				...VALID_CARD.supportedInterfaces[0],
+				protocolVersion: '999.0',
+			})),
+		});
+		expect(parsed.success).toBe(false);
+		if (!parsed.success) {
+			expect(parsed.error.issues.map((issue) => issue.path)).toEqual([
+				['protocolVersions', 0],
+				['supportedInterfaces', 0, 'protocolVersion'],
+			]);
+		}
+	});
+
 	it('bounds protocol membership work linearly for a large valid card', () => {
 		const versionCount = 512;
 		const maxMembershipChecks = versionCount * 4;
