@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
@@ -35,6 +35,7 @@ import {
 import { formatSixDecimalAmount, shortenAddress, cn } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
@@ -70,6 +71,9 @@ export default function WalletsPage() {
   const [searchQuery, setSearchQuery] = useState(
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
+  const isSearchPending =
+    searchQuery.trim().toLowerCase() !== debouncedSearchQuery.trim().toLowerCase();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isFundWalletDialogOpen, setIsFundWalletDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
@@ -89,7 +93,7 @@ export default function WalletsPage() {
     hasMore,
     loadMore,
     refetch: refetchWalletsQuery,
-  } = usePaginatedWallets(activeWalletType);
+  } = usePaginatedWallets(activeWalletType, debouncedSearchQuery);
 
   // State-based previous value tracking for router query initialization
   // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
@@ -157,30 +161,6 @@ export default function WalletsPage() {
     }
   }, [router.isReady, router.query.action, router, capabilities.canAdmin]);
 
-  const filteredWallets = useMemo(() => {
-    let filtered = [...allWallets];
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((wallet) => {
-        const matchAddress =
-          wallet.walletAddress?.toLowerCase().includes(query) ||
-          wallet.collectionAddress?.toLowerCase().includes(query) ||
-          false;
-        const matchNote = wallet.note?.toLowerCase().includes(query) || false;
-        const matchType = wallet.type?.toLowerCase().includes(query) || false;
-        const matchBalance = wallet.balance
-          ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
-          : false;
-        const matchUsdcxBalance = wallet.usdcxBalance?.includes(query) || false;
-
-        return matchAddress || matchNote || matchType || matchBalance || matchUsdcxBalance;
-      });
-    }
-
-    return filtered;
-  }, [allWallets, searchQuery]);
-
   // Open for every session: the dialog renders the read-visible fields and
   // omits the admin-only sections rather than erroring.
   const handleWalletClick = (wallet: WalletWithBalance) => {
@@ -246,7 +226,8 @@ export default function WalletsPage() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by address, note, type, or balance..."
+                placeholder="Search by address, note, type, key hash, or ID..."
+                isLoading={isSearchPending || isFetchingWallets}
                 className="max-w-xs"
               />
             </div>
@@ -276,9 +257,9 @@ export default function WalletsPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {isLoading || isSearchPending ? (
                   <WalletTableSkeleton rows={2} />
-                ) : filteredWallets.length === 0 ? (
+                ) : allWallets.length === 0 ? (
                   <tr>
                     <td colSpan={7}>
                       <EmptyState
@@ -290,7 +271,7 @@ export default function WalletsPage() {
                   </tr>
                 ) : (
                   <>
-                    {filteredWallets.map((wallet, index) => (
+                    {allWallets.map((wallet, index) => (
                       <tr
                         key={wallet.id}
                         className={`group border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
@@ -457,7 +438,7 @@ export default function WalletsPage() {
             </table>
           </HorizontalScrollArea>
 
-          {hasMore && (
+          {hasMore && !isSearchPending && (
             <div className="flex justify-center">
               <Button variant="outline" onClick={loadMore} disabled={isFetchingNextPage}>
                 {isFetchingNextPage ? 'Loading…' : 'Load more'}
