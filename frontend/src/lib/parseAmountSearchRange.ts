@@ -1,3 +1,6 @@
+/** Largest value a Postgres `bigint` column can hold. */
+const MAX_INT8 = BigInt('9223372036854775807');
+
 /**
  * Parse a numeric search string into a lovelace range for amount filtering.
  * Mirrors the backend's parseAmountSearchRange in src/utils/shared/queries.ts.
@@ -29,10 +32,15 @@ export function parseAmountSearchRange(query: string): { min: bigint; max: bigin
   const span = BigInt(10) ** BigInt(spanDigits);
   const max = min + span - BigInt(1);
 
+  // `amount` is a Postgres bigint server-side, and a bound past its range is
+  // rejected by the driver. Clamp the same way the backend does so the mirror
+  // keeps agreeing with it for very long numeric queries.
+  if (min > MAX_INT8) return { min: BigInt(0), max: BigInt(-1) };
+
   // Return BigInt: lovelace amounts routinely exceed 2^53 (whale ADA / native
   // tokens), so downcasting to Number here would silently misfilter large
   // values. Callers compare against parseAmountToBigInt(amount).
-  return { min, max };
+  return { min, max: max > MAX_INT8 ? MAX_INT8 : max };
 }
 
 /**

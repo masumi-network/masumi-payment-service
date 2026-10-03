@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { z } from 'zod';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -8,6 +9,7 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { DEFAULT_ADMIN_WALLETS } from '@/lib/constants/defaultWallets';
 import { DEFAULT_PAYMENT_SOURCE_TYPE } from '@/lib/payment-source-type';
 import type { SetupWallet } from '@/components/setup/setup-helpers';
+import { invalidateTransactionReportFacets } from '@/lib/queries/transaction-report-cache';
 
 export const paymentSourceSchema = z.object({
   blockfrostApiKey: z.string().min(1, 'Blockfrost API key is required'),
@@ -65,6 +67,7 @@ async function validateBlockfrostApiKey(
  */
 export function usePaymentSourceSetup() {
   const { apiClient, network } = useAppContext();
+  const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
@@ -128,6 +131,7 @@ export function usePaymentSourceSetup() {
         }),
       {
         onSuccess: () => {
+          void invalidateTransactionReportFacets(queryClient);
           toast.success('V2 payment source created successfully');
           onSuccess();
         },

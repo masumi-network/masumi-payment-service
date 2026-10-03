@@ -2,7 +2,6 @@
 // endpoint here, update THIS file in the same PR — CI regenerates
 // openapi-docs.json and fails on drift.
 import {
-	budgetSchema,
 	createPaymentSchemaInput,
 	createPaymentSchemaOutput,
 	createWalletSchemaInput,
@@ -10,8 +9,6 @@ import {
 	deleteWalletSchemaInput,
 	deleteWalletSchemaOutput,
 	listAvailableNetworksSchemaOutput,
-	listBudgetSchemaInput,
-	listBudgetSchemaOutput,
 	listNetworksSchemaInput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaInput,
@@ -22,7 +19,6 @@ import {
 	listWalletsSchemaOutput,
 	reconcilePaymentSchemaInput,
 	reconcilePaymentSchemaOutput,
-	setBudgetSchemaInput,
 	settleSchemaOutput,
 	upsertNetworkSchemaInput,
 	verifySchemaOutput,
@@ -39,8 +35,6 @@ import {
 	deleteX402WalletBodyExample,
 	deleteX402WalletResponseExample,
 	listAvailableX402NetworksResponseExample,
-	listX402BudgetsQueryExample,
-	listX402BudgetsResponseExample,
 	listX402NetworksResponseExample,
 	listX402PaymentAttemptsQueryExample,
 	listX402PaymentAttemptsResponseExample,
@@ -48,12 +42,10 @@ import {
 	listX402SettlementsResponseExample,
 	listX402WalletsQueryExample,
 	listX402WalletsResponseExample,
-	setX402BudgetBodyExample,
 	settleX402ResponseExample,
 	upsertX402NetworkBodyExample,
 	verifyX402BodyExample,
 	verifyX402ResponseExample,
-	x402BudgetExample,
 	x402NetworkExample,
 	x402WalletExample,
 } from '@/routes/api/x402/examples';
@@ -65,7 +57,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/networks/available',
 		description:
 			'Lists the safe network projection needed to create managed wallets. Non-admin results are restricted to the API key CAIP-2 network limit; RPC and facilitator configuration are never returned.',
-		summary: 'List accessible x402 EVM chains. (pay access required)',
+		summary: 'List accessible x402 EVM chains. (read access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: { query: listNetworksSchemaInput },
@@ -115,8 +107,8 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/wallets',
 		description:
-			'Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.',
-		summary: 'List managed x402 EVM wallets. (pay access required)',
+			"Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Results are limited by the key's permitted networks; a key with wallet scoping enabled additionally sees only its assigned and self-created wallets (an unscoped key sees all, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.",
+		summary: 'List managed x402 EVM wallets. (read access required; no key material)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -132,7 +124,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/wallets',
 		description:
 			'Creates a managed EVM wallet on a network permitted for the API key. When no key is supplied, the generated private key is returned once for backup and stored only in encrypted form.',
-		summary: 'Create a managed x402 EVM wallet. (pay access required; owned by the creating key)',
+		summary: 'Create a managed x402 EVM wallet. (admin access required; returns the generated private key once)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -154,8 +146,8 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/wallets/detail',
 		description:
-			'Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.',
-		summary: 'Get a managed x402 EVM wallet by id. (pay access required)',
+			"Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their permitted networks, and outside their wallet scope when scoping is enabled (an unscoped key can fetch any wallet, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.",
+		summary: 'Get a managed x402 EVM wallet by id. (read access required; no key material)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -170,8 +162,8 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'post',
 		path: '/x402/wallets/delete',
 		description:
-			'Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.',
-		summary: 'Retire a managed x402 EVM wallet. (pay access required; owner and network scoped)',
+			'Retires a managed EVM wallet: soft-deletes it and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.',
+		summary: 'Retire a managed x402 EVM wallet. (admin access required; network scoped)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -187,42 +179,6 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		responses: {
 			200: successResponse('Managed wallet retired', deleteWalletSchemaOutput, deleteX402WalletResponseExample),
 		},
-	});
-
-	registry.registerPath({
-		method: 'get',
-		path: '/x402/budgets',
-		description: 'Lists per-API-key spend budgets for managed x402 wallets, optionally filtered by API key.',
-		summary: 'List x402 wallet budgets. (admin access required)',
-		tags: ['x402'],
-		security: [{ [apiKeyAuth.name]: [] }],
-		request: {
-			query: listBudgetSchemaInput.openapi({ example: listX402BudgetsQueryExample }),
-		},
-		responses: {
-			200: successResponse('x402 wallet budgets', listBudgetSchemaOutput, listX402BudgetsResponseExample),
-		},
-	});
-
-	registry.registerPath({
-		method: 'post',
-		path: '/x402/budgets',
-		description:
-			'Sets the remaining spend budget for an (API key, managed wallet, chain, asset) tuple. Replaces the remaining amount.',
-		summary: 'Set an x402 wallet budget. (admin access required)',
-		tags: ['x402'],
-		security: [{ [apiKeyAuth.name]: [] }],
-		request: {
-			body: {
-				description: 'Budget to set',
-				content: {
-					'application/json': {
-						schema: setBudgetSchemaInput.openapi({ example: setX402BudgetBodyExample }),
-					},
-				},
-			},
-		},
-		responses: { 200: successResponse('Budget saved', budgetSchema, x402BudgetExample) },
 	});
 
 	registry.registerPath({
@@ -271,7 +227,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'post',
 		path: '/x402/pay',
 		description:
-			'Signs a payment for a forwarded 402 using a managed EVM wallet, charged against the caller budget. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.',
+			"Signs a payment for a forwarded 402 using a managed EVM wallet, debited against the caller's usage credits when the key is usage limited. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.",
 		summary: 'Sign a payment for a forwarded 402. (pay access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
@@ -295,7 +251,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/payments',
 		description:
 			'Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.',
-		summary: 'List x402 payment attempts. (pay access required; non-admin keys see only their own)',
+		summary: 'List x402 payment attempts. (read access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -346,7 +302,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/settlements',
 		description: 'Lists x402 on-chain settlements, newest first.',
-		summary: 'List x402 settlements. (pay access required; non-admin keys see only their own)',
+		summary: 'List x402 settlements. (read access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

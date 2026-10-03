@@ -268,6 +268,7 @@ export async function getRegistryEntriesForQuery(
 			A2ADetail: true,
 			SupportedPaymentSources: {
 				select: {
+					id: true,
 					chain: true,
 					network: true,
 					position: true,

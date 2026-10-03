@@ -3,9 +3,11 @@ import {
 	PaymentSourceType,
 	Prisma,
 	PurchasingAction,
+	TransactionLayer,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { resolveTxHash } from '@meshsdk/core';
 import { deserializeDatum } from '@meshsdk/core';
 import type { Asset, LanguageVersion, UTxO } from '@meshsdk/core';
@@ -19,10 +21,17 @@ import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
+import {
+	headClockBehindCooldownMs,
+	resolveHydraL2WindowOptions,
+	type HydraL2WindowOptions,
+} from '@/utils/hydra/l2-slot-context';
 import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { makeHotWalletUnlocker, makePurchaseRequestFailureMarker } from '../../request-failure';
 import { findMatchingPurchaseUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
+import { pickCollateralUtxo, sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 // V2-pinned single-item builder. MUST NOT use the root V1-mesh generator (@/utils/generator/transaction-generator) — that bundles the V1 cost models and CBOR serializer, which produce a script-data-hash the ledger rejects for V2 scripts (PPViewHashesDontMatch). See docs/adr/0005.
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '../../../builders/single-interaction';
@@ -54,10 +63,17 @@ import {
 	type BatchWithdrawItem,
 	generateMasumiSmartContractBatchWithdrawTransactionAutomaticFees,
 } from '../../../builders/batch-interaction';
-import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import { COLLATERAL_RESERVE_LOVELACE, ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
+import {
+	NO_PROGRESS_NOTE,
+	clearL2RequestAttempts,
+	deferredL2RequestIds,
+	standDownL2Request,
+} from '../../l2-queue-rotation';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+import { submitReservedL2Action } from '../../l2-submission';
 
 const COLLECT_REFUND_BATCH_SIZE = 7;
 
@@ -118,6 +134,10 @@ async function validateAndBuildItem(
 	network: 'mainnet' | 'preprod',
 	smartContractAddress: string,
 	walletAddress: string,
+	// L2 only: validity-window overrides anchoring to the head's clock (devnet
+	// env slot config, or the live head Tick/SyncedStatusReport time on a
+	// same-network head). undefined (L1) → default network config + Date.now().
+	l2WindowOptions?: HydraL2WindowOptions,
 ): Promise<ValidatedCollectRefundItem> {
 	if (request.payByTime == null) {
 		throw new Error('Pay by time is null, this is deprecated');
@@ -165,11 +185,20 @@ async function validateAndBuildItem(
 	// NOT into `constrainAfterMs`, which would lower the upper bound and
 	// produce an invalid window when resultTime is already in the past
 	// (steady-state given the `resultTime <= now - 10min` query filter).
+	const l2SlotOverrides = l2WindowOptions ?? {};
+	if (decodedContract.state !== SmartContractState.RefundAuthorized) {
+		const headBehindMs = headClockBehindCooldownMs(l2SlotOverrides, decodedContract.resultTime);
+		if (headBehindMs > 0) {
+			throw new Error(
+				`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the submit-result deadline; retry next tick`,
+			);
+		}
+	}
 	const { invalidBefore, invalidAfter } = createTxWindow(
 		network,
 		decodedContract.state === SmartContractState.RefundAuthorized
-			? {}
-			: { constrainBeforeMs: decodedContract.resultTime },
+			? { ...l2SlotOverrides }
+			: { constrainBeforeMs: decodedContract.resultTime, ...l2SlotOverrides },
 	);
 
 	return {
@@ -415,7 +444,7 @@ async function processWalletBatch(
 		// a transient infra issue. Unlock the hot wallet and leave the
 		// requests in their queued state — next tick (after the wallet
 		// session loads cleanly) re-batches them.
-		await unlockHotWallet(wallet.id);
+		await unlockHotWallet(wallet.id, wallet.lockedAt);
 		return;
 	}
 	const { wallet: meshWallet, utxos, address } = walletSession;
@@ -427,7 +456,7 @@ async function processWalletBatch(
 		// Empty wallet is a transient operational issue (faucet ran out,
 		// pending state still settling). NOT a per-item failure — leave
 		// items queued for the next tick after the wallet has UTxOs.
-		await unlockHotWallet(wallet.id);
+		await unlockHotWallet(wallet.id, wallet.lockedAt);
 		return;
 	}
 
@@ -510,7 +539,7 @@ async function processWalletBatch(
 			'No V2 collect-refund items in this tick reached the batch builder (every item was either deferred for tx-sync to reconcile or marked failed); leaving wallet unlocked',
 			{ walletId: wallet.id, deferredIds, failedIds },
 		);
-		await unlockHotWallet(wallet.id);
+		await unlockHotWallet(wallet.id, wallet.lockedAt);
 		return;
 	}
 
@@ -705,7 +734,7 @@ async function processWalletBatch(
 		);
 	} catch (dbError) {
 		logger.error('V2 collect-refund batch DB pre-submit update failed', { error: dbError });
-		await unlockHotWallet(wallet.id);
+		await unlockHotWallet(wallet.id, wallet.lockedAt);
 		return;
 	}
 
@@ -945,6 +974,229 @@ function groupRequestsByWallet(requests: PurchaseRequestWithRelations[]): Map<st
 	return byWallet;
 }
 
+/**
+ * Hydra L2 single-item refund collection (in-head withdraw). Spends the contract
+ * UTxO in the head and pays the buyer's refund, mirroring the L1 single-item
+ * path on mesh 102 via `asV2Provider` with synchronous head submit.
+ * Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
+ */
+async function processL2CollectRefund(
+	request: PurchaseRequestWithRelations,
+	paymentContract: PaymentSourceWithPurchaseRelations,
+	network: 'mainnet' | 'preprod',
+): Promise<boolean> {
+	const headId = request.CurrentTransaction?.hydraHeadId;
+	if (headId == null) {
+		throw new Error('L2 collect-refund: request has no hydraHeadId on CurrentTransaction');
+	}
+	const hydraProvider = getHydraConnectionManager().getProvider(headId);
+	if (!hydraProvider) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} no active Hydra provider for head ${headId}; retry next tick`);
+	}
+	if (request.SmartContractWallet == null) {
+		throw new Error('Smart contract wallet not found');
+	}
+
+	const walletSession = await loadHotWalletSession({
+		network: paymentContract.network,
+		rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
+		hotWalletId: request.SmartContractWallet.id,
+	});
+	const { wallet, address } = walletSession;
+
+	const headWalletUtxos = await hydraProvider.fetchAddressUTxOs(address);
+	if (headWalletUtxos.length === 0) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no UTxOs in head ${headId}; retry next tick`);
+	}
+
+	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
+	// validateAndBuildItem fetches the contract UTxO via the provider's
+	// fetchUTxOs; the HydraProvider implements it. Cast is safe — only fetchUTxOs
+	// is exercised here.
+	const validated = await validateAndBuildItem(
+		request,
+		hydraProvider as unknown as BlockfrostProvider,
+		network,
+		smartContractAddress,
+		address,
+		// L2: anchor the validity window to the head's clock (env devnet override
+		// or live head Tick/SyncedStatusReport time).
+		resolveHydraL2WindowOptions(hydraProvider),
+	);
+
+	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);
+	// Collateral is chosen the way every other rail chooses it: by value, with a
+	// floor. `limitedUtxos[0]` is ordered by asset count and has no floor at all,
+	// so the buyer's own lock change — pure ADA, sitting at the 2 ADA minimum —
+	// won whenever its reference sorted first. The builder declares 3 ADA of
+	// total collateral regardless, which makes the collateral-return output
+	// negative: the head refuses the body, every retry rebuilds the same one, and
+	// that escrow can no longer be collected, refunded or authorized in the head.
+	const collateralUtxo = pickCollateralUtxo(headWalletUtxos, COLLATERAL_RESERVE_LOVELACE);
+	if (collateralUtxo == null) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no collateral UTxO of at least 5 ADA in head`);
+	}
+
+	const hydraV2Provider = asV2Provider(hydraProvider);
+	// Patch the V2 mesh line's bundled Plutus cost-model arrays from the HEAD's
+	// protocol parameters before building (no Blockfrost evaluator on L2). Without
+	// the head's cost models the in-head script-data-hash won't match and the head
+	// rejects with PPViewHashesDontMatch. Arrays are process-global + shared with
+	// L1, so hold the per-payment-source mesh lock across sync + build + sign;
+	// submitTx stays outside. See docs/adr/0005.
+	const headCostModels = await hydraProvider.fetchRawCostModels();
+	const signedTx = await withMeshCostModelLock(paymentContract.PaymentSourceConfig.rpcProviderApiKey, async () => {
+		await syncMeshCostModelsFromHeadV2(headCostModels);
+		const unsignedTx = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+			'CollectRefund',
+			hydraV2Provider,
+			network,
+			script,
+			address,
+			validated.smartContractUtxo,
+			collateralUtxo,
+			limitedUtxos,
+			{
+				collectAssets: validated.collectAssets,
+				collectionAddress: validated.buyerRefundAddress,
+			},
+			null,
+			null,
+			validated.window.invalidBefore,
+			validated.window.invalidAfter,
+			true,
+			undefined, // rpcApiKey — no chain cost-model sync on L2
+			undefined, // walletSplitterLovelace — L1-only convention
+			hydraV2Provider,
+		);
+		return await wallet.signTx(unsignedTx);
+	});
+	const smartContractWalletId = request.SmartContractWallet.id;
+
+	const outcome = await submitReservedL2Action({
+		requestKind: 'purchase',
+		operation: 'collect-refund',
+		requestId: request.id,
+		nextActionId: request.nextActionId,
+		previousTransactionId: request.CurrentTransaction!.id,
+		walletId: smartContractWalletId,
+		walletLockedAt: request.SmartContractWallet.lockedAt!,
+		hydraHeadId: headId,
+		signedTx,
+		initiatedAction: PurchasingAction.WithdrawRefundInitiated,
+		initiatedActionData: { submittedTxHash: null },
+		retryAction: PurchasingAction.WithdrawRefundRequested,
+		submitTx: async (transaction) => await hydraProvider.submitTx(transaction),
+	});
+
+	// False for both outcomes that rolled the request back: the head judged this
+	// exact body and refused it, or the command never reached the socket. Either
+	// way the request is unchanged and immediately eligible again, and rebuilding
+	// the identical body next tick produces the identical answer. The caller
+	// stands it down so the rest of this wallet's queue can move.
+	return outcome.status !== 'definitively-rejected' && outcome.status !== 'not-dispatched';
+}
+
+/** The L2 portion of the CollectRefund cycle, shared by the timer and the on-demand run. */
+async function runCollectRefundL2Pass(): Promise<void> {
+	// --- Hydra L2: dedicated single-item head refund-collection path ---
+	// In-head withdraw timing differs from L1; validated on a Hydra devnet
+	// (see docs/hydra-l2-devnet-findings.md).
+	const l2PaymentContracts = await lockAndQueryPurchases({
+		purchasingAction: PurchasingAction.WithdrawRefundRequested,
+		resultHash: null,
+		// One wallet can own only one durable L2 reservation at a time.
+		maxBatchSize: 1,
+		paymentSourceType: PaymentSourceType.Web3CardanoV2,
+		layer: TransactionLayer.L2,
+		// A request that just deferred stands aside for a moment so the rest of
+		// its wallet's queue can move.
+		excludeRequestIds: deferredL2RequestIds(),
+		orFilters: [
+			{
+				onChainState: { in: [OnChainState.RefundRequested, OnChainState.FundsLocked] },
+				submitResultTime: { lte: Date.now() - 1000 * 60 * 10 },
+			},
+			{
+				onChainState: { in: [OnChainState.RefundAuthorized] },
+			},
+		],
+	});
+	await Promise.allSettled(
+		l2PaymentContracts.map(async (paymentContract) => {
+			if (paymentContract.PurchaseRequests.length === 0) return;
+			const network = convertNetwork(paymentContract.network);
+			await Promise.allSettled(
+				paymentContract.PurchaseRequests.map(async (request) => {
+					try {
+						const progressed = await processL2CollectRefund(request, paymentContract, network);
+						if (progressed) {
+							clearL2RequestAttempts(request.id);
+						} else {
+							// Rolled back rather than thrown, so the deferral in the catch
+							// arm below never saw it. Without this the same request is the
+							// oldest eligible row on this wallet every tick, is refused
+							// again, and every escrow behind it runs out its deadlines.
+							await standDownL2Request(request.id, () =>
+								markRequestFailed(request, new Error(NO_PROGRESS_NOTE), { unlockWallet: false }),
+							);
+						}
+					} catch (error) {
+						if (isLookupDeferred(error)) {
+							logger.info('L2 collect-refund deferred to next tick', { requestId: request.id, error });
+						} else {
+							logger.error('L2 collect-refund failed', { requestId: request.id, error });
+						}
+						// Stood down for a cooldown, whichever it was. This pass takes the
+						// oldest eligible request per wallet, so one that fails every tick —
+						// a request carrying an unresolved terminal hash never matches its
+						// UTxO again — would be picked forever while every other escrow on
+						// that wallet waited behind it. The stand-down grows each time, and
+						// a request that never gets past it is parked for an operator
+						// rather than retried until its deadline passes.
+						await standDownL2Request(request.id, () => markRequestFailed(request, error, { unlockWallet: false }));
+						await unlockHotWalletIfNoPendingTransaction(
+							request.SmartContractWallet!.id,
+							'collect-refund-l2-pre-reservation',
+							request.SmartContractWallet!.lockedAt!,
+						);
+					}
+				}),
+			);
+		}),
+	);
+}
+
+/**
+ * The head path on its own, so it can run the moment the work appears.
+ *
+ * L1 is batched because the chain paces it. This is a signature exchange inside
+ * an open head that finishes in under a second, so the wait is latency we add.
+ * Extracted rather than running the whole cycle early, which would drag the L1
+ * pass forward with it.
+ *
+ * Shares the cycle's mutex: work arriving mid-cycle is already covered by the
+ * pass in flight, and two passes would race for the same wallet locks.
+ */
+export async function collectRefundL2V2(): Promise<void> {
+	let release: MutexInterface.Releaser | null;
+	try {
+		release = await tryAcquire(mutex).acquire();
+	} catch {
+		logger.info('collect_refund_v2 is already running, skipping the on-demand L2 pass');
+		return;
+	}
+
+	try {
+		await runCollectRefundL2Pass();
+	} catch (error) {
+		logger.error('Error in the on-demand CollectRefund L2 pass', { error });
+	} finally {
+		release?.();
+	}
+}
+
 export async function collectRefundV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -967,6 +1219,7 @@ export async function collectRefundV2() {
 			resultHash: null,
 			maxBatchSize: COLLECT_REFUND_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			layer: TransactionLayer.L1,
 			orFilters: [
 				// Variant A: timed refund — submitResultTime has elapsed and the
 				// on-chain UTxO is still in a pre-collection state.
@@ -1009,6 +1262,8 @@ export async function collectRefundV2() {
 				);
 			}),
 		);
+
+		await runCollectRefundL2Pass();
 	} catch (error) {
 		logger.error('Error collecting V2 refunds', { error });
 	} finally {

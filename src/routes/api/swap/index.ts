@@ -629,7 +629,7 @@ export const cancelSwapEndpointPost = adminAuthenticatedEndpointFactory.build({
 			}
 
 			if (swapTx.orderOutputIndex == null) {
-				throw createHttpError(400, 'Order output index not available — cannot cancel');
+				throw createHttpError(400, 'Order output index not available, so it cannot be cancelled');
 			}
 
 			if (!swapTx.txHash) {
@@ -722,7 +722,7 @@ export const cancelSwapEndpointPost = adminAuthenticatedEndpointFactory.build({
 							data: { lockedAt: null, pendingSwapTransactionId: null },
 						});
 						walletId = null; // Prevent double-unlock in catch
-						throw createHttpError(409, 'Order already executed by DEX — swap completed');
+						throw createHttpError(409, 'Order already executed by the DEX, so the swap completed');
 					}
 				}
 			} catch (utxoError) {

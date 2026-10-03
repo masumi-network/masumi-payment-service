@@ -47,6 +47,16 @@ const sodiumReady = import('libsodium-wrappers-sumo').then(async ({ default: sod
 });
 void sodiumReady.catch(() => undefined);
 
+/**
+ * One-off WASM init, with room to breathe.
+ *
+ * Jest's default 5s hook timeout is ample on an idle machine and not ample at
+ * all on a busy one — a developer running the suite next to a local stack sees
+ * this hook time out across dozens of unrelated suites, which reads as the
+ * change under test having broken everything. The wait itself is a fixed cost
+ * paid once per worker, so a generous ceiling costs nothing when things are
+ * healthy and prevents a fleet of false failures when they are not.
+ */
 beforeAll(async () => {
 	await sodiumReady;
-});
+}, 60_000);

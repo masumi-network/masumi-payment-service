@@ -3,7 +3,14 @@ import { cardanoNetworkToCaip2 } from '@masumi/payment-core/network';
 import createHttpError from 'http-errors';
 import { InsufficientFundsError } from '@masumi/payment-core/insufficient-funds-error';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
-import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
+import {
+	Network,
+	PricingType,
+	PurchasingAction,
+	TransactionLayer,
+	WalletBase,
+	WalletType,
+} from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 export async function runPurchaseCreditInitTransaction({
@@ -26,6 +33,8 @@ export async function runPurchaseCreditInitTransaction({
 	buyerReturnAddress,
 	sellerReturnAddress,
 	agentName,
+	forceLayer,
+	paymentForceLayer,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -46,6 +55,8 @@ export async function runPurchaseCreditInitTransaction({
 	buyerReturnAddress?: string | null;
 	sellerReturnAddress?: string | null;
 	agentName?: string | null;
+	forceLayer?: TransactionLayer | null;
+	paymentForceLayer?: TransactionLayer | null;
 }) {
 	// Gate Serializable $transaction through the shared semaphore so concurrent
 	// HTTP requests don't exhaust the pg connection pool. See
@@ -138,21 +149,43 @@ export async function runPurchaseCreditInitTransaction({
 						}
 					}
 
-					// Create new usage amount records with unique IDs
-					const updatedUsageAmounts = Array.from(newRemainingUsageCredits.entries()).map(([unit, amount]) => ({
-						id: `${id}-${unit}`, // Create a unique ID
-						amount: amount,
-						unit: unit,
-					}));
+					// Write the new balances IN PLACE, preserving row ids.
+					//
+					// This must NOT use a relation `set`: `set` only re-links EXISTING rows by
+					// id — it never creates or updates them — and the `${id}-${unit}` ids it
+					// was given here never existed, so it silently disconnected every credit
+					// row (apiKeyId -> NULL) and wrote no amounts back, wiping the key's ledger
+					// on every usage-limited purchase.
+					//
+					// It must not delete-and-recreate either: the x402 reservation pins the
+					// row it debited by id so its refund cannot inflate an unrelated row, and
+					// it guards its decrement on that id. Minting fresh ids here would make
+					// every usage-limited Cardano purchase silently burn the credits of any
+					// concurrent in-flight x402 payment, and turn a routine race into a
+					// terminal "insufficient credits" for a fully funded key. Updating by id
+					// keeps those pins valid; a concurrent guarded decrement becomes a
+					// write-write conflict the serialization retry resolves.
 					if (result.usageLimited) {
-						await prisma.apiKey.update({
-							where: { id: id },
-							data: {
-								RemainingUsageCredits: {
-									set: updatedUsageAmounts,
-								},
-							},
-						});
+						const rowsByUnit = new Map<string, typeof result.RemainingUsageCredits>();
+						for (const row of result.RemainingUsageCredits) {
+							const rows = rowsByUnit.get(row.unit) ?? [];
+							rows.push(row);
+							rowsByUnit.set(row.unit, rows);
+						}
+						for (const [unit, amount] of newRemainingUsageCredits) {
+							const rows = rowsByUnit.get(unit) ?? [];
+							if (rows.length === 0) {
+								await prisma.unitValue.create({ data: { unit, amount, apiKeyId: id } });
+								continue;
+							}
+							// The summed total lands on the first row (its id is the one any
+							// in-flight reservation is most likely holding); duplicates for the
+							// same unit collapse into it.
+							await prisma.unitValue.update({ where: { id: rows[0].id }, data: { amount } });
+							for (const duplicate of rows.slice(1)) {
+								await prisma.unitValue.delete({ where: { id: duplicate.id } });
+							}
+						}
 					}
 
 					const agentIdentifier = decodeBlockchainIdentifier(blockchainIdentifier)?.agentIdentifier ?? null;
@@ -184,6 +217,8 @@ export async function runPurchaseCreditInitTransaction({
 							agentName: agentName ?? null,
 							agentNameSyncedAt: new Date(),
 							inputHash: inputHash,
+							forceLayer: forceLayer ?? null,
+							paymentForceLayer: paymentForceLayer ?? null,
 							NextAction: {
 								create: {
 									requestedAction: PurchasingAction.FundsLockingRequested,

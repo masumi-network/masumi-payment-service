@@ -1,14 +1,8 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  LayoutDashboard,
-  Bot,
-  Wallet,
-  FileText,
-  Receipt,
-  Key,
   Settings,
   Sun,
   Moon,
@@ -17,10 +11,8 @@ import {
   PanelLeft,
   Bell,
   Search,
-  Code,
-  Wand2,
+  Command,
   AlertTriangle,
-  Coins,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -32,6 +24,7 @@ import { SearchDialog } from '@/components/search/SearchDialog';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -43,23 +36,20 @@ import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
-import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
+import {
+  DEFAULT_PAYMENT_SOURCE_TYPE,
+  hasLegacyOnlyPaymentSources as networkHasLegacyOnlyPaymentSources,
+  isV2PaymentSource,
+} from '@/lib/payment-source-type';
 import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
+import { buildMainNavigation } from '@/components/layout/main-navigation';
+import { railHomePath, setupPath } from '@/lib/x402-navigation';
+import { MASUMI_DOCUMENTATION_URL, MASUMI_PRESS_URL, MASUMI_SUPPORT_URL } from '@/lib/masumi-links';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
-
-type NavItem = {
-  href: string;
-  name: string;
-  icon: React.ReactNode;
-  badge: string | null;
-  group: number;
-  notificationDot?: boolean;
-  notificationLabel?: string;
-};
 
 export function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
@@ -79,11 +69,36 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep, activeRail } =
-    useAppContext();
+  const {
+    network,
+    setNetwork,
+    isChangingNetwork,
+    isSetupMode,
+    setupWizardStep,
+    setSetupWizardStep,
+    activeRail,
+    capabilities,
+  } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
   const isFirstNavMount = !hasAnimatedNav;
+  const sidebarNavRef = useRef<HTMLElement>(null);
+  const [sidebarNavScroll, setSidebarNavScroll] = useState({ atTop: true, atBottom: true });
+
+  const updateSidebarNavScroll = useCallback(() => {
+    const nav = sidebarNavRef.current;
+    if (!nav) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = nav;
+    const canScroll = scrollHeight - clientHeight > 1;
+    const atTop = scrollTop <= 1;
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
+
+    setSidebarNavScroll({
+      atTop: !canScroll || atTop,
+      atBottom: !canScroll || atBottom,
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -150,8 +165,15 @@ export function MainLayout({ children }: MainLayoutProps) {
   );
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
   const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
-  const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
-  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+  // Hydra is V2-only (ADR 0005). Show the nav whenever the current network has a
+  // V2 source at all, not only when the *selected* source is V2 — otherwise the
+  // link flickers off during load / when another source is selected, hiding the
+  // very page users go to in order to set up a head.
+  const canShowHydraNav = hasV2PaymentSource;
+  const hasLegacyOnlyPaymentSources = networkHasLegacyOnlyPaymentSources(
+    currentNetworkPaymentSources,
+  );
+  const { networks: x402Networks, isLoading: x402Loading } = useX402NetworksForSession({
     silentErrors: true,
   });
   // The x402 rail stands on its own: an operator working the EVM rail shouldn't be forced
@@ -177,163 +199,64 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, [activeWalletAlertCount]);
   const notificationCount = newTransactionsCount + unacknowledgedWalletAlertCount;
 
-  const navItems = useMemo<NavItem[]>(() => {
-    // Show the setup-only sidebar while in Cardano setup, or when there are no payment
-    // sources at all — unless a configured x402 rail is active, which has its own nav.
-    if (isSetupMode || (!hasPaymentSources && !isX402Standalone)) {
-      return [
-        {
-          href: '/setup',
-          name: 'Setup',
-          icon: <Wand2 className="h-4 w-4" />,
-          badge: null,
-          group: 0,
-        },
-        {
-          href: '/api-keys',
-          name: 'API keys',
-          icon: <Key className="h-4 w-4" />,
-          badge: null,
-          group: 1,
-        },
-        {
-          href: '/webhooks',
-          name: 'Webhooks',
-          icon: <Bell className="h-4 w-4" />,
-          badge: null,
-          group: 1,
-        },
-        {
-          href: '/developers',
-          name: 'Developers',
-          icon: <Code className="h-4 w-4 text-violet-500" />,
-          badge: null,
-          group: 1,
-        },
-      ];
-    }
+  const navItems = useMemo(
+    () =>
+      buildMainNavigation({
+        activeRail,
+        canAdmin: capabilities.canAdmin,
+        canPay: capabilities.canPay,
+        canShowHydraNav,
+        hasPaymentSources,
+        isSetupMode,
+        isX402Standalone,
+        setupHref: setupPath(activeRail, router.pathname),
+        transactionBadge: formatCount(newTransactionsCount),
+        walletAlertCount: activeWalletAlertCount,
+        walletAlertLabel,
+      }),
+    [
+      activeRail,
+      capabilities.canAdmin,
+      capabilities.canPay,
+      canShowHydraNav,
+      hasPaymentSources,
+      isSetupMode,
+      isX402Standalone,
+      router.pathname,
+      newTransactionsCount,
+      activeWalletAlertCount,
+      walletAlertLabel,
+    ],
+  );
 
-    // Shared items appear on both rails. The rest are gated by the active rail so the
-    // sidebar fully reflects the Cardano vs x402 (EVM) context the user picked.
-    const sharedAgents: NavItem = {
-      href: '/ai-agents',
-      name: 'AI Agents',
-      icon: <Bot className="h-4 w-4" />,
-      badge: null,
-      group: 0,
+  useEffect(() => {
+    const nav = sidebarNavRef.current;
+    if (!nav) return;
+
+    const syncScrollState = () => updateSidebarNavScroll();
+    const frame = requestAnimationFrame(syncScrollState);
+    const resizeObserver = new ResizeObserver(syncScrollState);
+    resizeObserver.observe(nav);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
     };
-    // Webhooks are scoped to the selected payment source / network, so they belong with the
-    // context-aware items (group 0), not the account-level cluster (API keys, Developers).
-    const sharedWebhooks: NavItem = {
-      href: '/webhooks',
-      name: 'Webhooks',
-      icon: <Bell className="h-4 w-4" />,
-      badge: null,
-      group: 0,
-    };
-    const sharedGroup1: NavItem[] = [
-      {
-        href: '/api-keys',
-        name: 'API keys',
-        icon: <Key className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
-      {
-        href: '/developers',
-        name: 'Developers',
-        icon: <Code className="h-4 w-4 text-violet-500" />,
-        badge: null,
-        group: 1,
-      },
-    ];
-
-    if (activeRail === 'x402') {
-      return [
-        {
-          href: '/x402',
-          name: 'x402',
-          icon: <Coins className="h-4 w-4" />,
-          badge: null,
-          group: 0,
-        },
-        sharedAgents,
-        sharedWebhooks,
-        ...sharedGroup1,
-      ];
-    }
-
-    return [
-      {
-        href: '/',
-        name: 'Dashboard',
-        icon: <LayoutDashboard className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
-      sharedAgents,
-      {
-        href: '/inbox-agents',
-        name: 'Inbox Agents',
-        icon: <MessageSquare className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
-      {
-        href: '/wallets',
-        name: 'Wallets',
-        icon: <Wallet className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-        notificationDot: activeWalletAlertCount > 0,
-        notificationLabel: walletAlertLabel,
-      },
-      {
-        href: '/transactions',
-        name: 'Transactions',
-        icon: <FileText className="h-4 w-4" />,
-        badge: formatCount(newTransactionsCount),
-        group: 0,
-      },
-      {
-        // Chain sync failures the reconciler parked. Sits with Transactions
-        // because that is what a pending entry is holding back.
-        href: '/tx-sync-quarantine',
-        name: 'Sync Quarantine',
-        icon: <AlertTriangle className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
-      {
-        href: '/invoices',
-        name: 'Invoices',
-        icon: <Receipt className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
-      sharedWebhooks,
-      ...sharedGroup1,
-    ];
-  }, [
-    isSetupMode,
-    hasPaymentSources,
-    isX402Standalone,
-    activeRail,
-    newTransactionsCount,
-    activeWalletAlertCount,
-    walletAlertLabel,
-  ]);
+  }, [updateSidebarNavScroll, navItems.length, collapsed, isHovered]);
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
     if (newNetwork === network) return;
-    if (router.pathname === '/setup') {
+    if (router.pathname === '/setup' || router.pathname === '/x402-setup') {
       if (setupWizardStep > 0) {
         setPendingNetwork(newNetwork);
         setShowNetworkSwitchConfirm(true);
         return;
       }
       setNetwork(newNetwork);
-      router.replace('/setup?network=' + newNetwork, undefined, { shallow: true });
+      setSetupWizardStep(0);
+      router.replace(setupPath(activeRail, router.pathname) + '?network=' + newNetwork, undefined, {
+        shallow: true,
+      });
       return;
     }
     setNetwork(newNetwork);
@@ -345,30 +268,24 @@ export function MainLayout({ children }: MainLayoutProps) {
     setPendingNetwork(null);
     if (targetNetwork === null) return;
     setNetwork(targetNetwork);
-    if (router.pathname === '/setup') {
-      router.replace('/setup?network=' + targetNetwork, undefined, { shallow: true });
+    if (router.pathname === '/setup' || router.pathname === '/x402-setup') {
+      setSetupWizardStep(0);
+      router.replace(
+        setupPath(activeRail, router.pathname) + '?network=' + targetNetwork,
+        undefined,
+        { shallow: true },
+      );
     }
   };
 
   return (
     <div
-      className="flex bg-background w-full"
-      style={{
-        overflowY: 'scroll',
-        overflowX: 'hidden',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100%',
-        height: '100%',
-      }}
+      className="fixed inset-0 flex w-full overflow-hidden bg-background"
       onClick={(e) => e.stopPropagation()}
     >
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 h-screen border-r transition-[width] duration-300',
+          'fixed left-0 top-0 z-40 flex h-screen flex-col overflow-hidden border-r transition-[width] duration-300',
           'bg-[#FAFAFA] dark:bg-[#111]',
         )}
         data-collapsed={collapsed}
@@ -379,51 +296,66 @@ export function MainLayout({ children }: MainLayoutProps) {
           pointerEvents: 'auto',
         }}
       >
-        <div className="flex flex-col">
-          <div
-            className={cn(
-              'flex items-center p-2 px-4 border-b border-border',
-              collapsed && !isHovered ? 'justify-center' : 'justify-between',
-            )}
-          >
-            {!(collapsed && !isHovered) ? (
-              <Link href="/" key="masumi-logo-full">
-                <MasumiLogo />
-              </Link>
-            ) : (
-              <Link
-                href="/"
-                key="masumi-logo-icon"
-                className="flex items-center justify-center w-8 h-8"
-                style={
-                  shouldAnimateIcon && collapsed && !isHovered
-                    ? {
-                        animation: 'rotateIn 0.3s ease-out',
-                      }
-                    : undefined
-                }
-              >
-                <MasumiIconFlat className="w-6 h-6" />
-              </Link>
-            )}
-            {!(collapsed && !isHovered) && (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                className={cn(
-                  'h-8 w-8',
-                  collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
-                )}
-                onClick={() => setCollapsed(!collapsed)}
-              >
-                <PanelLeft className={cn('h-4 w-4 transition-transform duration-300')} />
-              </Button>
-            )}
+        <div
+          className={cn(
+            'relative z-10 shrink-0 bg-[#FAFAFA] dark:bg-[#111]',
+            !sidebarNavScroll.atTop &&
+              'after:pointer-events-none after:absolute after:-bottom-6 after:left-0 after:right-0 after:z-10 after:h-6 after:bg-gradient-to-b after:from-[#FAFAFA] after:to-transparent dark:after:from-[#111] dark:after:to-transparent',
+          )}
+        >
+          <div className="border-b border-border">
+            <div
+              className={cn(
+                'flex h-14 min-h-14 max-h-14 items-center px-4',
+                collapsed && !isHovered ? 'justify-center' : 'justify-between',
+              )}
+            >
+              {!(collapsed && !isHovered) ? (
+                <Link
+                  href={railHomePath(activeRail)}
+                  key="masumi-logo-full"
+                  className="flex h-full items-center"
+                >
+                  <MasumiLogo />
+                </Link>
+              ) : (
+                <Link
+                  href={railHomePath(activeRail)}
+                  key="masumi-logo-icon"
+                  className="flex items-center justify-center w-8 h-8"
+                  style={
+                    shouldAnimateIcon && collapsed && !isHovered
+                      ? {
+                          animation: 'rotateIn 0.3s ease-out',
+                        }
+                      : undefined
+                  }
+                >
+                  <MasumiIconFlat className="w-6 h-6" />
+                </Link>
+              )}
+              {!(collapsed && !isHovered) && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  className={cn(
+                    'h-8 w-8',
+                    collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
+                  )}
+                  onClick={() => setCollapsed(!collapsed)}
+                >
+                  <PanelLeft className={cn('h-4 w-4 transition-transform duration-300')} />
+                </Button>
+              )}
+            </div>
           </div>
 
           <div
-            className={cn('p-2 w-full', collapsed && !isHovered ? 'flex justify-center' : 'px-2')}
+            className={cn(
+              'w-full min-w-0 overflow-hidden px-2 pt-2 pb-0',
+              collapsed && !isHovered && 'flex justify-center',
+            )}
           >
             <NetworkSourceCard
               collapsed={collapsed && !isHovered}
@@ -433,12 +365,16 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <nav
+          ref={sidebarNavRef}
+          onScroll={updateSidebarNavScroll}
           className={cn(
-            'flex flex-col gap-1 p-2',
+            'flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pb-2 pt-2',
+            '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
           {navItems.map((item, index) => {
+            const Icon = item.icon;
             const isDev = item.href === '/developers';
             const isActive = router.pathname === item.href;
             const showSeparator = index > 0 && item.group !== navItems[index - 1].group;
@@ -489,9 +425,14 @@ export function MainLayout({ children }: MainLayoutProps) {
                       : undefined
                   }
                 >
-                  {item.icon}
+                  <Icon className={cn('h-4 w-4', item.iconClassName)} />
                   {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
-                  {!(collapsed && !isHovered) && item.badge && (
+                  {!(collapsed && !isHovered) && item.beta && (
+                    <span className="ml-auto rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none tracking-wide text-muted-foreground">
+                      Beta
+                    </span>
+                  )}
+                  {!(collapsed && !isHovered) && !item.beta && item.badge && (
                     <span
                       key={item.badge}
                       className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
@@ -537,8 +478,12 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         <div
           className={cn(
-            'absolute bottom-4 left-0 right-0 overflow-hidden transition-all duration-300',
-            collapsed && !isHovered ? 'px-0' : 'px-2',
+            'relative shrink-0 px-2 pb-2 pt-2 transition-all duration-300',
+            'bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-[#FAFAFA]/80',
+            'dark:from-[#111] dark:via-[#111] dark:to-[#111]/80',
+            !sidebarNavScroll.atBottom &&
+              'before:pointer-events-none before:absolute before:-top-8 before:left-0 before:right-0 before:h-8 before:bg-gradient-to-t before:from-[#FAFAFA] before:to-transparent dark:before:from-[#111] dark:before:to-transparent',
+            collapsed && !isHovered && 'px-0',
           )}
         >
           <div className={cn('mb-2', collapsed && !isHovered ? 'flex justify-center' : '')}>
@@ -566,12 +511,12 @@ export function MainLayout({ children }: MainLayoutProps) {
               )}
             >
               <Link
-                href="https://www.masumi.network/about"
+                href={MASUMI_PRESS_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="truncate hover:text-foreground transition-colors"
               >
-                About
+                Press
               </Link>
               <span className="mx-2 text-muted-foreground/40">|</span>
               <Link
@@ -581,15 +526,6 @@ export function MainLayout({ children }: MainLayoutProps) {
                 className="truncate hover:text-foreground transition-colors"
               >
                 Privacy
-              </Link>
-              <span className="mx-2 text-muted-foreground/40">|</span>
-              <Link
-                href="https://www.masumi.network/product-releases"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate hover:text-foreground transition-colors"
-              >
-                Changelog
               </Link>
             </div>
             <Button
@@ -610,27 +546,34 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       <div
-        className="flex flex-col min-h-screen w-screen transition-all duration-300"
+        className="flex h-full min-h-0 w-screen flex-col transition-all duration-300"
         style={{
           paddingLeft: collapsed && !isHovered ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
         }}
       >
-        <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
+        <header className="z-20 shrink-0 border-b border-border bg-background/80 backdrop-blur-md">
           <div className="max-w-[1400px] mx-auto w-full">
-            <div className="h-14 px-4 flex items-center justify-between gap-4">
+            <div className="flex h-14 min-h-14 max-h-14 items-center justify-between gap-4 px-4">
               <div
-                className="flex flex-1 max-w-[190px] justify-start gap-1 relative rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
+                className="flex flex-1 max-w-[220px] cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                 onClick={() => setIsSearchOpen(true)}
               >
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <div className="pl-2">{`Search... `}</div>
-                <div className="pl-4">{`(${isMac ? '⌘' : 'Ctrl'} + K)`}</div>
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">Search…</span>
+                <span className="pointer-events-none flex shrink-0 items-center gap-1">
+                  <kbd className="bg-muted text-muted-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-sm border border-border p-0 font-mono text-[9px] font-medium leading-none">
+                    {isMac ? <Command className="h-3 w-3" aria-hidden /> : 'Ctrl'}
+                  </kbd>
+                  <kbd className="bg-muted text-muted-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-sm border border-border p-0 font-mono text-[10px] font-medium leading-none">
+                    K
+                  </kbd>
+                </span>
               </div>
 
               <div className="flex items-center gap-4">
                 <Button variant="outline" size="sm" asChild>
                   <Link
-                    href="https://www.masumi.network/dev/masumi"
+                    href={MASUMI_DOCUMENTATION_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2"
@@ -641,7 +584,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 </Button>
                 <Button variant="outline" size="sm" asChild>
                   <Link
-                    href="https://www.masumi.network/contact"
+                    href={MASUMI_SUPPORT_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2"
@@ -667,15 +610,16 @@ export function MainLayout({ children }: MainLayoutProps) {
               </div>
             </div>
           </div>
-        </div>
+        </header>
 
-        <main className="flex-1 relative z-10 w-full animate-content-fade-in">
-          {activeRail === 'x402' && !isSetupMode && (
+        <main className="relative z-10 min-h-0 w-full flex-1 overflow-y-auto overscroll-contain animate-content-fade-in">
+          {capabilities.canAdmin && activeRail === 'x402' && !isSetupMode && (
             <div className="mx-auto w-full max-w-[1400px] px-4 pt-4">
               <X402SetupBanner />
             </div>
           )}
-          {activeRail !== 'x402' &&
+          {capabilities.canAdmin &&
+            activeRail !== 'x402' &&
             hasLegacyOnlyPaymentSources &&
             !isSetupMode &&
             // The payment-sources page renders its own richer V2 setup banner, so
@@ -694,7 +638,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                         />
                       </div>
                       <p className="opacity-85">
-                        Run the one-time V2 setup, then migrate your agents on the dashboard.
+                        Your V1 payment source stays active. Run the one-time V2 setup when you are
+                        ready to migrate agents.
                       </p>
                     </div>
                   </div>
@@ -720,11 +665,10 @@ export function MainLayout({ children }: MainLayoutProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Switch network?</DialogTitle>
+            <DialogDescription>
+              Switching network cancels the current setup and starts it again for the new network.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground py-2">
-            Switching network will cancel the current setup. You will need to start again for the
-            new network. Do you want to continue?
-          </p>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               type="button"

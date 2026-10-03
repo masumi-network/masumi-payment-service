@@ -1,0 +1,516 @@
+import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { createPublicKey, verify as verifyEd25519Signature } from 'node:crypto';
+
+import { HydraProtocolError } from './errors';
+import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './schemas';
+import { computeHydraAccumulatorHash } from './snapshot-accumulator';
+import {
+	serializeCardanoTransactionOutput,
+	serializeHydraSnapshotOutput,
+	type SnapshotUtxo,
+} from './snapshot-serialization';
+import { hydraSnapshotSignableBytes } from './snapshot-signable';
+
+// Re-exported so the moves stay invisible to importers: this module is the
+// public face of snapshot verification, and callers should not have to know
+// which half of it computes the commitment, serializes an output, or builds the
+// bytes a party signs.
+export { computeHydraAccumulatorHash } from './snapshot-accumulator';
+export {
+	serializeCardanoTransactionOutput,
+	serializeHydraSnapshotOutput,
+	type SnapshotOutput,
+	type SnapshotUtxo,
+} from './snapshot-serialization';
+export { hydraSnapshotSignableBytes } from './snapshot-signable';
+import type { HydraTransaction } from './types';
+import { hydraVerificationKeyRawHex } from './keys';
+export {
+	deriveHydraVerificationKeyCborHex,
+	hydraVerificationKeyRawHex,
+	normalizeHydraSigningKeyCborHex,
+	normalizeHydraVerificationKeyCborHex,
+} from './keys';
+
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
+
+export type HydraSnapshotVerificationFrame = {
+	headId: string;
+	signatures: { multiSignature: string[] };
+	snapshot: {
+		headId: string;
+		version: number;
+		number: number;
+		accumulator: string;
+		confirmed: HydraTransaction[];
+		utxo: SnapshotUtxo;
+		utxoToCommit: SnapshotUtxo | null;
+		utxoToDecommit: SnapshotUtxo | null;
+		/** Hydra 2.4: the deposit this snapshot approves; bound into the signature. */
+		depositTxId?: string | null;
+	};
+};
+
+export type VerifiedHydraSnapshot = {
+	headId: string;
+	number: number;
+	version: number;
+	/** Canonical Plutus `TxOut` bytes, keyed by `tx-id#index`. */
+	outputs: Map<string, string>;
+	/** The only UTxO state committed by Hydra 2.3's accumulator (utxo ∪ commit ∪ decommit). */
+	outputMultiset: Map<string, number>;
+	/**
+	 * This snapshot's PENDING incremental-commit deposits (`utxoToCommit`), keyed
+	 * by reference exactly like `outputs`. Signature-authenticated (part of the
+	 * accumulator) and L1-backed; the transition check treats a newly declared
+	 * one as a legitimate injection and one that leaves without being absorbed as
+	 * a legitimate removal, so a topped-up head still replays. Empty when no
+	 * commit is pending.
+	 *
+	 * Keyed by reference rather than by value because every allowance derived
+	 * from it has to name the exact output that moved. A value-keyed allowance
+	 * cannot tell an absorbed deposit from a recovered one, nor one deposit
+	 * re-declared across consecutive snapshots from two separate deposits — and
+	 * these values collide routinely: a withdrawal and a top-up of the same size
+	 * to the same wallet serialize to the same bytes.
+	 */
+	committedOutputs: Map<string, string>;
+	/** This snapshot's pending decommits (`utxoToDecommit`), keyed like `outputs`. */
+	decommitOutputs: Map<string, string>;
+	/**
+	 * Hydra 2.4: the on-chain deposit this snapshot's `committedOutputs` came
+	 * from, or `null`/`undefined` for a snapshot that declares none (including
+	 * every Hydra 2.3 snapshot, which never carried the field at all).
+	 *
+	 * Carried, authenticated, and deliberately not acted on: it is bound into
+	 * the signable bytes, so a forged value fails the multisignature, but no
+	 * acceptance decision reads it. `doesHydraTransactionTransitionReachSnapshot`
+	 * attributes commits by OUTPUT REFERENCE and says at length why refusing on
+	 * this field would add a way to take a live head offline without adding
+	 * security. It is here so a reader of a verified snapshot can see which
+	 * deposit the head named.
+	 */
+	depositTxId?: string | null;
+};
+
+export type VerifiedHydraFanoutReference = {
+	txHash: string;
+	outputIndex: number;
+	snapshotNumber: number;
+	serializedOutput: string;
+};
+
+function parseFanoutReference(
+	reference: string,
+	snapshotNumber: number,
+	serializedOutput: string,
+): VerifiedHydraFanoutReference | null {
+	const normalizedReference = reference.toLowerCase();
+	const separator = normalizedReference.indexOf('#');
+	if (separator <= 0 || normalizedReference.indexOf('#', separator + 1) !== -1) return null;
+	const txHash = normalizedReference.slice(0, separator);
+	const outputIndexText = normalizedReference.slice(separator + 1);
+	if (!/^(?:0|[1-9][0-9]*)$/.test(outputIndexText)) return null;
+	const outputIndex = Number(outputIndexText);
+	if (
+		!/^[0-9a-f]{64}$/.test(txHash) ||
+		!Number.isSafeInteger(outputIndex) ||
+		outputIndex < 0 ||
+		outputIndex > 0xffffffff
+	) {
+		return null;
+	}
+	return { txHash, outputIndex, snapshotNumber, serializedOutput };
+}
+
+function canonicalSnapshotOutputs(snapshot: HydraSnapshotVerificationFrame['snapshot']): Map<string, string> {
+	const result = new Map<string, string>();
+	for (const utxo of [snapshot.utxo, snapshot.utxoToCommit ?? {}, snapshot.utxoToDecommit ?? {}]) {
+		for (const [reference, output] of Object.entries(utxo)) {
+			const canonicalReference = reference.toLowerCase();
+			if (result.has(canonicalReference)) {
+				throw new HydraProtocolError('Hydra snapshot repeated one output reference across state partitions');
+			}
+			result.set(canonicalReference, serializeHydraSnapshotOutput(output));
+		}
+	}
+	if (result.size > MAX_HYDRA_SNAPSHOT_OUTPUTS) {
+		throw new HydraProtocolError(`Hydra snapshot exceeded the ${MAX_HYDRA_SNAPSHOT_OUTPUTS}-output KZG limit`);
+	}
+	return result;
+}
+
+function outputMultiset(outputs: Iterable<string>): Map<string, number> {
+	const result = new Map<string, number>();
+	for (const output of outputs) result.set(output, (result.get(output) ?? 0) + 1);
+	return result;
+}
+
+function numberMapsEqual(left: ReadonlyMap<string, number>, right: ReadonlyMap<string, number>): boolean {
+	return left.size === right.size && [...left].every(([key, value]) => right.get(key) === value);
+}
+
+/**
+ * What the fanout may legitimately pay out for this signed state.
+ *
+ * The canonical set the accumulator is computed over is all three partitions,
+ * because that is what the signature commits to. The fanout is not: a deposit
+ * still sitting in `utxoToCommit` has not entered the head — its funds are at
+ * the L1 deposit script, where the depositor recovers them — and distributing
+ * it as well would be a double spend. A pending DECOMMIT is the mirror image:
+ * the decrement has not landed, so those funds are still in the head's L1 UTxO
+ * and the fanout does pay them out.
+ *
+ * Both forms are accepted rather than only the second, because the snapshot
+ * this is checked against is the one the database recorded, and an increment
+ * that landed on L1 just before the close moves the same outputs from
+ * `utxoToCommit` into `utxo` — which our copy may not have seen yet. Requiring
+ * the full set was the bug: a head closed with any deposit in flight resolved
+ * no fanout reference at all, so `prepareFinalHandoff` returned null on every
+ * poll — deterministically, from replayed history — and every payment in that
+ * head stayed pinned to in-head UTxOs that no longer exist, on a head already
+ * Final with no protocol action left to unstick it.
+ */
+function expectedFanoutMultisets(snapshot: VerifiedHydraSnapshot): Array<ReadonlyMap<string, number>> {
+	if (snapshot.committedOutputs.size === 0) return [snapshot.outputMultiset];
+	const withoutCommitted = new Map(snapshot.outputMultiset);
+	for (const serializedOutput of snapshot.committedOutputs.values()) {
+		const remaining = (withoutCommitted.get(serializedOutput) ?? 0) - 1;
+		if (remaining > 0) withoutCommitted.set(serializedOutput, remaining);
+		else withoutCommitted.delete(serializedOutput);
+	}
+	return [snapshot.outputMultiset, withoutCommitted];
+}
+
+/**
+ * Bind the complete signature-verified final state to hydra-node's complete
+ * chain-observed fanout map. Unlike the single-output resolver below, this can
+ * retain duplicate values because every actual L1 reference is independently
+ * checked and the complete value multiset is authenticated.
+ */
+export function resolveVerifiedHydraFanoutReferences(
+	snapshot: VerifiedHydraSnapshot,
+	fanoutOutputs: ReadonlyMap<string, string>,
+): VerifiedHydraFanoutReference[] | null {
+	const observed = outputMultiset(fanoutOutputs.values());
+	if (!expectedFanoutMultisets(snapshot).some((expected) => numberMapsEqual(expected, observed))) return null;
+	const references: VerifiedHydraFanoutReference[] = [];
+	for (const [reference, serializedOutput] of fanoutOutputs) {
+		const parsed = parseFanoutReference(reference, snapshot.number, serializedOutput);
+		if (!parsed) return null;
+		references.push(parsed);
+	}
+	if (references.length === 0) return null;
+	// A head too large to empty in one transaction is fanned out over several, so
+	// references legitimately span transactions and an output index only has to
+	// be unique within its own. Requiring one transaction here rejected every
+	// partial fanout outright; requiring globally unique indexes would have
+	// rejected them anyway, since each step numbers its outputs from zero.
+	// What still has to hold — that the steps form one chain ending in the head's
+	// token burn — is proved on chain by the fanout verifier, and that every
+	// signed output is accounted for exactly once is the multiset check above.
+	if (new Set(references.map(({ txHash, outputIndex }) => `${txHash}#${outputIndex}`)).size !== references.length) {
+		return null;
+	}
+	return references.sort(
+		(left, right) => left.txHash.localeCompare(right.txHash) || left.outputIndex - right.outputIndex,
+	);
+}
+
+/**
+ * Map one independently reconstructed in-head TxOut to its exact L1 fanout
+ * reference.
+ *
+ * Hydra snapshot signatures authenticate a multiset of serialized TxOuts, not
+ * either reference map. The caller must therefore derive `serializedOutput`
+ * from the retained producer transaction CBOR at its exact txHash#index; using
+ * `snapshot.outputs.get(reference)` here would let an endpoint permute unsigned
+ * references while preserving every signature and accumulator. Identical
+ * TxOuts remain intentionally ambiguous.
+ */
+export function resolveVerifiedHydraFanoutReference(
+	snapshot: VerifiedHydraSnapshot,
+	fanoutOutputs: ReadonlyMap<string, string>,
+	serializedOutput: string,
+): VerifiedHydraFanoutReference | null {
+	const verifiedFanoutReferences = resolveVerifiedHydraFanoutReferences(snapshot, fanoutOutputs);
+	if (!verifiedFanoutReferences) return null;
+	const fanoutMultiset = outputMultiset(fanoutOutputs.values());
+
+	if (snapshot.outputMultiset.get(serializedOutput) !== 1 || fanoutMultiset.get(serializedOutput) !== 1) {
+		return null;
+	}
+	const matchingReferences = verifiedFanoutReferences.filter(
+		(reference) => reference.serializedOutput === serializedOutput,
+	);
+	return matchingReferences.length === 1 ? matchingReferences[0] : null;
+}
+
+export function verifyHydraSnapshot(
+	frame: HydraSnapshotVerificationFrame,
+	orderedVerificationKeys: readonly string[],
+): VerifiedHydraSnapshot {
+	if (frame.headId !== frame.snapshot.headId) {
+		throw new HydraProtocolError('SnapshotConfirmed top-level and signed snapshot head identifiers differed');
+	}
+	const rawVerificationKeys = orderedVerificationKeys.map(hydraVerificationKeyRawHex);
+	if (
+		rawVerificationKeys.length === 0 ||
+		new Set(rawVerificationKeys).size !== rawVerificationKeys.length ||
+		frame.signatures.multiSignature.length !== rawVerificationKeys.length
+	) {
+		throw new HydraProtocolError('SnapshotConfirmed signature count did not match the configured unique party set');
+	}
+	const signableBytes = hydraSnapshotSignableBytes(frame);
+	for (let index = 0; index < rawVerificationKeys.length; index++) {
+		const publicKey = createPublicKey({
+			key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(rawVerificationKeys[index], 'hex')]),
+			format: 'der',
+			type: 'spki',
+		});
+		if (
+			!verifyEd25519Signature(
+				null,
+				signableBytes,
+				publicKey,
+				Buffer.from(frame.signatures.multiSignature[index], 'hex'),
+			)
+		) {
+			throw new HydraProtocolError(`SnapshotConfirmed signature ${index} was invalid for the bound party order`);
+		}
+	}
+	// KZG recomputation is intentionally after the cheap Ed25519 gate. An
+	// unauthenticated websocket peer must not be able to force polynomial/MSM
+	// work with arbitrary maximum-size states.
+	const outputs = canonicalSnapshotOutputs(frame.snapshot);
+	const computedAccumulator = computeHydraAccumulatorHash(outputs.values());
+	if (computedAccumulator !== frame.snapshot.accumulator.toLowerCase()) {
+		throw new HydraProtocolError('SnapshotConfirmed accumulator did not match its full canonical UTxO state');
+	}
+	return {
+		headId: frame.snapshot.headId,
+		number: frame.snapshot.number,
+		version: frame.snapshot.version,
+		outputs,
+		outputMultiset: outputMultiset(outputs.values()),
+		committedOutputs: partitionOutputReferences(frame.snapshot.utxoToCommit),
+		decommitOutputs: partitionOutputReferences(frame.snapshot.utxoToDecommit),
+		depositTxId: frame.snapshot.depositTxId ?? null,
+	};
+}
+
+/** Reference-keyed outputs of one signed snapshot partition (utxoToCommit/utxoToDecommit). */
+function partitionOutputReferences(partition: SnapshotUtxo | null | undefined): Map<string, string> {
+	const result = new Map<string, string>();
+	if (!partition) return result;
+	for (const [reference, output] of Object.entries(partition)) {
+		result.set(reference.toLowerCase(), serializeHydraSnapshotOutput(output));
+	}
+	return result;
+}
+
+/**
+ * Check that locally-attested transaction bodies are consistent with the
+ * multiset delta between consecutive signed states. Hydra 2.3 commits only
+ * serialized TxOut values: it does NOT commit TxIn→TxOut references, witness
+ * bytes, or the `confirmed` list. Consequently this function deliberately
+ * never uses the endpoint-supplied snapshot reference map as cryptographic
+ * evidence. Transaction metadata still requires an explicitly trusted local
+ * Hydra endpoint plus the manager's action-specific actor/body validation.
+ *
+ * The first signed snapshot is intentionally only an anchor: without a signed
+ * predecessor its `confirmed` list is not even state-delta evidence.
+ *
+ * Before changing what this accepts, and before upgrading hydra-node, read
+ * docs/adr/0012-hydra-snapshot-verification-and-upgrades.md: it carries the
+ * upgrade checklist and the record of the two legitimate protocol behaviours
+ * this check has already been wrong about.
+ */
+export function doesHydraTransactionTransitionReachSnapshot(
+	previous: VerifiedHydraSnapshot,
+	current: VerifiedHydraSnapshot,
+	transactions: readonly HydraTransaction[],
+): boolean {
+	if (previous.headId !== current.headId || current.number !== previous.number + 1) return false;
+	// Hydra 2.4: `depositTxId` names the on-chain deposit `committedOutputs`
+	// came from. Nothing here refuses on it, and that is deliberate in BOTH
+	// directions.
+	//
+	// An earlier revision of this upgrade refused the shape "depositTxId set
+	// with no pending commit". That was removed: upstream models `utxoToCommit`
+	// and `depositTxId` as INDEPENDENT `Maybe`s (see the signable
+	// representation, which defends each separately with `fromMaybe mempty` and
+	// `foldMap`), so the combination is not proven impossible, and no recorded
+	// 2.4.1 history exists to prove it never occurs. Refusing it changed no
+	// acceptance decision either — with no committed outputs there are no
+	// commit allowances to derive, so the per-reference conservation accounting
+	// below evaluates identically — while adding a way for one unmodelled frame
+	// to reject a head's history permanently, since replay restarts from the
+	// beginning on every reconnect.
+	//
+	// Nothing here refuses a committed
+	// output reference that stays pending across snapshots while being
+	// re-attributed to a DIFFERENT depositTxId. `depositTxId` is verified — it
+	// is bound into the signature (see hydraSnapshotSignableBytes) and cannot
+	// be forged independently of the multiSignature — but it is deliberately
+	// not load-bearing for attribution: this service already attributes
+	// escrows by OUTPUT REFERENCE, not by deposit id, so re-attribution buys
+	// no additional security here. ADR 0012 records that an over-tight
+	// transition check has twice taken a live head offline — no verified
+	// session, no head clock, every L2 operation failing closed while the head
+	// still reports Open — for a cost far higher than the low value a
+	// re-attribution refusal would add. The recorded 2.4.1 preprod history
+	// (recorded-head-history-2.4.1.json: two increments, one decommit, a full
+	// lifecycle) shows no re-attribution, but one head is not proof it never
+	// legitimately occurs; revisit only with more recordings, never by tightening
+	// against a single one.
+	try {
+		const createdOutputs = new Map<string, string>();
+		const spentReferences = new Set<string>();
+		let externalInputCount = 0;
+		for (const claimedTransaction of transactions) {
+			if (claimedTransaction.txId == null) return false;
+			const transaction = FixedTransaction.from_bytes(Buffer.from(claimedTransaction.cborHex, 'hex'));
+			if (!transaction.is_valid()) return false;
+			const transactionId = transaction.transaction_hash().to_hex().toLowerCase();
+			if (transactionId !== claimedTransaction.txId.toLowerCase()) return false;
+			const body = transaction.body();
+			const inputs = body.inputs();
+			for (let inputIndex = 0; inputIndex < inputs.len(); inputIndex++) {
+				const input = inputs.get(inputIndex);
+				const reference = `${input.transaction_id().to_hex().toLowerCase()}#${input.index()}`;
+				if (spentReferences.has(reference)) return false;
+				spentReferences.add(reference);
+				if (createdOutputs.has(reference)) createdOutputs.delete(reference);
+				else externalInputCount += 1;
+			}
+
+			const outputs = body.outputs();
+			// A no-output body has no value contribution to compare with the signed
+			// multiset and therefore cannot support endpoint metadata attestation.
+			if (outputs.len() === 0) return false;
+			for (let outputIndex = 0; outputIndex < outputs.len(); outputIndex++) {
+				const reference = `${transactionId}#${outputIndex}`;
+				if (createdOutputs.has(reference)) return false;
+				createdOutputs.set(reference, serializeCardanoTransactionOutput(outputs.get(outputIndex)));
+			}
+		}
+
+		const survivingCreated = outputMultiset(createdOutputs.values());
+		// Incremental commits inject value into the head and decommits remove it,
+		// both OUTSIDE the confirmed-tx list. Each is authenticated by the
+		// multi-signature over the accumulator (and, for commits, an on-chain L1
+		// deposit), so a snapshot's pending-commit outputs are legitimate injections
+		// and pending-decommit outputs are legitimate removals. Value still cannot
+		// appear or vanish through the (unauthenticated) confirmed-tx list — that
+		// path stays bound by strict created/consumed conservation and the
+		// externalInputCount tie below.
+		//
+		// Every allowance below is derived by REFERENCE and only then counted by
+		// value: a pending entry earns slack only if that exact output actually
+		// arrived or actually left. Deriving them from the value multisets instead
+		// was wrong in three separate directions at once, all of them reachable on
+		// an ordinary head, because a withdrawal and a top-up of the same size to
+		// the same wallet serialize to identical bytes:
+		//
+		//   - a deposit still pending in BOTH snapshots was granted injection slack
+		//     on every transition it survived, even though it is already counted in
+		//     `previous`, letting an unexplained output of that value materialise;
+		//   - a deposit that was ABSORBED — the normal ending — still counted as
+		//     recoverable, letting an in-head output of that value disappear with no
+		//     transaction to account for it;
+		//   - an ordinary spend of any same-valued in-head UTxO cancelled a real
+		//     deposit's recovery allowance, rejecting a legitimate transition. That
+		//     one is the worst of the three: history replays from the beginning on
+		//     every reconnect, so a rejected frame is rejected forever — no verified
+		//     session, and every L2 escrow operation on that head fails closed.
+		//
+		// A deposit is an injection only on the snapshot that first declares it.
+		const injectionAllowance = new Map<string, number>();
+		for (const [reference, value] of current.committedOutputs) {
+			if (previous.outputs.has(reference)) continue;
+			injectionAllowance.set(value, (injectionAllowance.get(value) ?? 0) + 1);
+		}
+		// Two authenticated ways for value to leave without a transaction.
+		//
+		// A pending decommit is the obvious one. The second is a deposit that was
+		// recovered instead of absorbed: it sits in a signed snapshot's
+		// utxoToCommit, and if the increment never lands the depositor takes it back
+		// on L1 with a recoverTx, so the next snapshot drops it having never reached
+		// `utxo`. Both are covered by the multi-signature over the accumulator, and
+		// neither moves value anywhere the ledger does not already enforce: a
+		// recovered deposit returns to whoever deposited it.
+		//
+		// An entry that is still present in `current` has not left — a deposit that
+		// was absorbed keeps its reference on its way into `utxo` — and one that a
+		// transaction spent is already accounted for by that transaction's input.
+		// Neither earns an allowance; counting either would let value vanish twice.
+		//
+		// A removal identified this way is CERTAIN, not an upper bound: the entry
+		// was pending, it is not in `current`, and no transaction spent it, so it
+		// left. Treating it as optional slack let an unexplained output of the same
+		// value take its place — the settled decommit paid for the arrival and the
+		// transition was accepted with value appearing from nowhere.
+		const removalCount = new Map<string, number>();
+		for (const pendingOutputs of [previous.decommitOutputs, previous.committedOutputs]) {
+			for (const [reference, value] of pendingOutputs) {
+				if (current.outputs.has(reference) || spentReferences.has(reference)) continue;
+				removalCount.set(value, (removalCount.get(value) ?? 0) + 1);
+			}
+		}
+		const allOutputs = new Set([
+			...previous.outputMultiset.keys(),
+			...current.outputMultiset.keys(),
+			...survivingCreated.keys(),
+			...injectionAllowance.keys(),
+			...removalCount.keys(),
+		]);
+		// Per serialized value the transition equation is
+		//
+		//   current = previous + created + injected - consumed - removed
+		//
+		// with `injected` free in [0, injectionAllowance] and `removed` fixed at
+		// `removalCount`. That leaves ONE free variable per value, so `consumed` is
+		// not a number to compute but an interval to intersect: every extra deposit
+		// admitted is an extra previous output the confirmed list may have spent.
+		//
+		// Choosing a point on that interval — the minimum injection, which is also
+		// the minimum consumption — and then demanding it equal `externalInputCount`
+		// exactly was wrong whenever one value was both injected and consumed in the
+		// same transition. That is an ordinary shape, not a corner: a top-up is an
+		// exact-amount carve committed whole to the participant's own wallet, so a
+		// second top-up of the same size is byte-identical to what the first left in
+		// the head, and any L2 transaction spending the first one collides with it.
+		// The walk under-counted consumption, rejected the frame, and history
+		// replays from the beginning on every reconnect — so the head lost its
+		// verified session for good and every L2 escrow operation on it failed
+		// closed.
+		//
+		// Writing the free variable as d = injected - removed, the bounds are the
+		// allowance itself plus `consumed >= 0` and `consumed <= previous` (the
+		// confirmed list cannot spend a deposit that has not landed yet).
+		let minimumConsumed = 0;
+		let maximumConsumed = 0;
+		for (const output of allOutputs) {
+			const previousCount = previous.outputMultiset.get(output) ?? 0;
+			const createdCount = survivingCreated.get(output) ?? 0;
+			const currentCount = current.outputMultiset.get(output) ?? 0;
+			const removed = removalCount.get(output) ?? 0;
+			const injectable = injectionAllowance.get(output) ?? 0;
+			const lowestDelta = Math.max(-removed, currentCount - previousCount - createdCount);
+			const highestDelta = Math.min(injectable - removed, currentCount - createdCount);
+			// No injection count can satisfy the equation for this value at all: the
+			// surplus exceeds what the declared deposits can supply, or the shortfall
+			// exceeds what the previous state held.
+			if (lowestDelta > highestDelta) return false;
+			minimumConsumed += previousCount + createdCount - currentCount + lowestDelta;
+			maximumConsumed += previousCount + createdCount - currentCount + highestDelta;
+		}
+		if (!Number.isSafeInteger(minimumConsumed) || !Number.isSafeInteger(maximumConsumed)) return false;
+		// Each value's delta moves independently over a contiguous integer range, so
+		// every total in between is reachable and the tie is a containment test.
+		return externalInputCount >= minimumConsumed && externalInputCount <= maximumConsumed;
+	} catch {
+		return false;
+	}
+}

@@ -1,0 +1,66 @@
+# Hydra head timeline — hydra-l2-flow/preprod/persistence/purchasing/hydra.db
+
+events: 22342
+first:  2026-08-31T13:41:16.422109Z
+last:   2026-08-31T14:23:47.72087Z
+
+## Head lifecycle (node-recorded, UTC)
+
+  2026-08-31T13:43:02.143228Z  HeadOpened
+  2026-08-31T13:45:04.531459Z  DepositRecorded
+  2026-08-31T13:52:05.702649Z  DepositActivated
+  2026-08-31T13:52:05.738711Z  CommitApproved
+  2026-08-31T13:52:13.679248Z  TxInvalid
+  2026-08-31T13:52:35.099221Z  TxInvalid
+  2026-08-31T13:52:56.524408Z  TxInvalid
+  2026-08-31T13:53:17.912278Z  TxInvalid
+  2026-08-31T13:53:39.368605Z  TxInvalid
+  2026-08-31T13:54:00.821869Z  TxInvalid
+  2026-08-31T13:54:22.277424Z  TxInvalid
+  2026-08-31T13:54:43.757826Z  TxInvalid
+  2026-08-31T13:54:59.680701Z  CommitFinalized
+
+## Transactions applied per second (node-recorded, busiest 15)
+
+  UTC second → transactions applied in it:
+    2026-08-31T13:56:42Z    246 tx/s
+    2026-08-31T13:56:55Z    138 tx/s
+    2026-08-31T13:57:51Z    137 tx/s
+    2026-08-31T13:57:07Z    133 tx/s
+    2026-08-31T13:58:06Z    109 tx/s
+    2026-08-31T13:58:05Z    109 tx/s
+    2026-08-31T13:57:09Z    107 tx/s
+    2026-08-31T13:57:58Z    105 tx/s
+    2026-08-31T13:57:10Z    105 tx/s
+    2026-08-31T13:56:49Z    105 tx/s
+    2026-08-31T13:56:43Z    105 tx/s
+    2026-08-31T13:58:08Z    104 tx/s
+    2026-08-31T13:57:44Z    104 tx/s
+    2026-08-31T13:57:34Z    104 tx/s
+    2026-08-31T13:57:08Z    104 tx/s
+
+  peak observed: 246 tx/s (node's own record)
+
+## Event totals by type
+
+    10264  TransactionReceived
+    10216  TransactionAppliedToLocalUTxO
+      948  PartySignedSnapshot
+      316  SnapshotRequested
+      316  SnapshotConfirmed
+      158  SnapshotRequestDecided
+      103  TickObserved
+        8  TxInvalid
+        2  PeerConnected
+        2  NetworkConnected
+        1  NodeSynced
+        1  HeadOpened
+        1  HeadIsReadyToFanout
+        1  HeadFannedOut
+        1  HeadClosed
+        1  DepositRecorded
+        1  DepositActivated
+        1  CommitFinalized
+        1  CommitApproved
+
+JSON written to hydra-l2-flow/evidence/2026-08-31-settled/head-timeline.json

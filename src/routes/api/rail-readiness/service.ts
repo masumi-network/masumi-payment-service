@@ -49,7 +49,6 @@ export type X402ReadinessInput = {
 		facilitatorUrl: string | null;
 		sellingWalletCount: number;
 		purchasingWalletCount: number;
-		fundedBudgetCount: number;
 	}>;
 };
 
@@ -200,9 +199,11 @@ export function evaluateCardanoReadiness(input: CardanoReadinessInput): RailRead
  * and self-hosted settle alike — but it is NOT reconciling a disagreement
  * between callers, and its passing tells you nothing you did not already know.
  *
- * `isReady` covers receiving only. Outbound spending (purchasing wallet +
- * funded budget) is reported as checks but is an optional step — an operator
- * who only sells never configures it, and must not be told the rail is broken.
+ * `isReady` covers receiving only. Outbound spending (a purchasing wallet) is
+ * reported as a check but is an optional step — an operator who only sells
+ * never configures it, and must not be told the rail is broken. Spend caps are
+ * per-API-key usage credits (ADR 0016), so they have no node-wide check here —
+ * matching the Cardano list, which has no spend-cap entry either.
  */
 export function evaluateX402Readiness(input: X402ReadinessInput): RailReadiness {
 	const enabledChains = input.chains.filter((chain) => chain.isEnabled);
@@ -217,7 +218,6 @@ export function evaluateX402Readiness(input: X402ReadinessInput): RailReadiness 
 				check('x402.facilitator', 'Facilitator', false, 'Needs an enabled chain first'),
 				check('x402.selling_wallet', 'Selling wallet', false, 'Needs an enabled chain first'),
 				check('x402.purchasing_wallet', 'Purchasing wallet', false, 'Needs an enabled chain first'),
-				check('x402.budget', 'Spending budget', false, 'Needs an enabled chain first'),
 			],
 		};
 	}
@@ -259,12 +259,6 @@ export function evaluateX402Readiness(input: X402ReadinessInput): RailReadiness 
 				'Purchasing wallet',
 				chain.purchasingWalletCount > 0,
 				chain.purchasingWalletCount > 0 ? null : 'Optional — needed only to pay other agents',
-			),
-			check(
-				'x402.budget',
-				'Spending budget',
-				chain.fundedBudgetCount > 0,
-				chain.fundedBudgetCount > 0 ? null : 'Optional — needed only to pay other agents',
 			),
 		];
 

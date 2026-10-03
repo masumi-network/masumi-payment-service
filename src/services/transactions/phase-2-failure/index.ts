@@ -62,7 +62,10 @@ function composePhase2Error(priorError: string | null): string {
  * WaitingForManualAction — wallet-timeouts' next tick would re-discover
  * the same phase-2 failure and re-propagate, multiplying error noise.
  * Folding the unlock into this $transaction makes it atomic with the
- * dependent-request advance.
+ * dependent-request advance. Each unlock is fenced on
+ * `pendingTransactionId: transactionId`, so only a wallet still holding the
+ * failing tx is freed — an id passed for a wallet that has since moved on is
+ * logged and left alone rather than unlocked out from under its new holder.
  *
  * Uses per-row `updateMany` where the data is uniform across rows (the
  * paymentRequest / purchaseRequest path can't use bulk updateMany because
@@ -260,13 +263,29 @@ export async function markTransactionPhase2Failed(
 				const uniqueWalletIds = Array.from(new Set(options.walletIdsToUnlock));
 				// intentional sequential — Prisma serializes interactive-tx queries on a single connection
 				for (const walletId of uniqueWalletIds) {
-					await tx.hotWallet.updateMany({
-						where: { id: walletId, deletedAt: null },
+					// Fenced on the failing transaction. The caller reads the wallet,
+					// then spends a Blockfrost round trip deciding phase-2 before
+					// getting here; in that window another poller can settle the same
+					// tx and free the wallet, and a Hydra L1 deposit can claim it
+					// (claimHotWalletForL1 needs only pendingTransactionId: null).
+					// Clearing by wallet id alone would free a wallet whose deposit is
+					// still unconfirmed on chain. lockPurpose goes with lockedAt: a
+					// marker left on an unlocked row is adopted by the next holder,
+					// which then ages out at the Hydra timeout instead of the batcher's.
+					const unlocked = await tx.hotWallet.updateMany({
+						where: { id: walletId, deletedAt: null, pendingTransactionId: transactionId },
 						data: {
 							pendingTransactionId: null,
 							lockedAt: null,
+							lockPurpose: null,
 						},
 					});
+					if (unlocked.count !== 1) {
+						logger.info('phase-2 propagation: wallet no longer holds the failing tx; leaving its lock', {
+							walletId,
+							transactionId,
+						});
+					}
 				}
 			}
 

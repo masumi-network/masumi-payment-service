@@ -118,6 +118,7 @@ jest.unstable_mockModule('@prisma/client', async () => ({
 }));
 
 const { queryRegistryRequestGet, queryRegistryCountGet, registerAgentPost } = await import('./index');
+const { queryRegistryDiffGet } = await import('./diff');
 
 beforeEach(() => {
 	mockFindX402Networks.mockResolvedValue([{ caip2Id: 'eip155:8453' }, { caip2Id: 'eip155:84532' }]);
@@ -179,8 +180,8 @@ function buildRegistryRequestResponse(
 		apiBaseUrl: 'https://example.com/agent',
 		openApiSpecUrl: null,
 		x402ResourcesUrl: null,
-		a2aAgentCardUrl: null,
-		a2aProtocolVersions: [],
+		A2ADetail: null,
+		PaymentSource: { paymentSourceType: PaymentSourceType.Web3CardanoV2 },
 		capabilityName: 'demo',
 		capabilityVersion: '1.0.0',
 		authorName: 'Author',
@@ -270,6 +271,57 @@ describe('registerAgentPost', () => {
 		mockValidateAssetsOnChain.mockResolvedValue({ valid: [], invalid: [] });
 		mockValidateA2AAgentCardOrThrow.mockResolvedValue(undefined);
 	});
+
+	for (const [route, endpoint] of [
+		['list', queryRegistryRequestGet],
+		['diff', queryRegistryDiffGet],
+	] as const) {
+		it(`selects and returns source IDs through the authenticated registry ${route} pipeline`, async () => {
+			mockFindRegistryRequests.mockResolvedValue([
+				{
+					...buildRegistryRequestResponse(null),
+					SupportedPaymentSources: [
+						{
+							id: 'persisted-source-id',
+							position: 0,
+							chain: 'EVM',
+							network: 'eip155:84532',
+							paymentSourceType: null,
+							address: '0x1111111111111111111111111111111111111111',
+							scheme: 'Exact',
+							payTo: '0x1111111111111111111111111111111111111111',
+							resource: 'https://agent.example/run',
+							extra: null,
+							dynamicAsset: null,
+							dynamicDecimals: null,
+							fixedDecimals: 6,
+							Pricing: {
+								pricingType: PricingType.Fixed,
+								FixedPricing: { Amounts: [{ unit: '0x2222222222222222222222222222222222222222', amount: 100n }] },
+							},
+						},
+					],
+				},
+			]);
+			const { responseMock } = await testEndpoint({
+				endpoint,
+				requestProps: {
+					method: 'GET',
+					headers: { token: 'valid' },
+					query: { network: Network.Preprod, filterPaymentSourceType: PaymentSourceType.Web3CardanoV2 },
+				},
+			});
+			expect(responseMock.statusCode).toBe(200);
+			expect(responseMock._getJSONData().data.Assets[0].supportedPaymentSources[0].id).toBe('persisted-source-id');
+			expect(mockFindRegistryRequests).toHaveBeenCalledWith(
+				expect.objectContaining({
+					include: expect.objectContaining({
+						SupportedPaymentSources: expect.objectContaining({ select: expect.objectContaining({ id: true }) }),
+					}),
+				}),
+			);
+		});
+	}
 
 	it('scopes registry list queries to the current managed holder wallet', async () => {
 		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));
@@ -1210,6 +1262,77 @@ describe('registerAgentPost', () => {
 			walletVkey: 'recipient-wallet-vkey',
 			walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 		});
+	});
+
+	it('stores an external recipient address when it is not a managed hot wallet', async () => {
+		const externalAddress =
+			'addr_test1qzpzat7l9gnr93e6wdut6dlegy692wtl6qjgtcqlx0gzu8e75hpk9m2rkhl0grfh7fau00slzung053y7vxj7hntcsq2fy7qc';
+		mockFindRecipientWallet.mockResolvedValue(null);
+		mockCreateRegistryRequest.mockResolvedValue(buildRegistryRequestResponse(null));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					recipientWalletAddress: externalAddress,
+					name: 'Test Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					supportedPaymentSources: [freeCardanoSource()],
+					Author: {
+						name: 'Author',
+					},
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.recipientWalletAddress).toBe(externalAddress);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
+	});
+
+	it('rejects external recipient addresses on the wrong network', async () => {
+		mockFindRecipientWallet.mockResolvedValue(null);
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					recipientWalletAddress: 'addr1qwrongnetwork000000000000000000000000000000000000000000000000000',
+					name: 'Test Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					supportedPaymentSources: [freeCardanoSource()],
+					Author: {
+						name: 'Author',
+					},
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(JSON.stringify(responseMock._getJSONData())).toContain('does not match Preprod');
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
 	});
 
 	it('stores a normalized send funding lovelace override when provided', async () => {

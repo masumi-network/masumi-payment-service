@@ -1,5 +1,6 @@
 import { Network, PaymentSourceType, RPCProvider } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
+import { isCardanoAddressForNetwork } from '@/types/payment-source';
 
 export const paymentSourceExtendedSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
@@ -34,7 +35,12 @@ export const paymentSourceExtendedOutputSchema = z
 			),
 		PaymentSourceConfig: z
 			.object({
-				rpcProviderApiKey: z.string().describe('The RPC provider API key (e.g., Blockfrost project ID)'),
+				rpcProviderApiKey: z
+					.string()
+					.optional()
+					.describe(
+						'The RPC provider API key (e.g., Blockfrost project ID). Operator secret: only returned to keys with admin access, omitted for Read/ReadAndPay keys.',
+					),
 				rpcProvider: z.nativeEnum(RPCProvider).describe('The RPC provider type (e.g., Blockfrost)'),
 			})
 			.describe('RPC provider configuration for blockchain interactions'),
@@ -168,6 +174,26 @@ export const paymentSourceExtendedCreateSchemaInput = z
 			.describe('The mnemonic of the selling wallets to be added. Please backup the mnemonic of the wallets.'),
 	})
 	.superRefine((input, ctx) => {
+		input.AdminWallets.forEach((adminWallet, index) => {
+			if (!isCardanoAddressForNetwork(adminWallet.walletAddress, input.network)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['AdminWallets', index, 'walletAddress'],
+					message: 'walletAddress is not a valid Cardano address for the configured network',
+				});
+			}
+		});
+		if (
+			input.FeeReceiverNetworkWallet != null &&
+			!isCardanoAddressForNetwork(input.FeeReceiverNetworkWallet.walletAddress, input.network)
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['FeeReceiverNetworkWallet', 'walletAddress'],
+				message: 'walletAddress is not a valid Cardano address for the configured network',
+			});
+		}
+
 		if (input.paymentSourceType === PaymentSourceType.Web3CardanoV1) {
 			if (input.AdminWallets.length !== 3) {
 				ctx.addIssue({

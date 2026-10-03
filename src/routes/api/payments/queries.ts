@@ -7,6 +7,8 @@ import {
 	buildMatchingStates,
 	buildNeedsManualActionFilter,
 	buildTransactionSearchFilter,
+	buildAgentIdentifierFilter,
+	normalizeSearchQuery,
 } from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { queryPaymentsSchemaInput } from './schemas';
@@ -14,34 +16,66 @@ import { PaymentSourceType } from '@/generated/prisma/client';
 
 export type PaymentListQueryInput = z.infer<typeof queryPaymentsSchemaInput>;
 
+/**
+ * The filters the list and the count share. The count takes no cursor, limit or
+ * history flag, so it supplies a subset of the list's input.
+ */
+export type PaymentListWhereInput = Pick<
+	PaymentListQueryInput,
+	| 'network'
+	| 'filterSmartContractAddress'
+	| 'filterPaymentSourceType'
+	| 'filterOnChainState'
+	| 'filterNeedsManualAction'
+	| 'filterAgentIdentifier'
+	| 'searchQuery'
+>;
+
 export function resolvePaymentPaymentSourceTypeFilter(input: {
 	filterPaymentSourceType?: PaymentSourceType;
 	filterSmartContractAddress?: string | null;
+	filterAgentIdentifier?: string;
 }) {
 	if (input.filterPaymentSourceType != null) return input.filterPaymentSourceType;
 	if (input.filterSmartContractAddress != null) return undefined;
+	// An exact agent lookup names one agent, which may well live on a V2 source.
+	// Applying the V1 compatibility default here returned nothing for those
+	// agents. Mirrors resolveRegistryPaymentSourceTypeFilter.
+	if (input.filterAgentIdentifier != null) return undefined;
 	return PaymentSourceType.Web3CardanoV1;
 }
 
-export async function getPaymentsForQuery(input: PaymentListQueryInput, walletScopeIds: AuthContext['walletScopeIds']) {
-	const searchLower = input.searchQuery?.toLowerCase();
-	const matchingStates = buildMatchingStates(searchLower);
-	const amountFilter = searchLower ? parseAmountSearchRange(searchLower) : undefined;
-	const paymentSourceTypeFilter = resolvePaymentPaymentSourceTypeFilter(input);
-
-	return prisma.paymentRequest.findMany({
-		where: {
-			PaymentSource: {
-				network: input.network,
-				smartContractAddress: input.filterSmartContractAddress ?? undefined,
-				paymentSourceType: paymentSourceTypeFilter,
-				deletedAt: null,
-			},
-			...buildWalletScopeFilter(walletScopeIds),
-			...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
-			...buildNeedsManualActionFilter(input.filterNeedsManualAction),
-			...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
+/**
+ * The where clause behind both the payment list and the payment count. Shared
+ * so the two can never disagree: they were hand-copied, and the count silently
+ * ignored `filterOnChainState`, so a state-filtered page reported a total for
+ * every state.
+ */
+export function buildPaymentListWhere(input: PaymentListWhereInput, walletScopeIds: AuthContext['walletScopeIds']) {
+	const searchLower = normalizeSearchQuery(input.searchQuery);
+	return {
+		PaymentSource: {
+			network: input.network,
+			smartContractAddress: input.filterSmartContractAddress ?? undefined,
+			paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
+			deletedAt: null,
 		},
+		...buildWalletScopeFilter(walletScopeIds),
+		...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
+		...buildNeedsManualActionFilter(input.filterNeedsManualAction),
+		...buildAgentIdentifierFilter(input.filterAgentIdentifier),
+		...buildTransactionSearchFilter(
+			searchLower,
+			buildMatchingStates(searchLower),
+			searchLower ? parseAmountSearchRange(searchLower) : undefined,
+			'RequestedFunds',
+		),
+	};
+}
+
+export async function getPaymentsForQuery(input: PaymentListQueryInput, walletScopeIds: AuthContext['walletScopeIds']) {
+	return prisma.paymentRequest.findMany({
+		where: buildPaymentListWhere(input, walletScopeIds),
 		orderBy: { createdAt: 'desc' },
 		...cursorPaginationArgs(input.cursorId, input.limit),
 		include: {
@@ -78,6 +112,8 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 					blockHeight: true,
 					blockTime: true,
 					txHash: true,
+					layer: true,
+					hydraHeadId: true,
 					status: true,
 					previousOnChainState: true,
 					newOnChainState: true,
@@ -105,6 +141,8 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 								blockTime: true,
 								previousOnChainState: true,
 								newOnChainState: true,
+								layer: true,
+								hydraHeadId: true,
 								confirmations: true,
 							},
 						}

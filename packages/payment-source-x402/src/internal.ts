@@ -1,6 +1,7 @@
 import createHttpError from 'http-errors';
 import { Prisma, X402CounterpartyRole, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { isPrivateIpLiteral, isPrivateOrUnresolvableHostname } from '@masumi/payment-core/ssrf-guard';
 import { defineChain, http } from 'viem';
 
 export type HexAddress = `0x${string}`;
@@ -37,42 +38,7 @@ export function assertValidPrivateKey(value: string): asserts value is PrivateKe
 	}
 }
 
-function isPrivateIpv4(ip: string): boolean {
-	const parts = ip.split('.').map((part) => Number(part));
-	if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
-		return true; // malformed → treat as unsafe
-	}
-	const [a, b] = parts;
-	if (a === 0 || a === 127) return true; // this-host / loopback
-	if (a === 10) return true; // private
-	if (a === 172 && b >= 16 && b <= 31) return true; // private
-	if (a === 192 && b === 168) return true; // private
-	if (a === 169 && b === 254) return true; // link-local incl. cloud metadata (169.254.169.254)
-	if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-	return false;
-}
-
-function isPrivateHost(hostname: string): boolean {
-	const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-	if (host === 'localhost' || host.endsWith('.localhost')) return true;
-	if (host.includes(':')) {
-		// IPv6: loopback (::1, ::), unique-local (fc00::/7 → fc/fd), link-local (fe80::/10
-		// spans fe80–febf, i.e. the fe8/fe9/fea/feb hextet prefixes)
-		if (host === '::1' || host === '::') return true;
-		if (host.startsWith('fc') || host.startsWith('fd') || /^fe[89ab]/.test(host)) return true;
-		const mapped = /::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(host);
-		if (mapped != null) return isPrivateIpv4(mapped[1]);
-		return false;
-	}
-	if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return isPrivateIpv4(host);
-	return false;
-}
-
-// SSRF guard for admin-configured RPC endpoints: reject non-http(s) schemes and hosts
-// that are literal private/loopback/link-local addresses (e.g. the cloud metadata IP).
-// This checks the hostname/literal IP only and does not resolve DNS, so it is a
-// mitigation rather than a complete SSRF defense.
-function assertSafeHttpUrl(value: string, label: string, requireHttps: boolean): void {
+function parseHttpUrl(value: string, label: string, requireHttps: boolean): URL {
 	let url: URL;
 	try {
 		url = new URL(value);
@@ -82,26 +48,55 @@ function assertSafeHttpUrl(value: string, label: string, requireHttps: boolean):
 	if (requireHttps ? url.protocol !== 'https:' : url.protocol !== 'http:' && url.protocol !== 'https:') {
 		throw createHttpError(400, `${label} must use ${requireHttps ? 'https' : 'http or https'}`);
 	}
-	if (isPrivateHost(url.hostname)) {
+	return url;
+}
+
+// Fast, synchronous pre-check: rejects a literal private/loopback/link-local IP (or
+// bracketed IPv6 literal, including an IPv4-mapped one like [::ffff:127.0.0.1]) with
+// no DNS lookup. Safe to call from a constructor. Does NOT catch a hostname whose DNS
+// record points at an internal address — that requires resolving it, which only the
+// Resolved variants below do. Keep both: this one is the only option where a caller
+// cannot await (see RemoteHTTPFacilitatorClient's constructor).
+function assertSafeHttpUrlLiteral(value: string, label: string, requireHttps: boolean): void {
+	const url = parseHttpUrl(value, label, requireHttps);
+	if (isPrivateIpLiteral(url.hostname)) {
 		throw createHttpError(400, `${label} must not target a private, loopback or link-local address`);
 	}
 }
 
+// The strong check: resolves DNS (or accepts a literal IP) and rejects if any resolved
+// address is private/loopback/link-local/reserved, or if the hostname cannot be
+// resolved at all. Use this everywhere a caller can await.
+async function assertSafeHttpUrlResolved(value: string, label: string, requireHttps: boolean): Promise<void> {
+	const url = parseHttpUrl(value, label, requireHttps);
+	if (await isPrivateOrUnresolvableHostname(url.hostname)) {
+		throw createHttpError(400, `${label} must not resolve to a private, loopback or link-local address`);
+	}
+}
+
 export function assertSafeRpcUrl(rpcUrl: string): void {
-	assertSafeHttpUrl(rpcUrl, 'x402 network rpcUrl', false);
+	assertSafeHttpUrlLiteral(rpcUrl, 'x402 network rpcUrl', false);
+}
+
+export async function assertSafeRpcUrlResolved(rpcUrl: string): Promise<void> {
+	await assertSafeHttpUrlResolved(rpcUrl, 'x402 network rpcUrl', false);
 }
 
 // Remote facilitator calls carry a payment authorization and can also carry an encrypted-at-rest
 // Authorization header. Unlike an RPC URL, plaintext HTTP is never acceptable for that material.
 // Keep the literal-host SSRF guard as defense in depth at both persistence and use time.
 export function assertSafeFacilitatorUrl(facilitatorUrl: string): void {
-	assertSafeHttpUrl(facilitatorUrl, 'x402 network facilitatorUrl', true);
+	assertSafeHttpUrlLiteral(facilitatorUrl, 'x402 network facilitatorUrl', true);
+}
+
+export async function assertSafeFacilitatorUrlResolved(facilitatorUrl: string): Promise<void> {
+	await assertSafeHttpUrlResolved(facilitatorUrl, 'x402 network facilitatorUrl', true);
 }
 
 // Build a viem HTTP transport with an SSRF check and a request timeout, so a slow or
 // hostile admin-configured RPC cannot hang a request indefinitely.
-export function safeHttpTransport(rpcUrl: string) {
-	assertSafeRpcUrl(rpcUrl);
+export async function safeHttpTransport(rpcUrl: string) {
+	await assertSafeRpcUrlResolved(rpcUrl);
 	return http(rpcUrl, { timeout: RPC_REQUEST_TIMEOUT_MS });
 }
 
@@ -198,13 +193,66 @@ export async function getX402NetworkOrThrow(caip2Network: string) {
 // without it any key could address another tenant's node-custodied wallet and drain it.
 export type X402OwnerScope = string | null;
 
-export function buildOwnerScopeWhere(scope: X402OwnerScope): { createdById?: string } {
-	return scope == null ? {} : { createdById: scope };
+/**
+ * Which managed wallets a key may reach. `scope` is the key's own id (null for an
+ * admin); `walletScopeIds` is its assigned scope list from ApiKeyX402WalletScope,
+ * or null when the key is unrestricted — the Cardano `walletScopeEnabled` semantic,
+ * default included: unscoped means every wallet.
+ *
+ * Once scoped, access is the union of assigned wallets PLUS anything the key
+ * created. The union matters — without it a scoped key that creates a wallet would
+ * lose sight of it the moment it was created, since the new row is in nobody's
+ * scope list yet.
+ *
+ * Access means SPEND, not just visibility: an assigned wallet inherits own-wallet
+ * semantics (Cardano parity), so a pay key can sign payments from it — capped
+ * only by its usage credits (when usageLimited) and the on-chain balance. Spend
+ * caps live on the key, never on the wallet (ADR 0016).
+ */
+export type X402WalletAccess = {
+	scope: X402OwnerScope;
+	/** Assigned wallet ids, or null for an unscoped (unrestricted) key. Required so it is never omitted by accident. */
+	walletScopeIds: string[] | null;
+};
+
+/**
+ * What callers pass as `ownerScope`. Deliberately NOT `string | null`: since an
+ * absent scope list now means "unrestricted" (Cardano parity), a bare key id would
+ * silently widen access instead of limiting it to that key's own wallets. Requiring
+ * the object turns that trap into a compile error at every call site.
+ */
+export type X402OwnerScopeInput = X402WalletAccess;
+
+/** Admin / unscoped: no wallet restriction at all. */
+export const X402_UNRESTRICTED: X402WalletAccess = { scope: null, walletScopeIds: null };
+
+function normalizeAccess(access: X402OwnerScopeInput): X402WalletAccess {
+	return access;
 }
 
-export function assertWalletOwner(scope: X402OwnerScope, wallet: { createdById: string | null }) {
+/** The shapes the wallet-access filter can take, as a Prisma where fragment. */
+export type X402WalletScopeWhere = Record<string, never> | { OR: [{ createdById: string }, { id: { in: string[] } }] };
+
+export function buildOwnerScopeWhere(access: X402OwnerScopeInput): X402WalletScopeWhere {
+	const { scope, walletScopeIds } = normalizeAccess(access);
+	// Admin: unrestricted.
+	if (scope == null) return {};
+	// Unscoped non-admin: unrestricted, matching buildHotWalletScopeFilter on the
+	// Cardano side. Cardano permits this at pay level too — POST /purchase is
+	// pay-authenticated and assertWalletInScope is a no-op for an unscoped key — so
+	// the rails now agree on both the mechanism and the default.
+	if (walletScopeIds == null) return {};
+	return { OR: [{ createdById: scope }, { id: { in: walletScopeIds } }] };
+}
+
+export function assertWalletOwner(access: X402OwnerScopeInput, wallet: { id: string; createdById: string | null }) {
+	const { scope, walletScopeIds } = normalizeAccess(access);
+	// Admin, or an unscoped key: unrestricted (see buildOwnerScopeWhere).
+	if (scope == null || walletScopeIds == null) return;
 	// 404 (not 403) so a scoped key cannot distinguish "exists but not yours" from "absent".
-	if (scope != null && wallet.createdById !== scope) {
+	const owns = wallet.createdById === scope;
+	const assigned = walletScopeIds.includes(wallet.id);
+	if (!owns && !assigned) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
 }
@@ -226,7 +274,7 @@ function assertWalletType(wallet: { type: X402EvmWalletType }, expectedType?: X4
 export async function getManagedWalletOrThrow(
 	evmWalletId: string,
 	expectedType?: X402EvmWalletType,
-	ownerScope: X402OwnerScope = null,
+	ownerScope: X402OwnerScopeInput = X402_UNRESTRICTED,
 ) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
@@ -245,7 +293,7 @@ export async function getManagedWalletOrThrow(
 export async function getManagedWalletWithSecretOrThrow(
 	evmWalletId: string,
 	expectedType?: X402EvmWalletType,
-	ownerScope: X402OwnerScope = null,
+	ownerScope: X402OwnerScopeInput = X402_UNRESTRICTED,
 ) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },

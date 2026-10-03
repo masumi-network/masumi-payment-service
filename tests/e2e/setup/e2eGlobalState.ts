@@ -3,7 +3,12 @@ import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 
 export type E2EGlobalState = {
 	network: Network;
-	agents: Partial<Record<PaymentSourceType, ConfirmedAgent>>;
+	/**
+	 * Confirmed agents per payment source type, one per selling hot wallet.
+	 * A source seeded with a single selling wallet therefore holds exactly one
+	 * agent, which is what every flow file used before they ran concurrently.
+	 */
+	agents: Partial<Record<PaymentSourceType, ConfirmedAgent[]>>;
 	createdAt: string;
 };
 

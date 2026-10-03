@@ -1,0 +1,17 @@
+-- Index the transaction hash. The report joins on it to attribute Cardano fees.
+--
+-- This file must stay ONE statement: Prisma runs a migration inside a
+-- transaction unless the whole file is a single CONCURRENTLY statement, and
+-- both CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY are rejected
+-- inside a transaction block.
+--
+-- IF NOT EXISTS is deliberately absent. A failed concurrent build leaves an
+-- invalid index of this name behind, and IF NOT EXISTS would then skip it by
+-- name and report success for ever while queries never use it. Without the
+-- clause a retry fails loudly instead. Recovery:
+--   DROP INDEX CONCURRENTLY "Transaction_txHash_idx";  -- outside a transaction
+-- then re-run the migration. Confirm with:
+--   SELECT indisvalid FROM pg_index i
+--     JOIN pg_class c ON c.oid = i.indexrelid
+--    WHERE c.relname = 'Transaction_txHash_idx';
+CREATE INDEX CONCURRENTLY "Transaction_txHash_idx" ON "Transaction"("txHash");

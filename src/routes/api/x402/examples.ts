@@ -1,12 +1,10 @@
 import { X402EvmWalletType, X402PaymentDirection, X402PaymentStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import {
-	budgetSchema,
 	createPaymentSchemaOutput,
 	createWalletSchemaInput,
 	createWalletSchemaOutput,
 	listAvailableNetworksSchemaOutput,
-	listBudgetSchemaOutput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaOutput,
 	listSettlementsSchemaOutput,
@@ -79,20 +77,6 @@ const x402AvailableNetworkExample = {
 	defaultAssetDecimals: x402NetworkExample.defaultAssetDecimals,
 } satisfies z.infer<typeof x402AvailableNetworkSchema>;
 
-export const x402BudgetExample = {
-	id: 'clx402budget0001',
-	apiKeyId: 'api_key_id',
-	evmWalletId: x402WalletExample.id,
-	evmWalletAddress: x402WalletExample.address,
-	caip2Network: 'eip155:8453',
-	asset: exampleUsdcAsset,
-	remainingAmount: '1000000',
-	spentAmount: '0',
-	createdById: 'api_key_id',
-	createdAt: exampleDate,
-	updatedAt: exampleDate,
-} satisfies z.infer<typeof budgetSchema>;
-
 export const x402PaymentAttemptExample = {
 	id: 'clx402attempt0001',
 	createdAt: exampleDate,
@@ -152,10 +136,6 @@ export const listAvailableX402NetworksResponseExample = {
 	Networks: [x402AvailableNetworkExample],
 } satisfies z.infer<typeof listAvailableNetworksSchemaOutput>;
 
-export const listX402BudgetsResponseExample = {
-	Budgets: [x402BudgetExample],
-} satisfies z.infer<typeof listBudgetSchemaOutput>;
-
 export const listX402PaymentAttemptsResponseExample = {
 	PaymentAttempts: [x402PaymentAttemptExample],
 } satisfies z.infer<typeof listPaymentAttemptsSchemaOutput>;
@@ -185,18 +165,6 @@ export const upsertX402NetworkBodyExample = {
 	defaultAsset: exampleUsdcAsset,
 	defaultAssetDecimals: 6,
 	facilitatorWalletId: x402FacilitatorWalletExample.id,
-};
-
-export const setX402BudgetBodyExample = {
-	apiKeyId: 'api_key_id',
-	evmWalletId: x402WalletExample.id,
-	caip2Network: 'eip155:8453',
-	asset: exampleUsdcAsset,
-	remainingAmount: '1000000',
-};
-
-export const listX402BudgetsQueryExample = {
-	apiKeyId: 'api_key_id',
 };
 
 export const listX402PaymentAttemptsQueryExample = {

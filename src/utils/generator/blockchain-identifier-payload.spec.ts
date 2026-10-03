@@ -20,11 +20,13 @@ describe('buildSignedBlockchainIdentifierPayload', () => {
 	it('keeps the V1 signature payload shape unchanged', () => {
 		const payload = buildSignedBlockchainIdentifierPayload({
 			...baseInput,
+			paymentForceLayer: 'Hydra',
 			paymentSourceType: PaymentSourceType.Web3CardanoV1,
 		});
 
 		expect(payload).not.toHaveProperty('sellerReturnAddress');
 		expect(payload).not.toHaveProperty('smartContractAddress');
+		expect(payload).not.toHaveProperty('paymentForceLayer');
 		expect(payload).not.toHaveProperty('supportedPaymentSourceIndex');
 	});
 
@@ -38,6 +40,17 @@ describe('buildSignedBlockchainIdentifierPayload', () => {
 		expect(payload).toHaveProperty('sellerReturnAddress', 'seller-return-address');
 		expect(payload).toHaveProperty('smartContractAddress', 'addr_test1qcontract');
 		expect(payload).toHaveProperty('supportedPaymentSourceIndex', 2);
+		expect(payload).not.toHaveProperty('paymentForceLayer');
+	});
+
+	it('includes a seller-selected force layer in V2 signature payloads', () => {
+		const payload = buildSignedBlockchainIdentifierPayload({
+			...baseInput,
+			paymentForceLayer: 'Hydra',
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+		});
+
+		expect(payload).toHaveProperty('paymentForceLayer', 'Hydra');
 	});
 
 	it('keeps legacy V2 payloads compatible when no source index was signed', () => {
@@ -50,6 +63,7 @@ describe('buildSignedBlockchainIdentifierPayload', () => {
 
 		expect(payload).toHaveProperty('sellerReturnAddress', null);
 		expect(payload).toHaveProperty('smartContractAddress', null);
+		expect(payload).not.toHaveProperty('paymentForceLayer');
 		expect(payload).not.toHaveProperty('supportedPaymentSourceIndex');
 	});
 });

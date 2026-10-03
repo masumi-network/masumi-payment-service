@@ -1,6 +1,12 @@
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { HotWalletType, PaymentAction, PaymentSourceType, PricingType } from '@/generated/prisma/client';
+import {
+	HotWalletType,
+	PaymentAction,
+	PaymentSourceType,
+	PricingType,
+	TransactionLayer,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { HttpExistsError } from '@masumi/payment-core/http-exists-error';
@@ -20,11 +26,11 @@ import { validateHexString } from '@/utils/validator/hex';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { resolveTransactionAgentName } from '@/utils/shared/resolve-transaction-agent-name';
+import { forceLayerApiToTransactionLayer } from '@/utils/logic/force-layer';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,
@@ -34,7 +40,7 @@ import {
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from './schemas';
-import { getPaymentsForQuery, resolvePaymentPaymentSourceTypeFilter } from './queries';
+import { buildPaymentListWhere, getPaymentsForQuery } from './queries';
 import { serializePaymentsResponse } from './serializers';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
@@ -71,16 +77,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.paymentRequest.count({
-			where: {
-				PaymentSource: {
-					network: input.network,
-					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
-					deletedAt: null,
-				},
-				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
-			},
+			where: buildPaymentListWhere(input, ctx.walletScopeIds),
 		});
 
 		return {
@@ -111,6 +108,13 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		});
 		if (registryPaymentSource == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
+		}
+		const forceLayer = forceLayerApiToTransactionLayer(input.forceLayer);
+		if (
+			forceLayer === TransactionLayer.L2 &&
+			registryPaymentSource.paymentSourceType !== PaymentSourceType.Web3CardanoV2
+		) {
+			throw createHttpError(400, 'forceLayer="Hydra" is supported only for Web3CardanoV2 payment sources');
 		}
 		if (input.paymentSourceType != null && input.paymentSourceType !== registryPaymentSource.paymentSourceType) {
 			throw createHttpError(400, 'paymentSourceType does not match the agent registry source');
@@ -312,6 +316,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			sellerAddress: sellingWallet.walletAddress,
 			sellerReturnAddress,
 			smartContractAddress: isV2 ? specifiedPaymentContract.smartContractAddress : null,
+			paymentForceLayer: input.forceLayer ?? null,
 			supportedPaymentSourceIndex: isV2 ? input.supportedPaymentSourceIndex : undefined,
 			paymentSourceType: specifiedPaymentContract.paymentSourceType,
 		});
@@ -396,13 +401,24 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		});
 		if (existingPaymentRequest != null) {
 			const decoded = decodeBlockchainIdentifier(existingPaymentRequest.blockchainIdentifier);
+			const {
+				currentHydraUtxoTxHash: _currentHydraUtxoTxHash,
+				currentHydraUtxoOutputIndex: _currentHydraUtxoOutputIndex,
+				currentHydraUtxoValue: _currentHydraUtxoValue,
+				unresolvedHydraTerminalTxHash: _unresolvedHydraTerminalTxHash,
+				unresolvedHydraTerminalReason: _unresolvedHydraTerminalReason,
+				hydraFanoutHandoffHeadId: _hydraFanoutHandoffHeadId,
+				hydraFanoutHandoffTxHash: _hydraFanoutHandoffTxHash,
+				hydraFanoutHandoffOutputIndex: _hydraFanoutHandoffOutputIndex,
+				...existingPaymentResponse
+			} = existingPaymentRequest;
 			// Spread + transformer overrides produce a JSON-safe shape (BigInt
 			// fields converted to strings). HttpExistsError's `allowedObject`
 			// type is too narrow to express the structural-merge result, so
 			// cast to `any` (same pattern used by the purchase route's
 			// HttpExistsError call at purchases/index.ts:132).
 			const serialized = {
-				...existingPaymentRequest,
+				...existingPaymentResponse,
 				...transformPaymentGetTimestamps(existingPaymentRequest),
 				...transformPaymentGetAmounts(existingPaymentRequest),
 				// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
@@ -454,6 +470,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 					},
 				},
 				inputHash: input.inputHash,
+				forceLayer,
 				resultHash: '',
 				SmartContractWallet: {
 					connect: { id: sellingWallet.id, deletedAt: null },

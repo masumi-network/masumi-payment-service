@@ -5,6 +5,7 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { Pagination } from '@/components/ui/pagination';
 import {
   Select,
@@ -122,7 +123,7 @@ export default function TxSyncQuarantinePage() {
               <p className="text-sm text-muted-foreground max-w-3xl">
                 Transactions the chain scanner could not apply. The sync checkpoint has already
                 moved past them, so anything unresolved here is chain state the database has not
-                caught up with — the affected request is running on stale information until the
+                caught up with. The affected request is running on stale information until the
                 transaction is applied or reviewed.
               </p>
             </div>
@@ -159,13 +160,13 @@ export default function TxSyncQuarantinePage() {
           </div>
 
           {isInitialLoading ? (
-            <div className="border rounded-lg overflow-x-auto">
+            <HorizontalScrollArea className="border rounded-lg">
               <table className="w-full">
                 <tbody>
                   <TransactionTableSkeleton rows={5} />
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
           ) : isError ? (
             <div className="rounded-lg border">
               <EmptyState
@@ -204,7 +205,7 @@ export default function TxSyncQuarantinePage() {
           title="Delete quarantine entry"
           description={
             entryToDelete
-              ? `Deleting this entry does NOT apply transaction ${entryToDelete.txHash}. The database stays behind the chain for whatever that transaction would have changed, and nothing will retry it again.\n\nOnly delete entries that are genuinely irrelevant — a transaction belonging to another system, or one you have already repaired by hand.`
+              ? `Deleting this entry does NOT apply transaction ${entryToDelete.txHash}. The database stays behind the chain for whatever that transaction would have changed, and nothing will retry it again.\n\nOnly delete entries that are genuinely irrelevant: a transaction belonging to another system, or one you have already repaired by hand.`
               : ''
           }
           onConfirm={handleConfirmDelete}

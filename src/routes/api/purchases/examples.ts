@@ -17,6 +17,8 @@ export const purchaseResponseSchemaExample = {
 	externalDisputeUnlockTime: '0',
 	requestedById: 'requester_id',
 	onChainState: null,
+	forceLayer: null,
+	paymentForceLayer: null,
 	collateralReturnLovelace: null,
 	buyerReturnAddress: null,
 	sellerReturnAddress: null,

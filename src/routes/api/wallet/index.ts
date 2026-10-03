@@ -1,15 +1,21 @@
-import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { cursorPaginationArgs } from '@/utils/shared/queries';
+import {
+	adminAuthenticatedEndpointFactory,
+	readAuthenticatedEndpointFactory,
+	AuthContext,
+	checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@masumi/payment-core/auth';
+import { cursorPaginationArgs, escapeLikePattern, normalizeSearchQuery } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { Prisma, WalletFundTransfer } from '@/generated/prisma/client';
+import { HotWalletType, Prisma, WalletFundTransfer } from '@/generated/prisma/client';
 import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { logger } from '@masumi/payment-core/logger';
+import { createRateLimiter } from '@/utils/middleware/rate-limit';
 import {
 	getWalletListSchemaInput,
 	getWalletListSchemaOutput,
@@ -42,20 +48,62 @@ export {
 	getWalletFundSchemaOutput,
 };
 
-export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.build({
+// Public wallet metadata, no secrets: chain identifiers (vkey / address), the
+// operator's note, and the low-balance summary. Pay keys need it to pick a
+// selling wallet when registering agents, and read keys to render the wallets
+// view; the same addresses already reach read keys through payments/purchases,
+// and GET /balance and /utxos are read-level for any address.
+//
+// The mnemonic lives behind GET /wallet?includeSecret=true, which stays admin,
+// as do create / update / fund / low-balance below. networkLimit and the
+// wallet-scope filter still apply here, so a scoped key sees only its wallets.
+export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getWalletListSchemaInput,
 	output: getWalletListSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof getWalletListSchemaInput>; ctx: AuthContext }) => {
+		// Funding (treasury) wallets stay admin-only. The read/pay rationale above —
+		// "the same addresses already reach read keys through payments/purchases" —
+		// holds for Selling and Purchasing wallets, but a Funding wallet appears in
+		// no payment or purchase projection and is deliberately excluded from the
+		// payment-source counts too. Without this a read key could ask for
+		// ?walletType=Funding and enumerate the operator's treasury, then track it
+		// through the read-level /balance and /utxos endpoints.
+		const typeFilter: { type?: HotWalletType | { in: HotWalletType[] } } = ctx.canAdmin
+			? input.walletType != null
+				? { type: input.walletType }
+				: {}
+			: {
+					type:
+						input.walletType != null && input.walletType !== HotWalletType.Funding
+							? input.walletType
+							: { in: [HotWalletType.Selling, HotWalletType.Purchasing] },
+				};
+		const searchLower = normalizeSearchQuery(input.searchQuery);
+		const searchPattern = searchLower ? escapeLikePattern(searchLower) : undefined;
+		const matchingTypes = searchLower
+			? Object.values(HotWalletType).filter((walletType) => walletType.toLowerCase().includes(searchLower))
+			: undefined;
 		const wallets = await prisma.hotWallet.findMany({
 			orderBy: { createdAt: 'desc' },
 			...cursorPaginationArgs(input.cursorId, input.take),
 			where: {
 				deletedAt: null,
-				...(input.walletType != null ? { type: input.walletType } : {}),
+				...typeFilter,
 				...(input.paymentSourceId != null ? { paymentSourceId: input.paymentSourceId } : {}),
 				...(input.walletVkey != null ? { walletVkey: input.walletVkey } : {}),
 				...(input.walletAddress != null ? { walletAddress: input.walletAddress } : {}),
+				...(searchPattern
+					? {
+							OR: [
+								{ walletAddress: { contains: searchPattern, mode: 'insensitive' as const } },
+								{ collectionAddress: { contains: searchPattern, mode: 'insensitive' as const } },
+								{ walletVkey: { contains: searchPattern, mode: 'insensitive' as const } },
+								{ note: { contains: searchPattern, mode: 'insensitive' as const } },
+								...(matchingTypes != null && matchingTypes.length > 0 ? [{ type: { in: matchingTypes } }] : []),
+							],
+						}
+					: {}),
 				PaymentSource: {
 					network: { in: ctx.networkLimit },
 					deletedAt: null,
@@ -96,6 +144,8 @@ export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.buil
 		};
 	},
 });
+
+const walletSecretRevealRateLimiter = createRateLimiter({ maxRequests: 5, windowMs: 5 * 60_000 });
 
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
@@ -181,6 +231,13 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 			};
 
 			if (input.includeSecret == true) {
+				const rateLimit = walletSecretRevealRateLimiter.consume(ctx.id);
+				if (!rateLimit.allowed) {
+					throw createHttpError(429, 'Too many wallet secret reveals; try again later.');
+				}
+
+				logger.warn(`Wallet secret disclosed for ${walletTypeLabel} wallet ${result.id} (admin key ${ctx.id})`);
+
 				return {
 					...base,
 					Secret: {

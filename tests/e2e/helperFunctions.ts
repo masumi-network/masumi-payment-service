@@ -240,19 +240,30 @@ export interface TimingConfig {
  * Register an agent and wait for full confirmation with agent identifier
  * @param network - The blockchain network (Preprod, Mainnet, etc.)
  * @param paymentSourceType - Optional override for the payment source type (defaults to `global.testConfig.paymentSourceType`)
+ * @param signal - Aborts the confirmation polls when the caller gives up
+ * @param sellingWalletVkey - Bind the agent to this selling wallet instead of
+ *   the newest one. `globalSetup` passes it so each concurrent flow file can
+ *   own a wallet: V1 processes one request per hot wallet per scheduler tick.
  * @returns Confirmed agent data with identifier
  */
 export async function registerAndConfirmAgent(
 	network: Network,
 	paymentSourceType?: PaymentSourceType,
 	signal?: AbortSignal,
+	sellingWalletVkey?: string,
 ): Promise<ConfirmedAgent> {
 	const resolvedPaymentSourceType = paymentSourceType ?? global.testConfig.paymentSourceType;
 	console.log('📝 E2E: starting agent registration and confirmation...');
 
 	// Get test wallet dynamically from database
 	console.log('🔍 E2E: loading test wallet from database...');
-	const testWallet = await getTestWalletFromDatabase(network, 'seller', undefined, resolvedPaymentSourceType);
+	const testWallet =
+		sellingWalletVkey != null
+			? {
+					name: `Selected seller wallet (${resolvedPaymentSourceType}, ${network})`,
+					vkey: sellingWalletVkey,
+				}
+			: await getTestWalletFromDatabase(network, 'seller', undefined, resolvedPaymentSourceType);
 	const testScenario = getTestScenarios().basicAgent;
 	const smartContractAddress =
 		resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2

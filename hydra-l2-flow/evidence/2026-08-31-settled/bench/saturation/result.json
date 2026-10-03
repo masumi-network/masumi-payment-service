@@ -1,0 +1,43 @@
+{
+  "mode": "saturation",
+  "startedAt": "2026-08-31T13:56:29.425Z",
+  "config": {
+    "chains": 40,
+    "hops": 250,
+    "totalTxs": 10000,
+    "window": 500,
+    "seedLovelace": "2587500",
+    "node": "http://127.0.0.1:4001",
+    "node2": null,
+    "txShape": "1-in/1-out ada transfer, fee 0, no scripts"
+  },
+  "environment": {
+    "hydraNodeVersion": "2.3.0-ef833d8a07d412a5a58cf1976afd4e81866ac4df",
+    "headParticipants": 2,
+    "hardware": "Apple M4 (10 cores, 16 GB)",
+    "os": "darwin arm64",
+    "nodeJs": "v22.18.0"
+  },
+  "results": {
+    "sent": 10000,
+    "valid": 10000,
+    "confirmed": 10000,
+    "invalid": 0,
+    "snapshots": 101,
+    "txsPerSnapshot": 99,
+    "wallClockSec": 100.16,
+    "tpsValid": 100.3,
+    "tpsConfirmed": 100,
+    "latencyMsToValid": {
+      "p50": 554.7,
+      "p95": 1592.1,
+      "p99": 4166.9
+    },
+    "latencyMsToConfirmed": {
+      "p50": 4980.7,
+      "p95": 5745.5,
+      "p99": 7911
+    },
+    "invalidReasons": []
+  }
+}

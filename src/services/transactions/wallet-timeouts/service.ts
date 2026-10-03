@@ -8,6 +8,7 @@ import {
 	PaymentErrorType,
 	PurchasingAction,
 	PurchaseErrorType,
+	TransactionLayer,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
@@ -33,6 +34,15 @@ import {
 	updateCurrentTransactionStatus,
 } from '@/services/shared';
 import { classifyUnseenPendingTx } from './dead-tx';
+import {
+	buildInvalidPendingWalletReleaseWhere,
+	buildInvalidPendingWalletSweepWhere,
+	buildOrphanLockClearWhere,
+	buildSwapHalfStateClearWhere,
+	buildSwapUnlockWhere,
+	buildTimedOutUnlockWhere,
+	isL1PendingTransaction,
+} from './lock-fences';
 
 const mutex = new Mutex();
 
@@ -88,6 +98,7 @@ export async function updateWalletTransactionHash() {
 					async (prisma) => {
 						const result = await prisma.paymentRequest.findMany({
 							where: {
+								layer: TransactionLayer.L1,
 								NextAction: {
 									requestedAction: {
 										in: [
@@ -131,9 +142,18 @@ export async function updateWalletTransactionHash() {
 						});
 						for (const paymentRequest of result) {
 							if (paymentRequest.currentTransactionId == null) {
+								// `lockPurpose == null` appears in every lock-clearing condition
+								// in this file: a lock naming a purpose is not a batcher's and
+								// is not subject to this timeout. A Hydra L1 deposit holds its
+								// wallet across a full L1 confirmation and never attaches a
+								// PendingTransaction, so it matches these predicates exactly
+								// while being entirely healthy; clearing one hands the wallet to
+								// a batcher mid-carve and one of the two spends then dies on
+								// chain as BadInputsUTxO. See `HYDRA_L1_LOCK_PURPOSE`.
 								if (
 									paymentRequest.SmartContractWallet != null &&
 									paymentRequest.SmartContractWallet.pendingTransactionId == null &&
+									paymentRequest.SmartContractWallet.lockPurpose == null &&
 									paymentRequest.SmartContractWallet.lockedAt &&
 									new Date(paymentRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -153,6 +173,7 @@ export async function updateWalletTransactionHash() {
 															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
 															lockedAt:
 																paymentRequest.SmartContractWallet.pendingTransactionId == null &&
+																paymentRequest.SmartContractWallet.lockPurpose == null &&
 																paymentRequest.SmartContractWallet.lockedAt &&
 																new Date(paymentRequest.SmartContractWallet.lockedAt) <
 																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -172,7 +193,8 @@ export async function updateWalletTransactionHash() {
 									paymentRequest.SmartContractWallet != null &&
 									((paymentRequest.SmartContractWallet.pendingTransactionId != null &&
 										paymentRequest.SmartContractWallet.pendingTransactionId == paymentRequest.currentTransactionId) ||
-										(paymentRequest.SmartContractWallet.lockedAt &&
+										(paymentRequest.SmartContractWallet.lockPurpose == null &&
+											paymentRequest.SmartContractWallet.lockedAt &&
 											new Date(paymentRequest.SmartContractWallet.lockedAt) <
 												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
 								) {
@@ -193,7 +215,8 @@ export async function updateWalletTransactionHash() {
 																(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	paymentRequest.SmartContractWallet?.pendingTransactionId ==
 																		paymentRequest.currentTransactionId) ||
-																(paymentRequest.SmartContractWallet?.lockedAt &&
+																(paymentRequest.SmartContractWallet?.lockPurpose == null &&
+																	paymentRequest.SmartContractWallet?.lockedAt &&
 																	new Date(paymentRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -202,7 +225,8 @@ export async function updateWalletTransactionHash() {
 																(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	paymentRequest.SmartContractWallet?.pendingTransactionId ==
 																		paymentRequest.currentTransactionId) ||
-																(paymentRequest.SmartContractWallet?.lockedAt &&
+																(paymentRequest.SmartContractWallet?.lockPurpose == null &&
+																	paymentRequest.SmartContractWallet?.lockedAt &&
 																	new Date(paymentRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -234,6 +258,7 @@ export async function updateWalletTransactionHash() {
 					async (prisma) => {
 						const result = await prisma.purchaseRequest.findMany({
 							where: {
+								layer: TransactionLayer.L1,
 								NextAction: {
 									requestedAction: {
 										in: [
@@ -289,6 +314,7 @@ export async function updateWalletTransactionHash() {
 								if (
 									purchaseRequest.SmartContractWallet != null &&
 									purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
+									purchaseRequest.SmartContractWallet.lockPurpose == null &&
 									purchaseRequest.SmartContractWallet.lockedAt &&
 									new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -308,6 +334,7 @@ export async function updateWalletTransactionHash() {
 															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
 															lockedAt:
 																purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
+																purchaseRequest.SmartContractWallet.lockPurpose == null &&
 																purchaseRequest.SmartContractWallet.lockedAt &&
 																new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -327,7 +354,8 @@ export async function updateWalletTransactionHash() {
 									purchaseRequest.SmartContractWallet != null &&
 									((purchaseRequest.SmartContractWallet.pendingTransactionId != null &&
 										purchaseRequest.SmartContractWallet.pendingTransactionId == purchaseRequest.currentTransactionId) ||
-										(purchaseRequest.SmartContractWallet.lockedAt &&
+										(purchaseRequest.SmartContractWallet.lockPurpose == null &&
+											purchaseRequest.SmartContractWallet.lockedAt &&
 											new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
 								) {
@@ -348,7 +376,8 @@ export async function updateWalletTransactionHash() {
 																(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	purchaseRequest.SmartContractWallet?.pendingTransactionId ==
 																		purchaseRequest.currentTransactionId) ||
-																(purchaseRequest.SmartContractWallet?.lockedAt &&
+																(purchaseRequest.SmartContractWallet?.lockPurpose == null &&
+																	purchaseRequest.SmartContractWallet?.lockedAt &&
 																	new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -357,7 +386,8 @@ export async function updateWalletTransactionHash() {
 																(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	purchaseRequest.SmartContractWallet?.pendingTransactionId ==
 																		purchaseRequest.currentTransactionId) ||
-																(purchaseRequest.SmartContractWallet?.lockedAt &&
+																(purchaseRequest.SmartContractWallet?.lockPurpose == null &&
+																	purchaseRequest.SmartContractWallet?.lockedAt &&
 																	new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -436,6 +466,7 @@ export async function updateWalletTransactionHash() {
 								if (
 									registryRequest.SmartContractWallet != null &&
 									registryRequest.SmartContractWallet.pendingTransactionId == null &&
+									registryRequest.SmartContractWallet.lockPurpose == null &&
 									registryRequest.SmartContractWallet.lockedAt &&
 									new Date(registryRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -466,6 +497,7 @@ export async function updateWalletTransactionHash() {
 															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
 															lockedAt:
 																registryRequest.SmartContractWallet.pendingTransactionId == null &&
+																registryRequest.SmartContractWallet.lockPurpose == null &&
 																registryRequest.SmartContractWallet.lockedAt &&
 																new Date(registryRequest.SmartContractWallet.lockedAt) <
 																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -513,7 +545,8 @@ export async function updateWalletTransactionHash() {
 									registryRequest.SmartContractWallet != null &&
 									((registryRequest.SmartContractWallet.pendingTransactionId != null &&
 										registryRequest.SmartContractWallet.pendingTransactionId == registryRequest.currentTransactionId) ||
-										(registryRequest.SmartContractWallet.lockedAt &&
+										(registryRequest.SmartContractWallet.lockPurpose == null &&
+											registryRequest.SmartContractWallet.lockedAt &&
 											new Date(registryRequest.SmartContractWallet.lockedAt) <
 												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
 								) {
@@ -545,7 +578,8 @@ export async function updateWalletTransactionHash() {
 																(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	registryRequest.SmartContractWallet?.pendingTransactionId ==
 																		registryRequest.currentTransactionId) ||
-																(registryRequest.SmartContractWallet?.lockedAt &&
+																(registryRequest.SmartContractWallet?.lockPurpose == null &&
+																	registryRequest.SmartContractWallet?.lockedAt &&
 																	new Date(registryRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -554,7 +588,8 @@ export async function updateWalletTransactionHash() {
 																(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	registryRequest.SmartContractWallet?.pendingTransactionId ==
 																		registryRequest.currentTransactionId) ||
-																(registryRequest.SmartContractWallet?.lockedAt &&
+																(registryRequest.SmartContractWallet?.lockPurpose == null &&
+																	registryRequest.SmartContractWallet?.lockedAt &&
 																	new Date(registryRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -599,12 +634,18 @@ export async function updateWalletTransactionHash() {
 		//      caller that crashed/exited between committing the lock and creating
 		//      its PendingTransaction. Without this branch the wallet stays locked
 		//      forever (the relation filter requires `PendingTransaction != null`).
+		// One cutoff for the read and for every write it leads to: a lock taken
+		// after this instant was not the one this sweep judged.
+		const staleLockBefore = new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL);
 		const lockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
 				deletedAt: null,
 				OR: [
 					{
 						PendingTransaction: {
+							// L2 (Hydra) pending transactions are reconciled by the hydra-tx-handler,
+							// not this L1 wallet-timeout reaper — keep this branch scoped to L1.
+							layer: TransactionLayer.L1,
 							// Prisma `lte` does NOT match NULL — without the explicit null branch
 							// below, a PendingTransaction whose lastCheckedAt is NULL (any historical
 							// row predating `createPendingTransaction`'s mandatory seed, plus any
@@ -637,20 +678,17 @@ export async function updateWalletTransactionHash() {
 						//    risk — the alternative (skipping the null branch)
 						//    leaves corrupt half-states stranded indefinitely,
 						//    which is worse for operators.
-						OR: [
-							{
-								lockedAt: {
-									lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
-								},
-							},
-							{ lockedAt: null },
-						],
+						OR: [{ lockedAt: { lt: staleLockBefore } }, { lockedAt: null }],
 					},
 					{
 						pendingTransactionId: null,
-						lockedAt: {
-							lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
-						},
+						// A lock that names a purpose is not a batcher's and does not
+						// leak on this clock: the Hydra L1 deposits hold their wallet
+						// across a full L1 confirmation with no PendingTransaction, so
+						// this branch would free one mid-carve. `unlockStaleOrphanWalletLocks`
+						// sweeps those on their own, much longer threshold.
+						lockPurpose: null,
+						lockedAt: { lt: staleLockBefore },
 					},
 				],
 			},
@@ -675,10 +713,24 @@ export async function updateWalletTransactionHash() {
 						// a PendingTransaction. Clear the lock so the next scheduler tick can
 						// re-pick this wallet up.
 						logger.warn(`Wallet ${wallet.id} locked without PendingTransaction past timeout — clearing orphan lock`);
-						await prisma.hotWallet.update({
-							where: { id: wallet.id, deletedAt: null },
+						// Fenced on the unpurposed, unattached state this row was read in.
+						// Between the read and here a Hydra L1 deposit can claim the wallet
+						// — its own staleness threshold is longer, but a lock this branch
+						// considers timed out can already have crossed it — and the deposit
+						// holds no PendingTransaction, so an unguarded clear by id would
+						// free it mid-carve. It would also leave `lockPurpose` set on an
+						// unlocked wallet, the one half-state `unstickPurposeLocks` exists
+						// to repair, so the leak would not even be visible as one.
+						const unlocked = await prisma.hotWallet.updateMany({
+							where: buildOrphanLockClearWhere(wallet.id, staleLockBefore),
 							data: { lockedAt: null },
 						});
+						if (unlocked.count !== 1) {
+							logger.info('wallet-timeouts: wallet moved on before the orphan-lock clear; leaving it', {
+								walletId: wallet.id,
+							});
+							return;
+						}
 						tallyUnlockedWallet(wallet);
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 						return;
@@ -715,6 +767,7 @@ export async function updateWalletTransactionHash() {
 									id: wallet.PendingTransaction.id,
 									intendedTxHash,
 									invalidHereafterSlot: wallet.PendingTransaction.invalidHereafterSlot,
+									layer: TransactionLayer.L1,
 									BlocksWallet: {
 										id: wallet.id,
 										PaymentSource: {
@@ -782,11 +835,18 @@ export async function updateWalletTransactionHash() {
 								id: wallet.id,
 								deletedAt: null,
 								pendingTransactionId: wallet.PendingTransaction.id,
-								PendingTransaction: { intendedTxHash: null, txHash: null },
+								PendingTransaction: {
+									layer: TransactionLayer.L1,
+									intendedTxHash: null,
+									txHash: null,
+								},
 							},
 							data: {
 								pendingTransactionId: null,
 								lockedAt: null,
+								// Goes with lockedAt, always. A marker outliving its lock is
+								// adopted by the next holder and frees that holder's lock early.
+								lockPurpose: null,
 							},
 						});
 						if (disconnected.count !== 1) {
@@ -886,13 +946,34 @@ export async function updateWalletTransactionHash() {
 							// Tx landed and validContract=true (or null couldn't determine):
 							// just unlock the wallet — no dependents to advance. Kept outside
 							// the propagation transaction because no propagation runs here.
-							await prisma.hotWallet.update({
-								where: { id: wallet.id, deletedAt: null },
+							//
+							// Fenced on the transaction we read, for the same reason as the
+							// orphan-lock disconnect above: fetchTxInfo is a Blockfrost round trip,
+							// and inside it another poller can settle this same tx and free the
+							// wallet, after which a Hydra L1 deposit can claim it (claimHotWalletForL1
+							// needs only pendingTransactionId: null). An unguarded clear by wallet id
+							// would then free a wallet whose carve is still unconfirmed on chain, and
+							// leave lockPurpose set on an unlocked row — the marker the next holder
+							// would inherit.
+							const unlocked = await prisma.hotWallet.updateMany({
+								where: {
+									id: wallet.id,
+									deletedAt: null,
+									pendingTransactionId: wallet.PendingTransaction.id,
+								},
 								data: {
-									PendingTransaction: { disconnect: true },
+									pendingTransactionId: null,
 									lockedAt: null,
+									lockPurpose: null,
 								},
 							});
+							if (unlocked.count !== 1) {
+								logger.info('wallet-timeouts: wallet moved on before the settled-tx unlock; leaving it', {
+									walletId: wallet.id,
+									transactionId: wallet.PendingTransaction.id,
+								});
+								return;
+							}
 						}
 						tallyUnlockedWallet(wallet);
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
@@ -951,7 +1032,7 @@ export async function updateWalletTransactionHash() {
 											// other sweep in this file uses the same guard.
 											const freed = await dbTx.hotWallet.updateMany({
 												where: { id: wallet.id, deletedAt: null, pendingTransactionId: pendingTx.id },
-												data: { pendingTransactionId: null, lockedAt: null },
+												data: { pendingTransactionId: null, lockedAt: null, lockPurpose: null },
 											});
 											if (freed.count === 0) {
 												return false;
@@ -1197,10 +1278,27 @@ export async function updateWalletTransactionHash() {
 					}
 
 					if (shouldUnlock) {
-						await prisma.hotWallet.update({
-							where: { id: wallet.id, deletedAt: null },
-							data: { pendingSwapTransactionId: null, lockedAt: null },
+						// Fenced on the swap this poll actually resolved. The two Blockfrost
+						// round trips above are seconds long, and inside them the swap status
+						// endpoint can settle this same swap and free the wallet, after which
+						// a Hydra L1 deposit can claim it — `claimHotWalletForL1` needs only
+						// `pendingTransactionId` and `pendingSwapTransactionId` to be null.
+						// An unguarded clear by wallet id would then free a wallet whose carve
+						// is still unconfirmed on chain, hand it to the batchers, and one of
+						// the two spends over the same input dies as BadInputsUTxO. Clearing
+						// `lockPurpose` with it is what makes the unguarded form destroy the
+						// evidence too: the release at the deposit's end matches nothing and
+						// `unstickPurposeLocks` sees no violation to repair.
+						const unlocked = await prisma.hotWallet.updateMany({
+							where: buildSwapUnlockWhere(wallet.id, swapTxId),
+							data: { pendingSwapTransactionId: null, lockedAt: null, lockPurpose: null },
 						});
+						if (unlocked.count !== 1) {
+							logger.info('wallet-timeouts: wallet moved on before the swap unlock; leaving it', {
+								walletId: wallet.id,
+								swapTransactionId: swapTxId,
+							});
+						}
 					}
 				} catch (error) {
 					logger.error(`Error updating swap wallet transaction hash: ${errorToString(error)}`);
@@ -1208,14 +1306,21 @@ export async function updateWalletTransactionHash() {
 			}),
 		);
 
+		// Read and written against the same instant — see `staleLockBefore` above.
+		const timedOutLockBefore = new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL);
 		const timedOutLockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
-				lockedAt: {
-					lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
-				},
+				lockedAt: { lt: timedOutLockBefore },
 				deletedAt: null,
 				PendingTransaction: null,
 				PendingSwapTransaction: null,
+				// A lock naming a purpose is not a batcher's and does not belong to
+				// this timeout. See `HYDRA_L1_LOCK_PURPOSE`: a Hydra L1 deposit holds
+				// its wallet across a full L1 confirmation and never attaches a
+				// PendingTransaction, so it matches this predicate exactly while being
+				// entirely healthy. `unlockStalePurposeWalletLocks` sweeps those on
+				// their own, much longer clock.
+				lockPurpose: null,
 			},
 			include: {
 				PaymentSource: { include: { PaymentSourceConfig: true } },
@@ -1224,12 +1329,30 @@ export async function updateWalletTransactionHash() {
 		await Promise.allSettled(
 			timedOutLockedHotWallets.map(async (wallet) => {
 				try {
-					await prisma.hotWallet.update({
-						where: { id: wallet.id, deletedAt: null },
+					// Fenced on every column this row was selected by, the lock's age
+					// included. A Hydra L1 deposit that claims the wallet between the read
+					// and the write sets `lockPurpose`, and clearing by id alone would
+					// free its carve and destroy the marker in the same statement; a
+					// batcher claiming it sets only `lockedAt`, which is why the age has
+					// to be part of the fence rather than only part of the read.
+					const unlocked = await prisma.hotWallet.updateMany({
+						where: buildTimedOutUnlockWhere(wallet.id, timedOutLockBefore),
 						data: {
 							lockedAt: null,
+							// Cleared together with the lock it describes. A marker left
+							// behind on an unlocked wallet would be adopted by the next
+							// holder — a batcher, which sets only `lockedAt` — and the next
+							// `releaseHotWalletAfterL1` would then free that batcher's lock
+							// during its build window.
+							lockPurpose: null,
 						},
 					});
+					if (unlocked.count !== 1) {
+						logger.info('wallet-timeouts: wallet moved on before the timeout unlock; leaving it', {
+							walletId: wallet.id,
+						});
+						return;
+					}
 
 					tallyUnlockedWallet(wallet);
 					markUnlockedByType(wallet.PaymentSource.paymentSourceType);
@@ -1326,11 +1449,7 @@ export async function updateWalletTransactionHash() {
 		}
 		try {
 			const errorHotWallets = await prisma.hotWallet.findMany({
-				where: {
-					PendingTransaction: { isNot: null },
-					lockedAt: null,
-					deletedAt: null,
-				},
+				where: buildInvalidPendingWalletSweepWhere(),
 				include: {
 					PendingTransaction: true,
 					PaymentSource: {
@@ -1340,6 +1459,12 @@ export async function updateWalletTransactionHash() {
 			});
 			for (const hotWallet of errorHotWallets) {
 				const pendingTransaction = hotWallet.PendingTransaction;
+				if (!isL1PendingTransaction(pendingTransaction)) {
+					logger.warn('wallet-timeouts: refusing to detach a non-L1 pending transaction', {
+						walletId: hotWallet.id,
+					});
+					continue;
+				}
 				// Ambiguous-funding guard — mirrors the `txHash == null && intendedTxHash != null`
 				// branch in the lockedHotWallets loop above. A V2 collateral-prep / batch-payments
 				// tx records `intendedTxHash` BEFORE broadcast; on an ambiguous submit the row stays
@@ -1364,6 +1489,7 @@ export async function updateWalletTransactionHash() {
 							id: pendingTransaction.id,
 							intendedTxHash: pendingTransaction.intendedTxHash,
 							invalidHereafterSlot: pendingTransaction.invalidHereafterSlot,
+							layer: TransactionLayer.L1,
 							BlocksWallet: {
 								id: hotWallet.id,
 								PaymentSource: {
@@ -1393,13 +1519,19 @@ export async function updateWalletTransactionHash() {
 				logger.error(
 					`Hot wallet ${hotWallet.id} was in an invalid locked state, Pending transaction is not null, wallet is not locked (this is likely a bug please report it with the following transaction hash): ${hotWallet.PendingTransaction?.txHash} ; transaction id: ${hotWallet.PendingTransaction?.id}`,
 				);
-				await prisma.hotWallet.update({
-					where: { id: hotWallet.id, deletedAt: null },
+				const disconnected = await prisma.hotWallet.updateMany({
+					where: buildInvalidPendingWalletReleaseWhere(hotWallet.id, pendingTransaction.id),
 					data: {
 						lockedAt: null,
-						PendingTransaction: { disconnect: true },
+						pendingTransactionId: null,
 					},
 				});
+				if (disconnected.count !== 1) {
+					logger.info('wallet-timeouts: invalid half-state advanced before guarded disconnect; leaving it', {
+						walletId: hotWallet.id,
+						transactionId: pendingTransaction.id,
+					});
+				}
 			}
 		} catch (error) {
 			logger.error(`Error updating wallet transaction hash`, { error: error });
@@ -1429,10 +1561,18 @@ export async function updateWalletTransactionHash() {
 						);
 					}
 				}
-				await prisma.hotWallet.update({
-					where: { id: hotWallet.id, deletedAt: null },
-					data: { lockedAt: null, pendingSwapTransactionId: null },
-				});
+				if (hotWallet.pendingSwapTransactionId) {
+					const cleared = await prisma.hotWallet.updateMany({
+						where: buildSwapHalfStateClearWhere(hotWallet.id, hotWallet.pendingSwapTransactionId),
+						data: { pendingSwapTransactionId: null, lockPurpose: null },
+					});
+					if (cleared.count !== 1) {
+						logger.info('wallet-timeouts: swap half-state advanced before the guarded clear; leaving it', {
+							walletId: hotWallet.id,
+							swapTransactionId: hotWallet.pendingSwapTransactionId,
+						});
+					}
+				}
 			}
 		} catch (error) {
 			logger.error(`Error updating swap wallet transaction hash`, { error: error });

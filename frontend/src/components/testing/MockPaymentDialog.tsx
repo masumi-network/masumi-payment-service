@@ -1,9 +1,11 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useDialogResetOnOpen } from '@/lib/hooks/useDialogResetOnOpen';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postPayment, PostPaymentResponse } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAllAgents } from '@/lib/queries/useAgents';
@@ -14,11 +16,14 @@ import {
   calculateDefaultTimes,
   generatePaymentCurl,
   extractErrorMessage,
+  getHttpStatus,
+  type HttpStatus,
 } from './utils';
 import {
   PaymentFormFields,
   useInputDataHash,
   paymentFormSchema,
+  forceLayerToApi,
   type PaymentFormValues,
 } from './PaymentFormFields';
 import { buildPaidAgentOptions } from './payment-options';
@@ -29,7 +34,8 @@ interface MockPaymentDialogProps {
 }
 
 export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
-  const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
+  const resync = useResync();
   const {
     agents,
     isLoading: isLoadingAgents,
@@ -42,6 +48,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
   const [curlCommand, setCurlCommand] = useState<string>('');
   const [response, setResponse] = useState<PostPaymentResponse['data'] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<HttpStatus | null>(null);
 
   const {
     register,
@@ -58,6 +65,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
       inputHash: '',
       identifierFromPurchaser: '',
       metadata: '',
+      forceLayer: 'Auto',
     },
   });
 
@@ -71,22 +79,22 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
     watch,
   );
 
-  useEffect(() => {
-    if (open) {
-      resetInputData();
-      setValue('paymentOptionId', '');
-      setValue('identifierFromPurchaser', generateRandomHex(16));
-      setResponse(null);
-      setError(null);
-      setCurlCommand('');
-    }
-  }, [open, selectedPaymentSource?.id, setValue, resetInputData]);
+  useDialogResetOnOpen(open, () => {
+    resetInputData();
+    setValue('paymentOptionId', '');
+    setValue('identifierFromPurchaser', generateRandomHex(16));
+    setResponse(null);
+    setError(null);
+    setStatus(null);
+    setCurlCommand('');
+  }, [selectedPaymentSource?.id, setValue, resetInputData]);
 
   const onSubmit = useCallback(
     async (data: PaymentFormValues) => {
       try {
         setIsLoading(true);
         setError(null);
+        setStatus(null);
 
         const times = calculateDefaultTimes();
         const selectedAgent = paidAgents.find((option) => option.optionId === data.paymentOptionId);
@@ -131,16 +139,20 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
             ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
             : {}),
           ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
+          ...(forceLayerToApi(data.forceLayer)
+            ? { forceLayer: forceLayerToApi(data.forceLayer) }
+            : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePaymentCurl(baseUrl, apiKey || '', requestBody);
+        const curl = generatePaymentCurl(baseUrl, requestBody);
         setCurlCommand(curl);
 
         const result = await postPayment({
           client: apiClient,
           body: requestBody,
         });
+        setStatus(getHttpStatus(result));
 
         if (result.error) {
           throw new Error(extractErrorMessage(result.error, 'Payment creation failed'));
@@ -149,6 +161,8 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         if (result.data?.data) {
           setResponse(result.data.data);
           toast.success('Test payment created successfully');
+          // The lists behind this dialog describe the world before it ran.
+          await resync('payments');
         } else {
           throw new Error('Invalid response from server - no data returned');
         }
@@ -161,7 +175,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         setIsLoading(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents],
+    [apiClient, network, paidAgents, resync],
   );
 
   const handleClose = () => {
@@ -169,6 +183,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
     resetInputData(false);
     setResponse(null);
     setError(null);
+    setStatus(null);
     setCurlCommand('');
     onClose();
   };
@@ -192,6 +207,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
               control={control}
               errors={errors}
               paidAgents={paidAgents}
+              totalAgents={agents.length}
               isLoadingAgents={isLoadingAgents}
               hasAgentsError={agentsError != null}
               inputData={inputData}
@@ -223,7 +239,12 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         </div>
 
         <div className="shrink-0">
-          <CurlResponseViewer curlCommand={curlCommand} response={response} error={error} />
+          <CurlResponseViewer
+            curlCommand={curlCommand}
+            response={response}
+            error={error}
+            status={status}
+          />
         </div>
       </DialogContent>
     </Dialog>

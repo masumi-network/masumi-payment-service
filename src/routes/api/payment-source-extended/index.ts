@@ -6,13 +6,17 @@ import {
 } from '@/utils/generator/contract-generator';
 import { prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@/utils/security/encryption';
-import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import {
+	adminAuthenticatedEndpointFactory,
+	readAuthenticatedEndpointFactory,
+	AuthContext,
+	checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@masumi/payment-core/auth';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 import { z } from '@masumi/payment-core/zod';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { logger } from '@masumi/payment-core/logger';
@@ -101,7 +105,10 @@ async function resolveLatestIdentifierCheckpoint(
 	}
 }
 
-export const paymentSourceExtendedEndpointGet = adminAuthenticatedEndpointFactory.build({
+// Read access: the admin UI (and scoped non-admin keys) need the source list to
+// bootstrap network selection. Mutations below stay admin-only, and the
+// rpcProviderApiKey secret is stripped for non-admin keys (see serializer).
+export const paymentSourceExtendedEndpointGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: paymentSourceExtendedSchemaInput,
 	output: paymentSourceExtendedSchemaOutput,
@@ -111,7 +118,7 @@ export const paymentSourceExtendedEndpointGet = adminAuthenticatedEndpointFactor
 			paymentSources.map((source) => source.id),
 			ctx.walletScopeIds,
 		);
-		return serializePaymentSourceExtendedResponse(paymentSources, walletCounts);
+		return serializePaymentSourceExtendedResponse(paymentSources, walletCounts, ctx.canAdmin);
 	},
 });
 

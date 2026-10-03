@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDialogResetOnOpen } from '@/lib/hooks/useDialogResetOnOpen';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { toast } from 'react-toastify';
@@ -276,7 +277,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       // Swallow the error so the spinner clears (finally below) — surfacing a
       // toast on every transient balance-fetch failure would be noisy, but we
       // still want a trace for debugging.
-      console.error('[MigrateAgentsDialog] fetchWalletBalance failed', err);
+      console.error('Failed to fetch wallet balance for migration');
     } finally {
       if (balanceFetchEpochRef.current === epoch) {
         setIsLoadingBalance(false);
@@ -382,13 +383,11 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   // re-render when toggled.
   const hasPendingV1ListInvalidationRef = useRef(false);
 
-  useEffect(() => {
-    if (open) {
-      setResults({});
-      setIsDone(false);
-      setIsMigrating(false);
-    }
-  }, [open]);
+  useDialogResetOnOpen(open, () => {
+    setResults({});
+    setIsDone(false);
+    setIsMigrating(false);
+  });
 
   const handleClose = useCallback(() => {
     if (hasPendingV1ListInvalidationRef.current) {
@@ -639,7 +638,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             // Confirmed agents always have an agentIdentifier, but be explicit
             // about why we couldn't deregister in case of edge data.
             deregisterError =
-              'V1 entry has no agentIdentifier (never minted) — cannot deregister automatically.';
+              'V1 entry has no agentIdentifier (never minted), so it cannot be deregistered automatically.';
           } else {
             try {
               const deregResp = await postRegistryDeregister({
@@ -778,7 +777,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             </DialogTitle>
             <DialogDescription>
               Re-register your V1 agents on the V2 registry. Each agent is minted fresh on the V2
-              source — your V1 entries remain until you deregister them.
+              source. Your V1 entries remain until you deregister them.
             </DialogDescription>
           </DialogHeader>
 
@@ -800,7 +799,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
 
           {v1Sources.length === 0 && !isLoadingSources && (
             <div className="rounded-lg border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
-              No V1 payment source on {network} — nothing to migrate.
+              No V1 payment source on {network}, so there is nothing to migrate.
             </div>
           )}
 
@@ -926,7 +925,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                 ) : v1Agents.length === 0 ? (
                   <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
                     {allV1Agents.length > 0
-                      ? 'All V1 agents on this source are already on V2 — nothing left to migrate.'
+                      ? 'All V1 agents on this source are already on V2. Nothing left to migrate.'
                       : 'No registered V1 agents on this source.'}
                   </div>
                 ) : (
@@ -1051,7 +1050,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                                   <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
                                   <span className="truncate" title={droppedHoldingAddress}>
                                     Custom V1 payout {shortenAddress(droppedHoldingAddress)} not on
-                                    V2 — funds will route to the selling wallet.
+                                    V2. Funds route to the selling wallet.
                                   </span>
                                 </p>
                               )}
@@ -1147,7 +1146,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                 {/* Cancel-during-run: flips the `cancelRef` flag the loop
                     polls between agents. The currently in-flight agent's
                     request still completes; subsequent agents are skipped.
-                    Disabled when not migrating — close the dialog via the
+                    Disabled when not migrating. Close the dialog via the
                     Cancel button to the left instead. */}
                 {isMigrating ? (
                   <Button

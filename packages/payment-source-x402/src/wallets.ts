@@ -4,7 +4,13 @@ import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { encrypt } from '@masumi/payment-core/encryption';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { assertValidPrivateKey, assertWalletOwner, buildOwnerScopeWhere, type X402OwnerScope } from './internal';
+import {
+	assertValidPrivateKey,
+	assertWalletOwner,
+	buildOwnerScopeWhere,
+	X402_UNRESTRICTED,
+	type X402OwnerScopeInput,
+} from './internal';
 
 // The non-secret projection returned to the dashboard for every managed wallet. The
 // encrypted private key is never part of this set; the plaintext key is only ever
@@ -116,7 +122,7 @@ export async function listX402ManagedWallets(input?: {
 	cursorId?: string;
 	type?: X402EvmWalletType;
 	networkId?: string;
-	ownerScope?: X402OwnerScope;
+	ownerScope?: X402OwnerScopeInput;
 	caip2NetworkLimit?: string[] | null;
 }) {
 	const wallets = await prisma.x402EvmWallet.findMany({
@@ -125,7 +131,7 @@ export async function listX402ManagedWallets(input?: {
 			type: input?.type,
 			networkId: input?.networkId,
 			Network: input?.caip2NetworkLimit == null ? undefined : { caip2Id: { in: input.caip2NetworkLimit } },
-			...buildOwnerScopeWhere(input?.ownerScope ?? null),
+			...buildOwnerScopeWhere(input?.ownerScope ?? X402_UNRESTRICTED),
 		},
 		orderBy: { createdAt: 'desc' },
 		take: input?.take,
@@ -137,7 +143,7 @@ export async function listX402ManagedWallets(input?: {
 
 export async function getX402ManagedWallet(
 	evmWalletId: string,
-	ownerScope: X402OwnerScope = null,
+	ownerScope: X402OwnerScopeInput = X402_UNRESTRICTED,
 	caip2NetworkLimit: string[] | null = null,
 ) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
@@ -155,7 +161,7 @@ export async function getX402ManagedWallet(
 export async function updateX402ManagedWallet(input: {
 	id: string;
 	note?: string | null;
-	ownerScope?: X402OwnerScope;
+	ownerScope?: X402OwnerScopeInput;
 	caip2NetworkLimit?: string[] | null;
 }) {
 	// Only the human-facing note is mutable; address/type/key are immutable for an
@@ -167,7 +173,7 @@ export async function updateX402ManagedWallet(input: {
 	if (existing == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
-	assertWalletOwner(input.ownerScope ?? null, existing);
+	assertWalletOwner(input.ownerScope ?? X402_UNRESTRICTED, existing);
 	assertWalletNetworkAllowed(input.caip2NetworkLimit ?? null, existing.Network.caip2Id);
 	const updated = await prisma.x402EvmWallet.update({
 		where: { id: input.id },
@@ -179,7 +185,7 @@ export async function updateX402ManagedWallet(input: {
 
 export async function deleteX402ManagedWallet(
 	evmWalletId: string,
-	ownerScope: X402OwnerScope = null,
+	ownerScope: X402OwnerScopeInput = X402_UNRESTRICTED,
 	caip2NetworkLimit: string[] | null = null,
 ) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
@@ -192,12 +198,11 @@ export async function deleteX402ManagedWallet(
 	assertWalletOwner(ownerScope, wallet);
 	assertWalletNetworkAllowed(caip2NetworkLimit, wallet.Network.caip2Id);
 
-	// Soft-delete the wallet, disable its budgets and low-balance rules, and detach it
+	// Soft-delete the wallet, disable its low-balance rules, and detach it
 	// from any network it facilitates, so a retired/compromised key can no longer sign,
 	// settle or raise alerts.
 	await prisma.$transaction([
 		prisma.x402EvmWallet.update({ where: { id: evmWalletId }, data: { deletedAt: new Date() } }),
-		prisma.x402WalletBudget.updateMany({ where: { evmWalletId }, data: { enabled: false } }),
 		prisma.x402EvmWalletLowBalanceRule.updateMany({ where: { evmWalletId }, data: { enabled: false } }),
 		prisma.x402Network.updateMany({
 			where: { facilitatorWalletId: evmWalletId },

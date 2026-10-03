@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { formatTransactionErrorType } from '@/lib/display-labels';
 import type { Transaction } from './transaction-format.helpers';
 
 interface TransactionErrorSectionProps {
@@ -8,6 +9,8 @@ interface TransactionErrorSectionProps {
   /** Which recovery is currently running, so the button can say so. */
   errorRecoveryMode: 'clear' | 'retry' | null;
   onRecover: (retryPreviousAction: boolean) => void;
+  /** Pay-or-admin keys can clear/retry NextAction errors. */
+  canRecover?: boolean;
 }
 
 /**
@@ -21,6 +24,7 @@ export function TransactionErrorSection({
   isLoading,
   errorRecoveryMode,
   onRecover,
+  canRecover = true,
 }: TransactionErrorSectionProps) {
   if (!transaction.NextAction?.errorType) return null;
 
@@ -30,7 +34,8 @@ export function TransactionErrorSection({
       <div className="space-y-2 rounded-md bg-destructive/20 p-4">
         <div className="space-y-1">
           <p className="text-sm">
-            <span className="font-medium">Error Type:</span> {transaction.NextAction.errorType}
+            <span className="font-medium">Error Type:</span>{' '}
+            {formatTransactionErrorType(transaction.NextAction.errorType)}
           </p>
           {transaction.NextAction.errorNote && (
             <p className="text-sm">
@@ -41,19 +46,21 @@ export function TransactionErrorSection({
             Retry queues the failed blockchain action again with its original data. Clear only
             removes the error and waits for the next external action.
           </p>
-          <div className="flex flex-wrap gap-2 mt-4">
-            <Button size="sm" disabled={isLoading} onClick={() => onRecover(true)}>
-              {errorRecoveryMode === 'retry' ? 'Queueing retry...' : 'Retry Failed Action'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={isLoading}
-              onClick={() => onRecover(false)}
-            >
-              {errorRecoveryMode === 'clear' ? 'Clearing error state...' : 'Clear Error State'}
-            </Button>
-          </div>
+          {canRecover && (
+            <div className="flex flex-wrap gap-2 mt-4">
+              <Button size="sm" disabled={isLoading} onClick={() => onRecover(true)}>
+                {errorRecoveryMode === 'retry' ? 'Queueing retry...' : 'Retry Failed Action'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={isLoading}
+                onClick={() => onRecover(false)}
+              >
+                {errorRecoveryMode === 'clear' ? 'Clearing error state...' : 'Clear Error State'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>

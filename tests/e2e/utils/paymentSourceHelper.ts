@@ -111,6 +111,41 @@ export async function getActiveWalletVKey(
 	return wallet.walletVkey;
 }
 
+/**
+ * Every selling wallet vkey configured for a payment source (first 50).
+ *
+ * `globalSetup` registers one agent per entry so concurrent flow files can each
+ * drive their own selling wallet. Order does not matter: the wallets are
+ * interchangeable for the suite, and `globalSetup` queries once and shares the
+ * result, so every worker sees the same list.
+ */
+export async function getSellingWalletVkeys(
+	network: Network,
+	paymentSourceType?: PaymentSourceType,
+	apiClient?: ApiClient,
+): Promise<string[]> {
+	const client = apiClient || global.testApiClient;
+	if (!client) {
+		throw new Error('ApiClient not provided and global.testApiClient is not available');
+	}
+	const resolvedPaymentSourceType = resolvePaymentSourceType(paymentSourceType);
+	const paymentSource = await getE2EPaymentSource(network, resolvedPaymentSourceType, client);
+
+	const { Wallets: wallets } = await client.queryWallets({
+		paymentSourceId: paymentSource.id,
+		walletType: HotWalletType.Selling,
+		take: 50,
+	});
+
+	if (wallets.length === 0) {
+		throw new Error(
+			`No active selling wallet found for ${resolvedPaymentSourceType} on ${network}. Please run database seeding first.`,
+		);
+	}
+
+	return wallets.map((wallet) => wallet.walletVkey);
+}
+
 export async function validateE2EPaymentSourceWallets(
 	network: Network,
 	paymentSourceType?: PaymentSourceType,
@@ -191,6 +226,7 @@ export default {
 	getE2EPaymentSource,
 	getActiveSmartContractAddress,
 	getActiveWalletVKey,
+	getSellingWalletVkeys,
 	validateE2EPaymentSourceWallets,
 	getTestWalletFromDatabase,
 };

@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useDialogResetOnOpen } from '@/lib/hooks/useDialogResetOnOpen';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   postPayment,
@@ -9,6 +10,7 @@ import {
   PostPurchaseResponse,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAllAgents } from '@/lib/queries/useAgents';
@@ -20,11 +22,14 @@ import {
   generatePaymentCurl,
   generatePurchaseCurl,
   extractErrorMessage,
+  getHttpStatus,
+  type HttpStatus,
 } from './utils';
 import {
   PaymentFormFields,
   useInputDataHash,
   paymentFormSchema,
+  forceLayerToApi,
   type PaymentFormValues,
 } from './PaymentFormFields';
 import { Badge } from '@/components/ui/badge';
@@ -38,7 +43,8 @@ interface FullCycleDialogProps {
 }
 
 export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
-  const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
+  const resync = useResync();
   const {
     agents,
     isLoading: isLoadingAgents,
@@ -62,6 +68,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
+  const [paymentStatus, setPaymentStatus] = useState<HttpStatus | null>(null);
+  const [purchaseStatus, setPurchaseStatus] = useState<HttpStatus | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -77,6 +86,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       inputHash: '',
       identifierFromPurchaser: '',
       metadata: '',
+      forceLayer: 'Auto',
     },
   });
 
@@ -90,26 +100,27 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     watch,
   );
 
-  useEffect(() => {
-    if (open) {
-      resetInputData();
-      setValue('paymentOptionId', '');
-      setValue('identifierFromPurchaser', generateRandomHex(16));
-      setStep(1);
-      setPaymentResponse(null);
-      setPurchaseResponse(null);
-      setPaymentError(null);
-      setPurchaseError(null);
-      setPaymentCurl('');
-      setPurchaseCurl('');
-    }
-  }, [open, selectedPaymentSource?.id, setValue, resetInputData]);
+  useDialogResetOnOpen(open, () => {
+    resetInputData();
+    setValue('paymentOptionId', '');
+    setValue('identifierFromPurchaser', generateRandomHex(16));
+    setStep(1);
+    setPaymentResponse(null);
+    setPurchaseResponse(null);
+    setPaymentError(null);
+    setPurchaseError(null);
+    setPaymentStatus(null);
+    setPurchaseStatus(null);
+    setPaymentCurl('');
+    setPurchaseCurl('');
+  }, [selectedPaymentSource?.id, setValue, resetInputData]);
 
   const createPurchaseAutomatically = useCallback(
     async (payment: PostPaymentResponse['data'], originalFormData: PaymentFormValues) => {
       try {
         setIsLoadingPurchase(true);
         setPurchaseError(null);
+        setPurchaseStatus(null);
         setStep(2);
 
         // Always pass amounts — backend validates Fixed matches, Dynamic requires them
@@ -142,16 +153,20 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
             ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
             : {}),
           ...(amounts ? { Amounts: amounts } : {}),
+          // The seller's routing choice is signed into the payment terms; the
+          // purchase must round-trip it or the identifier signature check fails.
+          ...(payment.forceLayer != null ? { paymentForceLayer: payment.forceLayer } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePurchaseCurl(baseUrl, apiKey || '', requestBody);
+        const curl = generatePurchaseCurl(baseUrl, requestBody);
         setPurchaseCurl(curl);
 
         const result = await postPurchase({
           client: apiClient,
           body: requestBody,
         });
+        setPurchaseStatus(getHttpStatus(result));
 
         if (result.error) {
           throw new Error(extractErrorMessage(result.error, 'Purchase creation failed'));
@@ -160,6 +175,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         if (result.data?.data) {
           setPurchaseResponse(result.data.data);
           toast.success('Purchase created successfully - Full cycle complete!');
+          // A full cycle touches both sides, so both lists are now stale.
+          await resync('payments', 'purchases');
         } else {
           throw new Error('Invalid response from server - no data returned');
         }
@@ -172,7 +189,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPurchase(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents],
+    [apiClient, network, paidAgents, resync],
   );
 
   const onSubmitPayment = useCallback(
@@ -180,6 +197,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       try {
         setIsLoadingPayment(true);
         setPaymentError(null);
+        setPaymentStatus(null);
 
         const times = calculateDefaultTimes();
         const selectedAgent = paidAgents.find((option) => option.optionId === data.paymentOptionId);
@@ -224,16 +242,24 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
             ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
             : {}),
           ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
+          // The form offers this and the field says the choice is signed into
+          // the payment terms; leaving it out of the body meant Force Hydra was
+          // read, acknowledged and then dropped, and the one dialog that
+          // exercises a whole L2 cycle could not route a payment into a head.
+          ...(forceLayerToApi(data.forceLayer)
+            ? { forceLayer: forceLayerToApi(data.forceLayer) }
+            : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePaymentCurl(baseUrl, apiKey || '', requestBody);
+        const curl = generatePaymentCurl(baseUrl, requestBody);
         setPaymentCurl(curl);
 
         const result = await postPayment({
           client: apiClient,
           body: requestBody,
         });
+        setPaymentStatus(getHttpStatus(result));
 
         if (result.error) {
           throw new Error(extractErrorMessage(result.error, 'Payment creation failed'));
@@ -243,6 +269,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           const payment = result.data.data;
           setPaymentResponse(payment);
           toast.success('Payment created successfully');
+          await resync('payments');
           await createPurchaseAutomatically(payment, data);
         } else {
           throw new Error('Invalid response from server - no data returned');
@@ -256,7 +283,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPayment(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents, createPurchaseAutomatically],
+    [apiClient, network, paidAgents, createPurchaseAutomatically, resync],
   );
 
   const handleClose = () => {
@@ -267,6 +294,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     setPurchaseResponse(null);
     setPaymentError(null);
     setPurchaseError(null);
+    setPaymentStatus(null);
+    setPurchaseStatus(null);
     setPaymentCurl('');
     setPurchaseCurl('');
     onClose();
@@ -329,6 +358,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
                 control={control}
                 errors={errors}
                 paidAgents={paidAgents}
+                totalAgents={agents.length}
                 isLoadingAgents={isLoadingAgents}
                 hasAgentsError={agentsError != null}
                 inputData={inputData}
@@ -375,6 +405,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
                   curlCommand={paymentCurl}
                   response={paymentResponse}
                   error={paymentError}
+                  status={paymentStatus}
                 />
               </div>
 
@@ -397,6 +428,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
                     curlCommand={purchaseCurl}
                     response={purchaseResponse}
                     error={purchaseError}
+                    status={purchaseStatus}
                   />
                 </div>
               )}

@@ -58,13 +58,18 @@ export function makePurchaseRequestFailureMarker(config: PurchaseFailureConfig) 
 	return async function markRequestFailed(
 		request: { id: string; nextActionId: string },
 		error: unknown,
+		options: { unlockWallet?: boolean } = {},
 	): Promise<void> {
+		// See the payment marker for why a caller passes unlockWallet=false: the
+		// unlock here clears by wallet id, so a caller that fences its own unlock
+		// on the `lockedAt` it claimed has to keep that fence and do it itself.
 		logger.error(`${config.logMessage} ${request.id}`, { error });
 		await prisma.$transaction((tx) =>
 			writePurchaseErrorTransition(tx, {
 				requestId: request.id,
 				nextActionId: request.nextActionId,
 				errorNote: config.errorNotePrefix + interpretBlockchainError(error),
+				unlockWallet: options.unlockWallet ?? true,
 			}),
 		);
 	};
@@ -72,10 +77,34 @@ export function makePurchaseRequestFailureMarker(config: PurchaseFailureConfig) 
 
 /** Best-effort wallet unlock; `serviceLabel` names the calling service in the warn log. */
 export function makeHotWalletUnlocker(serviceLabel: string) {
-	return async function unlockHotWallet(walletId: string): Promise<void> {
+	/**
+	 * @param expectedLockedAt the `lockedAt` this caller claimed. Pass it, and
+	 * the clear applies only to that lock.
+	 */
+	return async function unlockHotWallet(walletId: string, expectedLockedAt?: Date | null): Promise<void> {
 		try {
-			await prisma.hotWallet.update({
-				where: { id: walletId, deletedAt: null },
+			// `lockPurpose: null` is the fence, not a filter for tidiness. A Hydra L1
+			// deposit claims the same wallet with a purpose set, holds it across a full
+			// L1 confirmation and never attaches a PendingTransaction — so a tick whose
+			// own lock was reaped as stale would otherwise clear a carve's lock here,
+			// and the next batch builds over the carve's inputs.
+			//
+			// `lockedAt` is the second half of the same fence, and it is the one that
+			// catches a sibling tick. A batch's validate loop can outlive
+			// `WALLET_LOCK_TIMEOUT_INTERVAL` on its own — seven items deferring
+			// through a [0, 5s, 10s, 20s] schedule is 245s of sleep before any
+			// Blockfrost time — so the orphan-lock reaper legitimately clears this
+			// tick's claim, the next tick takes the wallet, and this one then arrives
+			// here and frees a claim that is no longer its own. Two batches then
+			// build over the same UTxOs and one dies on chain as `BadInputsUTxO`,
+			// which for a script spend is a phase-2 failure and burns the collateral.
+			await prisma.hotWallet.updateMany({
+				where: {
+					id: walletId,
+					deletedAt: null,
+					lockPurpose: null,
+					...(expectedLockedAt == null ? {} : { lockedAt: expectedLockedAt }),
+				},
 				data: { lockedAt: null },
 			});
 		} catch (error) {

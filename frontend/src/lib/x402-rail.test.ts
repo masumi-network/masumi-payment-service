@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { X402Network, X402Wallet } from '@/lib/api/generated';
 import {
-  hasBudgetOnEnabledNetworks,
+  filterX402PaymentSourceChains,
+  hasPurchasingWalletOnEnabledNetworks,
   isX402ChainUsable,
   isX402SetUpForEnv,
+  resolveX402ChainEnvironment,
   walletsForNetworks,
 } from './x402-rail';
 
@@ -39,6 +41,19 @@ test('chain remains unusable without either facilitator mode', () => {
   assert.equal(isX402ChainUsable(network()), false);
 });
 
+test('payment sources keeps draft chains visible for management', () => {
+  const ready = network({ facilitatorUrl: 'https://facilitator.example' });
+  const draft = network({
+    id: 'draft-network',
+    caip2Id: 'eip155:84532',
+    displayName: 'Base Sepolia',
+    isEnabled: false,
+  });
+
+  assert.deepEqual(filterX402PaymentSourceChains([ready, draft], ''), [ready, draft]);
+  assert.deepEqual(filterX402PaymentSourceChains([ready, draft], 'sepolia'), [draft]);
+});
+
 test('wallets are scoped by their structural network binding', () => {
   const mainnet = network({ id: 'mainnet-network' });
   const testnet = network({
@@ -67,23 +82,40 @@ test('wallets are scoped by their structural network binding', () => {
   );
 });
 
-test('budget readiness ignores disabled networks', () => {
-  const enabledNetwork = network();
-  const disabledNetwork = network({
-    id: 'disabled-network',
-    caip2Id: 'eip155:84532',
-    isEnabled: false,
-  });
+test('paying readiness ignores purchasing wallets on disabled chains', () => {
+  const enabled = network({ id: 'enabled-network' });
+  const disabled = network({ id: 'disabled-network', isEnabled: false });
+  const walletOn = (networkId: string) =>
+    [
+      {
+        id: `wallet-${networkId}`,
+        networkId,
+        caip2Network: 'eip155:8453',
+        type: 'Purchasing',
+      },
+    ] as X402Wallet[];
 
   assert.equal(
-    hasBudgetOnEnabledNetworks(
-      [{ caip2Network: disabledNetwork.caip2Id }],
-      [enabledNetwork, disabledNetwork],
-    ),
+    hasPurchasingWalletOnEnabledNetworks(walletOn(disabled.id), [enabled, disabled]),
     false,
   );
   assert.equal(
-    hasBudgetOnEnabledNetworks([{ caip2Network: enabledNetwork.caip2Id }], [enabledNetwork]),
+    hasPurchasingWalletOnEnabledNetworks(walletOn(enabled.id), [enabled, disabled]),
     true,
   );
+});
+
+test('paying readiness needs a Purchasing wallet, not any wallet', () => {
+  const enabled = network({ id: 'enabled-network' });
+  const selling = [
+    { id: 'selling-wallet', networkId: enabled.id, caip2Network: 'eip155:8453', type: 'Selling' },
+  ] as X402Wallet[];
+
+  assert.equal(hasPurchasingWalletOnEnabledNetworks(selling, [enabled]), false);
+});
+
+test('setup locks a chain to the active environment', () => {
+  assert.equal(resolveX402ChainEnvironment('Preprod', false, true), true);
+  assert.equal(resolveX402ChainEnvironment('Mainnet', true, true), false);
+  assert.equal(resolveX402ChainEnvironment('Preprod', false, false), false);
 });

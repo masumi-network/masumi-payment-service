@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { deleteWebhooks, postWebhooksTest } from '@/lib/api/generated';
+import { MASUMI_API_REFERENCE_URL } from '@/lib/masumi-links';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +16,11 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs } from '@/components/ui/tabs';
 import { WebhookDialog } from '@/components/webhooks/WebhookDialog';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellWideClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWebhooks } from '@/lib/hooks/useWebhooks';
 import { shortenAddress } from '@/lib/utils';
@@ -49,7 +55,8 @@ const allEventsFilterValue = 'ALL_EVENTS';
 
 export default function WebhooksPage() {
   const router = useRouter();
-  const { apiClient, selectedPaymentSource, selectedPaymentSourceId, activeRail } = useAppContext();
+  const { apiClient, selectedPaymentSource, selectedPaymentSourceId, activeRail, capabilities } =
+    useAppContext();
   // Scope webhook events to the active rail: x402 events on the EVM rail, Cardano escrow
   // events on the Cardano rail. The event filter, the visible list, and the create/edit
   // dialog all use this so each rail shows only its own events.
@@ -245,7 +252,7 @@ export default function WebhooksPage() {
                 : 'Create your first webhook for this payment source to send alerts into your preferred chat tool.'
             }
             action={
-              !hasActiveFilters ? (
+              !hasActiveFilters && capabilities.canPay ? (
                 <Button onClick={() => setIsAddDialogOpen(true)}>
                   <Plus className="h-4 w-4" />
                   Add webhook
@@ -258,9 +265,9 @@ export default function WebhooksPage() {
     }
 
     return (
-      <div className="rounded-lg border overflow-x-auto">
+      <HorizontalScrollArea className="rounded-lg border">
         <table className="w-full min-w-[1080px]">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th
                 scope="col"
@@ -289,10 +296,7 @@ export default function WebhooksPage() {
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Updated
               </th>
-              <th
-                scope="col"
-                className="p-4 pr-6 text-right text-sm font-medium text-muted-foreground"
-              >
+              <th scope="col" className={tableActionsHeadWideClass}>
                 Actions
               </th>
             </tr>
@@ -308,7 +312,6 @@ export default function WebhooksPage() {
                       <p className="text-sm font-medium">
                         {webhook.name?.trim() || 'Unnamed webhook'}
                       </p>
-                      <p className="text-xs text-muted-foreground">{webhook.id}</p>
                     </div>
                   </td>
                   <td className="p-4">
@@ -340,7 +343,7 @@ export default function WebhooksPage() {
                   <td className="p-4 text-sm text-muted-foreground">
                     {formatWebhookDate(webhook.updatedAt)}
                   </td>
-                  <td className="p-4 pr-6">
+                  <td className={tableActionsCellWideClass}>
                     <div className="flex justify-end gap-2">
                       <Button
                         type="button"
@@ -376,7 +379,7 @@ export default function WebhooksPage() {
             })}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
     );
   };
 
@@ -400,7 +403,7 @@ export default function WebhooksPage() {
                   ? 'Send x402 payment events to custom endpoints, Slack, Google Chat, or Discord. '
                   : 'Send Cardano payment source events to custom endpoints, Slack, Google Chat, or Discord. '}
                 <Link
-                  href="https://www.masumi.network/dev/masumi/api-reference"
+                  href={MASUMI_API_REFERENCE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
@@ -421,14 +424,16 @@ export default function WebhooksPage() {
 
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
-              <Button
-                id="add-webhook-button"
-                onClick={() => setIsAddDialogOpen(true)}
-                disabled={!selectedPaymentSourceId}
-              >
-                <Plus className="h-4 w-4" />
-                Add webhook
-              </Button>
+              {capabilities.canPay && (
+                <Button
+                  id="add-webhook-button"
+                  onClick={() => setIsAddDialogOpen(true)}
+                  disabled={!selectedPaymentSourceId}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add webhook
+                </Button>
+              )}
             </div>
           </div>
 

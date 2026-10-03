@@ -3,8 +3,8 @@ import { Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@masumi/payment-core/encryption';
 import {
 	assertHexAddress,
-	assertSafeFacilitatorUrl,
-	assertSafeRpcUrl,
+	assertSafeFacilitatorUrlResolved,
+	assertSafeRpcUrlResolved,
 	getEip155ChainId,
 	normalizeAddress,
 } from './internal';
@@ -132,7 +132,7 @@ async function resolveFacilitatorData(input: {
 	if (wantsUrl) {
 		// The remote facilitator endpoint is admin-supplied and reached server-side, so guard
 		// it against SSRF exactly like the RPC URL.
-		assertSafeFacilitatorUrl(input.facilitatorUrl as string);
+		await assertSafeFacilitatorUrlResolved(input.facilitatorUrl as string);
 		const data: Prisma.X402NetworkUncheckedUpdateInput = {
 			facilitatorWalletId: null,
 			facilitatorUrl: input.facilitatorUrl,
@@ -192,7 +192,7 @@ async function resolveFacilitatorData(input: {
 		}
 		// Auth-only updates still persist a remote-facilitator configuration snapshot. Reject a
 		// legacy plaintext endpoint instead of rotating a credential that can only be sent unsafely.
-		assertSafeFacilitatorUrl(existing.facilitatorUrl);
+		await assertSafeFacilitatorUrlResolved(existing.facilitatorUrl);
 		// Snapshot the whole observed remote mode, not only the credential. Otherwise an auth-only
 		// update that races a URL/mode switch could commit last and attach this old-origin secret to
 		// the newly configured endpoint. Last-writer-wins may restore the observed URL, but never
@@ -219,7 +219,7 @@ export async function upsertX402Network(input: {
 	createdById?: string | null;
 }) {
 	getEip155ChainId(input.caip2Id);
-	assertSafeRpcUrl(input.rpcUrl);
+	await assertSafeRpcUrlResolved(input.rpcUrl);
 	const facilitatorData = await resolveFacilitatorData(input);
 
 	// The default-asset resolution reads the stored row to fill in whichever of
@@ -309,100 +309,4 @@ export async function upsertX402Network(input: {
 		{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
 	);
 	return flattenNetwork(result);
-}
-
-const BUDGET_SELECT = {
-	id: true,
-	apiKeyId: true,
-	evmWalletId: true,
-	// Chain comes from the wallet's bound network now, not a budget column.
-	EvmWallet: { select: { address: true, Network: { select: { caip2Id: true } } } },
-	asset: true,
-	remainingAmount: true,
-	spentAmount: true,
-	createdById: true,
-	createdAt: true,
-	updatedAt: true,
-} satisfies Prisma.X402WalletBudgetSelect;
-
-type BudgetRow = Prisma.X402WalletBudgetGetPayload<{ select: typeof BUDGET_SELECT }>;
-
-function flattenBudget(budget: BudgetRow) {
-	const { EvmWallet, ...rest } = budget;
-	return { ...rest, caip2Network: EvmWallet.Network.caip2Id, EvmWallet: { address: EvmWallet.address } };
-}
-
-export async function setX402WalletBudget(input: {
-	apiKeyId: string;
-	evmWalletId: string;
-	// Optional now: the budget's chain is the wallet's bound network. When supplied it must
-	// match, so a budget cannot be granted against a chain the wallet does not operate on.
-	caip2Network?: string;
-	asset: string;
-	remainingAmount: string;
-	createdById?: string | null;
-}) {
-	assertHexAddress(input.asset, 'asset');
-	const asset = normalizeAddress(input.asset);
-	const remainingAmount = BigInt(input.remainingAmount);
-
-	// Budgets fund outbound payments, so they may only be granted to a Purchasing wallet.
-	// Load the wallet with its bound network to validate the (optional) requested chain.
-	const wallet = await prisma.x402EvmWallet.findUnique({
-		where: { id: input.evmWalletId, deletedAt: null },
-		select: { id: true, type: true, Network: { select: { caip2Id: true } } },
-	});
-	if (wallet == null) {
-		throw createHttpError(404, 'Managed EVM wallet not found');
-	}
-	if (wallet.type !== X402EvmWalletType.Purchasing) {
-		throw createHttpError(400, 'Managed EVM wallet is not a Purchasing wallet');
-	}
-	if (input.caip2Network != null && input.caip2Network !== wallet.Network.caip2Id) {
-		throw createHttpError(400, 'caip2Network does not match the wallet network');
-	}
-
-	const apiKey = await prisma.apiKey.findUnique({ where: { id: input.apiKeyId }, select: { id: true } });
-	if (apiKey == null) {
-		throw createHttpError(404, 'API key not found');
-	}
-
-	const budget = await prisma.x402WalletBudget.upsert({
-		where: {
-			apiKeyId_evmWalletId_asset: {
-				apiKeyId: input.apiKeyId,
-				evmWalletId: input.evmWalletId,
-				asset,
-			},
-		},
-		create: {
-			apiKeyId: input.apiKeyId,
-			evmWalletId: input.evmWalletId,
-			asset,
-			remainingAmount,
-			spentAmount: 0n,
-			createdById: input.createdById,
-		},
-		// createdById is intentionally not updated — it records who first set the budget.
-		// Setting a budget replaces the remaining amount with a fresh grant, so reset
-		// spentAmount too; otherwise "remaining + spent" no longer equals what was granted
-		// and the Spent column keeps stale consumption from the previous grant. Incrementing
-		// generation prevents an in-flight refund from crediting this replacement grant.
-		update: {
-			remainingAmount,
-			spentAmount: 0n,
-			generation: { increment: 1 },
-		},
-		select: BUDGET_SELECT,
-	});
-	return flattenBudget(budget);
-}
-
-export async function listX402WalletBudgets(apiKeyId?: string) {
-	const budgets = await prisma.x402WalletBudget.findMany({
-		where: { apiKeyId },
-		orderBy: { createdAt: 'desc' },
-		select: BUDGET_SELECT,
-	});
-	return budgets.map(flattenBudget);
 }

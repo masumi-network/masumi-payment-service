@@ -1,309 +1,269 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import type { ReactNode } from 'react';
+import { Download, FileArchive, FileSpreadsheet, Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Download } from 'lucide-react';
-import { dateRangeUtils, endOfDayLocal, parseDateOnlyLocal } from '@/lib/utils';
-import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
-import {
-  buildTransactionDownloadQuery,
-  mergeDownloadedTransactions,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { InfoHint } from '@/components/ui/info-hint';
+import { getReportTransactionCountDisplay } from '@/lib/transaction-report/dashboard-metrics';
+import type {
+  TransactionReportFormState,
+  TransactionReportViewDefaults,
 } from './download-details.helpers';
+import { ExportAssetNote } from './report-export/ExportAssetNote';
+import { ExportKindPicker } from './report-export/ExportKindPicker';
+import { FiatSettingsField } from './report-export/FiatSettingsField';
+import { isEveryReportCsvKind } from './report-export/export-kinds';
+import { PurposePicker } from './report-export/PurposePicker';
+import { REPORT_PURPOSES, reportPurposeShows } from './report-export/report-purposes';
+import { ReportRuleFields } from './report-export/ReportRuleFields';
+import { ReportScopeFields } from './report-export/ReportScopeFields';
+import { SelectionSummary } from './report-export/SelectionSummary';
+import { useDownloadDetailsModel } from './useDownloadDetailsModel';
 
-type Transaction =
-  | (Payment & { type: 'payment' })
-  | (Purchase & {
-      type: 'purchase';
-    });
-
-interface DownloadDetailsDialogProps {
+type DownloadDetailsDialogProps = Readonly<{
   open: boolean;
   onClose: () => void;
-  onDownload: (startDate: Date, endDate: Date, transactions: Transaction[]) => void;
+  viewDefaults: TransactionReportViewDefaults;
+  /** Opens the dialog on the caller's current filters instead of the defaults. */
+  initialForm?: TransactionReportFormState;
+}>;
+
+function DialogSection({
+  step,
+  title,
+  description,
+  children,
+}: Readonly<{ step: number; title: string; description: string; children: ReactNode }>) {
+  return (
+    <section className="space-y-3 border-t px-6 py-5">
+      <div>
+        <h3 className="text-sm font-semibold">
+          <span className="mr-2 text-muted-foreground">{step}</span>
+          {title}
+        </h3>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      {children}
+    </section>
+  );
 }
 
-type PresetOption = '24h' | '7d' | '30d' | '90d' | 'custom';
-
-const PRESET_OPTIONS = [
-  { value: '24h', label: 'Last 24 hours' },
-  { value: '7d', label: 'Last week' },
-  { value: '30d', label: 'Last month' },
-  { value: '90d', label: 'Last 3 months' },
-  { value: 'custom', label: 'Custom range' },
-];
-
-export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDetailsDialogProps) {
-  const { apiClient, network } = useAppContext();
-  const [selectedPreset, setSelectedPreset] = useState<PresetOption>('24h');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
-
-  const fetchAllTransactions = useCallback(async (): Promise<Transaction[]> => {
-    const allTx: Transaction[] = [];
-    let purchaseCursor: string | null = null;
-    let paymentCursor: string | null = null;
-    let hasMorePurchases = true;
-    let hasMorePayments = true;
-
-    try {
-      // Fetch all purchases with pagination. Failures are console-only (no
-      // toast) and end the loop with whatever pages already arrived — same
-      // contract as the previous handleApiCall onError override.
-      while (hasMorePurchases) {
-        const purchases: Awaited<ReturnType<typeof getPurchase>> | null = await getPurchase({
-          client: apiClient,
-          query: buildTransactionDownloadQuery(network, purchaseCursor || undefined),
-        }).catch((error: unknown) => {
-          console.error('Failed to fetch purchases:', error);
-          return null;
-        });
-        if (purchases && 'error' in purchases && purchases.error) {
-          console.error('Failed to fetch purchases:', purchases.error);
-          break;
-        }
-
-        if (purchases?.data?.data?.Purchases) {
-          const nextPurchases = purchases.data.data.Purchases.map(
-            (purchase) =>
-              ({
-                ...purchase,
-                type: 'purchase',
-              }) as Transaction,
-          );
-          const mergedPurchases = mergeDownloadedTransactions(allTx, nextPurchases);
-          allTx.length = 0;
-          allTx.push(...mergedPurchases);
-          hasMorePurchases = purchases.data.data.Purchases.length === 100;
-          purchaseCursor =
-            purchases.data.data.Purchases[purchases.data.data.Purchases.length - 1]?.id;
-        } else {
-          hasMorePurchases = false;
-        }
-      }
-
-      // Fetch all payments with pagination (same failure contract as above).
-      while (hasMorePayments) {
-        const payments: Awaited<ReturnType<typeof getPayment>> | null = await getPayment({
-          client: apiClient,
-          query: buildTransactionDownloadQuery(network, paymentCursor || undefined),
-        }).catch((error: unknown) => {
-          console.error('Failed to fetch payments:', error);
-          return null;
-        });
-        if (payments && 'error' in payments && payments.error) {
-          console.error('Failed to fetch payments:', payments.error);
-          break;
-        }
-
-        if (payments?.data?.data?.Payments) {
-          const nextPayments = payments.data.data.Payments.map(
-            (payment) =>
-              ({
-                ...payment,
-                type: 'payment',
-              }) as Transaction,
-          );
-          const mergedPayments = mergeDownloadedTransactions(allTx, nextPayments);
-          allTx.length = 0;
-          allTx.push(...mergedPayments);
-          hasMorePayments = payments.data.data.Payments.length === 100;
-          paymentCursor = payments.data.data.Payments[payments.data.data.Payments.length - 1]?.id;
-        } else {
-          hasMorePayments = false;
-        }
-      }
-
-      return allTx;
-    } catch (error) {
-      console.error('Error fetching transactions:', error);
-      return allTx;
-    }
-  }, [apiClient, network]);
-
-  // Refetches on every dialog open (enabled flip + zero staleTime), matching
-  // the previous fetch-on-open effect.
-  const { data: allTransactions = [], isFetching: isLoading } = useQuery<Transaction[]>({
-    queryKey: ['download-transactions', network],
-    queryFn: fetchAllTransactions,
-    enabled: open,
-    staleTime: 0,
-  });
-  // Calculate filtered transactions for display
-  const getFilteredTransactions = useCallback(() => {
-    let startDate: Date;
-    let endDate: Date = new Date();
-
-    if (selectedPreset === 'custom') {
-      if (!customStartDate || !customEndDate) {
-        return [];
-      }
-      // Parse the date-only inputs as a local-time range (start of the start
-      // day to end of the end day); UTC parsing would drop the whole end day
-      // for users west of UTC.
-      const start = parseDateOnlyLocal(customStartDate);
-      const end = parseDateOnlyLocal(customEndDate);
-      if (!start || !end) {
-        return [];
-      }
-      startDate = start;
-      endDate = endOfDayLocal(end);
-    } else {
-      const range = dateRangeUtils.getPresetRange(selectedPreset);
-      startDate = range.start;
-      endDate = range.end;
-    }
-
-    const filtered = allTransactions.filter((tx) => {
-      const txDate = new Date(tx.createdAt);
-      return txDate >= startDate && txDate <= endDate;
-    });
-
-    return filtered;
-  }, [allTransactions, selectedPreset, customStartDate, customEndDate]);
-  // Pure derived state: recomputes from the fetched transactions and the
-  // selected range. Empty while the dialog is closed.
-  const filteredTransactions = useMemo(
-    () => (open ? getFilteredTransactions() : []),
-    [open, getFilteredTransactions],
+export function DownloadDetailsDialog({
+  open,
+  onClose,
+  viewDefaults,
+  initialForm,
+}: DownloadDetailsDialogProps) {
+  const model = useDownloadDetailsModel({ open, onClose, viewDefaults, initialForm });
+  const previewCountDisplay = model.preview
+    ? getReportTransactionCountDisplay(
+        model.preview.totals.transactionCount,
+        model.preview.totals.transactionCountCompleteness,
+        'matching request',
+      )
+    : null;
+  const fileCount = model.exportKinds.length;
+  const wantsZip = isEveryReportCsvKind(model.exportKinds);
+  const downloadLabel = wantsZip
+    ? 'Download ZIP'
+    : fileCount === 1
+      ? 'Download file'
+      : `Download ${fileCount} files`;
+  const isCustom = model.purpose === 'custom';
+  const showRules = reportPurposeShows(model.purpose, 'rules');
+  const selectedSource = model.paymentSources.find(
+    (source) => source.id === model.form.paymentSourceId,
   );
 
-  const handleDownload = () => {
-    let startDate: Date;
-    let endDate: Date = new Date();
-
-    if (selectedPreset === 'custom') {
-      if (!customStartDate || !customEndDate) {
-        return; // Don't download if custom dates are not set
-      }
-      // Same local-time range as the preview count in getFilteredTransactions.
-      const start = parseDateOnlyLocal(customStartDate);
-      const end = parseDateOnlyLocal(customEndDate);
-      if (!start || !end) {
-        return;
-      }
-      startDate = start;
-      endDate = endOfDayLocal(end);
-    } else {
-      // Calculate start date based on preset
-      const range = dateRangeUtils.getPresetRange(selectedPreset);
-      startDate = range.start;
-      endDate = range.end;
-    }
-
-    // Use the same filtered transactions
-    const filteredTransactions = getFilteredTransactions();
-
-    onDownload(startDate, endDate, filteredTransactions);
-    onClose();
-  };
-
-  const handleReset = () => {
-    setSelectedPreset('24h');
-    setCustomStartDate('');
-    setCustomEndDate('');
-  };
-
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Download transactions as CSV</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-6">
-          <div className="space-y-4">
-            <Label className="text-sm font-medium">Select Date Range</Label>
-            <Select
-              value={selectedPreset}
-              onValueChange={(value) => setSelectedPreset(value as PresetOption)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a date range" />
-              </SelectTrigger>
-              <SelectContent>
-                {PRESET_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedPreset === 'custom' && (
-            <div className="space-y-4 p-4 bg-muted/20 border border-muted rounded-lg">
-              <div className="space-y-2">
-                <Label htmlFor="start-date">Start Date</Label>
-                <Input
-                  id="start-date"
-                  type="date"
-                  value={customStartDate}
-                  max={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="end-date">End Date</Label>
-                <Input
-                  id="end-date"
-                  type="date"
-                  value={customEndDate}
-                  max={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                />
-              </div>
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent size="lg" className="gap-0 p-0">
+        <div className="border-b bg-muted/20 px-6 pb-5 pt-9">
+          <DialogHeader>
+            <div className="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Financial reporting
             </div>
-          )}
-
-          <div className="text-sm text-muted-foreground">
-            <p>
-              Transactions:{' '}
-              <span className="font-medium">
-                {isLoading ? 'Loading...' : filteredTransactions?.length || 0}
+            <DialogTitle className="text-xl">Export transaction report</DialogTitle>
+            <DialogDescription className="flex items-start gap-1">
+              <span>
+                Revenue, spend, refunds, protocol fees, and Cardano fees for the payment source you
+                are working in.
               </span>
-              {!isLoading && filteredTransactions && (
-                <span className="text-muted-foreground">
-                  {' '}
-                  (payments: {filteredTransactions.filter((t) => t.type === 'payment').length},
-                  purchases: {filteredTransactions.filter((t) => t.type === 'purchase').length})
-                </span>
+              {selectedSource && (
+                <InfoHint label="payment source">
+                  <p>
+                    {selectedSource.paymentSourceType === 'Web3CardanoV2'
+                      ? 'Cardano V2'
+                      : 'Cardano V1'}{' '}
+                    on {selectedSource.network}.
+                  </p>
+                  <p className="font-mono text-xs break-all">
+                    {selectedSource.smartContractAddress}
+                  </p>
+                  <p>
+                    The protocol fee rate is {selectedSource.feeRatePermille / 10}% of gross
+                    revenue.
+                  </p>
+                </InfoHint>
               )}
-            </p>
-            <p>
-              Selected range:{' '}
-              <span className="font-medium">
-                {selectedPreset === 'custom'
-                  ? customStartDate && customEndDate
-                    ? `${customStartDate} to ${customEndDate}`
-                    : 'Please select dates'
-                  : PRESET_OPTIONS.find((opt) => opt.value === selectedPreset)?.label}
-              </span>
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        {viewDefaults.hasUnmappedFilters && (
+          <p className="border-b bg-muted/10 px-6 py-3 text-xs text-muted-foreground">
+            Source, side, and state filters carry over from the list you came from. Search, error
+            type, and manual-action filters do not apply to financial reports.
+          </p>
+        )}
+
+        <section className="space-y-3 px-6 py-5">
+          <div>
+            <h3 className="text-sm font-semibold">
+              <span className="mr-2 text-muted-foreground">1</span>
+              What do you need?
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              This picks the files and shows only the filters that job uses.
             </p>
           </div>
-
-          <div className="flex justify-between">
-            <Button variant="outline" onClick={handleReset}>
-              Reset
+          <PurposePicker value={model.purpose} onChange={model.setPurpose} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] text-muted-foreground">
+              {isCustom
+                ? 'Custom: every filter and rule is shown.'
+                : 'Filters this job does not use are cleared, so a file never carries a filter you cannot see.'}
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => model.setPurpose(isCustom ? 'accounting' : 'custom')}
+            >
+              {isCustom ? 'Back to guided export' : 'Show all filters'}
             </Button>
-            <div className="flex justify-end">
+          </div>
+        </section>
+
+        <DialogSection
+          step={2}
+          title="Which requests"
+          description={REPORT_PURPOSES[model.purpose].detail}
+        >
+          <ReportScopeFields model={model} />
+        </DialogSection>
+
+        {showRules && (
+          <DialogSection
+            step={3}
+            title="Accounting rules"
+            description="These two rules change every figure in the file."
+          >
+            <ReportRuleFields model={model} />
+          </DialogSection>
+        )}
+
+        <DialogSection
+          step={showRules ? 4 : 3}
+          title="Currency"
+          description="Keep the crypto amounts as they are, or add a converted column beside them."
+        >
+          <FiatSettingsField
+            currency={model.form.fiatCurrency}
+            mode={model.form.fiatMode}
+            capability={model.fiatCapability}
+            issue={model.fiatIssue}
+            onChange={model.updateForm}
+            idPrefix="export"
+          />
+        </DialogSection>
+
+        <DialogSection
+          step={showRules ? 5 : 4}
+          title="Files"
+          description="Pick how far the numbers are already added up."
+        >
+          <ExportKindPicker
+            selected={model.exportKinds}
+            onToggle={model.toggleExportKind}
+            onToggleAll={model.setAllExportKinds}
+          />
+          <ExportAssetNote model={model} />
+        </DialogSection>
+
+        <div className="sticky bottom-0 space-y-3 border-t bg-background/95 px-6 py-4 backdrop-blur">
+          <SelectionSummary model={model} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-h-10 min-w-0" aria-live="polite">
+              {model.facetsError ? (
+                <p className="text-sm text-destructive">{model.facetsError}</p>
+              ) : model.isLoadingFacets ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading report filters…
+                </p>
+              ) : model.bodyError ? (
+                <p className="text-sm text-destructive">{model.bodyError}</p>
+              ) : model.fiatIssue ? (
+                <p className="text-sm text-destructive">{model.fiatIssue.message}</p>
+              ) : model.previewError ? (
+                <p className="text-sm text-destructive">{model.previewError}</p>
+              ) : model.isPreviewLoading ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Counting matching requests…
+                </p>
+              ) : model.preview ? (
+                <div>
+                  <p className="text-sm font-medium">{previewCountDisplay?.text}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {fileCount === 0
+                      ? 'Pick at least one file above.'
+                      : fileCount === 2
+                        ? 'Two files, downloaded one after the other.'
+                        : model.preview.metadata.warnings.length > 0
+                          ? 'Some figures are estimates. The file says which ones.'
+                          : 'One server snapshot drives every exported value.'}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Counting matching requests…</p>
+              )}
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
               <Button
-                onClick={handleDownload}
+                variant="ghost"
+                size="sm"
+                onClick={model.reset}
+                disabled={model.isDownloading}
+              >
+                <RotateCcw className="h-4 w-4" /> Reset
+              </Button>
+              <Button
+                onClick={() => model.download()}
                 disabled={
-                  isLoading || (selectedPreset === 'custom' && (!customStartDate || !customEndDate))
+                  model.isDownloading ||
+                  fileCount === 0 ||
+                  model.bodyError != null ||
+                  model.fiatIssue != null ||
+                  model.facetsError != null ||
+                  model.paymentSources.length === 0
                 }
               >
-                <Download className="h-4 w-4 mr-2" />
-                {isLoading ? 'Loading...' : 'Download CSV'}
+                {model.isDownloading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : wantsZip ? (
+                  <FileArchive className="h-4 w-4" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {model.isDownloading ? 'Preparing…' : downloadLabel}
               </Button>
             </div>
           </div>

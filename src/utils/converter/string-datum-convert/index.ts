@@ -228,6 +228,15 @@ export function decodeV1ContractDatum(
 	}
 }
 
+/**
+ * The largest datum integer this service can store.
+ *
+ * Every numeric datum field is written to a Postgres `int8`. A Plutus integer
+ * has no such bound, and nothing on chain rejects a larger one, so the check
+ * has to live where the datum is read.
+ */
+const MAX_DATUM_INT = 2n ** 63n - 1n;
+
 export function decodeV2ContractDatum(
 	decodedDatum: unknown,
 	network: Network,
@@ -296,6 +305,15 @@ export function decodeV2ContractDatum(
 		const buyerCooldownTime = BigInt(fields[17]?.int ?? -1);
 		const state = valueToStatus(fields[18]);
 
+		// Bounded from ABOVE as well as below. Plutus integers are arbitrary
+		// precision and every one of these lands in a Postgres `int8`, so a
+		// counterparty who puts 2^64 in a cooldown gets a datum the validator
+		// accepts (`vested_pay.ak` compares `>=`, and so does our own
+		// authorized-actor guard) and Prisma refuses. On L1 that is one failed
+		// write; inside a head it is permanent — the write happens in the ordered
+		// replay, the throw is caught per head and the cursor never advances, so
+		// the same transaction is retried on every tick and every reconnect and no
+		// escrow on that head ever moves again, with the funds inside it.
 		if (
 			collateralReturnLovelace < 0n ||
 			payByTime < 0n ||
@@ -304,6 +322,13 @@ export function decodeV2ContractDatum(
 			externalDisputeUnlockTime < 0n ||
 			sellerCooldownTime < 0n ||
 			buyerCooldownTime < 0n ||
+			collateralReturnLovelace > MAX_DATUM_INT ||
+			payByTime > MAX_DATUM_INT ||
+			resultTime > MAX_DATUM_INT ||
+			unlockTime > MAX_DATUM_INT ||
+			externalDisputeUnlockTime > MAX_DATUM_INT ||
+			sellerCooldownTime > MAX_DATUM_INT ||
+			buyerCooldownTime > MAX_DATUM_INT ||
 			state == null
 		) {
 			return null;
@@ -360,10 +385,69 @@ export function decodeV2ContractDatum(
 	}
 }
 
-export function newCooldownTime(cooldownTime: bigint) {
-	//We add some additional cooldown time to avoid validity issues with blocktime
-	const cooldownTimeMs = BigInt(Date.now()) + cooldownTime + BigInt(1000 * 60 * 10);
-	return cooldownTimeMs;
+const DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS = BigInt(1000 * 60 * 10);
+
+/**
+ * The smallest buffer that still satisfies the on-chain check.
+ *
+ * The default transaction window reaches `Date.now() + 5min + 30s` at its upper
+ * bound, and the validator compares the new cooldown against that bound rather
+ * than against wall-clock. A buffer under that reach makes the comparison fail
+ * whenever drift is small, and it fails on chain — the transaction is built,
+ * submitted and rejected. Six minutes is the first round number above it.
+ *
+ * Clamped rather than refused: the buffer is only a fallback for callers that
+ * build the datum before their window, and taking the service down for a
+ * misconfigured optional variable is the worse outcome.
+ */
+const MIN_COOLDOWN_BLOCKTIME_BUFFER_MS = BigInt(1000 * 60 * 6);
+
+/** So a clamped or ignored value is reported once, not once per transaction. */
+let hasWarnedAboutCooldownBuffer = false;
+
+function warnAboutCooldownBufferOnce(message: string, meta: Record<string, string>): void {
+	if (hasWarnedAboutCooldownBuffer) return;
+	hasWarnedAboutCooldownBuffer = true;
+	logger.warn(message, meta);
+}
+
+function resolveCooldownBlocktimeBufferMs(): bigint {
+	const rawBuffer = process.env.COOLDOWN_BLOCKTIME_BUFFER_MS;
+	if (rawBuffer == null || rawBuffer === '') return DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS;
+	if (!/^\d+$/.test(rawBuffer)) {
+		warnAboutCooldownBufferOnce('Ignoring non-numeric COOLDOWN_BLOCKTIME_BUFFER_MS', {
+			value: rawBuffer,
+			using: DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS.toString(),
+		});
+		return DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS;
+	}
+
+	const bufferMs = BigInt(rawBuffer);
+	if (bufferMs < MIN_COOLDOWN_BLOCKTIME_BUFFER_MS) {
+		warnAboutCooldownBufferOnce(
+			'COOLDOWN_BLOCKTIME_BUFFER_MS is below the minimum the on-chain cooldown check allows; using the minimum',
+			{ value: rawBuffer, using: MIN_COOLDOWN_BLOCKTIME_BUFFER_MS.toString() },
+		);
+		return MIN_COOLDOWN_BLOCKTIME_BUFFER_MS;
+	}
+	return bufferMs;
+}
+
+export function newCooldownTime(cooldownTime: bigint, windowUpperMs?: number | bigint) {
+	// The vested_pay validator checks the continuation datum's cooldown against
+	// the tx validity UPPER bound (`cooldown_time = tx_latest_time +
+	// cooldown_period`), not against wall-clock. When the caller knows its
+	// window, compute from it exactly (+1s for slot-boundary rounding) — this
+	// stays valid regardless of head-clock drift or window-buffer settings.
+	if (windowUpperMs != null) {
+		return BigInt(windowUpperMs) + cooldownTime + BigInt(1000);
+	}
+	// Legacy wall-clock path (V1/L1 callers that build the datum before the
+	// window): the buffer must cover the window upper bound's max reach past
+	// `Date.now()` (default window: +5min afterBuffer +30s slot buffer). The
+	// 10-min default does; anything under MIN_COOLDOWN_BLOCKTIME_BUFFER_MS does
+	// not, which is why the override is clamped rather than taken as given.
+	return BigInt(Date.now()) + cooldownTime + resolveCooldownBlocktimeBufferMs();
 }
 
 function valueToStatus(value: unknown) {

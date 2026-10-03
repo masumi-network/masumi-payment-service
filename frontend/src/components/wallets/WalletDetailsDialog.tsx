@@ -6,14 +6,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   getWallet,
-  patchWallet,
   getSwapTransactions,
   postSwapCancel,
   postSwapAcknowledgeTimeout,
   getSwapConfirm,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
+import { handleApiCall } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { isHotWalletType } from '@/lib/wallet-type';
 import { WalletLink } from '@/components/ui/wallet-link';
@@ -28,7 +27,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { fetchAllUtxos } from '@/lib/wallet-balance';
 import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 import {
   extractSwapAcknowledgePayload,
@@ -58,6 +56,7 @@ import {
 import { WalletExportSection } from '@/components/wallets/sections/WalletExportSection';
 import { CollectionAddressSection } from '@/components/wallets/sections/CollectionAddressSection';
 import { FundTransfersSection } from '@/components/wallets/sections/FundTransfersSection';
+import { useCollectionAddressEditor } from '@/components/wallets/useCollectionAddressEditor';
 
 // Re-exported for the many call sites that import these types from this module.
 export type { TokenBalance, WalletWithBalance } from '@/components/wallets/wallet-details-utils';
@@ -79,7 +78,13 @@ export function WalletDetailsDialog({
   elevatedChildStack,
 }: WalletDetailsDialogProps) {
   const queryClient = useQueryClient();
-  const { apiClient, network } = useAppContext();
+  const { apiClient, network, capabilities } = useAppContext();
+  // Everything beyond the list payload and the read-level balance lookups is
+  // admin-only: GET /wallet (rules + pending tx + mnemonic), the swap history,
+  // the fund transfers, and every mutation. Non-admins still get the dialog —
+  // address, note, vkey, balances — with those parts omitted rather than a
+  // spinner that resolves into "Failed to load wallet monitoring rules".
+  const canManageWallet = capabilities.canAdmin;
   const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
     null,
   );
@@ -88,14 +93,7 @@ export function WalletDetailsDialog({
   );
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [isEditingCollectionAddress, setIsEditingCollectionAddress] = useState(false);
-  const [newCollectionAddress, setNewCollectionAddress] = useState('');
-  // Local echo of a just-saved collection address for immediate UI feedback.
-  // `undefined` means "no local save yet" — fall through to the wallet prop.
-  const [savedCollectionAddress, setSavedCollectionAddress] = useState<string | null | undefined>(
-    undefined,
-  );
-
+  const [isDownloadConfirmOpen, setIsDownloadConfirmOpen] = useState(false);
   const [swapTransactions, setSwapTransactions] = useState<SwapTx[]>([]);
   const [swapTxLoading, setSwapTxLoading] = useState(false);
   const [swapTxCursor, setSwapTxCursor] = useState<string | undefined>(undefined);
@@ -122,6 +120,10 @@ export function WalletDetailsDialog({
 
   const balances = useTokenBalances(wallet);
   const rules = useLowBalanceRules({ wallet, invalidateWalletQueries });
+  const collectionAddressEditor = useCollectionAddressEditor({
+    wallet,
+    invalidateWalletQueries,
+  });
 
   const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {
     setSwapTransactions((prev) => prev.map((tx) => (tx.id === txId ? { ...tx, ...updates } : tx)));
@@ -133,7 +135,7 @@ export function WalletDetailsDialog({
     onTimeout: () => {
       setPollingTxId(null);
       pollingTxIdRef.current = null;
-      toast.warning('Polling timed out — use refresh to check again.', { theme: 'dark' });
+      toast.warning('Polling timed out. Use refresh to check again.', { theme: 'dark' });
     },
     onUpdate: (data) => {
       const currentTxId = pollingTxIdRef.current;
@@ -193,7 +195,7 @@ export function WalletDetailsDialog({
             swapStatus: 'CancelPending',
             cancelTxHash: cancelTxHash || null,
           });
-          toast.info('Cancel submitted — polling for confirmation…', { theme: 'dark' });
+          toast.info('Cancel submitted, polling for confirmation…', { theme: 'dark' });
           if (cancelTxHash) {
             startPollingConfirm(tx.id, cancelTxHash);
           }
@@ -202,7 +204,7 @@ export function WalletDetailsDialog({
           const msg = extractApiErrorMessage(error, 'Cancel failed.');
           if (msg.includes('already executed') || msg.includes('swap completed')) {
             updateSwapTxStatus(tx.id, { swapStatus: 'Completed' });
-            toast.success('Order was already executed by the DEX — swap completed!', {
+            toast.success('Order was already executed by the DEX, so the swap completed.', {
               theme: 'dark',
             });
             void balances.fetchTokenBalances();
@@ -336,22 +338,30 @@ export function WalletDetailsDialog({
 
   useEffect(() => {
     if (isOpen && wallet) {
-      // Reset states when dialog is opened. Token + rule state reset inside
-      // their hooks (fetchTokenBalances resets at call start; resetForNewWallet
-      // clears rule drafts and the add-rule form).
+      // Reset states when the dialog opens or switches wallet. Token, rule and
+      // collection-address state reset inside their hooks (fetchTokenBalances
+      // resets at call start; each resetForNewWallet clears its own drafts).
       setExportedMnemonic(null);
-      setSavedCollectionAddress(undefined);
+      setIsDownloadConfirmOpen(false);
+      collectionAddressEditor.resetForNewWallet();
       setSwapTransactions([]);
       setSwapTxCursor(undefined);
       setHasMoreSwapTx(true);
-      rules.resetForNewWallet();
       fetchTokenBalancesRef.current?.();
-      fetchWalletDetailsRef.current?.();
-      if (network === 'Mainnet') {
-        fetchSwapTransactions();
+      if (canManageWallet) {
+        rules.resetForNewWallet();
+        fetchWalletDetailsRef.current?.();
+        if (network === 'Mainnet') {
+          fetchSwapTransactions();
+        }
       }
     }
-  }, [isOpen, wallet?.walletAddress]);
+    // canManageWallet belongs in the deps: capabilities resolve asynchronously
+    // from /api-key-status, so an admin who opens this dialog before that query
+    // settles runs the effect with canManageWallet still false. Without a re-run,
+    // rules, wallet details and swap history never load and the dialog stays
+    // permanently degraded for a key that is in fact allowed to manage the wallet.
+  }, [isOpen, wallet?.walletAddress, canManageWallet]);
 
   const handleExport = async () => {
     if (!wallet || !isHotWalletType(wallet.type)) return;
@@ -393,6 +403,7 @@ export function WalletDetailsDialog({
   };
 
   const handleDownload = () => {
+    setIsDownloadConfirmOpen(false);
     if (!wallet || !exportedMnemonic) return;
     const data = {
       walletAddress: wallet.walletAddress,
@@ -411,72 +422,11 @@ export function WalletDetailsDialog({
     URL.revokeObjectURL(url);
   };
 
-  const collectionAddress =
-    savedCollectionAddress !== undefined
-      ? savedCollectionAddress
-      : (wallet?.collectionAddress ?? null);
-
-  const handleEditCollectionAddress = () => {
-    setIsEditingCollectionAddress(true);
-    setNewCollectionAddress(collectionAddress || '');
-  };
-
-  const handleSaveCollection = async () => {
-    if (!wallet) return;
-
-    // Validate the address if provided
-    if (newCollectionAddress.trim()) {
-      const validation = validateCardanoAddress(newCollectionAddress.trim(), network);
-      if (!validation.isValid) {
-        toast.error('Invalid collection address: ' + validation.error);
-        return;
-      }
-      let isAddressUnused = false;
-      try {
-        const utxos = await fetchAllUtxos(apiClient, network, newCollectionAddress.trim());
-        isAddressUnused = utxos.length === 0;
-      } catch {
-        isAddressUnused = true;
-      }
-      if (isAddressUnused) {
-        toast.warning(
-          'Collection address has not been used yet, please check if this is the correct address',
-        );
-      }
-    }
-    await handleApiCall(
-      () =>
-        patchWallet({
-          client: apiClient,
-          body: {
-            id: wallet.id,
-            newCollectionAddress: newCollectionAddress.trim() || null,
-          },
-        }),
-      {
-        onSuccess: () => {
-          toast.success('Collection address updated successfully');
-          setIsEditingCollectionAddress(false);
-          setSavedCollectionAddress(newCollectionAddress.trim() || null);
-          void invalidateWalletQueries();
-        },
-        onError: (error: unknown) => {
-          toast.error(extractApiErrorMessage(error, 'Failed to update collection address'));
-        },
-        errorMessage: 'Failed to update collection address',
-      },
-    );
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditingCollectionAddress(false);
-    setNewCollectionAddress('');
-  };
-
   const handleDialogClose = useCallback(() => {
     // Drop the plaintext seed phrase immediately on close so it never
     // lingers in state or paints for the next wallet's dialog.
     setExportedMnemonic(null);
+    setIsDownloadConfirmOpen(false);
     setSelectedWalletForSwap(null);
     setSelectedWalletForTopup(null);
     rules.setPendingDeleteRule(null);
@@ -526,7 +476,10 @@ export function WalletDetailsDialog({
           size="md"
           variant={isChild ? 'slide-from-right' : 'default'}
           isPushedBack={
-            !!selectedWalletForTopup || !!selectedWalletForSwap || !!rules.pendingDeleteRule
+            !!selectedWalletForTopup ||
+            !!selectedWalletForSwap ||
+            !!rules.pendingDeleteRule ||
+            isDownloadConfirmOpen
           }
           hideOverlay={isChild}
           onBack={isChild ? handleDialogClose : undefined}
@@ -545,16 +498,17 @@ export function WalletDetailsDialog({
                 className="h-8 w-8"
                 onClick={() => {
                   balances.fetchTokenBalances();
+                  if (!canManageWallet) return;
                   void rules.refreshWalletDetails();
                   if (network === 'Mainnet') {
                     setSwapTxCursor(undefined);
                     fetchSwapTransactions();
                   }
                 }}
-                disabled={balances.isLoading || rules.isWalletDetailsLoading}
+                disabled={balances.isLoading || (canManageWallet && rules.isWalletDetailsLoading)}
               >
                 <RefreshCw
-                  className={`h-4 w-4 ${balances.isLoading || rules.isWalletDetailsLoading ? 'animate-spin' : ''}`}
+                  className={`h-4 w-4 ${balances.isLoading || (canManageWallet && rules.isWalletDetailsLoading) ? 'animate-spin' : ''}`}
                 />
               </Button>
             </div>
@@ -586,7 +540,7 @@ export function WalletDetailsDialog({
               </div>
             </div>
 
-            {wallet.type !== 'Collection' && (
+            {wallet.type !== 'Collection' && canManageWallet && (
               <LowBalanceRulesSection
                 monitoringSummary={monitoringSummary}
                 configuredRules={configuredRules}
@@ -633,7 +587,7 @@ export function WalletDetailsDialog({
               isUSDM={balances.isUSDM}
             />
 
-            {network === 'Mainnet' && swapTransactions.length > 0 && (
+            {canManageWallet && network === 'Mainnet' && swapTransactions.length > 0 && (
               <SwapTransactionsSection
                 swapTransactions={swapTransactions}
                 swapTxLoading={swapTxLoading}
@@ -653,9 +607,11 @@ export function WalletDetailsDialog({
               />
             )}
 
-            <FundTransfersSection walletAddress={wallet.walletAddress} network={network} />
+            {canManageWallet && (
+              <FundTransfersSection walletAddress={wallet.walletAddress} network={network} />
+            )}
 
-            {wallet.type !== 'Collection' && (
+            {wallet.type !== 'Collection' && canManageWallet && (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -691,22 +647,22 @@ export function WalletDetailsDialog({
                 exportedMnemonic={exportedMnemonic}
                 onClose={() => setExportedMnemonic(null)}
                 onCopyMnemonic={handleCopyMnemonic}
-                onDownload={handleDownload}
+                onDownload={() => setIsDownloadConfirmOpen(true)}
               />
             )}
 
             {/* Linked Collection Wallet Section */}
-            {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && (
+            {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && canManageWallet && (
               <CollectionAddressSection
                 walletType={wallet.type}
                 network={network}
-                collectionAddress={collectionAddress}
-                isEditing={isEditingCollectionAddress}
-                newCollectionAddress={newCollectionAddress}
-                onNewCollectionAddressChange={setNewCollectionAddress}
-                onSave={handleSaveCollection}
-                onCancelEdit={handleCancelEdit}
-                onStartEdit={handleEditCollectionAddress}
+                collectionAddress={collectionAddressEditor.collectionAddress}
+                isEditing={collectionAddressEditor.isEditing}
+                newCollectionAddress={collectionAddressEditor.draft}
+                onNewCollectionAddressChange={collectionAddressEditor.setDraft}
+                onSave={collectionAddressEditor.save}
+                onCancelEdit={collectionAddressEditor.cancelEdit}
+                onStartEdit={collectionAddressEditor.startEdit}
               />
             )}
           </div>
@@ -731,6 +687,16 @@ export function WalletDetailsDialog({
         isLoading={
           rules.pendingDeleteRule != null && rules.mutatingRuleIds.has(rules.pendingDeleteRule.id)
         }
+      />
+
+      <ConfirmDialog
+        open={isDownloadConfirmOpen}
+        onClose={() => setIsDownloadConfirmOpen(false)}
+        elevatedGrandchildStack={elevatedChildStack}
+        title="Download seed phrase file?"
+        description="This saves the wallet's seed phrase as an unencrypted .json file. Anyone with the file can spend this wallet's funds. Continue only if you will store it securely."
+        confirmLabel="Download"
+        onConfirm={handleDownload}
       />
 
       <SwapDialog

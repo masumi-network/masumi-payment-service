@@ -44,7 +44,7 @@ export function RegisterAgentDetailsSection({
     }
 
     if (tag && !tags.includes(tag)) {
-      setValue('tags', [...tags, tag]);
+      setValue('tags', [...tags, tag], { shouldValidate: true });
     }
     setTagInput('');
   };
@@ -53,6 +53,7 @@ export function RegisterAgentDetailsSection({
     setValue(
       'tags',
       tags.filter((tag) => tag !== tagToRemove),
+      { shouldValidate: true },
     );
   };
 
@@ -70,10 +71,10 @@ export function RegisterAgentDetailsSection({
           disabled={typeLocked}
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <option value="Standard">Standard — single API base URL</option>
-          <option value="OpenApi">OpenAPI — link to a spec document</option>
-          <option value="X402">x402 — link to a resource manifest</option>
-          {isV2Target && <option value="A2A">A2A — MIP-002 agent card</option>}
+          <option value="Standard">Masumi: single API base URL</option>
+          <option value="OpenApi">OpenAPI: link to a spec document</option>
+          <option value="X402">x402: link to a resource manifest</option>
+          {isV2Target && <option value="A2A">A2A: MIP-002 agent card</option>}
         </select>
         <p className="text-xs text-muted-foreground">
           How this agent&apos;s API is described. Payment is configured separately below.

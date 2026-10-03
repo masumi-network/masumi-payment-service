@@ -24,14 +24,6 @@ export async function copyToClipboard(text: string) {
   }
 }
 
-export function parseError(error: unknown): string {
-  return extractApiErrorMessage(error, 'An error occurred');
-}
-
-export function parseFetchError(errorData: unknown, response: Response): string {
-  return extractApiErrorMessage(errorData, `HTTP ${response.status}: ${response.statusText}`);
-}
-
 export async function handleApiCall<T>(
   apiCall: () => Promise<T>,
   options: {
@@ -46,7 +38,7 @@ export async function handleApiCall<T>(
 
     // Check for API errors (response.error pattern)
     if (response && typeof response === 'object' && 'error' in response && response.error) {
-      console.error('API Error:', response.error);
+      console.error('API Error:', extractApiErrorMessage(response.error, 'API call failed'));
 
       if (options.onError) {
         options.onError(response.error);
@@ -67,7 +59,7 @@ export async function handleApiCall<T>(
     return response;
   } catch (error) {
     // Handle unexpected errors (network, etc.)
-    console.error('Unexpected error:', error);
+    console.error('Unexpected error:', extractApiErrorMessage(error, 'Unexpected error'));
 
     if (options.onError) {
       options.onError(error);
@@ -115,71 +107,6 @@ export function formatCount(count: number, maxValue: number = 999): string {
 
   return count.toString();
 }
-
-/**
- * Date range utilities for transaction filtering
- */
-export const dateRangeUtils = {
-  /**
-   * Get date range for preset options
-   */
-  getPresetRange(preset: '24h' | '7d' | '30d' | '90d'): {
-    start: Date;
-    end: Date;
-  } {
-    const now = new Date();
-    const end = now;
-
-    let start: Date;
-    switch (preset) {
-      case '24h':
-        start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        break;
-      case '7d':
-        start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case '30d':
-        start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      case '90d':
-        start = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-        break;
-      default:
-        start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    }
-
-    return { start, end };
-  },
-
-  /**
-   * Format date range for display
-   */
-  formatDateRange(start: Date, end: Date): string {
-    const formatDate = (date: Date) => {
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-      });
-    };
-
-    return `${formatDate(start)} - ${formatDate(end)}`;
-  },
-
-  /**
-   * Check if a date is within range
-   */
-  isDateInRange(date: Date, start: Date, end: Date): boolean {
-    return date >= start && date <= end;
-  },
-
-  /**
-   * Get ISO string for API calls
-   */
-  toISOString(date: Date): string {
-    return date.toISOString();
-  },
-};
 
 /**
  * Validates a Cardano wallet address based on network type using MeshJS
@@ -271,8 +198,11 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
     return unit;
   }
 
-  if (!unit) {
-    return 'ADA';
+  if (!unit || unit === 'lovelace') {
+    // An empty unit means lovelace, and lovelace on a testnet is tADA. Returning
+    // 'ADA' here regardless of network put "450.00 ADA" under a "tADA" heading
+    // in the same panel, which reads as two different assets.
+    return network.toLowerCase() === 'mainnet' ? 'ADA' : 'tADA';
   }
 
   const isUsdcx =
@@ -302,7 +232,17 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
     return 'ADA';
   }
 
-  return unit ?? '—';
+  // An unrecognised asset falls back to its own identifier, which is a policy id
+  // and asset name concatenated: 100+ characters that wrap across the panel and
+  // tell an operator nothing they can read. Shortened to the ends, which is what
+  // identifies it at a glance, with the full value still available wherever the
+  // caller offers copy.
+  return unit ? shortenAssetUnit(unit) : '—';
+}
+
+/** First and last characters of a long asset identifier, elided in the middle. */
+export function shortenAssetUnit(unit: string): string {
+  return unit.length <= 20 ? unit : `${unit.slice(0, 10)}…${unit.slice(-6)}`;
 }
 
 /**
@@ -338,7 +278,7 @@ export function formatX402Amount(amount: string | null | undefined, decimals: nu
 
 // Group an integer string with thousand separators for readability, e.g.
 // "1000000" -> "1,000,000". Used for base-unit amounts whose token decimals are
-// unknown (budgets, payment attempts), where a decimal point can't be placed safely.
+// unknown (payment attempts), where a decimal point can't be placed safely.
 export function groupDigits(value: string | null | undefined): string {
   if (value == null || value === '') return '—';
   if (!/^-?\d+$/.test(value)) return value;
@@ -347,7 +287,10 @@ export function groupDigits(value: string | null | undefined): string {
   return negative ? `-${digits}` : digits;
 }
 
-const SIX_DECIMAL_DISPLAY_UNITS = new Set(['ADA', 'USDM', 'tUSDM', 'USDCx']);
+// tADA belongs here for the same reason ADA does — it is lovelace, six
+// decimals. Left out, the formatter fell through to the raw-integer branch and
+// printed "450,000,000 tADA" for 450 ADA.
+const SIX_DECIMAL_DISPLAY_UNITS = new Set(['ADA', 'tADA', 'USDM', 'tUSDM', 'USDCx']);
 const SIX_DECIMAL_BASE = BigInt(10) ** BigInt(6);
 
 /**

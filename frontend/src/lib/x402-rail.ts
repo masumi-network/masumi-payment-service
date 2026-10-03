@@ -1,4 +1,4 @@
-import type { X402Budget, X402Network, X402Wallet } from '@/lib/api/generated';
+import type { X402Network, X402Wallet } from '@/lib/api/generated';
 import type { NetworkType } from '@/lib/contexts/AppContext';
 
 /**
@@ -9,6 +9,7 @@ export const X402_ACCENT = {
   badge:
     'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300',
   icon: 'text-indigo-600 dark:text-indigo-400',
+  iconRing: 'from-indigo-500/20 to-indigo-500/5 ring-indigo-500/30',
 } as const;
 
 /**
@@ -21,8 +22,19 @@ export function isTestnetEnv(network: NetworkType): boolean {
   return network === 'Preprod';
 }
 
+export function resolveX402ChainEnvironment(
+  network: NetworkType,
+  submittedIsTestnet: boolean,
+  isEnvironmentLocked: boolean,
+): boolean {
+  return isEnvironmentLocked ? isTestnetEnv(network) : submittedIsTestnet;
+}
+
 /** Enabled EVM chains that belong to the given Cardano environment. */
-export function chainsForEnv(chains: X402Network[], network: NetworkType): X402Network[] {
+export function chainsForEnv<T extends { isEnabled: boolean; isTestnet: boolean }>(
+  chains: T[],
+  network: NetworkType,
+): T[] {
   const wantTestnet = isTestnetEnv(network);
   return chains.filter((chain) => chain.isEnabled && chain.isTestnet === wantTestnet);
 }
@@ -33,15 +45,48 @@ export function walletsForNetworks(wallets: X402Wallet[], networks: X402Network[
   return wallets.filter((wallet) => networkIds.has(wallet.networkId));
 }
 
-/** Whether any budget belongs to an enabled network in the supplied environment scope. */
-export function hasBudgetOnEnabledNetworks(
-  budgets: Pick<X402Budget, 'caip2Network'>[],
+/** Payment Sources must keep drafts visible so operators can finish or remove their config. */
+export function filterX402PaymentSourceChains<
+  T extends Pick<X402Network, 'displayName' | 'caip2Id'>,
+>(chains: T[], searchQuery: string): T[] {
+  if (!searchQuery) return chains;
+  const query = searchQuery.toLowerCase();
+  return chains.filter(
+    (chain) =>
+      chain.displayName.toLowerCase().includes(query) ||
+      chain.caip2Id.toLowerCase().includes(query),
+  );
+}
+/**
+ * Whether outbound payments are actually possible: a Purchasing wallet bound to a chain
+ * that is ENABLED in the supplied scope. A wallet on a disabled chain cannot pay —
+ * `POST /x402/pay` rejects it with "The wallet network is not enabled" — so it must not
+ * count as a configured paying side and must not suppress the setup guide.
+ */
+/** Native gas token symbol for a CAIP-2 EVM chain id. */
+export function getEvmNativeSymbol(caip2Id: string): string {
+  const chainId = caip2Id.replace(/^eip155:/, '');
+  switch (chainId) {
+    case '137':
+    case '80002':
+      return 'POL';
+    case '56':
+    case '97':
+      return 'BNB';
+    case '43114':
+    case '43113':
+      return 'AVAX';
+    default:
+      return 'ETH';
+  }
+}
+
+export function hasPurchasingWalletOnEnabledNetworks(
+  wallets: X402Wallet[],
   networks: X402Network[],
 ): boolean {
-  const enabledNetworkIds = new Set(
-    networks.filter((network) => network.isEnabled).map((network) => network.caip2Id),
-  );
-  return budgets.some((budget) => enabledNetworkIds.has(budget.caip2Network));
+  const enabled = networks.filter((network) => network.isEnabled);
+  return walletsForNetworks(wallets, enabled).some((wallet) => wallet.type === 'Purchasing');
 }
 
 /**
@@ -49,8 +94,31 @@ export function hasBudgetOnEnabledNetworks(
  * URL set), and with either a self-hosted wallet or remote facilitator assigned. An enabled-but-
  * unconfigured chain (no facilitator / blank RPC) is not selectable as an active rail —
  * picking it should route to setup instead of pretending the rail works.
+ *
+ * Two projections reach this predicate. The admin one carries the raw config; the
+ * pay-authenticated `/x402/networks/available` one withholds it and sends `canSettle`,
+ * the server's own settlement verdict, instead.
+ *
+ * Dispatch on `canSettle` being present, NOT on config fields being absent: sniffing
+ * `rpcUrl === undefined` means the day the admin projection starts sending `canSettle`
+ * (or the available one starts sending `rpcUrl`) this predicate silently flips branch.
+ * Preferring the server's verdict whenever it is present degrades safely instead.
+ *
+ * Caveat: `canSettle` only reports "facilitator wallet or URL present" — it does not
+ * carry the RPC-reachability half of the admin check, so a facilitator-but-no-RPC chain
+ * reads usable to a pay key and unusable to an admin. Widen `canSettle` server-side if
+ * that divergence ever matters.
  */
-export function isX402ChainUsable(chain: X402Network): boolean {
+export function isX402ChainUsable(chain: {
+  isEnabled: boolean;
+  canSettle?: boolean;
+  facilitatorWalletId?: string | null;
+  facilitatorUrl?: string | null;
+  rpcUrl?: string | null;
+}): boolean {
+  if (typeof chain.canSettle === 'boolean') {
+    return chain.isEnabled && chain.canSettle;
+  }
   return (
     chain.isEnabled && (!!chain.facilitatorWalletId || !!chain.facilitatorUrl) && !!chain.rpcUrl
   );
@@ -62,6 +130,16 @@ export function isX402ChainUsable(chain: X402Network): boolean {
  * Uses the same bar as chain selection so a facilitator-but-no-RPC chain doesn't hide the
  * setup prompt while the rail still can't actually run payments.
  */
-export function isX402SetUpForEnv(chains: X402Network[], network: NetworkType): boolean {
+export function isX402SetUpForEnv(
+  chains: Array<{
+    isEnabled: boolean;
+    isTestnet: boolean;
+    canSettle?: boolean;
+    facilitatorWalletId?: string | null;
+    facilitatorUrl?: string | null;
+    rpcUrl?: string | null;
+  }>,
+  network: NetworkType,
+): boolean {
   return chainsForEnv(chains, network).some(isX402ChainUsable);
 }

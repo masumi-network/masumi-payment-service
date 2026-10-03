@@ -425,6 +425,22 @@ export interface QueryWalletsResponse {
 	Wallets: WalletListItem[];
 }
 
+/**
+ * The message of anything thrown, or null if it carries none.
+ *
+ * `instanceof Error` cannot be used to reach it. Jest's node environment runs
+ * this module inside a vm context, so its `Error` is not the `Error` that
+ * Node's fetch used to build the rejection, and the check is false for every
+ * error undici raises.
+ */
+function messageOf(error: unknown): string | null {
+	if (typeof error !== 'object' || error === null) {
+		return null;
+	}
+	const message = (error as { message?: unknown }).message;
+	return typeof message === 'string' ? message : null;
+}
+
 export class ApiClient {
 	private config: ApiClientConfig;
 
@@ -493,19 +509,24 @@ export class ApiClient {
 				// `TypeError('fetch failed')`, so the 'fetch failed' fragment in
 				// the message catches the intended case.
 				const transientFragments = /fetch failed|SocketError|ECONNRESET|EPIPE|other side closed/i;
+				// Match on shape, not `instanceof Error`. undici builds its errors in
+				// Node's realm while this module runs inside Jest's, so `instanceof
+				// Error` is false for exactly the socket failures this retry exists
+				// for, and the branch below never ran.
+				const message = messageOf(error);
 				const isTransient =
-					error instanceof Error &&
-					(transientFragments.test(error.message) ||
+					message !== null &&
+					(transientFragments.test(message) ||
 						transientFragments.test(String((error as { cause?: unknown }).cause ?? ''))) &&
-					!/HTTP \d{3}:/.test(error.message);
+					!/HTTP \d{3}:/.test(message);
 				if (isTransient && attempt < maxRetries) {
 					// Exponential backoff with jitter: 100ms, 250ms, 600ms (max).
 					const delay = Math.floor(Math.random() * (100 * Math.pow(2, attempt) + 100));
 					await new Promise((resolve) => setTimeout(resolve, delay));
 					continue;
 				}
-				if (error instanceof Error) {
-					throw new Error(`API request failed: ${error.message}`);
+				if (message !== null) {
+					throw new Error(`API request failed: ${message}`);
 				}
 				throw error;
 			}

@@ -1,0 +1,56 @@
+{
+  "generated": "2026-08-31T14:22:50.419Z",
+  "network": "preprod",
+  "headId": "d276058a22ad180bc94bfc89d85d6c02c5e5a110dd5ddcd759f213b1",
+  "purchasingAddress": "addr_test1vqau6vf2cc0p4s409yuyy4ep0nl0ax7zh3dj0vt4dlvtfmq48yln5",
+  "closeTx": "171d99ddaa6545fe6795bd81546aa1bd5dfc23186764dfd0b6435823fd9ba2bf",
+  "fanoutTx": "2108fdf624e313ddbd79ad83669130bf360827b7288909cd4e7b51bca52cfc83",
+  "note": "Selected by head-token policy, not by address: every head on a network shares one head script address. L2 transactions are absent by design — they never touch L1. Their proof is the multi-signed ConfirmedSnapshot, whose balances equal the fanout outputs.",
+  "anchors": [
+    {
+      "role": "funding",
+      "txHash": "b6bc7f589d2688cdd281290f9d3b4711e055c25c6798907b84a7549cd4972b55",
+      "block": 5121783,
+      "slot": 132500438,
+      "time": "2026-08-31T13:40:38.000Z",
+      "validContract": true,
+      "cardanoscan": "https://preprod.cardanoscan.io/transaction/b6bc7f589d2688cdd281290f9d3b4711e055c25c6798907b84a7549cd4972b55"
+    },
+    {
+      "role": "init",
+      "txHash": "29a86185fc14e956c3f2abdc32487c246be13deea28882d5fa147b5064bc4996",
+      "block": 5121789,
+      "slot": 132500518,
+      "time": "2026-08-31T13:41:58.000Z",
+      "validContract": true,
+      "cardanoscan": "https://preprod.cardanoscan.io/transaction/29a86185fc14e956c3f2abdc32487c246be13deea28882d5fa147b5064bc4996"
+    },
+    {
+      "role": "increment",
+      "txHash": "4b7b61735af539bf39a6899e6558f42f39b75e887327a412486cd1966d2a2daa",
+      "block": 5121818,
+      "slot": 132501150,
+      "time": "2026-08-31T13:52:30.000Z",
+      "validContract": true,
+      "cardanoscan": "https://preprod.cardanoscan.io/transaction/4b7b61735af539bf39a6899e6558f42f39b75e887327a412486cd1966d2a2daa"
+    },
+    {
+      "role": "close",
+      "txHash": "171d99ddaa6545fe6795bd81546aa1bd5dfc23186764dfd0b6435823fd9ba2bf",
+      "block": 5121841,
+      "slot": 132501662,
+      "time": "2026-08-31T14:01:02.000Z",
+      "validContract": true,
+      "cardanoscan": "https://preprod.cardanoscan.io/transaction/171d99ddaa6545fe6795bd81546aa1bd5dfc23186764dfd0b6435823fd9ba2bf"
+    },
+    {
+      "role": "fanout",
+      "txHash": "2108fdf624e313ddbd79ad83669130bf360827b7288909cd4e7b51bca52cfc83",
+      "block": 5121860,
+      "slot": 132502221,
+      "time": "2026-08-31T14:10:21.000Z",
+      "validContract": true,
+      "cardanoscan": "https://preprod.cardanoscan.io/transaction/2108fdf624e313ddbd79ad83669130bf360827b7288909cd4e7b51bca52cfc83"
+    }
+  ]
+}

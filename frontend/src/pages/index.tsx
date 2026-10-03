@@ -1,56 +1,83 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getWalletTypeRowLabel } from '@/lib/wallet-type';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import {
-  ChevronRight,
   Plus,
+  ArrowUpRight,
   Bot,
   DollarSign,
   Wallet,
   ArrowUpDown,
-  ArrowLeftRight,
-  ArrowUpRight,
-  PlusCircle,
+  ChevronRight,
 } from 'lucide-react';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { RefreshButton } from '@/components/RefreshButton';
 import { cn, formatAssetAmount, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
-import { useAgents } from '@/lib/queries/useAgents';
+import { useAgents, useRegistryAgentCount } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
 import { useQueryClient } from '@tanstack/react-query';
 import { resetAgentQueries } from '@/lib/queries/agent-cache';
 import { useTransactions } from '@/lib/hooks/useTransactions';
-import { toast } from 'react-toastify';
 import Link from 'next/link';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
-import { SwapDialog } from '@/components/wallets/SwapDialog';
-import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
 import { StatCardSkeleton } from '@/components/skeletons/StatCardSkeleton';
 import { AgentListSkeleton } from '@/components/skeletons/AgentListSkeleton';
 import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
-import { Spinner } from '@/components/ui/spinner';
 import formatBalance from '@/lib/formatBalance';
-import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
+import {
+  DashboardPanel,
+  OVERVIEW_LIST_VISIBLE_ROWS,
+  OverviewList,
+  OverviewListScroll,
+  OverviewListItem,
+  overviewAgentPriceColumnClass,
+  overviewWalletListRowClass,
+  overviewListSecondaryLineClass,
+} from '@/components/dashboard/dashboard-overview-section';
+import { DashboardWalletListSection } from '@/components/dashboard/dashboard-wallet-list-section';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
-import { CopyButton } from '@/components/ui/copy-button';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { WelcomeBanner } from '@/components/ui/welcome-banner';
+import { isWalletFundStepComplete } from '@/components/ui/welcome-banner-fund-step';
 import { SetupV2Banner } from '@/components/setup/SetupV2Banner';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
+import { FinancialReportSection } from '@/components/dashboard/FinancialReportSection';
+import { Tabs } from '@/components/ui/tabs';
+import { Pagination } from '@/components/ui/pagination';
+import { useViewportRemainingHeight } from '@/lib/hooks/useViewportRemainingHeight';
+
+// The dashboard carries two unrelated jobs: what exists (agents, wallets,
+// transactions) and what it earned. Stacking both in one scroll buried the
+// second, so each gets its own tab.
+const OVERVIEW_TAB = 'Overview';
+const FINANCES_TAB = 'Finances';
+const DASHBOARD_TABS = [{ name: OVERVIEW_TAB }, { name: FINANCES_TAB }];
 
 type AIAgent = RegistryEntry;
+
+function formatAgentListPrice(agent: RegistryEntry, network: 'Preprod' | 'Mainnet') {
+  const pricing = getPrimaryCardanoPricing(agent);
+  if (pricing?.pricingType === 'Free') return 'Free';
+  if (pricing?.pricingType === 'Dynamic') return 'Dynamic';
+  if (pricing?.pricingType === 'Fixed' && pricing.Pricing[0]) {
+    const price = pricing.Pricing[0];
+    return formatAssetAmount(price.amount, price.unit, network);
+  }
+  return '—';
+}
 
 export const getStaticProps: GetStaticProps = async () => {
   return {
@@ -59,8 +86,9 @@ export const getStaticProps: GetStaticProps = async () => {
 };
 
 export default function Overview() {
-  const { network, selectedPaymentSource } = useAppContext();
+  const { network, selectedPaymentSource, selectedPaymentSourceId, capabilities } = useAppContext();
   const { paymentSources, isLoading: isLoadingPaymentSources } = usePaymentSourceExtendedAll();
+  const [activeDashboardTab, setActiveDashboardTab] = useState(OVERVIEW_TAB);
   const [isMigrationHintDismissed, setIsMigrationHintDismissed] = useState(false);
 
   const queryClient = useQueryClient();
@@ -76,20 +104,32 @@ export default function Overview() {
     isLoading: isLoadingAgents,
     hasMore: hasMoreAgents,
     loadMore: loadMoreAgents,
+    isFetching: isFetchingAgents,
   } = useAgents();
+  const { total: totalAgentCount, isLoading: isLoadingAgentCount } = useRegistryAgentCount();
   // Defer the eager all-wallet balance load until after the dashboard shell has
   // painted, so its N+1 per-wallet UTxO fan-out doesn't compete with first
   // render. A single frame is enough to let the layout + skeletons show first.
+  //
+  // The timer is not redundant: requestAnimationFrame never fires while the tab
+  // is hidden, so opening the dashboard in a background tab (or restoring one)
+  // would otherwise leave this false forever and pin the wallet section and the
+  // balance cards on their skeletons until the tab was focused.
   const [walletsReady, setWalletsReady] = useState(false);
   useEffect(() => {
-    const id = requestAnimationFrame(() => setWalletsReady(true));
-    return () => cancelAnimationFrame(id);
+    const frame = requestAnimationFrame(() => setWalletsReady(true));
+    const timer = setTimeout(() => setWalletsReady(true), 200);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
   }, []);
   const {
     wallets: walletsList,
     totalBalance: totalBalanceValue,
     totalUsdcxBalance: totalUsdcxBalanceValue,
     isLoading: isLoadingWalletsQuery,
+    isRefetching: isRefreshingBalances,
   } = useWallets({ enabled: walletsReady });
   // Keep the balance cards in their loading state during the pre-paint defer
   // window so they never flash an empty "0" before the fetch starts.
@@ -97,7 +137,14 @@ export default function Overview() {
 
   const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
   const totalUsdcxBalance = useMemo(() => totalUsdcxBalanceValue || '0', [totalUsdcxBalanceValue]);
-  const isLoadingBalances = isLoadingWallets;
+  const hasFundedWallet = useMemo(
+    () =>
+      isWalletFundStepComplete({
+        isLoading: isLoadingWallets,
+        wallets: walletsList,
+      }),
+    [isLoadingWallets, walletsList],
+  );
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((source) => source.network === network),
     [paymentSources, network],
@@ -131,18 +178,17 @@ export default function Overview() {
   const [isAddWalletDialogOpen, setAddWalletDialogOpen] = useState(false);
   const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] = useState(false);
 
-  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
-    null,
-  );
-
-  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
-    null,
-  );
   const { rate, isLoading: isLoadingRate } = useRate();
 
   const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
+    null,
+  );
+  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
+    null,
+  );
   const [isMigrateDialogOpen, setMigrateDialogOpen] = useState(false);
 
   // Returns the grouped USD amount, or null when the CoinGecko rate is
@@ -156,6 +202,12 @@ export default function Overview() {
 
   const totalBalanceUsd = formatUsdValue(totalBalance);
 
+  const overviewSectionRef = useRef<HTMLDivElement>(null);
+  const overviewSectionHeight = useViewportRemainingHeight(overviewSectionRef, {
+    bottomInset: 32,
+    enabled: activeDashboardTab === OVERVIEW_TAB,
+  });
+
   return (
     <>
       <Head>
@@ -163,8 +215,8 @@ export default function Overview() {
       </Head>
       <MainLayout>
         <AnimatedPage>
-          <div className="space-y-6">
-            <div>
+          <div className="flex flex-col gap-6">
+            <div className="shrink-0">
               <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
               <p className="text-sm text-muted-foreground">
                 Overview of your AI agents, wallets, and transactions.
@@ -173,17 +225,24 @@ export default function Overview() {
                 Showing{' '}
                 {selectedPaymentSource?.smartContractAddress
                   ? shortenAddress(selectedPaymentSource?.smartContractAddress)
-                  : 'all payment sources'}{' '}
-                ·{' '}
-                <Link href="/payment-sources" className="text-primary hover:underline">
-                  Change source
-                </Link>
+                  : 'all payment sources'}
+                {capabilities.canAdmin && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <Link href="/payment-sources" className="text-primary hover:underline">
+                      Change source
+                    </Link>
+                  </>
+                )}
               </p>
             </div>
 
-            <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
+            {capabilities.canAdmin && (
+              <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
+            )}
 
-            {showMigrationHint && (
+            {capabilities.canAdmin && showMigrationHint && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/20">
                 <div className="flex items-center gap-2 text-amber-950 dark:text-amber-100">
                   <ArrowUpRight className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
@@ -210,349 +269,244 @@ export default function Overview() {
             )}
 
             <WelcomeBanner
-              agentCount={agents.length}
-              walletCount={walletsList.length}
+              agentCount={totalAgentCount ?? agents.length}
+              hasFundedWallet={hasFundedWallet}
               transactionCount={transactions.length}
               hasPaymentSource={!!selectedPaymentSource}
             />
 
-            <div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {agentsSectionLoading ? (
-                  <StatCardSkeleton />
-                ) : (
-                  <StatCard
-                    label="Total AI agents"
-                    index={0}
-                    icon={<Bot className="h-4 w-4 text-blue-500" />}
-                    accentColor="rgb(59, 130, 246)"
-                  >
-                    <div className="text-2xl font-semibold">
-                      {agents.length}
-                      {hasMoreAgents ? '+' : ''}
-                    </div>
-                  </StatCard>
-                )}
-                {walletsSectionLoading ? (
-                  <StatCardSkeleton />
-                ) : (
-                  <StatCard
-                    label={network === 'Mainnet' ? 'Total USDCx' : 'Total tUSDM'}
-                    index={1}
-                    icon={<DollarSign className="h-4 w-4 text-green-500" />}
-                    accentColor="rgb(34, 197, 94)"
-                  >
-                    <div className="text-2xl font-semibold flex items-center gap-1">
-                      <span className="text-xs font-normal text-muted-foreground">$</span>
-                      {formatSixDecimalAmount(totalUsdcxBalance)}
-                    </div>
-                  </StatCard>
-                )}
-                {walletsSectionLoading ? (
-                  <StatCardSkeleton />
-                ) : (
-                  <StatCard
-                    label="Total ada balance"
-                    index={2}
-                    icon={<Wallet className="h-4 w-4 text-orange-500" />}
-                    accentColor="rgb(249, 115, 22)"
-                  >
-                    <div className="flex flex-col gap-2">
-                      <div className="text-2xl font-semibold flex items-center gap-1">
-                        {formatSixDecimalAmount(totalBalance)}
-                        <span className="text-xs font-normal text-muted-foreground">ADA</span>
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {isLoadingRate ? '...' : totalBalanceUsd ? `~ $${totalBalanceUsd}` : '—'}
-                      </div>
-                    </div>
-                  </StatCard>
-                )}
-                {isLoadingTransactions ? (
-                  <StatCardSkeleton />
-                ) : (
-                  <StatCard
-                    label="New Transactions"
-                    index={3}
-                    icon={<ArrowUpDown className="h-4 w-4 text-purple-500" />}
-                    accentColor="rgb(168, 85, 247)"
-                  >
-                    <>
-                      <div className="text-2xl font-semibold">{newTransactionsCount}</div>
-                      <Link
-                        href="/transactions"
-                        className="text-sm text-primary hover:underline flex justify-items-center items-center"
+            <Tabs
+              tabs={DASHBOARD_TABS}
+              activeTab={activeDashboardTab}
+              onTabChange={setActiveDashboardTab}
+            />
+
+            {activeDashboardTab === OVERVIEW_TAB && (
+              <div
+                ref={overviewSectionRef}
+                className="flex min-h-0 flex-col gap-6 overflow-hidden"
+                style={
+                  overviewSectionHeight !== undefined
+                    ? { height: overviewSectionHeight }
+                    : undefined
+                }
+              >
+                <div className="shrink-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {agentsSectionLoading || isLoadingAgentCount ? (
+                      <StatCardSkeleton />
+                    ) : (
+                      <StatCard
+                        label="Total AI agents"
+                        index={0}
+                        icon={<Bot className="h-4 w-4 text-blue-500" />}
+                        accentColor="rgb(59, 130, 246)"
                       >
-                        View all transactions <ChevronRight size={14} />
-                      </Link>
-                    </>
-                  </StatCard>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="border rounded-lg p-6 flex flex-col">
-                <div className="flex-1">
-                  <div className="flex justify-between items-center mb-2">
-                    <div className="flex items-center gap-2">
-                      <Link href="/ai-agents" className="font-medium hover:underline">
-                        AI agents
-                      </Link>
-                      <ChevronRight className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Manage your AI agents and their configurations.
-                  </p>
-
-                  {agentsSectionLoading ? (
-                    <AgentListSkeleton items={3} />
-                  ) : agents.length > 0 ? (
-                    <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto">
-                      {agents.map((agent, index) => (
-                        <div
-                          key={agent.id}
-                          className="flex items-center justify-between py-4 border-b last:border-0 cursor-pointer transition-all duration-150 hover:bg-muted/30 hover:pl-1 animate-fade-in-up opacity-0"
-                          style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                          onClick={() => setSelectedAgentForDetails(agent)}
-                        >
-                          <div className="flex flex-col gap-1 max-w-[80%]">
-                            <div className="text-sm font-medium hover:underline">{agent.name}</div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {agent.description}
-                            </div>
+                        <div className="text-2xl font-semibold">{totalAgentCount ?? 0}</div>
+                      </StatCard>
+                    )}
+                    {walletsSectionLoading ? (
+                      <StatCardSkeleton />
+                    ) : (
+                      <StatCard
+                        label={network === 'Mainnet' ? 'Total USDCx' : 'Total tUSDM'}
+                        labelTooltip={network === 'Mainnet' ? '1 USDCx ~ $1' : '1 tUSDM ~ $1'}
+                        index={1}
+                        icon={<DollarSign className="h-4 w-4 text-green-500" />}
+                        accentColor="rgb(34, 197, 94)"
+                      >
+                        <div className="text-2xl font-semibold flex items-center gap-1">
+                          <span className="text-xs font-normal text-muted-foreground">$</span>
+                          {formatSixDecimalAmount(totalUsdcxBalance)}
+                        </div>
+                      </StatCard>
+                    )}
+                    {walletsSectionLoading ? (
+                      <StatCardSkeleton />
+                    ) : (
+                      <StatCard
+                        label="Total ada balance"
+                        index={2}
+                        icon={<Wallet className="h-4 w-4 text-orange-500" />}
+                        accentColor="rgb(249, 115, 22)"
+                      >
+                        <div className="flex flex-col gap-2">
+                          <div className="text-2xl font-semibold flex items-center gap-1">
+                            {formatSixDecimalAmount(totalBalance)}
+                            <span className="text-xs font-normal text-muted-foreground">ADA</span>
                           </div>
-                          <div className="text-sm min-w-content flex items-center gap-1">
-                            {(() => {
-                              const pricing = getPrimaryCardanoPricing(agent);
-                              if (pricing?.pricingType === 'Free') {
-                                return (
-                                  <span className="text-xs font-normal text-muted-foreground">
-                                    Free
-                                  </span>
-                                );
-                              }
-                              if (pricing?.pricingType === 'Dynamic') {
-                                return (
-                                  <span className="text-xs font-normal text-muted-foreground">
-                                    Dynamic
-                                  </span>
-                                );
-                              }
-                              if (pricing?.pricingType === 'Fixed' && pricing.Pricing[0]) {
-                                const price = pricing.Pricing[0];
-                                return (
-                                  <span className="text-xs font-normal text-muted-foreground">
-                                    {formatAssetAmount(price.amount, price.unit, network)}
-                                  </span>
-                                );
-                              }
-                              return (
-                                <span className="text-xs font-normal text-muted-foreground">—</span>
-                              );
-                            })()}
+                          <div className="text-sm text-muted-foreground">
+                            {isLoadingRate
+                              ? '...'
+                              : totalBalanceUsd
+                                ? `~ $${totalBalanceUsd}`
+                                : '—'}
                           </div>
                         </div>
-                      ))}
-                      {hasMoreAgents && (
-                        <div className="flex justify-center pt-4">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="btn-hover-lift"
-                            onClick={() => loadMoreAgents()}
-                            disabled={!hasMoreAgents || isLoadingAgents}
+                      </StatCard>
+                    )}
+                    {isLoadingTransactions ? (
+                      <StatCardSkeleton />
+                    ) : (
+                      <StatCard
+                        label="New Transactions"
+                        index={3}
+                        icon={<ArrowUpDown className="h-4 w-4 text-purple-500" />}
+                        accentColor="rgb(168, 85, 247)"
+                      >
+                        <>
+                          <div className="text-2xl font-semibold">{newTransactionsCount}</div>
+                          <Link
+                            href="/transactions"
+                            className="text-sm text-primary hover:underline flex items-center"
                           >
-                            Load more
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <EmptyState
-                      title="No AI agents found"
-                      description="Register your first AI agent to get started."
-                    />
-                  )}
+                            View all transactions
+                            <ChevronRight size={14} />
+                          </Link>
+                        </>
+                      </StatCard>
+                    )}
+                  </div>
                 </div>
 
-                <div className="pt-4">
-                  <Button
-                    className="flex items-center gap-2 btn-hover-lift"
-                    onClick={() => setRegisterAgentDialogOpen(true)}
+                <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch">
+                  <DashboardPanel
+                    title="AI agents"
+                    titleHref="/ai-agents"
+                    description="Recent agents on this payment source."
+                    reserveListHeight
+                    stretchToViewport
+                    fillListViewport
+                    footer={
+                      capabilities.canPay ? (
+                        <Button
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => setRegisterAgentDialogOpen(true)}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Register agent
+                        </Button>
+                      ) : undefined
+                    }
                   >
-                    <Plus className="h-4 w-4" />
-                    Register agent
-                  </Button>
-                </div>
-              </div>
+                    {agentsSectionLoading ? (
+                      <OverviewListScroll>
+                        <AgentListSkeleton items={OVERVIEW_LIST_VISIBLE_ROWS} />
+                      </OverviewListScroll>
+                    ) : agents.length > 0 ? (
+                      <OverviewListScroll>
+                        <OverviewList>
+                          {agents.map((agent, index) => (
+                            <OverviewListItem key={agent.id} index={index}>
+                              <button
+                                type="button"
+                                className={overviewWalletListRowClass}
+                                onClick={() => setSelectedAgentForDetails(agent)}
+                              >
+                                <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+                                  <span className="truncate text-sm font-medium leading-5">
+                                    {agent.name}
+                                  </span>
+                                  <p
+                                    className={cn(
+                                      overviewListSecondaryLineClass,
+                                      !agent.description && 'invisible',
+                                    )}
+                                    aria-hidden={!agent.description}
+                                  >
+                                    {agent.description?.trim() || '\u00a0'}
+                                  </p>
+                                </div>
+                                <div
+                                  className={cn(
+                                    overviewAgentPriceColumnClass,
+                                    'self-center leading-4',
+                                  )}
+                                >
+                                  {formatAgentListPrice(agent, network)}
+                                </div>
+                              </button>
+                            </OverviewListItem>
+                          ))}
+                        </OverviewList>
+                        <Pagination
+                          size="compact"
+                          className="border-t border-border/50 px-4 py-2"
+                          hasMore={hasMoreAgents}
+                          isLoading={isFetchingAgents && hasMoreAgents}
+                          onLoadMore={() => void loadMoreAgents()}
+                        />
+                      </OverviewListScroll>
+                    ) : (
+                      <div className="flex min-h-0 flex-1 flex-col justify-center px-4 py-8">
+                        <EmptyState
+                          title="No agents yet"
+                          description={
+                            capabilities.canPay
+                              ? 'Register an agent to list it here.'
+                              : 'Pay access is required to register agents.'
+                          }
+                        />
+                      </div>
+                    )}
+                  </DashboardPanel>
 
-              <div className="border rounded-lg p-6 flex flex-col">
-                <div className="flex-1">
-                  <div className="flex justify-between items-center mb-2">
-                    <div className="flex items-center gap-2">
-                      <Link href="/wallets" className="font-medium hover:underline">
-                        Wallets
-                      </Link>
-                      <ChevronRight className="h-4 w-4" />
+                  <DashboardPanel
+                    title="Wallets"
+                    titleHref="/wallets"
+                    description="Balances for buying and selling wallets."
+                    reserveListHeight
+                    stretchToViewport
+                    fillListViewport
+                    headerExtra={
                       <RefreshButton
                         onRefresh={() => refetchWallets()}
-                        isRefreshing={isLoadingWallets || isLoadingBalances}
+                        isRefreshing={isLoadingWallets || isRefreshingBalances}
                       />
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Manage your buying and selling wallets.
-                  </p>
-
-                  {walletsSectionLoading ? (
-                    <WalletListSkeleton rows={2} />
-                  ) : (
-                    <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto overflow-x-auto w-full">
-                      <table className="w-full">
-                        <thead className="sticky top-0 bg-muted/30 dark:bg-muted/15 z-10">
-                          <tr className="text-sm text-muted-foreground border-b">
-                            <th className="text-left py-2 px-2 w-20">Type</th>
-                            <th className="text-left py-2 px-2">Name</th>
-                            <th className="text-left py-2 px-2">Address</th>
-                            <th className="text-left py-2 px-2">Balance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {walletsList.length === 0 ? (
-                            <tr>
-                              <td colSpan={4}>
-                                <EmptyState title="No wallets found" />
-                              </td>
-                            </tr>
-                          ) : (
-                            walletsList.map((wallet, index) => (
-                              <tr
-                                key={wallet.id}
-                                className={cn(
-                                  'border-b last:border-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
-                                  wallet.LowBalanceSummary?.isLow
-                                    ? 'bg-amber-500/5 hover:bg-amber-500/10'
-                                    : 'hover:bg-muted/10',
-                                )}
-                                style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                                onClick={() => setSelectedWalletForDetails(wallet)}
-                              >
-                                <td className="py-3 px-2">
-                                  <div className="flex items-center gap-2">
-                                    <WalletTypeBadge type={wallet.type} />
-                                    {wallet.LowBalanceSummary?.isLow && (
-                                      <>
-                                        <span
-                                          aria-hidden="true"
-                                          className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]"
-                                          title={
-                                            wallet.LowBalanceSummary.lowRuleCount === 1
-                                              ? '1 low-balance alert'
-                                              : `${wallet.LowBalanceSummary.lowRuleCount} low-balance alerts`
-                                          }
-                                        />
-                                        <span className="sr-only">
-                                          {wallet.LowBalanceSummary.lowRuleCount === 1
-                                            ? '1 low-balance alert'
-                                            : `${wallet.LowBalanceSummary.lowRuleCount} low-balance alerts`}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-2 max-w-25">
-                                  <div className="text-sm font-medium truncate">
-                                    {getWalletTypeRowLabel(wallet.type)}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground truncate">
-                                    {wallet.note || 'Created by seeding'}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-2 max-w-25">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-xs text-muted-foreground truncate">
-                                      {wallet.walletAddress}
-                                    </span>
-                                    <CopyButton value={wallet.walletAddress} />
-                                  </div>
-                                </td>
-                                <td className="py-3 px-2 w-32">
-                                  <div className="text-xs flex items-center gap-1">
-                                    {wallet.isLoadingBalance ? (
-                                      <Spinner className="h-3 w-3" />
-                                    ) : (
-                                      <>
-                                        {wallet.isBalanceUnavailable
-                                          ? '—'
-                                          : formatSixDecimalAmount(wallet.balance || '0')}{' '}
-                                        <span className="text-xs text-muted-foreground">ADA</span>
-                                      </>
-                                    )}
-                                  </div>
-                                  <div className="text-xs flex items-center gap-1">
-                                    {!wallet.isLoadingBalance && (
-                                      <>
-                                        {wallet.isBalanceUnavailable
-                                          ? '—'
-                                          : formatSixDecimalAmount(wallet.usdcxBalance || '0')}{' '}
-                                        <span className="text-xs text-muted-foreground">
-                                          {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-2 w-32">
-                                  <div className="flex items-center gap-2">
-                                    {wallet.network === 'Mainnet' && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        aria-label="Swap tokens"
-                                        className="h-8 w-8"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedWalletForSwap(wallet);
-                                        }}
-                                      >
-                                        <ArrowLeftRight className="h-4 w-4" />
-                                      </Button>
-                                    )}
-                                    <Button
-                                      variant="muted"
-                                      className="h-8 btn-hover-lift"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedWalletForTopup(wallet);
-                                      }}
-                                    >
-                                      <PlusCircle className="h-3.5 w-3.5" />
-                                      Top Up
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-4">
-                  <Button
-                    className="flex items-center gap-2 btn-hover-lift"
-                    onClick={() => setAddWalletDialogOpen(true)}
+                    }
+                    footer={
+                      capabilities.canAdmin ? (
+                        <Button
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => setAddWalletDialogOpen(true)}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add wallet
+                        </Button>
+                      ) : undefined
+                    }
                   >
-                    <Plus className="h-4 w-4" />
-                    Add wallet
-                  </Button>
+                    {walletsSectionLoading ? (
+                      <OverviewListScroll className="overflow-auto">
+                        <WalletListSkeleton rows={OVERVIEW_LIST_VISIBLE_ROWS} />
+                      </OverviewListScroll>
+                    ) : walletsList.length > 0 ? (
+                      <DashboardWalletListSection
+                        key={selectedPaymentSourceId ?? 'no-source'}
+                        wallets={walletsList}
+                        network={network}
+                        canAdmin={capabilities.canAdmin}
+                        isRefreshingBalances={isRefreshingBalances}
+                        onWalletClick={setSelectedWalletForDetails}
+                        onSwap={setSelectedWalletForSwap}
+                        onTopUp={setSelectedWalletForTopup}
+                      />
+                    ) : (
+                      <div className="flex min-h-0 flex-1 flex-col justify-center px-4 py-8">
+                        <EmptyState
+                          title="No wallets yet"
+                          description="Add a wallet to fund agents."
+                        />
+                      </div>
+                    )}
+                  </DashboardPanel>
                 </div>
               </div>
-            </div>
+            )}
+
+            {activeDashboardTab === FINANCES_TAB && <FinancialReportSection />}
           </div>
         </AnimatedPage>
       </MainLayout>
@@ -567,9 +521,7 @@ export default function Overview() {
         open={isRegisterAgentDialogOpen}
         onClose={() => setRegisterAgentDialogOpen(false)}
         onSuccess={() => {
-          setTimeout(() => {
-            refetchAgents();
-          }, 2000);
+          refetchAgents();
         }}
       />
 
@@ -577,10 +529,14 @@ export default function Overview() {
         agent={selectedAgentForDetails}
         onClose={() => setSelectedAgentForDetails(null)}
         onSuccess={() => {
-          setTimeout(() => {
-            refetchAgents();
-          }, 2000);
+          refetchAgents();
         }}
+      />
+
+      <WalletDetailsDialog
+        isOpen={!!selectedWalletForDetails}
+        onClose={() => setSelectedWalletForDetails(null)}
+        wallet={selectedWalletForDetails}
       />
 
       <SwapDialog
@@ -595,16 +551,7 @@ export default function Overview() {
         isOpen={!!selectedWalletForTopup}
         onClose={() => setSelectedWalletForTopup(null)}
         walletAddress={selectedWalletForTopup?.walletAddress || ''}
-        onSuccess={() => {
-          toast.success('Top up successful');
-          refetchWallets();
-        }}
-      />
-
-      <WalletDetailsDialog
-        isOpen={!!selectedWalletForDetails}
-        onClose={() => setSelectedWalletForDetails(null)}
-        wallet={selectedWalletForDetails}
+        onSuccess={refetchWallets}
       />
 
       <MigrateAgentsDialog

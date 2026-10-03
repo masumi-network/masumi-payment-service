@@ -11,14 +11,15 @@ import { createPublicClient, createWalletClient, publicActions } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
 	assertRpcServesDeclaredChain,
-	assertSafeFacilitatorUrl,
+	assertSafeFacilitatorUrlResolved,
 	createChain,
 	getEip155ChainId,
 	getManagedWalletWithSecretOrThrow,
 	getX402NetworkOrThrow,
 	safeHttpTransport,
 	type PrivateKey,
-	type X402OwnerScope,
+	X402_UNRESTRICTED,
+	type X402OwnerScopeInput,
 } from './internal';
 import { RemoteHTTPFacilitatorClient } from './remote-facilitator';
 
@@ -28,7 +29,11 @@ import { RemoteHTTPFacilitatorClient } from './remote-facilitator';
 // ownerScope enforces tenant isolation: a scoped (non-admin) caller may only sign with a wallet
 // it created. The built publicClient is returned so callers can reuse it (e.g. an on-chain
 // balance pre-check) without re-running the chain-id assertion.
-export async function getClientForWallet(walletId: string, caip2Network: string, ownerScope: X402OwnerScope = null) {
+export async function getClientForWallet(
+	walletId: string,
+	caip2Network: string,
+	ownerScope: X402OwnerScopeInput = X402_UNRESTRICTED,
+) {
 	const [wallet, network] = await Promise.all([
 		getManagedWalletWithSecretOrThrow(walletId, X402EvmWalletType.Purchasing, ownerScope),
 		getX402NetworkOrThrow(caip2Network),
@@ -39,7 +44,7 @@ export async function getClientForWallet(walletId: string, caip2Network: string,
 	const privateKey = decrypt(wallet.Secret.encryptedPrivateKey) as PrivateKey;
 	const account = privateKeyToAccount(privateKey);
 	const chain = createChain(network.caip2Id, network.rpcUrl, network.displayName);
-	const publicClient = createPublicClient({ chain, transport: safeHttpTransport(network.rpcUrl) });
+	const publicClient = createPublicClient({ chain, transport: await safeHttpTransport(network.rpcUrl) });
 	await assertRpcServesDeclaredChain(publicClient, network.caip2Id);
 	const signer = toClientEvmSigner(account, publicClient);
 	const client = new x402Client();
@@ -85,7 +90,7 @@ export async function getFacilitatorForNetwork(
 	if (network.facilitatorUrl != null) {
 		// Persistence validation protects new writes; this use-time check also rejects unsafe
 		// legacy rows before decrypting or sending their stored Authorization header.
-		assertSafeFacilitatorUrl(network.facilitatorUrl);
+		await assertSafeFacilitatorUrlResolved(network.facilitatorUrl);
 		const authEnc = network.facilitatorAuthEnc;
 		const facilitator = new RemoteHTTPFacilitatorClient({
 			url: network.facilitatorUrl,
@@ -113,9 +118,11 @@ export async function getFacilitatorForNetwork(
 	const privateKey = decrypt(network.FacilitatorWallet.Secret.encryptedPrivateKey) as PrivateKey;
 	const account = privateKeyToAccount(privateKey);
 	const chain = createChain(network.caip2Id, network.rpcUrl, network.displayName);
-	const walletClient = createWalletClient({ account, chain, transport: safeHttpTransport(network.rpcUrl) }).extend(
-		publicActions,
-	);
+	const walletClient = createWalletClient({
+		account,
+		chain,
+		transport: await safeHttpTransport(network.rpcUrl),
+	}).extend(publicActions);
 	await assertRpcServesDeclaredChain(walletClient, network.caip2Id);
 	const facilitatorSigner = toFacilitatorEvmSigner(
 		Object.assign(walletClient, {

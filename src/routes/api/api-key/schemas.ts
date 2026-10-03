@@ -50,6 +50,18 @@ export const apiKeyOutputSchema = z
 				}),
 			)
 			.describe('List of hot wallets this API key is scoped to'),
+		x402WalletScopeEnabled: z
+			.boolean()
+			.describe('Whether managed EVM wallet scope filtering is enabled for this API key'),
+		X402WalletScopes: z
+			.array(
+				z.object({
+					evmWalletId: z.string().describe('ID of the managed EVM wallet in scope'),
+				}),
+			)
+			.describe(
+				'Managed EVM wallets this API key is scoped to. The key additionally always reaches wallets it created itself.',
+			),
 	})
 	.openapi('APIKey');
 
@@ -58,12 +70,19 @@ export const getAPIKeySchemaOutput = z.object({
 });
 
 export const addAPIKeySchemaInput = z.object({
+	// Optional, NOT defaulted. A default is applied whenever the field is absent, and
+	// combined with the admin guard in the route that made the documented admin create
+	// call impossible: POST /api-key {permission: 'Admin'} was filled in as
+	// usageLimited: true and then rejected with 400 'Admin API keys cannot have usage
+	// limits' for a flag the caller never sent. The route applies the non-admin default
+	// itself, so an omitted field still means "usage limited" for everyone else.
 	usageLimited: z
 		.string()
-		.default('true')
-		.transform((s) => (s.toLowerCase() == 'true' ? true : false))
+		.optional()
+		.transform((s) => (s == null ? undefined : s.toLowerCase() == 'true'))
 		.describe(
-			'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend',
+			'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend. ' +
+				'Omitted defaults to true for non-admin keys; admin keys are never usage limited.',
 		),
 	UsageCredits: z
 		.array(
@@ -72,7 +91,10 @@ export const addAPIKeySchemaInput = z.object({
 					.string()
 					.max(150)
 					.describe(
-						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); ' +
+							'"lovelace" is accepted and stored as the empty string. ' +
+							'For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), ' +
+							'e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.',
 					),
 				amount: z
 					.string()
@@ -98,29 +120,54 @@ export const addAPIKeySchemaInput = z.object({
 				),
 		)
 		.max(50)
-		.default([])
-		.describe('Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use'),
+		.optional()
+		.describe(
+			'Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use. Omit to grant every ' +
+				'configured EVM chain, mirroring NetworkLimit defaulting to all Cardano networks; pass an empty ' +
+				'array to grant none.',
+		),
 	/** @deprecated Use canRead, canPay, canAdmin flags instead. Will be removed in a future version. */
+
 	permission: z
 		.enum(['Read', 'ReadAndPay', 'Admin'])
-		.default('Read')
+		.optional()
 		.describe(
-			'[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.',
+			'[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected.',
 		),
 	// Flag-based permissions (new system - preferred)
 	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
 	canPay: z.boolean().optional().describe('Whether this API key can access payment/purchase endpoints'),
 	canAdmin: z.boolean().optional().describe('Whether this API key has admin access'),
+	// Boolean, or the exact strings 'true'/'false' for backward compatibility with
+	// clients that sent the old string form. Anything else — 'yes', '1', 'True ' —
+	// is a 400. The old bare-string truthiness transform silently parsed all of
+	// those to FALSE, creating the key UNSCOPED (unrestricted) while the caller
+	// believed it was scoped; and it rejected the JSON boolean that the update
+	// endpoint accepts for the same field.
 	walletScopeEnabled: z
-		.string()
-		.default('false')
-		.transform((s) => s.toLowerCase() == 'true')
+		.union([z.boolean(), z.enum(['true', 'false'])])
+		.default(false)
+		.transform((value) => value === true || value === 'true')
 		.describe('Whether to enable wallet scope filtering for this API key'),
 	WalletScopeHotWalletIds: z
 		.array(z.string().max(150))
 		.max(100)
 		.default([])
 		.describe('List of hot wallet IDs to scope this API key to'),
+	x402WalletScopeEnabled: z
+		.union([z.boolean(), z.enum(['true', 'false'])])
+		.default(false)
+		.transform((value) => value === true || value === 'true')
+		.describe(
+			'Whether to enable managed EVM wallet scope filtering. False leaves the key unrestricted, matching walletScopeEnabled.',
+		),
+	X402WalletScopeEvmWalletIds: z
+		.array(z.string().max(150))
+		.max(100)
+		.default([])
+		.describe(
+			'Managed EVM wallet IDs to scope this API key to. Only applied when x402WalletScopeEnabled is true; the key also always reaches wallets it created itself.',
+		),
 });
 
 export const addAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -135,7 +182,10 @@ export const updateAPIKeySchemaInput = z.object({
 					.string()
 					.max(150)
 					.describe(
-						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); ' +
+							'"lovelace" is accepted and stored as the empty string. ' +
+							'For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), ' +
+							'e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.',
 					),
 				amount: z
 					.string()
@@ -147,8 +197,17 @@ export const updateAPIKeySchemaInput = z.object({
 		.max(25)
 		.optional()
 		.describe('The amount of credits to add or remove from the API key. Only relevant if usageLimited is true. '),
-	usageLimited: z.boolean().default(true).optional().describe('Whether the API key is usage limited'),
-	status: z.nativeEnum(ApiKeyStatus).default(ApiKeyStatus.Active).optional().describe('The status of the API key'),
+	// No `.default(...)` on a PATCH field. Zod applies a default when the key is
+	// ABSENT, so `.default(true).optional()` turned every partial update that did
+	// not mention usageLimited into "cap this key", and the update dialog never
+	// sends the field. A key with no RemainingUsageCredits rows then failed every
+	// purchase with `Credit unit not found`, which surfaces as a bare 400
+	// 'Insufficient funds'. The same shape on `status` silently re-activated a
+	// Revoked key on any unrelated edit, and the defaulted `true` made the admin
+	// guard below reject the plain promotion call PATCH {id, canAdmin: true}.
+	// Omitted must mean unchanged, like every other field on this schema.
+	usageLimited: z.boolean().optional().describe('Whether the API key is usage limited. Omit to leave it unchanged.'),
+	status: z.nativeEnum(ApiKeyStatus).optional().describe('The status of the API key. Omit to leave it unchanged.'),
 	NetworkLimit: z
 		.array(z.nativeEnum(Network))
 		.max(3)
@@ -168,6 +227,15 @@ export const updateAPIKeySchemaInput = z.object({
 		.optional()
 		.describe('Replaces the EVM (CAIP-2) half of the access list. Omit to leave EVM access unchanged.'),
 	walletScopeEnabled: z.boolean().optional().describe('Whether to enable wallet scope filtering for this API key'),
+	x402WalletScopeEnabled: z
+		.boolean()
+		.optional()
+		.describe('Whether to enable managed EVM wallet scope filtering for this API key'),
+	X402WalletScopeEvmWalletIds: z
+		.array(z.string().max(150))
+		.max(100)
+		.optional()
+		.describe('Replaces the managed EVM wallets this API key is scoped to'),
 	WalletScopeHotWalletIds: z
 		.array(z.string().max(150))
 		.max(100)

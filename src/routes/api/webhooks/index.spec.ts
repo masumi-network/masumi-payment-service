@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network, WebhookFormat } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network, Prisma, WebhookFormat } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -96,6 +96,40 @@ describe('webhook endpoints', () => {
 		walletScopeEnabled: false,
 		WalletScopes: [],
 	});
+
+	const asStoredWebhook = (overrides: { format: WebhookFormat; authToken: string | null }) => ({
+		id: 'webhook-6',
+		url: 'enc:https://example.com/old',
+		events: ['PAYMENT_ON_ERROR'],
+		name: 'Webhook',
+		isActive: true,
+		createdAt: new Date('2026-04-08T12:00:00.000Z'),
+		updatedAt: new Date('2026-04-08T12:05:00.000Z'),
+		paymentSourceId: 'payment-source-1',
+		createdByApiKeyId: 'api-key-1',
+		PaymentSource: {
+			id: 'payment-source-1',
+			network: Network.Preprod,
+			deletedAt: null,
+		},
+		...overrides,
+	});
+
+	const patchExtendedWithoutToken = () =>
+		testEndpoint({
+			endpoint: patchWebhookPatch,
+			requestProps: {
+				method: 'PATCH',
+				headers: { token: 'valid' },
+				body: {
+					webhookId: 'webhook-6',
+					url: 'https://example.com/new',
+					format: WebhookFormat.EXTENDED,
+					Events: ['PAYMENT_ON_ERROR'],
+					name: 'Webhook renamed',
+				},
+			},
+		});
 
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -396,23 +430,100 @@ describe('webhook endpoints', () => {
 		});
 	});
 
-	it('rejects patching without authToken when format is EXTENDED', async () => {
+	it('keeps the stored authToken when an EXTENDED patch omits it', async () => {
+		mockFindWebhookById.mockResolvedValue(
+			asStoredWebhook({ format: WebhookFormat.EXTENDED, authToken: 'enc:old-secret' }),
+		);
+		mockUpdateWebhook.mockResolvedValue({
+			...asStoredWebhook({ format: WebhookFormat.EXTENDED, authToken: 'enc:old-secret' }),
+			name: 'Webhook renamed',
+		});
+
+		const { responseMock } = await patchExtendedWithoutToken();
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockUpdateWebhook).toHaveBeenCalledWith({
+			where: { id: 'webhook-6', format: WebhookFormat.EXTENDED, authToken: { not: null } },
+			data: {
+				url: 'enc:https://example.com/new',
+				urlHash: 'hash:https://example.com/new',
+				format: WebhookFormat.EXTENDED,
+				events: ['PAYMENT_ON_ERROR'],
+				name: 'Webhook renamed',
+			},
+		});
+	});
+
+	it('rejects an EXTENDED patch without authToken when switching from a provider format', async () => {
+		mockFindWebhookById.mockResolvedValue(asStoredWebhook({ format: WebhookFormat.SLACK, authToken: null }));
+
+		const { responseMock } = await patchExtendedWithoutToken();
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockUpdateWebhook).not.toHaveBeenCalled();
+	});
+
+	it('rejects an EXTENDED patch without authToken when no token is stored', async () => {
+		mockFindWebhookById.mockResolvedValue(asStoredWebhook({ format: WebhookFormat.EXTENDED, authToken: null }));
+
+		const { responseMock } = await patchExtendedWithoutToken();
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockUpdateWebhook).not.toHaveBeenCalled();
+	});
+
+	it('rejects a provided authToken shorter than 10 characters on patch', async () => {
+		mockFindWebhookById.mockResolvedValue(
+			asStoredWebhook({ format: WebhookFormat.EXTENDED, authToken: 'enc:old-secret' }),
+		);
+
 		const { responseMock } = await testEndpoint({
 			endpoint: patchWebhookPatch,
 			requestProps: {
 				method: 'PATCH',
 				headers: { token: 'valid' },
 				body: {
-					webhookId: 'webhook-3',
+					webhookId: 'webhook-6',
 					url: 'https://example.com/new',
+					authToken: 'short',
 					format: WebhookFormat.EXTENDED,
 					Events: ['PAYMENT_ON_ERROR'],
-					name: 'Webhook updated',
+					name: 'Webhook renamed',
 				},
 			},
 		});
 
 		expect(responseMock.statusCode).toBe(400);
+		expect(mockUpdateWebhook).not.toHaveBeenCalled();
+	});
+
+	it('returns 409 when the stored token disappears before the token-preserving update', async () => {
+		mockFindWebhookById.mockResolvedValue(
+			asStoredWebhook({ format: WebhookFormat.EXTENDED, authToken: 'enc:old-secret' }),
+		);
+		mockUpdateWebhook.mockRejectedValue(
+			new Prisma.PrismaClientKnownRequestError('No record was found for an update.', {
+				code: 'P2025',
+				clientVersion: 'test',
+			}),
+		);
+
+		const { responseMock } = await patchExtendedWithoutToken();
+
+		expect(responseMock.statusCode).toBe(409);
+	});
+
+	it('checks edit permission before revealing whether a token is stored', async () => {
+		mockFindApiKey.mockResolvedValue({
+			...asApiKey(),
+			id: 'api-key-2',
+			canAdmin: false,
+		});
+		mockFindWebhookById.mockResolvedValue(asStoredWebhook({ format: WebhookFormat.SLACK, authToken: null }));
+
+		const { responseMock } = await patchExtendedWithoutToken();
+
+		expect(responseMock.statusCode).toBe(403);
 		expect(mockUpdateWebhook).not.toHaveBeenCalled();
 	});
 

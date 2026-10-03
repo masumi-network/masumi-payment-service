@@ -7,12 +7,34 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
 export default function X402SetupPage() {
-  const { apiKey, network } = useAppContext();
+  const { apiKey, network, setNetwork, setActiveRail, setIsSetupMode, setSetupWizardStep } =
+    useAppContext();
   const router = useRouter();
 
   useEffect(() => {
+    setActiveRail('x402');
+    setIsSetupMode(true);
+    return () => {
+      setIsSetupMode(false);
+      setSetupWizardStep(0);
+    };
+  }, [setActiveRail, setIsSetupMode, setSetupWizardStep]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const requestedNetwork = router.query.network;
+    if (
+      typeof requestedNetwork === 'string' &&
+      (requestedNetwork === 'Preprod' || requestedNetwork === 'Mainnet') &&
+      requestedNetwork !== network
+    ) {
+      setNetwork(requestedNetwork);
+    }
+  }, [network, router.isReady, router.query.network, setNetwork]);
+
+  useEffect(() => {
     if (!apiKey) {
-      router.push('/');
+      router.replace('/');
     }
   }, [apiKey, router]);
 
@@ -27,7 +49,10 @@ export default function X402SetupPage() {
       </Head>
       <MainLayout>
         <AnimatedPage>
-          <X402SetupWelcome networkType={network} />
+          <X402SetupWelcome
+            networkType={network}
+            isAddingPaymentSource={router.query.action === 'add_payment_source'}
+          />
         </AnimatedPage>
       </MainLayout>
     </>

@@ -175,7 +175,12 @@ export const walletSchemaOutput = z
 			.nativeEnum(X402EvmWalletType)
 			.describe('Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators'),
 		note: z.string().nullable().describe('Optional human-readable label for the wallet'),
-		createdById: z.string().nullable().describe('Id of the API key that created this wallet'),
+		createdById: z
+			.string()
+			.nullable()
+			.describe(
+				'Id of the API key that created this wallet. Only returned to admins and for the caller’s own wallets; null otherwise, so a read key cannot enumerate other tenants’ key ids.',
+			),
 		createdAt: z.date(),
 		updatedAt: z.date(),
 	})
@@ -476,38 +481,6 @@ export const listNetworksSchemaOutput = z.object({
 
 export const listAvailableNetworksSchemaOutput = z.object({
 	Networks: z.array(x402AvailableNetworkSchema),
-});
-
-export const budgetSchema = z
-	.object({
-		id: z.string(),
-		apiKeyId: z.string().describe('API key the budget is granted to'),
-		evmWalletId: z.string().describe('Managed EVM wallet the budget draws from'),
-		evmWalletAddress: z.string().describe('Resolved address of the managed EVM wallet the budget draws from'),
-		caip2Network: caip2Eip155Schema,
-		asset: evmAddressSchema.describe('Token contract the budget is denominated in'),
-		remainingAmount: z.string().describe('Remaining spendable amount, in token base units'),
-		spentAmount: z.string().describe('Amount already spent, in token base units'),
-		createdById: z.string().nullable().describe('Id of the API key that created this budget'),
-		createdAt: z.date(),
-		updatedAt: z.date(),
-	})
-	.openapi('X402Budget');
-
-export const setBudgetSchemaInput = z.object({
-	apiKeyId: z.string(),
-	evmWalletId: z.string(),
-	caip2Network: caip2Eip155Schema,
-	asset: evmAddressSchema,
-	remainingAmount: uintStringSchema,
-});
-
-export const listBudgetSchemaInput = z.object({
-	apiKeyId: z.string().optional().describe('Filter budgets to a single API key'),
-});
-
-export const listBudgetSchemaOutput = z.object({
-	Budgets: z.array(budgetSchema),
 });
 
 export const x402SettlementSummarySchema = z.object({

@@ -4,6 +4,7 @@ import { cn, getExplorerUrl } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { formatTransactionErrorType } from '@/lib/display-labels';
 import {
   formatOnChainState,
   formatRequestedAction,
@@ -137,8 +138,9 @@ export function TransactionHistorySection({
                   )}
                   {action.errorType && (
                     <p className="text-xs text-destructive break-all">
-                      <span className="font-medium">Error:</span> {action.errorType}
-                      {action.errorNote ? ` — ${action.errorNote}` : ''}
+                      <span className="font-medium">Error:</span>{' '}
+                      {formatTransactionErrorType(action.errorType)}
+                      {action.errorNote ? `: ${action.errorNote}` : ''}
                     </p>
                   )}
                 </li>

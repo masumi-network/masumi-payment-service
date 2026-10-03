@@ -1,6 +1,7 @@
 import { HotWalletType, Network, TransactionStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { CARDANO_NATIVE_ASSET_UNIT_PATTERN } from '@/utils/cardano/asset-unit';
+import { searchQuerySchema } from '@/routes/api/shared/transaction-query-params';
 import { lowBalanceRuleSchema, lowBalanceSummarySchema } from './low-balance.schemas';
 
 export const walletListItemSchema = z
@@ -34,6 +35,9 @@ export const getWalletListSchemaInput = z.object({
 		.describe('Filter wallets by type (Selling, Purchasing or Funding)'),
 	walletVkey: z.string().max(250).optional().describe('Filter to the single wallet with this payment key hash'),
 	walletAddress: z.string().max(250).optional().describe('Filter to wallets with this Cardano address'),
+	searchQuery: searchQuerySchema.describe(
+		'Free-text search over wallet address, collection address, payment key hash, note, and wallet type. Matching is case-insensitive.',
+	),
 });
 
 export const getWalletListSchemaOutput = z.object({

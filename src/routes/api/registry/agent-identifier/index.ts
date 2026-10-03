@@ -8,31 +8,16 @@ import { logger } from '@masumi/payment-core/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { metadataSchema, registryMetadataApiUrl, resolveAgentPricingFromMetadata } from '@/routes/api/registry/wallet';
-import { metadataToString } from '@/utils/converter/metadata-string-convert';
-import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import {
-	isCardanoAddressForNetwork,
-	parseSupportedPaymentSourcesFromMetadata,
-	SupportedPaymentSourceChain,
-	supportedPaymentSourcesSchema,
-	type SupportedPaymentSource,
-} from '@/types/payment-source';
-import { parseVerificationsFromMetadata, verificationsSchema } from '@/types/verification';
-import type { Network as NetworkType } from '@/generated/prisma/client';
-
-function filterValidSupportedPaymentSources(
-	sources: SupportedPaymentSource[] | null,
-	expectedNetwork: NetworkType,
-): SupportedPaymentSource[] | null {
-	if (sources == null) return null;
-	return sources.filter((source) => {
-		if (source.chain === SupportedPaymentSourceChain.EVM) {
-			return true;
-		}
-		return source.network === expectedNetwork && isCardanoAddressForNetwork(source.address, expectedNetwork);
-	});
-}
+	isRegistryMetadataAllowedForPaymentSource,
+	mapParsedRegistryMetadataToApi,
+	metadataSchema,
+	resolveAgentPricingFromMetadata,
+} from '@/routes/api/registry/metadata-schema';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { verificationsSchema } from '@/types/verification';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 
 export const queryAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full agent identifier (policy ID + asset name in hex)'),
@@ -42,7 +27,15 @@ export const queryAgentByIdentifierSchemaInput = z.object({
 const agentMetadataObjectSchema = z.object({
 	name: z.string().max(250).describe('Name of the agent'),
 	description: z.string().max(250).nullable().optional().describe('Description of the agent. Null if not provided'),
-	apiBaseUrl: z.string().max(250).describe('Base URL of the agent API for interactions'),
+	apiBaseUrl: z
+		.string()
+		.max(250)
+		.describe('Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL'),
+	type: z.enum(['Standard', 'OpenApi', 'X402', 'A2A']).optional().describe('Registry entry type when encoded on-chain'),
+	openApiSpecUrl: z.string().max(250).optional().describe('OpenAPI spec URL for OpenApi registry entries'),
+	x402ResourcesUrl: z.string().max(250).optional().describe('x402 manifest URL for X402 registry entries'),
+	a2aAgentCardUrl: z.string().max(250).optional().describe('Agent Card URL for A2A registry entries'),
+	a2aProtocolVersions: z.array(z.string()).optional().describe('Declared A2A protocol versions'),
 	ExampleOutputs: z
 		.array(
 			z.object({
@@ -148,14 +141,6 @@ const agentMetadataObjectSchema = z.object({
 	verifications: verificationsSchema
 		.nullable()
 		.describe('KERI/Veridian verification claims advertised by this registry entry. Null when none.'),
-	agentCardUrl: z
-		.string()
-		.max(250)
-		.nullable()
-		.describe('URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type'),
-	a2aProtocolVersions: z
-		.array(z.string())
-		.describe('A2A protocol versions this agent declares support for. Empty for non-A2A agents'),
 });
 
 export const queryAgentByIdentifierSchemaOutput = z
@@ -167,7 +152,14 @@ export const queryAgentByIdentifierSchemaOutput = z
 	})
 	.openapi('AgentIdentifierMetadata');
 
-export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build({
+const agentIdentifierEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 60,
+		windowMs: 60_000,
+	}),
+);
+
+export const queryAgentByIdentifierGet = agentIdentifierEndpointFactory.build({
 	method: 'get',
 	input: queryAgentByIdentifierSchemaInput,
 	output: queryAgentByIdentifierSchemaOutput,
@@ -270,9 +262,20 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 			throw createHttpError(422, 'Agent metadata is invalid or malformed');
 		}
 
+		if (!isRegistryMetadataAllowedForPaymentSource(parsedMetadata.data, paymentSource.paymentSourceType)) {
+			throw createHttpError(422, 'Agent metadata is invalid or malformed');
+		}
+
 		const resolvedAgentPricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
 		if (parsedMetadata.data.metadata_version === 1 && resolvedAgentPricing == null) {
 			throw createHttpError(422, 'Agent metadata does not advertise any pricing');
+		}
+
+		const metadataApi = mapParsedRegistryMetadataToApi(parsedMetadata.data, {
+			filterPaymentSourcesForNetwork: input.network,
+		});
+		if (metadataApi == null) {
+			throw createHttpError(422, 'Agent metadata is invalid or malformed');
 		}
 
 		// Step 9: Transform and return
@@ -280,60 +283,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 			policyId: policyId,
 			assetName: extractAssetName(input.agentIdentifier),
 			agentIdentifier: input.agentIdentifier,
-			Metadata: {
-				name: metadataToString(parsedMetadata.data.name)!,
-				description: metadataToString(parsedMetadata.data.description),
-				apiBaseUrl: registryMetadataApiUrl(parsedMetadata.data)!,
-				ExampleOutputs:
-					parsedMetadata.data.example_output?.map((exampleOutput) => ({
-						name: metadataToString(exampleOutput.name)!,
-						mimeType: metadataToString(exampleOutput.mime_type)!,
-						url: metadataToString(exampleOutput.url)!,
-					})) ?? [],
-				Capability: parsedMetadata.data.capability
-					? {
-							name: metadataToString(parsedMetadata.data.capability.name)!,
-							version: metadataToString(parsedMetadata.data.capability.version)!,
-						}
-					: undefined,
-				Author: {
-					name: metadataToString(parsedMetadata.data.author.name)!,
-					contactEmail: metadataToString(parsedMetadata.data.author.contact_email),
-					contactOther: metadataToString(parsedMetadata.data.author.contact_other),
-					organization: metadataToString(parsedMetadata.data.author.organization),
-				},
-				Legal: parsedMetadata.data.legal
-					? {
-							privacyPolicy: metadataToString(parsedMetadata.data.legal.privacy_policy),
-							terms: metadataToString(parsedMetadata.data.legal.terms),
-							other: metadataToString(parsedMetadata.data.legal.other),
-						}
-					: undefined,
-				Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
-				AgentPricing:
-					parsedMetadata.data.metadata_version >= 2 || resolvedAgentPricing == null
-						? null
-						: resolvedAgentPricing.pricingType == PricingType.Fixed
-							? {
-									pricingType: resolvedAgentPricing.pricingType,
-									Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
-										amount: price.amount.toString(),
-										unit: metadataToString(price.unit)!,
-									})),
-								}
-							: {
-									pricingType: resolvedAgentPricing.pricingType,
-								},
-				image: metadataToString(parsedMetadata.data.image)!,
-				metadataVersion: parsedMetadata.data.metadata_version,
-				supportedPaymentSources: filterValidSupportedPaymentSources(
-					parseSupportedPaymentSourcesFromMetadata(parsedMetadata.data.supported_payment_sources),
-					input.network,
-				),
-				verifications: parseVerificationsFromMetadata(parsedMetadata.data.verifications),
-				agentCardUrl: metadataToString(parsedMetadata.data.agent_card_url) ?? null,
-				a2aProtocolVersions: parsedMetadata.data.a2a_protocol_versions ?? [],
-			},
+			Metadata: metadataApi,
 		};
 	},
 });

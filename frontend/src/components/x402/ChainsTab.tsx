@@ -1,120 +1,21 @@
-import { useEffect, useState } from 'react';
-import { useForm, Controller, useWatch } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { toast } from 'react-toastify';
+import { useState } from 'react';
 import { Plus, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellWideClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { isTestnetEnv } from '@/lib/x402-rail';
 import { shortenAddress } from '@/lib/utils';
-import { useApiMutation } from '@/lib/hooks/useApiMutation';
-import { postX402Networks, X402Network, PostX402NetworksData } from '@/lib/api/generated';
+import { X402Network } from '@/lib/api/generated';
 
-const NO_FACILITATOR = '__none__';
-
-const chainSchema = z
-  .object({
-    caip2Id: z
-      .string()
-      .regex(/^eip155:\d+$/, 'Must be a CAIP-2 EVM chain id, for example eip155:8453'),
-    displayName: z.string().min(1, 'Required').max(120),
-    rpcUrl: z
-      .string()
-      .url('Must be a valid URL')
-      .regex(/^https?:\/\//, 'RPC URL must use HTTP or HTTPS'),
-    isTestnet: z.boolean(),
-    isEnabled: z.boolean(),
-    defaultAsset: z
-      .string()
-      .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be an EVM token address')
-      .or(z.literal(''))
-      .optional(),
-    defaultAssetDecimals: z.string().max(3).optional(),
-    // A chain settles either through an owned Selling wallet (self-hosted) or a remote
-    // facilitator URL — exactly one, enforced by the backend and by the mode toggle here.
-    facilitatorMode: z.enum(['wallet', 'remote']),
-    facilitatorWalletId: z.string().optional(),
-    facilitatorUrl: z
-      .string()
-      .url('Must be a valid URL')
-      .regex(/^https:\/\//, 'Remote facilitator URL must use HTTPS')
-      .or(z.literal(''))
-      .optional(),
-    facilitatorAuth: z.string().optional(),
-    clearFacilitatorAuth: z.boolean(),
-  })
-  // An enabled chain becomes a live payment source the moment it is saved, so it must be
-  // fully configured: a facilitator is required to settle on it. Leave the chain disabled
-  // to save an incomplete draft instead of exposing a half-configured rail.
-  .superRefine((data, ctx) => {
-    const decimals = Number(data.defaultAssetDecimals);
-    if (data.defaultAsset && !data.defaultAssetDecimals) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Decimals are required for the default asset',
-        path: ['defaultAssetDecimals'],
-      });
-    } else if (
-      data.defaultAssetDecimals &&
-      (!Number.isInteger(decimals) || decimals < 0 || decimals > 255)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Must be a whole number between 0 and 255',
-        path: ['defaultAssetDecimals'],
-      });
-    } else if (!data.defaultAsset && data.defaultAssetDecimals) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Enter a default asset before its decimals',
-        path: ['defaultAssetDecimals'],
-      });
-    }
-
-    if (!data.isEnabled) return;
-    if (data.facilitatorMode === 'wallet') {
-      if (!data.facilitatorWalletId || data.facilitatorWalletId === NO_FACILITATOR) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Select a Selling wallet or switch to a remote facilitator',
-          path: ['facilitatorWalletId'],
-        });
-      }
-    } else if (!data.facilitatorUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'A facilitator URL is required to enable a chain',
-        path: ['facilitatorUrl'],
-      });
-    }
-  });
-
-type ChainFormValues = z.infer<typeof chainSchema>;
+import { ChainDialog } from '@/components/x402/ChainForm';
 
 export function ChainsTab() {
   const { networks, isLoading, isRefetching, refetch } = useX402Networks();
@@ -147,9 +48,9 @@ export function ChainsTab() {
         </div>
       </div>
 
-      <div className="border rounded-lg overflow-x-auto">
+      <HorizontalScrollArea className="border rounded-lg">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Chain
@@ -166,7 +67,7 @@ export function ChainsTab() {
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Facilitator
               </th>
-              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className={tableActionsHeadWideClass}>
                 Actions
               </th>
             </tr>
@@ -191,7 +92,7 @@ export function ChainsTab() {
               </tr>
             ) : (
               networks.map((network) => (
-                <tr key={network.id} className="border-b last:border-0">
+                <tr key={network.id} className="group border-b last:border-0 hover:bg-row-hover">
                   <td className="p-4">
                     <div className="font-medium">{network.displayName}</div>
                     <div className="text-xs text-muted-foreground font-mono">{network.caip2Id}</div>
@@ -249,7 +150,7 @@ export function ChainsTab() {
                       <Badge variant="warning">Not set</Badge>
                     )}
                   </td>
-                  <td className="p-4 text-right">
+                  <td className={tableActionsCellWideClass}>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -264,7 +165,7 @@ export function ChainsTab() {
             )}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
 
       <ChainDialog
         key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
@@ -285,353 +186,13 @@ export function ChainsTab() {
 }
 
 function FacilitatorLabel({ address, walletId }: { address: string | null; walletId: string }) {
-  // Address is denormalized onto the network response, so labelling no longer
-  // requires loading the full managed-wallet set.
-  return <span className="font-mono">{address ? shortenAddress(address, 6) : walletId}</span>;
-}
-
-export function ChainDialog({
-  open,
-  editing,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  editing: X402Network | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const { apiClient, network } = useAppContext();
-  // Only load the wallet set while the form is open (it feeds the picker). A facilitator
-  // settles inbound payments and must be bound to THIS chain (the backend rejects any other
-  // binding), so only this chain's Selling wallets are selectable. A chain being created has
-  // no id yet — and can have no bound wallets — so the picker stays empty until it is saved.
-  const { wallets } = useX402Wallets(open && !!editing, 'Selling', editing?.id);
-  const saveChain = useApiMutation({
-    mutationFn: (body: NonNullable<PostX402NetworksData['body']>) =>
-      postX402Networks({ client: apiClient, body }),
-    errorMessage: 'Failed to save chain',
-  });
-  const isSaving = saveChain.isPending;
-
-  const {
-    register,
-    handleSubmit,
-    control,
-    setValue,
-    formState: { errors },
-  } = useForm<ChainFormValues>({
-    resolver: zodResolver(chainSchema),
-    defaultValues: {
-      caip2Id: editing?.caip2Id ?? '',
-      displayName: editing?.displayName ?? '',
-      rpcUrl: editing?.rpcUrl ?? '',
-      // A new chain should land in the environment it is created from (testnet chains
-      // pair with Preprod), otherwise it is invisible in the active env after saving.
-      isTestnet: editing?.isTestnet ?? isTestnetEnv(network),
-      // A new self-hosted chain cannot have a bound facilitator wallet until the network row
-      // exists. Save it disabled first; remote-facilitator users may enable it in this form.
-      isEnabled: editing?.isEnabled ?? false,
-      defaultAsset: editing?.defaultAsset ?? '',
-      defaultAssetDecimals:
-        editing?.defaultAssetDecimals != null ? String(editing.defaultAssetDecimals) : '',
-      // Existing remote-facilitator chains open in remote mode; everything else defaults to
-      // the owned-wallet mode. facilitatorAuth is write-only, so it is never prefilled.
-      facilitatorMode: editing?.facilitatorUrl ? 'remote' : 'wallet',
-      facilitatorWalletId: editing?.facilitatorWalletId ?? NO_FACILITATOR,
-      facilitatorUrl: editing?.facilitatorUrl ?? '',
-      facilitatorAuth: '',
-      clearFacilitatorAuth: false,
-    },
-  });
-
-  const facilitatorMode = useWatch({ control, name: 'facilitatorMode' });
-  const clearFacilitatorAuth = useWatch({ control, name: 'clearFacilitatorAuth' });
-  const defaultAsset = useWatch({ control, name: 'defaultAsset' });
-  const hasExistingRemoteFacilitator = !!editing?.facilitatorUrl;
-
-  // The decimals input is disabled while no default asset is set; clear its
-  // RHF state too when the asset is removed, otherwise stale decimals behind
-  // the disabled input make superRefine block submit on a field the user
-  // can't edit.
-  useEffect(() => {
-    if (!defaultAsset) {
-      setValue('defaultAssetDecimals', '');
-    }
-  }, [defaultAsset, setValue]);
-
-  const onSubmit = async (data: ChainFormValues) => {
-    // Send exactly one facilitator mode; null the other so the backend's exactly-one rule is met.
-    const isRemote = data.facilitatorMode === 'remote';
-    const response = await saveChain
-      .mutateAsync({
-        caip2Id: data.caip2Id,
-        displayName: data.displayName,
-        rpcUrl: data.rpcUrl,
-        isTestnet: data.isTestnet,
-        isEnabled: data.isEnabled,
-        defaultAsset: data.defaultAsset ? data.defaultAsset : null,
-        defaultAssetDecimals: data.defaultAsset ? Number(data.defaultAssetDecimals) : null,
-        facilitatorWalletId:
-          !isRemote && data.facilitatorWalletId && data.facilitatorWalletId !== NO_FACILITATOR
-            ? data.facilitatorWalletId
-            : null,
-        facilitatorUrl: isRemote && data.facilitatorUrl ? data.facilitatorUrl : null,
-        // Auth is write-only and never prefilled. Blank preserves it for same-origin edits,
-        // explicit clear sends null, and a retyped value sets/rotates it for the submitted URL.
-        facilitatorAuth: !isRemote
-          ? undefined
-          : data.clearFacilitatorAuth
-            ? null
-            : data.facilitatorAuth || undefined,
-      })
-      .catch(() => null);
-    if (!response) return;
-    toast.success(editing ? 'Chain updated' : 'Chain added');
-    onSaved();
-  };
-
+  const { wallets } = useX402Wallets();
+  if (address) return <span className="font-mono">{shortenAddress(address, 6)}</span>;
+  const wallet = wallets.find((w) => w.id === walletId);
+  const label = wallet?.note || (wallet?.address ? shortenAddress(wallet.address, 6) : null);
   return (
-    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{editing ? 'Edit chain' : 'Add chain'}</DialogTitle>
-          <DialogDescription>
-            Configure an EVM chain for the x402 payment rail. The CAIP-2 id is the unique key.
-          </DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="chain-caip2Id" className="text-sm font-medium">
-              CAIP-2 chain id
-            </label>
-            <Input
-              id="chain-caip2Id"
-              placeholder="eip155:8453"
-              className="font-mono"
-              readOnly={!!editing}
-              {...register('caip2Id')}
-            />
-            {errors.caip2Id && <p className="text-xs text-destructive">{errors.caip2Id.message}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="chain-displayName" className="text-sm font-medium">
-              Display name
-            </label>
-            <Input id="chain-displayName" placeholder="Base" {...register('displayName')} />
-            {errors.displayName && (
-              <p className="text-xs text-destructive">{errors.displayName.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="chain-rpcUrl" className="text-sm font-medium">
-              RPC URL
-            </label>
-            <Input
-              id="chain-rpcUrl"
-              placeholder="https://mainnet.base.org"
-              {...register('rpcUrl')}
-            />
-            {errors.rpcUrl && <p className="text-xs text-destructive">{errors.rpcUrl.message}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="chain-defaultAsset" className="text-sm font-medium">
-              Default asset (optional)
-            </label>
-            <Input
-              id="chain-defaultAsset"
-              placeholder="0x… token contract"
-              className="font-mono"
-              {...register('defaultAsset')}
-            />
-            {errors.defaultAsset && (
-              <p className="text-xs text-destructive">{errors.defaultAsset.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="chain-defaultAssetDecimals" className="text-sm font-medium">
-              Default asset decimals
-            </label>
-            <Input
-              id="chain-defaultAssetDecimals"
-              type="number"
-              inputMode="numeric"
-              min="0"
-              max="255"
-              placeholder="6"
-              disabled={!defaultAsset}
-              {...register('defaultAssetDecimals')}
-            />
-            {errors.defaultAssetDecimals && (
-              <p className="text-xs text-destructive">{errors.defaultAssetDecimals.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Facilitator</label>
-            <Controller
-              control={control}
-              name="facilitatorMode"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger aria-label="Facilitator mode">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="wallet">Owned Selling wallet (self-hosted)</SelectItem>
-                      <SelectItem value="remote">Remote facilitator URL</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-
-            {facilitatorMode === 'wallet' ? (
-              <>
-                <Controller
-                  control={control}
-                  name="facilitatorWalletId"
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Facilitator wallet">
-                        <SelectValue placeholder="Select a managed wallet" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value={NO_FACILITATOR}>None</SelectItem>
-                          {wallets.map((wallet) => (
-                            <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
-                              {shortenAddress(wallet.address, 8)}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {errors.facilitatorWalletId ? (
-                  <p className="text-xs text-destructive">{errors.facilitatorWalletId.message}</p>
-                ) : editing ? (
-                  <p className="text-xs text-muted-foreground">
-                    An owned Selling wallet bound to this chain signs settlements locally and pays
-                    gas. Required to enable the chain.
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Save the chain first, then create a Selling wallet bound to it and assign it
-                    here as the facilitator.
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <Input
-                  placeholder="https://facilitator.example"
-                  aria-label="Facilitator URL"
-                  {...register('facilitatorUrl')}
-                />
-                {errors.facilitatorUrl && (
-                  <p className="text-xs text-destructive">{errors.facilitatorUrl.message}</p>
-                )}
-                <Input
-                  type="password"
-                  placeholder={
-                    hasExistingRemoteFacilitator
-                      ? 'Authorization header value (blank keeps it on the same origin)'
-                      : 'Authorization header value (optional)'
-                  }
-                  aria-label="Facilitator auth"
-                  autoComplete="new-password"
-                  spellCheck={false}
-                  disabled={clearFacilitatorAuth}
-                  {...register('facilitatorAuth')}
-                />
-                {hasExistingRemoteFacilitator && (
-                  <div className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <p className="text-sm font-medium">Clear stored authorization</p>
-                      <p className="text-xs text-muted-foreground">
-                        Stop sending the existing Authorization header after this save.
-                      </p>
-                    </div>
-                    <Controller
-                      control={control}
-                      name="clearFacilitatorAuth"
-                      render={({ field }) => (
-                        <Switch
-                          aria-label="Clear stored facilitator authorization"
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      )}
-                    />
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  A remote facilitator settles inbound payments over HTTPS — the node holds no key
-                  on this chain. Auth is stored encrypted and never shown again
-                  {hasExistingRemoteFacilitator
-                    ? clearFacilitatorAuth
-                      ? '; the stored value will be cleared when saved.'
-                      : '; blank preserves it only while the URL origin stays unchanged.'
-                    : '.'}
-                </p>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <p className="text-sm font-medium">Testnet</p>
-              <p className="text-xs text-muted-foreground">Pairs with the Preprod environment.</p>
-            </div>
-            <Controller
-              control={control}
-              name="isTestnet"
-              render={({ field }) => (
-                <Switch
-                  aria-label="Testnet"
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              )}
-            />
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <p className="text-sm font-medium">Enabled</p>
-              <p className="text-xs text-muted-foreground">Allow x402 payments on this chain.</p>
-            </div>
-            <Controller
-              control={control}
-              name="isEnabled"
-              render={({ field }) => (
-                <Switch
-                  aria-label="Enabled"
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              )}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? 'Saving…' : editing ? 'Save changes' : 'Add chain'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <span className="font-mono" title={walletId}>
+      {label ?? `${walletId.slice(0, 8)}…${walletId.slice(-4)}`}
+    </span>
   );
 }

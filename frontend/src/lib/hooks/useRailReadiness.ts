@@ -7,8 +7,8 @@ import { railOf } from '@/lib/rail-readiness';
 /**
  * Backend-owned answer to "is this rail set up?".
  *
- * Setup surfaces used to derive this client-side from the chain, wallet and
- * budget lists, which drifted from each other and from the server. Reading it
+ * Setup surfaces used to derive this client-side from the chain and wallet
+ * lists, which drifted from each other and from the server. Reading it
  * from one endpoint keeps a step from showing complete when the backend would
  * still refuse the payment.
  */
@@ -18,7 +18,7 @@ export function useRailReadiness(options?: { network?: NetworkType; silentErrors
   const silentErrors = options?.silentErrors ?? false;
 
   const query = useQuery({
-    queryKey: ['rail-readiness', network, silentErrors],
+    queryKey: ['rail-readiness', network],
     queryFn: async () => {
       const response = await handleApiCall(
         () => getRailReadiness({ client: apiClient, query: { network } }),

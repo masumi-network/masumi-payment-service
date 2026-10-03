@@ -87,7 +87,7 @@ export function RegisterInboxAgentDialog({
   const [sellingWallets, setSellingWallets] = useState<
     { wallet: WalletListItem; balance: number }[]
   >([]);
-  const { wallets, isLoading: isLoadingWallets } = useWallets();
+  const { wallets, isLoading: isLoadingWallets } = useWallets({ enabled: open });
   const { apiClient, network } = useAppContext();
 
   const {

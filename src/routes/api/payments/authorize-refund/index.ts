@@ -3,6 +3,7 @@ import { z } from '@masumi/payment-core/zod';
 import { Network, OnChainState, PaymentAction, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { nudgeHydraCycle } from '@/services/hydra-nudge';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
@@ -136,6 +137,9 @@ export const authorizePaymentRefundEndpointPost = payAuthenticatedEndpointFactor
 		}
 
 		const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
+
+		// Authorising inside an open head is a signature exchange, not a chain wait.
+		nudgeHydraCycle('authorizeRefund');
 
 		return {
 			...result,

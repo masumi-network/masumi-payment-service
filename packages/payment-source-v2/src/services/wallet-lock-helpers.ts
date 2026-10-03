@@ -20,10 +20,24 @@
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 
-export async function unlockHotWalletIfNoPendingTransaction(walletId: string, serviceLabel: string): Promise<void> {
+export async function unlockHotWalletIfNoPendingTransaction(
+	walletId: string,
+	serviceLabel: string,
+	expectedLockedAt?: Date,
+): Promise<void> {
 	try {
 		const result = await prisma.hotWallet.updateMany({
-			where: { id: walletId, deletedAt: null, pendingTransactionId: null },
+			where: {
+				id: walletId,
+				deletedAt: null,
+				pendingTransactionId: null,
+				// A Hydra L1 deposit holds a wallet with `lockPurpose` set and no
+				// PendingTransaction for the whole of a carve's confirmation, which is
+				// every other predicate here. Only a lock a payment path could have
+				// taken is a lock a payment path may clear.
+				lockPurpose: null,
+				...(expectedLockedAt == null ? {} : { lockedAt: expectedLockedAt }),
+			},
 			data: { lockedAt: null },
 		});
 		if (result.count === 0) {

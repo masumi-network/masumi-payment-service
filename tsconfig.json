@@ -21,6 +21,7 @@
 			"@masumi/payment-source-v1/*": ["packages/payment-source-v1/src/*"],
 			"@masumi/payment-source-v2": ["packages/payment-source-v2/src/index.ts"],
 			"@masumi/payment-source-v2/*": ["packages/payment-source-v2/src/*"],
+			"@masumi/hydra-host/*": ["packages/hydra-host/src/*"],
 			"@masumi/payment-source-x402": ["packages/payment-source-x402/src/index.ts"],
 			"@masumi/payment-source-x402/*": ["packages/payment-source-x402/src/*"],
 			"@smart-contracts/*": ["smart-contracts/*"],
@@ -30,12 +31,14 @@
 	"include": [
 		"src/**/*.ts",
 		"packages/**/*.ts",
+		"packages/**/*.mts",
 		"smart-contracts/**/plutus.json",
 		"tests/**/*.ts",
 		"jest.e2e*.config.ts",
 		"jest.setup.env.ts",
 		"jest.setup.libsodium.ts",
-		"scripts/**/*.ts"
+		"scripts/**/*.ts",
+		"scripts/**/*.mts"
 	],
-	"exclude": ["node_modules"]
+	"exclude": ["node_modules", "src/frontend/dist"]
 }

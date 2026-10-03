@@ -64,12 +64,6 @@ const railReadinessExample = {
 					isComplete: false,
 					detail: 'Optional — needed only to pay other agents',
 				},
-				{
-					id: 'x402.budget',
-					label: 'Spending budget',
-					isComplete: false,
-					detail: 'Optional — needed only to pay other agents',
-				},
 			],
 		},
 	],
@@ -82,7 +76,7 @@ export function registerRailReadinessPaths({ registry, apiKeyAuth }: SwaggerRegi
 		method: 'get',
 		path: '/rail-readiness',
 		description:
-			'Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys or private wallet data.',
+			'Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with a usable RPC URL and exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while the purchasing wallet is reported but optional. Only configuration presence is exposed — no keys or private wallet data.',
 		summary: 'Get payment rail readiness. (read access required)',
 		tags: ['rail-readiness'],
 		security: secured,

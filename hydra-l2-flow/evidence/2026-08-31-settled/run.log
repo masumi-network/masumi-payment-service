@@ -1,0 +1,134 @@
+=== FAST RUN START 2026-08-31T13:40:24Z ===
+--- [1/6] db reseed  13:40:24 ---
+[36m[db] test Postgres on :5434[0m
+[32m  db ready[0m
+--- [2/6] open fresh head  13:40:30 ---
+[36m[head] opening a fresh preprod head (200 ADA commit)[0m
+[split-l1] 13:40:32   commit candidate: 200 ADA, remainder stays as fuel
+[split-l1] 13:40:32 wait ~1-2 min for Blockfrost to confirm, then run 00-open-head.mts
+[36m  waiting for the split to confirm on L1…[0m
+[32m  split confirmed (200 ADA commit candidate present)[0m
+[36m  START_CHAIN_FROM=132500452.987c0f17594bbc3f060d49a4f56d62c6a7ba01407dd09948ce23d751683fa76f[0m
+[32m  both node APIs up (4001/4002)[0m
+[32m  in sync (worst drift 158s)[0m
+    at main (/Users/cryptonean/Desktop/NMKR/masumi-payment-service/hydra-l2-flow/00-open-head.mts:160:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[36m  waiting for the commit deposit to incorporate (~4 min on preprod)…[0m
+[32m  head funded: 200 ADA[0m
+  ◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+  [sync-head] live head d276058a22ad180bc94bfc89d85d6c02c5e5a110dd5ddcd759f213b1
+  [sync-head] initTx 29a86185fc14e956c3f2abdc32487c246be13deea28882d5fa147b5064bc4996 in block 809701702ee5dfc5503ed48617494529ac11f2814840f34ce433bc21b6ad462b
+  [sync-head] DB row cmtctofn300044fuc8i85hbgp now pinned to the live head (anchor 132500508.ef46d4737f0b901a98e33722e4fc94bf249ad2aed46896d4e0f491fcb4ec9031)
+[36m  waiting out the post-deposit settling window…[0m
+[32m  head is accepting L2 txs (settled after ~180s)[0m
+    live head: d276058a22ad180bc94bfc89d85d6c02c5e5a110dd5ddcd759f213b1
+--- [3/6] seller + in-head funding  13:55:06 ---
+◇ injected env (47) from .env // tip: ⌘ enable debugging { debug: true }
+seller updated: {
+  "remoteWalletId": "cmtctj76y0000azuc483t2cpn",
+  "address": "addr_test1qr5mwaf40wlmlnd693ekh4nfu4j3pk625udtxs0efwxjfmuaeqakx8ue32v38vmn70ky75yvvfvgwptj3qkvft3dhudsp5a8sy",
+  "vkey": "e9b775357bbfbfcdba2c736bd669e56510db4aa71ab341f94b8d24ef"
+}
+[36mtopping up buyer…[0m
+[36mtopping up seller…[0m
+--- [4/6] flow2: full escrow lifecycle  13:56:03 ---
+[36m── lock (slot 132501151)[0m
+[lock] 13:56:06 created PurchaseRequest cmthax6730001wcuc6oy86vf4 (FundsLockingRequested, 10000000 lovelace)
+[lock] 13:56:06 === L2 FUNDS-LOCK: did not complete as expected (see above) ===
+[32m   head verdict: TxValid cc009ebb8f63d130…  (head id == Masumi DB hash ✓ — built by Masumi V2)[0m
+[36m── request-refund (slot 132501157)[0m
+2026-08-31 19:26:12 │ [[32minfo[39m]    │ Created new BlockFrostAPI instance
+[req-refund] 13:56:13 === L2 REQUEST-REFUND VIA MASUMI SERVICE: PASSED (RequestRefund executed in-head) ===
+[32m   head verdict: TxValid d8e3d066519c6135…  (head id == Masumi DB hash ✓ — built by Masumi V2)[0m
+[36m── authorize-refund (slot 132501170)[0m
+2026-08-31 19:26:18 │ [[32minfo[39m]    │ Created new BlockFrostAPI instance
+[auth-refund] 13:56:19 === L2 AUTHORIZE-REFUND VIA MASUMI SERVICE: PASSED (AuthorizeRefund executed in-head) ===
+[32m   head verdict: TxValid c3e1ef5134c083a9…  (head id == Masumi DB hash ✓ — built by Masumi V2)[0m
+[36m── collect-refund (slot 132501170)[0m
+2026-08-31 19:26:25 │ [[32minfo[39m]    │ Created new BlockFrostAPI instance
+[collect-refund] 13:56:26 === L2 COLLECT-REFUND VIA MASUMI SERVICE: PASSED (CollectRefund executed in-head) ===
+[32m   head verdict: TxValid c16b1d638247f3e0…  (head id == Masumi DB hash ✓ — built by Masumi V2)[0m
+[32m=== FLOW2 done (lock → request → authorize → collect-refund) ===[0m
+--- [5/6] raw TPS bench  13:56:28 ---
+[36m[raw:ssd] sustained 40x250 txs, window 500[0m
+[bench] 13:58:18 TPS confirmed=100 valid=100.3 | confirmed 10000/10000 | invalid 0
+[36m[raw:ssd] latency, 200 sequential round-trips[0m
+[bench] 13:58:29 TPS confirmed=24.2 valid=24.3 | confirmed 200/200 | invalid 0
+  latency p50=39ms p95=50.1ms  (200/200 confirmed)
+--- [6/6] drain -> Close -> Fanout  13:58:29 ---
+[36m[settle] evidence -> /Users/cryptonean/Desktop/NMKR/masumi-payment-service/hydra-l2-flow/evidence/2026-08-31-settled[0m
+[36m[settle] draining escrows (this is the fanout-safety gate)[0m
+◇ injected env (47) from .env // tip: ⌘ enable debugging { debug: true }
+2026-08-31 19:28:30 │ [[32minfo[39m]    │ Serializable DB transaction concurrency capped at 4 (set DB_SERIALIZABLE_CONCURRENCY to override; sized from DATABASE_URL connection_limit by default).
+2026-08-31 19:28:31 │ [[32minfo[39m]    │ [HydraConnectionManager] Head cmtctofn300044fuc8i85hbgp status changed to Open
+2026-08-31 19:28:31 │ [[32minfo[39m]    │ [HydraConnectionManager] Connected to head cmtctofn300044fuc8i85hbgp via local node at http://127.0.0.1:4001
+[drain] 13:58:34 start: 1 script UTxOs in head, budget 20 min
+[drain] 13:58:59 round 1: 1 -> 1 script UTxOs (db: 0 escrows, 125 pending L2) · 1173s left
+[drain] 13:59:19 round 2: 1 -> 1 script UTxOs (db: 0 escrows, 125 pending L2) · 1153s left
+[drain] 13:59:39 round 3: 1 -> 1 script UTxOs (db: 0 escrows, 125 pending L2) · 1133s left
+[drain] 13:59:39 no progress in 3 rounds and 1 <= 10 — stopping early
+[drain] 13:59:39 OK — 1 datum UTxO(s) remain, within the 10 the fanout budget allows:
+[drain] 13:59:39      c16b1d638247f3e0a6f98963961a04c6473be2652afc6e00d488bbc5cb843097#0  10 ADA  addr_test1qpx9yesfls03wgndzhlky004w4hxufdmcfyqxrpermkmjna44xhhddygcelx5v0qlp7gyxl6acpefensvr5appn52h7qu0fszr
+[drain] 13:59:39      (orphans: no DB row references them, so no service can collect them)
+[drain] 13:59:39 Fanout-safe.
+[36m[settle] consolidating in-head UTxOs (fewer fanout outputs)[0m
+consolidating 2 UTxOs (115000000 lovelace) -> addr_test1vqau6vf2cc0p4s…
+submitted eb1f4ccc834fa996… — waiting for confirmation
+CONSOLIDATED: 115000000 lovelace in one UTxO at purchasing
+[36m[settle] capturing pre-close head state (signed snapshot + UTxO map)[0m
+captured :4001 /snapshot ->     3027 bytes
+captured :4001 /snapshot/utxo ->     1791 bytes
+captured :4001 /snapshot/last-seen ->       41 bytes
+captured :4001 /head ->     7391 bytes
+captured :4002 /snapshot ->     3027 bytes
+captured :4002 /snapshot/utxo ->     1791 bytes
+captured :4002 /snapshot/last-seen ->       41 bytes
+captured :4002 /head ->     7391 bytes
+capture -> /Users/cryptonean/Desktop/NMKR/masumi-payment-service/hydra-l2-flow/evidence/2026-08-31-settled/snapshots/pre-close
+[36m[settle] Close -> contestation -> Fanout[0m
+[36m── settle (Close → Fanout): settling in-head balances back to L1[0m
+[36m   restarting hydra-nodes to reset Blockfrost drift (catch-up burst)…[0m
+[36mStarting 2 native hydra-nodes on preprod (blockfrost)…[0m
+[36mWaiting for node APIs (preprod chain sync can take longer than devnet)…[0m
+[32m  both node APIs up (4001/4002)[0m
+[32m  restart verified (node1 log advancing)[0m
+[36mwaiting for node drift < 180s (timeout 900s)…[0m
+[32m  in sync (worst drift 145s)[0m
+[36m   checking/burning deposit re-apply phantom (target L2 total: 200000000)…[0m
+◇ injected env (47) from .env // tip: ⌘ override existing { override: true }
+2026-08-31 19:30:40 │ [[31merror[39m]   │ [HydraNode] History replay rejected a protocol frame
+2026-08-31 19:30:40 │ [[31merror[39m]   │ [HydraConnection] Transport failed
+[burn-phantom] 14:00:41 L2 total=200000000 target=200000000 phantom=0
+[burn-phantom] 14:00:41 no phantom — nothing to burn, Close is already consistent
+evidence report → /Users/cryptonean/Desktop/NMKR/masumi-payment-service/hydra-l2-flow/evidence/EVIDENCE.md (29 operations)
+[32m  open: /Users/cryptonean/Desktop/NMKR/masumi-payment-service/hydra-l2-flow/evidence/EVIDENCE.md[0m
+[36m[settle] capturing post-fanout head state[0m
+MISS :4001 /snapshot (endpoint absent or node down)
+MISS :4001 /snapshot/utxo (endpoint absent or node down)
+captured :4001 /snapshot/last-seen ->       24 bytes
+captured :4001 /head ->     2253 bytes
+MISS :4002 /snapshot (endpoint absent or node down)
+MISS :4002 /snapshot/utxo (endpoint absent or node down)
+captured :4002 /snapshot/last-seen ->       24 bytes
+captured :4002 /head ->     2253 bytes
+capture -> /Users/cryptonean/Desktop/NMKR/masumi-payment-service/hydra-l2-flow/evidence/2026-08-31-settled/snapshots/post-fanout
+[36m[settle] recording L1 anchors from the chain[0m
+[anchors] purchasing addr_test1vqau6vf2cc0p4s… · since 2026-08-31T06:12:00.000Z
+[anchors] head script addr_test1wq4erflxvet45f…
+[anchors] 13 L1 anchors -> /Users/cryptonean/Desktop/NMKR/masumi-payment-service/hydra-l2-flow/evidence/2026-08-31-settled/l1-anchors.json
+[anchors]   funding   affe0c0f3584cf43cf4a4f557119a5ae098be2e518d6f6a32e3a3854003349e8 block 5121473  2026-08-31T11:41:58.000Z
+[anchors]   init      72a844a50eee6e9abc7d8cafcac9b0b7661ef5ae30647d30a20900d6dd967fb1 block 5121476  2026-08-31T11:43:02.000Z
+[anchors]   deposit   62366ab8b64e3c49681d6285c95c56e457be70f938a7ae50e5385c8aa60b5d65 block 5121478  2026-08-31T11:44:13.000Z
+[anchors]   increment ce4d7a5aac325a2c02fd9b27a8ccdcac5fad3dc1e5e607a2234a4e76aed4004d block 5121505  2026-08-31T11:53:21.000Z
+[anchors]   funding   a8e77a9166c1cb83fde0d3be5ae45f29838d7b8d70a6ec4f54ff7ddc1321b0a6 block 5121740  2026-08-31T13:21:38.000Z
+[anchors]   init      db6c37513c6fd4f607ada9ad43d149a0a74191a062b45120cabf0c0b5441c6a1 block 5121747  2026-08-31T13:23:57.000Z
+[anchors]   deposit   a46d720eaf62c6943f3eec4848ac970ff21a7e68329fbaf0a6ea78fc1135c757 block 5121754  2026-08-31T13:25:45.000Z
+[anchors]   funding   b6bc7f589d2688cdd281290f9d3b4711e055c25c6798907b84a7549cd4972b55 block 5121783  2026-08-31T13:40:38.000Z
+[anchors]   init      29a86185fc14e956c3f2abdc32487c246be13deea28882d5fa147b5064bc4996 block 5121789  2026-08-31T13:41:58.000Z
+[anchors]   deposit   2035821f83c488a0debfe41f90d18575ada8bab014233b939f34238d3f71a8de block 5121794  2026-08-31T13:43:27.000Z
+[anchors]   increment 4b7b61735af539bf39a6899e6558f42f39b75e887327a412486cd1966d2a2daa block 5121818  2026-08-31T13:52:30.000Z
+[anchors]   increment 171d99ddaa6545fe6795bd81546aa1bd5dfc23186764dfd0b6435823fd9ba2bf block 5121841  2026-08-31T14:01:02.000Z
+[anchors]   increment 2108fdf624e313ddbd79ad83669130bf360827b7288909cd4e7b51bca52cfc83 block 5121860  2026-08-31T14:10:21.000Z
+[anchors] MISMATCH: closeTx eb1f4ccc834fa9963724e9efc3a17111f7e7c49ea66c6a235a37f1603ec8b263 from settlement.json is not on L1
+!! settle reported a failure
+=== FAST RUN END 2026-08-31T14:12:09Z ===

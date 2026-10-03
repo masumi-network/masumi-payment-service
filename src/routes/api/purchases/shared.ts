@@ -12,6 +12,7 @@ import createHttpError from 'http-errors';
 import stringify from 'canonical-json';
 import { prisma } from '@masumi/payment-core/db';
 import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockchain-identifier-payload';
+import type { ForceLayerApi } from '@/utils/logic/force-layer';
 
 interface PurchaseInitBaseInput {
 	network: 'Preprod' | 'Mainnet';
@@ -27,6 +28,7 @@ interface PurchaseInitBaseInput {
 	identifierFromPurchaser: string;
 	paymentSourceType: PaymentSourceType;
 	sellerReturnAddress?: string;
+	paymentForceLayer?: ForceLayerApi | null;
 	supportedPaymentSourceIndex?: number;
 }
 
@@ -263,6 +265,7 @@ export async function resolvePurchaseCreationContext({
 		sellerAddress,
 		sellerReturnAddress,
 		smartContractAddress: isV2 ? decoded.smartContractAddress : null,
+		paymentForceLayer: input.paymentForceLayer ?? null,
 		supportedPaymentSourceIndex: input.supportedPaymentSourceIndex,
 		paymentSourceType: resolvedPaymentSourceType,
 	});

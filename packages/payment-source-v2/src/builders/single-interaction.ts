@@ -20,7 +20,7 @@ import {
 	type IFetcher,
 	type LanguageVersion,
 	MeshTxBuilder,
-	mOutputReference,
+	getOutputMinLovelace,
 	type Network,
 	type UTxO,
 } from '@meshsdk/core';
@@ -31,6 +31,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, calculateTopUpAmount, getLovelaceFromAmounts, getNativeTokenCount } from '@/utils/min-utxo';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
+import { addWithdrawalOutputs } from './withdrawal-outputs';
 import { generateRedeemerData } from './redeemer-data';
 import { getSpendableWalletUtxos } from './batch-helpers';
 import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
@@ -103,7 +104,18 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	// the V2 batch-builder splitter semantics. See
 	// `packages/payment-source-v2/src/builders/batch-helpers.ts WALLET_SPLITTER_LOVELACE`.
 	walletSplitterLovelace?: bigint,
+	// Hydra L2: when set, the tx is built and submitted against a Hydra head
+	// instead of L1. The provider is the head's IFetcher (UTxOs come from the
+	// head snapshot). On L2 we skip Blockfrost fee evaluation (the head uses
+	// zero/standard fees) and tag the MeshTxBuilder with `isHydra`. The actual
+	// build still happens on the V2 mesh line (beta.102) so the script-data-hash
+	// matches the V2 contract. `IFetcher` is byte-identical across the V1/V2 mesh
+	// lines (verified), so a root-built HydraProvider is structurally accepted.
+	hydraProvider?: IFetcher,
 ) {
+	const isL2 = hydraProvider != null;
+	const provider = hydraProvider ?? blockchainProvider;
+
 	if (rpcApiKey) {
 		// Mesh hashes the script_data against its bundled
 		// `DEFAULT_V*_COST_MODEL_LIST` arrays; if those drift from on-chain the
@@ -113,7 +125,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	}
 	let coinsPerUtxoSize: number = FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
-		const protocolParams = await blockchainProvider.fetchProtocolParameters();
+		const protocolParams = await provider.fetchProtocolParameters(Number.NaN);
 		if (protocolParams.coinsPerUtxoSize != null) {
 			coinsPerUtxoSize = protocolParams.coinsPerUtxoSize;
 		}
@@ -127,6 +139,29 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 			error: error instanceof Error ? error.message : String(error),
 			type,
 		});
+	}
+
+	// L2 path: a Hydra head has no Blockfrost evaluator, so skip the fee-eval
+	// round-trip and build directly with default exUnits + isHydra.
+	if (isL2) {
+		return await generateMasumiSmartContractInteractionTransactionCustomFee(
+			type,
+			provider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			newInlineDatum,
+			invalidBefore,
+			invalidAfter,
+			undefined,
+			coinsPerUtxoSize,
+			undefined,
+			undefined,
+			true,
+		);
 	}
 
 	return await buildWithCollateralFallback('single-interaction', async (allowSpendingCollateral) => {
@@ -146,6 +181,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 			coinsPerUtxoSize,
 			rpcApiKey,
 			walletSplitterLovelace,
+			false,
 			allowSpendingCollateral,
 		);
 
@@ -169,6 +205,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 			coinsPerUtxoSize,
 			rpcApiKey,
 			walletSplitterLovelace,
+			false,
 			allowSpendingCollateral,
 		);
 	});
@@ -200,6 +237,8 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	coinsPerUtxoSize: number = FALLBACK_COINS_PER_UTXO_SIZE,
 	rpcApiKey?: string,
 	walletSplitterLovelace?: bigint,
+	// Hydra L2: tag the builder so mesh skips L1-only collateral/fee handling.
+	isHydra = false,
 	allowSpendingCollateral: boolean = false,
 ) {
 	// Pull live chain protocol params (incl. cost models) so the computed
@@ -214,8 +253,19 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
+		isHydra,
 	});
 	txBuilder.protocolParams(protocolParameters);
+	// Hydra L2 in-head txs are zero-fee: the head's ledger params set every fee
+	// to 0. The MeshTxBuilder constructor zeroes the fee params for `isHydra`,
+	// but `protocolParams(...)` above re-applies the (cached) chain params, which
+	// carry non-zero L1 fees. A non-zero fee skims value from the head on every
+	// op (fees are not redistributed in-head), accumulating into the head's
+	// `headAdaOverhead` until Close fails the strict-equality check (H65,
+	// ChangedHeadAdaOverhead) and the head can never settle to L1. Force fee 0.
+	if (isHydra) {
+		txBuilder.setFee('0');
+	}
 	const redeemerData = generateRedeemerData(type);
 	const smartContractAddress: unknown = resolvePlutusScriptAddress(
 		script,
@@ -232,6 +282,16 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		coinsPerUtxoSize,
 		includeBuffers: true,
 	});
+
+	const serializedMinimum = getOutputMinLovelace(
+		{
+			address: smartContractAddress,
+			amount: smartContractUtxo.output.amount,
+			datum: { type: 'Inline', data: { type: 'Mesh', content: newInlineDatum } },
+		},
+		coinsPerUtxoSize,
+	);
+	if (serializedMinimum > minUtxoResult.minUtxoLovelace) minUtxoResult.minUtxoLovelace = serializedMinimum;
 
 	const currentLovelace = getLovelaceFromAmounts(smartContractUtxo.output.amount);
 	const topUpAmount = calculateTopUpAmount(currentLovelace, minUtxoResult.minUtxoLovelace);
@@ -277,9 +337,26 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		)
 		.txInScript(script.code) // ,script.version)
 		.txInRedeemerValue(redeemerData, 'Mesh', exUnits)
-		.txInInlineDatumPresent()
-		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral('3000000')
+		.txInInlineDatumPresent();
+
+	// On a Hydra head, mesh must NOT try to resolve an input via
+	// fetcher.fetchUTxOs(txHash): in-head UTxOs are head-only and the per-tx query
+	// path stalls the build (see l2-lock.ts). Supply the collateral + wallet inputs
+	// with full amount + address (+ scriptSize 0) so each input is self-complete
+	// and no fetch is attempted. On L1 the 2-arg form is fine (Blockfrost resolves).
+	if (isHydra) {
+		txBuilder.txInCollateral(
+			collateralUtxo.input.txHash,
+			collateralUtxo.input.outputIndex,
+			collateralUtxo.output.amount,
+			collateralUtxo.output.address,
+		);
+	} else {
+		txBuilder.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex);
+	}
+
+	txBuilder
+		.setTotalCollateral(isHydra ? '0' : '3000000')
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
@@ -349,11 +426,41 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	// Optional V2 single-item fallback support — see equivalent param on
 	// `generateMasumiSmartContractInteractionTransactionAutomaticFees`.
 	walletSplitterLovelace?: bigint,
+	// Hydra L2 — see equivalent param on the interaction builder above.
+	hydraProvider?: IFetcher,
 ) {
+	const isL2 = hydraProvider != null;
+
 	if (rpcApiKey) {
 		// See cost-model sync comment in the interaction builder above.
 		await syncMeshCostModelsFromChainV2(rpcApiKey);
 	}
+
+	// L2 path: no Blockfrost evaluator on a Hydra head — build directly with
+	// default exUnits + isHydra (see interaction builder).
+	if (isL2) {
+		return await generateMasumiSmartContractWithdrawTransactionCustomFee(
+			type,
+			hydraProvider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			collection,
+			fee,
+			collateralReturn,
+			invalidBefore,
+			invalidAfter,
+			undefined,
+			tagMainOutputAsOwnRef,
+			undefined,
+			undefined,
+			true,
+		);
+	}
+
 	return await buildWithCollateralFallback('single-withdraw', async (allowSpendingCollateral) => {
 		const evaluationTx = await generateMasumiSmartContractWithdrawTransactionCustomFee(
 			type,
@@ -373,6 +480,7 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 			tagMainOutputAsOwnRef,
 			rpcApiKey,
 			walletSplitterLovelace,
+			false,
 			allowSpendingCollateral,
 		);
 
@@ -398,6 +506,7 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 			tagMainOutputAsOwnRef,
 			rpcApiKey,
 			walletSplitterLovelace,
+			false,
 			allowSpendingCollateral,
 		);
 	});
@@ -443,6 +552,8 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	tagMainOutputAsOwnRef: boolean = false,
 	rpcApiKey?: string,
 	walletSplitterLovelace?: bigint,
+	// Hydra L2: tag the builder so mesh skips L1-only collateral/fee handling.
+	isHydra = false,
 	allowSpendingCollateral: boolean = false,
 ) {
 	// See protocolParams comment in the interaction builder above. Reuse the
@@ -452,8 +563,14 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
+		isHydra,
 	});
 	txBuilder.protocolParams(protocolParameters);
+	// See the interaction builder: force zero fee on L2 so in-head txs don't skim
+	// value into the head's `headAdaOverhead` (which would make Close fail H65).
+	if (isHydra) {
+		txBuilder.setFee('0');
+	}
 	const redeemerData = generateRedeemerData(type);
 
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
@@ -468,32 +585,32 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		)
 		.txInScript(script.code) // ,script.version)
 		.txInRedeemerValue(redeemerData, 'Mesh', exUnits)
-		.txInInlineDatumPresent()
-		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral('3000000')
-		.txOut(collection.collectionAddress, collection.collectAssets);
+		.txInInlineDatumPresent();
 
-	if (tagMainOutputAsOwnRef) {
-		txBuilder.txOutInlineDatumValue(
-			mOutputReference(smartContractUtxo.input.txHash, smartContractUtxo.input.outputIndex),
+	// Hydra head: supply collateral + wallet inputs with full info so mesh never
+	// resolves them via fetchUTxOs(txHash) (head-only UTxOs stall the build — see
+	// l2-lock.ts). On L1 the 2-arg form is fine (Blockfrost resolves).
+	if (isHydra) {
+		txBuilder.txInCollateral(
+			collateralUtxo.input.txHash,
+			collateralUtxo.input.outputIndex,
+			collateralUtxo.output.amount,
+			collateralUtxo.output.address,
 		);
+	} else {
+		txBuilder.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex);
 	}
 
-	if (fee) {
-		const outputReference = mOutputReference(fee.txHash, fee.outputIndex);
-		txBuilder.txOut(fee.feeAddress, fee.feeAssets).txOutInlineDatumValue(outputReference);
-	}
-	if (collateralReturn != null && collateralReturn.lovelace > 0n) {
-		const outputReference = mOutputReference(collateralReturn.txHash, collateralReturn.outputIndex);
-		txBuilder
-			.txOut(collateralReturn.address, [
-				{
-					unit: 'lovelace',
-					quantity: collateralReturn.lovelace.toString(),
-				},
-			])
-			.txOutInlineDatumValue(outputReference);
-	}
+	txBuilder.setTotalCollateral(isHydra ? '0' : '3000000');
+	addWithdrawalOutputs(
+		txBuilder,
+		protocolParameters,
+		smartContractUtxo.input,
+		collection,
+		fee,
+		collateralReturn,
+		tagMainOutputAsOwnRef,
+	);
 
 	// Optional V2 single-item splitter — see CustomFee equivalent on the
 	// interaction builder for full rationale.

@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { Check } from 'lucide-react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { cn } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
+import { invalidateTransactionReportFacets } from '@/lib/queries/transaction-report-cache';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { useRailReadiness } from '@/lib/hooks/useRailReadiness';
 import { STEP_LABELS, type SetupWallet } from '@/components/setup/setup-helpers';
 import { WelcomeScreen } from '@/components/setup/screens/WelcomeScreen';
 import { SeedPhrasesScreen } from '@/components/setup/screens/SeedPhrasesScreen';
 import { PaymentSourceSetupScreen } from '@/components/setup/screens/PaymentSourceSetupScreen';
 import { AddAiAgentScreen } from '@/components/setup/screens/AddAiAgentScreen';
 import { SuccessScreen } from '@/components/setup/screens/SuccessScreen';
+import { SetupWizardShell } from '@/components/setup/wizard/SetupWizardShell';
 
 export function SetupWelcome({ networkType }: { networkType: string }) {
   const { setSetupWizardStep, setIsSetupMode } = useAppContext();
@@ -28,6 +29,9 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   });
   const [hasAiAgent, setHasAiAgent] = useState(false);
   const { paymentSources } = usePaymentSourceExtendedAll();
+  const { cardano: cardanoReadiness, isUnavailable: isReadinessUnavailable } = useRailReadiness({
+    network: networkType as 'Preprod' | 'Mainnet',
+  });
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset wizard state when network changes (user switched network during setup)
@@ -35,17 +39,28 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     setWallets({ buying: null, selling: null });
   }, [networkType]);
 
-  // If the current network already has a V2 payment source and we're on the welcome step,
-  // exit setup automatically. Legacy V1-only networks should still be able to migrate.
+  // Exit only once V2 is actually ready — a half-created V2 row must not boot
+  // legacy-only operators out of the wizard while migration is still impossible.
   useEffect(() => {
     const hasV2SourceForNetwork = paymentSources.some(
       (ps) => ps.network === networkType && isV2PaymentSource(ps),
     );
-    if (currentStep === 0 && hasV2SourceForNetwork) {
+    const hasReadyV2SourceForNetwork = isReadinessUnavailable
+      ? hasV2SourceForNetwork
+      : cardanoReadiness?.isReady === true && hasV2SourceForNetwork;
+    if (currentStep === 0 && hasReadyV2SourceForNetwork) {
       setIsSetupMode(false);
       router.push('/');
     }
-  }, [networkType, paymentSources, currentStep, setIsSetupMode, router]);
+  }, [
+    networkType,
+    paymentSources,
+    cardanoReadiness?.isReady,
+    isReadinessUnavailable,
+    currentStep,
+    setIsSetupMode,
+    router,
+  ]);
 
   useEffect(() => {
     setSetupWizardStep(currentStep);
@@ -65,6 +80,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     queryClient.invalidateQueries({ queryKey: ['wallets'] });
     invalidateAgentQueries(queryClient);
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    void invalidateTransactionReportFacets(queryClient);
     router.push('/');
   };
 
@@ -105,66 +121,9 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     />,
   ];
 
-  const totalSteps = steps.length;
-  const showStepper = currentStep > 0 && currentStep < totalSteps - 1;
-  const stepperSteps = STEP_LABELS.slice(1, -1);
-
   return (
-    <div className="w-full max-w-2xl mx-auto px-4">
-      {showStepper && (
-        <div className="mb-8 animate-fade-in">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-sm font-medium">{STEP_LABELS[currentStep]}</p>
-              <p className="text-xs text-muted-foreground">
-                Step {currentStep} of {stepperSteps.length}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {stepperSteps.map((label, i) => {
-                const stepIndex = i + 1;
-                const isComplete = currentStep > stepIndex;
-                const isCurrent = currentStep === stepIndex;
-                return (
-                  <div key={stepIndex} className="flex items-center gap-2">
-                    <div
-                      className={cn(
-                        'flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium transition-all duration-300',
-                        isComplete && 'bg-primary text-primary-foreground ring-2 ring-primary/20',
-                        isCurrent &&
-                          'bg-primary text-primary-foreground ring-4 ring-primary/20 scale-110',
-                        !isComplete && !isCurrent && 'bg-muted text-muted-foreground',
-                      )}
-                      title={label}
-                    >
-                      {isComplete ? <Check className="h-4 w-4 animate-pop-in" /> : stepIndex}
-                    </div>
-                    {i < stepperSteps.length - 1 && (
-                      <div
-                        className={cn(
-                          'h-0.5 w-6 rounded-full transition-all duration-500',
-                          currentStep > stepIndex + 1 ? 'bg-primary' : 'bg-muted',
-                        )}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="h-1 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full bg-primary transition-all duration-500 ease-out"
-              style={{ width: `${((currentStep - 1) / (stepperSteps.length - 1)) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-260px)] py-8">
-        <div key={currentStep} className="animate-slide-in-right w-full">
-          {steps[currentStep]}
-        </div>
-      </div>
-    </div>
+    <SetupWizardShell stepLabels={STEP_LABELS.slice(1, -1)} currentStep={currentStep}>
+      {steps[currentStep]}
+    </SetupWizardShell>
   );
 }

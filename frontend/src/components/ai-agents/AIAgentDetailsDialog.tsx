@@ -7,13 +7,18 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
-import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import {
+  parseAgentStatus,
+  getAgentStatusBadgeVariant,
+  getAgentStatusHelperText,
+  getAgentIdentifierPlaceholder,
+} from '@/lib/agent-status';
+import { getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
 
-import { Separator } from '@/components/ui/separator';
-import { Link2, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
+import { Link2, Pencil, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { RegisterAIAgentDialog } from './RegisterAIAgentDialog';
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -21,6 +26,7 @@ import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -31,6 +37,8 @@ import { AgentX402Options } from './AgentX402Options';
 import { AgentCardanoSources } from './AgentCardanoSources';
 import { AgentVerifications } from './AgentVerifications';
 import { parseLegacyAgentPricing } from '@/lib/registry-pricing';
+import { AgentAdditionalDetails } from './AgentAdditionalDetails';
+import { canEditAgentMetadata } from '@/lib/can-edit-agent-metadata';
 
 // The list page decorates agents with their relation to the active payment
 // source ('payment' = registered elsewhere, merely accepts payment here).
@@ -53,7 +61,8 @@ export function AIAgentDetailsDialog({
   onSuccess,
   initialTab = 'Details',
 }: AIAgentDetailsDialogProps) {
-  const { apiClient, selectedPaymentSourceId, network } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, capabilities } = useAppContext();
+  const resync = useResync();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const deleteAgent = useApiMutation({
@@ -71,12 +80,12 @@ export function AIAgentDetailsDialog({
   const { mutateAsync: deleteAgentAsync } = deleteAgent;
   const { mutateAsync: deregisterAgentAsync } = deregisterAgent;
   const isDeleting = deleteAgent.isPending || deregisterAgent.isPending;
-  const [isPurchaseDialogOpen] = useState(false);
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   // Re-register (deregistered agents only): confirm the new-identifier caveat,
   // then open the mint dialog prefilled from this agent.
   const [isReRegisterConfirmOpen, setIsReRegisterConfirmOpen] = useState(false);
   const [isReRegisterOpen, setIsReRegisterOpen] = useState(false);
+  const [isUpdateOpen, setIsUpdateOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -109,6 +118,21 @@ export function AIAgentDetailsDialog({
   // here ('payment' relation) are managed from their home source — mirrors the
   // row-action gating on pages/ai-agents.tsx.
   const isManagedOnActiveSource = agent?.relation !== 'payment';
+  const activePaymentSource = useMemo(
+    () => currentNetworkPaymentSources.find((ps) => ps.id === selectedPaymentSourceId),
+    [currentNetworkPaymentSources, selectedPaymentSourceId],
+  );
+  const showEditMetadata = canEditAgentMetadata({
+    relation: agent?.relation,
+    canPay: capabilities.canPay,
+    selectedPaymentSource: activePaymentSource,
+  });
+  // Deregistering is pay-authenticated; hard-deleting the DB row is admin-only.
+  const canDeleteOrDeregister = isDbDeletableAgentState(agent?.state)
+    ? capabilities.canAdmin
+    : isDeregisterableAgentState(agent?.state)
+      ? capabilities.canPay
+      : false;
 
   // Reset the tab whenever the dialog opens (or opens for a different agent):
   // without keying on the agent id, the previous agent's tab (e.g. Earnings,
@@ -120,6 +144,7 @@ export function AIAgentDetailsDialog({
       // Never carry a half-open re-register flow from one agent into the next.
       setIsReRegisterConfirmOpen(false);
       setIsReRegisterOpen(false);
+      setIsUpdateOpen(false);
     }
   }, [agentId, initialTab]);
 
@@ -148,6 +173,7 @@ export function AIAgentDetailsDialog({
         setIsDeleteDialogOpen(false);
         if (response) {
           toast.success('AI agent deleted from the database successfully');
+          await resync('agents');
           onClose();
           onSuccess?.();
         }
@@ -171,6 +197,7 @@ export function AIAgentDetailsDialog({
         setIsDeleteDialogOpen(false);
         if (response) {
           toast.success('AI agent deregistration initiated successfully');
+          await resync('agents');
           onClose();
           onSuccess?.();
         }
@@ -183,6 +210,7 @@ export function AIAgentDetailsDialog({
       isDeletingRef.current = false;
     }
   }, [
+    resync,
     agent,
     deleteAgentAsync,
     deregisterAgentAsync,
@@ -218,9 +246,9 @@ export function AIAgentDetailsDialog({
         open={
           !!agent &&
           !isDeleteDialogOpen &&
-          !isPurchaseDialogOpen &&
           !isReRegisterConfirmOpen &&
-          !isReRegisterOpen
+          !isReRegisterOpen &&
+          !isUpdateOpen
         }
         onOpenChange={onClose}
       >
@@ -237,13 +265,23 @@ export function AIAgentDetailsDialog({
                   <DialogTitle className="text-xl leading-tight break-words">
                     {agent.name}
                   </DialogTitle>
-                  <Badge
-                    variant={getAgentStatusBadgeVariant(agent.state)}
-                    className="mt-0.5 shrink-0 whitespace-nowrap"
-                  >
-                    {parseAgentStatus(agent.state)}
-                  </Badge>
+                  <div className="mt-0.5 flex shrink-0 items-center gap-2">
+                    <Badge variant="outline" className="whitespace-nowrap">
+                      {getAgentTypeLabel(agent.type)}
+                    </Badge>
+                    <Badge
+                      variant={getAgentStatusBadgeVariant(agent.state)}
+                      className="whitespace-nowrap"
+                    >
+                      {parseAgentStatus(agent.state)}
+                    </Badge>
+                  </div>
                 </div>
+                {getAgentStatusHelperText(agent.state) && (
+                  <p className="text-xs text-muted-foreground mt-2 pr-6">
+                    {getAgentStatusHelperText(agent.state)}
+                  </p>
+                )}
               </DialogHeader>
 
               <Tabs
@@ -379,171 +417,7 @@ export function AIAgentDetailsDialog({
 
                     <AgentVerifications verifications={agent.verifications} />
 
-                    <div className="flex items-center gap-4 pt-2">
-                      <Separator className="flex-1" />
-                      <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                        Additional Details
-                      </h3>
-                      <Separator className="flex-1" />
-                    </div>
-
-                    {/* Author and Legal */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Author</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3 text-sm">
-                            <div className="flex justify-between gap-3">
-                              <span className="text-muted-foreground shrink-0">Name</span>
-                              <span className="text-right break-words">{agent.Author.name}</span>
-                            </div>
-                            {agent.Author.contactEmail && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Email</span>
-                                <a
-                                  href={`mailto:${agent.Author.contactEmail}`}
-                                  className="text-primary hover:underline text-right break-all"
-                                >
-                                  {agent.Author.contactEmail}
-                                </a>
-                              </div>
-                            )}
-                            {agent.Author.organization && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Organization</span>
-                                <span className="text-right break-words">
-                                  {agent.Author.organization}
-                                </span>
-                              </div>
-                            )}
-                            {agent.Author.contactOther && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Website</span>
-                                <a
-                                  href={agent.Author.contactOther}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1 text-right break-all"
-                                >
-                                  {agent.Author.contactOther} <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Legal</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3 text-sm">
-                            {agent.Legal?.terms && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Terms of Use</span>
-                                <a
-                                  href={agent.Legal.terms}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {agent.Legal?.privacyPolicy && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">
-                                  Privacy Policy
-                                </span>
-                                <a
-                                  href={agent.Legal.privacyPolicy}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {agent.Legal?.other && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Support</span>
-                                <a
-                                  href={agent.Legal.other}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {(!agent.Legal || Object.values(agent.Legal).every((v) => !v)) && (
-                              <span className="text-muted-foreground">
-                                No legal information provided.
-                              </span>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Capability */}
-                    {agent.Capability && (agent.Capability.name || agent.Capability.version) && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Capability</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex justify-between text-sm py-2 px-3 bg-muted/40 border rounded-md">
-                            <span className="text-muted-foreground">Model</span>
-                            <span>
-                              {agent.Capability.name} (v
-                              {agent.Capability.version})
-                            </span>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Example Outputs */}
-                    {agent.ExampleOutputs && agent.ExampleOutputs.length > 0 && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Example Outputs</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            {agent.ExampleOutputs.map((output, index) => (
-                              <div
-                                key={index}
-                                className="text-sm py-2 px-3 bg-muted/40 border rounded-md"
-                              >
-                                <div className="flex justify-between items-center gap-3">
-                                  <div className="min-w-0">
-                                    <p className="font-medium truncate">{output.name}</p>
-                                    <p className="text-xs text-muted-foreground truncate">
-                                      {output.mimeType}
-                                    </p>
-                                  </div>
-                                  <a
-                                    href={output.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline flex items-center gap-1 shrink-0"
-                                  >
-                                    View <Link2 className="h-3 w-3" />
-                                  </a>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
+                    <AgentAdditionalDetails agent={agent} />
 
                     {/* Wallet Information */}
                     <Card>
@@ -569,7 +443,9 @@ export function AIAgentDetailsDialog({
                                   <CopyButton value={agent.agentIdentifier} />
                                 </>
                               ) : (
-                                <span className="text-muted-foreground">—</span>
+                                <span className="text-muted-foreground">
+                                  {getAgentIdentifierPlaceholder(agent.state)}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -673,13 +549,25 @@ export function AIAgentDetailsDialog({
               </div>
 
               <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
-                {canReRegister && (
+                {showEditMetadata && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsUpdateOpen(true)}
+                    title="Update agent metadata (V2)"
+                    aria-label="Update agent metadata (V2)"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
+                {canReRegister && capabilities.canPay && (
                   <Button variant="outline" onClick={() => setIsReRegisterConfirmOpen(true)}>
                     <RotateCcw className="h-4 w-4" />
                     Re-register
                   </Button>
                 )}
                 {isManagedOnActiveSource &&
+                  capabilities.canPay &&
                   (agent.state === 'RegistrationConfirmed' ||
                     agent.state === 'UpdateConfirmed' ||
                     agent.state === 'UpdateFailed') &&
@@ -689,7 +577,10 @@ export function AIAgentDetailsDialog({
                       Verify & Publish
                     </Button>
                   )}
-                {isManagedOnActiveSource && (
+                {/* The same control deregisters on-chain (POST /registry/deregister,
+                    pay) or hard-deletes the row (DELETE /registry, admin) depending on
+                    the agent's state, so it needs whichever permission that branch uses. */}
+                {isManagedOnActiveSource && canDeleteOrDeregister && (
                   <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -755,6 +646,18 @@ export function AIAgentDetailsDialog({
         onClose={() => setIsReRegisterOpen(false)}
         onSuccess={() => {
           setIsReRegisterOpen(false);
+          onClose();
+          onSuccess?.();
+        }}
+      />
+      <RegisterAIAgentDialog
+        open={isUpdateOpen && !!agent}
+        editingAgent={agent}
+        editingAgentSmartContractAddress={activePaymentSource?.smartContractAddress}
+        elevatedChildStack={elevatedStack}
+        onClose={() => setIsUpdateOpen(false)}
+        onSuccess={() => {
+          setIsUpdateOpen(false);
           onClose();
           onSuccess?.();
         }}

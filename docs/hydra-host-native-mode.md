@@ -1,0 +1,203 @@
+# Running a Hydra Host natively
+
+The Hydra Host normally ships as a container. Native mode runs the same Host
+process directly against the platform's own `hydra-node` binary. Through 2.3.0
+that was the only way to run a Host on Apple silicon. From 2.4.0 it is a
+choice, and the reason is worth stating precisely.
+
+## What 2.4.0 changed about architecture
+
+The image bakes `hydra-node`, since the Host's job is to supervise one
+`hydra-node` process per Head. At 2.3.0 upstream built exactly two targets,
+`x86_64-linux` and `aarch64-darwin`, shipped both as release zips, and
+published `ghcr.io/cardano-scaling/hydra-node:<version>` as a single
+`linux/amd64` manifest. A container on an arm64 Mac runs Linux, so it needed a
+_Linux_ `hydra-node`, and the only one was amd64. Under Docker Desktop's
+emulation that binary died with `SIGILL` (exit 132) the moment it touched its
+crypto path: `--version` succeeded, `--hydra-script-catalogue` did not.
+
+2.4.0 changed both halves of that.
+
+The tag publishes no release zips at all. VERIFIED: `gh release view 2.4.1
+--repo cardano-scaling/hydra --json assets` returns `{"assets":[]}`. Step 1
+below takes the Darwin binary from the tag's own CI run instead.
+
+The image is now multi-arch. VERIFIED: `docker buildx imagetools inspect
+ghcr.io/cardano-scaling/hydra-node:2.4.1` reports a manifest list carrying both
+`linux/amd64` and `linux/arm64`. `packages/hydra-host/Dockerfile` pins that
+index digest and builds for both, and records the arm64 image running on Apple
+silicon with no emulation and no `SIGILL` (REPORTED).
+
+So on Apple silicon the container is now the straightforward path, and arm64
+Linux is served by the same image. Use this document when you want the Host
+without a container at all: no Docker on the machine, or debugging the Host
+process directly against a local `hydra-node`.
+
+There is still no standalone `aarch64-linux` download. Building one from the
+Nix flake is possible in principle (haskell.nix plus a Rust accumulator), but it
+compiles GHC and Rust largely from source, and it produces an unofficial binary
+whose script hashes would have to be verified against
+`HYDRA_DEPOSIT_SCRIPT_HASH` and `HYDRA_HEAD_SCRIPT_HASH` before any Head opened
+with it could interoperate. Run the container there instead.
+
+## What native mode is
+
+The Host is a plain Node process. Running it directly, pointed at the platform's
+own `hydra-node`, executes the _same application code_ as the image — config,
+registry, port allocation, supervisor, plan/drain/drift/unwedge, node client,
+auth, routes, provisioning, and the proxy. Three environment variables differ,
+and all three are configuration rather than code paths:
+
+| Variable                     | Container                                       | Native (macOS)                             |
+| ---------------------------- | ----------------------------------------------- | ------------------------------------------ |
+| `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, Linux)      | path to the Darwin arm64 build             |
+| `HYDRA_HOST_DATA_DIR`        | `/data` volume                                  | a local directory                          |
+| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes a matching etcd 3.5.25 | `false` — let `hydra-node` extract its own |
+
+Native mode is a supported way to run the Host, not a workaround.
+
+## Running it
+
+Two arm64 cases, and they are not the same problem:
+
+- **macOS on Apple silicon**: upstream builds `aarch64-darwin`, so native mode
+  works today. Everything below applies.
+- **arm64 Linux**: there is no standalone binary to point `HYDRA_NODE_BIN` at,
+  so native mode does not apply. Since 2.4.0 the official image carries a
+  `linux/arm64` manifest, so run the container there.
+
+### 1. Fetch `hydra-node`
+
+2.4.1 publishes no release assets, so there is no zip to download and no
+upstream checksum to check one against (VERIFIED: `gh release view 2.4.1 --repo
+cardano-scaling/hydra --json assets` returns `{"assets":[]}`; 2.4.0 is REPORTED to behave
+the same and was not checked). The binary comes from the aarch64-darwin
+artifact of the tag's own Binaries CI run instead. The fetch script handles
+both cases, so use it rather than hand-rolling a `curl`:
+
+```bash
+HYDRA_VERSION=2.4.1 ./hydra-l2-flow/hydra-native.sh bin
+```
+
+It downloads through `gh`, so install the GitHub CLI and authenticate it first.
+Both paths read from `cardano-scaling/hydra`.
+
+The script tries the release asset first, in case upstream resumes attaching
+one, and checks it against `HYDRA_RELEASE_SHA256`. That digest is pinned in the
+script for 2.3.0 only. A future tag that ships a zip therefore needs you to
+supply it: the script downloads the zip first and refuses to install it after,
+so an unpinned digest costs you the transfer, not just the install. When there
+is no asset the script falls back to the CI artifact and checks the extracted
+binary against `HYDRA_BINARY_SHA256`, which is pinned for 2.4.1. That path
+checks the digest is present before it downloads. Upstream publishes no digest
+for a CI artifact, so the value was measured locally. Re-pin it when you move
+`HYDRA_VERSION`.
+
+The binary lands at `hydra-l2-flow/.bin/hydra-node`. An existing binary at that
+path is left alone: the script returns early rather than upgrading it, and
+prints nothing at all when it does. Silence therefore means the fetch replaced
+nothing, so check the version yourself:
+
+```bash
+./hydra-l2-flow/.bin/hydra-node --version
+```
+
+Both sides of a head must run the same version, so pin it rather than tracking
+latest. An upgrade from 2.3.0 has prerequisites that you cannot meet
+afterwards. See
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md).
+
+### 2. Start the Host
+
+```bash
+HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
+HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
+HYDRA_HOST_NETWORK=preprod \
+HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
+HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
+HYDRA_NODE_BIN="$PWD/hydra-l2-flow/.bin/hydra-node" \
+HYDRA_HOST_DATA_DIR="$PWD/.hydra-data" \
+BLOCKFROST_PROJECT_FILE="$PWD/blockfrost.txt" \
+HYDRA_HOST_LEDGER_PARAMS_FILE="$PWD/packages/hydra-host/params/preprod.json" \
+HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
+HYDRA_HOST_USE_SYSTEM_ETCD=false \
+pnpm exec tsx packages/hydra-host/src/index.ts
+```
+
+`HYDRA_HOST_SCRIPTS_TX_IDS` carries a Hydra script set you published yourself
+with `hydra-node publish-scripts`. On 2.4.1 preprod the Host cannot fall back to
+upstream's published set: the node then dies seconds after boot with
+`BlockfrostClientError AssetNameMissing`, an error that names neither the
+scripts nor this variable (REPORTED, see
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)). Leave it out
+only on a version that can read the upstream set.
+
+Keep the quotes when you substitute. Pasted unchanged, the quoted placeholder
+reaches the config parser and is refused by name:
+`HYDRA_HOST_SCRIPTS_TX_IDS must be comma-separated 64-character hex
+transaction ids`. Unquoted, the shell reads the angle brackets as redirects and
+the Host never starts.
+
+The loopback Exchange Plane URL is for a local native run. A reachable Host
+must use its public HTTPS Exchange Plane URL.
+
+Four of those differ from the container and are worth understanding:
+
+|                                    | Why                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HYDRA_NODE_BIN`                   | Nothing is baked in, so the path is yours to supply.                                                                                                                                                                                                                                                                                                            |
+| `HYDRA_HOST_DATA_DIR`              | Defaults to `/data`, which is the container's volume. Point it somewhere real and back it up: it holds the event store and the raft WAL.                                                                                                                                                                                                                        |
+| `HYDRA_HOST_LEDGER_PARAMS_FILE`    | Defaults to `/opt/hydra/params/<network>.json`, which only exists in the image. Use the reviewed file that ships in `packages/hydra-host/params/` — any other params file, however plausible, makes every payment service refuse the Host.                                                                                                                      |
+| `HYDRA_HOST_USE_SYSTEM_ETCD=false` | Required, and it defaults to `true`. There is no system etcd outside the image, so leaving the default means every node dies seconds after starting; let `hydra-node` extract the copy it embeds instead. Setting `true` against a different etcd version risks subtle raft incompatibilities. The Host refuses to boot if this is on and no `etcd` is on PATH. |
+
+`BLOCKFROST_PROJECT_FILE` is a path to a file containing the project id, not
+the id itself, in native mode as in the container.
+
+Everything else — ports, tokens, the peer allow-list — behaves exactly as it
+does in the container. See the
+[Hydra Operations Guide](hydra-operations.md) for those.
+
+One difference is worth stating, because it is easy to read as "already handled".
+There is no container here, so there is no port publication and no
+`docker-compose.public-peer.yml` to gate the peer range behind. The peer ports
+are simply open on the machine as soon as a node starts. The nftables ruleset
+from `GET /v1/peer-allowlist`, plus whatever firewall sits in front of the
+machine, is the entire protection for an unauthenticated etcd raft plane. Apply
+it before provisioning the first node, and re-apply whenever peer membership or
+DNS changes. The generated ruleset covers this case: it emits an `input` chain
+alongside the `forward` chain that Docker bridge traffic needs.
+
+### 3. Keep it running
+
+There is no supervisor around the supervisor here. Use whatever the machine
+already has — `launchd` on macOS, `systemd` on Linux — and give it a **stop
+timeout of about four minutes** (250s), because the Host drains a snapshot round
+before exiting and etcd's raft WAL does not tolerate being cut off mid-round.
+Native mode runs the same binary with the same defaults as the container: a node
+that will not drain takes 120s, then 30s before SIGKILL, then 5s waiting on it,
+and the Host gives up on its own drain at 240s. A two-minute timeout kills it
+before a single stuck node has finished.
+
+## What the container still covers exclusively
+
+Running natively verifies the logic; it does not verify the image. The
+container additionally covers the build itself, the baked binaries being on
+`PATH`, the non-root user, volume permissions, and `--network host`. The path
+native mode cannot exercise at all is a node reaching `Running` _inside_ the
+container using the baked etcd: the baked version matches the one `hydra-node`
+embeds, but a version match is not proof it runs. Since 2.4.0 that test needs
+no amd64 machine. The image builds and runs on `linux/arm64` too, and
+`packages/hydra-host/Dockerfile` bakes an arm64 etcd beside the amd64 one.
+
+## Running the end-to-end suite
+
+```bash
+pnpm exec tsx scripts/hydra-e2e/run.mts
+```
+
+This brings up two Hosts, provisions a node on each, peers them into one etcd
+cluster, and exercises the control plane, the proxy, the node lifecycle, Host
+crash recovery, and the cross-organisation handshake through a real payment
+service. See [scripts/hydra-e2e/README.md](../scripts/hydra-e2e/README.md) for
+prerequisites, what each phase asserts, and the opt-in phase that opens a real
+Head on preprod.

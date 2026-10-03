@@ -1,0 +1,61 @@
+flowchart LR
+    subgraph Client["Clients and operators"]
+        Admin["Admin API / Hydra page"]
+        Buyer["Buyer API flows"]
+        Seller["Seller / agent flows"]
+    end
+
+    subgraph Service["Masumi payment service"]
+        Routes["Express routes"]
+        Wallets["Hot wallets and signing"]
+        V2["V2 payment services"]
+        TxRows["Transaction rows"]
+        L1Sync["L1 tx sync"]
+        HydraManager["HydraConnectionManager"]
+        HydraTxHandler["Hydra tx handler"]
+    end
+
+    subgraph Providers["Provider boundary"]
+        Blockfrost["Blockfrost / L1 provider"]
+        HydraProvider["HydraProvider"]
+    end
+
+    subgraph L1["Cardano L1"]
+        L1WalletUtxos["Wallet UTxOs"]
+        L1Escrow["Normal payment contract UTxOs"]
+        HeadScripts["Hydra head scripts"]
+    end
+
+    subgraph Head["Hydra head"]
+        HydraNode["Local hydra-node"]
+        Snapshot["In-head UTxO snapshot"]
+        L2Escrow["In-head payment contract UTxOs"]
+        RemoteNodes["Remote hydra-nodes"]
+    end
+
+    Admin --> Routes
+    Buyer --> Routes
+    Seller --> Routes
+    Routes --> V2
+    Routes --> HydraManager
+    V2 --> Wallets
+    V2 --> TxRows
+
+    V2 -- "layer=L1: fetch UTxOs, build, submit" --> Blockfrost
+    Blockfrost --> L1WalletUtxos
+    Blockfrost --> L1Escrow
+    L1Sync --> Blockfrost
+    L1Sync --> TxRows
+
+    HydraManager -- "connect / status events" --> HydraNode
+    HydraProvider -- "snapshot UTxOs, protocol params, submitTx" --> HydraNode
+    HydraNode <--> RemoteNodes
+    HydraNode --> Snapshot
+    Snapshot --> L2Escrow
+
+    V2 -- "layer=L2: use HydraProvider as Mesh fetcher/submitter" --> HydraProvider
+    HydraTxHandler -- "confirmed in head" --> HydraNode
+    HydraTxHandler --> TxRows
+
+    HydraNode -- "init, commit, close, fanout settle on L1" --> HeadScripts
+    HeadScripts --> L1

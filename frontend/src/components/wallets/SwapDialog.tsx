@@ -142,7 +142,8 @@ export function SwapDialog({
   const [otherTokenBalances, setOtherTokenBalances] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const [fromAmount, setFromAmount] = useState<number>(1);
+  const [fromAmountInput, setFromAmountInput] = useState('1');
+  const fromAmount = Number.parseFloat(fromAmountInput) || 0;
   const { rate: adaToUsdRate } = useRate();
   const [isFetchingDetails, setIsFetchingDetails] = useState<boolean>(true);
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
@@ -287,7 +288,7 @@ export function SwapDialog({
       setShowConfirmation(false);
       setSelectedFromToken(swappableTokens[adaIndex]);
       setSelectedToToken(swappableTokens[usdmIndex]);
-      setFromAmount(1);
+      setFromAmountInput('1');
       fetchBalance();
 
       const balanceInterval = setInterval(() => {
@@ -363,12 +364,33 @@ export function SwapDialog({
     network === 'Mainnet' &&
     !!walletVkey;
 
+  /**
+   * Why the swap cannot run, in the operator's words.
+   *
+   * Four separate conditions used to collapse into one dead button that said
+   * "Swap" and did nothing. On a preprod service that is every visit, since
+   * swapping is mainnet-only, and nothing on screen said so.
+   *
+   * Ordered by how fixable each one is: the two that need a different service
+   * or wallet come first, then the ones a click away.
+   */
+  const swapBlockedReason: string | null =
+    network !== 'Mainnet'
+      ? `Swapping runs on mainnet only, and this service is on ${network ?? 'another network'}.`
+      : !walletVkey
+        ? 'This wallet has no verification key on file, so nothing can be signed for it.'
+        : adaBalance <= 0
+          ? 'This wallet holds no ADA, so there is nothing to swap and no fee to pay with.'
+          : selectedFromToken.symbol === selectedToToken.symbol
+            ? 'Pick two different tokens.'
+            : null;
+
   const handleSwitch = () => {
     if (selectedFromToken.symbol === 'ADA' || selectedToToken.symbol === 'ADA') {
       const prevToAmount = conversionRate > 0 ? fromAmount * conversionRate : fromAmount;
       setSelectedFromToken(selectedToToken);
       setSelectedToToken(selectedFromToken);
-      setFromAmount(prevToAmount);
+      setFromAmountInput(String(prevToAmount));
     }
   };
 
@@ -412,15 +434,14 @@ export function SwapDialog({
   };
 
   const handleMaxClick = () => {
-    setFromAmount(getMaxAmount(selectedFromToken.symbol));
+    setFromAmountInput(String(getMaxAmount(selectedFromToken.symbol)));
   };
 
   const handleFromAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    const filteredValue = value.replace(/[^0-9.]/g, '');
-    const parsedValue = parseFloat(filteredValue);
-    const normalizedValue = isNaN(parsedValue) ? 0 : Number(parsedValue);
-    setFromAmount(normalizedValue);
+    const value = e.target.value.replace(/[^0-9.]/g, '');
+    const dotCount = (value.match(/\./g) ?? []).length;
+    if (dotCount > 1) return;
+    setFromAmountInput(value);
   };
 
   const toAmount = fromAmount * conversionRate;
@@ -471,7 +492,7 @@ export function SwapDialog({
             onSwapComplete?.();
             void fetchBalance();
             setSwapStatus('confirmed');
-            toast.success('Order was already executed by the DEX — swap completed!', {
+            toast.success('Order was already executed by the DEX, so the swap completed.', {
               theme: 'dark',
             });
             pollTimeoutRef.current = setTimeout(() => {
@@ -506,7 +527,7 @@ export function SwapDialog({
 
           if (newStatus === 'OrderConfirmed') {
             setSwapStatus('orderConfirmed');
-            toast.info(message || 'Order recovered — you can retry cancelling.', {
+            toast.info(message || 'Order recovered. You can retry cancelling.', {
               theme: 'dark',
             });
           } else if (newStatus === 'CancelConfirmed' || newStatus === 'Completed') {
@@ -649,7 +670,7 @@ export function SwapDialog({
   const statusLabelMap: Record<string, string> = {
     processing: 'Signing transaction...',
     submitted: 'Waiting for order confirmation...',
-    orderConfirmed: 'Order placed — awaiting execution',
+    orderConfirmed: 'Order placed, awaiting execution',
     cancelling: 'Cancelling order...',
     cancelConfirmed: 'Order cancelled',
     confirmed: 'Swap confirmed!',
@@ -768,14 +789,14 @@ export function SwapDialog({
                       disabled={isSwapping}
                     />
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className={`w-full text-right bg-transparent focus:outline-none text-2xl font-semibold tabular-nums tracking-tight ${
                         isOverMax ? 'text-destructive' : 'text-foreground'
                       }`}
                       placeholder="0"
-                      value={fromAmount || ''}
+                      value={fromAmountInput}
                       onChange={handleFromAmountChange}
-                      step="0.1"
                     />
                   </div>
                   <div className="text-right text-xs text-muted-foreground mt-1.5">
@@ -834,6 +855,7 @@ export function SwapDialog({
                 variant="default"
                 className="w-full mt-4 h-11 text-sm font-semibold rounded-xl"
                 onClick={handleSwapClick}
+                title={swapBlockedReason ?? undefined}
                 disabled={
                   !canSwap || isSwapping || fromAmount <= 0 || isOverMax || swapStatus !== 'idle'
                 }
@@ -849,6 +871,15 @@ export function SwapDialog({
                   'Swap'
                 )}
               </Button>
+
+              {/* Said once, under the control it explains. An amount of zero is
+                left to the disabled button, which is the ordinary way a form
+                waits for input and needs no sentence. */}
+              {swapBlockedReason !== null && !isSwapping && (
+                <p className="mt-2 text-center text-xs text-muted-foreground">
+                  {swapBlockedReason}
+                </p>
+              )}
 
               {/* Order confirmed — awaiting execution */}
               {swapStatus === 'orderConfirmed' && !isSwapping && (

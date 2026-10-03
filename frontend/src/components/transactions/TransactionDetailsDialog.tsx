@@ -1,13 +1,16 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { shortenRecordId } from '@/lib/readable-reference';
 import { cn, shortenAddress, getExplorerUrl, formatAssetAmount } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   postPurchaseRequestRefund,
@@ -31,7 +34,6 @@ import { RequestRepairDialog } from './RequestRepairDialog';
 import {
   formatOnChainState,
   formatRequestedAction,
-  formatStatus,
   getLatestTxHash,
   getStatusColor,
   type Transaction,
@@ -45,6 +47,18 @@ interface TransactionDetailsDialogProps {
 
 const handleError = (error: unknown, fallback: string = 'An error occurred') => {
   toast.error(extractApiErrorMessage(error, fallback));
+};
+
+const isHydraTransaction = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.layer === 'L2';
+
+// Layer is only known once the request is picked up + locked (CurrentTransaction
+// exists). Before that, show neither L1 nor Hydra L2.
+const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' | null => {
+  const layer = transaction.CurrentTransaction?.layer;
+  if (layer === 'L2') return 'Hydra L2';
+  if (layer === 'L1') return 'L1';
+  return null;
 };
 
 const canRequestRefund = (transaction: Transaction) => {
@@ -74,7 +88,8 @@ export default function TransactionDetailsDialog({
   onClose,
   onRefresh,
 }: TransactionDetailsDialogProps) {
-  const { network, apiClient } = useAppContext();
+  const { network, apiClient, capabilities } = useAppContext();
+  const resync = useResync();
   const { openAgentDetails } = useAgentDetailsDialog();
   // Pin actions and explorer links to the network the transaction row lives
   // on, not the ambient app network (they can diverge mid-navigation).
@@ -286,6 +301,7 @@ export default function TransactionDetailsDialog({
 
       if (response.data?.data) {
         toast.success('Refund request submitted successfully');
+        await resync('transactions');
         onRefresh();
         onClose();
       } else {
@@ -317,6 +333,7 @@ export default function TransactionDetailsDialog({
 
       if (response.data?.data) {
         toast.success('Refund authorized successfully');
+        await resync('transactions');
         onRefresh();
         onClose();
       } else {
@@ -346,6 +363,7 @@ export default function TransactionDetailsDialog({
 
       if (response.data?.data) {
         toast.success('Refund request cancelled successfully');
+        await resync('transactions');
         onRefresh();
         onClose();
       } else {
@@ -374,7 +392,9 @@ export default function TransactionDetailsDialog({
               <div className="col-span-2">
                 <h4 className="font-semibold mb-1">Transaction ID</h4>
                 <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
-                  <p className="text-sm font-mono break-all">{transaction.id}</p>
+                  <p className="text-sm font-mono break-all" title={transaction.id}>
+                    {shortenRecordId(transaction.id)}
+                  </p>
                   <CopyButton value={transaction.id} />
                 </div>
               </div>
@@ -387,6 +407,7 @@ export default function TransactionDetailsDialog({
                     paymentSourceType={transaction.PaymentSource.paymentSourceType}
                     showDefault
                   />
+                  {isHydraTransaction(transaction) && <Badge variant="success">Hydra L2</Badge>}
                 </div>
               </div>
 
@@ -464,20 +485,6 @@ export default function TransactionDetailsDialog({
             )}
 
             <div className="space-y-2">
-              <h4 className="font-semibold">Onchain state</h4>
-              <div className="rounded-md border p-4 bg-muted/10">
-                <p className="text-sm font-medium">
-                  {formatOnChainState(transaction.onChainState)}
-                </p>
-                {transaction.NextAction?.requestedAction && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Next action: {formatRequestedAction(transaction.NextAction.requestedAction)}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
               <h4 className="font-semibold">Transaction Details</h4>
               <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
                 <div>
@@ -488,8 +495,35 @@ export default function TransactionDetailsDialog({
                       getStatusColor(transaction.onChainState, !!transaction.NextAction?.errorType),
                     )}
                   >
-                    {formatStatus(transaction.onChainState)}
+                    {formatOnChainState(transaction.onChainState)}
                   </p>
+                  {transaction.NextAction?.requestedAction && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Next action: {formatRequestedAction(transaction.NextAction.requestedAction)}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <h5 className="text-sm font-medium mb-1">Layer</h5>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {getTransactionLayerLabel(transaction) ? (
+                      <Badge variant={isHydraTransaction(transaction) ? 'success' : 'secondary'}>
+                        {getTransactionLayerLabel(transaction)}
+                      </Badge>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                    {transaction.CurrentTransaction?.hydraHeadId && (
+                      <>
+                        <span className="text-xs text-muted-foreground">Head</span>
+                        <span className="font-mono text-xs">
+                          {shortenAddress(transaction.CurrentTransaction.hydraHeadId, 8)}
+                        </span>
+                        <CopyButton value={transaction.CurrentTransaction.hydraHeadId} />
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -552,10 +586,6 @@ export default function TransactionDetailsDialog({
             <div className="space-y-2">
               <h4 className="font-semibold">Time Information</h4>
               <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
-                <div>
-                  <h5 className="text-sm font-medium mb-1">Created</h5>
-                  <p className="text-sm">{formatDateTime(transaction.createdAt)}</p>
-                </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Last Updated</h5>
                   <p className="text-sm">{formatDateTime(transaction.updatedAt)}</p>
@@ -631,51 +661,60 @@ export default function TransactionDetailsDialog({
               isLoading={isLoading}
               errorRecoveryMode={errorRecoveryMode}
               onRecover={recoverTransactionError}
+              canRecover={capabilities.canPay}
             />
 
             <TransactionHistorySection transaction={transaction} network={transactionNetwork} />
 
             <div className="flex gap-2 justify-end">
-              <Button
-                variant="outline"
-                onClick={() => setShowRepairDialog(true)}
-                disabled={isLoading}
-                title="Point this request at a specific transaction when the database has fallen behind the chain"
-              >
-                Repair Request
-              </Button>
-              {canRequestRefund(transaction) && transaction.type === 'purchase' && (
+              {capabilities.canAdmin && (
                 <Button
-                  variant="secondary"
-                  onClick={() => handleRefundRequest(transaction)}
+                  variant="outline"
+                  onClick={() => setShowRepairDialog(true)}
                   disabled={isLoading}
+                  title="Point this request at a specific transaction when the database has fallen behind the chain"
                 >
-                  {isLoading ? 'Requesting refund...' : 'Request Refund'}
+                  Repair Request
                 </Button>
               )}
-              {canAllowRefund(transaction) && transaction.type === 'payment' && (
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    setConfirmAction('refund');
-                    setShowConfirmDialog(true);
-                  }}
-                  className="bg-orange-600 hover:bg-orange-700"
-                >
-                  Authorize Refund
-                </Button>
-              )}
-              {canCancelRefund(transaction) && transaction.type === 'purchase' && (
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    setConfirmAction('cancel');
-                    setShowConfirmDialog(true);
-                  }}
-                >
-                  Cancel Refund Request
-                </Button>
-              )}
+              {capabilities.canPay &&
+                canRequestRefund(transaction) &&
+                transaction.type === 'purchase' && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => handleRefundRequest(transaction)}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Requesting refund...' : 'Request Refund'}
+                  </Button>
+                )}
+              {capabilities.canPay &&
+                canAllowRefund(transaction) &&
+                transaction.type === 'payment' && (
+                  <Button
+                    variant="default"
+                    onClick={() => {
+                      setConfirmAction('refund');
+                      setShowConfirmDialog(true);
+                    }}
+                    className="bg-orange-600 hover:bg-orange-700"
+                  >
+                    Authorize Refund
+                  </Button>
+                )}
+              {capabilities.canPay &&
+                canCancelRefund(transaction) &&
+                transaction.type === 'purchase' && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setConfirmAction('cancel');
+                      setShowConfirmDialog(true);
+                    }}
+                  >
+                    Cancel Refund Request
+                  </Button>
+                )}
             </div>
           </div>
         </DialogContent>

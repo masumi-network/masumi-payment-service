@@ -9,6 +9,9 @@ import { cn } from '@/lib/utils';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import { capabilitiesFromApiKeyStatus, DEFAULT_CAPABILITIES } from '@/lib/permissions';
+import { MASUMI_API_KEY_DOCS_URL } from '@/lib/masumi-links';
+import { encryptForStorage } from '@/lib/secure-storage';
 
 interface ApiError {
   message: string;
@@ -22,11 +25,15 @@ export function ApiKeyDialog() {
   const [apiKeyTMP, setApiKeyTMP] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { updateApiKey, apiClient } = useAppContext();
+  const { updateApiKey, setCapabilities, apiClient } = useAppContext();
 
   const handleApiKeySubmit = async (key: string) => {
     setError('');
     setIsLoading(true);
+    // Drop the previous session's flags before the new key is in play. Without
+    // this, signing in with a weaker key while stale capabilities say canPay
+    // leaves pay-gated queries enabled for a beat and they 401.
+    setCapabilities(DEFAULT_CAPABILITIES);
 
     try {
       apiClient.setConfig({ headers: { token: key } });
@@ -35,18 +42,15 @@ export function ApiKeyDialog() {
         client: apiClient,
       });
 
-      if (statusResponse.data?.data.status !== 'Active') {
-        throw new Error('Invalid Key: Admin key is not active');
+      const nextCapabilities = capabilitiesFromApiKeyStatus(statusResponse.data?.data);
+      if (!nextCapabilities) {
+        throw new Error('Invalid Key: Active key with read access required');
       }
 
-      // Check if the API key has admin permission
-      const permission = statusResponse.data?.data?.permission;
-      if (!permission || permission !== 'Admin') {
-        throw new Error('Invalid Key: Admin permission required');
-      }
+      setCapabilities(nextCapabilities);
 
-      const hexKey = Buffer.from(key).toString('hex');
-      localStorage.setItem('payment_api_key', hexKey);
+      const encryptedKey = await encryptForStorage(key);
+      localStorage.setItem('payment_api_key', encryptedKey);
 
       const sourcesResponse = await getPaymentSource({
         client: apiClient,
@@ -54,10 +58,12 @@ export function ApiKeyDialog() {
 
       const sources = sourcesResponse.data?.data?.PaymentSources ?? [];
 
-      if (sources.length === 0) {
+      if (sources.length === 0 && nextCapabilities.canAdmin) {
         const networkLimit = statusResponse.data?.data.NetworkLimit ?? [];
         const setupType = networkLimit.includes('Mainnet') ? 'mainnet' : 'preprod';
         router.push(`/setup?type=${setupType}`);
+      } else if (sources.length === 0) {
+        router.push('/developers');
       } else {
         router.push('/');
       }
@@ -77,27 +83,27 @@ export function ApiKeyDialog() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Head>
-        <title>Sign In | Admin Interface</title>
+        <title>Sign In | Masumi Payment</title>
       </Head>
       <Header />
 
       <main className="flex flex-col items-center justify-center min-h-screen py-20">
-        <h1 className="text-4xl font-bold mb-4">Enter your Admin Key</h1>
+        <h1 className="text-4xl font-bold mb-4">Enter your API Key</h1>
 
-        <p className="text-sm text-muted-foreground mb-8 text-center max-w-md">
-          Your admin key is needed to access the dashboard. This key is required to manage your ai
-          agents, payment settings and view transactions.
-        </p>
-
-        <Button variant="muted" className="text-sm mb-8 hover:underline" asChild>
+        <div className="text-sm text-muted-foreground mb-8 text-center max-w-lg space-y-3">
+          <p>
+            Sign in with the <code className="text-foreground">ADMIN_KEY</code> from your node
+            environment, or any other valid API key from this payment service.
+          </p>
           <Link
-            href={'https://www.masumi.network/dev/masumi/'}
+            href={MASUMI_API_KEY_DOCS_URL}
             target="_blank"
             rel="noopener noreferrer"
+            className="inline-block text-primary underline underline-offset-4 hover:text-primary/80"
           >
-            Learn more
+            Learn more about API keys and ADMIN_KEY
           </Link>
-        </Button>
+        </div>
 
         <form
           onSubmit={(e) => {
@@ -111,7 +117,7 @@ export function ApiKeyDialog() {
               type="password"
               value={apiKeyTMP}
               onChange={(e) => setApiKeyTMP(e.target.value)}
-              placeholder="Admin Key"
+              placeholder="API Key"
               required
               className={cn(
                 'flex-1 bg-transparent',

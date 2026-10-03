@@ -405,14 +405,14 @@ export async function generateMonthlyInvoice(
 		if (!decidedIdentifier) {
 			throw createHttpError(
 				400,
-				`Payment ${payment.id} has an invalid blockchain identifier — cannot generate invoice`,
+				`Payment ${payment.id} has an invalid blockchain identifier, so no invoice can be generated`,
 			);
 		}
 		const agentIdentifier = decidedIdentifier.agentIdentifier;
 		if (!agentIdentifier) {
 			throw createHttpError(
 				400,
-				`Payment ${payment.id} has no agent identifier in blockchain identifier — cannot generate invoice`,
+				`Payment ${payment.id} has no agent identifier in blockchain identifier, so no invoice can be generated`,
 			);
 		}
 		uniqueAgentIdentifiers.add(agentIdentifier);

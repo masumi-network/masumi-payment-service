@@ -13,6 +13,15 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
  */
 export type ChainTxLookupResult = 'found' | 'not-found' | 'transient-error';
 
+export type ConfirmedChainTxLookupResult =
+	| 'not-found'
+	| 'pending'
+	| 'confirmed-valid'
+	| 'confirmed-invalid'
+	| 'transient-error';
+
+const DEFAULT_CHAIN_OBSERVER_TIMEOUT_MS = 15_000;
+
 /**
  * Read the HTTP status of a failed chain lookup.
  *
@@ -69,5 +78,86 @@ export async function lookupChainTx(params: {
 		return 'found';
 	} catch (error) {
 		return getChainErrorStatus(error) === 404 ? 'not-found' : 'transient-error';
+	}
+}
+
+/**
+ * Verify exact, phase-aware transaction finality with an independent observer.
+ * A successful `txs` lookup alone is not durable evidence: the indexed block
+ * can still disappear in a shallow rollback. A failure after the transaction
+ * was found is therefore always transient, including a block lookup 404.
+ */
+export async function lookupConfirmedChainTx(params: {
+	network: Network;
+	rpcProviderApiKey: string;
+	txHash: string;
+	requiredConfirmations: number;
+	observerTimeoutMs?: number;
+}): Promise<ConfirmedChainTxLookupResult> {
+	const observerTimeoutMs = params.observerTimeoutMs ?? DEFAULT_CHAIN_OBSERVER_TIMEOUT_MS;
+	if (
+		!/^[0-9a-f]{64}$/.test(params.txHash) ||
+		!Number.isSafeInteger(params.requiredConfirmations) ||
+		params.requiredConfirmations < 0 ||
+		!Number.isSafeInteger(observerTimeoutMs) ||
+		observerTimeoutMs <= 0 ||
+		observerTimeoutMs > 60_000
+	) {
+		return 'transient-error';
+	}
+
+	const blockfrost = getBlockfrostInstance(params.network, params.rpcProviderApiKey);
+	return await withChainObserverTimeout(
+		(async (): Promise<ConfirmedChainTxLookupResult> => {
+			let details: Awaited<ReturnType<typeof blockfrost.txs>>;
+			try {
+				details = await blockfrost.txs(params.txHash);
+			} catch (error) {
+				return getChainErrorStatus(error) === 404 ? 'not-found' : 'transient-error';
+			}
+
+			if (
+				typeof details.hash !== 'string' ||
+				details.hash !== params.txHash ||
+				typeof details.valid_contract !== 'boolean'
+			) {
+				return 'transient-error';
+			}
+
+			if (params.requiredConfirmations > 0) {
+				if (typeof details.block !== 'string' || details.block.length === 0) return 'transient-error';
+				try {
+					const block = await blockfrost.blocks(details.block);
+					if (
+						typeof block.confirmations !== 'number' ||
+						!Number.isSafeInteger(block.confirmations) ||
+						block.confirmations < 0
+					) {
+						return 'transient-error';
+					}
+					if (block.confirmations < params.requiredConfirmations) return 'pending';
+				} catch {
+					return 'transient-error';
+				}
+			}
+
+			return details.valid_contract ? 'confirmed-valid' : 'confirmed-invalid';
+		})(),
+		observerTimeoutMs,
+	);
+}
+
+async function withChainObserverTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T | 'transient-error'> {
+	let timeout: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			operation,
+			new Promise<'transient-error'>((resolve) => {
+				timeout = setTimeout(() => resolve('transient-error'), timeoutMs);
+				timeout.unref?.();
+			}),
+		]);
+	} finally {
+		if (timeout) clearTimeout(timeout);
 	}
 }

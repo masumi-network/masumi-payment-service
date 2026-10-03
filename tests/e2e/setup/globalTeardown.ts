@@ -40,9 +40,16 @@ export default async function globalTeardown() {
 
 		const state = await safeReadState();
 		if (state?.agents) {
-			const entries = Object.entries(state.agents) as Array<
-				[PaymentSourceType, NonNullable<E2EGlobalState['agents'][PaymentSourceType]>]
-			>;
+			// Flattened: `agents` holds one entry per selling hot wallet, so a
+			// source seeded with several wallets has several agents to clean up.
+			// They sit on distinct wallets, so deregistering them concurrently
+			// costs no extra wall-clock.
+			const entries = (
+				Object.entries(state.agents) as Array<
+					[PaymentSourceType, NonNullable<E2EGlobalState['agents'][PaymentSourceType]>]
+				>
+			).flatMap(([sourceType, agentsForType]) => agentsForType.map((agent) => [sourceType, agent] as const));
+
 			const results = await Promise.allSettled(
 				entries.map(([sourceType, agent]) => {
 					if (!agent?.agentIdentifier) {
@@ -54,11 +61,14 @@ export default async function globalTeardown() {
 			);
 
 			for (const [index, result] of results.entries()) {
-				const [sourceType] = entries[index];
+				const [sourceType, agent] = entries[index];
 				if (result.status === 'rejected') {
-					console.error(`❌ [globalTeardown] Failed to deregister ${sourceType} agent:`, result.reason);
+					console.error(
+						`❌ [globalTeardown] Failed to deregister ${sourceType} agent ${agent?.agentIdentifier}:`,
+						result.reason,
+					);
 				} else {
-					console.log(`✅ [globalTeardown] Deregistered ${sourceType} agent.`);
+					console.log(`✅ [globalTeardown] Deregistered ${sourceType} agent ${agent?.agentIdentifier}.`);
 				}
 			}
 		}

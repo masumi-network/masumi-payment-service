@@ -1,11 +1,10 @@
-import { supportsAgentMetadataUpdate } from '@/lib/agent-update';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Pencil, Trash2, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { cn, formatAssetAmount, shortenAddress, getExplorerUrl } from '@/lib/utils';
-import type { RegistryEntry } from '@/lib/api/generated';
-import type { NetworkType } from '@/lib/contexts/AppContext';
+import type { RegistryEntry, PaymentSourceExtended } from '@/lib/api/generated';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
+import type { NetworkType } from '@/lib/contexts/AppContext';
 import { agentHasX402Options } from './AgentX402Options';
 import { agentHasVerifications } from './AgentVerifications';
 import { Spinner } from '@/components/ui/spinner';
@@ -13,28 +12,85 @@ import { rowActivation } from '@/lib/a11y';
 import { isDeregisterableAgentState } from '@/lib/registry-states';
 import { FaRegClock } from 'react-icons/fa';
 import { CopyButton } from '@/components/ui/copy-button';
-import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
-import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { Separator } from '@/components/ui/separator';
+import { TableSelectRowCheckbox } from '@/components/ui/table-select-checkbox';
+import { AIAgentRowActionsMenu } from './AIAgentRowActionsMenu';
+import {
+  tableActionsCellCompactClass,
+  tableActionsCellCompactSelectedClass,
+  tableActionsInnerClass,
+} from '@/components/ui/table-actions-column';
+import {
+  parseAgentStatus,
+  getAgentStatusBadgeVariant,
+  getAgentStatusHelperText,
+  getAgentIdentifierPlaceholder,
+} from '@/lib/agent-status';
+import { getAgentTypeLabel } from '@/lib/agent-type';
+import { canEditAgentMetadata } from '@/lib/can-edit-agent-metadata';
+import { supportsAgentMetadataUpdate } from '@/lib/agent-update';
 import { formatDate } from '@/lib/format-date';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 export type AIAgent = RegistryEntry & { relation?: AgentRelation };
-// Tells apart agents registered on the active source from those registered elsewhere that
-// merely accept payment on it (or over x402 on an EVM chain).
 function RelationBadge({ relation }: { relation?: AgentRelation }) {
   if (relation === 'payment') {
     return (
       <Badge
         variant="outline"
-        className="mt-1 border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
+        className="w-fit border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
       >
         Registered elsewhere
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="mt-1 text-[10px]">
+    <Badge variant="outline" className="w-fit text-[10px]">
       Registered here
     </Badge>
+  );
+}
+
+type AgentWalletRowProps = {
+  label: string;
+  address: string;
+  walletVkey: string;
+  onWalletClick: (walletVkey: string) => void;
+  /** Wider preview when minting and holding share one address (single-column layout). */
+  variant?: 'split' | 'combined';
+};
+
+function AgentWalletRow({
+  label,
+  address,
+  walletVkey,
+  onWalletClick,
+  variant = 'split',
+}: AgentWalletRowProps) {
+  const previewChars = variant === 'combined' ? 10 : 4;
+
+  return (
+    <div className={cn('min-w-0 space-y-1', variant === 'split' && 'flex-1')}>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <button
+          type="button"
+          className={cn(
+            'min-w-0 text-left font-mono text-xs text-muted-foreground hover:text-primary',
+            variant === 'combined' ? 'max-w-[14rem] truncate' : 'truncate',
+          )}
+          title={address}
+          onClick={(event) => {
+            event.stopPropagation();
+            onWalletClick(walletVkey);
+          }}
+        >
+          {shortenAddress(address, previewChars)}
+        </button>
+        <CopyButton value={address} />
+      </div>
+    </div>
   );
 }
 
@@ -47,7 +103,11 @@ type AIAgentRowProps = {
   agent: AIAgent;
   index: number;
   network: NetworkType;
-  isV2Source: boolean;
+  isSelected: boolean;
+  showBulkSelection: boolean;
+  capabilities: { canPay: boolean; canAdmin: boolean };
+  selectedPaymentSource: PaymentSourceExtended | null | undefined;
+  onToggleSelection: () => void;
   onSelect: (agent: AIAgent) => void;
   onWalletClick: (walletVkey: string) => void;
   onVerify: (agent: AIAgent) => void;
@@ -55,12 +115,15 @@ type AIAgentRowProps = {
   onUpdate: (agent: AIAgent) => void;
   onDelete: (agent: AIAgent) => void;
 };
-
 export function AIAgentRow({
   agent,
   index,
   network,
-  isV2Source,
+  isSelected,
+  showBulkSelection,
+  capabilities,
+  selectedPaymentSource,
+  onToggleSelection,
   onSelect,
   onWalletClick,
   onVerify,
@@ -70,11 +133,21 @@ export function AIAgentRow({
 }: AIAgentRowProps) {
   const holdingWallet = getHoldingWallet(agent);
   const isCombinedWallet = usesCombinedWallet(agent);
+  const statusHelperText = getAgentStatusHelperText(agent.state);
+  const hasRowActions =
+    isDeregisterableAgentState(agent.state) ||
+    agent.state === 'RegistrationInitiated' ||
+    agent.state === 'DeregistrationInitiated' ||
+    agent.state === 'RegistrationRequested' ||
+    agent.state === 'DeregistrationRequested';
+  const rowIsSelected = isSelected;
+
   return (
     <tr
       key={agent.id}
       className={cn(
-        'border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
+        'group border-b cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 opacity-0',
+        rowIsSelected && 'bg-row-hover',
         agent.state === 'DeregistrationConfirmed' ? 'animate-fade-in-to-muted' : 'animate-fade-in',
       )}
       style={{
@@ -84,7 +157,16 @@ export function AIAgentRow({
       onClick={() => onSelect(agent)}
       {...rowActivation(() => onSelect(agent))}
     >
-      <td className="p-4 max-w-50 truncate pl-6">
+      {showBulkSelection && (
+        <td className="p-4" onClick={(event) => event.stopPropagation()}>
+          <TableSelectRowCheckbox
+            aria-label={`Select ${agent.name}`}
+            checked={rowIsSelected}
+            onToggle={() => onToggleSelection()}
+          />
+        </td>
+      )}
+      <td className={cn('p-4 max-w-50 truncate', !showBulkSelection && 'pl-6')}>
         <div className="text-sm font-medium truncate" title={agent.name}>
           {agent.name}
         </div>
@@ -94,6 +176,14 @@ export function AIAgentRow({
         >
           {agent.description}
         </div>
+      </td>
+      <td className="p-4">
+        {/* Neutral outline: Status is the only colour-bearing
+                                badge in the row, and the Wallets cell already
+                                carries a RelationBadge. */}
+        <Badge variant="outline" className="whitespace-nowrap">
+          {getAgentTypeLabel(agent.type)}
+        </Badge>
       </td>
       <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
       <td className="p-4">
@@ -112,65 +202,46 @@ export function AIAgentRow({
             <CopyButton value={agent.agentIdentifier} />
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+          <span className="text-xs text-muted-foreground">
+            {getAgentIdentifierPlaceholder(agent.state)}
+          </span>
         )}
       </td>
-      <td className="p-4">
-        <PaymentSourceTypeBadge paymentSourceType={agent.paymentSourceType} />
-      </td>
-      <td className="p-4">
-        <div className="space-y-2">
+      <td className="p-4 align-top">
+        <div className={cn('space-y-2', isCombinedWallet ? 'w-fit max-w-md' : 'min-w-[15rem]')}>
           <RelationBadge relation={agent.relation} />
-          {isCombinedWallet ? (
-            <div>
-              <div className="text-xs font-medium">Minting & holding wallet</div>
-              <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                <span
-                  className="cursor-pointer hover:text-primary"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onWalletClick(holdingWallet.walletVkey);
-                  }}
-                >
-                  {shortenAddress(holdingWallet.walletAddress)}
-                </span>
-                <CopyButton value={holdingWallet.walletAddress} />
+          <div
+            className={cn(
+              'rounded-md border bg-muted/10 p-2.5',
+              isCombinedWallet && 'w-fit max-w-full',
+            )}
+          >
+            {isCombinedWallet ? (
+              <AgentWalletRow
+                variant="combined"
+                label="Minting & holding"
+                address={holdingWallet.walletAddress}
+                walletVkey={holdingWallet.walletVkey}
+                onWalletClick={onWalletClick}
+              />
+            ) : (
+              <div className="flex items-stretch gap-3">
+                <AgentWalletRow
+                  label="Minting"
+                  address={agent.SmartContractWallet.walletAddress}
+                  walletVkey={agent.SmartContractWallet.walletVkey}
+                  onWalletClick={onWalletClick}
+                />
+                <Separator orientation="vertical" className="h-auto" />
+                <AgentWalletRow
+                  label="Holding"
+                  address={holdingWallet.walletAddress}
+                  walletVkey={holdingWallet.walletVkey}
+                  onWalletClick={onWalletClick}
+                />
               </div>
-            </div>
-          ) : (
-            <>
-              <div>
-                <div className="text-xs font-medium">Minting wallet</div>
-                <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                  <span
-                    className="cursor-pointer hover:text-primary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onWalletClick(agent.SmartContractWallet.walletVkey);
-                    }}
-                  >
-                    {shortenAddress(agent.SmartContractWallet.walletAddress)}
-                  </span>
-                  <CopyButton value={agent.SmartContractWallet.walletAddress} />
-                </div>
-              </div>
-              <div>
-                <div className="text-xs font-medium">Holding wallet</div>
-                <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                  <span
-                    className="cursor-pointer hover:text-primary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onWalletClick(holdingWallet.walletVkey);
-                    }}
-                  >
-                    {shortenAddress(holdingWallet.walletAddress)}
-                  </span>
-                  <CopyButton value={holdingWallet.walletAddress} />
-                </div>
-              </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </td>
       <td className="p-4 text-sm truncate max-w-25">
@@ -210,82 +281,79 @@ export function AIAgentRow({
         )}
       </td>
       <td className="p-4">
-        <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
-          {parseAgentStatus(agent.state)}
-        </Badge>
+        <div className="space-y-1">
+          <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
+            {parseAgentStatus(agent.state)}
+          </Badge>
+          {statusHelperText && (
+            <p className="text-xs text-muted-foreground max-w-48 truncate" title={statusHelperText}>
+              {statusHelperText}
+            </p>
+          )}
+        </div>
       </td>
-      <td className="p-4 pr-8">
-        {isDeregisterableAgentState(agent.state) ? (
-          <div className="flex items-center gap-1">
-            {/* Manage actions (verify/update/delete) only apply to agents
-                                    registered on the active source. Agents shown because they
-                                    accept payment here are managed from their home source. */}
-            {agent.relation !== 'payment' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onVerify(agent);
-                }}
-                className="text-primary hover:text-primary hover:bg-primary/10"
-                title="Verify and Publish"
-              >
-                <ShieldCheck className="h-4 w-4" />
-              </Button>
-            )}
+      <td
+        className={cn(
+          rowIsSelected ? tableActionsCellCompactSelectedClass : tableActionsCellCompactClass,
+          !hasRowActions && 'pointer-events-none',
+        )}
+        onClick={hasRowActions ? (event) => event.stopPropagation() : undefined}
+      >
+        <div className={tableActionsInnerClass}>
+          {isDeregisterableAgentState(agent.state) ? (
+            <AIAgentRowActionsMenu
+              showVerifyPublish={agent.relation !== 'payment'}
+              showUpdateMetadata={
+                supportsAgentMetadataUpdate(agent) &&
+                canEditAgentMetadata({
+                  relation: agent.relation,
+                  canPay: capabilities.canPay,
+                  selectedPaymentSource,
+                })
+              }
+              showDeleteOrDeregister={
+                agent.relation !== 'payment' &&
+                (agent.state === 'RegistrationFailed' || agent.state === 'DeregistrationConfirmed'
+                  ? capabilities.canAdmin
+                  : capabilities.canPay)
+              }
+              deleteLabel={
+                agent.state === 'RegistrationFailed' || agent.state === 'DeregistrationConfirmed'
+                  ? 'Delete agent'
+                  : 'Deregister agent'
+              }
+              onVerifyPublish={() => onVerify(agent)}
+              onViewDetails={() => onSelect(agent)}
+              onViewEarnings={() => onEarnings(agent)}
+              onUpdateMetadata={() => onUpdate(agent)}
+              onDeleteOrDeregister={() => onDelete(agent)}
+            />
+          ) : agent.state === 'RegistrationInitiated' ||
+            agent.state === 'DeregistrationInitiated' ? (
             <Button
               variant="ghost"
               size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEarnings(agent);
-              }}
-              className="text-white hover:text-gray-200 hover:bg-gray-600"
-              title="View Details & Earnings"
+              disabled
+              className="text-primary"
+              title="Processing on-chain"
             >
-              <ExternalLink className="h-4 w-4" />
+              <Spinner size={16} />
             </Button>
-            {agent.relation !== 'payment' && supportsAgentMetadataUpdate(agent) && isV2Source && (
+          ) : (
+            (agent.state === 'RegistrationRequested' ||
+              agent.state === 'DeregistrationRequested') && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUpdate(agent);
-                }}
-                className="text-primary hover:text-primary hover:bg-primary/10"
-                title="Update agent metadata (V2)"
+                disabled
+                className="text-primary"
+                title={getAgentStatusHelperText(agent.state) ?? 'Pending'}
               >
-                <Pencil className="h-4 w-4" />
+                <FaRegClock />
               </Button>
-            )}
-            {agent.relation !== 'payment' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(agent);
-                }}
-                className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
-              >
-                <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-              </Button>
-            )}
-          </div>
-        ) : agent.state === 'RegistrationInitiated' || agent.state === 'DeregistrationInitiated' ? (
-          <div className="flex items-center justify-center w-8 h-8">
-            <Spinner size={16} />
-          </div>
-        ) : (
-          (agent.state === 'RegistrationRequested' ||
-            agent.state === 'DeregistrationRequested') && (
-            <div className="flex items-center justify-center w-8 h-8">
-              <FaRegClock size={12} />
-            </div>
-          )
-        )}
+            )
+          )}
+        </div>
       </td>
     </tr>
   );

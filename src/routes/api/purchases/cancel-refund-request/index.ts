@@ -2,6 +2,7 @@ import { z } from '@masumi/payment-core/zod';
 import { Network, PaymentSourceType, PurchasingAction, OnChainState, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { nudgeHydraCycle } from '@/services/hydra-nudge';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
@@ -157,6 +158,9 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 		}
 
 		const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
+
+		// On V2 this asks for AuthorizeWithdrawal, which the head can settle at once.
+		nudgeHydraCycle('authorizeWithdrawal');
 
 		return {
 			...result,

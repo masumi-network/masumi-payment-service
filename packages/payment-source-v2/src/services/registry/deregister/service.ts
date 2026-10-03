@@ -2,6 +2,7 @@ import { PaymentSourceType, RegistrationState, TransactionStatus } from '@/gener
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
+import { describeAmbiguousRegistrySubmit } from '../submit-failure';
 import { asV2Provider } from '../../provider-cast';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
@@ -239,7 +240,10 @@ async function processSingleDeregistration(
 	if (collateralCheck.status !== 'ready') {
 		// status === 'deferred': a collateral prep tx is in flight; keep the
 		// request queued so the next scheduler tick re-picks it up once the prep
-		// tx confirms.
+		// tx confirms. Clear the outer lockAndQuery `lockedAt` so a confirmed prep
+		// (PendingTransaction cleared) is not blocked until wallet-lock timeout.
+		const deregistrationWallet = resolveRegistryDeregistrationWallet(request);
+		await unlockHotWallet(deregistrationWallet.id);
 		return;
 	}
 	// Collateral ready — clear any transient prep-failure count.
@@ -276,25 +280,31 @@ async function processSingleDeregistration(
 	const signedTx = await wallet.signTx(unsignedTx);
 
 	// Submit FIRST, then write DB. See register/service.ts single-item
-	// path for full rationale. On submit failure, no orphan Transaction
-	// row to clean up; just revert state back to DeregistrationRequested
-	// and clear the wallet lock so the next tick can retry.
+	// path for full rationale. On submit failure there is no orphan
+	// Transaction row to clean up, so the catch below only has to stamp the
+	// failure and free the wallet.
 	let newTxHash: string;
 	try {
 		newTxHash = await wallet.submitTx(signedTx);
 	} catch (error) {
 		logger.error('Error submitting V2 deregister single-item tx', { error, requestId: request.id });
-		await prisma.registryRequest.update({
-			where: { id: request.id },
-			data: {
-				state: RegistrationState.DeregistrationRequested,
-				DeregistrationHotWallet: {
-					update: {
-						lockedAt: null,
-					},
-				},
-			},
-		});
+		const ambiguous = describeAmbiguousRegistrySubmit(signedTx, error);
+		if (ambiguous) {
+			logger.warn('Error submitting V2 deregister single-item tx was AMBIGUOUS; the transaction may be on chain', {
+				error,
+				requestId: request.id,
+				intendedTxHash: ambiguous.intendedTxHash,
+			});
+			await markRequestFailed(request, ambiguous.failure);
+			return;
+		}
+		// Terminal, not a silent re-queue. See the matching comment in
+		// `update/service.ts`: reverting to DeregistrationRequested retried a
+		// deterministic rejection every tick with `error` left NULL. The batch half
+		// of this file already fails the whole set on a submit rejection, and a
+		// DeregistrationFailed row records the reason and can be retried in place
+		// via the deregister route.
+		await markRequestFailed(request, error);
 		return;
 	}
 
@@ -431,6 +441,9 @@ export async function deRegisterAgentV2() {
 					return;
 				}
 				if (collateralCheck.status !== 'ready') {
+					// Deferred prep owns the wallet via PendingTransaction; release the
+					// batch lock so the deregister worker can resume after prep confirms.
+					await unlockHotWallet(deregistrationWallet.id);
 					return;
 				}
 				// Collateral ready — clear any transient prep-failure count on every item.

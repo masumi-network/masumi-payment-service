@@ -1,0 +1,25 @@
+{
+	"description": "Key shape of every SnapshotConfirmed frame a real hydra-node 2.4.1 (2.4.1-099f5dd775d8640047d0074edef294c1b39a600d) on preprod via Blockfrost, head 7357fa25ebd256f6fa5c3f15f9032c90a7f39456aff8d1cff14b2c4b, 2026-09-07 emitted. Payloads elided; only the field names are asserted.",
+	"frames": [
+		{
+			"headId": "…",
+			"seq": 41,
+			"signatures": {
+				"multiSignature": "…"
+			},
+			"snapshot": {
+				"accumulator": "…",
+				"confirmed": "…",
+				"depositTxId": "…",
+				"headId": "…",
+				"number": "…",
+				"utxo": "…",
+				"utxoToCommit": "…",
+				"utxoToDecommit": "…",
+				"version": "…"
+			},
+			"tag": "SnapshotConfirmed",
+			"timestamp": "…"
+		}
+	]
+}

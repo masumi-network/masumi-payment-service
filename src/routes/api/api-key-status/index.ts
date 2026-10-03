@@ -18,6 +18,7 @@ export const queryAPIKeyStatusEndpointGet = readAuthenticatedEndpointFactory.bui
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
 				WalletScopes: { select: { hotWalletId: true } },
+				X402WalletScopes: { select: { evmWalletId: true } },
 			},
 		});
 		if (!result) {

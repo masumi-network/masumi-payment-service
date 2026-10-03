@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network, OnChainState, PaymentSourceType, TransactionLayer } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -21,6 +21,15 @@ const mockFindPaymentRequest = jest.fn() as AnyMock;
 const mockFindPurchaseRequest = jest.fn() as AnyMock;
 const mockValidateRepairTransaction = jest.fn() as AnyMock;
 const mockRepairRequestTransaction = jest.fn() as AnyMock;
+const mockValidateHydraRepair = jest.fn() as AnyMock;
+const mockRepairHydraRequest = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@/services/transactions/manual-repair/hydra-validation', () => ({
+	validateHydraRepair: mockValidateHydraRepair,
+}));
+jest.unstable_mockModule('@/services/transactions/manual-repair/hydra-repair', () => ({
+	repairHydraRequest: mockRepairHydraRequest,
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -265,5 +274,106 @@ describe('request repair version contract', () => {
 				forcedOnChainState: OnChainState.FundsLocked,
 			}),
 		);
+	});
+});
+
+describe('Hydra repair routing', () => {
+	it.each(['Payment', 'Purchase'] as const)(
+		'previews and repairs %s through Hydra without L1 lookup or writes',
+		async (kind) => {
+			const request = {
+				...paymentRequest(),
+				layer: TransactionLayer.L2,
+				onChainState: OnChainState.FundsOrDatumInvalid,
+				SellerWallet: { walletVkey: 'seller-vkey', walletAddress: 'seller-address' },
+				PaidFunds: [{ unit: 'lovelace', amount: 3_000_000n }],
+			};
+			(kind === 'Payment' ? mockFindPaymentRequest : mockFindPurchaseRequest).mockResolvedValue(request);
+			mockValidateHydraRepair.mockResolvedValue({
+				txHash,
+				outputIndex: 0,
+				derivedOnChainState: OnChainState.FundsLocked,
+				resultHash: null,
+			});
+			mockRepairHydraRequest.mockResolvedValue({
+				requestId: request.id,
+				txHash,
+				transactionId: 'hydra-transaction',
+				previousOnChainState: request.onChainState,
+				newOnChainState: OnChainState.FundsLocked,
+				forced: false,
+			});
+			const body = { kind, network: Network.Preprod, blockchainIdentifier: request.blockchainIdentifier, txHash };
+			const { responseMock: previewResponse } = await testEndpoint({
+				endpoint: previewRepairRequestPost,
+				requestProps: { method: 'POST', headers: { token: 'valid' }, body },
+			});
+			expect(previewResponse.statusCode).toBe(200);
+			expect(mockValidateHydraRepair).toHaveBeenCalledWith({ kind: kind.toLowerCase(), requestId: request.id, txHash });
+			const requestVersion = previewResponse._getJSONData().data.requestVersion;
+			const { responseMock } = await testEndpoint({
+				endpoint: repairRequestPost,
+				requestProps: { method: 'POST', headers: { token: 'valid' }, body: { ...body, requestVersion } },
+			});
+			expect(responseMock.statusCode).toBe(200);
+			expect(mockRepairHydraRequest).toHaveBeenCalledWith(
+				expect.objectContaining({
+					kind: kind.toLowerCase(),
+					requestId: request.id,
+					txHash,
+					expectedVersion: expect.objectContaining({ onChainState: OnChainState.FundsOrDatumInvalid }),
+				}),
+			);
+			expect(mockValidateRepairTransaction).not.toHaveBeenCalled();
+			expect(mockRepairRequestTransaction).not.toHaveBeenCalled();
+		},
+	);
+
+	it('uses the current transaction layer for a legacy request without an L2 marker', async () => {
+		mockFindPaymentRequest.mockResolvedValue({
+			...paymentRequest(),
+			layer: TransactionLayer.L1,
+			CurrentTransaction: { txHash: 'known-parent', layer: TransactionLayer.L2 },
+		});
+		mockValidateHydraRepair.mockResolvedValue({
+			txHash,
+			outputIndex: 0,
+			derivedOnChainState: OnChainState.FundsLocked,
+			resultHash: null,
+		});
+		const { responseMock } = await preview();
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockValidateHydraRepair).toHaveBeenCalledTimes(1);
+		expect(mockValidateRepairTransaction).not.toHaveBeenCalled();
+	});
+
+	it.each(['Payment', 'Purchase'] as const)('rejects forced Hydra %s repair without writes', async (kind) => {
+		const request = {
+			...paymentRequest(),
+			layer: TransactionLayer.L2,
+			SellerWallet: { walletVkey: 'seller-vkey', walletAddress: 'seller-address' },
+			PaidFunds: [{ unit: 'lovelace', amount: 3_000_000n }],
+		};
+		(kind === 'Payment' ? mockFindPaymentRequest : mockFindPurchaseRequest).mockResolvedValue(request);
+		const { responseMock } = await testEndpoint({
+			endpoint: repairRequestPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					kind,
+					network: Network.Preprod,
+					blockchainIdentifier: request.blockchainIdentifier,
+					txHash,
+					force: true,
+					onChainState: OnChainState.FundsLocked,
+					expectedRequestUpdatedAt: request.updatedAt.toISOString(),
+				},
+			},
+		});
+		expect(responseMock.statusCode).toBe(400);
+		expect(responseMock._getData()).toContain('force is not supported');
+		expect(mockRepairHydraRequest).not.toHaveBeenCalled();
+		expect(mockRepairRequestTransaction).not.toHaveBeenCalled();
 	});
 });

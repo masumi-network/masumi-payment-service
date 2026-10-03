@@ -48,6 +48,30 @@ jobs:
           rm aiken.tar.gz
           echo "$HOME/.aiken/bin" >> "$GITHUB_PATH"
 
+          # VERIFIED: Aiken v1.1.23 checks this cache file before its
+          # unauthenticated REST download.
+          # Source: https://github.com/aiken-lang/aiken/blob/v1.1.23/crates/aiken-project/src/deps/downloader.rs#L70-L107
+          AIKEN_STDLIB_VERSION="v2.1.0"
+          AIKEN_STDLIB_COMMIT="0c2851f45cdad0d23a94f0cba149891a358e7637"
+          for manifest in smart-contracts/payment-v2/aiken.toml smart-contracts/registry-v2/aiken.toml; do
+            PROJECT_STDLIB_VERSION="$(sed -nE '/name = "aiken-lang\/stdlib"/{n;s/^version = "([^"]+)".*/\1/p;}' "$manifest")"
+            if [[ "$PROJECT_STDLIB_VERSION" != "$AIKEN_STDLIB_VERSION" ]]; then
+              echo "ERROR: $manifest pins stdlib $PROJECT_STDLIB_VERSION; update the CI cache seed"
+              exit 1
+            fi
+          done
+
+          AIKEN_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}"
+          AIKEN_STDLIB_DOWNLOAD="$RUNNER_TEMP/aiken-lang-stdlib-${AIKEN_STDLIB_VERSION}.zip"
+          AIKEN_STDLIB_CACHE="$AIKEN_CACHE_ROOT/aiken/packages/aiken-lang-stdlib-${AIKEN_STDLIB_VERSION}.zip"
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --retry-max-time 60 \
+            --output "$AIKEN_STDLIB_DOWNLOAD" \
+            "https://codeload.github.com/aiken-lang/stdlib/zip/${AIKEN_STDLIB_COMMIT}"
+          unzip -tq "$AIKEN_STDLIB_DOWNLOAD"
+          mkdir -p "$(dirname "$AIKEN_STDLIB_CACHE")"
+          install -m 0644 "$AIKEN_STDLIB_DOWNLOAD" "$AIKEN_STDLIB_CACHE"
+
       - name: Check V2 smart contracts
         run: bash scripts/check-v2-contracts.sh
 
@@ -69,6 +93,31 @@ jobs:
           # or in swagger-generator/registrars. If this fails, run
           # `pnpm run swagger-json` locally and commit the regenerated JSON.
           git diff --exit-code -- src/utils/generator/swagger-generator/openapi-docs.json
+
+      # A head's ledger is frozen at initialisation from these files. If the
+      # chain moves and the file does not, the head can create outputs L1 will
+      # refuse to accept back at fanout, and value cannot be added to an output
+      # on the way out — the head becomes impossible to settle. Catching it here
+      # means it is found before a head is opened across the gap. Skips cleanly
+      # when the secret is unavailable, so forks are not blocked by it.
+      #
+      # This is the only step in the job that holds a secret, and it runs the
+      # pull request's own code. A branch in this repository can therefore read
+      # BLOCKFROST_API_KEY_PREPROD, and no arrangement inside this workflow
+      # changes that: the checker imports src/utils/hydra/params-drift, runs
+      # under tsx, and installs from the branch's lockfile, so restoring any one
+      # file from the base branch would protect nothing while looking as though
+      # it did. Fork pull requests are unaffected, because they are issued no
+      # secrets at all.
+      #
+      # To close it, move this secret into a GitHub Environment with required
+      # reviewers (Settings > Environments) and add `environment: <name>` to
+      # this job. Left as a setting rather than a workflow change so the
+      # approval friction is an explicit decision.
+      - name: Check Hydra head ledger against the chain
+        env:
+          BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
+        run: pnpm exec tsx scripts/check-hydra-params-drift.mts
 
       - name: Run Backend ESLint
         run: pnpm run lint:backend
@@ -93,6 +142,9 @@ jobs:
 
       - name: Run Frontend TypeScript Check
         run: pnpm run typecheck:frontend
+
+      - name: Run Frontend Tests
+        run: pnpm run test:frontend
 
       - name: Run Next Build
         run: cd frontend && pnpm run build

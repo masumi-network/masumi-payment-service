@@ -45,6 +45,20 @@ type ScopedRecipientWallet = {
 	walletAddress: string;
 };
 
+export type ResolvedScopedRecipient = {
+	hotWallet: ScopedRecipientWallet | null;
+	externalAddress: string | null;
+};
+
+const BECH32_CARDANO_ADDRESS = /^(addr1|addr_test1)[0-9a-z]+$/;
+
+function assertExternalRecipientMatchesNetwork(address: string, network: Network): void {
+	const expectedPrefix = network === Network.Mainnet ? 'addr1' : 'addr_test';
+	if (!address.startsWith(expectedPrefix)) {
+		throw createHttpError(400, `Recipient wallet address does not match ${network}`);
+	}
+}
+
 export async function resolveScopedSellingWalletOrThrow({
 	network,
 	sellingWalletVkey,
@@ -96,12 +110,12 @@ export async function resolveScopedRecipientWalletOrThrow({
 	recipientWalletAddress,
 	sellingWallet,
 	walletScopeIds,
-	metricPath,
-	operation,
-}: ResolveScopedRecipientWalletParams): Promise<ScopedRecipientWallet | null> {
+	metricPath: _metricPath,
+	operation: _operation,
+}: ResolveScopedRecipientWalletParams): Promise<ResolvedScopedRecipient> {
 	const normalizedRecipientWalletAddress = recipientWalletAddress?.trim();
 	if (!normalizedRecipientWalletAddress || normalizedRecipientWalletAddress === sellingWallet.walletAddress) {
-		return null;
+		return { hotWallet: null, externalAddress: null };
 	}
 
 	const recipientWallet = await prisma.hotWallet.findFirst({
@@ -117,16 +131,14 @@ export async function resolveScopedRecipientWalletOrThrow({
 		},
 	});
 
-	if (recipientWallet == null) {
-		recordBusinessEndpointError(metricPath, 'POST', 404, 'Recipient wallet not found on the same payment source', {
-			network,
-			operation,
-			step: 'recipient_wallet_lookup',
-			recipient_wallet_address: normalizedRecipientWalletAddress,
-		});
-		throw createHttpError(404, 'Recipient wallet not found on the same payment source');
+	if (recipientWallet != null) {
+		assertHotWalletInScope(walletScopeIds, recipientWallet.id);
+		return { hotWallet: recipientWallet, externalAddress: null };
 	}
 
-	assertHotWalletInScope(walletScopeIds, recipientWallet.id);
-	return recipientWallet;
+	if (!BECH32_CARDANO_ADDRESS.test(normalizedRecipientWalletAddress)) {
+		throw createHttpError(400, 'recipientWalletAddress must be a bech32 Cardano address');
+	}
+	assertExternalRecipientMatchesNetwork(normalizedRecipientWalletAddress, network);
+	return { hotWallet: null, externalAddress: normalizedRecipientWalletAddress };
 }

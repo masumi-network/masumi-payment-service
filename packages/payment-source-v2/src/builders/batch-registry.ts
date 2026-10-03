@@ -13,7 +13,7 @@ import {
 } from '@meshsdk/core';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
-import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
+import { getCachedChainProtocolParameters, withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
 import { nativeAssetCount } from './batch-helpers';
 import { deriveTotalCollateral, lovelaceFromUtxo, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
@@ -166,6 +166,12 @@ function findMintExUnits(evaluated: EvalAction[]): ExUnits | undefined {
  * single-mint shape.)
  */
 export async function generateRegistryBatchMintTransaction(
+	...args: Parameters<typeof buildRegistryBatchMintTransaction>
+): Promise<string> {
+	return await withMeshCostModelLock('registry', () => buildRegistryBatchMintTransaction(...args));
+}
+
+async function buildRegistryBatchMintTransaction(
 	blockchainProvider: IFetcher,
 	network: Network,
 	script: { version: LanguageVersion; code: string },
@@ -326,6 +332,12 @@ export async function generateRegistryBatchMintTransaction(
  * uses the chain-computed `MINT` budget.
  */
 export async function generateRegistryBatchDeregisterTransactionAutomaticFees(
+	...args: Parameters<typeof buildRegistryBatchDeregisterTransactionAutomaticFees>
+): Promise<string> {
+	return await withMeshCostModelLock('registry', () => buildRegistryBatchDeregisterTransactionAutomaticFees(...args));
+}
+
+async function buildRegistryBatchDeregisterTransactionAutomaticFees(
 	blockchainProvider: BlockfrostProvider,
 	network: Network,
 	script: { version: LanguageVersion; code: string },
@@ -500,6 +512,12 @@ async function buildBatchDeregisterTx(
  * default exUnits, pass 2 uses the chain-computed MINT budget.
  */
 export async function generateRegistryBatchUpdateTransactionAutomaticFees(
+	...args: Parameters<typeof buildRegistryBatchUpdateTransactionAutomaticFees>
+): Promise<string> {
+	return await withMeshCostModelLock('registry', () => buildRegistryBatchUpdateTransactionAutomaticFees(...args));
+}
+
+async function buildRegistryBatchUpdateTransactionAutomaticFees(
 	blockchainProvider: BlockfrostProvider,
 	network: Network,
 	script: { version: LanguageVersion; code: string },

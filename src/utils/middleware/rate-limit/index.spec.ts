@@ -13,6 +13,7 @@ const makeAuthContext = (overrides: Partial<AuthContext> = {}): AuthContext => (
 	caip2NetworkLimit: ['cardano:mainnet', 'cardano:preprod'],
 	usageLimited: false,
 	walletScopeIds: null,
+	x402WalletScopeIds: null,
 	...overrides,
 });
 

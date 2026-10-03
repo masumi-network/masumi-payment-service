@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { formatDateTime } from '@/lib/format-date';
+import { MASUMI_PAYMENT_SOURCE_DOCS_URL } from '@/lib/masumi-links';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
@@ -12,6 +13,7 @@ import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceD
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
+import { invalidateTransactionReportFacets } from '@/lib/queries/transaction-report-cache';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deletePaymentSourceExtended,
@@ -23,6 +25,11 @@ import { toast } from 'react-toastify';
 import { shortenAddress, cn } from '@/lib/utils';
 import Head from 'next/head';
 import { PaymentSourceTableSkeleton } from '@/components/skeletons/PaymentSourceTableSkeleton';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
+} from '@/components/ui/table-actions-column';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
@@ -49,6 +56,7 @@ import { PaymentSourceSyncBadge } from '@/components/payment-sources/PaymentSour
 import {
   DEFAULT_PAYMENT_SOURCE_TYPE,
   getPaymentSourceTypeLabel,
+  hasLegacyOnlyPaymentSources,
   isV2PaymentSource,
 } from '@/lib/payment-source-type';
 
@@ -197,7 +205,7 @@ export default function PaymentSourcesPage() {
     [paymentSources],
   );
   const hasV2Source = v2Sources.length > 0;
-  const hasLegacyOnly = legacySources.length > 0 && !hasV2Source;
+  const hasLegacyOnly = hasLegacyOnlyPaymentSources(paymentSources);
   // "A V2 row exists" is not the same as "V2 works": a source with no selling
   // wallet, no Blockfrost key or a retired contract would still have shown the
   // green "ready" banner. Readiness is the backend's call; the row count only
@@ -214,6 +222,7 @@ export default function PaymentSourcesPage() {
   const firstBlockingCheck = cardanoReadiness?.Checks.find((check) => !check.isComplete) ?? null;
   // Stay neutral rather than alarming while readiness is still resolving.
   const needsV2Setup = !isLoadingReadiness && !isV2Ready;
+  const showLegacyOperationalBanner = hasLegacyOnly && needsV2Setup;
 
   const [sourceToSelect, setSourceToSelect] = useState<PaymentSourceExtended | undefined>(
     undefined,
@@ -251,6 +260,7 @@ export default function PaymentSourcesPage() {
     queryClient.invalidateQueries({ queryKey: ['wallets'] });
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
     invalidateAgentQueries(queryClient);
+    void invalidateTransactionReportFacets(queryClient);
   };
 
   return (
@@ -274,7 +284,7 @@ export default function PaymentSourcesPage() {
               <p className="text-sm text-muted-foreground">
                 Manage your payment sources.{' '}
                 <Link
-                  href="https://www.masumi.network/dev/masumi/api-reference/payment-service/get-payment-source"
+                  href={MASUMI_PAYMENT_SOURCE_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
@@ -323,7 +333,7 @@ export default function PaymentSourcesPage() {
                         : hasV2Source
                           ? 'Finish V2 payment source setup'
                           : hasLegacyOnly
-                            ? 'Set up V2 before migrating agents'
+                            ? 'V1 source active — set up V2 when you are ready to migrate'
                             : 'Set up V2 for new agents'}
                     </p>
                     <PaymentSourceTypeBadge
@@ -334,9 +344,11 @@ export default function PaymentSourcesPage() {
                   <p className="max-w-3xl text-sm opacity-85">
                     {hasV2Source && !isV2Ready && firstBlockingCheck
                       ? `${firstBlockingCheck.label}: ${firstBlockingCheck.detail ?? 'not configured yet'}`
-                      : legacySources.length > 0
-                        ? 'V2 is the default for new agents. Create the V2 source, migrate V1 agents to the V2 registry, then delete the old source after it is no longer used.'
-                        : 'V2 is the default for new agents. Create a V2 source to use the new registry metadata and zero-fee payment source behavior.'}
+                      : showLegacyOperationalBanner
+                        ? `Your ${getPaymentSourceTypeLabel('Web3CardanoV1')} remains available below. Run V2 setup when you want to migrate agents to the new registry.`
+                        : legacySources.length > 0
+                          ? 'V2 is the default for new agents. Create the V2 source, migrate V1 agents to the V2 registry, then delete the old source after it is no longer used.'
+                          : 'V2 is the default for new agents. Create a V2 source to use the new registry metadata and zero-fee payment source behavior.'}
                   </p>
                 </div>
               </div>
@@ -389,7 +401,7 @@ export default function PaymentSourcesPage() {
               </Badge>
             </div>
 
-            <div className="rounded-lg border overflow-x-auto">
+            <HorizontalScrollArea className="rounded-lg border">
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
@@ -414,7 +426,9 @@ export default function PaymentSourcesPage() {
                     <th scope="col" className="p-4 text-left text-sm font-medium">
                       Wallets
                     </th>
-                    <th scope="col" className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className={tableActionsHeadCompactClass}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -443,7 +457,7 @@ export default function PaymentSourcesPage() {
                       <tr
                         key={source.id}
                         className={cn(
-                          'border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 animate-fade-in opacity-0',
+                          'group border-b last:border-b-0 cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 animate-fade-in opacity-0',
                           selectedPaymentSourceId === source.id &&
                             'bg-green-50 dark:bg-green-950/20',
                         )}
@@ -505,8 +519,11 @@ export default function PaymentSourcesPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="p-4 pr-8" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex gap-2">
+                        <td
+                          className={tableActionsCellCompactClass}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex justify-end gap-2">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -519,9 +536,9 @@ export default function PaymentSourcesPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => setSourceToDelete(source)}
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 group/delete"
                             >
-                              <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                              <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover/delete:scale-110" />
                             </Button>
 
                             {selectedPaymentSourceId === source.id ? (
@@ -558,7 +575,7 @@ export default function PaymentSourcesPage() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
 
             <X402SourcesSection network={network} searchQuery={searchQuery} />
           </div>
@@ -574,6 +591,7 @@ export default function PaymentSourcesPage() {
             onClose={() => setSourceToUpdate(null)}
             onSuccess={() => {
               refetch();
+              void invalidateTransactionReportFacets(queryClient);
             }}
             paymentSourceId={sourceToUpdate?.id || ''}
             currentApiKey={sourceToUpdate?.PaymentSourceConfig?.rpcProviderApiKey || ''}

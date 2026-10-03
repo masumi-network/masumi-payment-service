@@ -658,7 +658,7 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 		path: '/payment-source-extended',
 		description: 'Gets the payment contracts including the status.',
 		summary:
-			'List payment sources with their public details augmented with internal configuration and sync status information. (admin access required)',
+			'List payment sources with their public details augmented with internal configuration and sync status information. (read access required)',
 		tags: ['payment-source'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

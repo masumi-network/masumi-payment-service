@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted.
+Accepted. Decision 2 (per-wallet budgets) is amended by
+[ADR 0016](0016-x402-key-scoped-spend-caps.md): spend caps are per-API-key
+usage credits; `X402WalletBudget` and `/x402/budgets` no longer exist.
+Decision 5 and the Consequences section still describe the original
+wallet-budget model. They are kept as written, because an ADR records the
+decision as it was made, and carry an inline superseded note where they
+mention budgets.
 
 ## Context
 
@@ -35,6 +41,8 @@ wire-compatible with `Mainnet` / `Preprod` request and response schemas.
    sell side (`canPay`) is an x402 facilitator that verifies and settles
    inbound payments for a registered resource. `canAdmin` manages x402
    rail config, wallets, networks, and budgets.
+   (Superseded by ADR 0016: a payment is charged against the API key's
+   usage credits, not a wallet budget, and there are no budgets to manage.)
 6. V1 Cardano registry behavior stays frozen and does not advertise x402.
    V2 registry entries may advertise x402 Supported Payment Sources.
 
@@ -53,7 +61,9 @@ performs an outbound resource fetch, so there is no SSRF surface and no
 proxied response to cache.
 
 Managed wallet spend is bounded by API-key CAIP-2 chain limits and
-wallet budget rows before a payment payload is signed. On the sell side,
+wallet budget rows before a payment payload is signed. (Superseded by
+ADR 0016: the bound is the API key's usage credits for the
+`eip155:<chainId>:<asset>` unit, and only when the key is `usageLimited`.) On the sell side,
 settlements are deduplicated by canonical x402 payment payload hash, and
 a replay is honored only when it is bound to the same registered source.
 
