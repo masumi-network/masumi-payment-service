@@ -6,6 +6,7 @@
  * datum shape — are unit-testable without the side-effecting wallet / provider /
  * prisma machinery around them.
  */
+import { getOutputMinLovelace } from '@meshsdk/core';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { createTxWindow, type TxWindow } from '@/services/shared/tx-window';
@@ -374,4 +375,16 @@ export function buildL2LockDatumParams(args: {
 		newCooldownTimeBuyer: BigInt(0),
 		state: SmartContractState.FundsLocked,
 	};
+}
+
+/** Count actual policy, name and quantity bytes rather than a per-token estimate. */
+export function inHeadChangeMinimum(
+	address: string,
+	assets: Array<{ unit: string; quantity: bigint }>,
+	coinsPerUtxoSize: number,
+): bigint {
+	return getOutputMinLovelace(
+		{ address, amount: assets.map((asset) => ({ unit: asset.unit, quantity: asset.quantity.toString() })) },
+		coinsPerUtxoSize,
+	);
 }

@@ -1,22 +1,12 @@
 /**
- * Hand a purchase back after the head refused its lock.
+ * Legacy reservation rollback helper. Automatic recovery must not call this.
  *
- * An L2 reservation is written before the transaction is submitted, so that a
- * lock which is accepted but never reported cannot be retried from different
- * inputs. The cost of that safety is that an unconfirmed reservation is
- * normally unresolvable: absence from history replay does not prove absence
- * from the ledger, so the reservation is held and the purchase stops moving
- * until someone clears it by hand.
+ * Correction: the earlier claim that TxInvalid plus expiry rules out a
+ * conflicting retry was wrong. Expiry prevents future acceptance but cannot
+ * disprove acceptance before expiry in a snapshot the node withheld.
  *
- * There is exactly one case where the ambiguity is gone. If the head itself
- * refused the body by hash, and the body's validity window has since closed
- * against the head's own clock, then no honest node can ever include it — not
- * now, and not later after having withheld it. At that point releasing the
- * reservation cannot authorise a conflicting retry, because there is nothing
- * left to conflict with.
- *
- * Everything here is scoped to that case. A reservation without a recorded
- * refusal, or one whose window is still open, is left exactly as it was.
+ * Rejection is diagnostic data, not independent proof of nonexecution.
+ * Recovery now retains these reservations for explicit reconciliation.
  */
 
 import { Prisma, PurchasingAction, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';

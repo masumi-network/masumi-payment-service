@@ -17,6 +17,7 @@ const SPEC: HydraNodeLaunchSpec = {
 	contestationPeriodSeconds: 220,
 	depositPeriodSeconds: 300,
 	unsyncedPeriodSeconds: 1800,
+	depositActivationSeconds: 300,
 };
 
 function valueAfter(args: string[], flag: string): string | undefined {
@@ -84,7 +85,45 @@ describe('buildHydraNodeArgs — composition', () => {
 		const args = buildHydraNodeArgs(SPEC);
 		expect(valueAfter(args, '--contestation-period')).toBe('220s');
 		expect(valueAfter(args, '--deposit-period')).toBe('300s');
+		expect(valueAfter(args, '--deposit-activation')).toBe('300s');
 		expect(valueAfter(args, '--unsynced-period')).toBe('1800s');
+	});
+
+	// hydra-node 2.4.1 removed --blockfrost-retry-timeout / --blockfrost-query-timeout;
+	// a config still passing them is now rejected by the node itself.
+	it('never emits the retired blockfrost timeout flags', () => {
+		const args = buildHydraNodeArgs({ ...SPEC, depositActivationSeconds: 600 });
+		expect(args[args.indexOf('--deposit-activation') + 1]).toBe('600s');
+		expect(args).not.toContain('--blockfrost-query-timeout');
+		expect(args).not.toContain('--blockfrost-retry-timeout');
+	});
+
+	// hydra-node treats `--network` and `--hydra-scripts-tx-id` as alternatives:
+	// `--network` resolves the pre-published scripts from networks.json, while
+	// an explicit tx id set points at scripts the operator published. 2.4.1's
+	// preprod publication is unusable through Blockfrost (its change output
+	// carries empty-asset-name tokens the reworked client rejects), so a Host
+	// must be able to point at a self-published set or it cannot start a node.
+	it('defaults to --network when no scripts tx ids are configured', () => {
+		const args = buildHydraNodeArgs(SPEC);
+		expect(valueAfter(args, '--network')).toBe('preprod');
+		expect(args).not.toContain('--hydra-scripts-tx-id');
+	});
+
+	it('emits --hydra-scripts-tx-id INSTEAD of --network when scripts tx ids are given', () => {
+		const a = 'b88df0c62f9734f0a6dba0faa7636ed51699cbe21706ce4a9736684daf418d67';
+		const b = '40ab074125b4734939cd45a00b2cfe1b20d679b2a1c52d6472aca193f637a2bc';
+		const args = buildHydraNodeArgs({ ...SPEC, hydraScriptsTxIds: [a, b] });
+		// hydra-node's repeated-flag form is rejected ("Invalid option"); only the
+		// comma-joined single flag parses. Observed against the 2.4.1 binary.
+		expect(valueAfter(args, '--hydra-scripts-tx-id')).toBe(`${a},${b}`);
+		expect(args.filter((x) => x === '--hydra-scripts-tx-id')).toHaveLength(1);
+		expect(args).not.toContain('--network');
+	});
+
+	it('rejects a malformed scripts tx id rather than handing hydra-node a bad flag', () => {
+		expect(() => buildHydraNodeArgs({ ...SPEC, hydraScriptsTxIds: ['not-a-tx-id'] })).toThrow(LaunchSpecError);
+		expect(() => buildHydraNodeArgs({ ...SPEC, hydraScriptsTxIds: ['b88df0c6'] })).toThrow(LaunchSpecError);
 	});
 });
 
@@ -127,6 +166,10 @@ describe('buildHydraNodeArgs — rejected specs', () => {
 
 	it('refuses non-positive periods', () => {
 		expect(() => buildHydraNodeArgs({ ...SPEC, contestationPeriodSeconds: 0 })).toThrow(/positive whole number/);
+	});
+
+	it('refuses a non-positive deposit activation', () => {
+		expect(() => buildHydraNodeArgs({ ...SPEC, depositActivationSeconds: 0 })).toThrow(/positive whole number/);
 	});
 });
 

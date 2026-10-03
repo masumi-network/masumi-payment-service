@@ -54,6 +54,7 @@ class MockMeshTxBuilder {
 jest.unstable_mockModule('@meshsdk/core', () => ({
 	MeshTxBuilder: MockMeshTxBuilder,
 	mOutputReference: jest.fn(),
+	getOutputMinLovelace: jest.fn(() => 1_400_000n),
 	deserializeDatum: jest.fn(),
 	resolveTxHash: jest.fn(() => 'resolved-tx-hash'),
 	SLOT_CONFIG_NETWORK: { preprod: {}, mainnet: {} },

@@ -14,6 +14,7 @@ function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
 		peers: [{ advertise: 'hydra2.example.com:5001', hydraVerificationKey: '5820aa', cardanoVerificationKey: 'bb' }],
 		contestationPeriodSeconds: 220,
 		depositPeriodSeconds: 300,
+		depositActivationSeconds: 300,
 		unsyncedPeriodSeconds: 1800,
 		hydraVerificationKey: '5820cc',
 		cardanoVerificationKey: 'dd',

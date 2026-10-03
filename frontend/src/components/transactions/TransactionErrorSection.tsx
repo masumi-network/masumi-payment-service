@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { formatTransactionErrorType } from '@/lib/display-labels';
 import type { Transaction } from './transaction-format.helpers';
 
 interface TransactionErrorSectionProps {
@@ -33,7 +34,8 @@ export function TransactionErrorSection({
       <div className="space-y-2 rounded-md bg-destructive/20 p-4">
         <div className="space-y-1">
           <p className="text-sm">
-            <span className="font-medium">Error Type:</span> {transaction.NextAction.errorType}
+            <span className="font-medium">Error Type:</span>{' '}
+            {formatTransactionErrorType(transaction.NextAction.errorType)}
           </p>
           {transaction.NextAction.errorNote && (
             <p className="text-sm">
