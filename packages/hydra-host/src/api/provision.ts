@@ -253,21 +253,16 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
  * would bootstrap a cluster the counterparty cannot join.
  */
 export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Promise<NodeRecord> {
-	const record = await deps.store.read(nodeId);
-	if (record === null) {
-		throw new ProvisionError(`no such node: ${nodeId}`, 404);
-	}
-	if (record.escrowAckedAt !== null) {
-		// Idempotent: acknowledging twice is not an error, it just does nothing.
-		return record;
-	}
-
-	const updated = await deps.store.update(nodeId, (current) => ({
-		...current,
-		state: 'Stopped',
-		desired: 'Running',
-		escrowAckedAt: deps.now().toISOString(),
-	}));
+	const updated = await deps.store.update(nodeId, (current) => {
+		// Check under the write queue so a delayed duplicate cannot reset a live node.
+		if (current.escrowAckedAt !== null) return current;
+		return {
+			...current,
+			state: 'Stopped',
+			desired: 'Running',
+			escrowAckedAt: deps.now().toISOString(),
+		};
+	});
 	if (updated === null) {
 		throw new ProvisionError(`no such node: ${nodeId}`, 404);
 	}
