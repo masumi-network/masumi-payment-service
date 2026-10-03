@@ -1979,7 +1979,26 @@ export const AgentMetadataSchema = {
                 apiBaseUrl: {
                     type: 'string',
                     maxLength: 250,
-                    description: 'Base URL of the agent API for interactions'
+                    description: 'Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL'
+                },
+                type: {
+                    type: 'string',
+                    enum: [
+                        'Standard',
+                        'OpenApi',
+                        'X402'
+                    ],
+                    description: 'Registry entry type when encoded on-chain'
+                },
+                openApiSpecUrl: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'OpenAPI spec URL for OpenApi registry entries'
+                },
+                x402ResourcesUrl: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'x402 manifest URL for X402 registry entries'
                 },
                 ExampleOutputs: {
                     type: 'array',
@@ -2693,7 +2712,26 @@ export const AgentIdentifierMetadataSchema = {
                 apiBaseUrl: {
                     type: 'string',
                     maxLength: 250,
-                    description: 'Base URL of the agent API for interactions'
+                    description: 'Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL'
+                },
+                type: {
+                    type: 'string',
+                    enum: [
+                        'Standard',
+                        'OpenApi',
+                        'X402'
+                    ],
+                    description: 'Registry entry type when encoded on-chain'
+                },
+                openApiSpecUrl: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'OpenAPI spec URL for OpenApi registry entries'
+                },
+                x402ResourcesUrl: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'x402 manifest URL for X402 registry entries'
                 },
                 ExampleOutputs: {
                     type: 'array',

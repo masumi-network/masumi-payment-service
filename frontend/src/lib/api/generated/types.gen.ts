@@ -1050,9 +1050,21 @@ export type AgentMetadata = {
          */
         description?: string | null;
         /**
-         * Base URL of the agent API for interactions
+         * Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL
          */
         apiBaseUrl: string;
+        /**
+         * Registry entry type when encoded on-chain
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        /**
+         * OpenAPI spec URL for OpenApi registry entries
+         */
+        openApiSpecUrl?: string;
+        /**
+         * x402 manifest URL for X402 registry entries
+         */
+        x402ResourcesUrl?: string;
         /**
          * List of example outputs from the agent
          */
@@ -1407,9 +1419,21 @@ export type AgentIdentifierMetadata = {
          */
         description?: string | null;
         /**
-         * Base URL of the agent API for interactions
+         * Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL
          */
         apiBaseUrl: string;
+        /**
+         * Registry entry type when encoded on-chain
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        /**
+         * OpenAPI spec URL for OpenApi registry entries
+         */
+        openApiSpecUrl?: string;
+        /**
+         * x402 manifest URL for X402 registry entries
+         */
+        x402ResourcesUrl?: string;
         /**
          * List of example outputs from the agent
          */
