@@ -73,8 +73,10 @@ export const agentCardSchema = z
 	})
 	.passthrough()
 	.superRefine((card, ctx) => {
+		const protocolVersions = new Set(card.protocolVersions);
+		const interfaceVersions = new Set(card.supportedInterfaces.map((iface) => iface.protocolVersion));
 		card.protocolVersions.forEach((version, index) => {
-			if (!card.supportedInterfaces.some((iface) => iface.protocolVersion === version)) {
+			if (!interfaceVersions.has(version)) {
 				ctx.addIssue({
 					code: 'custom',
 					path: ['protocolVersions', index],
@@ -83,7 +85,7 @@ export const agentCardSchema = z
 			}
 		});
 		card.supportedInterfaces.forEach((iface, index) => {
-			if (!card.protocolVersions.includes(iface.protocolVersion)) {
+			if (!protocolVersions.has(iface.protocolVersion)) {
 				ctx.addIssue({
 					code: 'custom',
 					path: ['supportedInterfaces', index, 'protocolVersion'],

@@ -78,6 +78,63 @@ function mockResponse(
 }
 
 describe('agentCardSchema', () => {
+	it('bounds protocol membership work linearly for a large valid card', () => {
+		const versionCount = 512;
+		const maxMembershipChecks = versionCount * 4;
+		const protocolVersions = Array.from({ length: versionCount }, (_, index) => `${index}.0`);
+		const card = {
+			...VALID_CARD,
+			protocolVersions,
+			supportedInterfaces: protocolVersions.map((protocolVersion) => ({
+				...VALID_CARD.supportedInterfaces[0],
+				protocolVersion,
+			})),
+		};
+		let membershipChecks = 0;
+		const originalSome = Array.prototype.some;
+		const originalIncludes = Array.prototype.includes;
+		const someSpy = jest.spyOn(Array.prototype, 'some').mockImplementation(function (
+			this: Array<{ protocolVersion?: string }>,
+			callback,
+			thisArg,
+		) {
+			const isInterfaceList = this.length === versionCount && this[0]?.protocolVersion === '0.0';
+			return originalSome.call(this, (value, index, values) => {
+				if (isInterfaceList) membershipChecks++;
+				return callback.call(thisArg, value, index, values);
+			});
+		});
+		const includesSpy = jest.spyOn(Array.prototype, 'includes').mockImplementation(function (
+			this: unknown[],
+			value,
+			fromIndex,
+		) {
+			if (this.length === versionCount && this[0] === '0.0') {
+				for (let index = fromIndex ?? 0; index < this.length; index++) {
+					membershipChecks++;
+					if (this[index] === value) break;
+				}
+			}
+			return originalIncludes.call(this, value, fromIndex);
+		});
+		const originalHas = Set.prototype.has;
+		const hasSpy = jest.spyOn(Set.prototype, 'has').mockImplementation(function (this: Set<unknown>, value) {
+			if (typeof value === 'string' && /^[0-9]+\.0$/.test(value)) membershipChecks++;
+			return originalHas.call(this, value);
+		});
+		let parsed: ReturnType<typeof agentCardSchema.safeParse>;
+		try {
+			parsed = agentCardSchema.safeParse(card);
+		} finally {
+			someSpy.mockRestore();
+			includesSpy.mockRestore();
+			hasSpy.mockRestore();
+		}
+		expect(parsed.success).toBe(true);
+		expect(membershipChecks).toBeGreaterThanOrEqual(versionCount * 2);
+		expect(membershipChecks).toBeLessThanOrEqual(maxMembershipChecks);
+	});
+
 	it('rejects a top-level version without a matching interface', () => {
 		expect(agentCardSchema.safeParse({ ...VALID_CARD, protocolVersions: ['1.0', '9.9'] }).success).toBe(false);
 	});
