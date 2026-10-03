@@ -1,35 +1,29 @@
+import { supportsAgentMetadataUpdate, UNSUPPORTED_AGENT_UPDATE_MESSAGE } from '@/lib/agent-update';
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Pencil, Trash2, ExternalLink, ShieldCheck, ArrowUpRight } from 'lucide-react';
+import { Plus, ArrowUpRight } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
-import { Badge } from '@/components/ui/badge';
 
-import { cn, formatAssetAmount, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
-import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
-import { agentHasVerifications } from '@/components/ai-agents/AgentVerifications';
 import { toast } from 'react-toastify';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
-import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
-import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
+import { useContextAgents } from '@/lib/queries/useContextAgents';
 import { invalidateAgentQueries, resetAgentQueries } from '@/lib/queries/agent-cache';
-import { rowActivation } from '@/lib/a11y';
 import { isDeregisterableAgentState } from '@/lib/registry-states';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { VerifyAndPublishAgentDialog } from '@/components/ai-agents/VerifyAndPublishAgentDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
-import { CopyButton } from '@/components/ui/copy-button';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -40,37 +34,9 @@ import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntr
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
-import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
-import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
-import { formatDate } from '@/lib/format-date';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
-type AIAgent = RegistryEntry & { relation?: AgentRelation };
-
-// Tells apart agents registered on the active source from those registered elsewhere that
-// merely accept payment on it (or over x402 on an EVM chain).
-function RelationBadge({ relation }: { relation?: AgentRelation }) {
-  if (relation === 'payment') {
-    return (
-      <Badge
-        variant="outline"
-        className="mt-1 border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
-      >
-        Registered elsewhere
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline" className="mt-1 text-[10px]">
-      Registered here
-    </Badge>
-  );
-}
-
-const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
-
-const usesCombinedWallet = (agent: AIAgent) =>
-  getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
+import { AIAgentRow, type AIAgent } from '@/components/ai-agents/AIAgentRow';
 
 export default function AIAgentsPage() {
   const router = useRouter();
@@ -317,6 +283,10 @@ export default function AIAgentsPage() {
   };
 
   const handleUpdateClick = (agent: AIAgent) => {
+    if (!supportsAgentMetadataUpdate(agent)) {
+      toast.error(UNSUPPORTED_AGENT_UPDATE_MESSAGE);
+      return;
+    }
     if (!selectedPaymentSource?.smartContractAddress) {
       toast.error('Cannot update agent: Missing payment source');
       return;
@@ -599,237 +569,21 @@ export default function AIAgentsPage() {
                       </td>
                     </tr>
                   ) : (
-                    displayAgents.map((agent, index) => {
-                      const holdingWallet = getHoldingWallet(agent);
-                      const isCombinedWallet = usesCombinedWallet(agent);
-
-                      return (
-                        <tr
-                          key={agent.id}
-                          className={cn(
-                            'border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
-                            agent.state === 'DeregistrationConfirmed'
-                              ? 'animate-fade-in-to-muted'
-                              : 'animate-fade-in',
-                          )}
-                          style={{
-                            animationDelay: `${Math.min(index, 9) * 40}ms`,
-                          }}
-                          aria-label={`View details for ${agent.name}`}
-                          onClick={() => handleAgentClick(agent)}
-                          {...rowActivation(() => handleAgentClick(agent))}
-                        >
-                          <td className="p-4 max-w-50 truncate pl-6">
-                            <div className="text-sm font-medium truncate" title={agent.name}>
-                              {agent.name}
-                            </div>
-                            <div
-                              className="text-xs text-muted-foreground truncate"
-                              title={agent.description ?? undefined}
-                            >
-                              {agent.description}
-                            </div>
-                          </td>
-                          <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
-                          <td className="p-4">
-                            {agent.agentIdentifier ? (
-                              <div className="text-xs font-mono truncate max-w-50 flex items-center gap-2">
-                                <a
-                                  href={getExplorerUrl(agent.agentIdentifier, network, 'token')}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-primary hover:underline flex items-center gap-1 truncate"
-                                >
-                                  {shortenAddress(agent.agentIdentifier)}
-                                  <ExternalLink className="h-3 w-3 shrink-0" />
-                                </a>
-                                <CopyButton value={agent.agentIdentifier} />
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </td>
-                          <td className="p-4">
-                            <PaymentSourceTypeBadge paymentSourceType={agent.paymentSourceType} />
-                          </td>
-                          <td className="p-4">
-                            <div className="space-y-2">
-                              <RelationBadge relation={agent.relation} />
-                              {isCombinedWallet ? (
-                                <div>
-                                  <div className="text-xs font-medium">
-                                    Minting & holding wallet
-                                  </div>
-                                  <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                                    <span
-                                      className="cursor-pointer hover:text-primary"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleWalletClick(holdingWallet.walletVkey);
-                                      }}
-                                    >
-                                      {shortenAddress(holdingWallet.walletAddress)}
-                                    </span>
-                                    <CopyButton value={holdingWallet.walletAddress} />
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <div>
-                                    <div className="text-xs font-medium">Minting wallet</div>
-                                    <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                                      <span
-                                        className="cursor-pointer hover:text-primary"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleWalletClick(agent.SmartContractWallet.walletVkey);
-                                        }}
-                                      >
-                                        {shortenAddress(agent.SmartContractWallet.walletAddress)}
-                                      </span>
-                                      <CopyButton value={agent.SmartContractWallet.walletAddress} />
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-xs font-medium">Holding wallet</div>
-                                    <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                                      <span
-                                        className="cursor-pointer hover:text-primary"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleWalletClick(holdingWallet.walletVkey);
-                                        }}
-                                      >
-                                        {shortenAddress(holdingWallet.walletAddress)}
-                                      </span>
-                                      <CopyButton value={holdingWallet.walletAddress} />
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-4 text-sm truncate max-w-25">
-                            {(() => {
-                              const pricing = getPrimaryCardanoPricing(agent);
-                              if (pricing?.pricingType === 'Free') {
-                                return <div className="whitespace-nowrap">Free</div>;
-                              }
-                              if (pricing?.pricingType === 'Dynamic') {
-                                return <div className="whitespace-nowrap">Dynamic</div>;
-                              }
-                              if (pricing?.pricingType === 'Fixed') {
-                                return pricing.Pricing.map((price, index) => (
-                                  <div key={index} className="whitespace-nowrap">
-                                    {formatAssetAmount(price.amount, price.unit, network)}
-                                  </div>
-                                ));
-                              }
-                              return null;
-                            })()}
-                            {agentHasX402Options(agent.supportedPaymentSources) && (
-                              <div className="mt-1">
-                                <Badge variant="secondary">x402</Badge>
-                              </div>
-                            )}
-                            {agentHasVerifications(agent.verifications) && (
-                              <div className="mt-1">
-                                <Badge variant="outline">Verifiable</Badge>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-4">
-                            {agent.Tags.length > 0 && (
-                              <Badge variant="secondary" className="truncate">
-                                {agent.Tags.length} tags
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="p-4">
-                            <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
-                              {parseAgentStatus(agent.state)}
-                            </Badge>
-                          </td>
-                          <td className="p-4 pr-8">
-                            {isDeregisterableAgentState(agent.state) ? (
-                              <div className="flex items-center gap-1">
-                                {/* Manage actions (verify/update/delete) only apply to agents
-                                    registered on the active source. Agents shown because they
-                                    accept payment here are managed from their home source. */}
-                                {agent.relation !== 'payment' && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedAgentForVerification(agent);
-                                    }}
-                                    className="text-primary hover:text-primary hover:bg-primary/10"
-                                    title="Verify and Publish"
-                                  >
-                                    <ShieldCheck className="h-4 w-4" />
-                                  </Button>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openAgentDetails(agent, { initialTab: 'Earnings' });
-                                  }}
-                                  className="text-white hover:text-gray-200 hover:bg-gray-600"
-                                  title="View Details & Earnings"
-                                >
-                                  <ExternalLink className="h-4 w-4" />
-                                </Button>
-                                {agent.relation !== 'payment' &&
-                                  selectedPaymentSource &&
-                                  isV2PaymentSource(selectedPaymentSource) && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateClick(agent);
-                                      }}
-                                      className="text-primary hover:text-primary hover:bg-primary/10"
-                                      title="Update agent metadata (V2)"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                {agent.relation !== 'payment' && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteClick(agent);
-                                    }}
-                                    className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
-                                  >
-                                    <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-                                  </Button>
-                                )}
-                              </div>
-                            ) : agent.state === 'RegistrationInitiated' ||
-                              agent.state === 'DeregistrationInitiated' ? (
-                              <div className="flex items-center justify-center w-8 h-8">
-                                <Spinner size={16} />
-                              </div>
-                            ) : (
-                              (agent.state === 'RegistrationRequested' ||
-                                agent.state === 'DeregistrationRequested') && (
-                                <div className="flex items-center justify-center w-8 h-8">
-                                  <FaRegClock size={12} />
-                                </div>
-                              )
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
+                    displayAgents.map((agent, index) => (
+                      <AIAgentRow
+                        key={agent.id}
+                        agent={agent}
+                        index={index}
+                        network={network}
+                        isV2Source={isV2PaymentSource(selectedPaymentSource)}
+                        onSelect={handleAgentClick}
+                        onWalletClick={handleWalletClick}
+                        onVerify={setSelectedAgentForVerification}
+                        onEarnings={(entry) => openAgentDetails(entry, { initialTab: 'Earnings' })}
+                        onUpdate={handleUpdateClick}
+                        onDelete={handleDeleteClick}
+                      />
+                    ))
                   )}
                 </tbody>
               </table>

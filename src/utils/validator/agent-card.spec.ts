@@ -1,6 +1,10 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { PassThrough } from 'node:stream';
+import { EventEmitter } from 'node:events';
+import type { IncomingMessage, ClientRequest } from 'node:http';
+import type { RequestOptions } from 'node:https';
 
-const mockAssertWebhookDestinationAllowed = jest.fn() as jest.Mock<any>;
+const mockResolveWebhookDestinationAllowed = jest.fn() as jest.Mock<any>;
 
 class TestWebhookDestinationPolicyError extends Error {
 	constructor(public readonly reason: string) {
@@ -10,12 +14,9 @@ class TestWebhookDestinationPolicyError extends Error {
 }
 
 jest.unstable_mockModule('@/utils/security/webhook-destination-policy', () => ({
-	assertWebhookDestinationAllowed: mockAssertWebhookDestinationAllowed,
+	resolveWebhookDestinationAllowed: mockResolveWebhookDestinationAllowed,
 	isWebhookDestinationPolicyError: jest.fn((error: unknown) => error instanceof TestWebhookDestinationPolicyError),
 }));
-
-const { agentCardSchema, validateA2AAgentCardOrThrow, AGENT_CARD_FETCH_TIMEOUT_MS, AGENT_CARD_MAX_BYTES } =
-	await import('./agent-card');
 
 const VALID_CARD = {
 	protocolVersions: ['1.0'],
@@ -38,26 +39,58 @@ const VALID_CARD = {
 	],
 };
 
-function mockFetchResponse(
+const mockRequest = jest.fn<typeof import('node:https').request>();
+
+const originalHttps = await import('node:https');
+jest.unstable_mockModule('node:https', () => ({ ...originalHttps, request: mockRequest }));
+
+const { agentCardSchema, validateA2AAgentCardOrThrow, AGENT_CARD_FETCH_TIMEOUT_MS, AGENT_CARD_MAX_BYTES } =
+	await import('./agent-card');
+
+let lastResponse: IncomingMessage;
+let lastRequest: ClientRequest;
+function mockResponse(
 	body: unknown,
-	init?: { ok?: boolean; status?: number; contentType?: string; contentLength?: string },
-): Response {
-	const text = JSON.stringify(body);
-	return {
-		ok: init?.ok ?? true,
-		status: init?.status ?? 200,
-		headers: {
-			get: (name: string) => {
-				if (name === 'content-type') return init?.contentType ?? 'application/json';
-				if (name === 'content-length') return init?.contentLength ?? null;
-				return null;
-			},
-		},
-		text: async () => text,
-	} as unknown as Response;
+	init?: { status?: number; contentType?: string; contentLength?: string; rawBody?: string },
+) {
+	mockRequest.mockImplementation((...args: any[]) => {
+		const callback = args[2] as (response: IncomingMessage) => void;
+		const options = args[1] as RequestOptions;
+		const req = new EventEmitter() as ClientRequest;
+		req.destroy = jest.fn(() => req);
+		req.end = jest.fn(() => {
+			const response = new PassThrough() as unknown as IncomingMessage;
+			response.statusCode = init?.status ?? 200;
+			response.headers = { 'content-type': init?.contentType ?? 'application/json' };
+			if (init?.contentLength) response.headers['content-length'] = init.contentLength;
+			lastResponse = response;
+			callback(response);
+			(response as unknown as PassThrough).end(init?.rawBody ?? JSON.stringify(body));
+			return req;
+		}) as ClientRequest['end'];
+		options.signal?.addEventListener('abort', () => {
+			lastResponse?.destroy(new Error('aborted'));
+			req.emit('error', new Error('aborted'));
+		});
+		lastRequest = req;
+		return req;
+	});
 }
 
 describe('agentCardSchema', () => {
+	it('rejects a top-level version without a matching interface', () => {
+		expect(agentCardSchema.safeParse({ ...VALID_CARD, protocolVersions: ['1.0', '9.9'] }).success).toBe(false);
+	});
+
+	it.each(['1', '1.0.0', '€'.repeat(22), '1.０'])('rejects invalid protocol version %s', (version) => {
+		const card = {
+			...VALID_CARD,
+			protocolVersions: [version],
+			supportedInterfaces: [{ ...VALID_CARD.supportedInterfaces[0], protocolVersion: version }],
+		};
+		expect(agentCardSchema.safeParse(card).success).toBe(false);
+	});
+
 	it('accepts a valid MIP-002 agent card', () => {
 		expect(agentCardSchema.safeParse(VALID_CARD).success).toBe(true);
 	});
@@ -91,8 +124,11 @@ describe('agentCardSchema', () => {
 describe('validateA2AAgentCardOrThrow', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockAssertWebhookDestinationAllowed.mockImplementation(async (url: string) => new URL(url));
-		global.fetch = jest.fn(async () => mockFetchResponse(VALID_CARD)) as unknown as typeof fetch;
+		mockResolveWebhookDestinationAllowed.mockImplementation(async (url: string) => ({
+			url: new URL(url),
+			addresses: [{ address: '93.184.216.34', family: 4 }],
+		}));
+		mockResponse(VALID_CARD);
 	});
 
 	afterEach(() => {
@@ -109,11 +145,11 @@ describe('validateA2AAgentCardOrThrow', () => {
 		await expect(
 			validateA2AAgentCardOrThrow('http://agent.example/.well-known/agent-card.json', ['1.0']),
 		).rejects.toThrow('must use https');
-		expect(mockAssertWebhookDestinationAllowed).not.toHaveBeenCalled();
+		expect(mockResolveWebhookDestinationAllowed).not.toHaveBeenCalled();
 	});
 
 	it('rejects when the SSRF guard blocks the destination', async () => {
-		mockAssertWebhookDestinationAllowed.mockRejectedValue(
+		mockResolveWebhookDestinationAllowed.mockRejectedValue(
 			new TestWebhookDestinationPolicyError('resolved to a blocked address'),
 		);
 		await expect(validateA2AAgentCardOrThrow('https://blocked.example/agent-card.json', ['1.0'])).rejects.toThrow(
@@ -122,43 +158,44 @@ describe('validateA2AAgentCardOrThrow', () => {
 	});
 
 	it('rejects a non-JSON content-type', async () => {
-		global.fetch = jest.fn(async () =>
-			mockFetchResponse(VALID_CARD, { contentType: 'text/html' }),
-		) as unknown as typeof fetch;
+		mockResponse(VALID_CARD, { contentType: 'text/html' });
 		await expect(
 			validateA2AAgentCardOrThrow('https://agent.example/.well-known/agent-card.json', ['1.0']),
 		).rejects.toThrow('was not application/json');
 	});
 
 	it('rejects a non-2xx fetch status', async () => {
-		global.fetch = jest.fn(async () =>
-			mockFetchResponse(VALID_CARD, { ok: false, status: 404 }),
-		) as unknown as typeof fetch;
+		mockResponse(VALID_CARD, { status: 404 });
 		await expect(
 			validateA2AAgentCardOrThrow('https://agent.example/.well-known/agent-card.json', ['1.0']),
 		).rejects.toThrow('status 404');
 	});
 
 	it('rejects a raw network failure as a 400, not an unhandled 500', async () => {
-		global.fetch = jest.fn(async () => {
-			throw new TypeError('fetch failed: ECONNREFUSED');
-		}) as unknown as typeof fetch;
+		mockRequest.mockImplementation(() => {
+			throw new Error('ECONNREFUSED');
+		});
 		await expect(
 			validateA2AAgentCardOrThrow('https://agent.example/.well-known/agent-card.json', ['1.0']),
 		).rejects.toMatchObject({ status: 400, message: expect.stringContaining('Could not fetch A2A agent card') });
 	});
 
 	it('rejects a response exceeding the size cap (content-length)', async () => {
-		global.fetch = jest.fn(async () =>
-			mockFetchResponse(VALID_CARD, { contentLength: String(AGENT_CARD_MAX_BYTES + 1) }),
-		) as unknown as typeof fetch;
+		mockResponse(VALID_CARD, { contentLength: String(AGENT_CARD_MAX_BYTES + 1) });
 		await expect(
 			validateA2AAgentCardOrThrow('https://agent.example/.well-known/agent-card.json', ['1.0']),
 		).rejects.toThrow('exceeds the maximum allowed size');
 	});
 
+	it('rejects UTF-8 bytes exceeding the cap even with fewer characters', async () => {
+		mockResponse({ ...VALID_CARD, description: '€'.repeat(400_000) });
+		await expect(validateA2AAgentCardOrThrow('https://agent.example/agent-card.json', ['1.0'])).rejects.toThrow(
+			'exceeds the maximum allowed size',
+		);
+	});
+
 	it('rejects a schema-invalid card', async () => {
-		global.fetch = jest.fn(async () => mockFetchResponse({ name: 'x' })) as unknown as typeof fetch;
+		mockResponse({ name: 'x' });
 		await expect(
 			validateA2AAgentCardOrThrow('https://agent.example/.well-known/agent-card.json', ['1.0']),
 		).rejects.toThrow('A2A agent card is invalid');
@@ -170,21 +207,109 @@ describe('validateA2AAgentCardOrThrow', () => {
 		).rejects.toThrow('does not support declared protocol version');
 	});
 
-	it('rejects when the fetch times out', async () => {
-		jest.useFakeTimers();
-		global.fetch = jest.fn((_url: unknown, init?: RequestInit) => {
-			return new Promise((_resolve, reject) => {
-				init?.signal?.addEventListener('abort', () => {
-					reject(new DOMException('The operation was aborted.', 'AbortError'));
-				});
-			});
-		}) as unknown as typeof fetch;
+	it('tries the next checked address after a connection failure', async () => {
+		mockResolveWebhookDestinationAllowed.mockResolvedValue({
+			url: new URL('https://agent.example/card'),
+			addresses: [
+				{ address: '2606:4700::1111', family: 6 },
+				{ address: '93.184.216.34', family: 4 },
+			],
+		});
+		mockRequest.mockImplementationOnce(() => {
+			const req = new EventEmitter() as ClientRequest;
+			req.end = jest.fn(() => {
+				req.emit('error', new Error('ENETUNREACH'));
+				return req;
+			}) as ClientRequest['end'];
+			return req;
+		});
+		await expect(validateA2AAgentCardOrThrow('https://agent.example/card', ['1.0'])).resolves.toBeUndefined();
+		expect(mockRequest).toHaveBeenCalledTimes(2);
+		const options = mockRequest.mock.calls[1][1] as RequestOptions;
+		const callback = jest.fn();
+		(options.lookup as Function)('agent.example', {}, callback);
+		expect(callback).toHaveBeenCalledWith(null, '93.184.216.34', 4);
+		expect(mockResolveWebhookDestinationAllowed).toHaveBeenCalledTimes(1);
+	});
 
-		const resultPromise = validateA2AAgentCardOrThrow('https://agent.example/.well-known/agent-card.json', ['1.0']);
-		// Let the fetch call register its abort listener before advancing timers.
-		await Promise.resolve();
-		await Promise.resolve();
-		jest.advanceTimersByTime(AGENT_CARD_FETCH_TIMEOUT_MS);
-		await expect(resultPromise).rejects.toThrow('timed out');
+	it('pins the validated address while retaining the original TLS hostname', async () => {
+		await validateA2AAgentCardOrThrow('https://agent.example/card', ['1.0']);
+		const [url, options] = mockRequest.mock.calls[0] as [URL, RequestOptions & { autoSelectFamily: boolean }];
+		expect(url.hostname).toBe('agent.example');
+		expect(options.agent).toBe(false);
+		expect(options.autoSelectFamily).toBe(false);
+		const callback = jest.fn();
+		(options.lookup as Function)('agent.example', {}, callback);
+		expect(callback).toHaveBeenCalledWith(null, '93.184.216.34', 4);
+	});
+
+	it('rejects redirects without following them', async () => {
+		mockResolveWebhookDestinationAllowed.mockResolvedValue({
+			url: new URL('https://agent.example/card'),
+			addresses: [
+				{ address: '93.184.216.34', family: 4 },
+				{ address: '2606:4700::1111', family: 6 },
+			],
+		});
+		mockResponse(VALID_CARD, { status: 302 });
+		await expect(validateA2AAgentCardOrThrow('https://agent.example/card', ['1.0'])).rejects.toThrow('status 302');
+		expect(mockRequest).toHaveBeenCalledTimes(1);
+		expect(lastResponse.destroyed).toBe(true);
+	});
+
+	it('stops an oversized stream and destroys the connection', async () => {
+		mockResponse(VALID_CARD, { rawBody: 'x'.repeat(AGENT_CARD_MAX_BYTES + 1) });
+		await expect(validateA2AAgentCardOrThrow('https://agent.example/card', ['1.0'])).rejects.toThrow(
+			'exceeds the maximum allowed size',
+		);
+		expect(lastResponse.destroyed).toBe(true);
+		expect(lastRequest.destroy).toHaveBeenCalled();
+	});
+
+	it('rejects invalid JSON', async () => {
+		mockResponse(VALID_CARD, { rawBody: '{' });
+		await expect(validateA2AAgentCardOrThrow('https://agent.example/card', ['1.0'])).rejects.toThrow(
+			'was not valid JSON',
+		);
+	});
+
+	it('rejects when DNS resolution times out, before opening a connection', async () => {
+		jest.useFakeTimers();
+		mockResolveWebhookDestinationAllowed.mockImplementation(() => new Promise(() => {}));
+		const assertion = expect(validateA2AAgentCardOrThrow('https://agent.example/card', ['1.0'])).rejects.toThrow(
+			'timed out',
+		);
+		await jest.advanceTimersByTimeAsync(AGENT_CARD_FETCH_TIMEOUT_MS);
+		await assertion;
+		expect(mockRequest).not.toHaveBeenCalled();
+	});
+
+	it('rejects when the response body stalls and destroys the connection', async () => {
+		jest.useFakeTimers();
+		mockRequest.mockImplementation((...args: any[]) => {
+			const options = args[1] as RequestOptions;
+			const callback = args[2] as (response: IncomingMessage) => void;
+			const response = new PassThrough() as unknown as IncomingMessage;
+			response.statusCode = 200;
+			response.headers = { 'content-type': 'application/json' };
+			const req = new EventEmitter() as ClientRequest;
+			req.end = jest.fn(() => {
+				callback(response);
+				return req;
+			}) as ClientRequest['end'];
+			req.destroy = jest.fn(() => req);
+			options.signal?.addEventListener('abort', () => {
+				response.destroy(new Error('aborted'));
+				req.emit('error', new Error('aborted'));
+			});
+			lastResponse = response;
+			return req;
+		});
+		const assertion = expect(validateA2AAgentCardOrThrow('https://agent.example/card', ['1.0'])).rejects.toThrow(
+			'timed out',
+		);
+		await jest.advanceTimersByTimeAsync(AGENT_CARD_FETCH_TIMEOUT_MS);
+		await assertion;
+		expect(lastResponse.destroyed).toBe(true);
 	});
 });

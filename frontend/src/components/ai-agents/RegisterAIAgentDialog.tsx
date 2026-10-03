@@ -1,3 +1,4 @@
+import { assertAgentMetadataUpdateSupported } from '@/lib/agent-update';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -339,6 +340,7 @@ export function RegisterAIAgentDialog({
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
       try {
+        if (editingAgent) assertAgentMetadataUpdateSupported(editingAgent);
         setIsLoading(true);
         const selectedWalletVkey = data.selectedWallet;
         // Register requires the user to pick a wallet with funds. Update

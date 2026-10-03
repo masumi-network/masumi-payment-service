@@ -1,15 +1,15 @@
 import createHttpError from 'http-errors';
+import { request, type RequestOptions } from 'node:https';
+import { a2aProtocolVersionSchema } from './a2a-protocol-version';
 import {
-	assertWebhookDestinationAllowed,
+	resolveWebhookDestinationAllowed,
+	type ResolvedAddress,
 	isWebhookDestinationPolicyError,
 } from '@/utils/security/webhook-destination-policy';
 import { z } from '@masumi/payment-core/zod';
 
-// Bounded fetch guards, matching the pattern in
-// packages/payment-source-x402/src/remote-facilitator.ts: an AbortController
-// timeout so a slow/hanging agent-card host cannot stall a registration
-// request indefinitely, plus a hard cap on response size so a malicious host
-// cannot exhaust memory with an oversized body.
+// One deadline covers DNS, connection attempts, and the response body.
+// Pin checked addresses and stop reading once the byte limit is exceeded.
 export const AGENT_CARD_FETCH_TIMEOUT_MS = 10_000;
 export const AGENT_CARD_MAX_BYTES = 1_048_576; // 1 MB
 
@@ -24,7 +24,7 @@ const agentCardInterfaceSchema = z.object({
 		.url()
 		.refine((url) => url.startsWith('https://'), 'supportedInterfaces[].url must be HTTPS'),
 	protocolBinding: z.enum(['HTTP+JSON', 'JSONRPC', 'GRPC']),
-	protocolVersion: z.string(),
+	protocolVersion: a2aProtocolVersionSchema,
 });
 
 const agentCardSkillSchema = z.object({
@@ -53,7 +53,7 @@ const agentCardCapabilitiesSchema = z
 
 export const agentCardSchema = z
 	.object({
-		protocolVersions: z.array(z.string()).min(1),
+		protocolVersions: z.array(a2aProtocolVersionSchema).min(1),
 		name: z.string(),
 		description: z.string(),
 		version: z.string(),
@@ -73,6 +73,15 @@ export const agentCardSchema = z
 	})
 	.passthrough()
 	.superRefine((card, ctx) => {
+		card.protocolVersions.forEach((version, index) => {
+			if (!card.supportedInterfaces.some((iface) => iface.protocolVersion === version)) {
+				ctx.addIssue({
+					code: 'custom',
+					path: ['protocolVersions', index],
+					message: `protocolVersion "${version}" has no supported interface`,
+				});
+			}
+		});
 		card.supportedInterfaces.forEach((iface, index) => {
 			if (!card.protocolVersions.includes(iface.protocolVersion)) {
 				ctx.addIssue({
@@ -86,26 +95,18 @@ export const agentCardSchema = z
 
 export type AgentCard = z.infer<typeof agentCardSchema>;
 
-// Reuses the hardened, DNS-resolving SSRF guard already used for webhook
-// delivery (RFC1918/CGNAT/loopback/link-local blocklist). That guard allows
-// both http/https; MIP-002 requires HTTPS for the agent card itself, so the
-// stricter protocol check is layered on top here rather than modifying the
-// shared function (its only other caller, webhook delivery, legitimately
-// allows http).
-async function assertHttpsAgentCardUrl(rawUrl: string): Promise<URL> {
-	// Cheap, synchronous protocol check first — reject non-https before paying
-	// for a DNS-resolving SSRF check that would only be discarded afterwards.
-	let protocolCheckUrl: URL;
+async function resolveHttpsAgentCardUrl(rawUrl: string): Promise<{ url: URL; addresses: ResolvedAddress[] }> {
+	let parsedUrl: URL;
 	try {
-		protocolCheckUrl = new URL(rawUrl);
+		parsedUrl = new URL(rawUrl);
 	} catch {
 		throw createHttpError(400, 'A2A agent card URL is invalid');
 	}
-	if (protocolCheckUrl.protocol !== 'https:') {
+	if (parsedUrl.protocol !== 'https:') {
 		throw createHttpError(400, 'A2A agent card URL must use https');
 	}
 	try {
-		return await assertWebhookDestinationAllowed(rawUrl);
+		return await resolveWebhookDestinationAllowed(rawUrl);
 	} catch (error) {
 		if (isWebhookDestinationPolicyError(error)) {
 			throw createHttpError(400, `A2A agent card URL rejected: ${error.reason}`);
@@ -114,55 +115,74 @@ async function assertHttpsAgentCardUrl(rawUrl: string): Promise<URL> {
 	}
 }
 
-async function fetchAgentCardJson(url: URL): Promise<unknown> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), AGENT_CARD_FETCH_TIMEOUT_MS);
-	timeout.unref();
-	try {
-		const response = await fetch(url, {
-			signal: controller.signal,
-			// Do not let a public agent-card host redirect around the SSRF guard
-			// that already validated `url` above.
-			redirect: 'error',
-		});
-		if (!response.ok) {
-			throw createHttpError(400, `A2A agent card fetch failed with status ${response.status}`);
-		}
-		const contentType = response.headers.get('content-type') ?? '';
-		if (!contentType.includes('application/json')) {
-			throw createHttpError(400, 'A2A agent card response was not application/json');
-		}
-		const contentLength = response.headers.get('content-length');
-		if (contentLength != null && Number(contentLength) > AGENT_CARD_MAX_BYTES) {
-			throw createHttpError(400, 'A2A agent card response exceeds the maximum allowed size');
-		}
-		const text = await response.text();
-		if (text.length > AGENT_CARD_MAX_BYTES) {
-			throw createHttpError(400, 'A2A agent card response exceeds the maximum allowed size');
-		}
-		try {
-			return JSON.parse(text);
-		} catch {
-			throw createHttpError(400, 'A2A agent card response was not valid JSON');
-		}
-	} catch (error) {
-		if (controller.signal.aborted) {
-			throw createHttpError(400, 'A2A agent card fetch timed out');
-		}
-		// A createHttpError we already threw above (bad status/content-type/size/JSON)
-		// passes through unwrapped; anything else — a raw network failure (DNS,
-		// connection refused, TLS, or a rejected redirect from `redirect: 'error'`) —
-		// must not escape as an unhandled 500.
-		if (createHttpError.isHttpError(error)) {
-			throw error;
-		}
-		throw createHttpError(
-			400,
-			`Could not fetch A2A agent card: ${error instanceof Error ? error.message : String(error)}`,
+function fetchAgentCardAtAddress(url: URL, address: ResolvedAddress, signal: AbortSignal): Promise<unknown> {
+	return new Promise((resolve, reject) => {
+		const req = request(
+			url,
+			{
+				agent: false,
+				signal,
+				family: address.family,
+				autoSelectFamily: false,
+				// Resolve once. Keep the original URL host for TLS certificate checks and SNI.
+				lookup: (_hostname, _options, callback) => callback(null, address.address, address.family),
+				headers: { Accept: 'application/json', 'Accept-Encoding': 'identity' },
+			} as RequestOptions & { autoSelectFamily: boolean },
+			(response) => {
+				void (async () => {
+					try {
+						const status = response.statusCode ?? 0;
+						if (status < 200 || status >= 300) {
+							throw createHttpError(400, `A2A agent card fetch failed with status ${status}`);
+						}
+						const contentType = response.headers['content-type'] ?? '';
+						if (contentType.split(';')[0].trim().toLowerCase() !== 'application/json') {
+							throw createHttpError(400, 'A2A agent card response was not application/json');
+						}
+						const contentLength = response.headers['content-length'];
+						if (contentLength != null && Number(contentLength) > AGENT_CARD_MAX_BYTES) {
+							throw createHttpError(400, 'A2A agent card response exceeds the maximum allowed size');
+						}
+						const chunks: Buffer[] = [];
+						let bytes = 0;
+						for await (const chunk of response) {
+							const rawChunk: unknown = chunk;
+							const buffer = rawChunk instanceof Uint8Array ? Buffer.from(rawChunk) : Buffer.from(String(rawChunk));
+							bytes += buffer.length;
+							if (bytes > AGENT_CARD_MAX_BYTES) {
+								throw createHttpError(400, 'A2A agent card response exceeds the maximum allowed size');
+							}
+							chunks.push(buffer);
+						}
+						try {
+							resolve(JSON.parse(Buffer.concat(chunks, bytes).toString('utf8')));
+						} catch {
+							throw createHttpError(400, 'A2A agent card response was not valid JSON');
+						}
+					} catch (error) {
+						reject(error instanceof Error ? error : createHttpError(400, String(error)));
+						response.destroy();
+						req.destroy();
+					}
+				})();
+			},
 		);
-	} finally {
-		clearTimeout(timeout);
+		req.on('error', reject);
+		req.end();
+	});
+}
+
+async function fetchAgentCardJson(url: URL, addresses: ResolvedAddress[], signal: AbortSignal): Promise<unknown> {
+	for (const [index, address] of addresses.entries()) {
+		try {
+			return await fetchAgentCardAtAddress(url, address, signal);
+		} catch (error) {
+			if (signal.aborted || createHttpError.isHttpError(error) || index === addresses.length - 1) {
+				throw error;
+			}
+		}
 	}
+	throw createHttpError(400, 'A2A agent card hostname resolved to no addresses');
 }
 
 /**
@@ -180,18 +200,46 @@ export async function validateA2AAgentCardOrThrow(
 	agentCardUrl: string,
 	declaredProtocolVersions: string[],
 ): Promise<void> {
-	const parsedUrl = await assertHttpsAgentCardUrl(agentCardUrl);
-	const json = await fetchAgentCardJson(parsedUrl);
-	const parseResult = agentCardSchema.safeParse(json);
-	if (!parseResult.success) {
-		throw createHttpError(400, `A2A agent card is invalid: ${parseResult.error.message}`);
-	}
-	const card = parseResult.data;
-	const missingVersions = declaredProtocolVersions.filter((version) => !card.protocolVersions.includes(version));
-	if (missingVersions.length > 0) {
+	const controller = new AbortController();
+	let rejectDeadline: (error: Error) => void;
+	const deadline = new Promise<never>((_resolve, reject) => {
+		rejectDeadline = reject;
+	});
+	const timeout = setTimeout(() => {
+		rejectDeadline(createHttpError(400, 'A2A agent card fetch timed out'));
+		controller.abort();
+	}, AGENT_CARD_FETCH_TIMEOUT_MS);
+	timeout.unref();
+	try {
+		const destination = await Promise.race([resolveHttpsAgentCardUrl(agentCardUrl), deadline]);
+		const json = await Promise.race([
+			fetchAgentCardJson(destination.url, destination.addresses, controller.signal),
+			deadline,
+		]);
+		const parseResult = agentCardSchema.safeParse(json);
+		if (!parseResult.success) {
+			throw createHttpError(400, `A2A agent card is invalid: ${parseResult.error.message}`);
+		}
+		const card = parseResult.data;
+		const missingVersions = declaredProtocolVersions.filter((version) => !card.protocolVersions.includes(version));
+		if (missingVersions.length > 0) {
+			throw createHttpError(
+				400,
+				`A2A agent card does not support declared protocol version(s): ${missingVersions.join(', ')}`,
+			);
+		}
+	} catch (error) {
+		if (controller.signal.aborted) {
+			throw createHttpError(400, 'A2A agent card fetch timed out');
+		}
+		if (createHttpError.isHttpError(error)) {
+			throw error;
+		}
 		throw createHttpError(
 			400,
-			`A2A agent card does not support declared protocol version(s): ${missingVersions.join(', ')}`,
+			`Could not fetch A2A agent card: ${error instanceof Error ? error.message : String(error)}`,
 		);
+	} finally {
+		clearTimeout(timeout);
 	}
 }

@@ -9,6 +9,7 @@ import {
 import { atomicAmountSchema, supportedPaymentSourcesSchema } from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
 import { z } from '@masumi/payment-core/zod';
+import { a2aProtocolVersionSchema } from '@/utils/validator/a2a-protocol-version';
 
 export enum FilterStatus {
 	Registered = 'Registered',
@@ -326,7 +327,7 @@ export const registerAgentSchemaInput = z.object({
 			'URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others.',
 		),
 	a2aProtocolVersions: z
-		.array(z.string().max(63))
+		.array(a2aProtocolVersionSchema)
 		.min(1)
 		.max(10)
 		.optional()

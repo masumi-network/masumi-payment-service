@@ -8,7 +8,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { metadataSchema, resolveAgentPricingFromMetadata } from '@/routes/api/registry/wallet';
+import { metadataSchema, registryMetadataApiUrl, resolveAgentPricingFromMetadata } from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import {
@@ -283,7 +283,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 			Metadata: {
 				name: metadataToString(parsedMetadata.data.name)!,
 				description: metadataToString(parsedMetadata.data.description),
-				apiBaseUrl: metadataToString(parsedMetadata.data.api_base_url)!,
+				apiBaseUrl: registryMetadataApiUrl(parsedMetadata.data)!,
 				ExampleOutputs:
 					parsedMetadata.data.example_output?.map((exampleOutput) => ({
 						name: metadataToString(exampleOutput.name)!,

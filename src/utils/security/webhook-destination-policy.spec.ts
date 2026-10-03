@@ -6,13 +6,45 @@ jest.unstable_mockModule('node:dns/promises', () => ({
 	lookup: mockLookup,
 }));
 
-const { assertWebhookDestinationAllowed, redactWebhookDestination, WebhookDestinationPolicyError } =
-	await import('./webhook-destination-policy');
+const {
+	resolveWebhookDestinationAllowed,
+	assertWebhookDestinationAllowed,
+	redactWebhookDestination,
+	WebhookDestinationPolicyError,
+} = await import('./webhook-destination-policy');
 
 describe('webhook destination policy', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockLookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+	});
+
+	it('returns the exact public addresses validated for a pinned connection', async () => {
+		const addresses = [
+			{ address: '93.184.216.34', family: 4 },
+			{ address: '2606:4700::1111', family: 6 },
+		];
+		mockLookup.mockResolvedValue(addresses);
+		const destination = await resolveWebhookDestinationAllowed('https://example.com/card');
+		expect(destination.url.href).toBe('https://example.com/card');
+		expect(destination.addresses).toEqual(addresses);
+		expect(mockLookup).toHaveBeenCalledTimes(1);
+	});
+
+	it('returns public literal addresses without DNS resolution', async () => {
+		const destination = await resolveWebhookDestinationAllowed('https://93.184.216.34/card');
+		expect(destination.addresses).toEqual([{ address: '93.184.216.34', family: 4 }]);
+		expect(mockLookup).not.toHaveBeenCalled();
+	});
+
+	it('rejects mixed public and blocked DNS answers', async () => {
+		mockLookup.mockResolvedValue([
+			{ address: '93.184.216.34', family: 4 },
+			{ address: '127.0.0.1', family: 4 },
+		]);
+		await expect(resolveWebhookDestinationAllowed('https://example.com/card')).rejects.toBeInstanceOf(
+			WebhookDestinationPolicyError,
+		);
 	});
 
 	it('allows public https destinations', async () => {

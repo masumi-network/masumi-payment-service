@@ -58,7 +58,7 @@ jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
-const { queryAgentFromWalletGet } = await import('./index');
+const { queryAgentFromWalletGet, metadataSchema } = await import('./index');
 
 function asApiKey() {
 	return {
@@ -144,5 +144,40 @@ describe('queryAgentFromWalletGet', () => {
 				}),
 			}),
 		]);
+	});
+});
+
+// MIP-002 endpoint aliases must preserve older A2A metadata without ambiguity.
+describe('A2A metadata endpoint', () => {
+	const metadata = {
+		name: 'Agent',
+		author: { name: 'Author' },
+		tags: ['demo'],
+		image: 'ipfs://image',
+		metadata_version: 2,
+		type: 'a2aV1',
+		agent_card_url: 'https://agent.example/card',
+		a2a_protocol_versions: ['1.0'],
+	};
+	it('accepts the MIP-002 api_url field', () => {
+		expect(metadataSchema.safeParse({ ...metadata, api_url: ['https://agent.example/a2a'] }).success).toBe(true);
+	});
+	it('keeps reading earlier A2A api_base_url metadata', () => {
+		expect(metadataSchema.safeParse({ ...metadata, api_base_url: ['https://agent.example/a2a'] }).success).toBe(true);
+	});
+	it('rejects conflicting A2A endpoint aliases', () => {
+		expect(
+			metadataSchema.safeParse({
+				...metadata,
+				api_url: 'https://agent.example/a2a',
+				api_base_url: 'https://other.example/a2a',
+			}).success,
+		).toBe(false);
+	});
+	it('requires an A2A endpoint and keeps api_base_url required for legacy metadata', () => {
+		expect(metadataSchema.safeParse(metadata).success).toBe(false);
+		expect(
+			metadataSchema.safeParse({ ...metadata, type: undefined, api_url: 'https://agent.example/a2a' }).success,
+		).toBe(false);
 	});
 });

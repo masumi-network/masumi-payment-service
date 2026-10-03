@@ -18,6 +18,8 @@ import { serializeA2ADetail, serializeSupportedPaymentSources, serializeVerifica
 import { verificationToRow } from '@/types/verification';
 import { buildSupportedPaymentSourceCreate, getCardanoFixedAssets } from '@/services/registry/source-pricing';
 
+const UNSUPPORTED_AGENT_UPDATE_MESSAGE = 'Updating OpenApi/X402/A2A agents is not yet supported';
+
 // Reuse the shared array schema so the update route's limits can never
 // silently diverge from the register path's `MAX_SUPPORTED_PAYMENT_SOURCES`.
 const updateSupportedPaymentSourcesSchema = supportedPaymentSourcesSchema.describe(
@@ -71,7 +73,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 			// OpenApi/X402/A2A updates rather than silently dropping their type-specific
 			// fields (spec URL, resource manifest, agent card + protocol versions).
 			if ((input.type ?? RegistryEntryType.Standard) !== RegistryEntryType.Standard) {
-				throw createHttpError(400, 'Updating OpenApi/X402/A2A agents is not yet supported');
+				throw createHttpError(400, UNSUPPORTED_AGENT_UPDATE_MESSAGE);
 			}
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
@@ -151,6 +153,10 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				// different payment source. Treat as "not found here" so the
 				// caller gets a consistent 404 rather than a stale 409.
 				throw createHttpError(404, 'Registration not found');
+			}
+
+			if (registryRequest.type !== RegistryEntryType.Standard) {
+				throw createHttpError(400, UNSUPPORTED_AGENT_UPDATE_MESSAGE);
 			}
 
 			const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);

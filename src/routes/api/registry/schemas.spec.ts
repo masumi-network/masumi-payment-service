@@ -1,5 +1,11 @@
 import { RegistryEntryType } from '@/generated/prisma/enums';
-import { getRegistryEndpointError } from './schemas';
+import { getRegistryEndpointError, registerAgentSchemaInput } from './schemas';
+
+describe('registration protocol version boundary', () => {
+	it.each(['', '1.0.0', '1', '€'.repeat(22)])('rejects invalid protocol version %s', (version) => {
+		expect(registerAgentSchemaInput.shape.a2aProtocolVersions.safeParse([version]).success).toBe(false);
+	});
+});
 
 describe('getRegistryEndpointError', () => {
 	it('treats an absent type as Standard (requires apiBaseUrl)', () => {

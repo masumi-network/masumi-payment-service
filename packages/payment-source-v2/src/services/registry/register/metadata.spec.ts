@@ -7,7 +7,7 @@ import {
 	X402PaymentScheme,
 } from '@/generated/prisma/client';
 import { parseSupportedPaymentSourcesFromMetadata } from '@/types/payment-source';
-import { buildAgentMetadata } from './service';
+import { buildAgentMetadata } from './metadata';
 
 describe('V2 registry metadata', () => {
 	const x402Source = {
@@ -97,7 +97,7 @@ describe('V2 registry metadata', () => {
 		expect(metadata.api_base_url).toBeUndefined();
 	});
 
-	it('emits type "a2aV1" + agent_card_url + a2a_protocol_versions + api_base_url for an A2A entry', () => {
+	it('emits type "a2aV1" + agent_card_url + a2a_protocol_versions + MIP-002 endpoint and version for an A2A entry', () => {
 		const metadata = buildAgentMetadata({
 			...baseRequest,
 			type: RegistryEntryType.A2A,
@@ -111,11 +111,15 @@ describe('V2 registry metadata', () => {
 			agent_card_url?: unknown;
 			a2a_protocol_versions?: unknown;
 			api_base_url?: unknown;
+			api_url?: unknown;
+			metadata_version?: unknown;
 		};
 		expect(metadata.type).toBe('a2aV1');
 		expect(metadata.agent_card_url).toEqual(['https://agent.example/.well-known/agent-card.json']);
 		expect(metadata.a2a_protocol_versions).toEqual(['1.0']);
-		expect(metadata.api_base_url).toEqual(['https://agent.example']);
+		expect(metadata.api_url).toEqual(['https://agent.example']);
+		expect(metadata.api_base_url).toBeUndefined();
+		expect(metadata.metadata_version).toBe(2);
 	});
 
 	it('never emits a2a_protocol_versions for a Standard entry (must be undefined, not [])', () => {

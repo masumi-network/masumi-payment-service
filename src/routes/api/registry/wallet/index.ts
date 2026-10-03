@@ -19,95 +19,124 @@ import {
 } from '@/types/payment-source';
 import { parseVerificationsFromMetadata, verificationMetadataSchema, verificationsSchema } from '@/types/verification';
 
-export const metadataSchema = z.object({
-	name: z
-		.string()
-		.min(1)
-		.or(z.array(z.string().min(1))),
-	description: z.string().or(z.array(z.string())).optional(),
-	api_base_url: z
-		.string()
-		.min(1)
-		.or(z.array(z.string().min(1))),
-	example_output: z
-		.array(
-			z.object({
-				name: z
-					.string()
-					.max(60)
-					.or(z.array(z.string().max(60)).min(1).max(1)),
-				mime_type: z
-					.string()
-					.min(1)
-					.max(60)
-					.or(z.array(z.string().min(1).max(60)).min(1).max(1)),
-				url: z.string().or(z.array(z.string())),
-			}),
-		)
-		.optional(),
-	capability: z
-		.object({
-			name: z.string().or(z.array(z.string())),
-			version: z
-				.string()
-				.max(60)
-				.or(z.array(z.string().max(60)).min(1).max(1)),
-		})
-		.optional(),
-	author: z.object({
+export const metadataSchema = z
+	.object({
+		type: z.string().or(z.array(z.string())).optional(),
+		api_url: z
+			.string()
+			.min(1)
+			.or(z.array(z.string().min(1)))
+			.optional(),
 		name: z
 			.string()
 			.min(1)
 			.or(z.array(z.string().min(1))),
-		contact_email: z.string().or(z.array(z.string())).optional(),
-		contact_other: z.string().or(z.array(z.string())).optional(),
-		organization: z.string().or(z.array(z.string())).optional(),
-	}),
-	legal: z
-		.object({
-			privacy_policy: z.string().or(z.array(z.string())).optional(),
-			terms: z.string().or(z.array(z.string())).optional(),
-			other: z.string().or(z.array(z.string())).optional(),
-		})
-		.optional(),
-	tags: z.array(z.string().min(1)).min(1),
-	agentPricing: z
-		.object({
-			pricingType: z.enum([PricingType.Fixed]),
-			fixedPricing: z
-				.array(
-					z.object({
-						amount: z.coerce.bigint().refine((amount) => amount > 0n, 'Amount must be greater than zero'),
-						unit: z
-							.string()
-							.min(1)
-							.or(z.array(z.string().min(1))),
-					}),
-				)
+		description: z.string().or(z.array(z.string())).optional(),
+		api_base_url: z
+			.string()
+			.min(1)
+			.or(z.array(z.string().min(1)))
+			.optional(),
+		example_output: z
+			.array(
+				z.object({
+					name: z
+						.string()
+						.max(60)
+						.or(z.array(z.string().max(60)).min(1).max(1)),
+					mime_type: z
+						.string()
+						.min(1)
+						.max(60)
+						.or(z.array(z.string().min(1).max(60)).min(1).max(1)),
+					url: z.string().or(z.array(z.string())),
+				}),
+			)
+			.optional(),
+		capability: z
+			.object({
+				name: z.string().or(z.array(z.string())),
+				version: z
+					.string()
+					.max(60)
+					.or(z.array(z.string().max(60)).min(1).max(1)),
+			})
+			.optional(),
+		author: z.object({
+			name: z
+				.string()
 				.min(1)
-				.max(25),
-		})
-		.or(
-			z.object({
-				pricingType: z.enum([PricingType.Free]),
-			}),
-		)
-		.or(
-			z.object({
-				pricingType: z.enum([PricingType.Dynamic]),
-			}),
-		)
-		// Optional: current metadata folds pricing into each Cardano supported
-		// payment source and drops this top-level block. Legacy entries still carry it.
-		.optional(),
-	image: z.string().or(z.array(z.string())),
-	metadata_version: z.coerce.number().int().min(1).max(2),
-	supported_payment_sources: z.array(supportedPaymentSourceMetadataSchema).optional(),
-	verifications: z.array(verificationMetadataSchema).optional(),
-	// A2A (MIP-002) entries only; absent for every other type.
-	agent_card_url: z.string().or(z.array(z.string())).optional(),
-	a2a_protocol_versions: z.array(z.string()).optional(),
-});
+				.or(z.array(z.string().min(1))),
+			contact_email: z.string().or(z.array(z.string())).optional(),
+			contact_other: z.string().or(z.array(z.string())).optional(),
+			organization: z.string().or(z.array(z.string())).optional(),
+		}),
+		legal: z
+			.object({
+				privacy_policy: z.string().or(z.array(z.string())).optional(),
+				terms: z.string().or(z.array(z.string())).optional(),
+				other: z.string().or(z.array(z.string())).optional(),
+			})
+			.optional(),
+		tags: z.array(z.string().min(1)).min(1),
+		agentPricing: z
+			.object({
+				pricingType: z.enum([PricingType.Fixed]),
+				fixedPricing: z
+					.array(
+						z.object({
+							amount: z.coerce.bigint().refine((amount) => amount > 0n, 'Amount must be greater than zero'),
+							unit: z
+								.string()
+								.min(1)
+								.or(z.array(z.string().min(1))),
+						}),
+					)
+					.min(1)
+					.max(25),
+			})
+			.or(
+				z.object({
+					pricingType: z.enum([PricingType.Free]),
+				}),
+			)
+			.or(
+				z.object({
+					pricingType: z.enum([PricingType.Dynamic]),
+				}),
+			)
+			// Optional: current metadata folds pricing into each Cardano supported
+			// payment source and drops this top-level block. Legacy entries still carry it.
+			.optional(),
+		image: z.string().or(z.array(z.string())),
+		metadata_version: z.coerce.number().int().min(1).max(2),
+		supported_payment_sources: z.array(supportedPaymentSourceMetadataSchema).optional(),
+		verifications: z.array(verificationMetadataSchema).optional(),
+		// A2A (MIP-002) entries only; absent for every other type.
+		agent_card_url: z.string().or(z.array(z.string())).optional(),
+		a2a_protocol_versions: z.array(z.string()).optional(),
+	})
+	.superRefine((metadata, ctx) => {
+		const isA2A = metadataToString(metadata.type) === 'a2aV1';
+		const apiUrl = metadataToString(metadata.api_url);
+		const apiBaseUrl = metadataToString(metadata.api_base_url);
+		if (isA2A ? apiUrl == null && apiBaseUrl == null : apiBaseUrl == null) {
+			ctx.addIssue({
+				code: 'custom',
+				path: [isA2A ? 'api_url' : 'api_base_url'],
+				message: 'Agent API URL is required',
+			});
+		}
+		if (isA2A && apiUrl != null && apiBaseUrl != null && apiUrl !== apiBaseUrl) {
+			ctx.addIssue({ code: 'custom', path: ['api_url'], message: 'A2A API URL fields conflict' });
+		}
+	});
+
+export function registryMetadataApiUrl(metadata: z.infer<typeof metadataSchema>): string | undefined {
+	return metadataToString(metadata.type) === 'a2aV1'
+		? metadataToString(metadata.api_url ?? metadata.api_base_url)
+		: metadataToString(metadata.api_base_url);
+}
 
 type MetadataAgentPricing = NonNullable<z.infer<typeof metadataSchema>['agentPricing']>;
 
@@ -398,7 +427,7 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 					Metadata: {
 						name: metadataToString(parsedMetadata.data.name)!,
 						description: metadataToString(parsedMetadata.data.description),
-						apiBaseUrl: metadataToString(parsedMetadata.data.api_base_url)!,
+						apiBaseUrl: registryMetadataApiUrl(parsedMetadata.data)!,
 						ExampleOutputs:
 							parsedMetadata.data.example_output?.map((exampleOutput) => ({
 								name: metadataToString(exampleOutput.name)!,
