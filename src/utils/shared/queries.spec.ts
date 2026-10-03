@@ -7,7 +7,10 @@ import {
 	looksLikeHash,
 	normalizeSearchQuery,
 	parseAmountSearchRange,
+	buildHotWalletSearchFilter,
+	buildMatchingHotWalletTypes,
 } from './queries';
+import { HotWalletType } from '@prisma/client';
 
 describe('normalizeSearchQuery', () => {
 	it('returns undefined for blank input', () => {
@@ -317,5 +320,59 @@ describe('parseAmountSearchRange', () => {
 		expect(parseAmountSearchRange('-1')).toBeUndefined();
 		expect(parseAmountSearchRange('1.2.3')).toBeUndefined();
 		expect(parseAmountSearchRange('')).toBeUndefined();
+	});
+});
+
+describe('buildMatchingHotWalletTypes', () => {
+	it('returns undefined when there is nothing to match', () => {
+		expect(buildMatchingHotWalletTypes(undefined)).toBeUndefined();
+		expect(buildMatchingHotWalletTypes('zzz')).toBeUndefined();
+	});
+
+	it('matches the enum name', () => {
+		expect(buildMatchingHotWalletTypes('selling')).toEqual([HotWalletType.Selling]);
+		expect(buildMatchingHotWalletTypes('fund')).toEqual([HotWalletType.Funding]);
+	});
+
+	it('matches the label the admin UI actually renders', () => {
+		// The wallets table shows Purchasing as "Buying", so searching the word
+		// on screen has to reach the enum behind it.
+		expect(buildMatchingHotWalletTypes('buying')).toEqual([HotWalletType.Purchasing]);
+	});
+});
+
+describe('buildHotWalletSearchFilter', () => {
+	it('returns an empty fragment when there is no query', () => {
+		expect(buildHotWalletSearchFilter(undefined)).toEqual({});
+	});
+
+	it('searches the stored wallet columns', () => {
+		const filter = buildHotWalletSearchFilter('addr_test1');
+		expect(filter.OR).toEqual(
+			expect.arrayContaining([
+				{ walletAddress: { contains: 'addr\\_test1', mode: 'insensitive' } },
+				{ collectionAddress: { contains: 'addr\\_test1', mode: 'insensitive' } },
+				{ note: { contains: 'addr\\_test1', mode: 'insensitive' } },
+				{ walletVkey: { contains: 'addr\\_test1', mode: 'insensitive' } },
+				{ id: { contains: 'addr\\_test1', mode: 'insensitive' } },
+			]),
+		);
+	});
+
+	it('adds a type branch only when the query names a type', () => {
+		expect(buildHotWalletSearchFilter('buying').OR).toContainEqual({
+			type: { in: [HotWalletType.Purchasing] },
+		});
+		expect(buildHotWalletSearchFilter('addr_test1').OR).not.toContainEqual(
+			expect.objectContaining({ type: expect.anything() }),
+		);
+	});
+
+	it('matches LIKE metacharacters literally', () => {
+		// Unescaped, '%' matches every wallet on the server while the frontend
+		// mirror compares it literally and matches none.
+		expect(buildHotWalletSearchFilter('100%').OR).toContainEqual({
+			note: { contains: '100\\%', mode: 'insensitive' },
+		});
 	});
 });

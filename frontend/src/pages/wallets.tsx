@@ -21,7 +21,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { patchPaymentSourceExtended } from '@/lib/api/generated';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
@@ -41,6 +41,7 @@ import { MASUMI_WALLETS_DOCS_URL } from '@/lib/masumi-links';
 import { formatSixDecimalAmount, shortenAddress, cn } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import {
@@ -63,7 +64,6 @@ import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
-import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
@@ -115,9 +115,11 @@ export default function WalletsPage() {
     hasMore,
     loadMore,
     refetch: refetchWalletsQuery,
-  } = usePaginatedWallets(activeWalletType, debouncedSearchQuery || undefined);
-  // Placeholder rows during a search keep their already-fetched balances.
+  } = usePaginatedWallets(activeWalletType, debouncedSearchQuery);
   const isRefreshingBalances = isRefetching && !isShowingPreviousSearch;
+  const isSearchPending =
+    searchQuery.trim().toLowerCase() !== debouncedSearchQuery.trim().toLowerCase() ||
+    isShowingPreviousSearch;
 
   // State-based previous value tracking for router query initialization
   // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
@@ -215,34 +217,6 @@ export default function WalletsPage() {
     }
   }, [router.isReady, router.query.action, router, capabilities.canAdmin]);
 
-  // Pending while the debounce runs or while the table shows the previous
-  // search's rows as placeholder. Load-more and refresh do not count.
-  const isSearchPending = searchQuery !== debouncedSearchQuery || isShowingPreviousSearch;
-
-  // Client-side filter for instant feedback while server results are pending.
-  // Mirror the server's searched columns so rows do not vanish and reappear.
-  const filteredWallets = useMemo(() => {
-    const query = searchQuery.toLowerCase().trim();
-    if (
-      !query ||
-      (!isShowingPreviousSearch && query === debouncedSearchQuery.toLowerCase().trim())
-    ) {
-      return allWallets;
-    }
-
-    return allWallets.filter((wallet) => {
-      const matchAddress =
-        wallet.walletAddress?.toLowerCase().includes(query) ||
-        wallet.collectionAddress?.toLowerCase().includes(query) ||
-        false;
-      const matchVkey = wallet.walletVkey?.toLowerCase().includes(query) || false;
-      const matchNote = wallet.note?.toLowerCase().includes(query) || false;
-      const matchType = wallet.type?.toLowerCase().includes(query) || false;
-
-      return matchAddress || matchVkey || matchNote || matchType;
-    });
-  }, [allWallets, debouncedSearchQuery, isShowingPreviousSearch, searchQuery]);
-
   // Open for every session: the dialog renders the read-visible fields and
   // omits the admin-only sections rather than erroring.
   const handleWalletClick = (wallet: WalletWithBalance) => {
@@ -308,9 +282,9 @@ export default function WalletsPage() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by address, note, or type..."
+                placeholder="Search by address, note, type, key hash, or ID..."
+                isLoading={isSearchPending || isFetchingWallets}
                 className="max-w-xs"
-                isLoading={isSearchPending}
               />
             </div>
           </div>
@@ -339,10 +313,9 @@ export default function WalletsPage() {
                 </tr>
               </thead>
               <tbody>
-                {/* A pending search with no local match is not an empty result yet. */}
-                {isLoading || (isSearchPending && filteredWallets.length === 0) ? (
+                {isLoading || isSearchPending ? (
                   <WalletTableSkeleton rows={2} />
-                ) : filteredWallets.length === 0 ? (
+                ) : allWallets.length === 0 ? (
                   <tr>
                     <td colSpan={7}>
                       <EmptyState
@@ -354,7 +327,7 @@ export default function WalletsPage() {
                   </tr>
                 ) : (
                   <>
-                    {filteredWallets.map((wallet, index) => (
+                    {allWallets.map((wallet, index) => (
                       <tr
                         key={wallet.id}
                         className={`group border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
@@ -533,7 +506,7 @@ export default function WalletsPage() {
             </table>
           </HorizontalScrollArea>
 
-          {hasMore && (
+          {hasMore && !isSearchPending && (
             <div className="flex justify-center">
               <Button
                 variant="outline"

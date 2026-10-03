@@ -624,11 +624,11 @@
                     "item": [
                         {
                             "id": "fe2217cd-5390-43dc-b969-17c3b16d8fa9",
-                            "name": "List hot wallets, optionally filtered by payment source and type. (read access required)",
+                            "name": "List hot wallets, optionally filtered or searched by payment source, type and free text. (read access required)",
                             "request": {
-                                "name": "List hot wallets, optionally filtered by payment source and type. (read access required)",
+                                "name": "List hot wallets, optionally filtered or searched by payment source, type and free text. (read access required)",
                                 "description": {
-                                    "content": "Lists hot wallets across payment sources with cursor-based pagination",
+                                    "content": "Lists hot wallets across payment sources with cursor-based pagination. searchQuery applies before pagination, so a wallet beyond the first page is still found.",
                                     "type": "text/plain"
                                 },
                                 "url": {
@@ -697,7 +697,7 @@
                                         {
                                             "disabled": false,
                                             "description": {
-                                                "content": "Free-text search over wallet address, collection address, payment key hash, note, and wallet type. Matching is case-insensitive.",
+                                                "content": "Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name (\"Purchasing\") or the label the admin UI renders (\"Buying\"). \"%\" and \"_\" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND.",
                                                 "type": "text/plain"
                                             },
                                             "key": "searchQuery",
@@ -803,7 +803,7 @@
                                                 {
                                                     "disabled": false,
                                                     "description": {
-                                                        "content": "Free-text search over wallet address, collection address, payment key hash, note, and wallet type. Matching is case-insensitive.",
+                                                        "content": "Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name (\"Purchasing\") or the label the admin UI renders (\"Buying\"). \"%\" and \"_\" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND.",
                                                         "type": "text/plain"
                                                     },
                                                     "key": "searchQuery",

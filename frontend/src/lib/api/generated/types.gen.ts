@@ -3750,7 +3750,7 @@ export type GetWalletListData = {
          */
         walletAddress?: string;
         /**
-         * Free-text search over wallet address, collection address, payment key hash, note, and wallet type. Matching is case-insensitive.
+         * Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name ("Purchasing") or the label the admin UI renders ("Buying"). "%" and "_" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND.
          */
         searchQuery?: string;
     };
