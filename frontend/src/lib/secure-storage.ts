@@ -74,26 +74,16 @@ async function saveKeyIfAbsent(key: CryptoKey): Promise<CryptoKey> {
   }
 }
 
-let keyPromise: Promise<CryptoKey> | null = null;
-
 // Non-extractable: the raw key material never exists as a string or byte
 // array script can read back out, only as an opaque CryptoKey handle.
-function getOrCreateKey(): Promise<CryptoKey> {
-  if (keyPromise == null) {
-    keyPromise = (async () => {
-      const existing = await loadStoredKey();
-      if (existing) return existing;
-      const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
-        'encrypt',
-        'decrypt',
-      ]);
-      return saveKeyIfAbsent(key);
-    })().catch((error: unknown) => {
-      keyPromise = null;
-      throw error;
-    });
-  }
-  return keyPromise;
+async function getOrCreateKey(): Promise<CryptoKey> {
+  const existing = await loadStoredKey();
+  if (existing) return existing;
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+    'encrypt',
+    'decrypt',
+  ]);
+  return saveKeyIfAbsent(key);
 }
 
 function toBase64(bytes: Uint8Array): string {

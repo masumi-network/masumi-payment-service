@@ -102,6 +102,9 @@ function createDatabase() {
     abortNextWrite() {
       abortWrite = true;
     },
+    clear() {
+      storedKey = undefined;
+    },
     get key() {
       return storedKey;
     },
@@ -192,6 +195,17 @@ test('stored keys remain non-extractable and database connections close', async 
   const reloaded = await freshStorage();
   assert.equal(await reloaded.decryptFromStorage(token), 'admin');
   assert.equal(db.closes, db.opens);
+});
+
+test('sign-in after clearing IndexedDB persists a key that survives reload', async (t) => {
+  const db = createDatabase();
+  installDatabase(t, db);
+  const storage = await freshStorage();
+  await storage.encryptForStorage('old-admin');
+  db.clear();
+  const token = await storage.encryptForStorage('new-admin');
+  const reloaded = await freshStorage();
+  assert.equal(await reloaded.decryptFromStorage(token), 'new-admin');
 });
 
 test('malformed and altered ciphertext return null', async (t) => {
