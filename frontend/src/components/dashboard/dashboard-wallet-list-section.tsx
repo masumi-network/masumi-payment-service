@@ -24,11 +24,13 @@ const tdClass = 'px-3 py-3 align-middle';
 function WalletBalanceCell({
   wallet,
   network,
+  isRefreshing,
 }: {
   wallet: WalletWithBalance;
   network: 'Preprod' | 'Mainnet';
+  isRefreshing: boolean;
 }) {
-  if (wallet.isLoadingBalance) {
+  if (isRefreshing) {
     return <Spinner className="h-3 w-3" />;
   }
 
@@ -50,6 +52,7 @@ export function DashboardWalletListSection({
   wallets,
   network,
   canAdmin,
+  isRefreshingBalances,
   onWalletClick,
   onSwap,
   onTopUp,
@@ -57,6 +60,7 @@ export function DashboardWalletListSection({
   wallets: WalletWithBalance[];
   network: 'Preprod' | 'Mainnet';
   canAdmin: boolean;
+  isRefreshingBalances: boolean;
   onWalletClick: (wallet: WalletWithBalance) => void;
   onSwap: (wallet: WalletWithBalance) => void;
   onTopUp: (wallet: WalletWithBalance) => void;
@@ -157,7 +161,11 @@ export function DashboardWalletListSection({
                 </div>
               </td>
               <td className={cn(tdClass, 'text-right text-xs')}>
-                <WalletBalanceCell wallet={wallet} network={network} />
+                <WalletBalanceCell
+                  wallet={wallet}
+                  network={network}
+                  isRefreshing={isRefreshingBalances}
+                />
               </td>
               {canAdmin ? (
                 <td className={cn(tdClass, 'text-right')}>

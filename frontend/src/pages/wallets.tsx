@@ -69,7 +69,6 @@ interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
   /** Carried over from the list item; the source this wallet actually belongs to. */
   paymentSourceId: string;
-  isLoadingBalance?: boolean;
   /** True when the balance fetch failed — render "—", not 0. */
   isBalanceUnavailable?: boolean;
 }
@@ -110,12 +109,15 @@ export default function WalletsPage() {
     wallets: walletsList,
     isLoading: isLoadingWallets,
     isFetching: isFetchingWallets,
+    isRefetching,
     isFetchingNextPage,
     isPlaceholderData: isShowingPreviousSearch,
     hasMore,
     loadMore,
     refetch: refetchWalletsQuery,
   } = usePaginatedWallets(activeWalletType, debouncedSearchQuery || undefined);
+  // Placeholder rows during a search keep their already-fetched balances.
+  const isRefreshingBalances = isRefetching && !isShowingPreviousSearch;
 
   // State-based previous value tracking for router query initialization
   // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
@@ -411,7 +413,7 @@ export default function WalletsPage() {
                         <td className="p-4">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-2">
-                              {wallet.isLoadingBalance ? (
+                              {isRefreshingBalances ? (
                                 <Spinner size={16} />
                               ) : (
                                 <span>
@@ -421,7 +423,7 @@ export default function WalletsPage() {
                                 </span>
                               )}
                             </div>
-                            {!wallet.isLoadingBalance &&
+                            {!isRefreshingBalances &&
                               !wallet.isBalanceUnavailable &&
                               wallet.balance &&
                               rate && (
@@ -436,7 +438,7 @@ export default function WalletsPage() {
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-2">
-                            {wallet.isLoadingBalance ? (
+                            {isRefreshingBalances ? (
                               <Spinner size={16} />
                             ) : (
                               <span>

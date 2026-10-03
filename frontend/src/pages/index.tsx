@@ -129,6 +129,7 @@ export default function Overview() {
     totalBalance: totalBalanceValue,
     totalUsdcxBalance: totalUsdcxBalanceValue,
     isLoading: isLoadingWalletsQuery,
+    isRefetching: isRefreshingBalances,
   } = useWallets({ enabled: walletsReady });
   // Keep the balance cards in their loading state during the pre-paint defer
   // window so they never flash an empty "0" before the fetch starts.
@@ -136,7 +137,6 @@ export default function Overview() {
 
   const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
   const totalUsdcxBalance = useMemo(() => totalUsdcxBalanceValue || '0', [totalUsdcxBalanceValue]);
-  const isLoadingBalances = isLoadingWallets;
   const hasFundedWallet = useMemo(
     () =>
       isWalletFundStepComplete({
@@ -455,7 +455,7 @@ export default function Overview() {
                     headerExtra={
                       <RefreshButton
                         onRefresh={() => refetchWallets()}
-                        isRefreshing={isLoadingWallets || isLoadingBalances}
+                        isRefreshing={isLoadingWallets || isRefreshingBalances}
                       />
                     }
                     footer={
@@ -481,6 +481,7 @@ export default function Overview() {
                         wallets={walletsList}
                         network={network}
                         canAdmin={capabilities.canAdmin}
+                        isRefreshingBalances={isRefreshingBalances}
                         onWalletClick={setSelectedWalletForDetails}
                         onSwap={setSelectedWalletForSwap}
                         onTopUp={setSelectedWalletForTopup}

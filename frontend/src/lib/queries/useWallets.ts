@@ -27,7 +27,6 @@ type Wallet = WalletListItem & {
 export type WalletWithBalance = Wallet & {
   balance: string;
   usdcxBalance: string;
-  isLoadingBalance?: boolean;
   /** True when the balance fetch failed — render "unknown", not 0. */
   isBalanceUnavailable?: boolean;
 };
@@ -120,7 +119,6 @@ export function useWallets(options?: { enabled?: boolean }) {
           ...wallet,
           balance: balance.ada,
           usdcxBalance: balance.usdcx,
-          isLoadingBalance: false,
           isBalanceUnavailable: balance.unavailable,
         };
       });
@@ -408,7 +406,6 @@ export function usePaginatedWallets(walletType?: HotWalletType, searchQuery?: st
         network,
         balance: balances[index].ada,
         usdcxBalance: balances[index].usdcx,
-        isLoadingBalance: false,
         isBalanceUnavailable: balances[index].unavailable,
       }));
 
