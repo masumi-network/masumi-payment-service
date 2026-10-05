@@ -82,6 +82,8 @@ function serializeListedSources(rows: SourceRow[]) {
 		collateralPrepFailureCount: 0,
 		requestedById: 'key',
 		ExampleOutputs: [],
+		PaymentSource: { paymentSourceType: PaymentSourceType.Web3CardanoV2 },
+		A2ADetail: null,
 		SmartContractWallet: { walletVkey: 'vkey', walletAddress: 'addr_test1holder' },
 		RecipientWallet: null,
 		SupportedPaymentSources: rows,

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
+import { MASUMI_PAYMENTS_DOCS_URL } from '@/lib/masumi-links';
 import { cn, formatAssetAmount } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -29,7 +30,7 @@ import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
+import { filterTransactionsClientSide } from '@/lib/client-search/transaction-search';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
@@ -53,6 +54,7 @@ import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransacti
 import { TransactionRowActionsMenu } from '@/components/transactions/TransactionRowActionsMenu';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
+import { useTransactionTabCounts } from '@/lib/hooks/useTransactionTabCounts';
 import { useTableSelection } from '@/lib/hooks/useTableSelection';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
@@ -131,8 +133,10 @@ export default function Transactions() {
     isPlaceholderData,
   } = useTransactions(filterParams, { trackVisit: false });
 
-  // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
-  const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
+  // Unfiltered instance for the "new transactions" watermark (shares the layout's
+  // cache); only this instance updates localStorage.
+  const { markAllAsRead } = useTransactions();
+  const { data: tabCounts, refetch: refetchTabCounts } = useTransactionTabCounts();
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
@@ -142,47 +146,29 @@ export default function Transactions() {
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
-  const tabs = useMemo(() => {
-    const seenIds = new Set<string>();
-    const dedupedTransactions = allTransactionsForCounts.filter((tx) => {
-      if (!tx.id) return true;
-      if (seenIds.has(tx.id)) return false;
-      seenIds.add(tx.id);
-      return true;
-    });
-
-    const refundCount = dedupedTransactions.filter(
-      (t) => t.onChainState === 'RefundRequested',
-    ).length;
-    const disputeCount = dedupedTransactions.filter((t) => t.onChainState === 'Disputed').length;
-    // Mirrors the backend filterNeedsManualAction predicate (buildNeedsManualActionFilter):
-    // parked in WaitingForManualAction or a recorded NextAction error.
-    const needsActionCount = dedupedTransactions.filter(
-      (t) =>
-        t.NextAction?.requestedAction === 'WaitingForManualAction' || !!t.NextAction?.errorType,
-    ).length;
-
-    return [
+  const tabs = useMemo(
+    () => [
       { name: 'All', count: null },
       { name: 'Payments', count: null },
       { name: 'Purchases', count: null },
       {
         name: 'Refund Requests',
-        count: refundCount || null,
+        count: tabCounts?.refundRequests || null,
         variant: 'alert' as const,
       },
       {
         name: 'Disputes',
-        count: disputeCount || null,
+        count: tabCounts?.disputes || null,
         variant: 'alert' as const,
       },
       {
         name: 'Needs Action',
-        count: needsActionCount || null,
+        count: tabCounts?.needsAction || null,
         variant: 'alert' as const,
       },
-    ];
-  }, [allTransactionsForCounts]);
+    ],
+    [tabCounts],
+  );
 
   // Dedup only — server handles filtering
   const filteredTransactions = useMemo(() => {
@@ -215,54 +201,13 @@ export default function Transactions() {
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return filteredTransactions;
 
-    const amountRange = parseAmountSearchRange(query);
-    // Mirror backend looksLikeHash (HASH_QUERY_MIN_LENGTH): the hash columns and
-    // the head ID are only searched for a hex query of 5+ characters.
-    const isHashQuery = query.length >= 5 && /^[0-9a-f]+$/.test(query);
-    // Mirror backend buildMatchingLayers: exact match plus the 'hydra' alias.
-    const matchingLayer =
-      query === 'hydra' ? 'L2' : query === 'l1' || query === 'l2' ? query.toUpperCase() : null;
-
-    // Mirror backend buildMatchingStates
-    const matchingStates = ON_CHAIN_STATES.filter(
-      (s) => s.toLowerCase().includes(query) || formatStatus(s).toLowerCase().includes(query),
-    );
-
-    return filteredTransactions.filter((tx) => {
-      if (tx.id?.toLowerCase().includes(query)) return true;
-      if (tx.blockchainIdentifier?.toLowerCase() === query) return true;
-      if (isHashQuery) {
-        if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
-        if (tx.TransactionHistory?.some((h) => h.txHash?.toLowerCase().includes(query)))
-          return true;
-        if (tx.inputHash?.toLowerCase().includes(query)) return true;
-        if (tx.resultHash?.toLowerCase().includes(query)) return true;
-        if (tx.CurrentTransaction?.hydraHeadId?.toLowerCase().includes(query)) return true;
-      }
-      if (matchingLayer && tx.CurrentTransaction?.layer === matchingLayer) return true;
-      if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
-        return true;
-      if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
-      if (tx.agentName?.toLowerCase().includes(query)) return true;
-      if (amountRange) {
-        const funds =
-          tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
-        if (
-          funds?.some((f) => {
-            const amt = parseAmountToBigInt(f.amount);
-            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
-          })
-        )
-          return true;
-      }
-      return false;
-    });
+    return filterTransactionsClientSide(filteredTransactions, searchQuery);
   }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
   const refreshTransactions = useCallback(() => {
     void refetchTransactions?.();
-  }, [refetchTransactions]);
+    void refetchTabCounts();
+  }, [refetchTransactions, refetchTabCounts]);
 
   // Error type has no server-side param, so narrow it client-side. Pagination-limited.
   const visibleTransactions = useMemo(() => {
@@ -415,7 +360,7 @@ export default function Transactions() {
               <p className="text-sm text-muted-foreground">
                 View and manage your transaction history.{' '}
                 <a
-                  href="https://www.masumi.network/dev/masumi/core-concepts/agent-to-agent-payments"
+                  href={MASUMI_PAYMENTS_DOCS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
@@ -608,7 +553,7 @@ export default function Transactions() {
                       <tr
                         key={transaction.id}
                         className={cn(
-                          'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ease-in-out',
+                          'group border-b last:border-b-0 animate-fade-in opacity-0',
                           'cursor-pointer',
                           hasTxError ? 'transaction-row-error' : 'hover:bg-row-hover',
                           isTxSelected &&

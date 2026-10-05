@@ -88,7 +88,7 @@ export function RegisterAgentReviewSection({
         <SummaryRow label="Name" value={values.name} />
         <SummaryRow label="Type" value={getAgentTypeLabel(values.agentType)} />
         <SummaryRow label="Description" value={values.description || '—'} />
-        {values.agentType === 'Standard' && values.apiUrl ? (
+        {(values.agentType === 'Standard' || values.agentType === 'A2A') && values.apiUrl ? (
           <SummaryRow label="API URL" value={values.apiUrl} />
         ) : null}
         {values.agentType === 'OpenApi' && values.openApiSpecUrl ? (
@@ -96,6 +96,16 @@ export function RegisterAgentReviewSection({
         ) : null}
         {values.agentType === 'X402' && values.x402ResourcesUrl ? (
           <SummaryRow label="x402 resources" value={values.x402ResourcesUrl} />
+        ) : null}
+        {values.agentType === 'A2A' ? (
+          <>
+            <SummaryRow label="Agent Card URL" value={values.a2aAgentCardUrl ?? ''} />
+            <SummaryRow label="A2A protocol versions" value={values.a2aProtocolVersions ?? ''} />
+            <SummaryRow
+              label="Agent Card validation"
+              value={values.skipAgentCardValidation ? 'Skipped' : 'Required'}
+            />
+          </>
         ) : null}
         <SummaryRow label="Tags" value={values.tags.length ? values.tags.join(', ') : '—'} />
       </ReviewSection>

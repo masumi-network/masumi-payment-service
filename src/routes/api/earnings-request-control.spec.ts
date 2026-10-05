@@ -25,6 +25,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	},
 }));
 
+jest.unstable_mockModule('@masumi/payment-source-x402/service', () => ({
+	getX402AgentPaymentIncome: jest.fn(),
+}));
+
 const { getPaymentIncome } = await import('./payments/income');
 const { postPurchaseSpending } = await import('./purchases/spending');
 const endpoints = [getPaymentIncome, postPurchaseSpending];

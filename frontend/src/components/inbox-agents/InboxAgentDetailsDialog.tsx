@@ -10,7 +10,8 @@ import {
   postInboxAgentsDeregister,
   RegistryInboxEntry,
 } from '@/lib/api/generated';
-import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { getAgentStatusBadgeVariant, parseInboxAgentStatus } from '@/lib/agent-status';
+import { formatMetadataVersion, formatTxStatus } from '@/lib/display-labels';
 import { formatDateTime } from '@/lib/format-date';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -26,29 +27,6 @@ interface InboxAgentDetailsDialogProps {
   onClose: () => void;
   onSuccess?: () => void;
 }
-
-const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): string => {
-  switch (status) {
-    case 'RegistrationRequested':
-      return 'Pending';
-    case 'RegistrationInitiated':
-      return 'Registering';
-    case 'RegistrationConfirmed':
-      return 'Registered';
-    case 'RegistrationFailed':
-      return 'Registration Failed';
-    case 'DeregistrationRequested':
-      return 'Pending';
-    case 'DeregistrationInitiated':
-      return 'Deregistering';
-    case 'DeregistrationConfirmed':
-      return 'Deregistered';
-    case 'DeregistrationFailed':
-      return 'Deregistration Failed';
-    default:
-      return status;
-  }
-};
 
 export function InboxAgentDetailsDialog({
   agent,
@@ -233,7 +211,9 @@ export function InboxAgentDetailsDialog({
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <div className="font-medium mb-1">Metadata version</div>
-                        <div className="text-muted-foreground">{agent.metadataVersion}</div>
+                        <div className="text-muted-foreground">
+                          {formatMetadataVersion(agent.metadataVersion)}
+                        </div>
                       </div>
                       <div>
                         <div className="font-medium mb-1">Holding wallet funding</div>
@@ -341,7 +321,7 @@ export function InboxAgentDetailsDialog({
                         <div>
                           <div className="font-medium mb-1">Status</div>
                           <div className="text-muted-foreground">
-                            {agent.CurrentTransaction.status}
+                            {formatTxStatus(agent.CurrentTransaction.status)}
                           </div>
                         </div>
                         <div>

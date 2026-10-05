@@ -1,164 +1,51 @@
-import { Button } from '@/components/ui/button';
+import { isBulkDeletableAgent, isBulkDeregisterableAgent } from '@/lib/agent-table-actions';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, ArrowUpRight, ExternalLink, Trash2, Unlink } from 'lucide-react';
-import { RefreshButton } from '@/components/RefreshButton';
+
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
-import { Badge } from '@/components/ui/badge';
 
-import { cn, formatAssetAmount, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
-import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
-import { agentHasVerifications } from '@/components/ai-agents/AgentVerifications';
+import { deleteRegistry, postRegistryDeregister } from '@/lib/api/generated';
+
 import { toast } from 'react-toastify';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import Head from 'next/head';
-import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
-import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
-import {
-  tableActionsCellCompactClass,
-  tableActionsCellCompactSelectedClass,
-  tableActionsHeadCompactClass,
-  tableActionsInnerClass,
-} from '@/components/ui/table-actions-column';
-import { AIAgentRowActionsMenu } from '@/components/ai-agents/AIAgentRowActionsMenu';
-import { Separator } from '@/components/ui/separator';
-import { Spinner } from '@/components/ui/spinner';
+
 import { useQueryClient } from '@tanstack/react-query';
-import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
+import { useContextAgents } from '@/lib/queries/useContextAgents';
 import { invalidateAgentQueries, resetAgentQueries } from '@/lib/queries/agent-cache';
-import { rowActivation } from '@/lib/a11y';
-import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
-import { BulkActionBar } from '@/components/ui/bulk-action-bar';
-import {
-  TableSelectAllCheckbox,
-  TableSelectRowCheckbox,
-} from '@/components/ui/table-select-checkbox';
+
+import { isDeregisterableAgentState } from '@/lib/registry-states';
+
 import {
   BULK_ACTION_MAX_ITEMS,
   runBulkSequential,
   useTableSelection,
 } from '@/lib/hooks/useTableSelection';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { FaRegClock } from 'react-icons/fa';
-import { Tabs } from '@/components/ui/tabs';
+
 import { Pagination } from '@/components/ui/pagination';
 import { VerifyAndPublishAgentDialog } from '@/components/ai-agents/VerifyAndPublishAgentDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
-import { CopyButton } from '@/components/ui/copy-button';
+
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { AnimatedPage } from '@/components/ui/animated-page';
-import { EmptyState } from '@/components/ui/empty-state';
-import { SearchInput } from '@/components/ui/search-input';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+
+import { Select } from '@/components/ui/select';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
+import { filterAgentsClientSide } from '@/lib/client-search/agent-search';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
-import { canEditAgentMetadata } from '@/lib/can-edit-agent-metadata';
+
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
-import {
-  parseAgentStatus,
-  getAgentStatusBadgeVariant,
-  getAgentStatusHelperText,
-  getAgentIdentifierPlaceholder,
-} from '@/lib/agent-status';
-import { AGENT_TYPE_LABELS, getAgentTypeLabel } from '@/lib/agent-type';
-import { formatDate } from '@/lib/format-date';
-import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
-type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
-function RelationBadge({ relation }: { relation?: AgentRelation }) {
-  if (relation === 'payment') {
-    return (
-      <Badge
-        variant="outline"
-        className="w-fit border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
-      >
-        Registered elsewhere
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline" className="w-fit text-[10px]">
-      Registered here
-    </Badge>
-  );
-}
-
-type AgentWalletRowProps = {
-  label: string;
-  address: string;
-  walletVkey: string;
-  onWalletClick: (walletVkey: string) => void;
-  /** Wider preview when minting and holding share one address (single-column layout). */
-  variant?: 'split' | 'combined';
-};
-
-function AgentWalletRow({
-  label,
-  address,
-  walletVkey,
-  onWalletClick,
-  variant = 'split',
-}: AgentWalletRowProps) {
-  const previewChars = variant === 'combined' ? 10 : 4;
-
-  return (
-    <div className={cn('min-w-0 space-y-1', variant === 'split' && 'flex-1')}>
-      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <button
-          type="button"
-          className={cn(
-            'min-w-0 text-left font-mono text-xs text-muted-foreground hover:text-primary',
-            variant === 'combined' ? 'max-w-[14rem] truncate' : 'truncate',
-          )}
-          title={address}
-          onClick={(event) => {
-            event.stopPropagation();
-            onWalletClick(walletVkey);
-          }}
-        >
-          {shortenAddress(address, previewChars)}
-        </button>
-        <CopyButton value={address} />
-      </div>
-    </div>
-  );
-}
-
-const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
-
-const usesCombinedWallet = (agent: AIAgent) =>
-  getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
-
-function isBulkDeletableAgent(agent: AIAgent, canAdmin: boolean): boolean {
-  return canAdmin && agent.relation !== 'payment' && isDbDeletableAgentState(agent.state);
-}
-
-function isBulkDeregisterableAgent(agent: AIAgent, canPay: boolean): boolean {
-  return (
-    canPay &&
-    agent.relation !== 'payment' &&
-    isDeregisterableAgentState(agent.state) &&
-    Boolean(agent.agentIdentifier?.trim())
-  );
-}
+import { AIAgentRow, type AIAgent } from '@/components/ai-agents/AIAgentRow';
+import { AIAgentsList } from '@/components/ai-agents/AIAgentsList';
+import { supportsAgentMetadataUpdate, UNSUPPORTED_AGENT_UPDATE_MESSAGE } from '@/lib/agent-update';
 
 export default function AIAgentsPage() {
   const router = useRouter();
@@ -168,7 +55,9 @@ export default function AIAgentsPage() {
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
 
   const [activeTab, setActiveTab] = useState('All');
-  const [typeFilter, setTypeFilter] = useState<'All' | 'Standard' | 'OpenApi' | 'X402'>('All');
+  const [typeFilter, setTypeFilter] = useState<'All' | 'Standard' | 'OpenApi' | 'X402' | 'A2A'>(
+    'All',
+  );
 
   const filterStatus = useMemo(() => {
     if (activeTab === 'All') return undefined;
@@ -233,32 +122,7 @@ export default function AIAgentsPage() {
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return byType(agents);
 
-    const amountRange = parseAmountSearchRange(query);
-
-    return byType(
-      agents.filter((agent) => {
-        const pricing = getPrimaryCardanoPricing(agent);
-        if (agent.name?.toLowerCase().includes(query)) return true;
-        if (agent.description?.toLowerCase().includes(query)) return true;
-        // Backend uses hasSome (exact match against tag array), not partial
-        if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
-        if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-        if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-        if (agent.state?.toLowerCase().includes(query)) return true;
-        if (pricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
-        if (pricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
-        if (
-          amountRange &&
-          pricing?.pricingType === 'Fixed' &&
-          pricing.Pricing.some((p) => {
-            const amt = parseAmountToBigInt(p.amount);
-            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
-          })
-        )
-          return true;
-        return false;
-      }),
-    );
+    return byType(filterAgentsClientSide(agents, searchQuery));
   }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData, typeFilter]);
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -469,6 +333,10 @@ export default function AIAgentsPage() {
   };
 
   const handleUpdateClick = (agent: AIAgent) => {
+    if (!supportsAgentMetadataUpdate(agent)) {
+      toast.error(UNSUPPORTED_AGENT_UPDATE_MESSAGE);
+      return;
+    }
     if (!selectedPaymentSource?.smartContractAddress) {
       toast.error('Cannot update agent: Missing payment source');
       return;
@@ -705,492 +573,71 @@ export default function AIAgentsPage() {
       </Head>
       <AnimatedPage>
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">AI agents</h1>
-              <p className="text-sm text-muted-foreground">
-                Manage your AI agents and their configurations.{' '}
-                <a
-                  href="https://www.masumi.network/dev/masumi/core-concepts/agentic-service"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  Learn more
-                </a>
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <RefreshButton
-                onRefresh={() => {
-                  refetchAll();
-                }}
-                isRefreshing={isFetchingAgents}
+          <AIAgentsList
+            activeRail={activeRail}
+            capabilities={capabilities}
+            canMigrate={canMigrate}
+            isFetchingAgents={isFetchingAgents}
+            refetchAll={refetchAll}
+            onMigrate={() => setIsMigrateDialogOpen(true)}
+            onRegister={() => setIsRegisterDialogOpen(true)}
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              setActiveTab(tab);
+              clearSelection();
+            }}
+            searchQuery={searchQuery}
+            onSearchChange={(value) => {
+              setSearchQuery(value);
+              clearSelection();
+            }}
+            isSearchPending={isSearchPending}
+            typeFilter={typeFilter}
+            onTypeFilterChange={(value) => {
+              setTypeFilter(value as typeof typeFilter);
+              clearSelection();
+            }}
+            truncated={truncated}
+            isLoading={isLoading}
+            agentCount={agents.length}
+            displayAgentCount={displayAgents.length}
+            showBulkSelection={showBulkSelection}
+            selectedCount={selectedCount}
+            clearSelection={clearSelection}
+            isBulkActionBusy={isBulkActionBusy}
+            isDeleting={isDeleting}
+            openBulkDeregisterConfirm={openBulkDeregisterConfirm}
+            openBulkDeleteConfirm={openBulkDeleteConfirm}
+            deregisterableCount={bulkDeregisterableSelectedIds.length}
+            deletableCount={bulkDeletableSelectedIds.length}
+            allSelected={allSelected}
+            someSelected={someSelected}
+            toggleAll={toggleAll}
+            visibleRowCount={visibleRowIds.length}
+            tableColumnCount={tableColumnCount}
+          >
+            {displayAgents.map((agent, index) => (
+              <AIAgentRow
+                key={agent.id}
+                agent={agent}
+                index={index}
+                network={network}
+                isSelected={isSelected(agent.id)}
+                showBulkSelection={showBulkSelection}
+                capabilities={capabilities}
+                selectedPaymentSource={selectedPaymentSource}
+                onToggleSelection={() => toggleRow(agent.id)}
+                onSelect={handleAgentClick}
+                onWalletClick={handleWalletClick}
+                onVerify={setSelectedAgentForVerification}
+                onEarnings={(entry) => openAgentDetails(entry, { initialTab: 'Earnings' })}
+                onUpdate={handleUpdateClick}
+                onDelete={handleDeleteClick}
               />
-              {/* Registration and migration are Cardano-registry operations. On the x402
-                  rail this page is a read-only "accepts x402" view, so these don't apply. */}
-              {activeRail === 'cardano' && capabilities.canPay && canMigrate && (
-                <Button
-                  variant="outline"
-                  className="flex items-center gap-2 btn-hover-lift"
-                  onClick={() => setIsMigrateDialogOpen(true)}
-                >
-                  <ArrowUpRight className="h-4 w-4" />
-                  Migrate to V2
-                </Button>
-              )}
-              {activeRail === 'cardano' && capabilities.canPay && (
-                <Button
-                  className="flex items-center gap-2 btn-hover-lift"
-                  onClick={() => setIsRegisterDialogOpen(true)}
-                >
-                  <Plus className="h-4 w-4" />
-                  Register AI Agent
-                </Button>
-              )}
-            </div>
-          </div>
-
+            ))}
+          </AIAgentsList>
           <div className="space-y-6">
-            <Tabs
-              tabs={tabs}
-              activeTab={activeTab}
-              onTabChange={(tab) => {
-                setActiveTab(tab);
-                clearSelection();
-              }}
-            />
-
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex-1 max-w-xs">
-                <SearchInput
-                  value={searchQuery}
-                  onChange={(value) => {
-                    setSearchQuery(value);
-                    clearSelection();
-                  }}
-                  placeholder="Search by name, description, tags, or wallet..."
-                  isLoading={isSearchPending && !!searchQuery}
-                />
-              </div>
-              <Select
-                value={typeFilter}
-                onValueChange={(value) => {
-                  setTypeFilter(value as 'All' | 'Standard' | 'OpenApi' | 'X402');
-                  clearSelection();
-                }}
-              >
-                <SelectTrigger className="w-[140px]" aria-label="Filter agents by type">
-                  <SelectValue placeholder="All types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="All">All types</SelectItem>
-                    {/* Options come from the same label map as the Type column, so
-                        the filter can never disagree with the badges it filters. */}
-                    {Object.entries(AGENT_TYPE_LABELS).map(([type, label]) => (
-                      <SelectItem key={type} value={type}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {truncated && !isLoading && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-                Showing the first {agents.length} agents. The list is capped, so some entries may
-                not appear. Use search or the status filter to narrow down to a specific agent.
-              </div>
-            )}
-
-            {showBulkSelection && (
-              <BulkActionBar
-                selectedCount={selectedCount}
-                onClear={clearSelection}
-                disabled={isBulkActionBusy || isDeleting}
-              >
-                {capabilities.canPay && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={openBulkDeregisterConfirm}
-                    disabled={
-                      isBulkActionBusy || isDeleting || bulkDeregisterableSelectedIds.length === 0
-                    }
-                  >
-                    <Unlink className="h-4 w-4" />
-                    Deregister ({bulkDeregisterableSelectedIds.length})
-                  </Button>
-                )}
-                {capabilities.canAdmin && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={openBulkDeleteConfirm}
-                    disabled={
-                      isBulkActionBusy || isDeleting || bulkDeletableSelectedIds.length === 0
-                    }
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete ({bulkDeletableSelectedIds.length})
-                  </Button>
-                )}
-              </BulkActionBar>
-            )}
-
-            <HorizontalScrollArea className="rounded-lg border">
-              <table
-                className={cn(
-                  'w-full transition-opacity duration-150',
-                  isSearchPending && 'opacity-70',
-                )}
-              >
-                <thead className="table-header-surface">
-                  <tr className="border-b">
-                    {showBulkSelection && (
-                      <th scope="col" className="w-12 p-4">
-                        <TableSelectAllCheckbox
-                          allSelected={allSelected}
-                          someSelected={someSelected}
-                          onToggleAll={toggleAll}
-                          disabled={visibleRowIds.length === 0}
-                          aria-label="Select all agents on this page"
-                        />
-                      </th>
-                    )}
-                    <th
-                      scope="col"
-                      className={cn(
-                        'p-4 text-left text-sm font-medium text-muted-foreground',
-                        !showBulkSelection && 'pl-6',
-                      )}
-                    >
-                      Name
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-4 text-left text-sm font-medium text-muted-foreground"
-                    >
-                      Type
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-4 text-left text-sm font-medium text-muted-foreground"
-                    >
-                      Added
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-4 text-left text-sm font-medium text-muted-foreground"
-                    >
-                      Agent ID
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-4 text-left text-sm font-medium text-muted-foreground"
-                    >
-                      Wallets
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-4 text-left text-sm font-medium text-muted-foreground"
-                    >
-                      Price
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-4 text-left text-sm font-medium text-muted-foreground"
-                    >
-                      Tags
-                    </th>
-                    <th
-                      scope="col"
-                      className="p-4 text-left text-sm font-medium text-muted-foreground"
-                    >
-                      Status
-                    </th>
-                    <th scope="col" className={tableActionsHeadCompactClass}>
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(isLoading && !agents.length) ||
-                  (displayAgents.length === 0 && isSearchPending) ? (
-                    <AIAgentTableSkeleton rows={5} columns={tableColumnCount} />
-                  ) : displayAgents.length === 0 ? (
-                    <tr>
-                      <td colSpan={tableColumnCount}>
-                        <EmptyState
-                          icon={searchQuery ? 'search' : 'inbox'}
-                          title={
-                            searchQuery
-                              ? 'No AI agents found matching your search'
-                              : activeRail === 'x402'
-                                ? 'No agents accept x402 payment here'
-                                : 'No AI agents found'
-                          }
-                          description={
-                            searchQuery
-                              ? 'Try adjusting your search terms'
-                              : activeRail === 'x402'
-                                ? "Agents that accept x402 on this environment's chains will appear here."
-                                : capabilities.canPay
-                                  ? 'Register your first AI agent to get started'
-                                  : 'Registering an agent needs an API key with pay access'
-                          }
-                        />
-                      </td>
-                    </tr>
-                  ) : (
-                    displayAgents.map((agent, index) => {
-                      const holdingWallet = getHoldingWallet(agent);
-                      const isCombinedWallet = usesCombinedWallet(agent);
-                      const statusHelperText = getAgentStatusHelperText(agent.state);
-                      const hasRowActions =
-                        isDeregisterableAgentState(agent.state) ||
-                        agent.state === 'RegistrationInitiated' ||
-                        agent.state === 'DeregistrationInitiated' ||
-                        agent.state === 'RegistrationRequested' ||
-                        agent.state === 'DeregistrationRequested';
-                      const rowIsSelected = isSelected(agent.id);
-
-                      return (
-                        <tr
-                          key={agent.id}
-                          className={cn(
-                            'group border-b cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 opacity-0',
-                            rowIsSelected && 'bg-row-hover',
-                            agent.state === 'DeregistrationConfirmed'
-                              ? 'animate-fade-in-to-muted'
-                              : 'animate-fade-in',
-                          )}
-                          style={{
-                            animationDelay: `${Math.min(index, 9) * 40}ms`,
-                          }}
-                          aria-label={`View details for ${agent.name}`}
-                          onClick={() => handleAgentClick(agent)}
-                          {...rowActivation(() => handleAgentClick(agent))}
-                        >
-                          {showBulkSelection && (
-                            <td className="p-4" onClick={(event) => event.stopPropagation()}>
-                              <TableSelectRowCheckbox
-                                aria-label={`Select ${agent.name}`}
-                                checked={rowIsSelected}
-                                onToggle={() => toggleRow(agent.id)}
-                              />
-                            </td>
-                          )}
-                          <td className={cn('p-4 max-w-50 truncate', !showBulkSelection && 'pl-6')}>
-                            <div className="text-sm font-medium truncate" title={agent.name}>
-                              {agent.name}
-                            </div>
-                            <div
-                              className="text-xs text-muted-foreground truncate"
-                              title={agent.description ?? undefined}
-                            >
-                              {agent.description}
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            {/* Neutral outline: Status is the only colour-bearing
-                                badge in the row, and the Wallets cell already
-                                carries a RelationBadge. */}
-                            <Badge variant="outline" className="whitespace-nowrap">
-                              {getAgentTypeLabel(agent.type)}
-                            </Badge>
-                          </td>
-                          <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
-                          <td className="p-4">
-                            {agent.agentIdentifier ? (
-                              <div className="text-xs font-mono truncate max-w-50 flex items-center gap-2">
-                                <a
-                                  href={getExplorerUrl(agent.agentIdentifier, network, 'token')}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-primary hover:underline flex items-center gap-1 truncate"
-                                >
-                                  {shortenAddress(agent.agentIdentifier)}
-                                  <ExternalLink className="h-3 w-3 shrink-0" />
-                                </a>
-                                <CopyButton value={agent.agentIdentifier} />
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                {getAgentIdentifierPlaceholder(agent.state)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-4 align-top">
-                            <div
-                              className={cn(
-                                'space-y-2',
-                                isCombinedWallet ? 'w-fit max-w-md' : 'min-w-[15rem]',
-                              )}
-                            >
-                              <RelationBadge relation={agent.relation} />
-                              <div
-                                className={cn(
-                                  'rounded-md border bg-muted/10 p-2.5',
-                                  isCombinedWallet && 'w-fit max-w-full',
-                                )}
-                              >
-                                {isCombinedWallet ? (
-                                  <AgentWalletRow
-                                    variant="combined"
-                                    label="Minting & holding"
-                                    address={holdingWallet.walletAddress}
-                                    walletVkey={holdingWallet.walletVkey}
-                                    onWalletClick={handleWalletClick}
-                                  />
-                                ) : (
-                                  <div className="flex items-stretch gap-3">
-                                    <AgentWalletRow
-                                      label="Minting"
-                                      address={agent.SmartContractWallet.walletAddress}
-                                      walletVkey={agent.SmartContractWallet.walletVkey}
-                                      onWalletClick={handleWalletClick}
-                                    />
-                                    <Separator orientation="vertical" className="h-auto" />
-                                    <AgentWalletRow
-                                      label="Holding"
-                                      address={holdingWallet.walletAddress}
-                                      walletVkey={holdingWallet.walletVkey}
-                                      onWalletClick={handleWalletClick}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-4 text-sm truncate max-w-25">
-                            {(() => {
-                              const pricing = getPrimaryCardanoPricing(agent);
-                              if (pricing?.pricingType === 'Free') {
-                                return <div className="whitespace-nowrap">Free</div>;
-                              }
-                              if (pricing?.pricingType === 'Dynamic') {
-                                return <div className="whitespace-nowrap">Dynamic</div>;
-                              }
-                              if (pricing?.pricingType === 'Fixed') {
-                                return pricing.Pricing.map((price, index) => (
-                                  <div key={index} className="whitespace-nowrap">
-                                    {formatAssetAmount(price.amount, price.unit, network)}
-                                  </div>
-                                ));
-                              }
-                              return null;
-                            })()}
-                            {agentHasX402Options(agent.supportedPaymentSources) && (
-                              <div className="mt-1">
-                                <Badge variant="secondary">x402</Badge>
-                              </div>
-                            )}
-                            {agentHasVerifications(agent.verifications) && (
-                              <div className="mt-1">
-                                <Badge variant="outline">Verifiable</Badge>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-4">
-                            {agent.Tags.length > 0 && (
-                              <Badge variant="secondary" className="truncate">
-                                {agent.Tags.length} tags
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="p-4">
-                            <div className="space-y-1">
-                              <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
-                                {parseAgentStatus(agent.state)}
-                              </Badge>
-                              {statusHelperText && (
-                                <p
-                                  className="text-xs text-muted-foreground max-w-48 truncate"
-                                  title={statusHelperText}
-                                >
-                                  {statusHelperText}
-                                </p>
-                              )}
-                            </div>
-                          </td>
-                          <td
-                            className={cn(
-                              rowIsSelected
-                                ? tableActionsCellCompactSelectedClass
-                                : tableActionsCellCompactClass,
-                              !hasRowActions && 'pointer-events-none',
-                            )}
-                            onClick={hasRowActions ? (event) => event.stopPropagation() : undefined}
-                          >
-                            <div className={tableActionsInnerClass}>
-                              {isDeregisterableAgentState(agent.state) ? (
-                                <AIAgentRowActionsMenu
-                                  showVerifyPublish={agent.relation !== 'payment'}
-                                  showUpdateMetadata={canEditAgentMetadata({
-                                    relation: agent.relation,
-                                    canPay: capabilities.canPay,
-                                    selectedPaymentSource,
-                                  })}
-                                  showDeleteOrDeregister={
-                                    agent.relation !== 'payment' &&
-                                    (agent.state === 'RegistrationFailed' ||
-                                    agent.state === 'DeregistrationConfirmed'
-                                      ? capabilities.canAdmin
-                                      : capabilities.canPay)
-                                  }
-                                  deleteLabel={
-                                    agent.state === 'RegistrationFailed' ||
-                                    agent.state === 'DeregistrationConfirmed'
-                                      ? 'Delete agent'
-                                      : 'Deregister agent'
-                                  }
-                                  onVerifyPublish={() => setSelectedAgentForVerification(agent)}
-                                  onViewDetails={() => handleAgentClick(agent)}
-                                  onViewEarnings={() =>
-                                    openAgentDetails(agent, { initialTab: 'Earnings' })
-                                  }
-                                  onUpdateMetadata={() => handleUpdateClick(agent)}
-                                  onDeleteOrDeregister={() => handleDeleteClick(agent)}
-                                />
-                              ) : agent.state === 'RegistrationInitiated' ||
-                                agent.state === 'DeregistrationInitiated' ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  disabled
-                                  className="text-primary"
-                                  title="Processing on-chain"
-                                >
-                                  <Spinner size={16} />
-                                </Button>
-                              ) : (
-                                (agent.state === 'RegistrationRequested' ||
-                                  agent.state === 'DeregistrationRequested') && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    disabled
-                                    className="text-primary"
-                                    title={getAgentStatusHelperText(agent.state) ?? 'Pending'}
-                                  >
-                                    <FaRegClock />
-                                  </Button>
-                                )
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </HorizontalScrollArea>
-
             <div className="flex flex-col gap-4 items-center">
               {!(isLoading && !agents.length) && (
                 <Pagination

@@ -1,5 +1,7 @@
+import type { RegisterAIAgentDialogProps } from './register-agent-dialog-props';
+import { assertAgentMetadataUpdateSupported } from '@/lib/agent-update';
 import { RegisterAgentDialogView } from './RegisterAgentDialogView';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, postRegistryUpdate, RegistryEntry } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -40,38 +42,6 @@ import { MIN_MINT_BALANCE_LOVELACE } from '@/lib/agent-mint';
 import type { RegisterAgentDialogStep } from '@/lib/register-agent-review';
 import { getHoldingWalletLabel, getMintingWalletLabel } from '@/lib/register-agent-wallet-labels';
 
-interface RegisterAIAgentDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-  /**
-   * When set, the dialog operates in update mode for the given agent: the
-   * form pre-fills with the agent's current metadata, the selling wallet
-   * picker is hidden (the asset's current managed holder signs the update),
-   * and submission calls the V2 update endpoint. Leave undefined for the
-   * default register flow.
-   */
-  editingAgent?: RegistryEntry | null;
-  /**
-   * Smart contract address of the payment source `editingAgent` belongs to.
-   * Threaded through to the update call so the V2 lookup hits the right
-   * source (the backend default fallback resolves to V1). Required when
-   * `editingAgent` is provided.
-   */
-  editingAgentSmartContractAddress?: string;
-  /**
-   * When set (and `editingAgent` is not), the dialog operates in re-register
-   * mode: it pre-fills from the given agent exactly like update mode, but
-   * stays a fresh registration — the minting-wallet picker is shown and
-   * submission calls the register endpoint, minting a BRAND-NEW asset with a
-   * NEW agent identifier on the active payment source. Used to re-register a
-   * previously deregistered agent.
-   */
-  prefillAgent?: RegistryEntry | null;
-  /** Stack above an elevated parent (e.g. opened from the agent details dialog). */
-  elevatedChildStack?: boolean;
-}
-
 export function RegisterAIAgentDialog({
   open,
   onClose,
@@ -87,6 +57,10 @@ export function RegisterAIAgentDialog({
   const isReRegisterMode = !isUpdateMode && !!prefillAgent;
   const sourceAgent = editingAgent ?? prefillAgent ?? null;
   const [isLoading, setIsLoading] = useState(false);
+  // Synchronous re-entry guard for register/mint. `setIsLoading(true)` is async,
+  // so a double-click on Confirm can fire two postRegistry calls (~5 ADA each)
+  // before the button disables. Migrate and Details dialogs already use this pattern.
+  const isSubmittingRef = useRef(false);
   const [topUpWalletAddress, setTopUpWalletAddress] = useState<string | null>(null);
   const [step, setStep] = useState<RegisterAgentDialogStep>('form');
   const [reviewValues, setReviewValues] = useState<AgentFormValues | null>(null);
@@ -233,6 +207,8 @@ export function RegisterAIAgentDialog({
         apiUrl: editingAgent.apiBaseUrl ?? '',
         openApiSpecUrl: editingAgent.openApiSpecUrl ?? '',
         x402ResourcesUrl: editingAgent.x402ResourcesUrl ?? '',
+        a2aAgentCardUrl: editingAgent.a2aAgentCardUrl ?? '',
+        a2aProtocolVersions: (editingAgent.a2aProtocolVersions ?? []).join(', '),
         name: editingAgent.name,
         description: editingAgent.description ?? '',
         // Selling wallet is fixed in update mode — the asset's managed
@@ -350,7 +326,10 @@ export function RegisterAIAgentDialog({
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
       try {
+        if (editingAgent) assertAgentMetadataUpdateSupported(editingAgent);
         setIsLoading(true);
         const selectedWalletVkey = data.selectedWallet;
         // Register requires the user to pick a wallet with funds. Update
@@ -556,6 +535,18 @@ export function RegisterAIAgentDialog({
             ...(data.agentType === 'Standard' ? { apiBaseUrl: data.apiUrl } : {}),
             ...(data.agentType === 'OpenApi' ? { openApiSpecUrl: data.openApiSpecUrl } : {}),
             ...(data.agentType === 'X402' ? { x402ResourcesUrl: data.x402ResourcesUrl } : {}),
+            ...(data.agentType === 'A2A'
+              ? {
+                  apiBaseUrl: data.apiUrl,
+                  a2aAgentCardUrl: data.a2aAgentCardUrl,
+                  a2aProtocolVersions: (data.a2aProtocolVersions ?? '')
+                    .split(',')
+                    .map((version) => version.trim())
+                    .filter((version) => version.length > 0),
+                  ...(data.skipAgentCardValidation ? { skipAgentCardValidation: true } : {}),
+                }
+              : {}),
+
             Tags: data.tags,
             Capability: capability,
             Author: author,
@@ -584,6 +575,7 @@ export function RegisterAIAgentDialog({
             ? 'AI agent re-registration requested (a new identifier will be minted)'
             : 'AI agent registered successfully',
         );
+        await resync('agents');
         onSuccess();
         onClose();
         reset();
@@ -591,6 +583,7 @@ export function RegisterAIAgentDialog({
         console.error('Error registering AI agent:', error);
         toast.error(error instanceof Error ? error.message : 'Failed to register AI agent');
       } finally {
+        isSubmittingRef.current = false;
         setIsLoading(false);
       }
     },
@@ -672,6 +665,7 @@ export function RegisterAIAgentDialog({
         watch,
         setValue,
         typeLocked: isUpdateMode,
+        isV2Target,
       }}
       wallet={{
         isUpdateMode,

@@ -1050,9 +1050,29 @@ export type AgentMetadata = {
          */
         description?: string | null;
         /**
-         * Base URL of the agent API for interactions
+         * Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL
          */
         apiBaseUrl: string;
+        /**
+         * Registry entry type when encoded on-chain
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
+        /**
+         * OpenAPI spec URL for OpenApi registry entries
+         */
+        openApiSpecUrl?: string;
+        /**
+         * x402 manifest URL for X402 registry entries
+         */
+        x402ResourcesUrl?: string;
+        /**
+         * Agent Card URL for A2A registry entries
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * Declared A2A protocol versions
+         */
+        a2aProtocolVersions?: Array<string>;
         /**
          * List of example outputs from the agent
          */
@@ -1407,9 +1427,29 @@ export type AgentIdentifierMetadata = {
          */
         description?: string | null;
         /**
-         * Base URL of the agent API for interactions
+         * Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL
          */
         apiBaseUrl: string;
+        /**
+         * Registry entry type when encoded on-chain
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
+        /**
+         * OpenAPI spec URL for OpenApi registry entries
+         */
+        openApiSpecUrl?: string;
+        /**
+         * x402 manifest URL for X402 registry entries
+         */
+        x402ResourcesUrl?: string;
+        /**
+         * Agent Card URL for A2A registry entries
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * Declared A2A protocol versions
+         */
+        a2aProtocolVersions?: Array<string>;
         /**
          * List of example outputs from the agent
          */
@@ -1901,11 +1941,11 @@ export type RegistryEntry = {
      */
     description: string | null;
     /**
-     * The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise
+     * The agent access model. Standard for legacy/untyped entries; OpenApi, X402, or A2A otherwise
      */
-    type: 'Standard' | 'OpenApi' | 'X402';
+    type: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
     /**
-     * Base URL of the agent API for interactions. Null for OpenApi/X402 agents
+     * Base URL of the agent API for interactions. Null for OpenApi/X402 agents; required for A2A agents alongside a2aAgentCardUrl
      */
     apiBaseUrl: string | null;
     /**
@@ -1916,6 +1956,18 @@ export type RegistryEntry = {
      * URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type
      */
     x402ResourcesUrl: string | null;
+    /**
+     * URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type
+     */
+    a2aAgentCardUrl: string | null;
+    /**
+     * A2A protocol versions this agent declares support for. Empty for non-A2A agents
+     */
+    a2aProtocolVersions: Array<string>;
+    /**
+     * Which payment source version (V1/V2) this registry entry is registered under
+     */
+    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
     /**
      * Information about the AI model and version used by the agent
      */
@@ -3725,6 +3777,10 @@ export type GetWalletListData = {
          * Filter to wallets with this Cardano address
          */
         walletAddress?: string;
+        /**
+         * Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name ("Purchasing") or the label the admin UI renders ("Buying"). "%" and "_" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND.
+         */
+        searchQuery?: string;
     };
     url: '/wallet/list';
 };
@@ -4425,7 +4481,7 @@ export type PostApiKeyData = {
          */
         ChainIdLimit?: Array<string>;
         /**
-         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
+         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected.
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
         /**
@@ -9669,9 +9725,9 @@ export type PostRegistryData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions.
          */
-        type?: 'Standard' | 'OpenApi' | 'X402';
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
         /**
          * The payment key of a specific wallet used for the registration
          */
@@ -9935,6 +9991,18 @@ export type PostRegistryData = {
          */
         x402ResourcesUrl?: string;
         /**
+         * URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others.
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types.
+         */
+        a2aProtocolVersions?: Array<string>;
+        /**
+         * A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types.
+         */
+        skipAgentCardValidation?: boolean;
+        /**
          * Description of the agent
          */
         description: string;
@@ -10139,9 +10207,9 @@ export type PostRegistryUpdateData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions.
          */
-        type?: 'Standard' | 'OpenApi' | 'X402';
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
         /**
          * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
          */
@@ -10400,6 +10468,18 @@ export type PostRegistryUpdateData = {
          * URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.
          */
         x402ResourcesUrl?: string;
+        /**
+         * URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others.
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types.
+         */
+        a2aProtocolVersions?: Array<string>;
+        /**
+         * A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types.
+         */
+        skipAgentCardValidation?: boolean;
         /**
          * Description of the agent
          */
@@ -11145,6 +11225,10 @@ export type PostPaymentIncomeData = {
          * Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node.
+         */
+        paymentRail?: 'cardano' | 'x402';
     };
     path?: never;
     query?: never;
@@ -11437,7 +11521,7 @@ export type PatchWebhooksData = {
          */
         url: string;
         /**
-         * Authentication token for extended webhook requests. Required when format is EXTENDED
+         * Authentication token for extended webhook requests. Omit to keep the stored token; required when changing a webhook to EXTENDED
          */
         authToken?: string | null;
         /**
@@ -14961,7 +15045,7 @@ export type GetHydraParticipantLocalFundErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
 };
@@ -14973,6 +15057,16 @@ export type GetHydraParticipantLocalFundResponses = {
     200: {
         status: 'success';
         data: {
+            autoFund: boolean;
+            /**
+             * Lifetime node funding limit in lovelace. Null means unlimited.
+             */
+            automaticFundingLimitLovelace: string | null;
+            /**
+             * Queued or confirmed funding to this address, including historical and manual transfers.
+             */
+            fundedLovelace: string;
+            remainingFundingLovelace: string | null;
             address: string;
             balanceLovelace: string;
             isUnderfunded: boolean;
@@ -14995,6 +15089,47 @@ export type GetHydraParticipantLocalFundResponses = {
 
 export type GetHydraParticipantLocalFundResponse = GetHydraParticipantLocalFundResponses[keyof GetHydraParticipantLocalFundResponses];
 
+export type PatchHydraParticipantLocalFundData = {
+    body?: {
+        id: string;
+        autoFund?: boolean;
+        /**
+         * Null removes the limit. Zero blocks automatic funding.
+         */
+        automaticFundingLimitLovelace?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local/fund';
+};
+
+export type PatchHydraParticipantLocalFundErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Local participant not found
+     */
+    404: unknown;
+};
+
+export type PatchHydraParticipantLocalFundResponses = {
+    /**
+     * Automatic funding settings
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            autoFund: boolean;
+            automaticFundingLimitLovelace: string | null;
+        };
+    };
+};
+
+export type PatchHydraParticipantLocalFundResponse = PatchHydraParticipantLocalFundResponses[keyof PatchHydraParticipantLocalFundResponses];
+
 export type PostHydraParticipantLocalFundData = {
     body?: {
         /**
@@ -15013,7 +15148,7 @@ export type PostHydraParticipantLocalFundErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
 };
@@ -15035,7 +15170,7 @@ export type PostHydraParticipantLocalFundResponses = {
              */
             transferredLovelace: string | null;
             /**
-             * `sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one.
+             * `sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent. The balance below is still the pre-transfer one.
              */
             outcome: 'sent' | 'sufficient' | 'in-flight';
         };
@@ -15062,7 +15197,7 @@ export type PostHydraParticipantLocalWithdrawErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
     /**

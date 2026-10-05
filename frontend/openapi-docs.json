@@ -1991,7 +1991,39 @@
                             "apiBaseUrl": {
                                 "type": "string",
                                 "maxLength": 250,
-                                "description": "Base URL of the agent API for interactions"
+                                "description": "Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL"
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "Standard",
+                                    "OpenApi",
+                                    "X402",
+                                    "A2A"
+                                ],
+                                "description": "Registry entry type when encoded on-chain"
+                            },
+                            "openApiSpecUrl": {
+                                "type": "string",
+                                "maxLength": 250,
+                                "description": "OpenAPI spec URL for OpenApi registry entries"
+                            },
+                            "x402ResourcesUrl": {
+                                "type": "string",
+                                "maxLength": 250,
+                                "description": "x402 manifest URL for X402 registry entries"
+                            },
+                            "a2aAgentCardUrl": {
+                                "type": "string",
+                                "maxLength": 250,
+                                "description": "Agent Card URL for A2A registry entries"
+                            },
+                            "a2aProtocolVersions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "Declared A2A protocol versions"
                             },
                             "ExampleOutputs": {
                                 "type": "array",
@@ -2704,7 +2736,39 @@
                             "apiBaseUrl": {
                                 "type": "string",
                                 "maxLength": 250,
-                                "description": "Base URL of the agent API for interactions"
+                                "description": "Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL"
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "Standard",
+                                    "OpenApi",
+                                    "X402",
+                                    "A2A"
+                                ],
+                                "description": "Registry entry type when encoded on-chain"
+                            },
+                            "openApiSpecUrl": {
+                                "type": "string",
+                                "maxLength": 250,
+                                "description": "OpenAPI spec URL for OpenApi registry entries"
+                            },
+                            "x402ResourcesUrl": {
+                                "type": "string",
+                                "maxLength": 250,
+                                "description": "x402 manifest URL for X402 registry entries"
+                            },
+                            "a2aAgentCardUrl": {
+                                "type": "string",
+                                "maxLength": 250,
+                                "description": "Agent Card URL for A2A registry entries"
+                            },
+                            "a2aProtocolVersions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "Declared A2A protocol versions"
                             },
                             "ExampleOutputs": {
                                 "type": "array",
@@ -3763,14 +3827,15 @@
                         "enum": [
                             "Standard",
                             "OpenApi",
-                            "X402"
+                            "X402",
+                            "A2A"
                         ],
-                        "description": "The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise"
+                        "description": "The agent access model. Standard for legacy/untyped entries; OpenApi, X402, or A2A otherwise"
                     },
                     "apiBaseUrl": {
                         "type": "string",
                         "nullable": true,
-                        "description": "Base URL of the agent API for interactions. Null for OpenApi/X402 agents"
+                        "description": "Base URL of the agent API for interactions. Null for OpenApi/X402 agents; required for A2A agents alongside a2aAgentCardUrl"
                     },
                     "openApiSpecUrl": {
                         "type": "string",
@@ -3781,6 +3846,26 @@
                         "type": "string",
                         "nullable": true,
                         "description": "URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type"
+                    },
+                    "a2aAgentCardUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type"
+                    },
+                    "a2aProtocolVersions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "A2A protocol versions this agent declares support for. Empty for non-A2A agents"
+                    },
+                    "paymentSourceType": {
+                        "type": "string",
+                        "enum": [
+                            "Web3CardanoV1",
+                            "Web3CardanoV2"
+                        ],
+                        "description": "Which payment source version (V1/V2) this registry entry is registered under"
                     },
                     "Capability": {
                         "type": "object",
@@ -4570,6 +4655,9 @@
                     "apiBaseUrl",
                     "openApiSpecUrl",
                     "x402ResourcesUrl",
+                    "a2aAgentCardUrl",
+                    "a2aProtocolVersions",
+                    "paymentSourceType",
                     "Capability",
                     "Author",
                     "Legal",
@@ -7767,8 +7855,8 @@
         },
         "/wallet/list": {
             "get": {
-                "description": "Lists hot wallets across payment sources with cursor-based pagination",
-                "summary": "List hot wallets, optionally filtered by payment source and type. (read access required)",
+                "description": "Lists hot wallets across payment sources with cursor-based pagination. searchQuery applies before pagination, so a wallet beyond the first page is still found.",
+                "summary": "List hot wallets, optionally filtered or searched by payment source, type and free text. (read access required)",
                 "tags": [
                     "wallet"
                 ],
@@ -7849,6 +7937,17 @@
                         "description": "Filter to wallets with this Cardano address",
                         "name": "walletAddress",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 500,
+                            "description": "Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name (\"Purchasing\") or the label the admin UI renders (\"Buying\"). \"%\" and \"_\" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND."
+                        },
+                        "required": false,
+                        "description": "Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name (\"Purchasing\") or the label the admin UI renders (\"Buying\"). \"%\" and \"_\" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND.",
+                        "name": "searchQuery",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -7916,7 +8015,7 @@
         "/wallet/low-balance": {
             "get": {
                 "description": "Lists low-balance monitoring rules for wallets",
-                "summary": "List wallet low-balance rules. (read access required)",
+                "summary": "List wallet low-balance rules. (admin access required)",
                 "tags": [
                     "wallet"
                 ],
@@ -8700,7 +8799,9 @@
                                     },
                                     "walletAddress": {
                                         "type": "string",
+                                        "minLength": 58,
                                         "maxLength": 250,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "Cardano address of the admin wallet signing the request"
                                     },
                                     "validUntil": {
@@ -8995,8 +9096,7 @@
                                             "ReadAndPay",
                                             "Admin"
                                         ],
-                                        "default": "Read",
-                                        "description": "[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version."
+                                        "description": "[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected."
                                     },
                                     "canRead": {
                                         "type": "boolean",
@@ -15767,7 +15867,9 @@
                                     },
                                     "walletAddress": {
                                         "type": "string",
+                                        "minLength": 58,
                                         "maxLength": 500,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "The wallet address that signed the message"
                                     },
                                     "validUntil": {
@@ -21233,9 +21335,10 @@
                                         "enum": [
                                             "Standard",
                                             "OpenApi",
-                                            "X402"
+                                            "X402",
+                                            "A2A"
                                         ],
-                                        "description": "The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources."
+                                        "description": "The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions."
                                     },
                                     "sellingWalletVkey": {
                                         "type": "string",
@@ -21772,6 +21875,27 @@
                                         "format": "uri",
                                         "description": "URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others."
                                     },
+                                    "a2aAgentCardUrl": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "format": "uri",
+                                        "description": "URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others."
+                                    },
+                                    "a2aProtocolVersions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 64,
+                                            "pattern": "^[0-9]+\\.[0-9]+$"
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types."
+                                    },
+                                    "skipAgentCardValidation": {
+                                        "type": "boolean",
+                                        "description": "A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types."
+                                    },
                                     "description": {
                                         "type": "string",
                                         "maxLength": 250,
@@ -22013,6 +22137,9 @@
                                             "apiBaseUrl": "https://api.example.com",
                                             "openApiSpecUrl": null,
                                             "x402ResourcesUrl": null,
+                                            "a2aAgentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "Capability": {
                                                 "name": "Capability Name",
                                                 "version": "1.0.0"
@@ -22173,6 +22300,9 @@
                                             "apiBaseUrl": "https://api.example.com",
                                             "openApiSpecUrl": null,
                                             "x402ResourcesUrl": null,
+                                            "a2aAgentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "Capability": {
                                                 "name": "Capability Name",
                                                 "version": "1.0.0"
@@ -22578,6 +22708,9 @@
                                             "apiBaseUrl": "https://api.example.com",
                                             "openApiSpecUrl": null,
                                             "x402ResourcesUrl": null,
+                                            "a2aAgentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "Capability": {
                                                 "name": "Capability Name",
                                                 "version": "1.0.0"
@@ -22707,9 +22840,10 @@
                                         "enum": [
                                             "Standard",
                                             "OpenApi",
-                                            "X402"
+                                            "X402",
+                                            "A2A"
                                         ],
-                                        "description": "The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources."
+                                        "description": "The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions."
                                     },
                                     "recipientWalletAddress": {
                                         "type": "string",
@@ -23239,6 +23373,27 @@
                                         "format": "uri",
                                         "description": "URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others."
                                     },
+                                    "a2aAgentCardUrl": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "format": "uri",
+                                        "description": "URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others."
+                                    },
+                                    "a2aProtocolVersions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 64,
+                                            "pattern": "^[0-9]+\\.[0-9]+$"
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types."
+                                    },
+                                    "skipAgentCardValidation": {
+                                        "type": "boolean",
+                                        "description": "A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types."
+                                    },
                                     "description": {
                                         "type": "string",
                                         "maxLength": 250,
@@ -23477,6 +23632,9 @@
                                             "apiBaseUrl": "https://api.example.com",
                                             "openApiSpecUrl": null,
                                             "x402ResourcesUrl": null,
+                                            "a2aAgentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "Capability": {
                                                 "name": "Capability Name",
                                                 "version": "1.0.0"
@@ -25521,6 +25679,15 @@
                                             "Web3CardanoV2"
                                         ],
                                         "description": "Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility."
+                                    },
+                                    "paymentRail": {
+                                        "type": "string",
+                                        "enum": [
+                                            "cardano",
+                                            "x402"
+                                        ],
+                                        "default": "cardano",
+                                        "description": "cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node."
                                     }
                                 },
                                 "required": [
@@ -26558,7 +26725,7 @@
                                         "nullable": true,
                                         "minLength": 10,
                                         "maxLength": 200,
-                                        "description": "Authentication token for extended webhook requests. Required when format is EXTENDED"
+                                        "description": "Authentication token for extended webhook requests. Omit to keep the stored token; required when changing a webhook to EXTENDED"
                                     },
                                     "format": {
                                         "type": "string",
@@ -27355,6 +27522,7 @@
                                     "recipientWalletAddress": {
                                         "type": "string",
                                         "maxLength": 250,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "Optional managed hot wallet address on the same payment source that should receive the minted inbox registry NFT. If omitted, the minting wallet receives it."
                                     },
                                     "sendFundingLovelace": {
@@ -35637,6 +35805,22 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
+                                                "autoFund": {
+                                                    "type": "boolean"
+                                                },
+                                                "automaticFundingLimitLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Lifetime node funding limit in lovelace. Null means unlimited."
+                                                },
+                                                "fundedLovelace": {
+                                                    "type": "string",
+                                                    "description": "Queued or confirmed funding to this address, including historical and manual transfers."
+                                                },
+                                                "remainingFundingLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
                                                 "address": {
                                                     "type": "string"
                                                 },
@@ -35676,6 +35860,10 @@
                                                 }
                                             },
                                             "required": [
+                                                "autoFund",
+                                                "automaticFundingLimitLovelace",
+                                                "fundedLovelace",
+                                                "remainingFundingLovelace",
                                                 "address",
                                                 "balanceLovelace",
                                                 "isUnderfunded",
@@ -35703,7 +35891,7 @@
                         "description": "Unauthorized"
                     },
                     "404": {
-                        "description": "Hydra head not found"
+                        "description": "Local participant not found"
                     }
                 }
             },
@@ -35776,7 +35964,7 @@
                                                         "sufficient",
                                                         "in-flight"
                                                     ],
-                                                    "description": "`sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one."
+                                                    "description": "`sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent. The balance below is still the pre-transfer one."
                                                 }
                                             },
                                             "required": [
@@ -35805,7 +35993,109 @@
                         "description": "Unauthorized"
                     },
                     "404": {
-                        "description": "Hydra head not found"
+                        "description": "Local participant not found"
+                    }
+                }
+            },
+            "patch": {
+                "summary": "Set optional automatic node funding limits. (admin access required)",
+                "description": "Automatic funding is unlimited by default. A lifetime limit counts pending and confirmed transfers to the node address, including manual and historical transfers. A refill is skipped if it would exceed the limit. Explicit admin funding remains available.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "autoFund": {
+                                        "type": "boolean"
+                                    },
+                                    "automaticFundingLimitLovelace": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "maxLength": 19,
+                                        "pattern": "^(0|[1-9][0-9]*)$",
+                                        "description": "Null removes the limit. Zero blocks automatic funding."
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated",
+                                    "automaticFundingLimitLovelace": null
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Automatic funding settings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "autoFund": {
+                                                    "type": "boolean"
+                                                },
+                                                "automaticFundingLimitLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "autoFund",
+                                                "automaticFundingLimitLovelace"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated",
+                                            "autoFund": true,
+                                            "automaticFundingLimitLovelace": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Local participant not found"
                     }
                 }
             }
@@ -35903,7 +36193,7 @@
                         "description": "Unauthorized"
                     },
                     "404": {
-                        "description": "Hydra head not found"
+                        "description": "Local participant not found"
                     },
                     "409": {
                         "description": "The node is still needed, so its funds are kept"

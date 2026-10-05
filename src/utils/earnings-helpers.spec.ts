@@ -1,5 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { fetchAndProcessInBatches } from './earnings-helpers';
+import { fetchAndProcessInBatches, parseDateRange } from './earnings-helpers';
 
 describe('fetchAndProcessInBatches', () => {
 	it('pages through full batches and stops at a short final page', async () => {
@@ -72,5 +72,34 @@ describe('fetchAndProcessInBatches', () => {
 			),
 		).rejects.toMatchObject({ name: 'AbortError' });
 		expect(fetchBatch).toHaveBeenCalledTimes(1);
+	});
+});
+
+// Invariant: cancellation during a query prevents processing its result and fetching another page.
+it('discards a page if cancellation arrives while its query is in flight', async () => {
+	const controller = new AbortController();
+	let complete!: (rows: Array<{ id: string }>) => void;
+	const page = new Promise<Array<{ id: string }>>((resolve) => {
+		complete = resolve;
+	});
+	const fetchBatch = jest.fn(async () => page);
+	const processBatch = jest.fn();
+	const running = fetchAndProcessInBatches(fetchBatch, 1, processBatch, controller.signal);
+	controller.abort();
+	complete([{ id: 'a' }]);
+	await expect(running).rejects.toMatchObject({ name: 'AbortError' });
+	expect(processBatch).not.toHaveBeenCalled();
+	expect(fetchBatch).toHaveBeenCalledTimes(1);
+});
+
+describe('parseDateRange', () => {
+	it('treats a date-only endDate (midnight UTC) as the end of that UTC day', () => {
+		const { periodEnd } = parseDateRange(null, new Date('2026-10-01T00:00:00.000Z'));
+		expect(periodEnd.toISOString()).toBe('2026-10-01T23:59:59.999Z');
+	});
+
+	it('keeps an endDate that carries a time of day unchanged', () => {
+		const { periodEnd } = parseDateRange(null, new Date('2026-10-01T12:30:00.000Z'));
+		expect(periodEnd.toISOString()).toBe('2026-10-01T12:30:00.000Z');
 	});
 });

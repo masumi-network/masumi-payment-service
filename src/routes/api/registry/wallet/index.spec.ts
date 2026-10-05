@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network, PricingType } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network, PaymentSourceType, PricingType } from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -58,7 +58,7 @@ jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
-const { queryAgentFromWalletGet } = await import('./index');
+const { queryAgentFromWalletGet, metadataSchema } = await import('./index');
 
 function asApiKey() {
 	return {
@@ -122,6 +122,50 @@ describe('queryAgentFromWalletGet', () => {
 		});
 	});
 
+	it.each([PaymentSourceType.Web3CardanoV1, PaymentSourceType.Web3CardanoV2])(
+		'limits A2A wallet metadata to V2 policies (%s)',
+		async (paymentSourceType) => {
+			mockFindPaymentSource.mockResolvedValue({
+				id: 'payment-source-1',
+				paymentSourceType,
+				PaymentSourceConfig: { rpcProviderApiKey: 'provider-key' },
+				HotWallets: [
+					{
+						id: 'recipient-wallet-id',
+						walletVkey: 'recipient-wallet-vkey',
+						walletAddress: 'addr_test1recipientwallet',
+						type: 'Purchasing',
+					},
+				],
+			});
+			mockAssetsById.mockResolvedValue({
+				onchain_metadata: {
+					name: 'A2A',
+					type: 'a2aV1',
+					api_url: 'https://agent.example/a2a',
+					agent_card_url: 'https://agent.example/card',
+					a2a_protocol_versions: ['1.0'],
+					author: { name: 'Author' },
+					tags: ['ai'],
+					image: 'ipfs://image',
+					metadata_version: 2,
+				},
+			});
+			const { responseMock } = await testEndpoint({
+				endpoint: queryAgentFromWalletGet,
+				requestProps: {
+					method: 'GET',
+					headers: { token: 'valid' },
+					query: { walletVkey: 'recipient-wallet-vkey', network: Network.Preprod },
+				},
+			});
+			expect(responseMock.statusCode).toBe(200);
+			expect(responseMock._getJSONData().data.Assets).toHaveLength(
+				paymentSourceType === PaymentSourceType.Web3CardanoV2 ? 1 : 0,
+			);
+		},
+	);
+
 	it('allows querying assets for a managed non-selling wallet', async () => {
 		const { responseMock } = await testEndpoint({
 			endpoint: queryAgentFromWalletGet,
@@ -144,5 +188,82 @@ describe('queryAgentFromWalletGet', () => {
 				}),
 			}),
 		]);
+	});
+	it('preserves on-chain payment source positions for metadata with multiple networks', async () => {
+		mockAssetsById.mockResolvedValue({
+			onchain_metadata: {
+				name: 'External agent',
+				api_base_url: 'https://example.com/agent',
+				author: { name: 'Author' },
+				tags: ['demo'],
+				image: 'ipfs://image',
+				metadata_version: 2,
+				supported_payment_sources: [Network.Mainnet, Network.Preprod].map((network) => ({
+					chain: 'Cardano',
+					network,
+					settlement: {
+						paymentSourceType: 'Web3CardanoV2',
+						address:
+							network === Network.Mainnet
+								? 'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df'
+								: 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g',
+					},
+					pricing: { pricingType: PricingType.Free },
+				})),
+			},
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: queryAgentFromWalletGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					walletVkey: 'recipient-wallet-vkey',
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(responseMock._getJSONData().data.Assets[0].Metadata.supportedPaymentSources).toEqual([
+			expect.objectContaining({ network: Network.Mainnet }),
+			expect.objectContaining({ network: Network.Preprod }),
+		]);
+	});
+});
+
+// MIP-002 endpoint aliases must preserve older A2A metadata without ambiguity.
+describe('A2A metadata endpoint', () => {
+	const metadata = {
+		name: 'Agent',
+		author: { name: 'Author' },
+		tags: ['demo'],
+		image: 'ipfs://image',
+		metadata_version: 2,
+		type: 'a2aV1',
+		agent_card_url: 'https://agent.example/card',
+		a2a_protocol_versions: ['1.0'],
+	};
+	it('accepts the MIP-002 api_url field', () => {
+		expect(metadataSchema.safeParse({ ...metadata, api_url: ['https://agent.example/a2a'] }).success).toBe(true);
+	});
+	it('keeps reading earlier A2A api_base_url metadata', () => {
+		expect(metadataSchema.safeParse({ ...metadata, api_base_url: ['https://agent.example/a2a'] }).success).toBe(true);
+	});
+	it('rejects conflicting A2A endpoint aliases', () => {
+		expect(
+			metadataSchema.safeParse({
+				...metadata,
+				api_url: 'https://agent.example/a2a',
+				api_base_url: 'https://other.example/a2a',
+			}).success,
+		).toBe(false);
+	});
+	it('requires an A2A endpoint and keeps api_base_url required for legacy metadata', () => {
+		expect(metadataSchema.safeParse(metadata).success).toBe(false);
+		expect(
+			metadataSchema.safeParse({ ...metadata, type: undefined, api_url: 'https://agent.example/a2a' }).success,
+		).toBe(false);
 	});
 });

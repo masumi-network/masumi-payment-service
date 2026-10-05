@@ -61,7 +61,11 @@ export async function requestStart(store: NodeRegistryStore, nodeId: string): Pr
 
 export async function requestStop(store: NodeRegistryStore, nodeId: string): Promise<NodeRecord> {
 	await load(store, nodeId);
-	const updated = await store.update(nodeId, (current) => ({ ...current, desired: 'Stopped' }));
+	const updated = await store.update(nodeId, (current) => ({
+		...current,
+		desired: 'Stopped',
+		restartRequested: false,
+	}));
 	return updated ?? (await load(store, nodeId));
 }
 

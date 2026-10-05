@@ -11,6 +11,7 @@ import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentCountGet, queryPaymentEntryGet } from './payments';
 import { buildX402TxPost } from './payments/x402';
 import { getPaymentIncome } from './payments/income';
+import { getX402AgentPaymentActivity } from './payments/x402-activity';
 import { deleteAgentRegistration, queryRegistryCountGet, queryRegistryRequestGet, registerAgentPost } from './registry';
 import {
 	deleteInboxAgentRegistration,
@@ -114,6 +115,7 @@ import {
 	fundParticipantNodePost,
 	withdrawParticipantNodePost,
 	participantFundingGet,
+	participantFundingPatch,
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
 	fanoutHeadPost,
@@ -247,6 +249,9 @@ export const apiRouter: Routing = {
 			},
 			income: {
 				post: getPaymentIncome,
+			},
+			'x402-activity': {
+				post: getX402AgentPaymentActivity,
 			},
 			count: {
 				get: queryPaymentCountGet,
@@ -566,7 +571,7 @@ export const apiRouter: Routing = {
 					// One-time backup of the node's signing keys; seals after first use.
 					keys: { post: revealParticipantKeysPost },
 					// Fund the node's own Cardano key, without which Init cannot post.
-					fund: { post: fundParticipantNodePost, get: participantFundingGet },
+					fund: { post: fundParticipantNodePost, get: participantFundingGet, patch: participantFundingPatch },
 					// Return what the node did not spend, once its head is final.
 					withdraw: { post: withdrawParticipantNodePost },
 				},

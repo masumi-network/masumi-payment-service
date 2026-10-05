@@ -14,7 +14,7 @@ import {
   tableActionsCellWideClass,
   tableActionsHeadWideClass,
 } from '@/components/ui/table-actions-column';
-import { ChainDialog } from '@/components/x402/ChainsTab';
+import { ChainDialog } from '@/components/x402/ChainForm';
 import { X402Network } from '@/lib/api/generated';
 
 /**

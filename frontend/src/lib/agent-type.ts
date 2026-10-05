@@ -17,6 +17,7 @@ export const AGENT_TYPE_LABELS: Record<RegistryEntry['type'], string> = {
   Standard: 'Masumi',
   OpenApi: 'OpenAPI',
   X402: 'x402',
+  A2A: 'A2A',
 };
 
 export const getAgentTypeLabel = (type: RegistryEntry['type']): string =>

@@ -21,6 +21,7 @@ import {
 import { cn, shortenAddress } from '@/lib/utils';
 import { useWalletGeneration } from '@/lib/hooks/useWalletGeneration';
 import { copyToClipboard, type SetupWallet } from '@/components/setup/setup-helpers';
+import { SetupStepHeader } from '@/components/setup/wizard/SetupStepParts';
 
 export function SeedPhrasesScreen({
   onNext,
@@ -56,16 +57,11 @@ export function SeedPhrasesScreen({
 
   return (
     <div className="space-y-6 w-full max-w-2xl">
-      <div className="text-center space-y-3 animate-fade-in-up">
-        <div className="inline-flex items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5 p-3 ring-1 ring-primary/20">
-          <Wallet className="h-6 w-6 text-primary" />
-        </div>
-        <h1 className="text-2xl font-bold">Save your seed phrases</h1>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          Store these phrases securely. You need them to access your wallets, and we cannot recover
-          them.
-        </p>
-      </div>
+      <SetupStepHeader
+        icon={Wallet}
+        title="Save your seed phrases"
+        description="Store these phrases securely. You need them to access your wallets, and we cannot recover them."
+      />
 
       {error && (
         <div className="flex items-center gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive animate-fade-in-up">
@@ -85,7 +81,7 @@ export function SeedPhrasesScreen({
           <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
             Security reminder
           </p>
-          <p className="text-sm text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+          <p className="text-sm text-amber-800 dark:text-amber-200/90 mt-0.5">
             Never share seed phrases or store them online. Anyone with a phrase can control that
             wallet.
           </p>
@@ -103,7 +99,7 @@ export function SeedPhrasesScreen({
                 <Wallet className="h-3 w-3" /> Buying
               </Badge>
               {!isGenerating && buyingWallet && (
-                <span className="text-xs text-green-600 dark:text-green-500 flex items-center gap-1 animate-pop-in">
+                <span className="text-xs text-green-700 dark:text-green-500 flex items-center gap-1 animate-pop-in">
                   <CheckCircle2 className="h-3 w-3" /> Generated
                 </span>
               )}
@@ -216,7 +212,7 @@ export function SeedPhrasesScreen({
                 <Wallet className="h-3 w-3" /> Selling
               </Badge>
               {!isGenerating && sellingWallet && (
-                <span className="text-xs text-green-600 dark:text-green-500 flex items-center gap-1 animate-pop-in">
+                <span className="text-xs text-green-700 dark:text-green-500 flex items-center gap-1 animate-pop-in">
                   <CheckCircle2 className="h-3 w-3" /> Generated
                 </span>
               )}

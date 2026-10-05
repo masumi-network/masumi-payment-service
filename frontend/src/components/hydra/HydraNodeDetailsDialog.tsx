@@ -52,6 +52,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { formatDateTime } from '@/lib/format-date';
 import { fundHydraNode, withdrawHydraNodeFunds } from '@/lib/hooks/useHydraHeads';
 import { useHydraLocalParticipants } from '@/lib/hooks/useHydraHeads';
+import { AutomaticFundingDialog } from '@/components/hydra/AutomaticFundingDialog';
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
@@ -178,6 +179,7 @@ export function HydraNodeDetailsDialog({
     undefined,
     host?.id,
   );
+  const [fundingSettingsId, setFundingSettingsId] = useState<string | null>(null);
   const [backUpId, setBackUpId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [isNodeBusy, setIsNodeBusy] = useState(false);
@@ -495,6 +497,9 @@ export function HydraNodeDetailsDialog({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setFundingSettingsId(participant.id)}>
+                            Automatic funding
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => void handleFund(participant.id)}>
                             Top up its funds now
                           </DropdownMenuItem>
@@ -551,6 +556,14 @@ export function HydraNodeDetailsDialog({
           </HydraDetailSection>
         </div>
       </DialogContent>
+
+      {fundingSettingsId !== null ? (
+        <AutomaticFundingDialog
+          key={fundingSettingsId}
+          participantId={fundingSettingsId}
+          onClose={() => setFundingSettingsId(null)}
+        />
+      ) : null}
 
       <BackUpNodeKeysDialog
         open={backUpId !== null}

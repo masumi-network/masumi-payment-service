@@ -80,7 +80,6 @@ export function AIAgentDetailsDialog({
   const { mutateAsync: deleteAgentAsync } = deleteAgent;
   const { mutateAsync: deregisterAgentAsync } = deregisterAgent;
   const isDeleting = deleteAgent.isPending || deregisterAgent.isPending;
-  const [isPurchaseDialogOpen] = useState(false);
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   // Re-register (deregistered agents only): confirm the new-identifier caveat,
   // then open the mint dialog prefilled from this agent.
@@ -124,6 +123,7 @@ export function AIAgentDetailsDialog({
     [currentNetworkPaymentSources, selectedPaymentSourceId],
   );
   const showEditMetadata = canEditAgentMetadata({
+    agent,
     relation: agent?.relation,
     canPay: capabilities.canPay,
     selectedPaymentSource: activePaymentSource,
@@ -247,7 +247,6 @@ export function AIAgentDetailsDialog({
         open={
           !!agent &&
           !isDeleteDialogOpen &&
-          !isPurchaseDialogOpen &&
           !isReRegisterConfirmOpen &&
           !isReRegisterOpen &&
           !isUpdateOpen

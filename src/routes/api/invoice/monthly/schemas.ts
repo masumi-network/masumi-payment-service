@@ -1,5 +1,6 @@
 import { z } from '@masumi/payment-core/zod';
 import { invoiceGenerationBaseSchema, invoiceGenerationSchemaOutput } from './shared';
+import { isCardanoAddress } from '@/utils/shared/cardano-address';
 
 export const getMonthlyInvoiceListSchemaInput = z.object({
 	month: z
@@ -74,7 +75,13 @@ export const postGenerateMonthlyInvoiceSchemaInput = invoiceGenerationBaseSchema
 	.extend({
 		signature: z.string().max(2000).describe('The signature to verify'),
 		key: z.string().max(2000).describe('The key to verify the signature'),
-		walletAddress: z.string().max(500).describe('The wallet address that signed the message'),
+		walletAddress: z
+			.string()
+			.min(58)
+			.max(500)
+			.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'walletAddress must be a bech32 Cardano address')
+			.refine(isCardanoAddress, 'walletAddress must be a valid Cardano address')
+			.describe('The wallet address that signed the message'),
 		validUntil: z.number().describe('The valid until timestamp'),
 		action: z.enum(['RetrieveMonthlyInvoices']).describe('The action to perform for monthly invoices'),
 	})

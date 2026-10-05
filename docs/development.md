@@ -84,6 +84,13 @@ cursor according to the endpoint contract.
 Do not add Prisma `skip: 1` to these list queries unless the API contract is intentionally changed and downstream
 clients are updated.
 
+### Search and cursors
+
+Where a list endpoint accepts `searchQuery`, the search is part of the `where` clause, so it filters the whole table
+before the cursor is applied — a match beyond the first page is still returned. The cursor therefore belongs to one
+particular query: **clients must drop the cursor and restart from the first page whenever `searchQuery` changes.**
+Reusing a cursor from an unfiltered listing against a narrowed search points at a row the new filter may exclude.
+
 ## Testing
 
 This project uses Jest as the testing framework. Here's how you can run tests:

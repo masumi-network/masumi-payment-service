@@ -240,7 +240,10 @@ async function processSingleDeregistration(
 	if (collateralCheck.status !== 'ready') {
 		// status === 'deferred': a collateral prep tx is in flight; keep the
 		// request queued so the next scheduler tick re-picks it up once the prep
-		// tx confirms.
+		// tx confirms. Clear the outer lockAndQuery `lockedAt` so a confirmed prep
+		// (PendingTransaction cleared) is not blocked until wallet-lock timeout.
+		const deregistrationWallet = resolveRegistryDeregistrationWallet(request);
+		await unlockHotWallet(deregistrationWallet.id);
 		return;
 	}
 	// Collateral ready — clear any transient prep-failure count.
@@ -438,6 +441,9 @@ export async function deRegisterAgentV2() {
 					return;
 				}
 				if (collateralCheck.status !== 'ready') {
+					// Deferred prep owns the wallet via PendingTransaction; release the
+					// batch lock so the deregister worker can resume after prep confirms.
+					await unlockHotWallet(deregistrationWallet.id);
 					return;
 				}
 				// Collateral ready — clear any transient prep-failure count on every item.
