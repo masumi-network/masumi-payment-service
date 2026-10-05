@@ -357,7 +357,7 @@ export default function InboxAgentsPage() {
                         <tr
                           key={agent.id}
                           className={cn(
-                            'group border-b cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 opacity-0',
+                            'group border-b cursor-pointer hover:bg-row-hover opacity-0',
                             agent.state === 'DeregistrationConfirmed'
                               ? 'animate-fade-in-to-muted'
                               : 'animate-fade-in',

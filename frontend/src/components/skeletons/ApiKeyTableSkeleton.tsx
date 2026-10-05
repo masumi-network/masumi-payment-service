@@ -1,4 +1,8 @@
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  tableActionsCellCompactClass,
+  tableActionsInnerClass,
+} from '@/components/ui/table-actions-column';
 import { TableCell, TableRow } from '@/components/ui/table';
 
 export function ApiKeyTableSkeleton({ rows = 5 }: { rows?: number }) {
@@ -6,7 +10,10 @@ export function ApiKeyTableSkeleton({ rows = 5 }: { rows?: number }) {
     <>
       {Array.from({ length: rows }).map((_, index) => (
         <TableRow key={index} className="hover:bg-transparent">
-          <TableCell className="pl-4">
+          <TableCell className="w-12 p-4">
+            <Skeleton className="h-4 w-4" />
+          </TableCell>
+          <TableCell className="p-4">
             <Skeleton className="h-4 w-24" />
           </TableCell>
           <TableCell>
@@ -27,8 +34,10 @@ export function ApiKeyTableSkeleton({ rows = 5 }: { rows?: number }) {
           <TableCell>
             <Skeleton className="h-5 w-14 rounded-full" />
           </TableCell>
-          <TableCell>
-            <Skeleton className="h-8 w-8 rounded-md" />
+          <TableCell className={tableActionsCellCompactClass}>
+            <div className={tableActionsInnerClass}>
+              <Skeleton className="h-8 w-8 rounded-md" />
+            </div>
           </TableCell>
         </TableRow>
       ))}

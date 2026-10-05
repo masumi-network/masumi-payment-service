@@ -278,7 +278,11 @@ export function AIAgentsList({
             </thead>
             <tbody>
               {(isLoading && !agentCount) || (displayAgentCount === 0 && isSearchPending) ? (
-                <AIAgentTableSkeleton rows={5} columns={tableColumnCount} />
+                <AIAgentTableSkeleton
+                  rows={5}
+                  columns={tableColumnCount}
+                  withSelectionColumn={showBulkSelection}
+                />
               ) : displayAgentCount === 0 ? (
                 <tr>
                   <td colSpan={tableColumnCount}>

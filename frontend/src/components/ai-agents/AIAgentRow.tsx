@@ -145,7 +145,7 @@ export function AIAgentRow({
     <tr
       key={agent.id}
       className={cn(
-        'group border-b cursor-pointer hover:bg-row-hover transition-[background-color,opacity] duration-150 opacity-0',
+        'group border-b cursor-pointer hover:bg-row-hover opacity-0',
         rowIsSelected && 'bg-row-hover',
         agent.state === 'DeregistrationConfirmed' ? 'animate-fade-in-to-muted' : 'animate-fade-in',
       )}

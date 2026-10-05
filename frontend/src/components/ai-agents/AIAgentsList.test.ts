@@ -42,7 +42,12 @@ const props: ComponentProps<typeof AIAgentsList> = {
   visibleRowCount: 1,
   tableColumnCount: 9,
 };
-type ElementProps = { children?: ReactNode; value?: string; columns?: number };
+type ElementProps = {
+  children?: ReactNode;
+  value?: string;
+  columns?: number;
+  withSelectionColumn?: boolean;
+};
 function elements(node: ReactNode): Array<{ type: unknown; props: ElementProps }> {
   if (Array.isArray(node)) return node.flatMap(elements);
   if (!isValidElement<ElementProps>(node)) return [];
@@ -54,7 +59,15 @@ test('extracted list includes A2A filter and keeps loading column count', () => 
   assert.ok(loaded.some((element) => element.type === SelectItem && element.props.value === 'A2A'));
   assert.ok(!loaded.some((element) => element.type === AIAgentTableSkeleton));
   const loading = elements(
-    AIAgentsList({ ...props, isLoading: true, agentCount: 0, tableColumnCount: 10 }),
+    AIAgentsList({
+      ...props,
+      isLoading: true,
+      agentCount: 0,
+      tableColumnCount: 10,
+      showBulkSelection: true,
+    }),
   );
-  assert.equal(loading.find((element) => element.type === AIAgentTableSkeleton)?.props.columns, 10);
+  const skeleton = loading.find((element) => element.type === AIAgentTableSkeleton);
+  assert.equal(skeleton?.props.columns, 10);
+  assert.equal(skeleton?.props.withSelectionColumn, true);
 });

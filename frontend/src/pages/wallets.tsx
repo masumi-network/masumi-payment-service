@@ -330,7 +330,7 @@ export default function WalletsPage() {
                     {allWallets.map((wallet, index) => (
                       <tr
                         key={wallet.id}
-                        className={`group border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
+                        className={`group border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 ${
                           wallet.LowBalanceSummary?.isLow
                             ? 'bg-amber-500/5 hover:bg-amber-500/10'
                             : 'hover:bg-row-hover'

@@ -103,7 +103,7 @@ export function DashboardWalletListSection({
             <tr
               key={wallet.id}
               className={cn(
-                'border-b border-border/50 last:border-b-0 animate-fade-in opacity-0 transition-colors',
+                'border-b border-border/50 last:border-b-0 animate-fade-in opacity-0',
                 canAdmin && 'cursor-pointer',
                 wallet.LowBalanceSummary?.isLow
                   ? 'bg-amber-500/[0.07] hover:bg-amber-500/10'

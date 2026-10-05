@@ -390,7 +390,7 @@ export default function ApiKeys() {
                       <tr
                         key={key.id}
                         className={cn(
-                          'group border-b transition-[background-color] duration-150 hover:bg-row-hover',
+                          'group border-b hover:bg-row-hover',
                           isKeySelected && 'bg-row-hover',
                         )}
                       >
