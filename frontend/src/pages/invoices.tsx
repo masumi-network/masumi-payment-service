@@ -378,7 +378,7 @@ export default function Invoices() {
                         <tr
                           key={invoice.id}
                           className={cn(
-                            'group border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                            'group border-b last:border-b-0 animate-fade-in opacity-0',
                             'cursor-pointer hover:bg-muted/50',
                           )}
                           style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
@@ -473,7 +473,7 @@ export default function Invoices() {
                         <div key={groupKey}>
                           {/* Wallet group header */}
                           <div
-                            className="flex items-center gap-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors"
+                            className="flex items-center gap-3 p-4 hover:bg-muted/50 cursor-pointer"
                             onClick={() => toggleWallet(groupKey)}
                           >
                             {isExpanded ? (

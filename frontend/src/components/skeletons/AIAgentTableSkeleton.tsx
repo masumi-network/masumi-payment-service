@@ -1,4 +1,5 @@
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 import {
   tableActionsCellCompactClass,
   tableActionsInnerClass,
@@ -19,16 +20,28 @@ const CELL_WIDTHS = ['w-32', 'w-24', 'w-48', 'w-40', 'w-20', 'w-24', 'w-24'];
 export function AIAgentTableSkeleton({
   rows = 5,
   columns = 8,
+  withSelectionColumn = false,
 }: {
   rows?: number;
   columns?: number;
+  withSelectionColumn?: boolean;
 }) {
+  const dataColumnCount = Math.max(columns - 1 - (withSelectionColumn ? 1 : 0), 0);
+
   return (
     <>
       {Array.from({ length: rows }).map((_, rowIndex) => (
         <tr key={rowIndex} className="border-b">
-          {Array.from({ length: Math.max(columns - 1, 0) }).map((_, cellIndex) => (
-            <td key={cellIndex} className="p-4">
+          {withSelectionColumn ? (
+            <td className="w-12 p-4">
+              <Skeleton className="h-4 w-4" />
+            </td>
+          ) : null}
+          {Array.from({ length: dataColumnCount }).map((_, cellIndex) => (
+            <td
+              key={cellIndex}
+              className={cn('p-4', !withSelectionColumn && cellIndex === 0 && 'pl-6')}
+            >
               <Skeleton className={`h-4 ${CELL_WIDTHS[cellIndex] ?? 'w-24'}`} />
             </td>
           ))}
