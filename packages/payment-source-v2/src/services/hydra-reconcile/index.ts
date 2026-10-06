@@ -198,8 +198,9 @@ async function reconcileHead(
 	}
 	// The live UTxO tip can infer absence only after one authenticated, untruncated
 	// history pass reached its matching Greetings marker. Expired reservations are
-	// reported but retained: history absence cannot prove that a locally accepted
-	// transaction is absent while it remains outside a signed snapshot.
+	// released only on verified-snapshot input proof and reported otherwise:
+	// history absence cannot prove that a locally accepted transaction is absent
+	// while it remains outside a signed snapshot.
 	if (!(node?.hasVerifiedPinnedSessions && node.confirmedTransactionHistoryReady)) return;
 	await reportExpiredL2Reservations({ hydraHeadId, network: source.network, node });
 

@@ -14,6 +14,7 @@ import { type HydraRawCostModels } from './node-api';
 import { reportParamsDrift } from './params-drift';
 import {
 	hydraCostModelSchema,
+	hydraConfirmedSnapshotSchema,
 	hydraCostModelsEnvelopeSchema,
 	hydraProtocolParametersSchema,
 	hydraSnapshotUtxoSchema,
@@ -88,6 +89,25 @@ export async function fetchHydraRawCostModels(transport: HydraQueryTransport): P
 		PlutusV2: parseCostModel('PlutusV2', costModels?.PlutusV2),
 		PlutusV3: parseCostModel('PlutusV3', costModels?.PlutusV3),
 	};
+}
+
+/**
+ * The node's own latest confirmed snapshot number, read from `GET /snapshot`.
+ * Unlike the replayed or persisted copies, this cannot lag the node itself.
+ */
+export async function fetchHydraConfirmedSnapshotNumber(
+	transport: HydraQueryTransport,
+): Promise<{ headId: string; number: bigint }> {
+	const response = hydraConfirmedSnapshotSchema.safeParse(await transport.get('/snapshot'));
+	if (!response.success) {
+		throw new HydraProtocolError('Hydra confirmed snapshot response failed schema validation', {
+			cause: response.error,
+		});
+	}
+	const data = response.data;
+	return data.tag === 'ConfirmedSnapshot'
+		? { headId: data.snapshot.headId, number: BigInt(data.snapshot.number) }
+		: { headId: data.headId, number: 0n };
 }
 
 export async function fetchHydraSnapshotUTxO(transport: HydraQueryTransport): Promise<UTxO[]> {

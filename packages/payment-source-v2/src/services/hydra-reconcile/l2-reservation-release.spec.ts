@@ -30,6 +30,7 @@ jest.unstable_mockModule('@/services/shared', () => ({
 }));
 
 const { releaseRejectedL2Reservation } = await import('./l2-reservation-release');
+const { prisma } = await import('@masumi/payment-core/db');
 
 const reservation = {
 	id: 'tx-1',
@@ -64,7 +65,7 @@ beforeEach(() => {
  */
 describe('releaseRejectedL2Reservation', () => {
 	it('rolls the transaction back, frees the wallet and returns the request', async () => {
-		await expect(releaseRejectedL2Reservation(reservation)).resolves.toBe(true);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection')).resolves.toBe(true);
 
 		expect(mockTransactionUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: TransactionStatus.RolledBack }) }),
@@ -82,7 +83,7 @@ describe('releaseRejectedL2Reservation', () => {
 	it('does nothing once the transaction has a hash', async () => {
 		mockFindUnique.mockResolvedValue(pendingRejected({ txHash: 'a'.repeat(64) }));
 
-		await expect(releaseRejectedL2Reservation(reservation)).resolves.toBe(false);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection')).resolves.toBe(false);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
 	});
@@ -90,22 +91,51 @@ describe('releaseRejectedL2Reservation', () => {
 	it('does nothing when the head never refused the body', async () => {
 		mockFindUnique.mockResolvedValue(pendingRejected({ l2RejectedByHeadAt: null }));
 
-		await expect(releaseRejectedL2Reservation(reservation)).resolves.toBe(false);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection')).resolves.toBe(false);
+		expect(mockTransactionUpdate).not.toHaveBeenCalled();
+	});
+
+	// Automatic recovery proves the body dead from its inputs, not from a head
+	// rejection, so that proof mode must not require one.
+	it('releases without a head rejection under the input proof', async () => {
+		mockFindUnique.mockResolvedValue(pendingRejected({ l2RejectedByHeadAt: null }));
+
+		await expect(
+			releaseRejectedL2Reservation(reservation, prisma as never, 'inputs-unspent-after-expiry'),
+		).resolves.toBe(true);
+		expect(mockHotWalletUpdateMany).toHaveBeenCalledTimes(1);
+		// The marker that lets a late confirmation of this body halt replay.
+		expect(mockTransactionUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ l2ReleasedByInputProofAt: expect.any(Date) }) }),
+		);
+	});
+
+	// TxValid may already have paired the seller's PaymentRequest, which a
+	// release does not undo.
+	it('still refuses a TxValid (hashed) transaction under the input proof', async () => {
+		mockFindUnique.mockResolvedValue(
+			pendingRejected({ l2RejectedByHeadAt: null, txHash: 'a'.repeat(64), intendedTxHash: 'a'.repeat(64) }),
+		);
+
+		await expect(
+			releaseRejectedL2Reservation(reservation, prisma as never, 'inputs-unspent-after-expiry'),
+		).resolves.toBe(false);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 	});
 
 	it('does nothing when the reservation is no longer pending', async () => {
 		mockFindUnique.mockResolvedValue(pendingRejected({ status: TransactionStatus.Confirmed }));
 
-		await expect(releaseRejectedL2Reservation(reservation)).resolves.toBe(false);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection')).resolves.toBe(false);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 	});
 
 	it('restores the wallet the reservation replaced', async () => {
-		await releaseRejectedL2Reservation({
-			...reservation,
-			l2ReservationPreviousSmartContractWalletId: 'wallet-before',
-		});
+		await releaseRejectedL2Reservation(
+			{ ...reservation, l2ReservationPreviousSmartContractWalletId: 'wallet-before' },
+			prisma as never,
+			'head-rejection',
+		);
 
 		expect(mockPurchaseUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
