@@ -298,6 +298,7 @@ export async function executeL2Lock(
 		hydraHeadId,
 		intendedTxHash,
 		invalidHereafterSlot,
+		inputRefs: selected.map((u) => `${u.input.txHash}#${u.input.outputIndex}`.toLowerCase()),
 		buyerReturnAddress,
 		collateralReturnLovelace: valuePlan.collateralReturnLovelace,
 		trustedHeadTimeMs: reservationHeadTimeMs,
@@ -408,6 +409,7 @@ async function reserveL2LockBeforeSubmit(params: {
 	hydraHeadId: string;
 	intendedTxHash: string;
 	invalidHereafterSlot: bigint;
+	inputRefs: string[];
 	buyerReturnAddress: string | null;
 	collateralReturnLovelace: bigint;
 	trustedHeadTimeMs: number;
@@ -418,6 +420,7 @@ async function reserveL2LockBeforeSubmit(params: {
 		hydraHeadId,
 		intendedTxHash,
 		invalidHereafterSlot,
+		inputRefs,
 		buyerReturnAddress,
 		collateralReturnLovelace,
 		trustedHeadTimeMs,
@@ -429,6 +432,7 @@ async function reserveL2LockBeforeSubmit(params: {
 				data: {
 					intendedTxHash,
 					invalidHereafterSlot,
+					l2ReservationInputRefs: inputRefs,
 					status: TransactionStatus.Pending,
 					layer: TransactionLayer.L2,
 					l2ReservationPreviousActionId: request.nextActionId,
