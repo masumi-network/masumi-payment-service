@@ -317,6 +317,15 @@ export const hydraSnapshotUtxoSchema = z
 		`Hydra snapshot exceeded ${MAX_HYDRA_SNAPSHOT_OUTPUTS} outputs`,
 	);
 
+/** `GET /snapshot`: only the head id and confirmed number are read. */
+export const hydraConfirmedSnapshotSchema = z.union([
+	z.looseObject({
+		tag: z.literal('ConfirmedSnapshot'),
+		snapshot: z.looseObject({ headId: z.string(), number: z.number().int().nonnegative() }),
+	}),
+	z.looseObject({ tag: z.literal('InitialSnapshot'), headId: z.string() }),
+]);
+
 // Loose, like the rest of the replay path: an added sibling field must not wedge
 // a running head, and the vkey below stays required so a rename is still caught.
 const hydraPartySchema = z.looseObject({
