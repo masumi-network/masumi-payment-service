@@ -235,15 +235,21 @@ model Transaction {
   l2ReservationPreviousCollateralReturn      BigInt?
   /// When the head itself refused this transaction body, naming its hash.
   ///
-  /// The one signal that separates "we do not know what happened" from "this
-  /// can never confirm". Everything else about an unconfirmed L2 reservation is
-  /// ambiguous -- absence from replay does not prove absence from the ledger --
-  /// which is why a reservation without this stays held. With it, and once the
-  /// validity window has closed, the body is provably dead and the request can
-  /// be handed back for a fresh attempt.
+  /// Diagnostic only. A node can relay a body, withhold the snapshot that
+  /// applied it and still report it invalid, so a rejection does not prove the
+  /// body dead and never releases a reservation on its own. Release needs the
+  /// input proof (see l2ReservationInputRefs).
   l2RejectedByHeadAt                         DateTime?
   /// The head's own words for that refusal, kept for the operator.
   l2RejectedByHeadReason                     String?
+  /// Inputs (`txHash#index`) the reserved in-head body spends. A body that ever
+  /// applied consumed them, and a spent output never reappears. Finding all of
+  /// them in a verified snapshot newer than the node's own confirmed snapshot
+  /// read after expiry proves the body dead (decideL2ReservationRelease).
+  l2ReservationInputRefs                     String[]                        @default([])
+  /// Set when the reservation was auto-released on that input proof. A later
+  /// confirmation of such a body halts the head's replay (invariant breach).
+  l2ReleasedByInputProofAt                   DateTime?
   BlocksWallet                               HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.

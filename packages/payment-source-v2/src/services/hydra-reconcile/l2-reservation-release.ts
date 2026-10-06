@@ -1,12 +1,15 @@
 /**
- * Legacy reservation rollback helper. Automatic recovery must not call this.
+ * Reservation rollback helper.
  *
  * Correction: the earlier claim that TxInvalid plus expiry rules out a
  * conflicting retry was wrong. Expiry prevents future acceptance but cannot
  * disprove acceptance before expiry in a snapshot the node withheld.
  *
- * Rejection is diagnostic data, not independent proof of nonexecution.
- * Recovery now retains these reservations for explicit reconciliation.
+ * Rejection is diagnostic data, not independent proof of nonexecution, so
+ * automatic recovery never releases on it. Automatic recovery releases only
+ * with `proof: 'inputs-unspent-after-expiry'`, after
+ * `decideL2ReservationRelease` found every input of the body unspent in a
+ * verified snapshot confirmed after expiry (see `./l2-reservation-recovery`).
  */
 
 import { Prisma, PurchasingAction, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
@@ -32,7 +35,8 @@ export interface ReleasableL2Reservation {
  */
 export async function releaseRejectedL2Reservation(
 	reservation: ReleasableL2Reservation,
-	database: typeof prisma = prisma,
+	database: typeof prisma,
+	proof: 'head-rejection' | 'inputs-unspent-after-expiry',
 ): Promise<boolean> {
 	try {
 		return await database.$transaction(
@@ -52,15 +56,21 @@ export async function releaseRejectedL2Reservation(
 				if (
 					current == null ||
 					current.status !== TransactionStatus.Pending ||
+					// A TxValid row (txHash set) may already be paired with the seller's
+					// PaymentRequest, which this helper does not restore. Keep those manual.
 					current.txHash != null ||
-					current.l2RejectedByHeadAt == null
+					(proof === 'head-rejection' && current.l2RejectedByHeadAt == null)
 				) {
 					return false;
 				}
 
 				await tx.transaction.update({
 					where: { id: reservation.id, status: TransactionStatus.Pending },
-					data: { status: TransactionStatus.RolledBack, lastCheckedAt: new Date() },
+					data: {
+						status: TransactionStatus.RolledBack,
+						lastCheckedAt: new Date(),
+						...(proof === 'inputs-unspent-after-expiry' ? { l2ReleasedByInputProofAt: new Date() } : {}),
+					},
 				});
 
 				// Free the wallet this reservation claimed. Scoped by the pending

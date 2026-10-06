@@ -93,11 +93,11 @@ export class HydraNode extends EventEmitter {
 	 * a snapshot forming, not a request/response round trip.
 	 *
 	 * Exceeding it is not a failure but `HydraTransportAmbiguousError`, and the
-	 * reservation then stays Pending and held. Recovery does NOT settle it on
-	 * its own: `reportExpiredL2Reservations` reports an expired reservation
-	 * without releasing it. A node rejection is also insufficient proof that
-	 * the body was never accepted. A timed-out body waits for reconciliation,
-	 * and the wallet lease stays held until
+	 * reservation then stays Pending and held. `reportExpiredL2Reservations`
+	 * releases it only on the input proof (every input unspent in a verified
+	 * snapshot newer than the node's own post-expiry snapshot). A node rejection
+	 * is insufficient proof that the body was never accepted. Until that proof
+	 * holds, the body waits for reconciliation and the wallet lease stays held until
 	 * then. Raising this holds that lease open longer; lowering it sends bodies
 	 * to reconciliation that would have confirmed on their own.
 	 */
