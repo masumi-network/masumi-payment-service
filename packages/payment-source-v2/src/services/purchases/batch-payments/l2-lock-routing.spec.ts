@@ -192,11 +192,11 @@ describe('processL2PurchaseLocks wallet waiting', () => {
 });
 
 /**
- * The head row only proves this side's view. The counterparty's service can
- * disable the head and stop observing it while its node keeps co-signing, so a
- * lock confirms in the head and the seller never sees it: the payment times
- * out and the buyer is refunded. The pass must not route to a head whose
- * counterparty its node does not report as reachable.
+ * The head row only proves this side's view. The counterparty's node can be
+ * down or unreachable, and a lock routed there would never be co-signed. The
+ * pass must not route to a head whose counterparty our node does not report
+ * as connected. This does not catch a counterparty that disabled the head but
+ * keeps its node live: that lock times out and is refunded on L2.
  */
 describe('processL2PurchaseLocks counterparty health', () => {
 	function sourceWithFreeHeadWallet(forceLayer: 'L2' | null) {
