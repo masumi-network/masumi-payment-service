@@ -2333,9 +2333,9 @@ export const getHydraParticipantRemote = <ThrowOnError extends boolean = false>(
 });
 
 /**
- * Check a Hydra head on L1 and set its node to match. (admin access required)
+ * Read a Hydra head state on L1. (admin access required)
  *
- * Reads the newest transaction that moved the head's state token. When a disabled head is still Open on chain, asks the Host to stop this side's node, so the counterparty stops using the head. When the head is Closed on chain, asks the Host to start the node, so it can contest. A fanned-out head needs nothing.
+ * Reads the newest transaction that moved the head's state token, through the payment source's independent L1 observer. Returns whether the head is still open, closed (contestation running), or fanned out. Read-only.
  */
 export const postHydraHeadChainCheck = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadChainCheckData, ThrowOnError>): RequestResult<PostHydraHeadChainCheckResponses, PostHydraHeadChainCheckErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadChainCheckResponses, PostHydraHeadChainCheckErrors, ThrowOnError>({
     responseType: 'json',

@@ -15628,14 +15628,6 @@ export type PostHydraHeadChainCheckResponses = {
              * Newest transaction that moved the head state token
              */
             latestTxHash: string;
-            /**
-             * What was asked of the node; null when nothing was (head enabled, or gone)
-             */
-            nodeAction: 'stop' | 'start' | null;
-            /**
-             * Outcome of the node request; null when no request was sent
-             */
-            nodeOutcome: 'requested' | 'head-closing' | 'no-participant' | 'no-admin-token' | 'failed' | null;
         };
     };
 };
