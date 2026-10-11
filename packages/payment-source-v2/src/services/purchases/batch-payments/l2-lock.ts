@@ -164,6 +164,22 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 					headResolutionIndeterminate = true;
 					continue;
 				}
+				// The persisted head says nothing about the counterparty's side. Its
+				// service can disable the head (and stop observing it) while its node
+				// keeps co-signing, so a lock here would confirm and then never be seen
+				// by the seller. Require the node to report the peer as reachable.
+				// Down: auto falls to L1 now; forced retries until payByTime fails it.
+				// Not reported yet (null): indeterminate, like a missing provider.
+				const peerConnected = getHydraConnectionManager().getNode(head.hydraHead.id)?.networkConnected ?? null;
+				if (peerConnected !== true) {
+					logger.info('L2 lock: Hydra counterparty is not connected; not routing to this head', {
+						requestId: request.id,
+						hydraHeadId: head.hydraHead.id,
+						peerConnected,
+					});
+					if (peerConnected === null || forcedHydra) headResolutionIndeterminate = true;
+					continue;
+				}
 				// A head exists for this pair — record it BEFORE the wallet-busy check so
 				// a busy wallet never masquerades as "no head".
 				headAvailable = true;
