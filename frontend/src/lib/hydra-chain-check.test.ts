@@ -46,3 +46,15 @@ test('a fanned-out head needs nothing', () => {
   assert.match(describeHydraHeadChainCheck(result), /Fanned out/);
   assert.equal(needsOperatorAction(result), false);
 });
+
+// A re-enable that lands during the check leaves an enabled head whose node
+// the check stopped; the check starts it again.
+test('an open head re-enabled during the check reports the restart', () => {
+  const restarted = check({ nodeAction: 'start' });
+  assert.match(describeHydraHeadChainCheck(restarted), /start the node again/);
+  assert.equal(needsOperatorAction(restarted), false);
+
+  const failed = check({ nodeAction: 'start', nodeOutcome: 'failed' });
+  assert.match(describeHydraHeadChainCheck(failed), /Start it on the host now/);
+  assert.equal(needsOperatorAction(failed), true);
+});
