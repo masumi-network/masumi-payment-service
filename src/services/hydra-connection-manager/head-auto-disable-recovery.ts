@@ -40,7 +40,8 @@ const lastAutoReEnableAt = new Map<string, number>();
  * a rollback quarantined for explicit recovery, must stay as it is.
  */
 const failedClosedHeads = new Set<string>();
-const recoveringHeads = new Set<string>();
+/** Recoveries in flight, and whether each has consumed its mark yet. */
+const recoveringHeads = new Map<string, { consumed: boolean }>();
 
 export function markHeadFailedClosed(hydraHeadId: string): void {
 	failedClosedHeads.add(hydraHeadId);
@@ -60,11 +61,23 @@ export async function recoverAutoDisabledHead(
 	hydraHeadId: string,
 	deps: AutoDisableRecoveryDeps = defaultDeps,
 ): Promise<AutoDisableRecoveryOutcome> {
-	// One recovery per head at a time: a second one for the same failure does nothing.
-	if (!failedClosedHeads.has(hydraHeadId) || recoveringHeads.has(hydraHeadId)) return 'not-failed-closed';
-	recoveringHeads.add(hydraHeadId);
+	if (!failedClosedHeads.has(hydraHeadId)) return 'not-failed-closed';
+	const inFlight = recoveringHeads.get(hydraHeadId);
+	if (inFlight) {
+		// Before its consume point, the running recovery owns this same mark.
+		if (!inFlight.consumed) return 'not-failed-closed';
+		// After it, the head failed closed again while being re-enabled: as for
+		// the cooldown, leave it to the operator, and drop the new mark.
+		failedClosedHeads.delete(hydraHeadId);
+		logger.error('[HydraAutoRecovery] head failed closed again during its automatic re-enable; leaving it disabled', {
+			hydraHeadId,
+		});
+		return 'cooldown';
+	}
+	const state = { consumed: false };
+	recoveringHeads.set(hydraHeadId, state);
 	try {
-		return await recoverMarkedHead(hydraHeadId, deps);
+		return await recoverMarkedHead(hydraHeadId, state, deps);
 	} finally {
 		recoveringHeads.delete(hydraHeadId);
 	}
@@ -72,6 +85,7 @@ export async function recoverAutoDisabledHead(
 
 async function recoverMarkedHead(
 	hydraHeadId: string,
+	state: { consumed: boolean },
 	deps: AutoDisableRecoveryDeps,
 ): Promise<AutoDisableRecoveryOutcome> {
 	if ((await isHeadEnabled(hydraHeadId)) !== false) {
@@ -95,6 +109,7 @@ async function recoverMarkedHead(
 	// quarantine) that landed during the reads above has dropped the mark by
 	// now. One landing later is caught by the re-enable's own compare-and-set.
 	if (!failedClosedHeads.delete(hydraHeadId)) return 'not-failed-closed';
+	state.consumed = true;
 	lastAutoReEnableAt.set(hydraHeadId, deps.now());
 	try {
 		await deps.reEnable(hydraHeadId);

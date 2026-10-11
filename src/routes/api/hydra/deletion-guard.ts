@@ -195,6 +195,9 @@ async function assertHydraHeadsCleanupEligible(
 					}
 
 					if (options.disable) {
+						// Disabled for deletion: automatic recovery must not re-enable them.
+						// Dropped before the write, so a recovery running meanwhile finds no mark.
+						for (const headId of uniqueHeadIds) forgetHeadFailedClosed(headId);
 						const disabled = await tx.hydraHead.updateMany({
 							where: {
 								id: { in: [...uniqueHeadIds] },
@@ -208,8 +211,6 @@ async function assertHydraHeadsCleanupEligible(
 						if (disabled.count !== uniqueHeadIds.length) {
 							throw createHttpError(409, 'Hydra head cleanup eligibility changed concurrently');
 						}
-						// Disabled for deletion: automatic recovery must not re-enable them.
-						for (const headId of uniqueHeadIds) forgetHeadFailedClosed(headId);
 					}
 
 					return heads.map((head) => ({

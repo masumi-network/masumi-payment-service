@@ -89,6 +89,20 @@ describe('recoverAutoDisabledHead', () => {
 		expect(reEnable).not.toHaveBeenCalled();
 	});
 
+	it('leaves a head disabled that fails closed again during its re-enable', async () => {
+		let inner: Promise<unknown> | undefined;
+		reEnable.mockImplementation(async () => {
+			markHeadFailedClosed('head-1');
+			inner = recoverAutoDisabledHead('head-1', deps);
+		});
+
+		await expect(recoverAutoDisabledHead('head-1', deps)).resolves.toBe('re-enabled');
+		await expect(inner).resolves.toBe('cooldown');
+		expect(reEnable).toHaveBeenCalledTimes(1);
+		// The second failure's mark is gone, not left for a later recovery.
+		await expect(recoverAutoDisabledHead('head-1', deps)).resolves.toBe('not-failed-closed');
+	});
+
 	it('acts once per failure when two recoveries race', async () => {
 		const results = await Promise.all([recoverAutoDisabledHead('head-1', deps), recoverAutoDisabledHead('head-1', deps)]);
 
