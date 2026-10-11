@@ -15,7 +15,7 @@
  * place.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
@@ -26,6 +26,11 @@ import { useResync } from '@/lib/hooks/useResync';
 import { setHydraHeadEnabled } from '@/lib/hooks/hydra/heads';
 import type { HydraHead } from '@/lib/hooks/hydra/types';
 
+/** When to look at the head again after a re-enable. */
+const RECHECK_AFTER_MS = [5_000, 20_000] as const;
+/** How long a disable is still read as the head undoing its own re-enable. */
+const RE_DISABLE_NOTICE_WINDOW_MS = 5 * 60_000;
+
 export function HydraHeadEnableNotice({ head }: { head: HydraHead }) {
   const { apiClient } = useAppContext();
   const resync = useResync();
@@ -35,6 +40,19 @@ export function HydraHeadEnableNotice({ head }: { head: HydraHead }) {
   // reconnects, and it can disable the head again seconds later. Without this,
   // that looks like a click that did nothing.
   const [wasReEnabled, setWasReEnabled] = useState(false);
+
+  // An Open head list does not poll, so look again shortly after a re-enable,
+  // when a head that cannot record its status disables itself. Stop claiming
+  // that link after a while: a later disable has other causes.
+  useEffect(() => {
+    if (!wasReEnabled) return;
+    const timers = [
+      setTimeout(() => void resync('hydra'), RECHECK_AFTER_MS[0]),
+      setTimeout(() => void resync('hydra'), RECHECK_AFTER_MS[1]),
+      setTimeout(() => setWasReEnabled(false), RE_DISABLE_NOTICE_WINDOW_MS),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [wasReEnabled, resync]);
 
   if (head.isEnabled !== false) return null;
 
