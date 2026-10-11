@@ -9,11 +9,15 @@
  */
 
 import { prisma } from '@masumi/payment-core/db';
+import { HydraHeadStatus } from '@/generated/prisma/client';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
 import { startHostNode, stopHostNode } from './client';
 
-export type OwnNodeRunStateOutcome = 'requested' | 'no-participant' | 'no-admin-token' | 'failed';
+export type OwnNodeRunStateOutcome = 'requested' | 'head-closing' | 'no-participant' | 'no-admin-token' | 'failed';
+
+/** Past Open the node has to contest or fan out; it must never be stopped there. */
+const NODE_REQUIRED_STATUSES: readonly HydraHeadStatus[] = [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible];
 
 /**
  * Ask the Host to run (`running: true`) or stop the local node of this head.
@@ -34,8 +38,18 @@ export async function setOwnHeadNodeRunning(
 			select: {
 				hostNodeId: true,
 				HydraHost: { select: { baseUrl: true, encryptedAdminToken: true, allowInsecureHttp: true } },
+				HydraHead: { select: { status: true, isClosing: true } },
 			},
 		});
+		const head = participant?.HydraHead;
+		if (!running && head != null && (head.isClosing || NODE_REQUIRED_STATUSES.includes(head.status))) {
+			logger.warn('[HydraOwnNode] refusing to stop the node of a closing head; it must stay up to contest', {
+				hydraHeadId,
+				status: head.status,
+				reason,
+			});
+			return 'head-closing';
+		}
 		if (!participant) {
 			logger.warn('[HydraOwnNode] head has no local participant; node run state unchanged', {
 				hydraHeadId,

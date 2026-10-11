@@ -20,10 +20,11 @@ jest.unstable_mockModule('./client', () => ({
 
 const { setOwnHeadNodeRunning } = await import('./own-node-control');
 
-function participant(encryptedAdminToken: string | null) {
+function participant(encryptedAdminToken: string | null, head = { status: 'Open', isClosing: false }) {
 	return {
 		hostNodeId: 'node-1',
 		HydraHost: { baseUrl: 'https://hydra.example.com', encryptedAdminToken, allowInsecureHttp: false },
+		HydraHead: head,
 	};
 }
 
@@ -72,5 +73,25 @@ describe('setOwnHeadNodeRunning', () => {
 		mockStop.mockRejectedValue(new Error('host unreachable'));
 
 		await expect(setOwnHeadNodeRunning('head-1', false, 'test')).resolves.toBe('failed');
+	});
+
+	// A stopped node cannot contest a stale close, and the contestation period
+	// does not wait for it.
+	it.each([
+		{ status: 'Closed', isClosing: true },
+		{ status: 'FanoutPossible', isClosing: true },
+		{ status: 'Open', isClosing: true },
+	])('never stops the node of a closing head (%o)', async (head) => {
+		mockFindUnique.mockResolvedValue(participant('enc-admin', head));
+
+		await expect(setOwnHeadNodeRunning('head-1', false, 'test')).resolves.toBe('head-closing');
+		expect(mockStop).not.toHaveBeenCalled();
+	});
+
+	it('still starts the node of a closing head', async () => {
+		mockFindUnique.mockResolvedValue(participant('enc-admin', { status: 'Closed', isClosing: true }));
+
+		await expect(setOwnHeadNodeRunning('head-1', true, 'test')).resolves.toBe('requested');
+		expect(mockStart).toHaveBeenCalledTimes(1);
 	});
 });

@@ -150,6 +150,7 @@ import {
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
 	updateHeadPatch,
+	checkHeadOnChainPost,
 } from './hydra';
 import {
 	createX402PaymentPost,
@@ -556,6 +557,8 @@ export const apiRouter: Routing = {
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
+				// A disabled head's node is stopped; this wakes it once L1 shows a close.
+				'chain-check': { post: checkHeadOnChainPost },
 				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet, delete: clearHeadErrorsDelete },
 				// What the head has done, in order — the three lifecycle hashes on the
