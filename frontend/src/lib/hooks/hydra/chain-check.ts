@@ -1,9 +1,6 @@
 /**
- * Read a disabled head's state on L1 by hand.
- *
- * The service checks every disabled head on a schedule: it stops the node while
- * the head is open on chain, and starts it once the head is closed, so it can
- * contest. This runs the same check now.
+ * Read a head's state on L1 by hand: still open, closed (contestation
+ * running), or fanned out. Read-only.
  */
 
 import { useCallback, useState } from 'react';
