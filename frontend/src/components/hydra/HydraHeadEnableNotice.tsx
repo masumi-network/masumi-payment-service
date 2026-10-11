@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { Radar, ShieldCheck } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useResync } from '@/lib/hooks/useResync';
 import { setHydraHeadEnabled } from '@/lib/hooks/hydra/heads';
+import { useHydraHeadChainCheck } from '@/lib/hooks/hydra/chain-check';
+import { describeHydraHeadChainCheck } from '@/lib/hydra-chain-check';
 import type { HydraHead } from '@/lib/hooks/hydra/types';
 
 /** When to look at the head again after a re-enable. */
@@ -40,6 +42,7 @@ export function HydraHeadEnableNotice({ head }: { head: HydraHead }) {
   // reconnects, and it can disable the head again seconds later. Without this,
   // that looks like a click that did nothing.
   const [wasReEnabled, setWasReEnabled] = useState(false);
+  const chainCheck = useHydraHeadChainCheck(head.id);
 
   // An Open head list does not poll, so look again shortly after a re-enable,
   // when a head that cannot record its status disables itself. Stop claiming
@@ -83,22 +86,51 @@ export function HydraHeadEnableNotice({ head }: { head: HydraHead }) {
       <HydraNotice
         tone="warn"
         action={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            disabled={isEnabling}
-            onClick={handleEnable}
-          >
-            {isEnabling ? <Spinner className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
-            {isEnabling ? 'Verifying' : 'Re-enable'}
-          </Button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={chainCheck.isChecking}
+              onClick={() => void chainCheck.check()}
+            >
+              {chainCheck.isChecking ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Radar className="h-4 w-4" />
+              )}
+              {chainCheck.isChecking ? 'Checking' : 'Check on chain'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isEnabling}
+              onClick={handleEnable}
+            >
+              {isEnabling ? <Spinner className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+              {isEnabling ? 'Verifying' : 'Re-enable'}
+            </Button>
+          </div>
         }
       >
-        This head is disabled, so no lifecycle action will run on it. Re-enabling checks its opening
+        This head is disabled, so no lifecycle action will run on it, and its node is stopped so the
+        counterparty cannot use it. A stopped node cannot contest a close: the service checks the
+        head on chain and starts the node when the head is closed. Re-enabling checks its opening
         transaction against the chain first, and leaves it disabled if that check does not pass.
       </HydraNotice>
+
+      {chainCheck.result && (
+        <HydraNotice tone={chainCheck.result.isOpenOnChain ? 'info' : 'error'}>
+          <span className="break-words">{describeHydraHeadChainCheck(chainCheck.result)}</span>
+        </HydraNotice>
+      )}
+
+      {chainCheck.error && (
+        <HydraNotice tone="error">
+          <span className="break-words">Chain check failed: {chainCheck.error}</span>
+        </HydraNotice>
+      )}
 
       {refusal && (
         <HydraNotice tone="error">
