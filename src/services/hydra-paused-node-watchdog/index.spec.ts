@@ -77,6 +77,23 @@ describe('convergeDisabledHeadNode', () => {
 		expect(mockSetRunning).not.toHaveBeenCalled();
 	});
 
+	// The re-enable's start can reach the Host before this stop; nothing else
+	// starts the node of an enabled head, so it must be started again here.
+	it('starts the node again when the head was re-enabled during the stop', async () => {
+		mockFindUnique
+			.mockResolvedValueOnce(HEAD)
+			.mockResolvedValueOnce({ isEnabled: false })
+			.mockResolvedValueOnce({ isEnabled: true });
+		mockObserve.mockResolvedValue({ state: 'open', latestTxHash: 'aa' });
+
+		await expect(convergeDisabledHeadNode('head-1', 'test')).resolves.toMatchObject({
+			nodeAction: 'start',
+			nodeOutcome: 'requested',
+		});
+		expect(mockSetRunning).toHaveBeenNthCalledWith(1, 'head-1', false, 'test');
+		expect(mockSetRunning).toHaveBeenNthCalledWith(2, 'head-1', true, expect.any(String));
+	});
+
 	// The node must be up to contest a stale close before the deadline.
 	it('starts the node once the head is closed on chain', async () => {
 		mockFindUnique.mockResolvedValueOnce(HEAD);

@@ -4,11 +4,12 @@ import type { CustomHydraHead } from '@/lib/hydra';
 import type { HeadStatusPersistenceHost } from './head-status-persistence';
 
 const mockFindUnique = jest.fn<(_args: unknown) => Promise<unknown>>();
+const mockFindMany = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockUpdateMany = jest.fn<(_args: unknown) => Promise<{ count: number }>>();
 const mockPersistRegressive = jest.fn<(...args: unknown[]) => Promise<string>>();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hydraHead: { findUnique: mockFindUnique, updateMany: mockUpdateMany } },
+	prisma: { hydraHead: { findUnique: mockFindUnique, findMany: mockFindMany, updateMany: mockUpdateMany } },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/db-retry', () => ({
@@ -24,8 +25,10 @@ jest.unstable_mockModule('./head-session-ops', () => ({
 }));
 
 const mockMarkHeadFailedClosed = jest.fn();
+const mockForgetHeadFailedClosed = jest.fn();
 jest.unstable_mockModule('./head-auto-disable-recovery', () => ({
 	markHeadFailedClosed: mockMarkHeadFailedClosed,
+	forgetHeadFailedClosed: mockForgetHeadFailedClosed,
 }));
 
 const { persistHeadStatus, failClosedAfterStatusPersistenceFailure, recordCloseTransaction } =
@@ -95,6 +98,19 @@ describe('persistHeadStatus under the ownership fence', () => {
 		// not quarantine the slot or durably disable the head a newer owner runs.
 		expect(persistenceHost.quarantine).not.toHaveBeenCalled();
 		expect(persistenceHost.scheduleRecovery).not.toHaveBeenCalled();
+	});
+
+	// The relation is held for explicit operator recovery; an earlier
+	// fail-closed mark must not re-enable any of its heads automatically.
+	it('drops the auto-recovery mark of every head a rollback quarantined', async () => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Final }));
+		mockPersistRegressive.mockResolvedValue('quarantined-relation-conflict');
+		mockFindMany.mockResolvedValue([{ id: 'head-1' }, { id: 'head-2' }]);
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Open });
+
+		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-1');
+		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-2');
 	});
 
 	it('treats a stale-owner rollback verdict as self-demotion, not failure', async () => {

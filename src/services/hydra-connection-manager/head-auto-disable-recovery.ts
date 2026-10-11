@@ -40,7 +40,7 @@ const defaultDeps: AutoDisableRecoveryDeps = {
 	pause: async (hydraHeadId, reason) => {
 		try {
 			const check = await convergeDisabledHeadNode(hydraHeadId, reason);
-			return check.nodeAction !== 'stop' || check.nodeOutcome === 'requested' || check.nodeOutcome === 'head-closing';
+			return check.nodeAction === null || check.nodeOutcome === 'requested' || check.nodeOutcome === 'head-closing';
 		} catch (error) {
 			logger.error('[HydraAutoRecovery] could not read the head on chain; the disabled-head watch retries', {
 				hydraHeadId,

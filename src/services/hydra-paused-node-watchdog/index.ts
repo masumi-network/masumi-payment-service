@@ -74,6 +74,14 @@ export async function convergeDisabledHeadNode(hydraHeadId: string, reason: stri
 	const head = await prisma.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { isEnabled: true } });
 	if (head?.isEnabled !== false) return { chainState, latestTxHash, nodeAction: null, nodeOutcome: null };
 	const nodeOutcome = await setOwnHeadNodeRunning(hydraHeadId, false, reason);
+	// A re-enable can land between the read above and the stop, and its start
+	// can reach the Host first. Nothing else starts the node of an enabled head,
+	// so undo the stop here.
+	const after = await prisma.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { isEnabled: true } });
+	if (after?.isEnabled === true) {
+		const restart = await setOwnHeadNodeRunning(hydraHeadId, true, 'head was re-enabled while its node was stopping');
+		return { chainState, latestTxHash, nodeAction: 'start', nodeOutcome: restart };
+	}
 	if (nodeOutcome !== 'requested' && nodeOutcome !== 'head-closing') {
 		logger.error(
 			'[HydraDisabledHeadNode] could not stop the node of a disabled head; the counterparty may still use it',

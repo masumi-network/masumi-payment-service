@@ -22,7 +22,7 @@ import { CustomHydraHead, StatusChangeData } from '@/lib/hydra';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { HYDRA_HEAD_STATUS_RANK } from './head-status-rank';
 import { persistRegressiveHeadStatus } from './head-session-ops';
-import { markHeadFailedClosed } from './head-auto-disable-recovery';
+import { forgetHeadFailedClosed, markHeadFailedClosed } from './head-auto-disable-recovery';
 
 /**
  * What the persistence pipeline needs from the session/registry it serves.
@@ -115,6 +115,24 @@ export async function persistHeadStatus(
 				}
 				if (rollbackResult !== 'ignored') {
 					host.clearQuarantineAfterReobservation(head);
+				}
+				if (rollbackResult.startsWith('quarantined')) {
+					// Every head of the relation is now held for explicit operator
+					// recovery; an earlier fail-closed mark must not undo that.
+					forgetHeadFailedClosed(hydraHeadId);
+					try {
+						const relationHeads = await prisma.hydraHead.findMany({
+							where: { hydraRelationId: current.hydraRelationId },
+							select: { id: true },
+						});
+						for (const relationHead of relationHeads) forgetHeadFailedClosed(relationHead.id);
+					} catch (error) {
+						// The quarantine is durable already; only a sibling's mark may remain.
+						logger.warn('[HydraConnectionManager] Could not clear auto-recovery marks of quarantined heads', {
+							hydraRelationId: current.hydraRelationId,
+							error: error instanceof Error ? error.message : String(error),
+						});
+					}
 				}
 				if (rollbackResult === 'persisted') {
 					logger.warn('[HydraConnectionManager] Persisted authenticated live Hydra lifecycle rollback', {

@@ -13,6 +13,7 @@ import {
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
+import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 const settledTerminalStates = [OnChainState.Withdrawn, OnChainState.RefundWithdrawn] as const;
 
@@ -207,6 +208,8 @@ async function assertHydraHeadsCleanupEligible(
 						if (disabled.count !== uniqueHeadIds.length) {
 							throw createHttpError(409, 'Hydra head cleanup eligibility changed concurrently');
 						}
+						// Disabled for deletion: automatic recovery must not re-enable them.
+						for (const headId of uniqueHeadIds) forgetHeadFailedClosed(headId);
 					}
 
 					return heads.map((head) => ({
