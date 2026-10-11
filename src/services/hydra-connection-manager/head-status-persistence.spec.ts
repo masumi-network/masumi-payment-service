@@ -33,6 +33,7 @@ jest.unstable_mockModule('./head-auto-disable-recovery', () => ({
 
 const { persistHeadStatus, failClosedAfterStatusPersistenceFailure, recordCloseTransaction } =
 	await import('./head-status-persistence');
+const { logger } = await import('@masumi/payment-core/logger');
 
 function host(): { [K in keyof HeadStatusPersistenceHost]: jest.Mock } {
 	return {
@@ -159,6 +160,25 @@ describe('persistHeadStatus under the ownership fence', () => {
 
 		expect(persistenceHost.quarantine).toHaveBeenCalledTimes(1);
 		expect(persistenceHost.scheduleRecovery).toHaveBeenCalledTimes(1);
+	});
+
+	// This miss disables the head. Without the row it was compared against, the
+	// log cannot say what moved, and the cause of the disable is lost.
+	it('logs the durable row next to the frame when the compare-and-set keeps missing', async () => {
+		mockUpdateMany.mockResolvedValue({ count: 0 });
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Closed });
+
+		expect(logger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('Head status changed concurrently'),
+			expect.objectContaining({
+				status: HydraHeadStatus.Closed,
+				sessionOwnerEpoch: '1',
+				durableIsEnabled: true,
+				durableStatus: HydraHeadStatus.Open,
+				durableOwnerEpoch: '1',
+			}),
+		);
 	});
 });
 

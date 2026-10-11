@@ -229,9 +229,23 @@ export async function persistHeadStatus(
 				return;
 			}
 		}
+		// Name what moved under the compare-and-set: this fails the head closed,
+		// and without the row it was compared against the cause is lost.
+		const observed = await prisma.hydraHead
+			.findUnique({
+				where: { id: hydraHeadId },
+				select: { isEnabled: true, status: true, headIdentifier: true, ownerEpoch: true },
+			})
+			.catch(() => null);
 		logger.warn('[HydraConnectionManager] Head status changed concurrently; observed frame retained in logs', {
 			hydraHeadId,
 			status,
+			headId,
+			sessionOwnerEpoch: ownerEpoch.toString(),
+			durableIsEnabled: observed?.isEnabled ?? null,
+			durableStatus: observed?.status ?? null,
+			durableHeadIdentifier: observed?.headIdentifier ?? null,
+			durableOwnerEpoch: observed?.ownerEpoch.toString() ?? null,
 		});
 		await failClosedAfterStatusPersistenceFailure(host, hydraHeadId, head, ownerEpoch);
 	} catch (error) {
