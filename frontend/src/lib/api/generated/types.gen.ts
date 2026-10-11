@@ -15578,6 +15578,70 @@ export type GetHydraParticipantRemoteResponses = {
 
 export type GetHydraParticipantRemoteResponse = GetHydraParticipantRemoteResponses[keyof GetHydraParticipantRemoteResponses];
 
+export type PostHydraHeadChainCheckData = {
+    body?: {
+        /**
+         * ID of the HydraHead to check
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/chain-check';
+};
+
+export type PostHydraHeadChainCheckErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head identifier not observed yet, or no independent L1 observer configured
+     */
+    409: unknown;
+    /**
+     * The head state could not be read on chain
+     */
+    502: unknown;
+    /**
+     * Independent L1 evidence not yet available
+     */
+    503: unknown;
+};
+
+export type PostHydraHeadChainCheckResponses = {
+    /**
+     * Head state on chain
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Head state after its newest state-token transaction; gone means fanned out
+             */
+            chainState: 'open' | 'closed' | 'gone';
+            /**
+             * Newest transaction that moved the head state token
+             */
+            latestTxHash: string;
+            /**
+             * What was asked of the node; null when nothing was (head enabled, or gone)
+             */
+            nodeAction: 'stop' | 'start' | null;
+            /**
+             * Outcome of the node request; null when no request was sent
+             */
+            nodeOutcome: 'requested' | 'head-closing' | 'no-participant' | 'no-admin-token' | 'failed' | null;
+        };
+    };
+};
+
+export type PostHydraHeadChainCheckResponse = PostHydraHeadChainCheckResponses[keyof PostHydraHeadChainCheckResponses];
+
 export type GetRailReadinessData = {
     body?: never;
     path?: never;
