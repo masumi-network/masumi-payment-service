@@ -335,6 +335,19 @@ export async function startHostNode(
 	await request(baseUrl, `/v1/nodes/${nodeId}/start`, adminToken, transport, { method: 'POST' });
 }
 
+/**
+ * Ask the Host's supervisor to stop this node and keep its data. Idempotent.
+ * The Host drains an in-flight snapshot round before it stops the process.
+ */
+export async function stopHostNode(
+	baseUrl: string,
+	adminToken: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): Promise<void> {
+	await request(baseUrl, `/v1/nodes/${nodeId}/stop`, adminToken, transport, { method: 'POST' });
+}
+
 export async function removeHostNode(
 	baseUrl: string,
 	adminToken: string,

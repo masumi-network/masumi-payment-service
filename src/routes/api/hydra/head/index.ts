@@ -37,6 +37,7 @@ import { toPrismaJsonValue } from '@/utils/json-value';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { decrypt } from '@/utils/security/encryption';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
+import { setOwnHeadNodeRunning } from '@/services/hydra-host/own-node-control';
 
 // --- Shared schemas ---
 
@@ -580,6 +581,14 @@ export async function updateHydraHeadEnabledState(
 ): Promise<HydraHeadRecord> {
 	const existing = await prisma.hydraHead.findUnique({ where: { id } });
 	if (!existing) throw createHttpError(404, 'Hydra head not found');
+	if (isEnabled && existing.isEnabled) {
+		// Already enabled: its InitTx binding still stands. Re-proving it would
+		// mean disabling first, which drops the live session and the counterparty
+		// with it. Nothing to do.
+		const current = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
+		if (!current) throw createHttpError(404, 'Hydra head not found');
+		return current;
+	}
 
 	const manager = getHydraConnectionManager();
 	const quarantined = await prisma.hydraHead.update({
@@ -594,7 +603,12 @@ export async function updateHydraHeadEnabledState(
 		include: headInclude,
 	});
 	await manager.reconcileEnabledState(id);
-	if (!isEnabled) return quarantined;
+	if (!isEnabled) {
+		// Stop the node too, or it keeps co-signing and the counterparty keeps
+		// locking funds in a head this side no longer observes.
+		await setOwnHeadNodeRunning(id, false, 'operator disabled the head');
+		return quarantined;
+	}
 
 	const preInitStatuses = new Set<HydraHeadStatus>([
 		HydraHeadStatus.Disconnected,
@@ -642,6 +656,8 @@ export async function updateHydraHeadEnabledState(
 		throw createHttpError(409, 'Hydra head configuration or enable state changed during verification');
 	}
 
+	// Start is idempotent on the Host: a node that already runs is not restarted.
+	await setOwnHeadNodeRunning(id, true, 'head re-enabled');
 	await manager.reconcileEnabledState(id);
 	const head = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
 	if (!head) throw createHttpError(404, 'Hydra head not found');
