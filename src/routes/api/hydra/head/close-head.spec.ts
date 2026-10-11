@@ -20,8 +20,6 @@ const mockCreateHeadError = jest.fn() as AnyMock;
 const mockClose = jest.fn() as AnyMock;
 const mockFlushHeadStatus = jest.fn() as AnyMock;
 const mockReconcileEnabledState = jest.fn() as AnyMock;
-const mockSetOwnHeadNodeRunning = jest.fn() as AnyMock;
-const mockConvergeDisabledHeadNode = jest.fn() as AnyMock;
 
 const transactionClient = {
 	$queryRaw: mockQueryRaw,
@@ -62,14 +60,6 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 		flushHeadStatus: mockFlushHeadStatus,
 		reconcileEnabledState: mockReconcileEnabledState,
 	}),
-}));
-
-jest.unstable_mockModule('@/services/hydra-host/own-node-control', () => ({
-	setOwnHeadNodeRunning: mockSetOwnHeadNodeRunning,
-}));
-
-jest.unstable_mockModule('@/services/hydra-paused-node-watchdog', () => ({
-	convergeDisabledHeadNode: mockConvergeDisabledHeadNode,
 }));
 
 // Close and fanout live in the settlement module; enable/list stay in the route
@@ -270,10 +260,6 @@ describe('Hydra head state convergence', () => {
 		);
 		expect(mockReleaseClose).not.toHaveBeenCalled();
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
-		// The node stops too (after an L1 check), so the counterparty stops
-		// locking in an unobserved head.
-		expect(mockConvergeDisabledHeadNode).toHaveBeenCalledWith('head-1', expect.any(String));
-		expect(mockSetOwnHeadNodeRunning).not.toHaveBeenCalled();
 	});
 
 	// Re-proving an enabled head meant disabling it first, which dropped the
@@ -287,8 +273,6 @@ describe('Hydra head state convergence', () => {
 		expect(mockUpdateHead).not.toHaveBeenCalled();
 		expect(mockReleaseClose).not.toHaveBeenCalled();
 		expect(mockReconcileEnabledState).not.toHaveBeenCalled();
-		// Only an idempotent start: a recovery race can leave an enabled head with a stopped node.
-		expect(mockSetOwnHeadNodeRunning).toHaveBeenCalledWith('head-1', true, expect.any(String));
 	});
 
 	it('freshly verifies an established head before re-enabling and reconnecting it', async () => {
@@ -336,8 +320,6 @@ describe('Hydra head state convergence', () => {
 			data: { isEnabled: true, initTxHash: 'c'.repeat(64) },
 		});
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(2);
-		// Start is idempotent on the Host, so a running node is not restarted.
-		expect(mockSetOwnHeadNodeRunning).toHaveBeenCalledWith('head-1', true, expect.any(String));
 	});
 
 	it('leaves an established head disabled when fresh L1 evidence is still unavailable', async () => {

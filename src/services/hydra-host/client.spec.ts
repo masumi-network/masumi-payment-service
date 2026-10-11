@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { logger } from '@masumi/payment-core/logger';
-import { fetchHostCapabilities, provisionNodeOnHost, startHostNode, stopHostNode } from './client';
+import { fetchHostCapabilities, provisionNodeOnHost } from './client';
 
 const originalFetch = global.fetch;
 
@@ -120,24 +120,5 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 		);
 
 		expect(warn).not.toHaveBeenCalled();
-	});
-});
-
-describe('node run-state requests', () => {
-	it.each([
-		['stop', stopHostNode],
-		['start', startHostNode],
-	] as const)('POSTs %s for the node with the admin token', async (action, call) => {
-		const fetchMock = jest
-			.fn<(url: string, init?: RequestInit) => Promise<Response>>()
-			.mockResolvedValue(new Response(null, { status: 202 }));
-		global.fetch = fetchMock as unknown as typeof fetch;
-
-		await call('https://hydra.example.com', 'admin-token', 'node-1', { allowInsecureHttp: false });
-
-		expect(fetchMock).toHaveBeenCalledTimes(1);
-		const [url, init] = fetchMock.mock.calls[0]!;
-		expect(url).toBe(`https://hydra.example.com/v1/nodes/node-1/${action}`);
-		expect(init?.method).toBe('POST');
 	});
 });

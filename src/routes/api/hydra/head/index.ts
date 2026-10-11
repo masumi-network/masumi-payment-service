@@ -37,9 +37,6 @@ import { toPrismaJsonValue } from '@/utils/json-value';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { decrypt } from '@/utils/security/encryption';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
-import { setOwnHeadNodeRunning } from '@/services/hydra-host/own-node-control';
-import { convergeDisabledHeadNode } from '@/services/hydra-paused-node-watchdog';
-import { logger } from '@masumi/payment-core/logger';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 // --- Shared schemas ---
@@ -587,9 +584,7 @@ export async function updateHydraHeadEnabledState(
 	if (isEnabled && existing.isEnabled) {
 		// Already enabled: its InitTx binding still stands. Re-proving it would
 		// mean disabling first, which drops the live session and the counterparty
-		// with it. Only make sure the node runs: a recovery race can leave an
-		// enabled head with a stopped node, and start is idempotent on the Host.
-		await setOwnHeadNodeRunning(id, true, 'enable requested for an enabled head');
+		// with it.
 		const current = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
 		if (!current) throw createHttpError(404, 'Hydra head not found');
 		return current;
@@ -609,19 +604,8 @@ export async function updateHydraHeadEnabledState(
 	});
 	await manager.reconcileEnabledState(id);
 	if (!isEnabled) {
+		// The operator's decision now: automatic recovery must not undo it.
 		forgetHeadFailedClosed(id);
-		// Stop the node too, or it keeps co-signing and the counterparty keeps
-		// locking funds in a head this side no longer observes. The stop is
-		// checked against L1 first; when the chain cannot be read now, the
-		// disabled-head watch retries.
-		try {
-			await convergeDisabledHeadNode(id, 'operator disabled the head');
-		} catch (error) {
-			logger.warn('[HydraHead] could not check the disabled head on chain; its node is not stopped yet', {
-				hydraHeadId: id,
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
 		return quarantined;
 	}
 
@@ -671,8 +655,6 @@ export async function updateHydraHeadEnabledState(
 		throw createHttpError(409, 'Hydra head configuration or enable state changed during verification');
 	}
 
-	// Start is idempotent on the Host: a node that already runs is not restarted.
-	await setOwnHeadNodeRunning(id, true, 'head re-enabled');
 	await manager.reconcileEnabledState(id);
 	const head = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
 	if (!head) throw createHttpError(404, 'Hydra head not found');

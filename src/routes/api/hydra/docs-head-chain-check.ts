@@ -10,9 +10,9 @@ export function registerHydraHeadChainCheckPath({ registry, apiKeyAuth }: Swagge
 	registry.registerPath({
 		method: 'post',
 		path: '/hydra/head/chain-check',
-		summary: 'Check a Hydra head on L1 and set its node to match. (admin access required)',
+		summary: 'Read a Hydra head state on L1. (admin access required)',
 		description:
-			"Reads the newest transaction that moved the head's state token. When a disabled head is still Open on chain, asks the Host to stop this side's node, so the counterparty stops using the head. When the head is Closed on chain, asks the Host to start the node, so it can contest. A fanned-out head needs nothing.",
+			"Reads the newest transaction that moved the head's state token, through the payment source's independent L1 observer. Returns whether the head is still open, closed (contestation running), or fanned out. Read-only.",
 		tags: TAG,
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: { body: jsonBody(checkHeadOnChainInput, { id: 'cuid_v2_auto_generated' }) },
@@ -20,8 +20,6 @@ export function registerHydraHeadChainCheckPath({ registry, apiKeyAuth }: Swagge
 			200: successResponse('Head state on chain', checkHeadOnChainOutput, {
 				chainState: 'open',
 				latestTxHash: 'cd'.repeat(32),
-				nodeAction: 'stop',
-				nodeOutcome: 'requested',
 			}),
 			401: { description: 'Unauthorized' },
 			404: { description: 'Hydra head not found' },

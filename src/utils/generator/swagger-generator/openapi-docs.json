@@ -36994,8 +36994,8 @@
         },
         "/hydra/head/chain-check": {
             "post": {
-                "summary": "Check a Hydra head on L1 and set its node to match. (admin access required)",
-                "description": "Reads the newest transaction that moved the head's state token. When a disabled head is still Open on chain, asks the Host to stop this side's node, so the counterparty stops using the head. When the head is Closed on chain, asks the Host to start the node, so it can contest. A fanned-out head needs nothing.",
+                "summary": "Read a Hydra head state on L1. (admin access required)",
+                "description": "Reads the newest transaction that moved the head's state token, through the payment source's independent L1 observer. Returns whether the head is still open, closed (contestation running), or fanned out. Read-only.",
                 "tags": [
                     "hydra"
                 ],
@@ -37055,36 +37055,11 @@
                                                 "latestTxHash": {
                                                     "type": "string",
                                                     "description": "Newest transaction that moved the head state token"
-                                                },
-                                                "nodeAction": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "enum": [
-                                                        "stop",
-                                                        "start",
-                                                        null
-                                                    ],
-                                                    "description": "What was asked of the node; null when nothing was (head enabled, or gone)"
-                                                },
-                                                "nodeOutcome": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "enum": [
-                                                        "requested",
-                                                        "head-closing",
-                                                        "no-participant",
-                                                        "no-admin-token",
-                                                        "failed",
-                                                        null
-                                                    ],
-                                                    "description": "Outcome of the node request; null when no request was sent"
                                                 }
                                             },
                                             "required": [
                                                 "chainState",
-                                                "latestTxHash",
-                                                "nodeAction",
-                                                "nodeOutcome"
+                                                "latestTxHash"
                                             ]
                                         }
                                     },
@@ -37096,9 +37071,7 @@
                                         "status": "success",
                                         "data": {
                                             "chainState": "open",
-                                            "latestTxHash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
-                                            "nodeAction": "stop",
-                                            "nodeOutcome": "requested"
+                                            "latestTxHash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
                                         }
                                     }
                                 }
