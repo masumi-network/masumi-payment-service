@@ -104,7 +104,10 @@ describe('recoverAutoDisabledHead', () => {
 	});
 
 	it('acts once per failure when two recoveries race', async () => {
-		const results = await Promise.all([recoverAutoDisabledHead('head-1', deps), recoverAutoDisabledHead('head-1', deps)]);
+		const results = await Promise.all([
+			recoverAutoDisabledHead('head-1', deps),
+			recoverAutoDisabledHead('head-1', deps),
+		]);
 
 		expect(results.sort()).toEqual(['not-failed-closed', 're-enabled']);
 		expect(reEnable).toHaveBeenCalledTimes(1);
