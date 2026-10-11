@@ -38,6 +38,8 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { decrypt } from '@/utils/security/encryption';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { setOwnHeadNodeRunning } from '@/services/hydra-host/own-node-control';
+import { convergeDisabledHeadNode } from '@/services/hydra-paused-node-watchdog';
+import { logger } from '@masumi/payment-core/logger';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 // --- Shared schemas ---
@@ -609,8 +611,17 @@ export async function updateHydraHeadEnabledState(
 	if (!isEnabled) {
 		forgetHeadFailedClosed(id);
 		// Stop the node too, or it keeps co-signing and the counterparty keeps
-		// locking funds in a head this side no longer observes.
-		await setOwnHeadNodeRunning(id, false, 'operator disabled the head');
+		// locking funds in a head this side no longer observes. The stop is
+		// checked against L1 first; when the chain cannot be read now, the
+		// disabled-head watch retries.
+		try {
+			await convergeDisabledHeadNode(id, 'operator disabled the head');
+		} catch (error) {
+			logger.warn('[HydraHead] could not check the disabled head on chain; its node is not stopped yet', {
+				hydraHeadId: id,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 		return quarantined;
 	}
 

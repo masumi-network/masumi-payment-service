@@ -21,6 +21,7 @@ const mockClose = jest.fn() as AnyMock;
 const mockFlushHeadStatus = jest.fn() as AnyMock;
 const mockReconcileEnabledState = jest.fn() as AnyMock;
 const mockSetOwnHeadNodeRunning = jest.fn() as AnyMock;
+const mockConvergeDisabledHeadNode = jest.fn() as AnyMock;
 
 const transactionClient = {
 	$queryRaw: mockQueryRaw,
@@ -65,6 +66,10 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 
 jest.unstable_mockModule('@/services/hydra-host/own-node-control', () => ({
 	setOwnHeadNodeRunning: mockSetOwnHeadNodeRunning,
+}));
+
+jest.unstable_mockModule('@/services/hydra-paused-node-watchdog', () => ({
+	convergeDisabledHeadNode: mockConvergeDisabledHeadNode,
 }));
 
 // Close and fanout live in the settlement module; enable/list stay in the route
@@ -265,8 +270,10 @@ describe('Hydra head state convergence', () => {
 		);
 		expect(mockReleaseClose).not.toHaveBeenCalled();
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
-		// The node stops too, so the counterparty stops locking in an unobserved head.
-		expect(mockSetOwnHeadNodeRunning).toHaveBeenCalledWith('head-1', false, expect.any(String));
+		// The node stops too (after an L1 check), so the counterparty stops
+		// locking in an unobserved head.
+		expect(mockConvergeDisabledHeadNode).toHaveBeenCalledWith('head-1', expect.any(String));
+		expect(mockSetOwnHeadNodeRunning).not.toHaveBeenCalled();
 	});
 
 	// Re-proving an enabled head meant disabling it first, which dropped the

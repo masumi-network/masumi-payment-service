@@ -11,16 +11,22 @@
 
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { setOwnHeadNodeRunning } from '@/services/hydra-host/own-node-control';
+import { convergeDisabledHeadNode } from '@/services/hydra-paused-node-watchdog';
 
 /** A head that fails closed again within this window after an automatic re-enable is paused, not retried. */
 export const HYDRA_AUTO_RECOVERY_COOLDOWN_MS = 15 * 60 * 1000;
 
-export type AutoDisableRecoveryOutcome = 'not-failed-closed' | 'still-enabled' | 're-enabled' | 'paused';
+export type AutoDisableRecoveryOutcome =
+	| 'not-failed-closed'
+	| 'still-enabled'
+	| 're-enabled'
+	| 'paused'
+	| 'pause-failed';
 
 export interface AutoDisableRecoveryDeps {
 	reEnable: (hydraHeadId: string) => Promise<void>;
-	pause: (hydraHeadId: string, reason: string) => Promise<unknown>;
+	/** Resolves true once the node is where the chain wants it (stopped while open). */
+	pause: (hydraHeadId: string, reason: string) => Promise<boolean>;
 	now: () => number;
 }
 
@@ -31,7 +37,18 @@ const defaultDeps: AutoDisableRecoveryDeps = {
 		const { updateHydraHeadEnabledState } = await import('@/routes/api/hydra/head');
 		await updateHydraHeadEnabledState(hydraHeadId, true);
 	},
-	pause: async (hydraHeadId, reason) => await setOwnHeadNodeRunning(hydraHeadId, false, reason),
+	pause: async (hydraHeadId, reason) => {
+		try {
+			const check = await convergeDisabledHeadNode(hydraHeadId, reason);
+			return check.nodeAction !== 'stop' || check.nodeOutcome === 'requested' || check.nodeOutcome === 'head-closing';
+		} catch (error) {
+			logger.error('[HydraAutoRecovery] could not read the head on chain; the disabled-head watch retries', {
+				hydraHeadId,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			return false;
+		}
+	},
 	now: () => Date.now(),
 };
 
@@ -65,8 +82,7 @@ async function pauseIfStillDisabled(
 ): Promise<AutoDisableRecoveryOutcome> {
 	if ((await isHeadEnabled(hydraHeadId)) !== false) return 'still-enabled';
 	logger.error(`[HydraAutoRecovery] ${reason}; pausing the node`, { hydraHeadId });
-	await deps.pause(hydraHeadId, reason);
-	return 'paused';
+	return (await deps.pause(hydraHeadId, reason)) ? 'paused' : 'pause-failed';
 }
 
 export async function recoverOrPauseAutoDisabledHead(

@@ -23,7 +23,10 @@ import { pollHydraRedemptions, reapExpiredInvites } from '@/services/hydra-invit
 import { releaseAbandonedReservations } from '@/services/hydra-invite/release-reservation';
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
-import { watchDisabledHeadsOnChain } from '@/services/hydra-paused-node-watchdog';
+import {
+	HYDRA_DISABLED_HEAD_WATCH_INTERVAL_MS,
+	watchDisabledHeadsOnChain,
+} from '@/services/hydra-paused-node-watchdog';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { reconcileRecoveredHydraTopups } from '@/services/hydra-topup-reconciliation/recovered';
 import {
@@ -143,12 +146,12 @@ export const scheduledJobs: JobDefinition[] = [
 	},
 	{
 		initialDelayMs: 18000,
-		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		intervalMs: HYDRA_DISABLED_HEAD_WATCH_INTERVAL_MS,
 		startMessage: 'Starting Hydra disabled-head chain watch',
 		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra disabled-head chain watch',
-		// A disabled head's node is stopped, and a stopped node cannot contest.
-		// This reads the head on L1 and wakes the node once it is closed there.
+		// A disabled head's node must be stopped while the head is open, and
+		// running once it is closed so it can contest. This reads the head on L1.
 		run: async () => {
 			await watchDisabledHeadsOnChain();
 		},

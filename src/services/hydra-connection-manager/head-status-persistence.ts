@@ -232,32 +232,33 @@ export async function failClosedAfterStatusPersistenceFailure(
 	// disconnect's flush of that same queue.
 	host.quarantine(failedHead);
 	try {
-		// Read first: only a head this write takes from enabled to disabled is
-		// ours to re-enable automatically later.
-		const before = await prisma.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { isEnabled: true } });
-		const disabled = await retryOnSerializationConflict(
-			async () =>
-				await prisma.hydraHead.updateMany({
-					// Fenced: a stale session must never durably disable a head a newer
-					// session owns. Its local quarantine and teardown are enough.
-					where: { id: hydraHeadId, ownerEpoch },
-					data: {
-						isEnabled: false,
-						initTxHash: null,
-						initChainSlot: null,
-						initChainHash: null,
-						reconciliationCompletedAt: null,
-					},
-				}),
-			{ label: 'hydra-status-persistence-fail-closed' },
-		);
-		if (disabled.count === 0) {
+		const failClosed = async (onlyIfEnabled: boolean) =>
+			await retryOnSerializationConflict(
+				async () =>
+					await prisma.hydraHead.updateMany({
+						// Fenced: a stale session must never durably disable a head a newer
+						// session owns. Its local quarantine and teardown are enough.
+						where: { id: hydraHeadId, ownerEpoch, ...(onlyIfEnabled ? { isEnabled: true } : {}) },
+						data: {
+							isEnabled: false,
+							initTxHash: null,
+							initChainSlot: null,
+							initChainHash: null,
+							reconciliationCompletedAt: null,
+						},
+					}),
+				{ label: 'hydra-status-persistence-fail-closed' },
+			);
+		// Only a head this write takes from enabled to disabled is ours to
+		// re-enable automatically later. The first write decides that atomically;
+		// the second still clears init evidence on a head already disabled.
+		if ((await failClosed(true)).count > 0) {
+			markHeadFailedClosed(hydraHeadId);
+		} else if ((await failClosed(false)).count === 0) {
 			logger.warn('[HydraConnectionManager] Skipped durable quarantine: head row gone or owned by a newer session', {
 				hydraHeadId,
 				sessionOwnerEpoch: ownerEpoch.toString(),
 			});
-		} else if (before?.isEnabled === true) {
-			markHeadFailedClosed(hydraHeadId);
 		}
 	} catch (quarantineError) {
 		logger.error('[HydraConnectionManager] Failed to durably quarantine head after status persistence error', {

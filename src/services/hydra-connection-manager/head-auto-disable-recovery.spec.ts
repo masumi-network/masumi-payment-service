@@ -8,8 +8,8 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
-jest.unstable_mockModule('@/services/hydra-host/own-node-control', () => ({
-	setOwnHeadNodeRunning: jest.fn(),
+jest.unstable_mockModule('@/services/hydra-paused-node-watchdog', () => ({
+	convergeDisabledHeadNode: jest.fn(),
 }));
 
 const {
@@ -23,7 +23,7 @@ const {
 
 let clock = 0;
 const reEnable = jest.fn<(hydraHeadId: string) => Promise<void>>();
-const pause = jest.fn<(hydraHeadId: string, reason: string) => Promise<unknown>>();
+const pause = jest.fn<(hydraHeadId: string, reason: string) => Promise<boolean>>();
 const deps = { reEnable, pause, now: () => clock };
 
 beforeEach(() => {
@@ -31,7 +31,7 @@ beforeEach(() => {
 	resetAutoDisableRecoveryState();
 	clock = 1_000_000;
 	reEnable.mockResolvedValue(undefined);
-	pause.mockResolvedValue('requested');
+	pause.mockResolvedValue(true);
 	mockFindUnique.mockResolvedValue({ isEnabled: false });
 	markHeadFailedClosed('head-1');
 });
@@ -58,6 +58,14 @@ describe('recoverOrPauseAutoDisabledHead', () => {
 
 		await expect(recoverOrPauseAutoDisabledHead('head-1', deps)).resolves.toBe('paused');
 		expect(pause).toHaveBeenCalledWith('head-1', expect.any(String));
+	});
+
+	// The operator must not be told the node is stopped when it is not.
+	it('reports a pause that did not stop the node', async () => {
+		reEnable.mockRejectedValue(new Error('L1 verification failed'));
+		pause.mockResolvedValue(false);
+
+		await expect(recoverOrPauseAutoDisabledHead('head-1', deps)).resolves.toBe('pause-failed');
 	});
 
 	it('pauses instead of looping when the head fails closed again soon after', async () => {

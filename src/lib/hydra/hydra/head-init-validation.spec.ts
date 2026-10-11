@@ -419,7 +419,7 @@ describe('observeHydraHeadIsOpenOnChain', () => {
 		const chain = observer();
 
 		await expect(observeHydraHeadIsOpenOnChain({ observer: chain, headId: HEAD_ID })).resolves.toEqual({
-			isOpen: true,
+			state: 'open',
 			latestTxHash: INIT_TX_HASH,
 		});
 		expect(chain.assetsTransactions).toHaveBeenCalledWith(STATE_TOKEN, { page: 1, order: 'desc', count: 1 });
@@ -430,16 +430,16 @@ describe('observeHydraHeadIsOpenOnChain', () => {
 		const closed = constructor(1, [constructor(0, [PlutusData.new_bytes(Buffer.from(HEAD_ID, 'hex'))])]).to_hex();
 
 		await expect(observeHydraHeadIsOpenOnChain({ observer: observer(closed), headId: HEAD_ID })).resolves.toEqual({
-			isOpen: false,
+			state: 'closed',
 			latestTxHash: INIT_TX_HASH,
 		});
 	});
 
-	it('reports a head whose state token left the head script as not open', async () => {
+	it('reports a head whose state token left the head script as gone', async () => {
 		const chain = observer(openDatum(), headAddressForScriptHash('77'.repeat(28)));
 
 		await expect(observeHydraHeadIsOpenOnChain({ observer: chain, headId: HEAD_ID })).resolves.toMatchObject({
-			isOpen: false,
+			state: 'gone',
 		});
 	});
 

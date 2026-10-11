@@ -133,7 +133,7 @@ describe('failClosedAfterStatusPersistenceFailure under the ownership fence', ()
 		await failClosedAfterStatusPersistenceFailure(persistenceHost, 'head-1', fakeHead(), 3n);
 
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', ownerEpoch: 3n },
+			where: { id: 'head-1', ownerEpoch: 3n, isEnabled: true },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -145,17 +145,22 @@ describe('failClosedAfterStatusPersistenceFailure under the ownership fence', ()
 	});
 
 	it('marks the head for automatic recovery only when this write disabled it', async () => {
+		mockUpdateMany.mockResolvedValue({ count: 1 });
 		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
 		expect(mockMarkHeadFailedClosed).toHaveBeenCalledWith('head-1');
 
 		mockMarkHeadFailedClosed.mockClear();
-		// Already disabled (an operator or a rollback quarantine did it): not ours to undo.
-		mockFindUnique.mockResolvedValue(durableRow({ isEnabled: false }));
+		mockUpdateMany.mockClear();
+		// Already disabled (an operator or a rollback quarantine did it): not ours
+		// to undo. Init evidence is still cleared.
+		mockUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
 		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
 		expect(mockMarkHeadFailedClosed).not.toHaveBeenCalled();
+		expect(mockUpdateMany).toHaveBeenLastCalledWith(
+			expect.objectContaining({ where: { id: 'head-1', ownerEpoch: 1n } }),
+		);
 
 		// Fenced out by a newer owner: not ours either.
-		mockFindUnique.mockResolvedValue(durableRow());
 		mockUpdateMany.mockResolvedValue({ count: 0 });
 		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
 		expect(mockMarkHeadFailedClosed).not.toHaveBeenCalled();

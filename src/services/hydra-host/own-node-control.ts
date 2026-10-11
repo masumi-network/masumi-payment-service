@@ -72,7 +72,7 @@ export async function setOwnHeadNodeRunning(
 		await call(host.baseUrl, decrypt(host.encryptedAdminToken), participant.hostNodeId, {
 			allowInsecureHttp: host.allowInsecureHttp,
 		});
-		logger.warn(`[HydraOwnNode] requested node ${action}`, {
+		logger.info(`[HydraOwnNode] requested node ${action}`, {
 			hydraHeadId,
 			hostNodeId: participant.hostNodeId,
 			reason,

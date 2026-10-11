@@ -88,6 +88,9 @@ async function withObserverTimeout<T>(promise: Promise<T>, timeoutMs: number): P
 	}
 }
 
+/** `gone`: the state token was burnt (fanout) or left the head script; nothing is left to contest. */
+export type HydraHeadChainState = 'open' | 'closed' | 'gone';
+
 /**
  * Whether the head is still Open on L1, read from the newest transaction that
  * moved its state token. Increments and decrements keep it Open; a Close, a
@@ -99,7 +102,7 @@ export async function observeHydraHeadIsOpenOnChain(options: {
 	headId: string;
 	headScriptHash?: string;
 	observerTimeoutMs?: number;
-}): Promise<{ isOpen: boolean; latestTxHash: string }> {
+}): Promise<{ state: HydraHeadChainState; latestTxHash: string }> {
 	const headId = normalizeHex(options.headId, 56, 'Hydra head id');
 	const acceptedHeadScriptHashes = knownHydraHeadScriptHashes(options.headScriptHash);
 	const stateToken = `${headId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
@@ -133,14 +136,16 @@ export async function observeHydraHeadIsOpenOnChain(options: {
 			output.amount.some(({ unit, quantity }) => unit.toLowerCase() === stateToken && quantity === '1'),
 	);
 	// No head output: the state token was burnt (fanout) or left the script.
-	if (!headOutput?.inline_datum) return { isOpen: false, latestTxHash };
-	let datum: PlutusData;
+	if (!headOutput) return { state: 'gone', latestTxHash };
+	let datum: PlutusData | null = null;
 	try {
-		datum = PlutusData.from_hex(headOutput.inline_datum);
+		datum = headOutput.inline_datum ? PlutusData.from_hex(headOutput.inline_datum) : null;
 	} catch {
-		return { isOpen: false, latestTxHash };
+		datum = null;
 	}
-	return { isOpen: isOpenStateDatum(datum), latestTxHash };
+	// Anything at the head script that is not a readable Open datum counts as
+	// closed: the node must then be up, and a wrong guess only costs a start.
+	return { state: datum != null && isOpenStateDatum(datum) ? 'open' : 'closed', latestTxHash };
 }
 
 /** `Open OpenDatum` is constructor 0 with one field, itself constructor 0 (see `validateOpenDatum`). */

@@ -36994,8 +36994,8 @@
         },
         "/hydra/head/chain-check": {
             "post": {
-                "summary": "Check a Hydra head on L1 and wake its node if the head is closed. (admin access required)",
-                "description": "Reads the newest transaction that moved the head's state token. When the head is no longer Open on chain, asks the Host to start this side's node so it can contest. Disabling a head stops its node, and a stopped node cannot contest.",
+                "summary": "Check a Hydra head on L1 and set its node to match. (admin access required)",
+                "description": "Reads the newest transaction that moved the head's state token. When a disabled head is still Open on chain, asks the Host to stop this side's node, so the counterparty stops using the head. When the head is Closed on chain, asks the Host to start the node, so it can contest. A fanned-out head needs nothing.",
                 "tags": [
                     "hydra"
                 ],
@@ -37043,15 +37043,30 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "isOpenOnChain": {
-                                                    "type": "boolean",
-                                                    "description": "Whether the newest state-token transaction leaves the head Open"
+                                                "chainState": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "open",
+                                                        "closed",
+                                                        "gone"
+                                                    ],
+                                                    "description": "Head state after its newest state-token transaction; gone means fanned out"
                                                 },
                                                 "latestTxHash": {
                                                     "type": "string",
                                                     "description": "Newest transaction that moved the head state token"
                                                 },
-                                                "nodeStart": {
+                                                "nodeAction": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "stop",
+                                                        "start",
+                                                        null
+                                                    ],
+                                                    "description": "What was asked of the node; null when nothing was (head enabled, or gone)"
+                                                },
+                                                "nodeOutcome": {
                                                     "type": "string",
                                                     "nullable": true,
                                                     "enum": [
@@ -37062,13 +37077,14 @@
                                                         "failed",
                                                         null
                                                     ],
-                                                    "description": "Outcome of starting the node, when the head is no longer open; null otherwise"
+                                                    "description": "Outcome of the node request; null when no request was sent"
                                                 }
                                             },
                                             "required": [
-                                                "isOpenOnChain",
+                                                "chainState",
                                                 "latestTxHash",
-                                                "nodeStart"
+                                                "nodeAction",
+                                                "nodeOutcome"
                                             ]
                                         }
                                     },
@@ -37079,9 +37095,10 @@
                                     "example": {
                                         "status": "success",
                                         "data": {
-                                            "isOpenOnChain": true,
+                                            "chainState": "open",
                                             "latestTxHash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
-                                            "nodeStart": null
+                                            "nodeAction": "stop",
+                                            "nodeOutcome": "requested"
                                         }
                                     }
                                 }
@@ -37093,6 +37110,9 @@
                     },
                     "404": {
                         "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Head identifier not observed yet, or no independent L1 observer configured"
                     },
                     "502": {
                         "description": "The head state could not be read on chain"
