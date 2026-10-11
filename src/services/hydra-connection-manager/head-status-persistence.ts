@@ -116,9 +116,12 @@ export async function persistHeadStatus(
 				if (rollbackResult !== 'ignored') {
 					host.clearQuarantineAfterReobservation(head);
 				}
-				if (rollbackResult.startsWith('quarantined')) {
-					// Every head of the relation is now held for explicit operator
-					// recovery; an earlier fail-closed mark must not undo that.
+				const rolledBackPastOpen =
+					rollbackResult === 'persisted' &&
+					HYDRA_HEAD_STATUS_RANK[status] < HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Open];
+				if (rollbackResult.startsWith('quarantined') || rolledBackPastOpen) {
+					// The head (or every head of the relation) is now held for explicit
+					// operator recovery; an earlier fail-closed mark must not undo that.
 					forgetHeadFailedClosed(hydraHeadId);
 					try {
 						const relationHeads = await prisma.hydraHead.findMany({

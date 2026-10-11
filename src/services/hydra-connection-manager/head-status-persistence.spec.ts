@@ -113,6 +113,25 @@ describe('persistHeadStatus under the ownership fence', () => {
 		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-2');
 	});
 
+	it('drops the auto-recovery mark when a rollback below Open disabled the head', async () => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Open }));
+		mockPersistRegressive.mockResolvedValue('persisted');
+		mockFindMany.mockResolvedValue([{ id: 'head-1' }]);
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Initializing });
+
+		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-1');
+	});
+
+	it('keeps the mark for a rollback that leaves the head open', async () => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Closed }));
+		mockPersistRegressive.mockResolvedValue('persisted');
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Open });
+
+		expect(mockForgetHeadFailedClosed).not.toHaveBeenCalled();
+	});
+
 	it('treats a stale-owner rollback verdict as self-demotion, not failure', async () => {
 		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Final }));
 		mockPersistRegressive.mockResolvedValue('stale-owner');
