@@ -25,7 +25,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useResync } from '@/lib/hooks/useResync';
 import { setHydraHeadEnabled } from '@/lib/hooks/hydra/heads';
 import { useHydraHeadChainCheck } from '@/lib/hooks/hydra/chain-check';
-import { describeHydraHeadChainCheck } from '@/lib/hydra-chain-check';
+import { describeHydraHeadChainCheck, needsOperatorAction } from '@/lib/hydra-chain-check';
 import type { HydraHead } from '@/lib/hooks/hydra/types';
 
 /** When to look at the head again after a re-enable. */
@@ -114,14 +114,15 @@ export function HydraHeadEnableNotice({ head }: { head: HydraHead }) {
           </div>
         }
       >
-        This head is disabled, so no lifecycle action will run on it, and its node is stopped so the
-        counterparty cannot use it. A stopped node cannot contest a close: the service checks the
-        head on chain and starts the node when the head is closed. Re-enabling checks its opening
-        transaction against the chain first, and leaves it disabled if that check does not pass.
+        This head is disabled, so no lifecycle action will run on it. While the head is open on
+        chain, the service asks the host to stop its node, so the counterparty stops using it. Once
+        the head is closed on chain, the service asks the host to start the node, so it can contest.
+        Re-enabling checks its opening transaction against the chain first, and leaves it disabled
+        if that check does not pass.
       </HydraNotice>
 
       {chainCheck.result && (
-        <HydraNotice tone={chainCheck.result.isOpenOnChain ? 'info' : 'error'}>
+        <HydraNotice tone={needsOperatorAction(chainCheck.result) ? 'error' : 'info'}>
           <span className="break-words">{describeHydraHeadChainCheck(chainCheck.result)}</span>
         </HydraNotice>
       )}

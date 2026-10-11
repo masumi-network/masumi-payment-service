@@ -1,22 +1,48 @@
 /** Result of `POST /hydra/head/chain-check`, and how it reads to an operator. */
 
+export type HydraHeadNodeOutcome =
+  | 'requested'
+  | 'head-closing'
+  | 'no-participant'
+  | 'no-admin-token'
+  | 'failed';
+
 export type HydraHeadChainCheck = {
-  isOpenOnChain: boolean;
+  chainState: 'open' | 'closed' | 'gone';
   latestTxHash: string;
-  nodeStart: 'requested' | 'head-closing' | 'no-participant' | 'no-admin-token' | 'failed' | null;
+  nodeAction: 'stop' | 'start' | null;
+  nodeOutcome: HydraHeadNodeOutcome | null;
 };
+
+/** True when the operator has to act on the host now. */
+export function needsOperatorAction(result: HydraHeadChainCheck): boolean {
+  if (result.chainState === 'closed') return result.nodeOutcome !== 'requested';
+  if (result.nodeAction === 'stop') {
+    return result.nodeOutcome !== 'requested' && result.nodeOutcome !== 'head-closing';
+  }
+  return false;
+}
 
 /** What the operator reads after a check. */
 export function describeHydraHeadChainCheck(result: HydraHeadChainCheck): string {
-  if (result.isOpenOnChain) {
-    return 'Still open on chain. The node stays stopped, and the service keeps checking.';
+  if (result.chainState === 'gone') {
+    return 'Fanned out on chain. The head is finished, so its node is no longer needed.';
   }
-  switch (result.nodeStart) {
-    case 'requested':
-      return 'No longer open on chain. The node was asked to start, so it can contest the close.';
-    case 'no-admin-token':
-      return 'No longer open on chain, but this host has no admin token. Start the node on the host now, so it can contest the close.';
-    default:
-      return 'No longer open on chain, and the node could not be started. Start it on the host now, so it can contest the close.';
+  const noToken = result.nodeOutcome === 'no-admin-token' ? ' This host has no admin token.' : '';
+  if (result.chainState === 'closed') {
+    if (result.nodeOutcome === 'requested') {
+      return 'Closed on chain. The host was asked to start the node, so it can contest the close.';
+    }
+    return `Closed on chain, and the node could not be started.${noToken} Start it on the host now, so it can contest the close.`;
   }
+  if (result.nodeAction === null) {
+    return 'Open on chain. The head is enabled again, so its node keeps running.';
+  }
+  if (result.nodeOutcome === 'requested') {
+    return 'Open on chain. The host was asked to stop the node, so the counterparty stops using this head. The service keeps checking.';
+  }
+  if (result.nodeOutcome === 'head-closing') {
+    return 'Open on chain, but this side is closing the head, so the node stays up to finish the close.';
+  }
+  return `Open on chain, and the node could not be stopped.${noToken} The counterparty can still lock funds in this head. Stop the node on the host.`;
 }

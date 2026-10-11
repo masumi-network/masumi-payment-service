@@ -1,9 +1,9 @@
 /**
  * Read a disabled head's state on L1 by hand.
  *
- * A disabled head's node is stopped, and a stopped node cannot contest. The
- * service checks every disabled head on a schedule and wakes its node once the
- * head is closed on chain; this runs the same check now.
+ * The service checks every disabled head on a schedule: it stops the node while
+ * the head is open on chain, and starts it once the head is closed, so it can
+ * contest. This runs the same check now.
  */
 
 import { useCallback, useState } from 'react';
