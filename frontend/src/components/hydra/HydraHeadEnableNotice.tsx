@@ -31,15 +31,25 @@ export function HydraHeadEnableNotice({ head }: { head: HydraHead }) {
   const resync = useResync();
   const [isEnabling, setIsEnabling] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  // Set once a re-enable succeeded. The service answers before the head
+  // reconnects, and it can disable the head again seconds later. Without this,
+  // that looks like a click that did nothing.
+  const [wasReEnabled, setWasReEnabled] = useState(false);
 
   if (head.isEnabled !== false) return null;
 
   async function handleEnable() {
     setIsEnabling(true);
     setRefusal(null);
+    setWasReEnabled(false);
     try {
-      await setHydraHeadEnabled(apiClient, { id: head.id, isEnabled: true });
+      const updated = await setHydraHeadEnabled(apiClient, { id: head.id, isEnabled: true });
       await resync('hydra');
+      if (updated.isEnabled === false) {
+        setRefusal('The service answered, but the head is still disabled.');
+        return;
+      }
+      setWasReEnabled(true);
       toast.success('Head re-enabled. Its opening transaction was verified on chain again.');
     } catch (error) {
       // Kept on screen, not toasted: this is the diagnosis, and it is the
@@ -75,6 +85,17 @@ export function HydraHeadEnableNotice({ head }: { head: HydraHead }) {
       {refusal && (
         <HydraNotice tone="error">
           <span className="break-words">Still disabled: {refusal}</span>
+        </HydraNotice>
+      )}
+
+      {!refusal && wasReEnabled && (
+        <HydraNotice tone="error">
+          <span className="break-words">
+            The head was re-enabled, then the service disabled it again. This happens when the
+            service cannot record the head&apos;s status. Its logs name the cause: search for
+            &quot;Head status changed concurrently&quot; or &quot;Failed to update head
+            status&quot;.
+          </span>
         </HydraNotice>
       )}
     </div>
