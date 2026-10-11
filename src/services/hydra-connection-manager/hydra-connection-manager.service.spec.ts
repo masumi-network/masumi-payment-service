@@ -815,7 +815,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		await manager.flushHeadStatus('head-1');
 
 		// Three status CAS misses, then the fail-closed write: first only from
-		// enabled (which marks it for auto recovery), then unconditionally.
+		// enabled (it misses here, as every write does), then unconditionally.
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(5);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
 			where: { id: 'head-1' },

@@ -199,8 +199,8 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				// An initialized-but-unverified head must not remain eligible for sync or
 				// lifecycle actions. Re-enabling is an explicit operator decision after
 				// fixing the L1 observer or node configuration.
-				await prisma.hydraHead.updateMany({ where: { id: head.id }, data: { isEnabled: false } });
 				forgetHeadFailedClosed(head.id);
+				await prisma.hydraHead.updateMany({ where: { id: head.id }, data: { isEnabled: false } });
 				await cm.disconnect(head.id);
 				throw createHttpError(
 					502,

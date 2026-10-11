@@ -77,6 +77,18 @@ describe('recoverAutoDisabledHead', () => {
 		expect(reEnable).not.toHaveBeenCalled();
 	});
 
+	// The operator's disable lands while recovery reads the head; it drops the
+	// mark, and recovery must not then re-enable the head.
+	it('does not re-enable a head the operator disabled during recovery', async () => {
+		mockFindUnique.mockImplementation(async () => {
+			forgetHeadFailedClosed('head-1');
+			return { isEnabled: false };
+		});
+
+		await expect(recoverAutoDisabledHead('head-1', deps)).resolves.toBe('not-failed-closed');
+		expect(reEnable).not.toHaveBeenCalled();
+	});
+
 	it('acts once per failure when two recoveries race', async () => {
 		const results = await Promise.all([recoverAutoDisabledHead('head-1', deps), recoverAutoDisabledHead('head-1', deps)]);
 

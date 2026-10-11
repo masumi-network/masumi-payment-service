@@ -584,12 +584,16 @@ export async function updateHydraHeadEnabledState(
 	if (isEnabled && existing.isEnabled) {
 		// Already enabled: its InitTx binding still stands. Re-proving it would
 		// mean disabling first, which drops the live session and the counterparty
-		// with it.
+		// with it. Only reconcile, which reconnects a head that lost its session.
+		await getHydraConnectionManager().reconcileEnabledState(id);
 		const current = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
 		if (!current) throw createHttpError(404, 'Hydra head not found');
 		return current;
 	}
 
+	// The operator's decision now: automatic recovery must not undo it. Dropped
+	// before the write, so a recovery that runs meanwhile finds no mark.
+	if (!isEnabled) forgetHeadFailedClosed(id);
 	const manager = getHydraConnectionManager();
 	const quarantined = await prisma.hydraHead.update({
 		where: { id },
@@ -603,11 +607,7 @@ export async function updateHydraHeadEnabledState(
 		include: headInclude,
 	});
 	await manager.reconcileEnabledState(id);
-	if (!isEnabled) {
-		// The operator's decision now: automatic recovery must not undo it.
-		forgetHeadFailedClosed(id);
-		return quarantined;
-	}
+	if (!isEnabled) return quarantined;
 
 	const preInitStatuses = new Set<HydraHeadStatus>([
 		HydraHeadStatus.Disconnected,

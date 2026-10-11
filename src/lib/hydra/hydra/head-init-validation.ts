@@ -94,8 +94,8 @@ export type HydraHeadChainState = 'open' | 'closed' | 'gone';
 /**
  * Whether the head is still Open on L1, read from the newest transaction that
  * moved its state token. Increments and decrements keep it Open; a Close, a
- * contest or a fanout do not. Used to wake a stopped node in time to contest:
- * a stopped node cannot, and the contestation period does not wait for it.
+ * contest or a fanout do not. Read from an independent observer, not the
+ * head's own node, so an operator can check a disabled head.
  */
 export async function observeHydraHeadIsOpenOnChain(options: {
 	observer: HydraHeadChainObserver;
@@ -144,7 +144,7 @@ export async function observeHydraHeadIsOpenOnChain(options: {
 		datum = null;
 	}
 	// Anything at the head script that is not a readable Open datum counts as
-	// closed: the node must then be up, and a wrong guess only costs a start.
+	// closed: the operator then checks that the node runs, the safe side.
 	return { state: datum != null && isOpenStateDatum(datum) ? 'open' : 'closed', latestTxHash };
 }
 

@@ -264,7 +264,7 @@ describe('Hydra head state convergence', () => {
 
 	// Re-proving an enabled head meant disabling it first, which dropped the
 	// live session and the counterparty with it.
-	it('leaves an already enabled head untouched', async () => {
+	it('leaves an already enabled head enabled and only reconciles it', async () => {
 		const liveHead = { ...openHead, headIdentifier: 'a'.repeat(56), initTxHash: 'b'.repeat(64) };
 		mockFindHead.mockResolvedValue(liveHead);
 
@@ -272,7 +272,8 @@ describe('Hydra head state convergence', () => {
 
 		expect(mockUpdateHead).not.toHaveBeenCalled();
 		expect(mockReleaseClose).not.toHaveBeenCalled();
-		expect(mockReconcileEnabledState).not.toHaveBeenCalled();
+		// Reconnects a head that lost its session, without disabling it first.
+		expect(mockReconcileEnabledState).toHaveBeenCalledWith('head-1');
 	});
 
 	it('freshly verifies an established head before re-enabling and reconnecting it', async () => {

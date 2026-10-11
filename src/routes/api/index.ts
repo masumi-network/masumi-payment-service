@@ -557,7 +557,7 @@ export const apiRouter: Routing = {
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
-				// A disabled head's node is stopped; this wakes it once L1 shows a close.
+				// Read-only: the head's state on L1, from an independent observer.
 				'chain-check': { post: checkHeadOnChainPost },
 				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet, delete: clearHeadErrorsDelete },

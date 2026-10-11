@@ -40,6 +40,7 @@ const lastAutoReEnableAt = new Map<string, number>();
  * a rollback quarantined for explicit recovery, must stay as it is.
  */
 const failedClosedHeads = new Set<string>();
+const recoveringHeads = new Set<string>();
 
 export function markHeadFailedClosed(hydraHeadId: string): void {
 	failedClosedHeads.add(hydraHeadId);
@@ -59,9 +60,24 @@ export async function recoverAutoDisabledHead(
 	hydraHeadId: string,
 	deps: AutoDisableRecoveryDeps = defaultDeps,
 ): Promise<AutoDisableRecoveryOutcome> {
-	// Consumed up front, so a second recovery for the same failure does nothing.
-	if (!failedClosedHeads.delete(hydraHeadId)) return 'not-failed-closed';
-	if ((await isHeadEnabled(hydraHeadId)) !== false) return 'still-enabled';
+	// One recovery per head at a time: a second one for the same failure does nothing.
+	if (!failedClosedHeads.has(hydraHeadId) || recoveringHeads.has(hydraHeadId)) return 'not-failed-closed';
+	recoveringHeads.add(hydraHeadId);
+	try {
+		return await recoverMarkedHead(hydraHeadId, deps);
+	} finally {
+		recoveringHeads.delete(hydraHeadId);
+	}
+}
+
+async function recoverMarkedHead(
+	hydraHeadId: string,
+	deps: AutoDisableRecoveryDeps,
+): Promise<AutoDisableRecoveryOutcome> {
+	if ((await isHeadEnabled(hydraHeadId)) !== false) {
+		failedClosedHeads.delete(hydraHeadId);
+		return 'still-enabled';
+	}
 
 	const lastAttempt = lastAutoReEnableAt.get(hydraHeadId);
 	if (lastAttempt !== undefined && deps.now() - lastAttempt < HYDRA_AUTO_RECOVERY_COOLDOWN_MS) {
@@ -71,9 +87,14 @@ export async function recoverAutoDisabledHead(
 				hydraHeadId,
 			},
 		);
+		failedClosedHeads.delete(hydraHeadId);
 		return 'cooldown';
 	}
 
+	// Consumed last, right before the re-enable: an operator disable (or a
+	// quarantine) that landed during the reads above has dropped the mark by
+	// now. One landing later is caught by the re-enable's own compare-and-set.
+	if (!failedClosedHeads.delete(hydraHeadId)) return 'not-failed-closed';
 	lastAutoReEnableAt.set(hydraHeadId, deps.now());
 	try {
 		await deps.reEnable(hydraHeadId);
@@ -111,4 +132,5 @@ export async function continueAfterStatusPersistenceRecovery(
 export function resetAutoDisableRecoveryState(): void {
 	lastAutoReEnableAt.clear();
 	failedClosedHeads.clear();
+	recoveringHeads.clear();
 }
