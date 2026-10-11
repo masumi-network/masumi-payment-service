@@ -16,7 +16,7 @@ import { setOwnHeadNodeRunning } from '@/services/hydra-host/own-node-control';
 /** A head that fails closed again within this window after an automatic re-enable is paused, not retried. */
 export const HYDRA_AUTO_RECOVERY_COOLDOWN_MS = 15 * 60 * 1000;
 
-export type AutoDisableRecoveryOutcome = 'still-enabled' | 're-enabled' | 'paused';
+export type AutoDisableRecoveryOutcome = 'not-failed-closed' | 'still-enabled' | 're-enabled' | 'paused';
 
 export interface AutoDisableRecoveryDeps {
 	reEnable: (hydraHeadId: string) => Promise<void>;
@@ -36,22 +36,50 @@ const defaultDeps: AutoDisableRecoveryDeps = {
 };
 
 const lastAutoReEnableAt = new Map<string, number>();
+/**
+ * Heads this process disabled itself, by failing closed from an enabled state.
+ * Only these are re-enabled automatically: a head the operator disabled, or one
+ * a rollback quarantined for explicit recovery, must stay as it is.
+ */
+const failedClosedHeads = new Set<string>();
+
+export function markHeadFailedClosed(hydraHeadId: string): void {
+	failedClosedHeads.add(hydraHeadId);
+}
+
+/** Drop the mark: the head's disabled state is now someone else's decision. */
+export function forgetHeadFailedClosed(hydraHeadId: string): void {
+	failedClosedHeads.delete(hydraHeadId);
+}
+
+async function isHeadEnabled(hydraHeadId: string): Promise<boolean | null> {
+	const head = await prisma.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { isEnabled: true } });
+	return head?.isEnabled ?? null;
+}
+
+/** Pause, unless the head came back meanwhile (an operator re-enable can win the race). */
+async function pauseIfStillDisabled(
+	hydraHeadId: string,
+	reason: string,
+	deps: AutoDisableRecoveryDeps,
+): Promise<AutoDisableRecoveryOutcome> {
+	if ((await isHeadEnabled(hydraHeadId)) !== false) return 'still-enabled';
+	logger.error(`[HydraAutoRecovery] ${reason}; pausing the node`, { hydraHeadId });
+	await deps.pause(hydraHeadId, reason);
+	return 'paused';
+}
 
 export async function recoverOrPauseAutoDisabledHead(
 	hydraHeadId: string,
 	deps: AutoDisableRecoveryDeps = defaultDeps,
 ): Promise<AutoDisableRecoveryOutcome> {
-	const head = await prisma.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { isEnabled: true } });
-	// Gone, or the durable disable never landed: nothing to recover from.
-	if (!head || head.isEnabled) return 'still-enabled';
+	// Consumed up front, so a second recovery for the same failure does nothing.
+	if (!failedClosedHeads.delete(hydraHeadId)) return 'not-failed-closed';
+	if ((await isHeadEnabled(hydraHeadId)) !== false) return 'still-enabled';
 
 	const lastAttempt = lastAutoReEnableAt.get(hydraHeadId);
 	if (lastAttempt !== undefined && deps.now() - lastAttempt < HYDRA_AUTO_RECOVERY_COOLDOWN_MS) {
-		logger.error('[HydraAutoRecovery] head failed closed again soon after an automatic re-enable; pausing its node', {
-			hydraHeadId,
-		});
-		await deps.pause(hydraHeadId, 'head failed closed again after automatic re-enable');
-		return 'paused';
+		return await pauseIfStillDisabled(hydraHeadId, 'head failed closed again soon after an automatic re-enable', deps);
 	}
 
 	lastAutoReEnableAt.set(hydraHeadId, deps.now());
@@ -60,16 +88,35 @@ export async function recoverOrPauseAutoDisabledHead(
 		logger.warn('[HydraAutoRecovery] re-enabled a head after it failed closed', { hydraHeadId });
 		return 're-enabled';
 	} catch (error) {
-		logger.error('[HydraAutoRecovery] automatic re-enable failed; pausing the node', {
+		logger.error('[HydraAutoRecovery] automatic re-enable failed', {
 			hydraHeadId,
 			error: error instanceof Error ? error.message : String(error),
 		});
-		await deps.pause(hydraHeadId, 'automatic re-enable failed after the head failed closed');
-		return 'paused';
+		return await pauseIfStillDisabled(hydraHeadId, 'automatic re-enable failed after the head failed closed', deps);
 	}
+}
+
+/**
+ * Next step once the fail-closed teardown and re-read settled. `connected` is
+ * what that re-read returned, or null when it threw. Runs outside the head's
+ * control queue: re-enable reconciles through that same queue.
+ */
+export async function continueAfterStatusPersistenceRecovery(
+	hydraHeadId: string,
+	connected: boolean | null,
+	deps: AutoDisableRecoveryDeps = defaultDeps,
+): Promise<AutoDisableRecoveryOutcome | null> {
+	if (connected === true) return null;
+	if (connected === null) {
+		// Not known whether the head is still ours to re-enable: the operator decides.
+		forgetHeadFailedClosed(hydraHeadId);
+		return null;
+	}
+	return await recoverOrPauseAutoDisabledHead(hydraHeadId, deps);
 }
 
 /** Test seam: forget recorded attempts. */
 export function resetAutoDisableRecoveryState(): void {
 	lastAutoReEnableAt.clear();
+	failedClosedHeads.clear();
 }

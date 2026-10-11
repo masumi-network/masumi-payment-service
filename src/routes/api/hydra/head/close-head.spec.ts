@@ -280,7 +280,8 @@ describe('Hydra head state convergence', () => {
 		expect(mockUpdateHead).not.toHaveBeenCalled();
 		expect(mockReleaseClose).not.toHaveBeenCalled();
 		expect(mockReconcileEnabledState).not.toHaveBeenCalled();
-		expect(mockSetOwnHeadNodeRunning).not.toHaveBeenCalled();
+		// Only an idempotent start: a recovery race can leave an enabled head with a stopped node.
+		expect(mockSetOwnHeadNodeRunning).toHaveBeenCalledWith('head-1', true, expect.any(String));
 	});
 
 	it('freshly verifies an established head before re-enabling and reconnecting it', async () => {

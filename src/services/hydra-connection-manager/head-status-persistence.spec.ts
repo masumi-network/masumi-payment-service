@@ -23,6 +23,11 @@ jest.unstable_mockModule('./head-session-ops', () => ({
 	persistRegressiveHeadStatus: mockPersistRegressive,
 }));
 
+const mockMarkHeadFailedClosed = jest.fn();
+jest.unstable_mockModule('./head-auto-disable-recovery', () => ({
+	markHeadFailedClosed: mockMarkHeadFailedClosed,
+}));
+
 const { persistHeadStatus, failClosedAfterStatusPersistenceFailure, recordCloseTransaction } =
 	await import('./head-status-persistence');
 
@@ -137,6 +142,23 @@ describe('failClosedAfterStatusPersistenceFailure under the ownership fence', ()
 				reconciliationCompletedAt: null,
 			},
 		});
+	});
+
+	it('marks the head for automatic recovery only when this write disabled it', async () => {
+		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
+		expect(mockMarkHeadFailedClosed).toHaveBeenCalledWith('head-1');
+
+		mockMarkHeadFailedClosed.mockClear();
+		// Already disabled (an operator or a rollback quarantine did it): not ours to undo.
+		mockFindUnique.mockResolvedValue(durableRow({ isEnabled: false }));
+		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
+		expect(mockMarkHeadFailedClosed).not.toHaveBeenCalled();
+
+		// Fenced out by a newer owner: not ours either.
+		mockFindUnique.mockResolvedValue(durableRow());
+		mockUpdateMany.mockResolvedValue({ count: 0 });
+		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
+		expect(mockMarkHeadFailedClosed).not.toHaveBeenCalled();
 	});
 
 	it('still schedules recovery when the disable was fenced out', async () => {

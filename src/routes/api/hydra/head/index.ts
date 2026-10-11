@@ -38,6 +38,7 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { decrypt } from '@/utils/security/encryption';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { setOwnHeadNodeRunning } from '@/services/hydra-host/own-node-control';
+import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 // --- Shared schemas ---
 
@@ -584,7 +585,9 @@ export async function updateHydraHeadEnabledState(
 	if (isEnabled && existing.isEnabled) {
 		// Already enabled: its InitTx binding still stands. Re-proving it would
 		// mean disabling first, which drops the live session and the counterparty
-		// with it. Nothing to do.
+		// with it. Only make sure the node runs: a recovery race can leave an
+		// enabled head with a stopped node, and start is idempotent on the Host.
+		await setOwnHeadNodeRunning(id, true, 'enable requested for an enabled head');
 		const current = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
 		if (!current) throw createHttpError(404, 'Hydra head not found');
 		return current;
@@ -604,6 +607,7 @@ export async function updateHydraHeadEnabledState(
 	});
 	await manager.reconcileEnabledState(id);
 	if (!isEnabled) {
+		forgetHeadFailedClosed(id);
 		// Stop the node too, or it keeps co-signing and the counterparty keeps
 		// locking funds in a head this side no longer observes.
 		await setOwnHeadNodeRunning(id, false, 'operator disabled the head');

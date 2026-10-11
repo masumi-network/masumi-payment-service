@@ -35,7 +35,7 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { probeHeadCurrentSlot } from './head-session-ops';
 import { HeadSession } from './head-session';
 import { persistHeadStatus, type HeadStatusPersistenceHost } from './head-status-persistence';
-import { recoverOrPauseAutoDisabledHead } from './head-auto-disable-recovery';
+import { continueAfterStatusPersistenceRecovery } from './head-auto-disable-recovery';
 import { applyConfirmedHydraTransaction, type TxConfirmedHost } from './head-tx-confirmed';
 import {
 	HYDRA_PRE_INIT_STATUSES,
@@ -616,23 +616,19 @@ export class HydraConnectionManager {
 			await this.disconnect(hydraHeadId);
 			return await this.reconcileEnabledStateInner(hydraHeadId);
 		});
-		void work.then(
-			(connected) => {
-				// Outside the control queue: re-enable reconciles through that same
-				// queue and would wait on itself.
-				if (connected) return;
-				void recoverOrPauseAutoDisabledHead(hydraHeadId).catch((error: unknown) => {
-					logger.error('[HydraConnectionManager] Failed auto-disable recovery', { hydraHeadId, error });
-				});
-			},
-			(error: unknown) => {
-				logger.error('[HydraConnectionManager] Failed lifecycle-persistence recovery', {
-					hydraHeadId,
-					error,
-				});
-				this.scheduleReconnect(hydraHeadId);
-			},
-		);
+		const continueRecovery = (connected: boolean | null) => {
+			void continueAfterStatusPersistenceRecovery(hydraHeadId, connected).catch((error: unknown) => {
+				logger.error('[HydraConnectionManager] Failed auto-disable recovery', { hydraHeadId, error });
+			});
+		};
+		void work.then(continueRecovery, (error: unknown) => {
+			logger.error('[HydraConnectionManager] Failed lifecycle-persistence recovery', {
+				hydraHeadId,
+				error,
+			});
+			continueRecovery(null);
+			this.scheduleReconnect(hydraHeadId);
+		});
 	}
 
 	async handleTxConfirmed(

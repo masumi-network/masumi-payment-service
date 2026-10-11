@@ -22,6 +22,7 @@ import { CustomHydraHead, StatusChangeData } from '@/lib/hydra';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { HYDRA_HEAD_STATUS_RANK } from './head-status-rank';
 import { persistRegressiveHeadStatus } from './head-session-ops';
+import { markHeadFailedClosed } from './head-auto-disable-recovery';
 
 /**
  * What the persistence pipeline needs from the session/registry it serves.
@@ -231,6 +232,9 @@ export async function failClosedAfterStatusPersistenceFailure(
 	// disconnect's flush of that same queue.
 	host.quarantine(failedHead);
 	try {
+		// Read first: only a head this write takes from enabled to disabled is
+		// ours to re-enable automatically later.
+		const before = await prisma.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { isEnabled: true } });
 		const disabled = await retryOnSerializationConflict(
 			async () =>
 				await prisma.hydraHead.updateMany({
@@ -252,6 +256,8 @@ export async function failClosedAfterStatusPersistenceFailure(
 				hydraHeadId,
 				sessionOwnerEpoch: ownerEpoch.toString(),
 			});
+		} else if (before?.isEnabled === true) {
+			markHeadFailedClosed(hydraHeadId);
 		}
 	} catch (quarantineError) {
 		logger.error('[HydraConnectionManager] Failed to durably quarantine head after status persistence error', {
