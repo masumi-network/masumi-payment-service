@@ -37,6 +37,7 @@ import { toPrismaJsonValue } from '@/utils/json-value';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { decrypt } from '@/utils/security/encryption';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
+import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 // --- Shared schemas ---
 
@@ -580,7 +581,19 @@ export async function updateHydraHeadEnabledState(
 ): Promise<HydraHeadRecord> {
 	const existing = await prisma.hydraHead.findUnique({ where: { id } });
 	if (!existing) throw createHttpError(404, 'Hydra head not found');
+	if (isEnabled && existing.isEnabled) {
+		// Already enabled: its InitTx binding still stands. Re-proving it would
+		// mean disabling first, which drops the live session and the counterparty
+		// with it. Only reconcile, which reconnects a head that lost its session.
+		await getHydraConnectionManager().reconcileEnabledState(id);
+		const current = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
+		if (!current) throw createHttpError(404, 'Hydra head not found');
+		return current;
+	}
 
+	// The operator's decision now: automatic recovery must not undo it. Dropped
+	// before the write, so a recovery that runs meanwhile finds no mark.
+	if (!isEnabled) forgetHeadFailedClosed(id);
 	const manager = getHydraConnectionManager();
 	const quarantined = await prisma.hydraHead.update({
 		where: { id },
