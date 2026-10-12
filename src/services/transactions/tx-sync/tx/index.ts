@@ -446,10 +446,12 @@ async function updateInitialPurchaseTransaction(
 	// Gate Serializable $transaction through the shared semaphore so the pg
 	// connection pool isn't exhausted when scheduler ticks fan out across
 	// payment sources. See `src/utils/db/serializable-semaphore.ts`.
+	let hasNoPurchaseRow = false;
 	await withSerializableSlotRetry(
 		() =>
 			prisma.$transaction(
 				async (prisma) => {
+					hasNoPurchaseRow = false;
 					await beforeWrite?.(prisma);
 					const dbEntry = await prisma.purchaseRequest.findUnique({
 						where: {
@@ -465,12 +467,7 @@ async function updateInitialPurchaseTransaction(
 						},
 					});
 					if (dbEntry == null) {
-						await reportInitialLockWithoutPurchaseRow(prisma, {
-							txHash: tx.tx.tx_hash,
-							paymentSourceId: paymentContract.id,
-							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
-							buyerVkey: decodedNewContract.buyerVkey,
-						});
+						hasNoPurchaseRow = true;
 						return;
 					}
 					if (dbEntry.paymentSourceId !== paymentContract.id) {
@@ -854,6 +851,14 @@ async function updateInitialPurchaseTransaction(
 			),
 		{ label: 'tx-sync-handle-2' },
 	);
+	if (hasNoPurchaseRow) {
+		await reportInitialLockWithoutPurchaseRow(prisma, {
+			txHash: tx.tx.tx_hash,
+			paymentSourceId: paymentContract.id,
+			blockchainIdentifier: decodedNewContract.blockchainIdentifier,
+			buyerVkey: decodedNewContract.buyerVkey,
+		});
+	}
 }
 
 async function updateInitialPaymentTransaction(

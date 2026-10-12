@@ -18,7 +18,7 @@ const DETAILS = {
 
 function clientFinding(wallet: { id: string } | null) {
 	const findFirst = jest.fn(async () => wallet);
-	return { client: { hotWallet: { findFirst } } as unknown as Prisma.TransactionClient, findFirst };
+	return { client: { hotWallet: { findFirst } } as unknown as Pick<Prisma.TransactionClient, 'hotWallet'>, findFirst };
 }
 
 describe('reportInitialLockWithoutPurchaseRow', () => {

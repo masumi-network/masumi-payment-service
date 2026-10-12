@@ -11,13 +11,17 @@ import { logger } from '@masumi/payment-core/logger';
  * When the lock's buyer key is one of this node's purchasing wallets, it is
  * not normal: this node locked funds for a purchase it has no record of
  * (the row was deleted, or never committed), and nothing else will notice.
+ *
+ * Call it after the sync transaction, not inside it: this log-only wallet read
+ * would add HotWallet to that Serializable read set and conflict with the
+ * batchers, which write HotWallet locks all the time.
  */
 export async function reportInitialLockWithoutPurchaseRow(
-	tx: Prisma.TransactionClient,
+	db: Pick<Prisma.TransactionClient, 'hotWallet'>,
 	details: { txHash: string; paymentSourceId: string; blockchainIdentifier: string; buyerVkey: string },
 ): Promise<void> {
 	// Deleted wallets included: a lock by a wallet removed afterwards is still ours.
-	const ownBuyerWallet = await tx.hotWallet.findFirst({
+	const ownBuyerWallet = await db.hotWallet.findFirst({
 		where: { walletVkey: details.buyerVkey, type: HotWalletType.Purchasing },
 		select: { id: true },
 	});
