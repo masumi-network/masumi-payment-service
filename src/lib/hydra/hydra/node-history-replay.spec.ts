@@ -1,7 +1,14 @@
-import { describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Connection } from './connection';
 import type { ConfirmedTransactionLedger } from './node-confirmed-ledger';
-import { HydraHistoryReplay } from './node-history-replay';
+import type { HydraHistoryReplay as HydraHistoryReplayType } from './node-history-replay';
+
+const mockWarn = jest.fn();
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
+	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
+}));
+
+const { HydraHistoryReplay } = await import('./node-history-replay');
 
 /**
  * The flush of frames buffered before the head id was pinned.
@@ -26,7 +33,7 @@ function createReplay() {
 		assertPersistenceReplayIsSupported: () => undefined,
 		bindSnapshotPartyOrder: () => undefined,
 		verifyGreetingsPartyIdentity,
-		setNetworkConnected: () => undefined,
+		setNetworkConnected: (_connected: boolean): void => undefined,
 		recordFinalizedFanout: () => undefined,
 		rememberReplayedDeposit: () => undefined,
 		rememberReplayedDecommit: () => undefined,
@@ -38,7 +45,7 @@ function createReplay() {
 
 	const ledger = { trim: () => undefined, hasUnreconciled: false } as unknown as ConfirmedTransactionLedger;
 
-	let replay: HydraHistoryReplay;
+	let replay: HydraHistoryReplayType;
 	const invalidate = jest.fn(() => {
 		// What `HydraNode` wires up: the invalidated socket emits `close`
 		// synchronously, and its handler starts a fresh pass.
@@ -70,5 +77,60 @@ describe('HydraHistoryReplay buffered flush', () => {
 		expect(verifyGreetingsPartyIdentity).not.toHaveBeenCalled();
 		expect(replay.isComplete).toBe(false);
 		expect(replay.sessionHeadId).toBeUndefined();
+	});
+});
+
+describe('HydraHistoryReplay slow-work reporting', () => {
+	beforeEach(() => {
+		mockWarn.mockClear();
+	});
+
+	const NETWORK_CONNECTED_FRAME = JSON.stringify({ tag: 'NetworkConnected' });
+
+	/** A replay whose frame handling advances a fake clock by `costMs` per frame. */
+	function createTimedReplay(costMs: number) {
+		let clockMs = 1_000_000;
+		const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => clockMs);
+		const created = createReplay();
+		created.host.setNetworkConnected = () => {
+			clockMs += costMs;
+		};
+		return {
+			...created,
+			warnSpy: mockWarn,
+			restore: () => nowSpy.mockRestore(),
+		};
+	}
+
+	it('reports one pinned frame that held the event loop', () => {
+		const { replay, host, warnSpy, restore } = createTimedReplay(2_500);
+		host.expectedHeadId = PINNED_HEAD_ID;
+		replay.processMessage(NETWORK_CONNECTED_FRAME);
+		restore();
+		expect(warnSpy).toHaveBeenCalledWith(
+			'[HydraNode] One history frame held the event loop',
+			expect.objectContaining({ headId: PINNED_HEAD_ID, elapsedMs: 2_500 }),
+		);
+	});
+
+	it('reports a buffered flush that held the event loop as a whole', () => {
+		const { replay, host, warnSpy, restore } = createTimedReplay(400);
+		for (let index = 0; index < 5; index += 1) replay.processMessage(NETWORK_CONNECTED_FRAME);
+		host.expectedHeadId = PINNED_HEAD_ID;
+		replay.processBufferedUnpinnedFrames();
+		restore();
+		expect(warnSpy).toHaveBeenCalledWith(
+			'[HydraNode] Buffered history flush held the event loop',
+			expect.objectContaining({ headId: PINNED_HEAD_ID, frames: 5, elapsedMs: 2_000 }),
+		);
+	});
+
+	it('stays quiet for fast frames', () => {
+		const { replay, host, warnSpy, restore } = createTimedReplay(5);
+		host.expectedHeadId = PINNED_HEAD_ID;
+		replay.processMessage(NETWORK_CONNECTED_FRAME);
+		replay.processMessage(NETWORK_CONNECTED_FRAME);
+		restore();
+		expect(warnSpy).not.toHaveBeenCalled();
 	});
 });
