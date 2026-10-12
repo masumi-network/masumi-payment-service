@@ -21,6 +21,8 @@ import { decrypt } from '@/utils/security/encryption';
 import { resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { CosignTransportError, mergeCosignWitnesses, requestCosign } from '../../../smart-wallet/cosign-client';
 import { buildGuardedL2LockTx } from '../../../smart-wallet/guarded-l2-lock-builder';
+import { toHydraSnapshotProof } from '../../../smart-wallet/hydra-snapshot/build-proof';
+import { findOutput, type HydraSnapshotProof } from '../../../smart-wallet/hydra-snapshot/snapshot-proof';
 import { loadSmartWalletScript, readWalletDatum } from '../../../smart-wallet/wallet-lifecycle';
 import { pickBatchCollateral } from '../../../builders/batch-helpers';
 import { cosignConfigOrNull } from './cosign-config';
@@ -68,6 +70,27 @@ export async function locateGuardedWalletForLock(
 		(utxo) => !pending.includes(`${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase()),
 	);
 	return { walletUtxo: held[0], snapshot: usable };
+}
+
+/**
+ * The latest confirmed snapshot, with every party's signature, as proof for the
+ * co-signer that `walletUtxoRef` exists in this head with exactly this output.
+ * Throws when the node cannot give one that holds the wallet, so no co-sign is
+ * asked for on a proof that would fail.
+ */
+export async function signedSnapshotHoldingWallet(
+	hydraHeadId: string,
+	headIdentifier: string,
+	walletUtxoRef: string,
+): Promise<HydraSnapshotProof> {
+	const node = getHydraConnectionManager().getNode(hydraHeadId);
+	if (node == null) throw new Error(`No live connection to head ${hydraHeadId}`);
+	const proof = toHydraSnapshotProof(await node.get('/snapshot'));
+	if (proof.headId !== headIdentifier.toLowerCase()) throw new Error('The node returned a snapshot of another head');
+	if (findOutput(proof.utxo, walletUtxoRef) == null && findOutput(proof.utxoToCommit, walletUtxoRef) == null) {
+		throw new Error('The latest confirmed snapshot does not hold the guarded wallet UTxO');
+	}
+	return proof;
 }
 
 /** The co-signer refused or deferred; the purchase got its disposition and nothing was submitted. */
@@ -166,13 +189,16 @@ export async function executeGuardedL2Lock(params: {
 	});
 	const buildMs = Date.now() - tBuild;
 
+	const walletUtxoRef = `${walletUtxo.input.txHash}#${walletUtxo.input.outputIndex}`;
+	const hydraSnapshot = await signedSnapshotHoldingWallet(hydraHeadId, head.headIdentifier, walletUtxoRef);
+
 	const tCosign = Date.now();
 	let outcome: CosignOutcome;
 	try {
 		outcome = await requestCosign(cosignConfig, {
 			unsignedTx: built.unsignedTx,
 			batchId: randomUUID(),
-			walletUtxoRef: `${walletUtxo.input.txHash}#${walletUtxo.input.outputIndex}`,
+			walletUtxoRef,
 			intents: [cosignIntentFor(request, built.lockOutputIndexes[0], lockLovelace)],
 			context: {
 				nodeId: cosignConfig.nodeId,
@@ -180,6 +206,7 @@ export async function executeGuardedL2Lock(params: {
 				submittedAt: new Date().toISOString(),
 				walletAddress: script.address,
 				hydraHeadId: head.headIdentifier,
+				hydraSnapshot,
 			},
 		});
 	} catch (error) {
@@ -208,7 +235,6 @@ export async function executeGuardedL2Lock(params: {
 	if (resolveTxHash(signedTx) !== built.txHash) throw new Error('the agent signature changed the frozen body');
 
 	// The owner may have prepared a withdraw of this UTxO while the quorum signed.
-	const walletUtxoRef = `${walletUtxo.input.txHash}#${walletUtxo.input.outputIndex}`;
 	if (
 		await hasOpenGuardedMove(
 			{ id: guarded.id, heldWalletUtxoRef: walletUtxoRef },

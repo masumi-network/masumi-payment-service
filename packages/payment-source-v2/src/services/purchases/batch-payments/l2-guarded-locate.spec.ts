@@ -19,7 +19,7 @@ jest.unstable_mockModule('@/lib/hydra/hydra/pending-commit', () => ({
 		mockPendingRefs(await node.get('/head')),
 }));
 
-const { locateGuardedWalletForLock } = await import('./l2-guarded-lock-execute');
+const { locateGuardedWalletForLock, signedSnapshotHoldingWallet } = await import('./l2-guarded-lock-execute');
 
 const guarded = { id: 'gw-1', policyId: 'aa'.repeat(28), stateTokenName: 'bb'.repeat(32) };
 const unit = `${guarded.policyId}${guarded.stateTokenName}`;
@@ -79,5 +79,48 @@ describe('locateGuardedWalletForLock', () => {
 	it('returns null when no node serves the head', async () => {
 		mockGetNode.mockReturnValue(null);
 		await expect(locateGuardedWalletForLock(guarded, 'head-1')).resolves.toBeNull();
+	});
+});
+
+describe('signedSnapshotHoldingWallet', () => {
+	const headId = 'ab'.repeat(28);
+	const walletRef = `${'cc'.repeat(32)}#0`;
+	const confirmed = (utxoRefs: string[], snapshotHeadId = headId) => ({
+		signatures: { multiSignature: ['ef'.repeat(64)] },
+		snapshot: {
+			headId: snapshotHeadId,
+			version: 1,
+			number: 2,
+			accumulator: 'ac'.repeat(32),
+			utxo: Object.fromEntries(utxoRefs.map((ref) => [ref, { address: 'addr_test', value: { lovelace: 90000000n } }])),
+			utxoToCommit: null,
+			utxoToDecommit: null,
+			depositTxId: null,
+		},
+	});
+
+	it('returns the confirmed snapshot from /snapshot when it holds the wallet', async () => {
+		mockHeadState.mockResolvedValue(confirmed([walletRef]));
+		const proof = await signedSnapshotHoldingWallet('head-1', headId, walletRef);
+		expect(mockHeadState).toHaveBeenCalledWith('/snapshot');
+		expect(proof.utxo[walletRef].value.lovelace).toBe('90000000');
+	});
+
+	it('accepts a snapshot that holds the wallet as a deposit still pending in the commit set', async () => {
+		const pending = confirmed([]);
+		pending.snapshot.utxoToCommit = { [walletRef]: { address: 'addr_test', value: { lovelace: 90000000n } } } as never;
+		mockHeadState.mockResolvedValue(pending);
+		const proof = await signedSnapshotHoldingWallet('head-1', headId, walletRef);
+		expect(proof.utxoToCommit?.[walletRef].value.lovelace).toBe('90000000');
+	});
+
+	it('refuses a snapshot that does not hold the wallet yet', async () => {
+		mockHeadState.mockResolvedValue(confirmed([`${'dd'.repeat(32)}#0`]));
+		await expect(signedSnapshotHoldingWallet('head-1', headId, walletRef)).rejects.toThrow('does not hold');
+	});
+
+	it('refuses a snapshot of another head', async () => {
+		mockHeadState.mockResolvedValue(confirmed([walletRef], 'cd'.repeat(28)));
+		await expect(signedSnapshotHoldingWallet('head-1', headId, walletRef)).rejects.toThrow('another head');
 	});
 });
