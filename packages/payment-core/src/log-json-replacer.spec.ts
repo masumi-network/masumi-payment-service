@@ -53,7 +53,7 @@ describe('logJson', () => {
 		Object.defineProperty(error, 'cause', { value: error });
 		const line = renderLine({ error });
 		const written = line.error as Record<string, unknown>;
-		expect(written).toMatchObject({ message: 'branching', self: '[Circular]', cause: '[Circular]' });
+		expect(written).toMatchObject({ message: 'branching', self: '[Repeated Error]', cause: '[Repeated Error]' });
 		expect(JSON.stringify(line).length).toBeLessThan(10_000);
 	});
 
@@ -71,6 +71,17 @@ describe('logJson', () => {
 		error.request = error;
 		Object.defineProperty(error, 'cause', { value: error });
 		expect(JSON.stringify(renderLine({ error })).length).toBeLessThan(10_000);
+	});
+
+	it('writes an error shared by many branches in full only once', () => {
+		// No cycle: each error is referenced twice by its parent, 25 levels deep.
+		let shared: Error = new Error('leaf');
+		for (let level = 0; level < 25; level += 1) {
+			shared = Object.assign(new Error(`level ${level}`), { left: shared, right: shared });
+		}
+		const line = renderLine({ error: shared });
+		expect(JSON.stringify(line).length).toBeLessThan(100_000);
+		expect((line.error as Record<string, unknown>).right).toBe('[Repeated Error]');
 	});
 
 	it('writes an error as it is now when it is logged again after a change', () => {

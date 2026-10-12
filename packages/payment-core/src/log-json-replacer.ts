@@ -1,6 +1,8 @@
 import { format } from 'winston';
 import { getOwnEntries, getOwnValue, type RuntimeObject } from './object-properties';
 
+const REPEATED_ERROR = '[Repeated Error]';
+
 /**
  * A JSON replacer for one production log line.
  *
@@ -10,23 +12,22 @@ import { getOwnEntries, getOwnValue, type RuntimeObject } from './object-propert
  * `clientVersion`). This writes them out explicitly, at any depth, and keeps
  * the enumerable extras (`code`, `meta`, ...) next to them.
  *
- * Each Error is serialized once per line and the same object is returned when
- * it is reached again. The stringifier finds cycles by object identity, so
- * that is what lets it write `[Circular]` for `error.cause = error` instead of
- * copying the error over and over. The cache belongs to this one replacer, so
- * an error logged again after it changed is written as it is now.
+ * Each Error is written in full once per line; any later reference to it on
+ * the same line is written as `[Repeated Error]`. Without that, an error that
+ * reaches itself (`error.cause = error`) or is shared by several branches is
+ * copied once per path, which grows exponentially. The set belongs to this one
+ * replacer, so an error logged again after it changed is written as it is now.
  *
  * BigInt becomes a string, as in logform's default replacer, which this
  * replaces.
  */
 export function createLogJsonReplacer(): (key: string, value: unknown) => unknown {
-	const serializedErrors = new WeakMap<Error, RuntimeObject | string>();
+	const writtenErrors = new WeakSet<Error>();
 	return (_key, value) => {
 		if (typeof value === 'bigint') return value.toString();
 		if (!(value instanceof Error)) return value;
-		const cached = serializedErrors.get(value);
-		if (cached !== undefined) return cached;
-		let serialized: RuntimeObject | string;
+		if (writtenErrors.has(value)) return REPEATED_ERROR;
+		writtenErrors.add(value);
 		try {
 			const fields: RuntimeObject = {};
 			for (const [entryKey, entryValue] of getOwnEntries(value)) fields[entryKey] = entryValue;
@@ -35,13 +36,11 @@ export function createLogJsonReplacer(): (key: string, value: unknown) => unknow
 			if (value.stack) fields.stack = value.stack;
 			const cause = getOwnValue(value, 'cause');
 			if (cause !== undefined) fields.cause = cause;
-			serialized = fields;
+			return fields;
 		} catch {
 			// A throwing getter must not turn the log call into a new exception.
-			serialized = '[Unserializable Error]';
+			return '[Unserializable Error]';
 		}
-		serializedErrors.set(value, serialized);
-		return serialized;
 	};
 }
 
