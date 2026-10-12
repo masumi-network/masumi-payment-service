@@ -472,7 +472,9 @@ async function reconcileEscrowUtxo(
 	// in that snapshot. Legacy replay frames without it stay null, so first-seen
 	// locks fail closed instead of using a stale head-clock tick as deadline proof.
 	const confirmationTimeMs = confirmedTransaction?.confirmedAtMs ?? null;
-	logger.info('[HydraReconcile] advancing in-head escrow state', {
+	// Debug, not info: every pass re-applies every live escrow output, almost
+	// always as a no-op, so at info this repeated each row every cycle.
+	logger.debug('[HydraReconcile] advancing in-head escrow state', {
 		hydraHeadId,
 		blockchainIdentifier: decoded.blockchainIdentifier,
 		newState,
