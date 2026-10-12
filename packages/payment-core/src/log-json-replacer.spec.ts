@@ -49,6 +49,26 @@ describe('logJsonReplacer', () => {
 		}
 	});
 
+	it('writes an error with several links back to itself once', () => {
+		const error = Object.assign(new Error('branching'), { self: undefined as Error | undefined });
+		error.self = error;
+		Object.defineProperty(error, 'cause', { value: error });
+		const line = renderLine({ error });
+		const written = line.error as Record<string, unknown>;
+		expect(written).toMatchObject({ message: 'branching', self: '[Circular]', cause: '[Circular]' });
+		expect(JSON.stringify(line).length).toBeLessThan(10_000);
+	});
+
+	it('does not throw when an error getter throws', () => {
+		const error = new Error('hostile');
+		Object.defineProperty(error, 'stack', {
+			get: () => {
+				throw new Error('no stack for you');
+			},
+		});
+		expect(renderLine({ error }).error).toBe('[Unserializable Error]');
+	});
+
 	it('still writes bigint as a string', () => {
 		expect(renderLine({ amount: 10n ** 20n }).amount).toBe('100000000000000000000');
 	});

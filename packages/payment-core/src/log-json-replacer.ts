@@ -1,6 +1,14 @@
 import { getOwnEntries, getOwnValue, type RuntimeObject } from './object-properties';
 
 /**
+ * One serialized object per Error. The stringifier finds cycles by object
+ * identity, so returning the same object for an Error it reaches again
+ * (`error.cause = error`, two errors citing each other) is what lets it write
+ * `[Circular]` instead of copying the error over and over.
+ */
+const serializedErrors = new WeakMap<Error, RuntimeObject | string>();
+
+/**
  * JSON replacer for the production log line.
  *
  * An Error's `name`, `message`, `stack` and `cause` are not own enumerable
@@ -15,24 +23,29 @@ import { getOwnEntries, getOwnValue, type RuntimeObject } from './object-propert
 export function logJsonReplacer(_key: string, value: unknown): unknown {
 	if (typeof value === 'bigint') return value.toString();
 	if (!(value instanceof Error)) return value;
-	const serialized: RuntimeObject = {};
-	for (const [entryKey, entryValue] of getOwnEntries(value)) serialized[entryKey] = entryValue;
-	serialized.name = value.name;
-	serialized.message = value.message;
-	if (value.stack) serialized.stack = value.stack;
-	const cause = getOwnValue(value, 'cause');
-	if (cause !== undefined) serialized.cause = cause;
+	const cached = serializedErrors.get(value);
+	if (cached !== undefined) return cached;
+	let serialized: RuntimeObject | string;
+	try {
+		const fields: RuntimeObject = {};
+		for (const [entryKey, entryValue] of getOwnEntries(value)) fields[entryKey] = entryValue;
+		fields.name = value.name;
+		fields.message = value.message;
+		if (value.stack) fields.stack = value.stack;
+		const cause = getOwnValue(value, 'cause');
+		if (cause !== undefined) fields.cause = cause;
+		serialized = fields;
+	} catch {
+		// A throwing getter must not turn the log call into a new exception.
+		serialized = '[Unserializable Error]';
+	}
+	serializedErrors.set(value, serialized);
 	return serialized;
 }
 
 /**
- * How deep a log line is written before the rest becomes `[Object]`.
- *
- * Required with `logJsonReplacer`, not optional: the stringifier finds cycles
- * by object identity, and the replacer returns a new object for every Error,
- * so an Error that reaches itself again (`error.cause = error`, two errors
- * citing each other) is never seen as a cycle. Without a depth cap that
- * recursion overflows the stack, and winston rethrows it from the log call.
+ * How deep a log line is written before the rest becomes `[Object]`. A
+ * backstop: real log metadata reaches about five levels.
  */
 export const LOG_JSON_MAXIMUM_DEPTH = 16;
 
