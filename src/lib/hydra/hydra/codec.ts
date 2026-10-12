@@ -1,6 +1,7 @@
 import { PlutusData, PlutusDatumSchema } from '@emurgo/cardano-serialization-lib-nodejs';
 import type { Asset, UTxO } from '@meshsdk/core';
 
+import { parseHydraJson } from './json';
 import { MAX_HYDRA_QUANTITY } from './schemas';
 import type { HydraQuantity, HydraUTxO, HydraValue } from './types';
 
@@ -105,10 +106,12 @@ export function mapUTxOToHydraUTxO(utxo: UTxO): HydraUTxO {
  * hydra-node 2.4.1 reads `inlineDatumRaw` to keep the original bytes, but then
  * hands the output to cardano-api's parser, which only builds an inline datum
  * when `inlineDatum` (detailed-schema JSON) is present as well
- * (`Hydra.Cardano.Api.TxOut.parseTxOutFromJSON`).
+ * (`Hydra.Cardano.Api.TxOut.parseTxOutFromJSON`). It then checks the JSON's hash
+ * against the raw bytes, so an integer above 2^53 must keep every digit: plain
+ * `JSON.parse` would round it and the node would reject the commit.
  */
 function inlineDatumJson(rawHex: string): object {
-	return JSON.parse(PlutusData.from_hex(rawHex).to_json(PlutusDatumSchema.DetailedSchema)) as object;
+	return parseHydraJson(PlutusData.from_hex(rawHex).to_json(PlutusDatumSchema.DetailedSchema)) as object;
 }
 
 export function mapHydraUTxOToUTxO(txId: string, utxo: HydraUTxO): UTxO {

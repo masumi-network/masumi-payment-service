@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { mapAmountToHydraValue, mapHydraValueToAmount, mapUTxOToHydraUTxO, mapHydraUTxOToUTxO } from './codec';
+import { stringifyHydraJson } from './json';
 
 describe('mapAmountToHydraValue', () => {
 	it('converts lovelace-only amount', () => {
@@ -116,6 +117,23 @@ describe('mapUTxOToHydraUTxO', () => {
 		const result = mapUTxOToHydraUTxO(utxo);
 		expect(result.inlineDatumRaw).toBe('d87980');
 		expect(result.inlineDatum).toEqual({ constructor: 0, fields: [] });
+	});
+
+	it('keeps every digit of a datum integer above 2^53', () => {
+		// Constr 0 [18446744073709551615]: a token limit no double can hold.
+		const utxo = {
+			input: { txHash: 'cccc', outputIndex: 0 },
+			output: {
+				address: 'addr_test1',
+				amount: [{ unit: 'lovelace', quantity: '1000000' }],
+				dataHash: undefined,
+				plutusData: 'd8799f1bffffffffffffffffff',
+			},
+		};
+		const result = mapUTxOToHydraUTxO(utxo);
+		expect(stringifyHydraJson(result.inlineDatum).replace(/\s/g, '')).toBe(
+			'{"constructor":0,"fields":[{"int":18446744073709551615}]}',
+		);
 	});
 
 	it('drops the hash Blockfrost reports for an inline datum', () => {
