@@ -123,7 +123,7 @@ function parseFanoutReference(
 	return { txHash, outputIndex, snapshotNumber, serializedOutput };
 }
 
-function canonicalSnapshotOutputs(snapshot: HydraSnapshotVerificationFrame['snapshot']): Map<string, string> {
+export function canonicalSnapshotOutputs(snapshot: HydraSnapshotVerificationFrame['snapshot']): Map<string, string> {
 	const result = new Map<string, string>();
 	for (const utxo of [snapshot.utxo, snapshot.utxoToCommit ?? {}, snapshot.utxoToDecommit ?? {}]) {
 		for (const [reference, output] of Object.entries(utxo)) {
@@ -246,10 +246,15 @@ export function resolveVerifiedHydraFanoutReference(
 	return matchingReferences.length === 1 ? matchingReferences[0] : null;
 }
 
-export function verifyHydraSnapshot(
+/**
+ * Every party's Ed25519 signature over the snapshot's signable bytes, nothing
+ * more. The UTxO sets enter only through the commit and decommit hashes, so a
+ * caller that checks `utxo` another way (a membership witness) may pass `{}`.
+ */
+export function verifyHydraSnapshotSignatures(
 	frame: HydraSnapshotVerificationFrame,
 	orderedVerificationKeys: readonly string[],
-): VerifiedHydraSnapshot {
+): void {
 	if (frame.headId !== frame.snapshot.headId) {
 		throw new HydraProtocolError('SnapshotConfirmed top-level and signed snapshot head identifiers differed');
 	}
@@ -279,6 +284,13 @@ export function verifyHydraSnapshot(
 			throw new HydraProtocolError(`SnapshotConfirmed signature ${index} was invalid for the bound party order`);
 		}
 	}
+}
+
+export function verifyHydraSnapshot(
+	frame: HydraSnapshotVerificationFrame,
+	orderedVerificationKeys: readonly string[],
+): VerifiedHydraSnapshot {
+	verifyHydraSnapshotSignatures(frame, orderedVerificationKeys);
 	// KZG recomputation is intentionally after the cheap Ed25519 gate. An
 	// unauthenticated websocket peer must not be able to force polynomial/MSM
 	// work with arbitrary maximum-size states.

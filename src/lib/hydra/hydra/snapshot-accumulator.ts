@@ -149,16 +149,27 @@ function getTrustedSetupPoints(count: number) {
 	return trustedSetupPoints.slice(0, count);
 }
 
-export function computeHydraAccumulatorHash(serializedOutputs: Iterable<string>): string {
+/** An output's root in the accumulator polynomial: blake2b-224(sha256(Plutus TxOut bytes)) as an integer. */
+export function hydraAccumulatorRoot(serializedOutput: string): bigint {
+	const outputHash = createHash('sha256').update(Buffer.from(serializedOutput, 'hex')).digest();
+	return BigInt(`0x${Buffer.from(blake2b(outputHash, 28)).toString('hex')}`);
+}
+
+/** The signed accumulator field: blake2b-256 of the compressed G1 commitment. */
+export function hydraAccumulatorHashOfCommitment(commitment: Uint8Array): string {
+	return Buffer.from(blake2b(commitment, 32)).toString('hex');
+}
+
+function rootsOf(serializedOutputs: Iterable<string>): bigint[] {
 	const outputs = [...serializedOutputs];
 	if (outputs.length > MAX_HYDRA_SNAPSHOT_OUTPUTS) {
 		throw new HydraProtocolError(`Hydra snapshot exceeded the ${MAX_HYDRA_SNAPSHOT_OUTPUTS}-output KZG limit`);
 	}
-	const roots = outputs.map((output) => {
-		const outputHash = createHash('sha256').update(Buffer.from(output, 'hex')).digest();
-		return BigInt(`0x${Buffer.from(blake2b(outputHash, 28)).toString('hex')}`);
-	});
-	const coefficients = polynomialFromRoots(roots);
+	return outputs.map(hydraAccumulatorRoot);
+}
+
+/** [p(τ)]₁ for coefficients lowest first. */
+function commitPolynomial(coefficients: bigint[]): Uint8Array {
 	const points = getTrustedSetupPoints(coefficients.length);
 	const nonzeroPoints = [];
 	const nonzeroScalars = [];
@@ -167,6 +178,40 @@ export function computeHydraAccumulatorHash(serializedOutputs: Iterable<string>)
 		nonzeroPoints.push(points[index]);
 		nonzeroScalars.push(coefficients[index]);
 	}
-	const commitment = bls12_381.G1.ProjectivePoint.msm(nonzeroPoints, nonzeroScalars);
-	return Buffer.from(blake2b(commitment.toRawBytes(true), 32)).toString('hex');
+	return bls12_381.G1.ProjectivePoint.msm(nonzeroPoints, nonzeroScalars).toRawBytes(true);
+}
+
+export function computeHydraAccumulatorHash(serializedOutputs: Iterable<string>): string {
+	return hydraAccumulatorHashOfCommitment(commitPolynomial(polynomialFromRoots(rootsOf(serializedOutputs))));
+}
+
+/**
+ * The commitment C = [P(τ)]₁ with P(x) = ∏(x + rᵢ) over every output, and the
+ * KZG witness π = [P(x) / (x + r)]₁ that one output is among them. The same
+ * check Hydra's head contract runs for a partial fanout (Hydra 2.4.1
+ * `hydra-plutus/src/Hydra/Contract/CRS.hs` `checkMembershipPairing`), so a
+ * verifier needs C, π and the one output instead of the whole UTxO set.
+ * Throws when `serializedMember` is not among `serializedOutputs`.
+ */
+export function computeHydraMembershipWitness(
+	serializedOutputs: Iterable<string>,
+	serializedMember: string,
+): { commitment: string; witness: string } {
+	const coefficients = polynomialFromRoots(rootsOf(serializedOutputs));
+	const root = hydraAccumulatorRoot(serializedMember);
+	// Synthetic division by (x + r), highest coefficient first.
+	const degree = coefficients.length - 1;
+	const quotient = Array<bigint>(Math.max(degree, 0)).fill(0n);
+	let carry = 0n;
+	for (let index = degree; index >= 1; index--) {
+		carry = mod(coefficients[index] - root * carry);
+		quotient[index - 1] = carry;
+	}
+	if (mod(coefficients[0] - root * carry) !== 0n) {
+		throw new HydraProtocolError('The member output is not in the accumulated UTxO set');
+	}
+	return {
+		commitment: Buffer.from(commitPolynomial(coefficients)).toString('hex'),
+		witness: Buffer.from(commitPolynomial(quotient)).toString('hex'),
+	};
 }
