@@ -13,6 +13,13 @@ import {
 	MultiAsset,
 	PlutusData,
 	PlutusList,
+	PlutusMap,
+	PlutusMapValues,
+	Redeemer,
+	Redeemers,
+	RedeemerTag,
+	ExUnits,
+	ScriptDataHash,
 	ScriptHash,
 	Transaction,
 	TransactionBody,
@@ -315,6 +322,90 @@ describe('readHydraCommitDraftInputReferences', () => {
 	});
 });
 
+describe('validateHydraCommitDraft with a script commit', () => {
+	const scriptHash = Address.from_bech32(OTHER_SCRIPT_ADDRESS).payment_cred()!.to_scripthash()!.to_hex();
+	const walletDatum = 'd8799f4100ff';
+	const scriptUtxo: UTxO = {
+		input: { txHash: COMMIT_TX_HASH, outputIndex: 1 },
+		output: {
+			address: OTHER_SCRIPT_ADDRESS,
+			amount: [{ unit: 'lovelace', quantity: '5000000' }],
+			plutusData: walletDatum,
+			// Blockfrost also reports the inline datum's hash.
+			dataHash: 'a'.repeat(64),
+		},
+	};
+
+	function validateScript(draft: HydraTransaction, commitUtxo = scriptUtxo) {
+		return validateHydraCommitDraft({
+			...baseValidationOptions(draft),
+			commitUtxos: [commitUtxo],
+			walletUtxos: [],
+			scriptCommit: { scriptHash },
+		});
+	}
+
+	it('accepts a script spend that keeps the inline datum', () => {
+		const draft = buildDraft({ serializedOutput: serializedScriptOutput(walletDatum), scriptDataHash: true });
+		expect(validateScript(draft).depositOutputIndex).toBe(0);
+	});
+
+	it('rejects a script data hash on a plain commit', () => {
+		expect(() => validate(buildDraft({ scriptDataHash: true }))).toThrow('unexpected script data hash');
+	});
+
+	it('rejects a deposit that changes the inline datum', () => {
+		const draft = buildDraft({ serializedOutput: serializedScriptOutput('d8799f4101ff'), scriptDataHash: true });
+		expect(() => validateScript(draft)).toThrow('changes the committed inline datum');
+	});
+
+	it('rejects a deposit that drops the inline datum', () => {
+		const draft = buildDraft({ serializedOutput: serializedScriptOutput(null), scriptDataHash: true });
+		expect(() => validateScript(draft)).toThrow('output datum has an invalid constructor shape');
+	});
+
+	it('rejects a second redeemer that would run another script', () => {
+		const spend = commitSpendIndex([NODE_FEE_TX_HASH]);
+		const draft = buildDraft({
+			serializedOutput: serializedScriptOutput(walletDatum),
+			scriptDataHash: true,
+			redeemers: [
+				{ tag: 'spend', index: spend },
+				{ tag: 'spend', index: 1 - spend },
+			],
+		});
+		expect(() => validateScript(draft)).toThrow('exactly one redeemer');
+	});
+
+	it('rejects a redeemer that spends an input other than the committed one', () => {
+		const draft = buildDraft({
+			serializedOutput: serializedScriptOutput(walletDatum),
+			scriptDataHash: true,
+			redeemers: [{ tag: 'spend', index: 1 - commitSpendIndex([NODE_FEE_TX_HASH]) }],
+		});
+		expect(() => validateScript(draft)).toThrow('must spend the committed UTxO');
+	});
+
+	it('rejects a commit UTxO at another script', () => {
+		const elsewhere = { ...scriptUtxo, output: { ...scriptUtxo.output, address: COMMIT_ADDRESS } };
+		const draft = buildDraft({ serializedOutput: serializedScriptOutput(walletDatum), scriptDataHash: true });
+		expect(() => validateScript(draft, elsewhere)).toThrow('is not an inline-datum output at the commit script');
+	});
+
+	function serializedScriptOutput(datumHex: string | null): string {
+		const lovelace = PlutusMap.new();
+		lovelace.insert(PlutusData.new_bytes(Buffer.alloc(0)), plutusValues(integer(5_000_000n)));
+		const value = PlutusMap.new();
+		value.insert(PlutusData.new_bytes(Buffer.alloc(0)), plutusValues(PlutusData.new_map(lovelace)));
+		return constructor(0, [
+			PlutusData.from_address(Address.from_bech32(OTHER_SCRIPT_ADDRESS)),
+			PlutusData.new_map(value),
+			datumHex == null ? constructor(0, []) : constructor(2, [PlutusData.from_hex(datumHex)]),
+			constructor(1, []),
+		]).to_hex();
+	}
+});
+
 describe('assertHydraCommitSignedBody', () => {
 	it('accepts witness-only signing and rejects a changed transaction body', () => {
 		const original = buildDraft();
@@ -364,6 +455,8 @@ function buildDraft({
 	changeAddress = NODE_CHANGE_ADDRESS,
 	changeLovelace = 999_600_000n,
 	ttl = 129_100_000,
+	scriptDataHash = false,
+	redeemers,
 }: {
 	serializedOutput?: string;
 	depositAddress?: string;
@@ -376,6 +469,9 @@ function buildDraft({
 	changeAddress?: string;
 	changeLovelace?: bigint;
 	ttl?: number;
+	scriptDataHash?: boolean;
+	/** Defaults to one spend of the committed input when `scriptDataHash` is set. */
+	redeemers?: Array<{ tag: 'spend' | 'mint'; index: number }>;
 } = {}): HydraTransaction {
 	const inputs = TransactionInputs.new();
 	inputs.add(TransactionInput.new(TransactionHash.from_hex(COMMIT_TX_HASH), 1));
@@ -420,6 +516,7 @@ function buildDraft({
 
 	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str(fee.toString()));
 	body.set_ttl(BigNum.from_str(ttl.toString()));
+	if (scriptDataHash) body.set_script_data_hash(ScriptDataHash.from_hex('0'.repeat(64)));
 	if (collateralInputHashes.length > 0) {
 		const collateral = TransactionInputs.new();
 		for (const txHash of collateralInputHashes) {
@@ -427,7 +524,24 @@ function buildDraft({
 		}
 		body.set_collateral(collateral);
 	}
-	const transaction = Transaction.new(body, TransactionWitnessSet.new());
+	const witnessSet = TransactionWitnessSet.new();
+	const redeemerList =
+		redeemers ?? (scriptDataHash ? [{ tag: 'spend' as const, index: commitSpendIndex(feeInputHashes) }] : []);
+	if (redeemerList.length > 0) {
+		const all = Redeemers.new();
+		for (const entry of redeemerList) {
+			all.add(
+				Redeemer.new(
+					entry.tag === 'spend' ? RedeemerTag.new_spend() : RedeemerTag.new_mint(),
+					BigNum.from_str(String(entry.index)),
+					constructor(3, []),
+					ExUnits.new(BigNum.from_str('1000000'), BigNum.from_str('500000000')),
+				),
+			);
+		}
+		witnessSet.set_redeemers(all);
+	}
+	const transaction = Transaction.new(body, witnessSet);
 	return {
 		type: HydraTransactionType.TxConwayEra,
 		description: '',
@@ -435,10 +549,26 @@ function buildDraft({
 	};
 }
 
+/** The committed input's position in the ledger's sorted input set. */
+function commitSpendIndex(feeInputHashes: string[]): number {
+	const references = [`${COMMIT_TX_HASH}#1`, ...feeInputHashes.map((hash) => `${hash}#0`)].sort();
+	return references.indexOf(`${COMMIT_TX_HASH}#1`);
+}
+
 function constructor(alternative: number, fields: PlutusData[]): PlutusData {
 	const fieldList = PlutusList.new();
 	for (const field of fields) fieldList.add(field);
 	return PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.from_str(alternative.toString()), fieldList));
+}
+
+function integer(value: bigint): PlutusData {
+	return PlutusData.new_integer(CardanoBigInt.from_str(value.toString()));
+}
+
+function plutusValues(value: PlutusData): PlutusMapValues {
+	const values = PlutusMapValues.new();
+	values.add(value);
+	return values;
 }
 
 function list(items: PlutusData[]): PlutusData {

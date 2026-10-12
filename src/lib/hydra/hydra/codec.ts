@@ -1,3 +1,4 @@
+import { PlutusData, PlutusDatumSchema } from '@emurgo/cardano-serialization-lib-nodejs';
 import type { Asset, UTxO } from '@meshsdk/core';
 
 import { MAX_HYDRA_QUANTITY } from './schemas';
@@ -86,15 +87,28 @@ export function mapUTxOToHydraUTxO(utxo: UTxO): HydraUTxO {
 		);
 	}
 
+	const inlineDatumRaw = utxo.output.plutusData ?? null;
 	return {
 		address: utxo.output.address,
 		value: mapAmountToHydraValue(utxo.output.amount),
-		datumhash: utxo.output.dataHash ?? null,
-		inlineDatum: null,
-		inlineDatumRaw: utxo.output.plutusData ?? null,
+		// Blockfrost reports the hash of an inline datum as `dataHash` too; sending it
+		// as `datumhash` would describe a second, hash-only datum on the same output.
+		datumhash: inlineDatumRaw == null ? (utxo.output.dataHash ?? null) : null,
+		inlineDatum: inlineDatumRaw == null ? null : inlineDatumJson(inlineDatumRaw),
+		inlineDatumRaw,
 		datum: null,
 		referenceScript: null,
 	};
+}
+
+/**
+ * hydra-node 2.4.1 reads `inlineDatumRaw` to keep the original bytes, but then
+ * hands the output to cardano-api's parser, which only builds an inline datum
+ * when `inlineDatum` (detailed-schema JSON) is present as well
+ * (`Hydra.Cardano.Api.TxOut.parseTxOutFromJSON`).
+ */
+function inlineDatumJson(rawHex: string): object {
+	return JSON.parse(PlutusData.from_hex(rawHex).to_json(PlutusDatumSchema.DetailedSchema)) as object;
 }
 
 export function mapHydraUTxOToUTxO(txId: string, utxo: HydraUTxO): UTxO {

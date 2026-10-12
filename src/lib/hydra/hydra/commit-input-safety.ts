@@ -1,3 +1,4 @@
+import { Address } from '@emurgo/cardano-serialization-lib-nodejs';
 import type { UTxO } from '@meshsdk/core';
 
 /**
@@ -42,6 +43,12 @@ export async function assertCommitDraftInputsAreNodeFunded(params: {
 	walletPaymentKeyHash: string;
 	resolveOutput: ResolveInputOutput;
 	paymentKeyHashOf: (address: string) => string;
+	/**
+	 * Refuse non-committed inputs at any script. Set for a script commit: the
+	 * draft then runs scripts, and a script that trusts the signer's key (a
+	 * second smart wallet of the same owner) would spend under its witness.
+	 */
+	refuseScriptInputs?: boolean;
 }): Promise<void> {
 	const {
 		inputReferences,
@@ -72,6 +79,12 @@ export async function assertCommitDraftInputsAreNodeFunded(params: {
 		if (!output) {
 			throw new HydraCommitInputSafetyError(`funding input ${reference} could not be resolved on L1`, 'unresolved');
 		}
+		if (params.refuseScriptInputs === true && isScriptAddress(output.address)) {
+			throw new HydraCommitInputSafetyError(
+				`non-committed input ${reference} sits at a script; a script commit spends only its committed UTxO`,
+				'wallet-owned',
+			);
+		}
 		if (paymentKeyHashOf(output.address).toLowerCase() === walletKeyHash) {
 			throw new HydraCommitInputSafetyError(
 				`non-committed input ${reference} is owned by this wallet; the wallet must sign only its committed UTxOs`,
@@ -79,6 +92,10 @@ export async function assertCommitDraftInputsAreNodeFunded(params: {
 			);
 		}
 	}
+}
+
+function isScriptAddress(bech32: string): boolean {
+	return Address.from_bech32(bech32).payment_cred()?.to_scripthash() != null;
 }
 
 export { inputReference };

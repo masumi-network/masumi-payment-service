@@ -115,6 +115,22 @@ describe('mapUTxOToHydraUTxO', () => {
 		};
 		const result = mapUTxOToHydraUTxO(utxo);
 		expect(result.inlineDatumRaw).toBe('d87980');
+		expect(result.inlineDatum).toEqual({ constructor: 0, fields: [] });
+	});
+
+	it('drops the hash Blockfrost reports for an inline datum', () => {
+		const utxo = {
+			input: { txHash: 'cccc', outputIndex: 0 },
+			output: {
+				address: 'addr_test1',
+				amount: [{ unit: 'lovelace', quantity: '1000000' }],
+				dataHash: 'inlinedatumhash',
+				plutusData: 'd8799f4100ff',
+			},
+		};
+		const result = mapUTxOToHydraUTxO(utxo);
+		expect(result.datumhash).toBeNull();
+		expect(result.inlineDatum).toEqual({ constructor: 0, fields: [{ bytes: '00' }] });
 	});
 
 	it('rejects a reference script instead of silently dropping it', () => {

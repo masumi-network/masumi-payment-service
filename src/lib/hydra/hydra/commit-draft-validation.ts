@@ -4,6 +4,7 @@ import {
 	FixedTransaction,
 	NetworkInfo,
 	PlutusData,
+	RedeemerTagKind,
 	Transaction,
 	type PlutusMap,
 	type Value,
@@ -49,6 +50,13 @@ export type ValidateHydraCommitDraftOptions = {
 	maxFeeLovelace?: bigint;
 	/** Slot timeline of the L1 chain on which the deposit transaction executes. */
 	slotConfig: SlotConfig;
+	/**
+	 * Commit UTxOs locked at this Plutus script (28-byte hex) instead of plain key
+	 * outputs. The draft then spends a script, so it carries a script data hash,
+	 * and the committed outputs keep their inline datum. Everything else is
+	 * validated as for a plain commit.
+	 */
+	scriptCommit?: { scriptHash: string };
 };
 
 export type ValidatedHydraCommitDraft = {
@@ -72,7 +80,9 @@ export function validateHydraCommitDraft({
 	maxDeadlineFromNowMs = DEFAULT_MAX_DEADLINE_FROM_NOW_MS,
 	maxFeeLovelace = DEFAULT_MAX_FEE_LOVELACE,
 	slotConfig,
+	scriptCommit,
 }: ValidateHydraCommitDraftOptions): ValidatedHydraCommitDraft {
+	const commitScriptHash = scriptCommit ? normalizeHash(scriptCommit.scriptHash, 'commit script hash', 56) : null;
 	if (draft.type !== HydraTransactionType.TxConwayEra && draft.type !== HydraTransactionType.UnwitnessedTxConwayEra) {
 		fail(`unexpected transaction type ${JSON.stringify(draft.type)}`);
 	}
@@ -105,7 +115,8 @@ export function validateHydraCommitDraft({
 	}
 
 	const body = transaction.body();
-	assertNoUnexpectedBodyFeatures(body);
+	assertNoUnexpectedBodyFeatures(body, commitScriptHash != null);
+	if (commitScriptHash != null) assertOnlyCommitScriptRuns(transaction, commitUtxos);
 	const txId = hashTransactionBody(cborHex);
 	if (draft.txId !== undefined && normalizeHash(draft.txId, 'advertised transaction id') !== txId) {
 		fail('advertised transaction id does not match the transaction body');
@@ -157,7 +168,12 @@ export function validateHydraCommitDraft({
 		if (address.network_id() !== networkId) {
 			fail('commit UTxOs span multiple Cardano networks');
 		}
-		if (utxo.output.plutusData != null || utxo.output.dataHash != null || utxo.output.scriptRef != null) {
+		if (commitScriptHash != null) {
+			const scriptHash = address.payment_cred()?.to_scripthash()?.to_hex().toLowerCase();
+			if (scriptHash !== commitScriptHash || utxo.output.plutusData == null || utxo.output.scriptRef != null) {
+				fail(`commit UTxO ${utxoReference(utxo)} is not an inline-datum output at the commit script`);
+			}
+		} else if (utxo.output.plutusData != null || utxo.output.dataHash != null || utxo.output.scriptRef != null) {
 			fail(`commit UTxO ${utxoReference(utxo)} is not a plain output`);
 		}
 	}
@@ -352,11 +368,21 @@ function validateSerializedCommitOutput(bytes: Buffer, expectedUtxo: UTxO, netwo
 	const serializedValue = normalizePlutusValue(outputFields.get(1), `deposit commit ${index} value`);
 	const expectedValue = normalizeMeshAmounts(expectedUtxo.output.amount);
 	assertValueMapEquals(serializedValue, expectedValue, `deposit commit ${index} value`);
-	expectConstructor(outputFields.get(2), 0n, 0, `deposit commit ${index} output datum`);
+	const inlineDatum = expectedUtxo.output.plutusData;
+	if (inlineDatum == null) {
+		expectConstructor(outputFields.get(2), 0n, 0, `deposit commit ${index} output datum`);
+	} else {
+		// Plutus `OutputDatum`: constructor 2 wraps an inline datum. The head
+		// recreates the output from these bytes, so they must be the wallet's datum.
+		const datumFields = expectConstructor(outputFields.get(2), 2n, 1, `deposit commit ${index} output datum`);
+		if (datumFields.get(0).to_hex() !== parsePlutusData(inlineDatum, `commit UTxO ${index} datum`).to_hex()) {
+			fail(`deposit commit ${index} changes the committed inline datum`);
+		}
+	}
 	expectConstructor(outputFields.get(3), 1n, 0, `deposit commit ${index} reference script`);
 }
 
-function assertNoUnexpectedBodyFeatures(body: ReturnType<Transaction['body']>): void {
+function assertNoUnexpectedBodyFeatures(body: ReturnType<Transaction['body']>, spendsCommitScript: boolean): void {
 	// `script data hash` / `mint` / `reference inputs` stay rejected below: their
 	// presence is the ledger's signal of Plutus script execution. Collateral is
 	// therefore INERT here — a Conway tx can only ever consume collateral when a
@@ -365,6 +391,10 @@ function assertNoUnexpectedBodyFeatures(body: ReturnType<Transaction['body']>): 
 	// even though the deposit spends no scripts; rejecting it blocked every commit.
 	// We allow collateral ONLY while the script-execution features remain absent,
 	// so the signer's collateral can never actually be taken.
+	// A script commit must carry a script data hash. Its collateral is then live,
+	// but it is the node's own input: no non-committed input may belong to the
+	// signer key or sit at any script (`commit-input-safety.ts`), and the only
+	// redeemer spends the committed UTxO (`assertOnlyCommitScriptRuns`).
 	const unexpectedFeatures: Array<[string, unknown]> = [
 		['certificates', body.certs()],
 		['withdrawals', body.withdrawals()],
@@ -372,7 +402,7 @@ function assertNoUnexpectedBodyFeatures(body: ReturnType<Transaction['body']>): 
 		['validity start', body.validity_start_interval_bignum()],
 		['mint', body.mint()],
 		['reference inputs', body.reference_inputs()],
-		['script data hash', body.script_data_hash()],
+		['script data hash', spendsCommitScript ? undefined : body.script_data_hash()],
 		['voting procedures', body.voting_procedures()],
 		['voting proposals', body.voting_proposals()],
 		['treasury donation', body.donation()],
@@ -558,6 +588,31 @@ function expectInteger(data: PlutusData, label: string): bigint {
 	return BigInt(integer.to_str());
 }
 
+/**
+ * A script commit runs exactly one script: the committed UTxO's spend. Any other
+ * redeemer would let the node spend more under the signer's witness, for
+ * example a second UTxO at a script that trusts the same owner key.
+ */
+function assertOnlyCommitScriptRuns(transaction: Transaction, commitUtxos: UTxO[]): void {
+	if (commitUtxos.length !== 1) fail('a script commit commits exactly one UTxO');
+	const redeemers = transaction.witness_set().redeemers();
+	if (redeemers == null || redeemers.len() !== 1) fail('a script commit must carry exactly one redeemer');
+	const redeemer = redeemers.get(0);
+	// The ledger indexes spend redeemers by the input's position in the sorted input set.
+	const sorted = readInputReferences(transaction.body().inputs()).sort(compareInputReferences);
+	const commitIndex = sorted.indexOf(utxoReference(commitUtxos[0]).toLowerCase());
+	if (redeemer.tag().kind() !== RedeemerTagKind.Spend || Number(redeemer.index().to_str()) !== commitIndex) {
+		fail('the only redeemer of a script commit must spend the committed UTxO');
+	}
+}
+
+function compareInputReferences(a: string, b: string): number {
+	const [hashA, indexA] = a.split('#');
+	const [hashB, indexB] = b.split('#');
+	if (hashA !== hashB) return hashA < hashB ? -1 : 1;
+	return Number(indexA) - Number(indexB);
+}
+
 function readInputReferences(inputs: ReturnType<ReturnType<Transaction['body']>['inputs']>): string[] {
 	const references: string[] = [];
 	for (let index = 0; index < inputs.len(); index += 1) {
@@ -579,6 +634,14 @@ function mapUtxosByReference(utxos: UTxO[], label: string): Map<string, UTxO> {
 
 function utxoReference(utxo: UTxO): string {
 	return `${normalizeHash(utxo.input.txHash, 'wallet UTxO transaction hash')}#${utxo.input.outputIndex}`;
+}
+
+function parsePlutusData(hex: string, label: string): PlutusData {
+	try {
+		return PlutusData.from_hex(hex);
+	} catch {
+		fail(`${label} is not valid Plutus data`);
+	}
 }
 
 function parseAddress(address: string, label: string): Address {

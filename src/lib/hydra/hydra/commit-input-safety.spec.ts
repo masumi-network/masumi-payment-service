@@ -1,5 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
+import { Credential, Ed25519KeyHash, EnterpriseAddress, ScriptHash } from '@emurgo/cardano-serialization-lib-nodejs';
 import { assertCommitDraftInputsAreNodeFunded, HydraCommitInputSafetyError } from './commit-input-safety';
 
 const WALLET_KEY = 'aa'.repeat(28);
@@ -107,5 +108,49 @@ describe('assertCommitDraftInputsAreNodeFunded', () => {
 			resolveOutput,
 		});
 		expect(resolveOutput).not.toHaveBeenCalled();
+	});
+});
+
+describe('assertCommitDraftInputsAreNodeFunded with refuseScriptInputs', () => {
+	const enterprise = (credential: Credential) => EnterpriseAddress.new(0, credential).to_address().to_bech32();
+	const NODE_ADDRESS = enterprise(Credential.from_keyhash(Ed25519KeyHash.from_hex(NODE_KEY)));
+	const SCRIPT_ADDRESS = enterprise(Credential.from_scripthash(ScriptHash.from_hex('cc'.repeat(28))));
+	const keyHashOf = (address: string) => (address === NODE_ADDRESS ? NODE_KEY : 'cc'.repeat(28));
+	const resolveOutput = async (txHash: string): Promise<UTxO['output']> => ({
+		address: txHash === NODE_HASH ? NODE_ADDRESS : SCRIPT_ADDRESS,
+		amount: [{ unit: 'lovelace', quantity: '1000000' }],
+	});
+	const params = {
+		commitReferences: [`${COMMIT_HASH}#0`],
+		collateralReferences: [],
+		walletPaymentKeyHash: WALLET_KEY,
+		paymentKeyHashOf: keyHashOf,
+		resolveOutput,
+		refuseScriptInputs: true,
+	};
+
+	it('accepts node-funded key inputs', async () => {
+		await expect(
+			assertCommitDraftInputsAreNodeFunded({ ...params, inputReferences: [`${COMMIT_HASH}#0`, `${NODE_HASH}#0`] }),
+		).resolves.toBeUndefined();
+	});
+
+	it('rejects a second script input smuggled next to the committed one', async () => {
+		await expect(
+			assertCommitDraftInputsAreNodeFunded({
+				...params,
+				inputReferences: [`${COMMIT_HASH}#0`, `${NODE_HASH}#0`, `${WALLET_EXTRA_HASH}#0`],
+			}),
+		).rejects.toThrow('sits at a script');
+	});
+
+	it('lets a script input through when the flag is off', async () => {
+		await expect(
+			assertCommitDraftInputsAreNodeFunded({
+				...params,
+				refuseScriptInputs: false,
+				inputReferences: [`${COMMIT_HASH}#0`, `${WALLET_EXTRA_HASH}#0`],
+			}),
+		).resolves.toBeUndefined();
 	});
 });

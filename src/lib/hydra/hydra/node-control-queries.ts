@@ -18,7 +18,7 @@ import {
 	hydraProtocolParametersSchema,
 	hydraSnapshotUtxoSchema,
 } from './schemas';
-import { HydraUTxO } from './types';
+import { HydraTransactionType, type HydraUTxO } from './types';
 
 export interface HydraQueryTransport {
 	get<T = unknown>(url: string): Promise<T>;
@@ -156,5 +156,10 @@ export function buildHydraCommitRequest(utxos: UTxO[], blueprintTx?: string | nu
 		},
 		{} as Record<string, HydraUTxO>,
 	);
-	return blueprintTx ? { blueprintTx, utxo: hydraUTxOs } : hydraUTxOs;
+	return blueprintTx
+		? {
+				blueprintTx: { type: HydraTransactionType.TxConwayEra, description: '', cborHex: blueprintTx },
+				utxo: hydraUTxOs,
+			}
+		: hydraUTxOs;
 }

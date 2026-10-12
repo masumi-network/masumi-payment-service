@@ -31,6 +31,17 @@ export type HydraCommitFlowDeps = {
 	paymentKeyHashOf: (address: string) => string;
 };
 
+/** What drafting and validating needs; signing is the caller's or the owner's. */
+export type HydraCommitDraftDeps = Omit<HydraCommitFlowDeps, 'signTx'>;
+
+export type ValidatedHydraCommitDraftResult = {
+	draft: HydraTransaction;
+	txId: string;
+	invalidHereafterSlot: bigint;
+	deadlineMs: number;
+	depositOutputIndex: number;
+};
+
 export type ValidatedHydraCommit = {
 	signedCommitTx: string;
 	txId: string;
@@ -70,6 +81,38 @@ export async function buildValidatedHydraCommit(params: {
 	slotConfig: SlotConfig;
 	deps: HydraCommitFlowDeps;
 }): Promise<ValidatedHydraCommit> {
+	const validated = await draftAndValidateHydraCommit(params);
+
+	// Partial sign (the draft may already carry node witnesses) and confirm the
+	// wallet added only witnesses without altering the validated body.
+	const signedCommitTx = await params.deps.signTx(validated.draft.cborHex, true);
+	assertHydraCommitSignedBody(signedCommitTx, validated.txId);
+
+	return {
+		signedCommitTx,
+		txId: validated.txId,
+		invalidHereafterSlot: validated.invalidHereafterSlot,
+		deadlineMs: validated.deadlineMs,
+		depositOutputIndex: validated.depositOutputIndex,
+		committedValue: sumCommittedValue(params.commitUtxos),
+	};
+}
+
+/**
+ * Draft the commit with the hydra-node, enforce key-scoped input safety for the
+ * signer (`walletPaymentKeyHash`), and validate every signer-relevant field. The
+ * returned draft is still unsigned by that signer. `scriptCommit` admits commit
+ * UTxOs locked at that script (see `validateHydraCommitDraft`).
+ */
+export async function draftAndValidateHydraCommit(params: {
+	commitUtxos: UTxO[];
+	walletUtxos: UTxO[];
+	walletPaymentKeyHash: string;
+	expectedHeadId: string;
+	slotConfig: SlotConfig;
+	deps: HydraCommitDraftDeps;
+	scriptCommit?: { scriptHash: string };
+}): Promise<ValidatedHydraCommitDraftResult> {
 	const { commitUtxos, walletUtxos, walletPaymentKeyHash, expectedHeadId, slotConfig, deps } = params;
 
 	const draft = await deps.requestCommitDraft(commitUtxos);
@@ -87,6 +130,7 @@ export async function buildValidatedHydraCommit(params: {
 			walletPaymentKeyHash,
 			resolveOutput: deps.resolveInputOutput,
 			paymentKeyHashOf: deps.paymentKeyHashOf,
+			refuseScriptInputs: params.scriptCommit != null,
 		});
 	} catch (error) {
 		if (error instanceof HydraCommitInputSafetyError) {
@@ -106,22 +150,17 @@ export async function buildValidatedHydraCommit(params: {
 			expectedHeadId,
 			depositScriptHash: resolveHydraDepositScriptHash(),
 			slotConfig,
+			scriptCommit: params.scriptCommit,
 		});
 	} catch (error) {
 		throw new HydraCommitFlowError(`unsafe commit draft: ${error instanceof Error ? error.message : String(error)}`);
 	}
 
-	// Partial sign (the draft may already carry node witnesses) and confirm the
-	// wallet added only witnesses without altering the validated body.
-	const signedCommitTx = await deps.signTx(draft.cborHex, true);
-	assertHydraCommitSignedBody(signedCommitTx, validated.txId);
-
 	return {
-		signedCommitTx,
+		draft,
 		txId: validated.txId,
 		invalidHereafterSlot: validated.invalidHereafterSlot,
 		deadlineMs: validated.deadlineMs,
 		depositOutputIndex: validated.depositOutputIndex,
-		committedValue: sumCommittedValue(commitUtxos),
 	};
 }

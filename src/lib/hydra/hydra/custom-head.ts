@@ -1,14 +1,7 @@
 import type { UTxO } from '@meshsdk/core';
 import { HydraHead } from './head';
 import { HydraNode } from './node';
-import {
-	HydraTransaction,
-	HydraTransactionType,
-	HydraHeadEvent,
-	HydraNodeEvent,
-	HydraNodeConfig,
-	StatusChangeData,
-} from './types';
+import { HydraTransaction, HydraHeadEvent, HydraNodeEvent, HydraNodeConfig, StatusChangeData } from './types';
 import { HydraTransportError } from './errors';
 
 export class CustomHydraHead extends HydraHead<HydraNode> {
@@ -67,7 +60,8 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 
 	async commit(
 		utxos: UTxO[],
-		blueprintTx?: HydraTransactionType | null,
+		/** Blueprint transaction CBOR (hex) for a script commit; null for a plain commit. */
+		blueprintTx?: string | null,
 		participant?: string | null,
 	): Promise<HydraTransaction> {
 		this.assertMutationAllowed();
@@ -80,7 +74,7 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 			throw new Error(`Participant ${participant} not found in node`);
 		}
 
-		return await node.commit(utxos, blueprintTx as string | undefined);
+		return await node.commit(utxos, blueprintTx);
 	}
 
 	async close(): Promise<void> {
