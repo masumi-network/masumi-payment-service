@@ -2100,7 +2100,7 @@ export const getHydraHeadTransactions = <ThrowOnError extends boolean = false>(o
 /**
  * Recover a deposit the head never absorbed. (admin access required)
  *
- * A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.
+ * A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed. Without a live node (head closed, disabled or quarantined) the service posts the recover on L1 itself and the participant hot wallet pays the fee.
  */
 export const postHydraHeadTopupRecover = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadTopupRecoverData, ThrowOnError>): RequestResult<PostHydraHeadTopupRecoverResponses, PostHydraHeadTopupRecoverErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadTopupRecoverResponses, PostHydraHeadTopupRecoverErrors, ThrowOnError>({
     responseType: 'json',
@@ -2457,7 +2457,7 @@ export const postWalletGuardedHydraDepositSubmit = <ThrowOnError extends boolean
 /**
  * Recover an unabsorbed guarded wallet deposit. (admin access required)
  *
- * Asks the head node to return a Submitted deposit that the head never took in. Allowed only after recoverableAt. The node builds, pays for and submits the recover transaction, which puts the wallet back at its address with its datum; the owner signs nothing. The status endpoint settles the transfer as Failed once the wallet is on L1 again.
+ * Asks the head node to return a Submitted deposit that the head never took in. Allowed only after recoverableAt. The node builds, pays for and submits the recover transaction, which puts the wallet back at its address with its datum; the owner signs nothing. Without a live node (head closed, disabled or quarantined) the service posts the same recover on L1 and the agent hot wallet pays the fee. The status endpoint settles the transfer as Failed once the wallet is on L1 again.
  */
 export const postWalletGuardedHydraDepositRecover = <ThrowOnError extends boolean = false>(options?: Options<PostWalletGuardedHydraDepositRecoverData, ThrowOnError>): RequestResult<PostWalletGuardedHydraDepositRecoverResponses, PostWalletGuardedHydraDepositRecoverErrors, ThrowOnError> => (options?.client ?? client).post<PostWalletGuardedHydraDepositRecoverResponses, PostWalletGuardedHydraDepositRecoverErrors, ThrowOnError>({
     responseTransformer: postWalletGuardedHydraDepositRecoverResponseTransformer,

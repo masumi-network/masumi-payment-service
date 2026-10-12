@@ -14816,6 +14816,10 @@ export type PostHydraHeadTopupRecoverErrors = {
      * The deposit is not recoverable yet, or has already been absorbed or recovered
      */
     409: unknown;
+    /**
+     * The recover could not be built or submitted on L1
+     */
+    502: unknown;
 };
 
 export type PostHydraHeadTopupRecoverResponses = {
@@ -16178,11 +16182,11 @@ export type PostWalletGuardedHydraDepositRecoverErrors = {
      */
     404: unknown;
     /**
-     * The deposit is not Submitted, its deadline has not passed, the head already holds the wallet, or the node refused
+     * The deposit is not Submitted, its deadline has not passed, the head already holds the wallet, the node refused, or L1 shows the deposit already spent
      */
     409: unknown;
     /**
-     * No connection to the Hydra head
+     * The recover could not be built or submitted on L1
      */
     502: unknown;
 };
