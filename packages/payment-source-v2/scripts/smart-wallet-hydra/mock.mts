@@ -7,8 +7,9 @@
  * - the head's parties are read from its open state datum on L1, and every one
  *   must be in `SW_TRUSTED_HYDRA_PARTIES` (anyone can mint a token named
  *   `HydraHeadV2`, so the L1 read alone proves nothing);
- * - the wallet output is found by the wallet's state token (from
- *   `.state/prove.json`), because snapshot signatures do not cover refs;
+ * - the wallet output must carry the wallet's state token (from
+ *   `.state/prove.json`), because snapshot signatures do not cover refs, and
+ *   its KZG witness must match the signed accumulator;
  * - a head's snapshot number may not go backwards; the mark is saved in
  *   `.state/snapshot-marks.json` before the mock signs, so a restart keeps it.
  *
@@ -102,7 +103,6 @@ async function resolveWalletInput(ref: TxRef, context: CosignContext): Promise<V
 			headId: context.hydraHeadId,
 			partyKeys: await headPartyKeysFromL1(context.hydraHeadId),
 			stateTokenUnit,
-			walletUtxoRef,
 		});
 		if (output.address !== wallet.address) throw new Error('state token output is not at the wallet address');
 		// Re-check after the L1 read: another request may have moved the mark meanwhile.

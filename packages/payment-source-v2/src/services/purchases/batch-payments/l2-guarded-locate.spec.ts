@@ -85,6 +85,17 @@ describe('locateGuardedWalletForLock', () => {
 describe('signedSnapshotHoldingWallet', () => {
 	const headId = 'ab'.repeat(28);
 	const walletRef = `${'cc'.repeat(32)}#0`;
+	// hydra-node's JSON for an output: every field present, nulls included.
+	const output = () => ({
+		address:
+			'addr_test1zzvw95k0jfvkfma83mdh4uyh34yak0upukx966cuvennsd3ylyqmd4rq6dt35f8a9l9hugzc9ux5lmcm9s7umqzk8qaq2dgjdy',
+		value: { lovelace: 90000000n },
+		referenceScript: null,
+		datumhash: null,
+		inlineDatum: null,
+		inlineDatumRaw: null,
+		datum: null,
+	});
 	const confirmed = (utxoRefs: string[], snapshotHeadId = headId) => ({
 		signatures: { multiSignature: ['ef'.repeat(64)] },
 		snapshot: {
@@ -92,25 +103,29 @@ describe('signedSnapshotHoldingWallet', () => {
 			version: 1,
 			number: 2,
 			accumulator: 'ac'.repeat(32),
-			utxo: Object.fromEntries(utxoRefs.map((ref) => [ref, { address: 'addr_test', value: { lovelace: 90000000n } }])),
+			utxo: Object.fromEntries(utxoRefs.map((ref) => [ref, output()])),
 			utxoToCommit: null,
 			utxoToDecommit: null,
 			depositTxId: null,
 		},
 	});
 
-	it('returns the confirmed snapshot from /snapshot when it holds the wallet', async () => {
-		mockHeadState.mockResolvedValue(confirmed([walletRef]));
+	it('builds the proof from /snapshot when it holds the wallet, without the rest of the head', async () => {
+		mockHeadState.mockResolvedValue(confirmed([walletRef, `${'dd'.repeat(32)}#0`]));
 		const proof = await signedSnapshotHoldingWallet('head-1', headId, walletRef);
 		expect(mockHeadState).toHaveBeenCalledWith('/snapshot');
-		expect(proof.utxo[walletRef].value.lovelace).toBe('90000000');
+		expect(proof.walletOutput.value.lovelace).toBe('90000000');
+		expect(proof).not.toHaveProperty('utxo');
+		expect(proof.commitment).toMatch(/^[0-9a-f]{96}$/);
+		expect(proof.witness).toMatch(/^[0-9a-f]{96}$/);
 	});
 
 	it('accepts a snapshot that holds the wallet as a deposit still pending in the commit set', async () => {
 		const pending = confirmed([]);
-		pending.snapshot.utxoToCommit = { [walletRef]: { address: 'addr_test', value: { lovelace: 90000000n } } } as never;
+		pending.snapshot.utxoToCommit = { [walletRef]: output() } as never;
 		mockHeadState.mockResolvedValue(pending);
 		const proof = await signedSnapshotHoldingWallet('head-1', headId, walletRef);
+		expect(proof.walletOutput.value.lovelace).toBe('90000000');
 		expect(proof.utxoToCommit?.[walletRef].value.lovelace).toBe('90000000');
 	});
 

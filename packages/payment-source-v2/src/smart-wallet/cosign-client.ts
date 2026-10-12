@@ -125,17 +125,21 @@ const snapshotTxOutSchema = z.object({
 const snapshotUTxOSchema = z.record(z.string().regex(/^[0-9a-f]{64}#(0|[1-9]\d{0,4})$/), snapshotTxOutSchema);
 
 /**
- * A confirmed Hydra snapshot signed by every head party. The co-signer checks the
- * signatures against the party keys in the head's L1 state datum and finds the
- * wallet by its state token, so it never has to trust the sender for that output.
- * See `smart-wallet/hydra-snapshot/snapshot-proof.ts` for the exact checks.
+ * The signed header of a confirmed Hydra snapshot, the wallet output and its KZG
+ * membership witness. The co-signer checks the signatures against the party keys
+ * in the head's L1 state datum, the witness against the signed accumulator, and
+ * the wallet's state token in the output, so it never has to trust the sender
+ * for that output. See `smart-wallet/hydra-snapshot/snapshot-proof.ts`.
  */
 export const hydraSnapshotProofSchema = z.object({
 	headId: z.string().regex(/^[0-9a-f]{56}$/),
 	version: z.number().int().min(0),
 	number: z.number().int().min(0),
 	accumulator: z.string().regex(/^[0-9a-f]{64}$/),
-	utxo: snapshotUTxOSchema,
+	/** Compressed G1 points (48 bytes): the commitment to every output and the wallet output's witness. */
+	commitment: z.string().regex(/^[0-9a-f]{96}$/),
+	witness: z.string().regex(/^[0-9a-f]{96}$/),
+	walletOutput: snapshotTxOutSchema,
 	utxoToCommit: snapshotUTxOSchema.nullable(),
 	utxoToDecommit: snapshotUTxOSchema.nullable(),
 	depositTxId: z

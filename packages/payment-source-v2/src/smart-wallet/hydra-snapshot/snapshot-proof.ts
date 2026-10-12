@@ -2,21 +2,26 @@
  * Proof that a guarded wallet output exists in a Hydra head, checkable by anyone
  * who knows the head's party keys (they are in the head's state datum on L1).
  *
- * The proof is hydra-node's confirmed snapshot with its multisignature, with
- * quantities as decimal strings so no JSON stack on either side rounds them.
- * Verification is the same `verifyHydraSnapshot` the node uses on its own
- * websocket feed: every party's Ed25519 signature over the signable bytes, then
- * the KZG accumulator rebuilt from the full UTxO state.
+ * The proof is the signed header of hydra-node's latest confirmed snapshot, the
+ * wallet output, and a KZG membership witness for it. Every party signs the
+ * accumulator, a hash of the commitment C to all outputs of the head; the
+ * witness shows the wallet output is one of them (`verifyHydraMembership`), so
+ * the rest of the head's UTxO set stays with the node. The small pending sets
+ * (`utxoToCommit`, `utxoToDecommit`) are sent whole, because the signature
+ * covers them through their hashes. Quantities are decimal strings so no JSON
+ * stack on either side rounds them.
  *
- * What a valid proof shows: every party agreed the head holds these output
- * contents. It does NOT bind an output reference (`txId#index`) to a content:
- * the accumulator hashes outputs only. So the wallet output is found by its
- * state token, which exactly one output can carry, never by the ref the sender
- * names. Whether that output is still unspent, and whether the snapshot is the
- * newest, are for the head ledger and the co-signer's own records.
+ * What a valid proof shows: every party agreed the head holds this output
+ * content. It does NOT bind an output reference (`txId#index`): the accumulator
+ * hashes outputs only. The output is the wallet's because it carries the
+ * wallet's state token, which only one output can hold. Whether that output is
+ * still unspent, and whether the snapshot is the newest, are for the head
+ * ledger and the co-signer's own records.
  */
+import { verifyHydraMembership } from '@/lib/hydra/hydra/snapshot-membership';
 import {
-	verifyHydraSnapshot,
+	serializeHydraSnapshotOutput,
+	verifyHydraSnapshotSignatures,
 	type HydraSnapshotVerificationFrame,
 	type SnapshotOutput,
 	type SnapshotUtxo,
@@ -34,13 +39,17 @@ export type SnapshotTxOut = {
 
 export type SnapshotUTxO = Record<string, SnapshotTxOut>;
 
-/** A confirmed snapshot and its multisignature, in the shape the co-sign request carries. */
+/** A confirmed snapshot's signed header, the wallet output and its membership witness. */
 export type HydraSnapshotProof = {
 	headId: string;
 	version: number;
 	number: number;
 	accumulator: string;
-	utxo: SnapshotUTxO;
+	/** C, the compressed G1 commitment to every output; its blake2b-256 is `accumulator`. */
+	commitment: string;
+	/** π, the compressed G1 witness that `walletOutput` is one of C's outputs. */
+	witness: string;
+	walletOutput: SnapshotTxOut;
 	utxoToCommit: SnapshotUTxO | null;
 	utxoToDecommit: SnapshotUTxO | null;
 	depositTxId: string | null;
@@ -139,8 +148,11 @@ function frameUtxo(utxo: SnapshotUTxO): SnapshotUtxo {
 	return Object.fromEntries(Object.entries(canonicalUtxo(utxo)).map(([ref, out]) => [ref, frameOutput(out)]));
 }
 
-/** The node's own snapshot frame, rebuilt from the proof. */
-export function toVerificationFrame(proof: HydraSnapshotProof): HydraSnapshotVerificationFrame {
+/**
+ * The snapshot frame the signatures cover. `utxo` stays empty: the signable
+ * bytes read it only to cap the output count, and the witness covers it.
+ */
+function signedFrame(proof: HydraSnapshotProof): HydraSnapshotVerificationFrame {
 	return {
 		headId: proof.headId,
 		signatures: { multiSignature: proof.signatures },
@@ -150,7 +162,7 @@ export function toVerificationFrame(proof: HydraSnapshotProof): HydraSnapshotVer
 			number: proof.number,
 			accumulator: proof.accumulator,
 			confirmed: [],
-			utxo: frameUtxo(proof.utxo),
+			utxo: {},
 			utxoToCommit: proof.utxoToCommit == null ? null : frameUtxo(proof.utxoToCommit),
 			utxoToDecommit: proof.utxoToDecommit == null ? null : frameUtxo(proof.utxoToDecommit),
 			depositTxId: proof.depositTxId,
@@ -164,32 +176,34 @@ export function toVerificationFrame(proof: HydraSnapshotProof): HydraSnapshotVer
  * `partyKeys` must come from somewhere the sender does not control: the
  * `parties` field of the head's state datum on L1, for a head the co-signer
  * already trusts. `stateTokenUnit` (policy id + asset name) is the wallet's own
- * state token, from the co-signer's wallet records. The output is taken from
+ * state token, from the co-signer's wallet records. The output may sit in
  * `utxo` or `utxoToCommit` (a deposit stays in the commit set until the next
- * in-head transaction makes a new snapshot), never from `utxoToDecommit`.
- * `walletUtxoRef` must be the key it sits under, which catches a confused
- * sender, but that key is not signed. Throws when anything does not hold.
+ * in-head transaction), never in `utxoToDecommit`. Order: the cheap Ed25519
+ * signatures first, then two pairings. Throws when anything does not hold.
  */
 export function verifyHydraSnapshotProof(params: {
 	proof: HydraSnapshotProof;
 	headId: string;
 	partyKeys: string[];
 	stateTokenUnit: string;
-	walletUtxoRef: string;
 }): SnapshotTxOut {
-	const { proof, headId, partyKeys, stateTokenUnit, walletUtxoRef } = params;
+	const { proof, headId, partyKeys, stateTokenUnit } = params;
 	// Policy id (28 bytes) and a non-empty asset name (up to 32 bytes).
 	if (!/^[0-9a-f]{56}(?:[0-9a-f]{2}){1,32}$/.test(stateTokenUnit)) throw new Error('Invalid state token unit');
 	if (proof.headId.toLowerCase() !== headId.toLowerCase()) throw new Error('The snapshot is for another head');
-	verifyHydraSnapshot(toVerificationFrame(proof), partyKeys);
-	// Read only the canonical copies: they are exactly what was signed.
-	const candidates = [canonicalUtxo(proof.utxo), canonicalUtxo(proof.utxoToCommit ?? {})];
-	const holders = candidates
-		.flatMap((set) => Object.entries(set))
-		.filter(([, output]) => holdsToken(output, stateTokenUnit));
-	if (holders.length !== 1) throw new Error('The wallet state token is not in the snapshot UTxO set exactly once');
-	const [[ref, output]] = holders;
-	if (ref !== walletUtxoRef.toLowerCase()) throw new Error('The wallet state token is not at the named output');
+	verifyHydraSnapshotSignatures(signedFrame(proof), partyKeys);
+	// Read only canonical copies: they are exactly what was signed.
+	const output = canonicalOutput(proof.walletOutput);
+	if (!holdsToken(output, stateTokenUnit)) throw new Error('The wallet output does not hold the wallet state token');
+	if (Object.values(canonicalUtxo(proof.utxoToDecommit ?? {})).some((out) => holdsToken(out, stateTokenUnit))) {
+		throw new Error('The wallet is on its way out of the head');
+	}
+	verifyHydraMembership({
+		accumulator: proof.accumulator,
+		commitment: proof.commitment,
+		witness: proof.witness,
+		serializedOutput: serializeHydraSnapshotOutput(frameOutput(output)),
+	});
 	return output;
 }
 
@@ -198,14 +212,7 @@ function holdsToken(output: SnapshotTxOut, unit: string): boolean {
 	return typeof assets === 'object' && assets[unit.slice(56)] === '1';
 }
 
-/**
- * The output under `walletUtxoRef` in `utxo` or `utxoToCommit`. A sender-side
- * check only: the ref is not signed, so a verifier must use the state token.
- */
-export function findOutput(utxo: SnapshotUTxO | null, walletUtxoRef: string): SnapshotTxOut | undefined {
-	const { txId, index } = parseTxIn(walletUtxoRef.toLowerCase());
-	return Object.entries(utxo ?? {}).find(([ref]) => {
-		const parsed = parseTxIn(ref);
-		return parsed.txId === txId && parsed.index === index;
-	})?.[1];
+/** The proof's own form of one output, for a builder that serializes it the way the verifier does. */
+export function serializeSnapshotTxOut(output: SnapshotTxOut): string {
+	return serializeHydraSnapshotOutput(frameOutput(canonicalOutput(output)));
 }

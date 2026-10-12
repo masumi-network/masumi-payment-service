@@ -1,8 +1,13 @@
 /**
  * Turn hydra-node's `GET /snapshot` answer (a `ConfirmedSnapshot`) into the
- * proof a co-signer can check. Quantities become decimal strings so no JSON
- * stack on either side rounds them, and only the fields the hashes read are kept.
+ * proof a co-signer can check for one wallet output: the signed header, the
+ * output, and its KZG membership witness over the head's whole UTxO set.
+ * Quantities become decimal strings so no JSON stack on either side rounds
+ * them, and only the fields the hashes read are kept.
  */
+import { computeHydraMembershipWitness } from '@/lib/hydra/hydra/snapshot-accumulator';
+import { hydraSnapshotUtxoSchema } from '@/lib/hydra/hydra/schemas';
+import { canonicalSnapshotOutputs } from '@/lib/hydra/hydra/snapshot-verification';
 import {
 	getOwnEntries,
 	getOwnPlainObject,
@@ -11,7 +16,12 @@ import {
 	isPlainObject,
 	type RuntimeObject,
 } from '@masumi/payment-core/object-properties';
-import type { HydraSnapshotProof, SnapshotTxOut, SnapshotUTxO } from './snapshot-proof';
+import {
+	serializeSnapshotTxOut,
+	type HydraSnapshotProof,
+	type SnapshotTxOut,
+	type SnapshotUTxO,
+} from './snapshot-proof';
 
 function quantityString(value: unknown, label: string): string {
 	if (typeof value === 'bigint' && value >= 0n) return value.toString();
@@ -64,7 +74,11 @@ function utxoSet(raw: RuntimeObject | undefined): SnapshotUTxO | null {
 	return set;
 }
 
-export function toHydraSnapshotProof(confirmed: unknown): HydraSnapshotProof {
+/**
+ * The proof that `walletUtxoRef` is in the confirmed snapshot. Throws when the
+ * snapshot does not hold it in `utxo` or `utxoToCommit`.
+ */
+export function toHydraSnapshotProof(confirmed: unknown, walletUtxoRef: string): HydraSnapshotProof {
 	if (!isPlainObject(confirmed)) throw new Error('The node returned no confirmed snapshot');
 	const snapshot = getOwnPlainObject(confirmed, 'snapshot');
 	const signatures = getOwnValue(getOwnPlainObject(confirmed, 'signatures') ?? {}, 'multiSignature');
@@ -73,19 +87,50 @@ export function toHydraSnapshotProof(confirmed: unknown): HydraSnapshotProof {
 	}
 	const headId = getOwnString(snapshot, 'headId');
 	const accumulator = getOwnString(snapshot, 'accumulator');
-	const utxo = utxoSet(getOwnPlainObject(snapshot, 'utxo'));
-	if (headId == null || accumulator == null || utxo == null) {
+	const rawUtxo = getOwnPlainObject(snapshot, 'utxo');
+	if (headId == null || accumulator == null || rawUtxo == null) {
 		throw new Error('The snapshot has no head id, accumulator or UTxO set');
 	}
+	const rawCommit = getOwnPlainObject(snapshot, 'utxoToCommit');
+	const rawDecommit = getOwnPlainObject(snapshot, 'utxoToDecommit');
+	const ref = walletUtxoRef.toLowerCase();
+	const rawWallet =
+		getOwnPlainObject(rawUtxo, ref) ?? (rawCommit == null ? undefined : getOwnPlainObject(rawCommit, ref));
+	if (rawWallet == null) throw new Error('The latest confirmed snapshot does not hold the guarded wallet UTxO');
+	const walletOutput = txOut(ref, rawWallet);
+	const version = wholeNumber(getOwnValue(snapshot, 'version'), 'version');
+	const number = wholeNumber(getOwnValue(snapshot, 'number'), 'number');
+	const depositTxId = getOwnString(snapshot, 'depositTxId') ?? null;
+
+	// Every output of the head, in the exact bytes the accumulator hashes.
+	const outputs = canonicalSnapshotOutputs({
+		headId,
+		version,
+		number,
+		accumulator,
+		confirmed: [],
+		utxo: hydraSnapshotUtxoSchema.parse(rawUtxo),
+		utxoToCommit: rawCommit == null ? null : hydraSnapshotUtxoSchema.parse(rawCommit),
+		utxoToDecommit: rawDecommit == null ? null : hydraSnapshotUtxoSchema.parse(rawDecommit),
+		depositTxId,
+	});
+	const member = outputs.get(ref);
+	// The verifier serializes the proof's copy; it must be the bytes the head signed.
+	if (member == null || serializeSnapshotTxOut(walletOutput) !== member) {
+		throw new Error('The wallet output in the proof does not serialize to its snapshot bytes');
+	}
+	const { commitment, witness } = computeHydraMembershipWitness(outputs.values(), member);
 	return {
 		headId,
-		version: wholeNumber(getOwnValue(snapshot, 'version'), 'version'),
-		number: wholeNumber(getOwnValue(snapshot, 'number'), 'number'),
+		version,
+		number,
 		accumulator,
-		utxo,
-		utxoToCommit: utxoSet(getOwnPlainObject(snapshot, 'utxoToCommit')),
-		utxoToDecommit: utxoSet(getOwnPlainObject(snapshot, 'utxoToDecommit')),
-		depositTxId: getOwnString(snapshot, 'depositTxId') ?? null,
+		commitment,
+		witness,
+		walletOutput,
+		utxoToCommit: utxoSet(rawCommit),
+		utxoToDecommit: utxoSet(rawDecommit),
+		depositTxId,
 		signatures,
 	};
 }

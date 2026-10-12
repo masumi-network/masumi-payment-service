@@ -22,7 +22,7 @@ import { resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { CosignTransportError, mergeCosignWitnesses, requestCosign } from '../../../smart-wallet/cosign-client';
 import { buildGuardedL2LockTx } from '../../../smart-wallet/guarded-l2-lock-builder';
 import { toHydraSnapshotProof } from '../../../smart-wallet/hydra-snapshot/build-proof';
-import { findOutput, type HydraSnapshotProof } from '../../../smart-wallet/hydra-snapshot/snapshot-proof';
+import type { HydraSnapshotProof } from '../../../smart-wallet/hydra-snapshot/snapshot-proof';
 import { loadSmartWalletScript, readWalletDatum } from '../../../smart-wallet/wallet-lifecycle';
 import { pickBatchCollateral } from '../../../builders/batch-helpers';
 import { cosignConfigOrNull } from './cosign-config';
@@ -85,11 +85,9 @@ export async function signedSnapshotHoldingWallet(
 ): Promise<HydraSnapshotProof> {
 	const node = getHydraConnectionManager().getNode(hydraHeadId);
 	if (node == null) throw new Error(`No live connection to head ${hydraHeadId}`);
-	const proof = toHydraSnapshotProof(await node.get('/snapshot'));
+	// Throws when the snapshot does not hold the wallet UTxO.
+	const proof = toHydraSnapshotProof(await node.get('/snapshot'), walletUtxoRef);
 	if (proof.headId !== headIdentifier.toLowerCase()) throw new Error('The node returned a snapshot of another head');
-	if (findOutput(proof.utxo, walletUtxoRef) == null && findOutput(proof.utxoToCommit, walletUtxoRef) == null) {
-		throw new Error('The latest confirmed snapshot does not hold the guarded wallet UTxO');
-	}
 	return proof;
 }
 
