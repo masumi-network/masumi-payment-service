@@ -17,6 +17,7 @@ import { registerHydraPaths } from '@/routes/api/hydra/docs';
 import { registerRailReadinessPaths } from '@/routes/api/rail-readiness/docs';
 import { registerExchainPaths } from '@/routes/api/exchain/docs';
 import { registerGuardedWalletPaths } from '@/routes/api/wallet/guarded/docs';
+import { registerGuardedHydraPaths } from '@/routes/api/wallet/guarded/hydra/docs';
 import { registerTxSyncQuarantinePaths } from '@/routes/api/tx-sync-quarantine/docs';
 import { registerRequestRepairPaths } from '@/routes/api/request-repair/docs';
 import { registerReportPaths } from '@/routes/api/reports/docs';
@@ -47,6 +48,7 @@ export function generateOpenAPI() {
 	registerRailReadinessPaths({ registry, apiKeyAuth });
 	registerExchainPaths({ registry, apiKeyAuth });
 	registerGuardedWalletPaths({ registry, apiKeyAuth });
+	registerGuardedHydraPaths({ registry, apiKeyAuth });
 	registerTxSyncQuarantinePaths({ registry, apiKeyAuth });
 	registerRequestRepairPaths({ registry, apiKeyAuth });
 	registerReportPaths({ registry, apiKeyAuth });

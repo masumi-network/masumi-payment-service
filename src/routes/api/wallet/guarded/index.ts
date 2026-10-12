@@ -8,7 +8,8 @@ import {
 	postGuardedWalletSchemaInput,
 	postGuardedWalletSchemaOutput,
 } from './schemas';
-import { attachGuardedWallet, detachGuardedWallet, getGuardedWallet } from './service';
+import { detachGuardedWallet } from './detach';
+import { attachGuardedWallet, getGuardedWallet } from './service';
 
 /** Admin only: bind a Purchasing hot wallet to an Exchain co-signed smart wallet the owner minted. */
 export const postGuardedWalletEndpointPost = adminAuthenticatedEndpointFactory.build({

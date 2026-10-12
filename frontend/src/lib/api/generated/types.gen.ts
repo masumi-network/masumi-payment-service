@@ -15905,6 +15905,412 @@ export type PostWalletGuardedResponses = {
 
 export type PostWalletGuardedResponse = PostWalletGuardedResponses[keyof PostWalletGuardedResponses];
 
+export type GetWalletGuardedHydraData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The guarded Purchasing hot wallet
+         */
+        hotWalletId: string;
+    };
+    url: '/wallet/guarded/hydra';
+};
+
+export type GetWalletGuardedHydraErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hot wallet not found or not guarded
+     */
+    404: unknown;
+};
+
+export type GetWalletGuardedHydraResponses = {
+    /**
+     * Guarded wallet location
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * L2: inside a connected head. L1: on chain. Unknown: neither could be read, e.g. while it moves
+             */
+            location: 'L1' | 'L2' | 'Unknown';
+            hydraHeadId: string | null;
+            /**
+             * The wallet UTxO inside the head (txHash#index)
+             */
+            walletUtxoRef: string | null;
+            /**
+             * The wallet datum and balance where the wallet is now
+             */
+            state: {
+                lovelace: string;
+                periodLimitLovelace: string;
+                spentInPeriodLovelace: string;
+                periodStart: Date;
+                periodLengthMs: string;
+                minBalanceLovelace: string;
+            } | null;
+            l1Error: string | null;
+            /**
+             * The most recent moves, newest first
+             */
+            transfers: Array<{
+                id: string;
+                direction: 'Deposit' | 'Withdraw';
+                status: 'Prepared' | 'Submitted' | 'Confirmed' | 'Expired' | 'Failed';
+                hydraHeadId: string;
+                /**
+                 * The deposit L1 transaction id, or the in-head decommit transaction id
+                 */
+                txHash: string;
+                /**
+                 * The wallet UTxO this transfer moves (txHash#index)
+                 */
+                walletUtxoRef: string;
+                /**
+                 * The owner must sign and submit before this moment
+                 */
+                signBefore: Date | null;
+                /**
+                 * Deposit only: after this an unabsorbed deposit can be recovered to L1
+                 */
+                recoverableAt: Date | null;
+                submittedAt: Date | null;
+                confirmedAt: Date | null;
+                failureReason: string | null;
+                createdAt: Date;
+            }>;
+        };
+    };
+};
+
+export type GetWalletGuardedHydraResponse = GetWalletGuardedHydraResponses[keyof GetWalletGuardedHydraResponses];
+
+export type PostWalletGuardedHydraDepositData = {
+    /**
+     * The guarded hot wallet and the target head
+     */
+    body?: {
+        /**
+         * The guarded Purchasing hot wallet
+         */
+        hotWalletId: string;
+        /**
+         * The open head the hot wallet takes part in
+         */
+        hydraHeadId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guarded/hydra/deposit';
+};
+
+export type PostWalletGuardedHydraDepositErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hot wallet not found, not guarded, or Hydra head not found
+     */
+    404: unknown;
+    /**
+     * The wallet is already in a head or cannot be read on L1, the head is not usable, or another transfer is open
+     */
+    409: unknown;
+    /**
+     * No connection to the Hydra head, or the node could not build the transaction
+     */
+    502: unknown;
+};
+
+export type PostWalletGuardedHydraDepositResponses = {
+    /**
+     * Deposit prepared
+     */
+    200: {
+        status: 'success';
+        data: {
+            transfer: {
+                id: string;
+                direction: 'Deposit' | 'Withdraw';
+                status: 'Prepared' | 'Submitted' | 'Confirmed' | 'Expired' | 'Failed';
+                hydraHeadId: string;
+                /**
+                 * The deposit L1 transaction id, or the in-head decommit transaction id
+                 */
+                txHash: string;
+                /**
+                 * The wallet UTxO this transfer moves (txHash#index)
+                 */
+                walletUtxoRef: string;
+                /**
+                 * The owner must sign and submit before this moment
+                 */
+                signBefore: Date | null;
+                /**
+                 * Deposit only: after this an unabsorbed deposit can be recovered to L1
+                 */
+                recoverableAt: Date | null;
+                submittedAt: Date | null;
+                confirmedAt: Date | null;
+                failureReason: string | null;
+                createdAt: Date;
+            };
+            /**
+             * Sign this with the owner key (partial sign) and send it back to the submit endpoint
+             */
+            unsignedTx: string;
+        };
+    };
+};
+
+export type PostWalletGuardedHydraDepositResponse = PostWalletGuardedHydraDepositResponses[keyof PostWalletGuardedHydraDepositResponses];
+
+export type PostWalletGuardedHydraDepositSubmitData = {
+    /**
+     * The prepared deposit with the owner witness added
+     */
+    body?: {
+        /**
+         * The Prepared transfer
+         */
+        transferId: string;
+        /**
+         * The prepared transaction with the owner witness added
+         */
+        signedTx: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guarded/hydra/deposit/submit';
+};
+
+export type PostWalletGuardedHydraDepositSubmitErrors = {
+    /**
+     * signedTx is not valid, changes the prepared body, or lacks the owner witness
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Transfer not found
+     */
+    404: unknown;
+    /**
+     * The transfer is not Prepared, or it expired before it was signed
+     */
+    409: unknown;
+    /**
+     * No connection to the Hydra head
+     */
+    502: unknown;
+};
+
+export type PostWalletGuardedHydraDepositSubmitResponses = {
+    /**
+     * Deposit submitted
+     */
+    200: {
+        status: 'success';
+        data: {
+            transfer: {
+                id: string;
+                direction: 'Deposit' | 'Withdraw';
+                status: 'Prepared' | 'Submitted' | 'Confirmed' | 'Expired' | 'Failed';
+                hydraHeadId: string;
+                /**
+                 * The deposit L1 transaction id, or the in-head decommit transaction id
+                 */
+                txHash: string;
+                /**
+                 * The wallet UTxO this transfer moves (txHash#index)
+                 */
+                walletUtxoRef: string;
+                /**
+                 * The owner must sign and submit before this moment
+                 */
+                signBefore: Date | null;
+                /**
+                 * Deposit only: after this an unabsorbed deposit can be recovered to L1
+                 */
+                recoverableAt: Date | null;
+                submittedAt: Date | null;
+                confirmedAt: Date | null;
+                failureReason: string | null;
+                createdAt: Date;
+            };
+        };
+    };
+};
+
+export type PostWalletGuardedHydraDepositSubmitResponse = PostWalletGuardedHydraDepositSubmitResponses[keyof PostWalletGuardedHydraDepositSubmitResponses];
+
+export type PostWalletGuardedHydraWithdrawData = {
+    /**
+     * The guarded hot wallet
+     */
+    body?: {
+        /**
+         * The guarded Purchasing hot wallet
+         */
+        hotWalletId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guarded/hydra/withdraw';
+};
+
+export type PostWalletGuardedHydraWithdrawErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hot wallet not found, not guarded, or Hydra head not found
+     */
+    404: unknown;
+    /**
+     * The wallet is not in a connected head, the head is not usable, the hot wallet has no collateral in the head, or another transfer is open
+     */
+    409: unknown;
+    /**
+     * No connection to the Hydra head, or the node could not build the transaction
+     */
+    502: unknown;
+};
+
+export type PostWalletGuardedHydraWithdrawResponses = {
+    /**
+     * Withdraw prepared
+     */
+    200: {
+        status: 'success';
+        data: {
+            transfer: {
+                id: string;
+                direction: 'Deposit' | 'Withdraw';
+                status: 'Prepared' | 'Submitted' | 'Confirmed' | 'Expired' | 'Failed';
+                hydraHeadId: string;
+                /**
+                 * The deposit L1 transaction id, or the in-head decommit transaction id
+                 */
+                txHash: string;
+                /**
+                 * The wallet UTxO this transfer moves (txHash#index)
+                 */
+                walletUtxoRef: string;
+                /**
+                 * The owner must sign and submit before this moment
+                 */
+                signBefore: Date | null;
+                /**
+                 * Deposit only: after this an unabsorbed deposit can be recovered to L1
+                 */
+                recoverableAt: Date | null;
+                submittedAt: Date | null;
+                confirmedAt: Date | null;
+                failureReason: string | null;
+                createdAt: Date;
+            };
+            /**
+             * Sign this with the owner key (partial sign) and send it back to the submit endpoint
+             */
+            unsignedTx: string;
+        };
+    };
+};
+
+export type PostWalletGuardedHydraWithdrawResponse = PostWalletGuardedHydraWithdrawResponses[keyof PostWalletGuardedHydraWithdrawResponses];
+
+export type PostWalletGuardedHydraWithdrawSubmitData = {
+    /**
+     * The prepared withdraw with the owner witness added
+     */
+    body?: {
+        /**
+         * The Prepared transfer
+         */
+        transferId: string;
+        /**
+         * The prepared transaction with the owner witness added
+         */
+        signedTx: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guarded/hydra/withdraw/submit';
+};
+
+export type PostWalletGuardedHydraWithdrawSubmitErrors = {
+    /**
+     * signedTx is not valid, changes the prepared body, or lacks the owner witness
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Transfer not found
+     */
+    404: unknown;
+    /**
+     * The transfer is not Prepared, or it expired before it was signed
+     */
+    409: unknown;
+    /**
+     * No connection to the Hydra head
+     */
+    502: unknown;
+};
+
+export type PostWalletGuardedHydraWithdrawSubmitResponses = {
+    /**
+     * Withdraw submitted
+     */
+    200: {
+        status: 'success';
+        data: {
+            transfer: {
+                id: string;
+                direction: 'Deposit' | 'Withdraw';
+                status: 'Prepared' | 'Submitted' | 'Confirmed' | 'Expired' | 'Failed';
+                hydraHeadId: string;
+                /**
+                 * The deposit L1 transaction id, or the in-head decommit transaction id
+                 */
+                txHash: string;
+                /**
+                 * The wallet UTxO this transfer moves (txHash#index)
+                 */
+                walletUtxoRef: string;
+                /**
+                 * The owner must sign and submit before this moment
+                 */
+                signBefore: Date | null;
+                /**
+                 * Deposit only: after this an unabsorbed deposit can be recovered to L1
+                 */
+                recoverableAt: Date | null;
+                submittedAt: Date | null;
+                confirmedAt: Date | null;
+                failureReason: string | null;
+                createdAt: Date;
+            };
+        };
+    };
+};
+
+export type PostWalletGuardedHydraWithdrawSubmitResponse = PostWalletGuardedHydraWithdrawSubmitResponses[keyof PostWalletGuardedHydraWithdrawSubmitResponses];
+
 export type DeleteTxSyncQuarantineData = {
     /**
      * Quarantine entry to delete

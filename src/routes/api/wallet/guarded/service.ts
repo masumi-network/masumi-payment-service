@@ -21,7 +21,7 @@ type AttachInput = z.infer<typeof postGuardedWalletSchemaInput>;
 type Scope = Pick<AuthContext, 'networkLimit' | 'walletScopeIds'>;
 
 /** The hot wallet a guarded wallet may attach to: a live Purchasing wallet on a V2 source this key can see. */
-async function loadPurchasingHotWallet(hotWalletId: string, scope: Scope) {
+export async function loadPurchasingHotWallet(hotWalletId: string, scope: Scope) {
 	const hotWallet = await prisma.hotWallet.findFirst({
 		where: {
 			id: hotWalletId,
@@ -37,7 +37,7 @@ async function loadPurchasingHotWallet(hotWalletId: string, scope: Scope) {
 
 const ATTACH_TX_TIMEOUT_MS = 10_000;
 
-function hotWalletBusyError() {
+export function hotWalletBusyError() {
 	return createHttpError(409, 'The hot wallet is busy with a transaction; retry once it is unlocked');
 }
 
@@ -146,14 +146,6 @@ export async function attachGuardedWallet(input: AttachInput, scope: Scope) {
 		}
 		throw error;
 	}
-}
-
-export async function detachGuardedWallet(hotWalletId: string, scope: Scope) {
-	const hotWallet = await loadPurchasingHotWallet(hotWalletId, scope);
-	if (hotWallet.GuardedWallet == null) throw createHttpError(404, 'This hot wallet is not guarded');
-	// A batch in flight holds the lock; detaching now would change how it must be signed.
-	if (hotWallet.lockedAt != null || hotWallet.pendingTransactionId != null) throw hotWalletBusyError();
-	return prisma.guardedWallet.delete({ where: { hotWalletId: hotWallet.id } });
 }
 
 export async function getGuardedWallet(

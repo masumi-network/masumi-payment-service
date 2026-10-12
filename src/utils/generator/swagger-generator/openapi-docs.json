@@ -37813,6 +37813,1018 @@
                 }
             }
         },
+        "/wallet/guarded/hydra": {
+            "get": {
+                "description": "Returns where the guarded smart wallet of a hot wallet is now: L2 inside a connected Hydra head, L1 on chain, or Unknown when neither can be read. Includes the wallet datum and balance at that location and the most recent deposits and withdrawals.",
+                "summary": "Get the Hydra location of a guarded wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The guarded Purchasing hot wallet"
+                        },
+                        "required": true,
+                        "description": "The guarded Purchasing hot wallet",
+                        "name": "hotWalletId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Guarded wallet location",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "location": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "L1",
+                                                        "L2",
+                                                        "Unknown"
+                                                    ],
+                                                    "description": "L2: inside a connected head. L1: on chain. Unknown: neither could be read, e.g. while it moves"
+                                                },
+                                                "hydraHeadId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "walletUtxoRef": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "The wallet UTxO inside the head (txHash#index)"
+                                                },
+                                                "state": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "lovelace": {
+                                                            "type": "string"
+                                                        },
+                                                        "periodLimitLovelace": {
+                                                            "type": "string"
+                                                        },
+                                                        "spentInPeriodLovelace": {
+                                                            "type": "string"
+                                                        },
+                                                        "periodStart": {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        },
+                                                        "periodLengthMs": {
+                                                            "type": "string"
+                                                        },
+                                                        "minBalanceLovelace": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "lovelace",
+                                                        "periodLimitLovelace",
+                                                        "spentInPeriodLovelace",
+                                                        "periodStart",
+                                                        "periodLengthMs",
+                                                        "minBalanceLovelace"
+                                                    ],
+                                                    "description": "The wallet datum and balance where the wallet is now"
+                                                },
+                                                "l1Error": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "transfers": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "direction": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Deposit",
+                                                                    "Withdraw"
+                                                                ]
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Prepared",
+                                                                    "Submitted",
+                                                                    "Confirmed",
+                                                                    "Expired",
+                                                                    "Failed"
+                                                                ]
+                                                            },
+                                                            "hydraHeadId": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string",
+                                                                "description": "The deposit L1 transaction id, or the in-head decommit transaction id"
+                                                            },
+                                                            "walletUtxoRef": {
+                                                                "type": "string",
+                                                                "description": "The wallet UTxO this transfer moves (txHash#index)"
+                                                            },
+                                                            "signBefore": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "format": "date-time",
+                                                                "description": "The owner must sign and submit before this moment"
+                                                            },
+                                                            "recoverableAt": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "format": "date-time",
+                                                                "description": "Deposit only: after this an unabsorbed deposit can be recovered to L1"
+                                                            },
+                                                            "submittedAt": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "format": "date-time"
+                                                            },
+                                                            "confirmedAt": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "format": "date-time"
+                                                            },
+                                                            "failureReason": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string",
+                                                                "format": "date-time"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "direction",
+                                                            "status",
+                                                            "hydraHeadId",
+                                                            "txHash",
+                                                            "walletUtxoRef",
+                                                            "signBefore",
+                                                            "recoverableAt",
+                                                            "submittedAt",
+                                                            "confirmedAt",
+                                                            "failureReason",
+                                                            "createdAt"
+                                                        ]
+                                                    },
+                                                    "description": "The most recent moves, newest first"
+                                                }
+                                            },
+                                            "required": [
+                                                "location",
+                                                "hydraHeadId",
+                                                "walletUtxoRef",
+                                                "state",
+                                                "l1Error",
+                                                "transfers"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "location": "L2",
+                                            "hydraHeadId": "cmg1hydrahead00example",
+                                            "walletUtxoRef": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#0",
+                                            "state": {
+                                                "lovelace": "200000000",
+                                                "periodLimitLovelace": "1000000000",
+                                                "spentInPeriodLovelace": "120000000",
+                                                "periodStart": "2026-10-12T09:00:00.000Z",
+                                                "periodLengthMs": "86400000",
+                                                "minBalanceLovelace": "5000000"
+                                            },
+                                            "l1Error": null,
+                                            "transfers": [
+                                                {
+                                                    "id": "cmg1hydratransfer0example",
+                                                    "direction": "Deposit",
+                                                    "status": "Confirmed",
+                                                    "hydraHeadId": "cmg1hydrahead00example",
+                                                    "txHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                                                    "walletUtxoRef": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#0",
+                                                    "signBefore": "2026-10-12T12:10:00.000Z",
+                                                    "recoverableAt": "2026-10-12T13:00:00.000Z",
+                                                    "submittedAt": "2026-10-12T12:05:00.000Z",
+                                                    "confirmedAt": "2026-10-12T12:08:00.000Z",
+                                                    "failureReason": null,
+                                                    "createdAt": "2026-10-12T12:00:00.000Z"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hot wallet not found or not guarded"
+                    }
+                }
+            }
+        },
+        "/wallet/guarded/hydra/deposit": {
+            "post": {
+                "description": "Prepares a deposit of the guarded smart wallet from L1 into an open Hydra head the hot wallet takes part in. Returns the transfer and an unsigned transaction. The owner signs it (partial sign) before signBefore and sends it to the deposit submit endpoint.",
+                "summary": "Prepare a guarded wallet deposit into a Hydra head. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The guarded hot wallet and the target head",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The guarded Purchasing hot wallet"
+                                    },
+                                    "hydraHeadId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The open head the hot wallet takes part in"
+                                    }
+                                },
+                                "required": [
+                                    "hotWalletId",
+                                    "hydraHeadId"
+                                ],
+                                "example": {
+                                    "hotWalletId": "cmg1hotwallet000example",
+                                    "hydraHeadId": "cmg1hydrahead00example"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Deposit prepared",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "transfer": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "direction": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Deposit",
+                                                                "Withdraw"
+                                                            ]
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Prepared",
+                                                                "Submitted",
+                                                                "Confirmed",
+                                                                "Expired",
+                                                                "Failed"
+                                                            ]
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string",
+                                                            "description": "The deposit L1 transaction id, or the in-head decommit transaction id"
+                                                        },
+                                                        "walletUtxoRef": {
+                                                            "type": "string",
+                                                            "description": "The wallet UTxO this transfer moves (txHash#index)"
+                                                        },
+                                                        "signBefore": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "The owner must sign and submit before this moment"
+                                                        },
+                                                        "recoverableAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "Deposit only: after this an unabsorbed deposit can be recovered to L1"
+                                                        },
+                                                        "submittedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "confirmedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "failureReason": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "direction",
+                                                        "status",
+                                                        "hydraHeadId",
+                                                        "txHash",
+                                                        "walletUtxoRef",
+                                                        "signBefore",
+                                                        "recoverableAt",
+                                                        "submittedAt",
+                                                        "confirmedAt",
+                                                        "failureReason",
+                                                        "createdAt"
+                                                    ]
+                                                },
+                                                "unsignedTx": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 131072,
+                                                    "pattern": "^(?:[0-9a-fA-F]{2})+$",
+                                                    "description": "Sign this with the owner key (partial sign) and send it back to the submit endpoint"
+                                                }
+                                            },
+                                            "required": [
+                                                "transfer",
+                                                "unsignedTx"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "transfer": {
+                                                "id": "cmg1hydratransfer0example",
+                                                "direction": "Deposit",
+                                                "status": "Prepared",
+                                                "hydraHeadId": "cmg1hydrahead00example",
+                                                "txHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                                                "walletUtxoRef": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#0",
+                                                "signBefore": "2026-10-12T12:10:00.000Z",
+                                                "recoverableAt": "2026-10-12T13:00:00.000Z",
+                                                "submittedAt": null,
+                                                "confirmedAt": null,
+                                                "failureReason": null,
+                                                "createdAt": "2026-10-12T12:00:00.000Z"
+                                            },
+                                            "unsignedTx": "84a400818258200000"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hot wallet not found, not guarded, or Hydra head not found"
+                    },
+                    "409": {
+                        "description": "The wallet is already in a head or cannot be read on L1, the head is not usable, or another transfer is open"
+                    },
+                    "502": {
+                        "description": "No connection to the Hydra head, or the node could not build the transaction"
+                    }
+                }
+            }
+        },
+        "/wallet/guarded/hydra/deposit/submit": {
+            "post": {
+                "description": "Checks the owner-signed deposit against the prepared transaction and submits it. The transfer becomes Submitted, or Failed with a failureReason when the node refuses it. The status endpoint shows when the wallet arrives in the head.",
+                "summary": "Submit an owner-signed guarded wallet deposit. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The prepared deposit with the owner witness added",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "transferId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The Prepared transfer"
+                                    },
+                                    "signedTx": {
+                                        "type": "string",
+                                        "minLength": 2,
+                                        "maxLength": 131072,
+                                        "pattern": "^(?:[0-9a-fA-F]{2})+$",
+                                        "description": "The prepared transaction with the owner witness added"
+                                    }
+                                },
+                                "required": [
+                                    "transferId",
+                                    "signedTx"
+                                ],
+                                "example": {
+                                    "transferId": "cmg1hydratransfer0example",
+                                    "signedTx": "84a400818258200000a100818258200000"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Deposit submitted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "transfer": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "direction": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Deposit",
+                                                                "Withdraw"
+                                                            ]
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Prepared",
+                                                                "Submitted",
+                                                                "Confirmed",
+                                                                "Expired",
+                                                                "Failed"
+                                                            ]
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string",
+                                                            "description": "The deposit L1 transaction id, or the in-head decommit transaction id"
+                                                        },
+                                                        "walletUtxoRef": {
+                                                            "type": "string",
+                                                            "description": "The wallet UTxO this transfer moves (txHash#index)"
+                                                        },
+                                                        "signBefore": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "The owner must sign and submit before this moment"
+                                                        },
+                                                        "recoverableAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "Deposit only: after this an unabsorbed deposit can be recovered to L1"
+                                                        },
+                                                        "submittedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "confirmedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "failureReason": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "direction",
+                                                        "status",
+                                                        "hydraHeadId",
+                                                        "txHash",
+                                                        "walletUtxoRef",
+                                                        "signBefore",
+                                                        "recoverableAt",
+                                                        "submittedAt",
+                                                        "confirmedAt",
+                                                        "failureReason",
+                                                        "createdAt"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "transfer"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "transfer": {
+                                                "id": "cmg1hydratransfer0example",
+                                                "direction": "Deposit",
+                                                "status": "Submitted",
+                                                "hydraHeadId": "cmg1hydrahead00example",
+                                                "txHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                                                "walletUtxoRef": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#0",
+                                                "signBefore": "2026-10-12T12:10:00.000Z",
+                                                "recoverableAt": "2026-10-12T13:00:00.000Z",
+                                                "submittedAt": "2026-10-12T12:05:00.000Z",
+                                                "confirmedAt": null,
+                                                "failureReason": null,
+                                                "createdAt": "2026-10-12T12:00:00.000Z"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "signedTx is not valid, changes the prepared body, or lacks the owner witness"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Transfer not found"
+                    },
+                    "409": {
+                        "description": "The transfer is not Prepared, or it expired before it was signed"
+                    },
+                    "502": {
+                        "description": "No connection to the Hydra head"
+                    }
+                }
+            }
+        },
+        "/wallet/guarded/hydra/withdraw": {
+            "post": {
+                "description": "Prepares a decommit of the guarded smart wallet from its Hydra head back to L1. The agent hot wallet already signed for the collateral. Returns the transfer and an unsigned transaction for the owner to sign and send to the withdraw submit endpoint.",
+                "summary": "Prepare a guarded wallet withdraw from a Hydra head. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The guarded hot wallet",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The guarded Purchasing hot wallet"
+                                    }
+                                },
+                                "required": [
+                                    "hotWalletId"
+                                ],
+                                "example": {
+                                    "hotWalletId": "cmg1hotwallet000example"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Withdraw prepared",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "transfer": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "direction": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Deposit",
+                                                                "Withdraw"
+                                                            ]
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Prepared",
+                                                                "Submitted",
+                                                                "Confirmed",
+                                                                "Expired",
+                                                                "Failed"
+                                                            ]
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string",
+                                                            "description": "The deposit L1 transaction id, or the in-head decommit transaction id"
+                                                        },
+                                                        "walletUtxoRef": {
+                                                            "type": "string",
+                                                            "description": "The wallet UTxO this transfer moves (txHash#index)"
+                                                        },
+                                                        "signBefore": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "The owner must sign and submit before this moment"
+                                                        },
+                                                        "recoverableAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "Deposit only: after this an unabsorbed deposit can be recovered to L1"
+                                                        },
+                                                        "submittedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "confirmedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "failureReason": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "direction",
+                                                        "status",
+                                                        "hydraHeadId",
+                                                        "txHash",
+                                                        "walletUtxoRef",
+                                                        "signBefore",
+                                                        "recoverableAt",
+                                                        "submittedAt",
+                                                        "confirmedAt",
+                                                        "failureReason",
+                                                        "createdAt"
+                                                    ]
+                                                },
+                                                "unsignedTx": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 131072,
+                                                    "pattern": "^(?:[0-9a-fA-F]{2})+$",
+                                                    "description": "Sign this with the owner key (partial sign) and send it back to the submit endpoint"
+                                                }
+                                            },
+                                            "required": [
+                                                "transfer",
+                                                "unsignedTx"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "transfer": {
+                                                "id": "cmg1hydratransfer0example",
+                                                "direction": "Withdraw",
+                                                "status": "Prepared",
+                                                "hydraHeadId": "cmg1hydrahead00example",
+                                                "txHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                                                "walletUtxoRef": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#0",
+                                                "signBefore": "2026-10-12T12:10:00.000Z",
+                                                "recoverableAt": null,
+                                                "submittedAt": null,
+                                                "confirmedAt": null,
+                                                "failureReason": null,
+                                                "createdAt": "2026-10-12T12:00:00.000Z"
+                                            },
+                                            "unsignedTx": "84a400818258200000"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hot wallet not found, not guarded, or Hydra head not found"
+                    },
+                    "409": {
+                        "description": "The wallet is not in a connected head, the head is not usable, the hot wallet has no collateral in the head, or another transfer is open"
+                    },
+                    "502": {
+                        "description": "No connection to the Hydra head, or the node could not build the transaction"
+                    }
+                }
+            }
+        },
+        "/wallet/guarded/hydra/withdraw/submit": {
+            "post": {
+                "description": "Checks the owner-signed decommit against the prepared transaction and sends it to the head. The transfer becomes Submitted, or Failed with a failureReason when the head refuses it. The status endpoint shows when the wallet is back on L1.",
+                "summary": "Submit an owner-signed guarded wallet withdraw. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The prepared withdraw with the owner witness added",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "transferId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The Prepared transfer"
+                                    },
+                                    "signedTx": {
+                                        "type": "string",
+                                        "minLength": 2,
+                                        "maxLength": 131072,
+                                        "pattern": "^(?:[0-9a-fA-F]{2})+$",
+                                        "description": "The prepared transaction with the owner witness added"
+                                    }
+                                },
+                                "required": [
+                                    "transferId",
+                                    "signedTx"
+                                ],
+                                "example": {
+                                    "transferId": "cmg1hydratransfer0example",
+                                    "signedTx": "84a400818258200000a100818258200000"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Withdraw submitted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "transfer": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "direction": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Deposit",
+                                                                "Withdraw"
+                                                            ]
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Prepared",
+                                                                "Submitted",
+                                                                "Confirmed",
+                                                                "Expired",
+                                                                "Failed"
+                                                            ]
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string",
+                                                            "description": "The deposit L1 transaction id, or the in-head decommit transaction id"
+                                                        },
+                                                        "walletUtxoRef": {
+                                                            "type": "string",
+                                                            "description": "The wallet UTxO this transfer moves (txHash#index)"
+                                                        },
+                                                        "signBefore": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "The owner must sign and submit before this moment"
+                                                        },
+                                                        "recoverableAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "Deposit only: after this an unabsorbed deposit can be recovered to L1"
+                                                        },
+                                                        "submittedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "confirmedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "failureReason": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "direction",
+                                                        "status",
+                                                        "hydraHeadId",
+                                                        "txHash",
+                                                        "walletUtxoRef",
+                                                        "signBefore",
+                                                        "recoverableAt",
+                                                        "submittedAt",
+                                                        "confirmedAt",
+                                                        "failureReason",
+                                                        "createdAt"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "transfer"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "transfer": {
+                                                "id": "cmg1hydratransfer0example",
+                                                "direction": "Withdraw",
+                                                "status": "Submitted",
+                                                "hydraHeadId": "cmg1hydrahead00example",
+                                                "txHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                                                "walletUtxoRef": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#0",
+                                                "signBefore": "2026-10-12T12:10:00.000Z",
+                                                "recoverableAt": null,
+                                                "submittedAt": "2026-10-12T12:05:00.000Z",
+                                                "confirmedAt": null,
+                                                "failureReason": null,
+                                                "createdAt": "2026-10-12T12:00:00.000Z"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "signedTx is not valid, changes the prepared body, or lacks the owner witness"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Transfer not found"
+                    },
+                    "409": {
+                        "description": "The transfer is not Prepared, or it expired before it was signed"
+                    },
+                    "502": {
+                        "description": "No connection to the Hydra head"
+                    }
+                }
+            }
+        },
         "/tx-sync-quarantine": {
             "get": {
                 "description": "Lists transactions the chain sync could not apply. The checkpoint has already advanced past these, so anything still pending is chain state the database has NOT caught up with — some request is running on stale information until it is applied.",

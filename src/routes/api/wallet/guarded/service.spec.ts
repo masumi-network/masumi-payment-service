@@ -4,7 +4,6 @@ import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/cl
 type AsyncFn = (...args: never[]) => Promise<unknown>;
 const mockFindFirst = jest.fn<AsyncFn>();
 const mockCreate = jest.fn<(args: { data: Record<string, unknown> }) => Promise<unknown>>();
-const mockDelete = jest.fn<(args: unknown) => Promise<unknown>>();
 const mockUpdateMany = jest.fn<(args: unknown) => Promise<{ count: number }>>();
 const mockInspect = jest.fn<(params: unknown, rpcApiKey: string) => Promise<unknown>>();
 const mockRegister = jest.fn<(args: Record<string, unknown>) => Promise<unknown>>();
@@ -18,7 +17,7 @@ const config = {
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hotWallet: { findFirst: mockFindFirst },
-		guardedWallet: { create: mockCreate, delete: mockDelete },
+		guardedWallet: { create: mockCreate },
 		$transaction: (run: (tx: unknown) => Promise<unknown>) =>
 			run({ hotWallet: { updateMany: mockUpdateMany }, guardedWallet: { create: mockCreate } }),
 	},
@@ -36,7 +35,7 @@ jest.unstable_mockModule('@masumi/payment-source-v2/smart-wallet/guarded-wallet'
 	registerGuardedWalletWithExchain: mockRegister,
 }));
 
-const { attachGuardedWallet, detachGuardedWallet } = await import('./service');
+const { attachGuardedWallet } = await import('./service');
 
 const AGENT = 'a'.repeat(56);
 const scope = { networkLimit: [Network.Preprod], walletScopeIds: null };
@@ -162,19 +161,5 @@ describe('attachGuardedWallet', () => {
 			attachGuardedWallet({ ...input, register: { mandate: { ...mandate, daily: '5' } } }, scope),
 		).rejects.toMatchObject({ status: 400 });
 		expect(mockRegister).not.toHaveBeenCalled();
-	});
-});
-
-describe('detachGuardedWallet', () => {
-	it('refuses while the hot wallet is locked by a batch', async () => {
-		mockFindFirst.mockResolvedValue(hotWallet({ GuardedWallet: { id: 'gw-1' }, lockedAt: new Date() }));
-		await expect(detachGuardedWallet('hw-1', scope)).rejects.toMatchObject({ status: 409 });
-		expect(mockDelete).not.toHaveBeenCalled();
-	});
-
-	it('deletes the row of an idle guarded wallet', async () => {
-		mockFindFirst.mockResolvedValue(hotWallet({ GuardedWallet: { id: 'gw-1' } }));
-		await detachGuardedWallet('hw-1', scope);
-		expect(mockDelete).toHaveBeenCalledWith({ where: { hotWalletId: 'hw-1' } });
 	});
 });

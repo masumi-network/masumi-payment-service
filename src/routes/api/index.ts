@@ -106,6 +106,13 @@ import {
 	postGuardedWalletEndpointPost,
 } from './wallet/guarded';
 import {
+	getGuardedHydraEndpointGet,
+	postGuardedHydraDepositEndpointPost,
+	postGuardedHydraDepositSubmitEndpointPost,
+	postGuardedHydraWithdrawEndpointPost,
+	postGuardedHydraWithdrawSubmitEndpointPost,
+} from './wallet/guarded/hydra';
+import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
 	getSwapTransactionsEndpointGet,
@@ -356,6 +363,17 @@ export const apiRouter: Routing = {
 				get: getGuardedWalletEndpointGet,
 				post: postGuardedWalletEndpointPost,
 				delete: deleteGuardedWalletEndpointDelete,
+				hydra: {
+					get: getGuardedHydraEndpointGet,
+					deposit: {
+						post: postGuardedHydraDepositEndpointPost,
+						submit: { post: postGuardedHydraDepositSubmitEndpointPost },
+					},
+					withdraw: {
+						post: postGuardedHydraWithdrawEndpointPost,
+						submit: { post: postGuardedHydraWithdrawSubmitEndpointPost },
+					},
+				},
 			},
 		},
 		'payment-source-extended': {
