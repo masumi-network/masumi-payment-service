@@ -114,6 +114,37 @@ export const cosignIntentSchema = z.object({
 });
 export type CosignIntent = z.infer<typeof cosignIntentSchema>;
 
+const snapshotHexKey = z.string().regex(/^(lovelace|(?:[0-9a-f]{2})*)$/);
+const snapshotQuantity = z.string().regex(/^(0|[1-9]\d*)$/, 'canonical decimal string');
+const snapshotTxOutSchema = z.object({
+	address: z.string().min(1).max(200),
+	value: z.record(snapshotHexKey, z.union([snapshotQuantity, z.record(snapshotHexKey, snapshotQuantity)])),
+	datumhash: hex.nullable().optional(),
+	inlineDatumRaw: hex.nullable().optional(),
+});
+const snapshotUTxOSchema = z.record(z.string().regex(/^[0-9a-f]{64}#(0|[1-9]\d{0,4})$/), snapshotTxOutSchema);
+
+/**
+ * A confirmed Hydra snapshot signed by every head party. The co-signer checks the
+ * signatures against the party keys in the head's L1 state datum and finds the
+ * wallet by its state token, so it never has to trust the sender for that output.
+ * See `smart-wallet/hydra-snapshot/snapshot-proof.ts` for the exact checks.
+ */
+export const hydraSnapshotProofSchema = z.object({
+	headId: z.string().regex(/^[0-9a-f]{56}$/),
+	version: z.number().int().min(0),
+	number: z.number().int().min(0),
+	accumulator: z.string().regex(/^[0-9a-f]{64}$/),
+	utxo: snapshotUTxOSchema,
+	utxoToCommit: snapshotUTxOSchema.nullable(),
+	utxoToDecommit: snapshotUTxOSchema.nullable(),
+	depositTxId: z
+		.string()
+		.regex(/^[0-9a-f]{64}$/)
+		.nullable(),
+	signatures: z.array(z.string().regex(/^[0-9a-f]{128}$/)).min(1),
+});
+
 export const cosignContextSchema = z.object({
 	nodeId: z.string().min(1).max(200),
 	orgId: z.string().min(1).max(200),
@@ -129,6 +160,8 @@ export const cosignContextSchema = z.object({
 		.string()
 		.regex(/^[0-9a-f]{56}$/)
 		.optional(),
+	/** Sent with `hydraHeadId`: the signed snapshot that holds `walletUtxoRef`. */
+	hydraSnapshot: hydraSnapshotProofSchema.optional(),
 });
 export type CosignContext = z.infer<typeof cosignContextSchema>;
 
