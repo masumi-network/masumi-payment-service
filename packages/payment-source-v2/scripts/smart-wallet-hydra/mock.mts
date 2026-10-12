@@ -9,7 +9,8 @@
  *   `HydraHeadV2`, so the L1 read alone proves nothing);
  * - the wallet output is found by the wallet's state token (from
  *   `.state/prove.json`), because snapshot signatures do not cover refs;
- * - a head's snapshot number may not go backwards.
+ * - a head's snapshot number may not go backwards; the mark is saved in
+ *   `.state/snapshot-marks.json` before the mock signs, so a restart keeps it.
  *
  * Run (from the repo root, with the proof env exported):
  *   pnpm exec tsx packages/payment-source-v2/scripts/smart-wallet-hydra/mock.mts
@@ -21,7 +22,7 @@ import type { CosignContext } from '../../src/smart-wallet/cosign-client';
 import { verifyHydraSnapshotProof } from '../../src/smart-wallet/hydra-snapshot/snapshot-proof';
 import { startMockCosignServer } from '../smart-wallet-demo/cosign-mock';
 import type { TxRef, VerifyInput } from '../smart-wallet-demo/cosign-policy';
-import { ADA, blockfrostKey, loadMnemonics, loadWallets, log, readState, STATE_DIR } from './lib.mjs';
+import { ADA, blockfrostKey, loadMnemonics, loadWallets, log, readState, STATE_DIR, writeState } from './lib.mjs';
 
 const PORT = Number(process.env.SW_MOCK_PORT ?? 4600);
 const ESCROW_ADDRESS = process.env.SW_ESCROW_ADDRESS?.trim();
@@ -37,8 +38,12 @@ const TRUSTED_PARTIES = new Set(
 		.map((key) => key.trim().toLowerCase())
 		.filter((key) => key !== ''),
 );
-/** Highest snapshot number accepted per head: an older one could show an older wallet. */
-const newestSnapshot = new Map<string, number>();
+/**
+ * Highest snapshot number accepted per head: an older one could show an older
+ * wallet. Saved on every accept, so a restart cannot accept an old one again.
+ */
+const SNAPSHOT_MARKS = 'snapshot-marks';
+const newestSnapshot = new Map<string, number>(Object.entries(readState<Record<string, number>>(SNAPSHOT_MARKS) ?? {}));
 
 type BlockfrostOutput = { output_index: number; address: string; amount: Array<{ unit: string; quantity: string }> };
 
@@ -104,6 +109,8 @@ async function resolveWalletInput(ref: TxRef, context: CosignContext): Promise<V
 		const newest = newestSnapshot.get(context.hydraHeadId) ?? 0;
 		if (proof.number < newest) throw new Error('snapshot is older than one already seen');
 		newestSnapshot.set(context.hydraHeadId, Math.max(newest, proof.number));
+		// Synchronous, and before the policy check and signing: no await can run between the check and the save.
+		writeState(SNAPSHOT_MARKS, Object.fromEntries(newestSnapshot));
 		const lovelace = output.value.lovelace;
 		if (typeof lovelace !== 'string') throw new Error('wallet output has no lovelace');
 		log('mock', `in-head wallet input ${walletUtxoRef} proven by snapshot ${proof.number}`);
