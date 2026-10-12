@@ -1,16 +1,14 @@
-import { format } from 'winston';
-import { logJsonFormatOptions } from './log-json-replacer';
+import { logJson } from './log-json-replacer';
 
 const MESSAGE = Symbol.for('message');
 
 function renderLine(meta: object): Record<string, unknown> {
-	const jsonFormat = format.json(logJsonFormatOptions);
-	const info = jsonFormat.transform({ level: 'error', message: 'boom', ...meta }, jsonFormat.options);
+	const info = logJson().transform({ level: 'error', message: 'boom', ...meta });
 	if (!info || typeof info === 'boolean') throw new Error('format dropped the line');
 	return JSON.parse((info as unknown as Record<symbol, string>)[MESSAGE]) as Record<string, unknown>;
 }
 
-describe('logJsonReplacer', () => {
+describe('logJson', () => {
 	it('keeps the message and stack of an error passed as meta', () => {
 		const line = renderLine({ error: new Error('pool timeout') });
 		const error = line.error as Record<string, unknown>;
@@ -57,6 +55,22 @@ describe('logJsonReplacer', () => {
 		const written = line.error as Record<string, unknown>;
 		expect(written).toMatchObject({ message: 'branching', self: '[Circular]', cause: '[Circular]' });
 		expect(JSON.stringify(line).length).toBeLessThan(10_000);
+	});
+
+	it('still writes a cycle once when the error data has an empty-string key', () => {
+		// The stringifier calls the replacer with key '' for such a property too,
+		// so a cache reset keyed on '' would reopen the exponential copy.
+		const error = Object.assign(new Error('keyed'), {
+			data: { '': 1 },
+			related: undefined as Error | undefined,
+			response: undefined as Error | undefined,
+			request: undefined as Error | undefined,
+		});
+		error.related = error;
+		error.response = error;
+		error.request = error;
+		Object.defineProperty(error, 'cause', { value: error });
+		expect(JSON.stringify(renderLine({ error })).length).toBeLessThan(10_000);
 	});
 
 	it('writes an error as it is now when it is logged again after a change', () => {

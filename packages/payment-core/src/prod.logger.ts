@@ -2,8 +2,8 @@ import { createLogger, format, transports } from 'winston';
 import { logs } from '@opentelemetry/api-logs';
 import type { RuntimePropertyValue } from './object-properties';
 import { CONFIG } from './config';
-import { logJsonFormatOptions } from './log-json-replacer';
-const { combine, timestamp, errors, json } = format;
+import { logJson } from './log-json-replacer';
+const { combine, timestamp, errors } = format;
 
 type LoggerInfoValue = RuntimePropertyValue | unknown[];
 
@@ -92,7 +92,7 @@ class OpenTelemetryTransport extends transports.Console {
 
 function buildProdLogger() {
 	return createLogger({
-		format: combine(timestamp(), errors({ stack: true }), json(logJsonFormatOptions)),
+		format: combine(timestamp(), errors({ stack: true }), logJson()),
 		defaultMeta: { service: 'payment-service' },
 		transports: [new OpenTelemetryTransport()],
 	});
