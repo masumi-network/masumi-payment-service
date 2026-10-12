@@ -5,8 +5,11 @@ import { getOwnEntries, getOwnValue, type RuntimeObject } from './object-propert
  * identity, so returning the same object for an Error it reaches again
  * (`error.cause = error`, two errors citing each other) is what lets it write
  * `[Circular]` instead of copying the error over and over.
+ *
+ * Per line: reset on the root call (key `''`), so an error logged again after
+ * it changed is written as it is now.
  */
-const serializedErrors = new WeakMap<Error, RuntimeObject | string>();
+let serializedErrors = new WeakMap<Error, RuntimeObject | string>();
 
 /**
  * JSON replacer for the production log line.
@@ -20,7 +23,8 @@ const serializedErrors = new WeakMap<Error, RuntimeObject | string>();
  * BigInt becomes a string, as in logform's default replacer, which this
  * replaces.
  */
-export function logJsonReplacer(_key: string, value: unknown): unknown {
+export function logJsonReplacer(key: string, value: unknown): unknown {
+	if (key === '') serializedErrors = new WeakMap();
 	if (typeof value === 'bigint') return value.toString();
 	if (!(value instanceof Error)) return value;
 	const cached = serializedErrors.get(value);

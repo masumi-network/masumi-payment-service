@@ -59,6 +59,13 @@ describe('logJsonReplacer', () => {
 		expect(JSON.stringify(line).length).toBeLessThan(10_000);
 	});
 
+	it('writes an error as it is now when it is logged again after a change', () => {
+		const error = new Error('first');
+		expect((renderLine({ error }).error as Record<string, unknown>).message).toBe('first');
+		error.message = 'second';
+		expect((renderLine({ error }).error as Record<string, unknown>).message).toBe('second');
+	});
+
 	it('does not throw when an error getter throws', () => {
 		const error = new Error('hostile');
 		Object.defineProperty(error, 'stack', {
