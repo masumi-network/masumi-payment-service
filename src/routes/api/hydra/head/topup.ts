@@ -141,9 +141,9 @@ export const recoverTopupOutput = z.object({
 /**
  * Return a deposit the head never absorbed.
  *
- * The funds sit at a deposit script rather than in the wallet, and only the node
- * can spend them back, and only once the deadline in the deposit's datum has
- * passed.
+ * The funds sit at a deposit script rather than in the wallet, and they can be
+ * spent back only once the deadline in the deposit's datum has passed: by the
+ * node, or on L1 by the service when no node is live.
  */
 export const recoverTopupPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',

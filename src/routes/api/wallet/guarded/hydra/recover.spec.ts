@@ -7,10 +7,15 @@ const mockFindUnique = jest.fn<AsyncFn>();
 const mockFindInHead = jest.fn<AsyncFn>();
 const mockDelete = jest.fn<AsyncFn>();
 const mockGetNode = jest.fn<(id: string) => unknown>();
+const mockRecoverOnL1 = jest.fn<AsyncFn>();
+const mockHeadFindUnique = jest.fn<AsyncFn>();
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn() } }));
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { guardedHydraTransfer: { findUnique: mockFindUnique } },
+	prisma: { guardedHydraTransfer: { findUnique: mockFindUnique }, hydraHead: { findUnique: mockHeadFindUnique } },
+}));
+jest.unstable_mockModule('@/services/hydra-deposit-recovery/recover-on-l1', () => ({
+	recoverDepositWithoutNode: mockRecoverOnL1,
 }));
 jest.unstable_mockModule('./transfers', () => ({
 	loadGuardedHotWallet: () => Promise.resolve({ guarded: { policyId: 'p', stateTokenName: 't' } }),
@@ -40,6 +45,8 @@ beforeEach(() => {
 	mockFindInHead.mockResolvedValue(null);
 	mockGetNode.mockReturnValue({ delete: mockDelete });
 	mockDelete.mockResolvedValue({});
+	mockHeadFindUnique.mockResolvedValue({ headIdentifier: 'cd'.repeat(28) });
+	mockRecoverOnL1.mockResolvedValue({ recoverTxHash: 'ef'.repeat(32) });
 });
 
 describe('recoverGuardedDeposit', () => {
@@ -86,5 +93,29 @@ describe('recoverGuardedDeposit', () => {
 			status: 409,
 			message: expect.stringMatching(/read the status/),
 		});
+	});
+
+	it('posts the recover on L1 itself when the head has no live node', async () => {
+		mockGetNode.mockReturnValue(null);
+		const result = await recoverGuardedDeposit({ transferId: 'tr-1' }, scope);
+		expect(mockRecoverOnL1).toHaveBeenCalledWith({
+			hotWalletId: 'hw-1',
+			depositTxHash: deposit.txHash,
+			headIdentifier: 'cd'.repeat(28),
+		});
+		expect(result.reason).toMatch(new RegExp('ef'.repeat(32)));
+		expect(mockDelete).not.toHaveBeenCalled();
+	});
+
+	it('never takes the L1 path while the node is live', async () => {
+		await recoverGuardedDeposit({ transferId: 'tr-1' }, scope);
+		expect(mockRecoverOnL1).not.toHaveBeenCalled();
+	});
+
+	it('keeps the deadline check in front of the L1 path', async () => {
+		mockGetNode.mockReturnValue(null);
+		mockFindUnique.mockResolvedValue({ ...deposit, recoverableAt: new Date(Date.now() + 60_000) });
+		await expect(recoverGuardedDeposit({ transferId: 'tr-1' }, scope)).rejects.toMatchObject({ status: 409 });
+		expect(mockRecoverOnL1).not.toHaveBeenCalled();
 	});
 });

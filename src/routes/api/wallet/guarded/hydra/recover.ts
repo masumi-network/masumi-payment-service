@@ -4,6 +4,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { recoverDepositWithoutNode } from '@/services/hydra-deposit-recovery/recover-on-l1';
 import { findGuardedWalletInHead } from './location';
 import { loadGuardedHotWallet, transferView } from './transfers';
 
@@ -19,6 +20,9 @@ type Scope = Parameters<typeof loadGuardedHotWallet>[1];
  * recover transaction recreates the wallet output with its datum and state token
  * and the node pays the fee, so the owner signs nothing. The status read settles
  * the transfer once the wallet is on L1 again.
+ *
+ * Without a live node (head closed, disabled or quarantined) the service posts the
+ * same recover on L1 itself, and the agent hot wallet pays the fee.
  */
 export async function recoverGuardedDeposit(input: { transferId: string }, scope: Scope) {
 	const transfer = await prisma.guardedHydraTransfer.findUnique({
@@ -44,7 +48,25 @@ export async function recoverGuardedDeposit(input: { transferId: string }, scope
 		throw createHttpError(409, 'The head already holds the wallet; read the status to settle this deposit');
 	}
 	const node = getHydraConnectionManager().getNode(transfer.hydraHeadId);
-	if (node == null) throw createHttpError(502, 'No connection to the Hydra head');
+	if (node == null) {
+		const head = await prisma.hydraHead.findUnique({
+			where: { id: transfer.hydraHeadId },
+			select: { headIdentifier: true },
+		});
+		const { recoverTxHash } = await recoverDepositWithoutNode({
+			hotWalletId: transfer.GuardedWallet.hotWalletId,
+			depositTxHash: transfer.txHash,
+			headIdentifier: head?.headIdentifier ?? null,
+		});
+		logger.info('Recovered a guarded wallet deposit on L1 without the node', {
+			transferId: transfer.id,
+			recoverTxHash,
+		});
+		return {
+			transfer: transferView(transfer),
+			reason: `No live node for the head; the service posted recover ${recoverTxHash} on L1. Read the status once it confirms`,
+		};
+	}
 
 	try {
 		await node.delete(`/commits/${transfer.txHash}`);

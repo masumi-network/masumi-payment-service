@@ -19,6 +19,7 @@ import { HydraTopupStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { recoverDepositWithoutNode } from '@/services/hydra-deposit-recovery/recover-on-l1';
 import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
 
 export type DepositRecovery = {
@@ -32,9 +33,10 @@ export type DepositRecovery = {
 /**
  * Ask the node to return one deposit's funds.
  *
- * The node is the only party that can do this: the deposit script is spendable
- * by a recover transaction it builds, and only after the deadline written into
- * the deposit's own datum.
+ * The node builds the recover transaction, which spends the deposit script only
+ * after the deadline written into the deposit's own datum. Without a live node
+ * the service builds the same transaction on L1 and the participant's hot wallet
+ * pays the fee: the deposit validator checks no signer, only the deadline.
  */
 export async function recoverHydraDeposit(topupId: string): Promise<DepositRecovery> {
 	// `findUnique` and an explicit 404: the throwing variant raises a Prisma
@@ -47,6 +49,8 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			depositTxHash: true,
 			status: true,
 			hydraHeadId: true,
+			HydraHead: { select: { headIdentifier: true } },
+			LocalParticipant: { select: { walletId: true } },
 		},
 	});
 	if (topup === null) {
@@ -87,10 +91,17 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	const manager = getHydraConnectionManager();
 	const node = manager.getNode(topup.hydraHeadId);
 	if (node === null) {
-		throw createHttpError(
-			502,
-			'no live connection to this head’s node, so the recovery cannot be requested. Check the connection and try again',
-		);
+		const { recoverTxHash } = await recoverDepositWithoutNode({
+			hotWalletId: topup.LocalParticipant.walletId,
+			depositTxHash: topup.depositTxHash,
+			headIdentifier: topup.HydraHead.headIdentifier,
+		});
+		await markRecoveryRequested(topup.id);
+		return {
+			depositTxHash: topup.depositTxHash,
+			requested: true,
+			reason: `no live connection to this head’s node, so the service posted recover ${recoverTxHash} on L1. Watch the wallet`,
+		};
 	}
 
 	try {

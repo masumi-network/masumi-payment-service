@@ -148,7 +148,7 @@ export function registerGuardedHydraPaths({ registry, apiKeyAuth }: SwaggerRegis
 		method: 'post',
 		path: '/wallet/guarded/hydra/deposit/recover',
 		description:
-			'Asks the head node to return a Submitted deposit that the head never took in. Allowed only after recoverableAt. The node builds, pays for and submits the recover transaction, which puts the wallet back at its address with its datum; the owner signs nothing. The status endpoint settles the transfer as Failed once the wallet is on L1 again.',
+			'Asks the head node to return a Submitted deposit that the head never took in. Allowed only after recoverableAt. The node builds, pays for and submits the recover transaction, which puts the wallet back at its address with its datum; the owner signs nothing. Without a live node (head closed, disabled or quarantined) the service posts the same recover on L1 and the agent hot wallet pays the fee. The status endpoint settles the transfer as Failed once the wallet is on L1 again.',
 		summary: 'Recover an unabsorbed guarded wallet deposit. (admin access required)',
 		tags: ['wallet'],
 		security: secured,
@@ -171,9 +171,9 @@ export function registerGuardedHydraPaths({ registry, apiKeyAuth }: SwaggerRegis
 			404: { description: 'Deposit not found' },
 			409: {
 				description:
-					'The deposit is not Submitted, its deadline has not passed, the head already holds the wallet, or the node refused',
+					'The deposit is not Submitted, its deadline has not passed, the head already holds the wallet, the node refused, or L1 shows the deposit already spent',
 			},
-			502: { description: 'No connection to the Hydra head' },
+			502: { description: 'The recover could not be built or submitted on L1' },
 		},
 	});
 	registry.registerPath({
