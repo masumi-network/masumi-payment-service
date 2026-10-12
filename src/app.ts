@@ -24,6 +24,7 @@ import fs from 'fs';
 import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
 import helmet from 'helmet';
 import { CORS_EXPOSED_HEADERS_VALUE } from '@/utils/cors-headers';
+import { startEventLoopStallMonitor } from '@/utils/monitoring/event-loop-lag';
 
 const __dirname = path.resolve();
 
@@ -85,6 +86,8 @@ function registerShutdownHandlers() {
 }
 
 export async function startApp() {
+	// First, so a stall during startup (history replay, migrations) is reported too.
+	startEventLoopStallMonitor();
 	logger.info('Initializing services');
 	await initialize();
 

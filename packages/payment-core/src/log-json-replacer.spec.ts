@@ -1,0 +1,107 @@
+import { logJson } from './log-json-replacer';
+
+const MESSAGE = Symbol.for('message');
+
+function renderLine(meta: object): Record<string, unknown> {
+	const info = logJson().transform({ level: 'error', message: 'boom', ...meta });
+	if (!info || typeof info === 'boolean') throw new Error('format dropped the line');
+	return JSON.parse((info as unknown as Record<symbol, string>)[MESSAGE]) as Record<string, unknown>;
+}
+
+describe('logJson', () => {
+	it('keeps the message and stack of an error passed as meta', () => {
+		const line = renderLine({ error: new Error('pool timeout') });
+		const error = line.error as Record<string, unknown>;
+		expect(error.name).toBe('Error');
+		expect(error.message).toBe('pool timeout');
+		expect(typeof error.stack).toBe('string');
+	});
+
+	it('keeps enumerable extras such as a Prisma code next to the message', () => {
+		const prismaLike = Object.assign(new Error('Transaction API error'), { code: 'P2028', clientVersion: '7.8.0' });
+		const error = renderLine({ error: prismaLike }).error as Record<string, unknown>;
+		expect(error).toMatchObject({ code: 'P2028', clientVersion: '7.8.0', message: 'Transaction API error' });
+	});
+
+	it('serializes nested errors and their cause', () => {
+		// Defined the way the native `new Error(message, { cause })` does: own, not enumerable.
+		const outer = Object.defineProperty(new Error('outer'), 'cause', { value: new Error('connect ECONNREFUSED') });
+		const line = renderLine({ details: { error: outer } });
+		const error = (line.details as Record<string, Record<string, unknown>>).error;
+		expect(error.message).toBe('outer');
+		expect((error.cause as Record<string, unknown>).message).toBe('connect ECONNREFUSED');
+	});
+
+	it('writes an error that causes itself instead of overflowing the stack', () => {
+		const looping = new Error('loops');
+		Object.defineProperty(looping, 'cause', { value: looping });
+		const selfReferencing = Object.assign(new Error('self'), { self: undefined as Error | undefined });
+		selfReferencing.self = selfReferencing;
+		const first = new Error('first');
+		const second = new Error('second');
+		Object.defineProperty(first, 'cause', { value: second });
+		Object.defineProperty(second, 'cause', { value: first });
+
+		for (const error of [looping, selfReferencing, first]) {
+			expect((renderLine({ error }).error as Record<string, unknown>).message).toBe(error.message);
+		}
+	});
+
+	it('writes an error with several links back to itself once', () => {
+		const error = Object.assign(new Error('branching'), { self: undefined as Error | undefined });
+		error.self = error;
+		Object.defineProperty(error, 'cause', { value: error });
+		const line = renderLine({ error });
+		const written = line.error as Record<string, unknown>;
+		expect(written).toMatchObject({ message: 'branching', self: '[Repeated Error]', cause: '[Repeated Error]' });
+		expect(JSON.stringify(line).length).toBeLessThan(10_000);
+	});
+
+	it('still writes a cycle once when the error data has an empty-string key', () => {
+		// The stringifier calls the replacer with key '' for such a property too,
+		// so a cache reset keyed on '' would reopen the exponential copy.
+		const error = Object.assign(new Error('keyed'), {
+			data: { '': 1 },
+			related: undefined as Error | undefined,
+			response: undefined as Error | undefined,
+			request: undefined as Error | undefined,
+		});
+		error.related = error;
+		error.response = error;
+		error.request = error;
+		Object.defineProperty(error, 'cause', { value: error });
+		expect(JSON.stringify(renderLine({ error })).length).toBeLessThan(10_000);
+	});
+
+	it('writes an error shared by many branches in full only once', () => {
+		// No cycle: each error is referenced twice by its parent, 25 levels deep.
+		let shared: Error = new Error('leaf');
+		for (let level = 0; level < 25; level += 1) {
+			shared = Object.assign(new Error(`level ${level}`), { left: shared, right: shared });
+		}
+		const line = renderLine({ error: shared });
+		expect(JSON.stringify(line).length).toBeLessThan(100_000);
+		expect((line.error as Record<string, unknown>).right).toBe('[Repeated Error]');
+	});
+
+	it('writes an error as it is now when it is logged again after a change', () => {
+		const error = new Error('first');
+		expect((renderLine({ error }).error as Record<string, unknown>).message).toBe('first');
+		error.message = 'second';
+		expect((renderLine({ error }).error as Record<string, unknown>).message).toBe('second');
+	});
+
+	it('does not throw when an error getter throws', () => {
+		const error = new Error('hostile');
+		Object.defineProperty(error, 'stack', {
+			get: () => {
+				throw new Error('no stack for you');
+			},
+		});
+		expect(renderLine({ error }).error).toBe('[Unserializable Error]');
+	});
+
+	it('still writes bigint as a string', () => {
+		expect(renderLine({ amount: 10n ** 20n }).amount).toBe('100000000000000000000');
+	});
+});

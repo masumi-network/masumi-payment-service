@@ -66,6 +66,13 @@ const MAX_TRACKED_DECOMMIT_TRANSACTIONS = 64;
 
 const MAX_UNPINNED_HISTORY_BUFFER_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Replay work at least this long, done without yielding, is reported. Every
+ * frame is verified synchronously, so a long history can hold the event loop
+ * for the whole stretch — and nothing else in the process runs meanwhile.
+ */
+const SLOW_REPLAY_WORK_MS = 1_000;
+
 /** What the replay needs from the session it serves. */
 export interface HistoryReplayHost {
 	readonly expectedHeadId: string | undefined;
@@ -235,7 +242,16 @@ export class HydraHistoryReplay {
 			this.bufferUnpinnedFrame(rawMessage);
 			return;
 		}
+		const startedAtMs = Date.now();
 		this.processPinnedMessage(rawMessage);
+		const elapsedMs = Date.now() - startedAtMs;
+		if (elapsedMs >= SLOW_REPLAY_WORK_MS) {
+			logger.warn('[HydraNode] One history frame held the event loop', {
+				headId: this.host.expectedHeadId,
+				frameBytes: Buffer.byteLength(rawMessage, 'utf8'),
+				elapsedMs,
+			});
+		}
 	}
 
 	private bufferUnpinnedFrame(rawMessage: string): void {
@@ -277,9 +293,20 @@ export class HydraHistoryReplay {
 		// replay complete, reporting a verified history for a head whose signed
 		// history had just been rejected.
 		const failureGenerationAtStart = this._failureGeneration;
+		const startedAtMs = Date.now();
+		let processedFrames = 0;
 		for (const frame of bufferedFrames) {
 			if (this._failureGeneration !== failureGenerationAtStart) break;
 			this.processPinnedMessage(frame);
+			processedFrames += 1;
+		}
+		const elapsedMs = Date.now() - startedAtMs;
+		if (elapsedMs >= SLOW_REPLAY_WORK_MS) {
+			logger.warn('[HydraNode] Buffered history flush held the event loop', {
+				headId: this.host.expectedHeadId,
+				frames: processedFrames,
+				elapsedMs,
+			});
 		}
 	}
 
