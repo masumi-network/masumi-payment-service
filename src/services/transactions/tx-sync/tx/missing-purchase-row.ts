@@ -14,17 +14,25 @@ import { logger } from '@masumi/payment-core/logger';
  *
  * Call it after the sync transaction, not inside it: this log-only wallet read
  * would add HotWallet to that Serializable read set and conflict with the
- * batchers, which write HotWallet locks all the time.
+ * batchers, which write HotWallet locks all the time. It never throws, so a
+ * failed lookup cannot hold up the rest of the sync.
  */
 export async function reportInitialLockWithoutPurchaseRow(
 	db: Pick<Prisma.TransactionClient, 'hotWallet'>,
 	details: { txHash: string; paymentSourceId: string; blockchainIdentifier: string; buyerVkey: string },
 ): Promise<void> {
-	// Deleted wallets included: a lock by a wallet removed afterwards is still ours.
-	const ownBuyerWallet = await db.hotWallet.findFirst({
-		where: { walletVkey: details.buyerVkey, type: HotWalletType.Purchasing },
-		select: { id: true },
-	});
+	let ownBuyerWallet: { id: string } | null;
+	try {
+		// Any payment source and network, deleted wallets included: the same key
+		// is the same signer, so a lock it made is ours wherever it was registered.
+		ownBuyerWallet = await db.hotWallet.findFirst({
+			where: { walletVkey: details.buyerVkey, type: HotWalletType.Purchasing },
+			select: { id: true },
+		});
+	} catch (error) {
+		logger.warn('tx-sync: could not check whether a lock without a purchase row is ours', { ...details, error });
+		return;
+	}
 	if (ownBuyerWallet == null) {
 		logger.debug('tx-sync: initial purchase output belongs to another buyer', details);
 		return;
