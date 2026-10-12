@@ -6,6 +6,8 @@ import {
 	getGuardedHydraSchemaOutput,
 	postGuardedHydraDepositSchemaInput,
 	postGuardedHydraDepositSchemaOutput,
+	postGuardedHydraRecoverSchemaInput,
+	postGuardedHydraRecoverSchemaOutput,
 	postGuardedHydraSubmitSchemaInput,
 	postGuardedHydraSubmitSchemaOutput,
 	postGuardedHydraWithdrawSchemaInput,
@@ -140,6 +142,38 @@ export function registerGuardedHydraPaths({ registry, apiKeyAuth }: SwaggerRegis
 				transfer: { ...transferExample, status: 'Submitted', submittedAt: new Date('2026-10-12T12:05:00Z') },
 			}),
 			...submitErrors,
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/wallet/guarded/hydra/deposit/recover',
+		description:
+			'Asks the head node to return a Submitted deposit that the head never took in. Allowed only after recoverableAt. The node builds, pays for and submits the recover transaction, which puts the wallet back at its address with its datum; the owner signs nothing. The status endpoint settles the transfer as Failed once the wallet is on L1 again.',
+		summary: 'Recover an unabsorbed guarded wallet deposit. (admin access required)',
+		tags: ['wallet'],
+		security: secured,
+		request: {
+			body: {
+				description: 'The deposit to recover',
+				content: {
+					'application/json': {
+						schema: postGuardedHydraRecoverSchemaInput.openapi({ example: { transferId: transferExample.id } }),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Recovery requested', postGuardedHydraRecoverSchemaOutput, {
+				transfer: { ...transferExample, status: 'Submitted', submittedAt: new Date('2026-10-12T12:05:00Z') },
+				reason: null,
+			}),
+			401: { description: 'Unauthorized' },
+			404: { description: 'Deposit not found' },
+			409: {
+				description:
+					'The deposit is not Submitted, its deadline has not passed, the head already holds the wallet, or the node refused',
+			},
+			502: { description: 'No connection to the Hydra head' },
 		},
 	});
 	registry.registerPath({

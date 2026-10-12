@@ -6,11 +6,14 @@ import {
 	getGuardedHydraSchemaOutput,
 	postGuardedHydraDepositSchemaInput,
 	postGuardedHydraDepositSchemaOutput,
+	postGuardedHydraRecoverSchemaInput,
+	postGuardedHydraRecoverSchemaOutput,
 	postGuardedHydraSubmitSchemaInput,
 	postGuardedHydraSubmitSchemaOutput,
 	postGuardedHydraWithdrawSchemaInput,
 	postGuardedHydraWithdrawSchemaOutput,
 } from './schemas';
+import { recoverGuardedDeposit } from './recover';
 import { getGuardedHydraStatus } from './status';
 import { prepareGuardedWithdraw, submitGuardedWithdraw } from './withdraw';
 
@@ -37,6 +40,15 @@ export const postGuardedHydraDepositSubmitEndpointPost = adminAuthenticatedEndpo
 	output: postGuardedHydraSubmitSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof postGuardedHydraSubmitSchemaInput>; ctx: AuthContext }) =>
 		submitGuardedDeposit(input, ctx),
+});
+
+/** Return an unabsorbed deposit to L1 after its deadline. The node posts it; the owner signs nothing. */
+export const postGuardedHydraDepositRecoverEndpointPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: postGuardedHydraRecoverSchemaInput,
+	output: postGuardedHydraRecoverSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof postGuardedHydraRecoverSchemaInput>; ctx: AuthContext }) =>
+		recoverGuardedDeposit(input, ctx),
 });
 
 /** Owner-signed move out of a head, step 1: returns the decommit for the owner to sign. */

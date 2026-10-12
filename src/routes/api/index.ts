@@ -109,6 +109,7 @@ import {
 	getGuardedHydraEndpointGet,
 	postGuardedHydraDepositEndpointPost,
 	postGuardedHydraDepositSubmitEndpointPost,
+	postGuardedHydraDepositRecoverEndpointPost,
 	postGuardedHydraWithdrawEndpointPost,
 	postGuardedHydraWithdrawSubmitEndpointPost,
 } from './wallet/guarded/hydra';
@@ -368,6 +369,7 @@ export const apiRouter: Routing = {
 					deposit: {
 						post: postGuardedHydraDepositEndpointPost,
 						submit: { post: postGuardedHydraDepositSubmitEndpointPost },
+						recover: { post: postGuardedHydraDepositRecoverEndpointPost },
 					},
 					withdraw: {
 						post: postGuardedHydraWithdrawEndpointPost,

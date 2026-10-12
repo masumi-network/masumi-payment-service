@@ -66,3 +66,14 @@ export const postGuardedHydraSubmitSchemaInput = z.object({
 	signedTx: cborHex.describe('The prepared transaction with the owner witness added'),
 });
 export const postGuardedHydraSubmitSchemaOutput = z.object({ transfer: guardedHydraTransferSchema });
+
+export const postGuardedHydraRecoverSchemaInput = z.object({
+	transferId: z.string().min(1).describe('The Submitted deposit the head never took in'),
+});
+export const postGuardedHydraRecoverSchemaOutput = z.object({
+	transfer: guardedHydraTransferSchema,
+	reason: z
+		.string()
+		.nullable()
+		.describe('Null when the node confirmed the request; otherwise why the outcome is not known yet'),
+});

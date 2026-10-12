@@ -16153,6 +16153,83 @@ export type PostWalletGuardedHydraDepositSubmitResponses = {
 
 export type PostWalletGuardedHydraDepositSubmitResponse = PostWalletGuardedHydraDepositSubmitResponses[keyof PostWalletGuardedHydraDepositSubmitResponses];
 
+export type PostWalletGuardedHydraDepositRecoverData = {
+    /**
+     * The deposit to recover
+     */
+    body?: {
+        /**
+         * The Submitted deposit the head never took in
+         */
+        transferId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guarded/hydra/deposit/recover';
+};
+
+export type PostWalletGuardedHydraDepositRecoverErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Deposit not found
+     */
+    404: unknown;
+    /**
+     * The deposit is not Submitted, its deadline has not passed, the head already holds the wallet, or the node refused
+     */
+    409: unknown;
+    /**
+     * No connection to the Hydra head
+     */
+    502: unknown;
+};
+
+export type PostWalletGuardedHydraDepositRecoverResponses = {
+    /**
+     * Recovery requested
+     */
+    200: {
+        status: 'success';
+        data: {
+            transfer: {
+                id: string;
+                direction: 'Deposit' | 'Withdraw';
+                status: 'Prepared' | 'Submitted' | 'Confirmed' | 'Expired' | 'Failed';
+                hydraHeadId: string;
+                /**
+                 * The deposit L1 transaction id, or the in-head decommit transaction id
+                 */
+                txHash: string;
+                /**
+                 * The wallet UTxO this transfer moves (txHash#index)
+                 */
+                walletUtxoRef: string;
+                /**
+                 * The owner must sign and submit before this moment
+                 */
+                signBefore: Date | null;
+                /**
+                 * Deposit only: after this an unabsorbed deposit can be recovered to L1
+                 */
+                recoverableAt: Date | null;
+                submittedAt: Date | null;
+                confirmedAt: Date | null;
+                failureReason: string | null;
+                createdAt: Date;
+            };
+            /**
+             * Null when the node confirmed the request; otherwise why the outcome is not known yet
+             */
+            reason: string | null;
+        };
+    };
+};
+
+export type PostWalletGuardedHydraDepositRecoverResponse = PostWalletGuardedHydraDepositRecoverResponses[keyof PostWalletGuardedHydraDepositRecoverResponses];
+
 export type PostWalletGuardedHydraWithdrawData = {
     /**
      * The guarded hot wallet
