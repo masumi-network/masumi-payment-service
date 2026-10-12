@@ -120,6 +120,15 @@ export const cosignContextSchema = z.object({
 	submittedAt: z.string().min(1),
 	/** Deprecated since 1.1 (the wallet is resolved from the body), still accepted. Sent for 1.0 clients. */
 	walletAddress: address.optional(),
+	/**
+	 * Proposed extension: set when the spend runs inside a Hydra head. The wallet
+	 * input then exists only in that head's snapshot, so the co-signer resolves
+	 * `walletUtxoRef` there instead of on L1. The on-chain head id (28-byte hex).
+	 */
+	hydraHeadId: z
+		.string()
+		.regex(/^[0-9a-f]{56}$/)
+		.optional(),
 });
 export type CosignContext = z.infer<typeof cosignContextSchema>;
 

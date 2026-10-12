@@ -210,7 +210,10 @@ export type GuardedLockBuild = {
 	validity: { invalidBefore: number; invalidAfter: number };
 };
 
-function assertGuardedLockParams(params: BuildGuardedLockParams, agentVkh: string): void {
+export function assertGuardedLockParams(
+	params: Pick<BuildGuardedLockParams, 'locks' | 'walletUtxo' | 'wallet' | 'walletDatum' | 'cosignerVkhs'>,
+	agentVkh: string,
+): void {
 	if (params.locks.length === 0) {
 		throw new Error('a guarded lock needs at least one lock output');
 	}
@@ -244,7 +247,7 @@ function assertGuardedLockParams(params: BuildGuardedLockParams, agentVkh: strin
  * out of the frozen body rather than assumed: a reordering would otherwise bind
  * a purchase to another purchase's output and be rejected as a body mismatch.
  */
-function readLockOutputIndexes(txCbor: string, walletAddress: string, lockAddresses: string[]): number[] {
+export function readLockOutputIndexes(txCbor: string, walletAddress: string, lockAddresses: string[]): number[] {
 	const outputs = deserializeTx(txCbor).body().outputs();
 	const addressAt = (index: number) => (index < outputs.length ? outputs[index].address().toBech32() : undefined);
 	if (addressAt(0) !== walletAddress) {

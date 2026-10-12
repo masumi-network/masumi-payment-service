@@ -105,6 +105,9 @@ export function readWalletDatum(utxo: UTxO): WalletDatum {
  * The wallet is found by its state token, never by scanning for a datum shape
  * an attacker could imitate. Exactly one UTxO may carry the token.
  */
+/** No UTxO on L1 holds the state token: the wallet sits in a Hydra head or is moving. */
+export class GuardedWalletNotOnL1Error extends Error {}
+
 export async function fetchWalletUtxo(
 	provider: Pick<BlockfrostProvider, 'fetchAddressUTxOs'>,
 	wallet: Pick<SmartWalletScript, 'address' | 'policyId'>,
@@ -115,6 +118,9 @@ export async function fetchWalletUtxo(
 	const held = utxos.filter((utxo) =>
 		utxo.output.amount.some((asset) => asset.unit === unit && BigInt(asset.quantity) === 1n),
 	);
+	if (held.length === 0) {
+		throw new GuardedWalletNotOnL1Error(`No UTxO carries ${unit} at ${wallet.address} on L1`);
+	}
 	if (held.length !== 1) {
 		throw new Error(`Expected exactly one UTxO carrying ${unit} at ${wallet.address}, found ${held.length}`);
 	}

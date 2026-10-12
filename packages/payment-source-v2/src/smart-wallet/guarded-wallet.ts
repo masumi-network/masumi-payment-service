@@ -1,8 +1,8 @@
-import { BlockfrostProvider, resolvePaymentKeyHash } from '@meshsdk/core';
+import { BlockfrostProvider, resolvePaymentKeyHash, type UTxO } from '@meshsdk/core';
 import { z } from '@masumi/payment-core/zod';
 import { assertSafeCosignUrl } from './cosign-client';
 import { assetValueGet, lovelaceOf } from './wallet';
-import { fetchWalletUtxo, loadSmartWalletScript, readWalletDatum } from './wallet-lifecycle';
+import { fetchWalletUtxo, loadSmartWalletScript, readWalletDatum, type SmartWalletScript } from './wallet-lifecycle';
 
 /**
  * Guarded wallet helpers for the node's admin API. They live in the V2 package
@@ -42,6 +42,14 @@ export async function inspectGuardedWallet(
 ): Promise<GuardedWalletState> {
 	const script = loadSmartWalletScript(params);
 	const walletUtxo = await fetchWalletUtxo(new BlockfrostProvider(rpcApiKey), script, params.stateTokenName);
+	return describeWalletUtxo(script, walletUtxo);
+}
+
+/** Read a wallet UTxO found anywhere (L1 or a head snapshot) into its guarded-wallet state. */
+export function describeWalletUtxo(
+	script: Pick<SmartWalletScript, 'address' | 'policyId'>,
+	walletUtxo: UTxO,
+): GuardedWalletState {
 	const datum = readWalletDatum(walletUtxo);
 	return {
 		scriptAddress: script.address,
