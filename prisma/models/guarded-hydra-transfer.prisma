@@ -1,0 +1,47 @@
+enum GuardedHydraTransferDirection {
+  Deposit
+  Withdraw
+}
+
+enum GuardedHydraTransferStatus {
+  /// Built and validated; waiting for the owner's signature.
+  Prepared
+  /// Owner-signed and handed to the chain (deposit) or the head (withdraw).
+  Submitted
+  /// The wallet arrived: in the head snapshot (deposit) or back on L1 (withdraw).
+  Confirmed
+  /// The owner did not sign before the transaction's validity ran out.
+  Expired
+  Failed
+}
+
+/// One move of a guarded wallet between L1 and a Hydra head. The owner signs
+/// every move (OwnerSpend), so a row is first Prepared with the unsigned
+/// transaction and only then Submitted with the owner's witness.
+model GuardedHydraTransfer {
+  id              String                        @id @default(cuid())
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+  guardedWalletId String
+  GuardedWallet   GuardedWallet                 @relation(fields: [guardedWalletId], references: [id], onDelete: Cascade)
+  hydraHeadId     String
+  HydraHead       HydraHead                     @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+  direction       GuardedHydraTransferDirection
+  status          GuardedHydraTransferStatus
+  /// The deposit's L1 transaction id, or the in-head decommit transaction id.
+  txHash          String
+  /// The transaction the owner signs, with any witnesses the node already added.
+  unsignedTx      String
+  /// The wallet UTxO this transfer moves (txHash#index).
+  walletUtxoRef   String
+  /// Last moment the owner's signed transaction is still valid (deposit TTL).
+  signBefore      DateTime?
+  /// Deposit only: after this the deposit can be recovered to L1.
+  recoverableAt   DateTime?
+  submittedAt     DateTime?
+  confirmedAt     DateTime?
+  failureReason   String?
+
+  @@index([guardedWalletId, createdAt])
+  @@index([hydraHeadId])
+}

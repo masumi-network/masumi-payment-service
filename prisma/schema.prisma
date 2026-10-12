@@ -185,6 +185,7 @@ model GuardedWallet {
   policyId        String
   exchainWalletId String?
   HotWallet       HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+  HydraTransfers  GuardedHydraTransfer[]
 }
 
 model HotWalletLowBalanceRule {
@@ -1821,6 +1822,9 @@ model HydraHead {
 
   /// Incremental-decommit withdrawals out of this head
   Withdrawals HydraDecommit[]
+
+  /// Guarded wallets moved into or out of this head.
+  GuardedWalletTransfers GuardedHydraTransfer[]
 
   /// The local participant in this head (this server's wallet + node)
   LocalParticipant HydraLocalParticipant?
