@@ -262,9 +262,24 @@ describe('Hydra head state convergence', () => {
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
 	});
 
+	// Re-proving an enabled head meant disabling it first, which dropped the
+	// live session and the counterparty with it.
+	it('leaves an already enabled head enabled and only reconciles it', async () => {
+		const liveHead = { ...openHead, headIdentifier: 'a'.repeat(56), initTxHash: 'b'.repeat(64) };
+		mockFindHead.mockResolvedValue(liveHead);
+
+		await expect(updateHydraHeadEnabledState('head-1', true, jest.fn() as AnyMock)).resolves.toBe(liveHead);
+
+		expect(mockUpdateHead).not.toHaveBeenCalled();
+		expect(mockReleaseClose).not.toHaveBeenCalled();
+		// Reconnects a head that lost its session, without disabling it first.
+		expect(mockReconcileEnabledState).toHaveBeenCalledWith('head-1');
+	});
+
 	it('freshly verifies an established head before re-enabling and reconnecting it', async () => {
 		const staleHead = {
 			...openHead,
+			isEnabled: false,
 			headIdentifier: 'a'.repeat(56),
 			initTxHash: 'b'.repeat(64),
 			updatedAt: new Date('2026-07-23T01:00:00Z'),
@@ -311,6 +326,7 @@ describe('Hydra head state convergence', () => {
 	it('leaves an established head disabled when fresh L1 evidence is still unavailable', async () => {
 		const staleHead = {
 			...openHead,
+			isEnabled: false,
 			headIdentifier: 'a'.repeat(56),
 			initTxHash: 'b'.repeat(64),
 			updatedAt: new Date('2026-07-23T01:00:00Z'),

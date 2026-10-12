@@ -35,6 +35,7 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { probeHeadCurrentSlot } from './head-session-ops';
 import { HeadSession } from './head-session';
 import { persistHeadStatus, type HeadStatusPersistenceHost } from './head-status-persistence';
+import { continueAfterStatusPersistenceRecovery } from './head-auto-disable-recovery';
 import { applyConfirmedHydraTransaction, type TxConfirmedHost } from './head-tx-confirmed';
 import {
 	HYDRA_PRE_INIT_STATUSES,
@@ -615,11 +616,17 @@ export class HydraConnectionManager {
 			await this.disconnect(hydraHeadId);
 			return await this.reconcileEnabledStateInner(hydraHeadId);
 		});
-		void work.catch((error: unknown) => {
+		const continueRecovery = (connected: boolean | null) => {
+			void continueAfterStatusPersistenceRecovery(hydraHeadId, connected).catch((error: unknown) => {
+				logger.error('[HydraConnectionManager] Failed auto-disable recovery', { hydraHeadId, error });
+			});
+		};
+		void work.then(continueRecovery, (error: unknown) => {
 			logger.error('[HydraConnectionManager] Failed lifecycle-persistence recovery', {
 				hydraHeadId,
 				error,
 			});
+			continueRecovery(null);
 			this.scheduleReconnect(hydraHeadId);
 		});
 	}

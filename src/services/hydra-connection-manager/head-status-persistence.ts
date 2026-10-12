@@ -22,6 +22,7 @@ import { CustomHydraHead, StatusChangeData } from '@/lib/hydra';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { HYDRA_HEAD_STATUS_RANK } from './head-status-rank';
 import { persistRegressiveHeadStatus } from './head-session-ops';
+import { forgetHeadFailedClosed, markHeadFailedClosed } from './head-auto-disable-recovery';
 
 /**
  * What the persistence pipeline needs from the session/registry it serves.
@@ -114,6 +115,27 @@ export async function persistHeadStatus(
 				}
 				if (rollbackResult !== 'ignored') {
 					host.clearQuarantineAfterReobservation(head);
+				}
+				const rolledBackPastOpen =
+					rollbackResult === 'persisted' &&
+					HYDRA_HEAD_STATUS_RANK[status] < HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Open];
+				if (rollbackResult.startsWith('quarantined') || rolledBackPastOpen) {
+					// The head (or every head of the relation) is now held for explicit
+					// operator recovery; an earlier fail-closed mark must not undo that.
+					forgetHeadFailedClosed(hydraHeadId);
+					try {
+						const relationHeads = await prisma.hydraHead.findMany({
+							where: { hydraRelationId: current.hydraRelationId },
+							select: { id: true },
+						});
+						for (const relationHead of relationHeads) forgetHeadFailedClosed(relationHead.id);
+					} catch (error) {
+						// The quarantine is durable already; only a sibling's mark may remain.
+						logger.warn('[HydraConnectionManager] Could not clear auto-recovery marks of quarantined heads', {
+							hydraRelationId: current.hydraRelationId,
+							error: error instanceof Error ? error.message : String(error),
+						});
+					}
 				}
 				if (rollbackResult === 'persisted') {
 					logger.warn('[HydraConnectionManager] Persisted authenticated live Hydra lifecycle rollback', {
@@ -231,23 +253,29 @@ export async function failClosedAfterStatusPersistenceFailure(
 	// disconnect's flush of that same queue.
 	host.quarantine(failedHead);
 	try {
-		const disabled = await retryOnSerializationConflict(
-			async () =>
-				await prisma.hydraHead.updateMany({
-					// Fenced: a stale session must never durably disable a head a newer
-					// session owns. Its local quarantine and teardown are enough.
-					where: { id: hydraHeadId, ownerEpoch },
-					data: {
-						isEnabled: false,
-						initTxHash: null,
-						initChainSlot: null,
-						initChainHash: null,
-						reconciliationCompletedAt: null,
-					},
-				}),
-			{ label: 'hydra-status-persistence-fail-closed' },
-		);
-		if (disabled.count === 0) {
+		const failClosed = async (onlyIfEnabled: boolean) =>
+			await retryOnSerializationConflict(
+				async () =>
+					await prisma.hydraHead.updateMany({
+						// Fenced: a stale session must never durably disable a head a newer
+						// session owns. Its local quarantine and teardown are enough.
+						where: { id: hydraHeadId, ownerEpoch, ...(onlyIfEnabled ? { isEnabled: true } : {}) },
+						data: {
+							isEnabled: false,
+							initTxHash: null,
+							initChainSlot: null,
+							initChainHash: null,
+							reconciliationCompletedAt: null,
+						},
+					}),
+				{ label: 'hydra-status-persistence-fail-closed' },
+			);
+		// Only a head this write takes from enabled to disabled is ours to
+		// re-enable automatically later. The first write decides that atomically;
+		// the second still clears init evidence on a head already disabled.
+		if ((await failClosed(true)).count > 0) {
+			markHeadFailedClosed(hydraHeadId);
+		} else if ((await failClosed(false)).count === 0) {
 			logger.warn('[HydraConnectionManager] Skipped durable quarantine: head row gone or owned by a newer session', {
 				hydraHeadId,
 				sessionOwnerEpoch: ownerEpoch.toString(),

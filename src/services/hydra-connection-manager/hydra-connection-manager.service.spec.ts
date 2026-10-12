@@ -814,7 +814,9 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		head.emit('StatusChange', { status: HydraHeadStatus.Initializing, headId: 'a'.repeat(56) });
 		await manager.flushHeadStatus('head-1');
 
-		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(4);
+		// Three status CAS misses, then the fail-closed write: first only from
+		// enabled (it misses here, as every write does), then unconditionally.
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(5);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
 			where: { id: 'head-1' },
 			data: {
@@ -1125,7 +1127,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 		expect(mockTransactionFindFirst).not.toHaveBeenCalled();
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1' },
+			where: { id: 'head-1', isEnabled: true },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
