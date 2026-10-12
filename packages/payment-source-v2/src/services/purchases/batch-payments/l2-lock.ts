@@ -25,6 +25,7 @@ import { resolveEffectiveForceLayer } from '@/utils/logic/force-layer';
 import { waitForFreeWallet } from '../../l2-pass';
 import { isHotWalletEligibleForL2Lock } from './l2-lock-helpers';
 import { executeL2Lock, type L2PurchaseRequest } from './l2-lock-execute';
+import { executeGuardedL2Lock, locateGuardedWalletForLock, type GuardedWalletInHead } from './l2-guarded-lock-execute';
 
 /**
  * How long an auto-routed request waits for a busy head wallet before the L1
@@ -93,11 +94,12 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				where: {
 					type: HotWalletType.Purchasing,
 					deletedAt: null,
-					// A guarded wallet locks only through Exchain co-signing on L1; never from its own key in a head.
-					GuardedWallet: null,
 				},
 				include: {
 					Secret: true,
+					// A guarded hot wallet locks only from its smart wallet, co-signed by the quorum,
+					// and only in a head that holds that wallet. Never from its own key.
+					GuardedWallet: true,
 				},
 			},
 		},
@@ -166,6 +168,13 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 					headResolutionIndeterminate = true;
 					continue;
 				}
+				// A guarded wallet not in this head is on L1, where the L1 pass locks for it.
+				if (hotWallet.GuardedWallet != null) {
+					const inHead = await tryLocateGuardedWallet(hotWallet.GuardedWallet, head.hydraHead.id);
+					// Unreadable, or here but withdrawing: neither proves the head can never serve it.
+					if (inHead === 'unknown' || inHead === 'moving') headResolutionIndeterminate = true;
+					if (inHead == null || inHead === 'unknown' || inHead === 'moving') continue;
+				}
 				// A head exists for this pair — record it BEFORE the wallet-busy check so
 				// a busy wallet never masquerades as "no head".
 				headAvailable = true;
@@ -210,8 +219,33 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 					continue;
 				}
 
+				// Located again once the wallet is free: a lock this pass just made
+				// spent the wallet UTxO seen before the wait.
+				let guardedInHead: GuardedWalletInHead | null = null;
+				if (hotWallet.GuardedWallet != null) {
+					const inHead = await tryLocateGuardedWallet(hotWallet.GuardedWallet, head.hydraHead.id);
+					if (inHead == null || inHead === 'unknown' || inHead === 'moving') continue;
+					guardedInHead = inHead;
+				}
+
 				try {
-					const outcome = await executeL2Lock(request, paymentContract, hotWallet, head.hydraHead.id);
+					const guardedOutcome =
+						guardedInHead != null
+							? await executeGuardedL2Lock({
+									request,
+									paymentContract,
+									hotWallet,
+									hydraHeadId: head.hydraHead.id,
+									...guardedInHead,
+								})
+							: null;
+					if (guardedOutcome?.status === 'cosign-refused') {
+						// The purchase has its disposition and nothing was submitted.
+						locked = true;
+						break;
+					}
+					const outcome =
+						guardedOutcome ?? (await executeL2Lock(request, paymentContract, hotWallet, head.hydraHead.id));
 					// Accepted, accepted-but-not-finalized, and ambiguous outcomes all
 					// retain the durable pre-submit reservation, so the request is
 					// handled either way and neither another wallet nor this tick's L1
@@ -317,5 +351,18 @@ async function failForcedL2Request(request: L2PurchaseRequest, reason: string): 
 			return;
 		}
 		throw error;
+	}
+}
+
+/** `locateGuardedWalletForLock`, with an unreadable snapshot reported as 'unknown' rather than thrown. */
+async function tryLocateGuardedWallet(
+	guarded: Parameters<typeof locateGuardedWalletForLock>[0],
+	hydraHeadId: string,
+): Promise<GuardedWalletInHead | 'moving' | null | 'unknown'> {
+	try {
+		return await locateGuardedWalletForLock(guarded, hydraHeadId);
+	} catch (error) {
+		logger.warn('L2 lock: could not read the head snapshot for a guarded wallet', { hydraHeadId, error });
+		return 'unknown';
 	}
 }

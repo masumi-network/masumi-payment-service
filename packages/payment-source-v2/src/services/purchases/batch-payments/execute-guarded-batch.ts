@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
-import { prisma } from '@masumi/payment-core/db';
+import { GuardedHydraTransferDirection } from '@/generated/prisma/client';
 import { logger } from '@masumi/payment-core/logger';
-import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 // V2 mesh line: the guarded builder and its signer must never mix with the root (V1) provider or wallet.
 import { BlockfrostProvider, MeshWallet, resolveTxHash } from '@meshsdk/core';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
@@ -10,7 +8,6 @@ import { decrypt } from '@/utils/security/encryption';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import {
 	CosignTransportError,
-	jobHashOf,
 	mergeCosignWitnesses,
 	requestCosign,
 	type CosignIntent,
@@ -22,7 +19,12 @@ import {
 	type GuardedLockBuild,
 	type GuardedLockOutput,
 } from '../../../smart-wallet/guarded-lock-builder';
-import { fetchWalletUtxo, loadSmartWalletScript, readWalletDatum } from '../../../smart-wallet/wallet-lifecycle';
+import {
+	fetchWalletUtxo,
+	GuardedWalletNotOnL1Error,
+	loadSmartWalletScript,
+	readWalletDatum,
+} from '../../../smart-wallet/wallet-lifecycle';
 import {
 	batchLockDatum,
 	recordBatchPresubmit,
@@ -33,23 +35,15 @@ import {
 	type WalletPairing,
 } from './execute-batch';
 import { classifyCosignResult, type CosignDisposition, type CosignOutcome } from './cosign-disposition';
+import { cosignIntentFor, guardedLockLovelace, recordCosignDispositionsFor } from './guarded-cosign-purchase';
 import { cosignConfigOrNull } from './cosign-config';
+import { hasOpenGuardedMove } from './guarded-open-move';
 
 /** One rebuild with the admitted set per tick; a second denial goes back to the queue. */
 const MAX_COSIGN_REBUILDS = 1;
 
-/** A guarded wallet governs lovelace only, so packing never hands it a purchase with native tokens. */
 function lockLovelaceOf(request: BatchedRequest): bigint {
-	let lovelace = 0n;
-	for (const funds of request.paymentRequest.PaidFunds) {
-		if (funds.unit !== '' && funds.unit !== 'lovelace') {
-			throw new Error(
-				`guarded wallets lock lovelace only; purchase ${request.paymentRequest.id} carries ${funds.unit}`,
-			);
-		}
-		lovelace += funds.amount;
-	}
-	return lovelace;
+	return guardedLockLovelace(request.paymentRequest);
 }
 
 function lockOutputOf(walletPairing: WalletPairing, request: BatchedRequest): GuardedLockOutput {
@@ -61,50 +55,14 @@ function lockOutputOf(walletPairing: WalletPairing, request: BatchedRequest): Gu
 }
 
 function intentOf(request: BatchedRequest, outputIndex: number): CosignIntent {
-	const purchase = request.paymentRequest;
-	const agentIdentifier =
-		purchase.agentIdentifier ?? decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier;
-	if (agentIdentifier == null) {
-		throw new Error(`purchase ${purchase.id} has no agent identifier to show the co-signer`);
-	}
-	return {
-		purchaseId: purchase.id,
-		outputIndex,
-		counterparty: `sellerVkeyHash:${purchase.SellerWallet.walletVkey}`,
-		amount: lockLovelaceOf(request).toString(),
-		asset: 'lovelace',
-		jobHash: jobHashOf(purchase.inputHash),
-		agentIdentifier,
-	};
+	return cosignIntentFor(request.paymentRequest, outputIndex, lockLovelaceOf(request));
 }
 
-/** Park or requeue the purchases the quorum did not co-sign. Nothing was submitted for them. */
 async function recordCosignDispositions(requests: BatchedRequest[], refused: Map<string, CosignDisposition>) {
-	for (const request of requests) {
-		const disposition = refused.get(request.paymentRequest.id);
-		if (disposition == null) continue;
-		await prisma.purchaseRequest.update({
-			where: { id: request.paymentRequest.id },
-			data: {
-				ActionHistory: { connect: { id: request.paymentRequest.nextActionId } },
-				NextAction: {
-					create:
-						disposition.kind === 'retry'
-							? {
-									// errorType stays null: the batch job selects only queued rows without one.
-									requestedAction: PurchasingAction.FundsLockingRequested,
-									errorType: null,
-									errorNote: disposition.note,
-								}
-							: {
-									requestedAction: PurchasingAction.WaitingForManualAction,
-									errorType: disposition.policy ? PurchaseErrorType.PolicyDenied : PurchaseErrorType.Unknown,
-									errorNote: disposition.note,
-								},
-				},
-			},
-		});
-	}
+	await recordCosignDispositionsFor(
+		requests.map((request) => request.paymentRequest),
+		refused,
+	);
 }
 
 /**
@@ -160,6 +118,13 @@ export async function executeGuardedBatch(
 			note: 'The guarded wallet script no longer matches its attach record; detach and attach it again',
 		});
 	}
+	// The owner may be signing a deposit of the current wallet UTxO; spending it now would void that deposit.
+	if (await hasOpenGuardedMove({ id: guarded.id }, GuardedHydraTransferDirection.Deposit)) {
+		return refuseAll({
+			kind: 'retry',
+			note: 'A deposit of the guarded wallet into a Hydra head is in flight; retrying',
+		});
+	}
 	const cosignerVkhs = guarded.quorumVkhs.slice(0, guarded.threshold);
 	const rpcApiKey = paymentContract.PaymentSourceConfig.rpcProviderApiKey;
 	const hotWallet = paymentContract.HotWallets.find((candidate) => candidate.id === walletId);
@@ -206,6 +171,13 @@ export async function executeGuardedBatch(
 				}),
 			);
 		} catch (error) {
+			// In a Hydra head or moving there: the L2 pass serves these purchases, so they wait in the queue.
+			if (error instanceof GuardedWalletNotOnL1Error) {
+				return refuseAll({
+					kind: 'retry',
+					note: 'The guarded wallet is not on L1 (in a Hydra head or moving); retrying',
+				});
+			}
 			// Both shrink with the batch: fewer locks mean a smaller body and more left in the wallet.
 			const shrinkNote =
 				error instanceof GuardedTxTooLargeError
@@ -283,6 +255,13 @@ export async function executeGuardedBatch(
 			return preSubmitFailed(error);
 		}
 
+		// The owner may have prepared a deposit of this UTxO while the quorum signed.
+		if (await hasOpenGuardedMove({ id: guarded.id }, GuardedHydraTransferDirection.Deposit)) {
+			return refuseAll({
+				kind: 'retry',
+				note: 'A deposit of the guarded wallet into a Hydra head is in flight; retrying',
+			});
+		}
 		const presubmitTxId = await recordBatchPresubmit(walletPairing);
 		return submitBatchTx({
 			walletPairing,

@@ -38,9 +38,14 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: () => 
 jest.unstable_mockModule('@/utils/mesh-cost-model-sync', () => ({
 	withMeshCostModelLock: (_key: string, run: () => unknown) => run(),
 }));
+const mockHasOpenMove = jest.fn<(...args: unknown[]) => Promise<boolean>>();
+jest.unstable_mockModule('./guarded-open-move', () => ({ hasOpenGuardedMove: mockHasOpenMove }));
+class MockNotOnL1Error extends Error {}
+const mockFetchWalletUtxo = jest.fn<() => Promise<unknown>>();
 jest.unstable_mockModule('../../../smart-wallet/wallet-lifecycle', () => ({
 	loadSmartWalletScript: () => ({ address: 'addr_script', policyId: 'policy', scriptCode: 'code' }),
-	fetchWalletUtxo: () => Promise.resolve({ input: { txHash: 'c'.repeat(64), outputIndex: 0 }, output: {} }),
+	fetchWalletUtxo: mockFetchWalletUtxo,
+	GuardedWalletNotOnL1Error: MockNotOnL1Error,
 	readWalletDatum: () => ({}),
 }));
 jest.unstable_mockModule('../../../smart-wallet/guarded-lock-builder', () => ({
@@ -86,6 +91,7 @@ function pairing(ids: string[]) {
 		placeholderTransactionId: 'placeholder-1',
 		batchedRequests: ids.map(request),
 		guarded: {
+			id: 'gw-1',
 			ownerAddress: 'addr_owner',
 			quorumVkhs: ['q1', 'q2', 'q3'],
 			threshold: 2,
@@ -124,6 +130,8 @@ beforeEach(() => {
 	jest.clearAllMocks();
 	config.EXCHAIN_COSIGN_URL = 'https://cosign.example';
 	mockPurchaseUpdate.mockResolvedValue({});
+	mockHasOpenMove.mockResolvedValue(false);
+	mockFetchWalletUtxo.mockResolvedValue({ input: { txHash: 'c'.repeat(64), outputIndex: 0 }, output: {} });
 	mockBuild.mockResolvedValue(built('tx1', 2));
 	mockMerge.mockImplementation((tx) => `merged:${tx}`);
 	mockSignTx.mockImplementation((tx) => Promise.resolve(`signed:${tx.slice('merged:'.length)}`));
@@ -219,6 +227,41 @@ describe('executeGuardedBatch', () => {
 		expect(mockRequestCosign).toHaveBeenCalledTimes(1);
 		expect(mockSubmit).toHaveBeenCalledWith(expect.objectContaining({ requestIds: ['p1'] }));
 		expect(nextActionOf('p2')).toEqual(
+			expect.objectContaining({ requestedAction: PurchasingAction.FundsLockingRequested, errorType: null }),
+		);
+	});
+
+	it('keeps purchases queued while the wallet is in a Hydra head', async () => {
+		mockFetchWalletUtxo.mockRejectedValueOnce(new MockNotOnL1Error('not on L1'));
+		const outcome = await run(pairing(['p1']));
+
+		expect(outcome.status).toBe('cosign-refused');
+		expect(mockBuild).not.toHaveBeenCalled();
+		expect(nextActionOf('p1')).toEqual(
+			expect.objectContaining({ requestedAction: PurchasingAction.FundsLockingRequested, errorType: null }),
+		);
+	});
+
+	it('keeps purchases queued while the owner signs a deposit of the wallet', async () => {
+		mockHasOpenMove.mockResolvedValue(true);
+		const outcome = await run(pairing(['p1']));
+
+		expect(outcome.status).toBe('cosign-refused');
+		expect(mockHasOpenMove).toHaveBeenCalledWith({ id: 'gw-1' }, 'Deposit');
+		expect(mockBuild).not.toHaveBeenCalled();
+		expect(nextActionOf('p1')).toEqual(
+			expect.objectContaining({ requestedAction: PurchasingAction.FundsLockingRequested, errorType: null }),
+		);
+	});
+
+	it('does not submit when a deposit started while the quorum signed', async () => {
+		mockHasOpenMove.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+		mockRequestCosign.mockResolvedValue({ httpStatus: 200, approved: { witnessSetHex: 'ws' } });
+		const outcome = await run(pairing(['p1']));
+
+		expect(outcome.status).toBe('cosign-refused');
+		expect(mockSubmit).not.toHaveBeenCalled();
+		expect(nextActionOf('p1')).toEqual(
 			expect.objectContaining({ requestedAction: PurchasingAction.FundsLockingRequested, errorType: null }),
 		);
 	});

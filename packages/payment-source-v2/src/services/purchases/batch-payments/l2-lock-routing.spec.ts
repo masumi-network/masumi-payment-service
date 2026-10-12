@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { HotWalletType, PaymentSourceType, PurchasingAction } from '@/generated/prisma/client';
+import { HotWalletType, PaymentSourceType, PurchasingAction, TransactionLayer } from '@/generated/prisma/client';
 
 const mockPaymentSourceFindMany = jest.fn<(_args: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
 const mockResolveHead = jest.fn<(..._args: unknown[]) => Promise<unknown>>();
@@ -10,10 +10,13 @@ const mockHotWalletFindUnique = jest
 	.fn<(_args: unknown) => Promise<unknown>>()
 	.mockResolvedValue({ lockedAt: null, pendingTransactionId: null });
 
+const mockPurchaseRequestUpdate = jest.fn<(_args: unknown) => Promise<unknown>>().mockResolvedValue({});
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		paymentSource: { findMany: mockPaymentSourceFindMany },
 		hotWallet: { findUnique: mockHotWalletFindUnique },
+		purchaseRequest: { update: mockPurchaseRequestUpdate },
 	},
 }));
 
@@ -23,6 +26,19 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 jest.unstable_mockModule('@/utils/hydra/resolve-hydra-head', () => ({
 	resolveUsableHydraHeadForPurchase: mockResolveHead,
+}));
+
+// Both lock builders throw by default, the way an unbuildable lock does before
+// any reservation exists, so a test only sees which one the pass chose.
+const mockExecuteL2Lock = jest.fn<(..._args: unknown[]) => Promise<unknown>>();
+const mockExecuteGuardedL2Lock = jest.fn<(..._args: unknown[]) => Promise<unknown>>();
+const mockLocateGuardedWallet = jest.fn<(..._args: unknown[]) => Promise<unknown>>();
+
+jest.unstable_mockModule('./l2-lock-execute', () => ({ executeL2Lock: mockExecuteL2Lock }));
+
+jest.unstable_mockModule('./l2-guarded-lock-execute', () => ({
+	executeGuardedL2Lock: mockExecuteGuardedL2Lock,
+	locateGuardedWalletForLock: mockLocateGuardedWallet,
 }));
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
@@ -82,6 +98,9 @@ beforeEach(() => {
 	mockPaymentSourceFindMany.mockResolvedValue([]);
 	mockResolveHead.mockResolvedValue({ hydraHead: { id: 'head-1' } });
 	mockGetProvider.mockReturnValue({});
+	mockExecuteL2Lock.mockRejectedValue(new Error('not buildable in this test'));
+	mockExecuteGuardedL2Lock.mockRejectedValue(new Error('not buildable in this test'));
+	mockLocateGuardedWallet.mockResolvedValue(null);
 });
 
 describe('processL2PurchaseLocks routing scope', () => {
@@ -186,13 +205,107 @@ describe('processL2PurchaseLocks wallet waiting', () => {
 	});
 });
 
+/** A free guarded hot wallet and one auto-routed request waiting on it. */
+function sourceWithFreeGuardedWallet() {
+	mockHotWalletFindUnique.mockResolvedValue({ lockedAt: null, pendingTransactionId: null });
+	const busy = sourceWithBusyHeadWallet(new Date());
+	return {
+		...busy,
+		HotWallets: [
+			{
+				...busy.HotWallets[0]!,
+				lockedAt: null,
+				pendingTransactionId: null,
+				GuardedWallet: { id: 'guarded-1', policyId: 'aa'.repeat(28), stateTokenName: 'bb' },
+			},
+		],
+	};
+}
+
+const walletInHead = { walletUtxo: { input: { txHash: 'cc'.repeat(32), outputIndex: 0 } }, snapshot: [] };
+
+/**
+ * A guarded wallet pays only from its smart wallet, co-signed by the quorum. In a
+ * head that holds the wallet it takes the guarded builder; anywhere else it is
+ * left for the L1 pass, and its own key never locks in the head.
+ */
 describe('processL2PurchaseLocks guarded wallets', () => {
-	it('never loads a guarded hot wallet, so it cannot lock in a head without Exchain', async () => {
-		mockPaymentSourceFindMany.mockResolvedValueOnce([]);
+	it('loads guarded hot wallets with their guarded wallet', async () => {
 		await processL2PurchaseLocks();
 		const [args] = mockPaymentSourceFindMany.mock.calls[mockPaymentSourceFindMany.mock.calls.length - 1] as [
-			{ include: { HotWallets: { where: Record<string, unknown> } } },
+			{ include: { HotWallets: { where: Record<string, unknown>; include: Record<string, unknown> } } },
 		];
-		expect(args.include.HotWallets.where).toEqual(expect.objectContaining({ GuardedWallet: null }));
+		expect(args.include.HotWallets.where).not.toHaveProperty('GuardedWallet');
+		expect(args.include.HotWallets.include).toEqual(expect.objectContaining({ GuardedWallet: true }));
+	});
+
+	it('leaves the request to L1 when the head does not hold the wallet', async () => {
+		mockPaymentSourceFindMany.mockResolvedValue([sourceWithFreeGuardedWallet()]);
+
+		await expect(processL2PurchaseLocks()).resolves.toEqual({ deferredRequestIds: [] });
+		expect(mockExecuteGuardedL2Lock).not.toHaveBeenCalled();
+		expect(mockExecuteL2Lock).not.toHaveBeenCalled();
+	});
+
+	it('locks through the guarded builder when the head holds the wallet', async () => {
+		mockPaymentSourceFindMany.mockResolvedValue([sourceWithFreeGuardedWallet()]);
+		mockLocateGuardedWallet.mockResolvedValue(walletInHead);
+		mockExecuteGuardedL2Lock.mockResolvedValue({ status: 'accepted' });
+
+		await processL2PurchaseLocks();
+
+		expect(mockExecuteGuardedL2Lock).toHaveBeenCalledWith(
+			expect.objectContaining({ hydraHeadId: 'head-1', walletUtxo: walletInHead.walletUtxo }),
+		);
+		expect(mockExecuteL2Lock).not.toHaveBeenCalled();
+	});
+
+	// The wallet UTxO seen before the wallet frees may be spent by then.
+	it('locates the wallet again after the wallet frees', async () => {
+		mockPaymentSourceFindMany.mockResolvedValue([sourceWithFreeGuardedWallet()]);
+		mockLocateGuardedWallet.mockResolvedValueOnce(walletInHead).mockResolvedValueOnce(null);
+
+		await processL2PurchaseLocks();
+
+		expect(mockLocateGuardedWallet).toHaveBeenCalledTimes(2);
+		expect(mockExecuteGuardedL2Lock).not.toHaveBeenCalled();
+		expect(mockExecuteL2Lock).not.toHaveBeenCalled();
+	});
+
+	it('does not fall back to a plain lock when the quorum refuses', async () => {
+		mockPaymentSourceFindMany.mockResolvedValue([sourceWithFreeGuardedWallet()]);
+		mockLocateGuardedWallet.mockResolvedValue(walletInHead);
+		mockExecuteGuardedL2Lock.mockResolvedValue({ status: 'cosign-refused' });
+
+		await processL2PurchaseLocks();
+
+		expect(mockExecuteGuardedL2Lock).toHaveBeenCalledTimes(1);
+		expect(mockExecuteL2Lock).not.toHaveBeenCalled();
+	});
+
+	it('keeps a forced-Hydra request alive when the head snapshot cannot be read', async () => {
+		const source = sourceWithFreeGuardedWallet();
+		source.PurchaseRequests[0] = { ...source.PurchaseRequests[0]!, forceLayer: TransactionLayer.L2 as never };
+		mockPaymentSourceFindMany.mockResolvedValue([source]);
+		mockLocateGuardedWallet.mockRejectedValue(new Error('head unreachable'));
+
+		await processL2PurchaseLocks();
+
+		expect(mockPurchaseRequestUpdate).not.toHaveBeenCalled();
+		expect(mockExecuteGuardedL2Lock).not.toHaveBeenCalled();
+		expect(mockExecuteL2Lock).not.toHaveBeenCalled();
+	});
+
+	it('keeps a forced-Hydra request alive while the wallet is withdrawing from the head', async () => {
+		const source = sourceWithFreeGuardedWallet();
+		source.PurchaseRequests[0] = { ...source.PurchaseRequests[0]!, forceLayer: TransactionLayer.L2 as never };
+		mockPaymentSourceFindMany.mockResolvedValue([source]);
+		mockLocateGuardedWallet.mockResolvedValue('moving');
+
+		await processL2PurchaseLocks();
+
+		expect(mockPurchaseRequestUpdate).not.toHaveBeenCalled();
+		expect(mockExecuteGuardedL2Lock).not.toHaveBeenCalled();
+		expect(mockExecuteL2Lock).not.toHaveBeenCalled();
 	});
 });
