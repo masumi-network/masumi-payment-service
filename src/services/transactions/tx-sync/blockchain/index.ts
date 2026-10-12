@@ -242,10 +242,12 @@ export async function getTxsFromCardanoAfterSpecificTx(
 		if (txs.length == 0) {
 			//we reached the last page of all smart contract transactions
 			if (latestTx.length == 0) {
-				// A contract nobody has used yet; this repeats every sync tick.
-				logger.debug('No transactions found for payment contract', {
-					paymentContractAddress: paymentContract.smartContractAddress,
-				});
+				// Expected for a contract nobody has used yet, every sync tick. After a
+				// sync already recorded transactions it is not: the provider lost
+				// history (wrong network or address, or an outage).
+				const details = { paymentContractAddress: paymentContract.smartContractAddress, latestIdentifier };
+				if (latestIdentifier == null) logger.debug('No transactions found for payment contract', details);
+				else logger.warn('No transactions found for payment contract', details);
 			}
 			break;
 		}

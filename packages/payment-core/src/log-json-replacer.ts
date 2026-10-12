@@ -24,3 +24,17 @@ export function logJsonReplacer(_key: string, value: unknown): unknown {
 	if (cause !== undefined) serialized.cause = cause;
 	return serialized;
 }
+
+/**
+ * How deep a log line is written before the rest becomes `[Object]`.
+ *
+ * Required with `logJsonReplacer`, not optional: the stringifier finds cycles
+ * by object identity, and the replacer returns a new object for every Error,
+ * so an Error that reaches itself again (`error.cause = error`, two errors
+ * citing each other) is never seen as a cycle. Without a depth cap that
+ * recursion overflows the stack, and winston rethrows it from the log call.
+ */
+export const LOG_JSON_MAXIMUM_DEPTH = 16;
+
+/** The options to give winston's `format.json`. */
+export const logJsonFormatOptions = { replacer: logJsonReplacer, maximumDepth: LOG_JSON_MAXIMUM_DEPTH };

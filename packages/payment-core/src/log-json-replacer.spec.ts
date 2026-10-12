@@ -1,10 +1,10 @@
 import { format } from 'winston';
-import { logJsonReplacer } from './log-json-replacer';
+import { logJsonFormatOptions } from './log-json-replacer';
 
 const MESSAGE = Symbol.for('message');
 
 function renderLine(meta: object): Record<string, unknown> {
-	const jsonFormat = format.json({ replacer: logJsonReplacer });
+	const jsonFormat = format.json(logJsonFormatOptions);
 	const info = jsonFormat.transform({ level: 'error', message: 'boom', ...meta }, jsonFormat.options);
 	if (!info || typeof info === 'boolean') throw new Error('format dropped the line');
 	return JSON.parse((info as unknown as Record<symbol, string>)[MESSAGE]) as Record<string, unknown>;
@@ -32,6 +32,21 @@ describe('logJsonReplacer', () => {
 		const error = (line.details as Record<string, Record<string, unknown>>).error;
 		expect(error.message).toBe('outer');
 		expect((error.cause as Record<string, unknown>).message).toBe('connect ECONNREFUSED');
+	});
+
+	it('writes an error that causes itself instead of overflowing the stack', () => {
+		const looping = new Error('loops');
+		Object.defineProperty(looping, 'cause', { value: looping });
+		const selfReferencing = Object.assign(new Error('self'), { self: undefined as Error | undefined });
+		selfReferencing.self = selfReferencing;
+		const first = new Error('first');
+		const second = new Error('second');
+		Object.defineProperty(first, 'cause', { value: second });
+		Object.defineProperty(second, 'cause', { value: first });
+
+		for (const error of [looping, selfReferencing, first]) {
+			expect((renderLine({ error }).error as Record<string, unknown>).message).toBe(error.message);
+		}
 	});
 
 	it('still writes bigint as a string', () => {
