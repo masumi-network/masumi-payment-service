@@ -242,7 +242,8 @@ export async function getTxsFromCardanoAfterSpecificTx(
 		if (txs.length == 0) {
 			//we reached the last page of all smart contract transactions
 			if (latestTx.length == 0) {
-				logger.warn('No transactions found for payment contract', {
+				// A contract nobody has used yet; this repeats every sync tick.
+				logger.debug('No transactions found for payment contract', {
 					paymentContractAddress: paymentContract.smartContractAddress,
 				});
 			}

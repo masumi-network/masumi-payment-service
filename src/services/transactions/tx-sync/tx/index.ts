@@ -464,7 +464,9 @@ async function updateInitialPurchaseTransaction(
 						},
 					});
 					if (dbEntry == null) {
-						logger.warn('tx-sync: initial purchase output has no matching local purchase row', {
+						// Expected whenever this node is not the buyer (every lock a seller-only
+						// node sees), so not a warning.
+						logger.debug('tx-sync: initial purchase output has no matching local purchase row', {
 							txHash: tx.tx.tx_hash,
 							paymentSourceId: paymentContract.id,
 							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
