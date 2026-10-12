@@ -45,7 +45,7 @@ type HydraHeadChainOutput = {
 export type HydraHeadChainObserver = {
 	assetsTransactions: (
 		asset: string,
-		options: { page: number; order: 'asc'; count: number },
+		options: { page: number; order: 'asc' | 'desc'; count: number },
 	) => Promise<Array<{ tx_hash: string }>>;
 	txsUtxos: (txHash: string) => Promise<{ hash: string; outputs: HydraHeadChainOutput[] }>;
 };
@@ -86,6 +86,74 @@ async function withObserverTimeout<T>(promise: Promise<T>, timeoutMs: number): P
 	} finally {
 		if (timeout) clearTimeout(timeout);
 	}
+}
+
+/** `gone`: the state token was burnt (fanout) or left the head script; nothing is left to contest. */
+export type HydraHeadChainState = 'open' | 'closed' | 'gone';
+
+/**
+ * Whether the head is still Open on L1, read from the newest transaction that
+ * moved its state token. Increments and decrements keep it Open; a Close, a
+ * contest or a fanout do not. Read from an independent observer, not the
+ * head's own node, so an operator can check a disabled head.
+ */
+export async function observeHydraHeadIsOpenOnChain(options: {
+	observer: HydraHeadChainObserver;
+	headId: string;
+	headScriptHash?: string;
+	observerTimeoutMs?: number;
+}): Promise<{ state: HydraHeadChainState; latestTxHash: string }> {
+	const headId = normalizeHex(options.headId, 56, 'Hydra head id');
+	const acceptedHeadScriptHashes = knownHydraHeadScriptHashes(options.headScriptHash);
+	const stateToken = `${headId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
+	const { latestTxHash, transaction } = await withObserverTimeout(
+		(async () => {
+			let transactions: Array<{ tx_hash: string }>;
+			try {
+				transactions = await options.observer.assetsTransactions(stateToken, { page: 1, order: 'desc', count: 1 });
+			} catch (error) {
+				throw new HydraHeadInitObservationError('Hydra head state lookup is temporarily unavailable', {
+					cause: error,
+				});
+			}
+			if (transactions.length === 0) {
+				throw new HydraHeadInitObservationError('Hydra head state token has not been indexed yet');
+			}
+			const latestTxHash = normalizeHex(transactions[0]?.tx_hash ?? '', 64, 'Hydra head state tx hash');
+			try {
+				return { latestTxHash, transaction: await options.observer.txsUtxos(latestTxHash) };
+			} catch (error) {
+				throw new HydraHeadInitObservationError('Hydra head state output lookup is temporarily unavailable', {
+					cause: error,
+				});
+			}
+		})(),
+		options.observerTimeoutMs ?? DEFAULT_HEAD_INIT_OBSERVER_TIMEOUT_MS,
+	);
+	const headOutput = transaction.outputs.find(
+		(output) =>
+			acceptedHeadScriptHashes.has(paymentScriptHash(output.address) ?? '') &&
+			output.amount.some(({ unit, quantity }) => unit.toLowerCase() === stateToken && quantity === '1'),
+	);
+	// No head output: the state token was burnt (fanout) or left the script.
+	if (!headOutput) return { state: 'gone', latestTxHash };
+	let datum: PlutusData | null = null;
+	try {
+		datum = headOutput.inline_datum ? PlutusData.from_hex(headOutput.inline_datum) : null;
+	} catch {
+		datum = null;
+	}
+	// Anything at the head script that is not a readable Open datum counts as
+	// closed: the operator then checks that the node runs, the safe side.
+	return { state: datum != null && isOpenStateDatum(datum) ? 'open' : 'closed', latestTxHash };
+}
+
+/** `Open OpenDatum` is constructor 0 with one field, itself constructor 0 (see `validateOpenDatum`). */
+function isOpenStateDatum(datum: PlutusData): boolean {
+	const state = datum.as_constr_plutus_data();
+	if (!state || BigInt(state.alternative().to_str()) !== 0n || state.data().len() !== 1) return false;
+	const open = state.data().get(0).as_constr_plutus_data();
+	return open != null && BigInt(open.alternative().to_str()) === 0n;
 }
 
 export function resolveHydraHeadScriptHash(configuredHash = process.env.HYDRA_HEAD_SCRIPT_HASH): string {

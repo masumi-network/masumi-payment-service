@@ -44,6 +44,7 @@ import { classifyInitObservation, type InitObservationVerdict } from '@/utils/hy
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
+import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
@@ -198,6 +199,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				// An initialized-but-unverified head must not remain eligible for sync or
 				// lifecycle actions. Re-enabling is an explicit operator decision after
 				// fixing the L1 observer or node configuration.
+				forgetHeadFailedClosed(head.id);
 				await prisma.hydraHead.updateMany({ where: { id: head.id }, data: { isEnabled: false } });
 				await cm.disconnect(head.id);
 				throw createHttpError(
