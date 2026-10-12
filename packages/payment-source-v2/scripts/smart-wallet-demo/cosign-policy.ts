@@ -30,6 +30,8 @@ export type DecodedOutput = {
 	lovelace: bigint;
 	/** True when the output carries any asset other than lovelace. */
 	hasOtherAssets: boolean;
+	/** Asset units (policy id + asset name hex) the output holds with quantity 1. */
+	singleUnits: string[];
 	/** Null when the address is a script address or cannot be parsed. */
 	paymentKeyHash: string | null;
 	/** Null when the output carries no inline datum that decodes as a V2 escrow datum. */
@@ -40,6 +42,9 @@ export type DecodedTxBody = {
 	inputs: TxRef[];
 	outputs: DecodedOutput[];
 	requiredSigners: string[];
+	fee: bigint;
+	/** Certificates, withdrawals, mint, votes, proposals or treasury fields: each adds a term to value balance. */
+	hasBalanceFields: boolean;
 	validityStart: number | null;
 	ttl: number | null;
 };
@@ -75,8 +80,12 @@ const ada = (lovelace: bigint) => `${(Number(lovelace) / 1e6).toFixed(6)} tADA`;
 export type VerifyInput = {
 	request: CosignRequest;
 	body: DecodedTxBody;
-	/** Value and address of the wallet input named by `walletUtxoRef`, resolved on chain. */
-	walletInput: { address: string; lovelace: bigint };
+	/**
+	 * Value and address of the wallet input named by `walletUtxoRef`. An in-head
+	 * input comes from a snapshot proof, whose refs are not signed, so it also
+	 * names the wallet's state token for the continuing-output check.
+	 */
+	walletInput: { address: string; lovelace: bigint; stateTokenUnit?: string };
 	policy: CosignPolicy;
 	nowMs: number;
 };
@@ -100,6 +109,33 @@ export function verifyIntentAgainstBody(input: VerifyInput): PolicyOutcome {
 			'body_mismatch',
 			`Expected exactly one continuing wallet output, found ${walletOutputs.length}.`,
 		);
+	}
+
+	// The validator makes the continuing output carry the spent input's state
+	// token, so this ties the input the body really spends to the wallet the
+	// input value was read from. Wallets of one configuration share an address.
+	const stateTokenUnit = input.walletInput.stateTokenUnit;
+	if (stateTokenUnit != null && !walletOutputs[0].singleUnits.includes(stateTokenUnit)) {
+		return batchDenied('body_mismatch', "The continuing wallet output does not carry this wallet's state token.");
+	}
+
+	// An in-head input comes from a snapshot proof, which may be stale: the
+	// wallet may hold more now than the proof shows, hiding outflow from the
+	// value check below. So the body must have the honest builder's exact shape:
+	// the wallet is the only input, the fee is 0, nothing else enters the value
+	// balance (deposits, refunds, withdrawals, mint, donation), and every output
+	// is the continuing output or an intent output. Value conservation then
+	// makes the wallet's real outflow equal the declared outflow, however old the proof.
+	if (stateTokenUnit != null) {
+		const intentIndexes = new Set(request.intents.map((intent) => intent.outputIndex));
+		const continuingIndex = body.outputs.indexOf(walletOutputs[0]);
+		const extraOutput = body.outputs.some((_, index) => index !== continuingIndex && !intentIndexes.has(index));
+		if (body.inputs.length !== 1 || body.fee !== 0n || body.hasBalanceFields || extraOutput) {
+			return batchDenied(
+				'body_mismatch',
+				'An in-head spend must spend only the wallet, pay no fee, carry no certificate, withdrawal, mint or treasury field, and create only the continuing and intent outputs.',
+			);
+		}
 	}
 
 	if (body.validityStart == null || body.ttl == null) {

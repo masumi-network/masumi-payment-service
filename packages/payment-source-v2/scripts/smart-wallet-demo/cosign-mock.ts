@@ -42,6 +42,7 @@ import {
 	type DecodedEscrowLock,
 	type DecodedTxBody,
 	type TxRef,
+	type VerifyInput,
 } from './cosign-policy';
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -60,7 +61,8 @@ export type MockCosignOptions = {
 	/** From registration: hot keys allowed to spend, and the escrow addresses they may pay. */
 	agentVkhs: string[];
 	escrowAddresses: string[];
-	resolveWalletInput: (ref: TxRef) => Promise<{ address: string; lovelace: bigint }>;
+	/** `context` is the request's own context, so an in-head resolver can check its snapshot proof. */
+	resolveWalletInput: (ref: TxRef, context: CosignRequest['context']) => Promise<VerifyInput['walletInput']>;
 	decisionsFile: string;
 	port: number;
 };
@@ -149,6 +151,9 @@ function decodeTxBody(txBodyHex: string): DecodedTxBody {
 				address,
 				lovelace: value.coin(),
 				hasOtherAssets: (value.multiasset()?.size ?? 0) > 0,
+				singleUnits: [...(value.multiasset() ?? new Map<string, bigint>())]
+					.filter(([, quantity]) => quantity === 1n)
+					.map(([unit]) => String(unit)),
 				paymentKeyHash: paymentKeyHashOf(address),
 				lock: decodeEscrowLock(output.datum()?.asInlineData()?.toCbor(), address),
 			};
@@ -158,6 +163,15 @@ function decodeTxBody(txBodyHex: string): DecodedTxBody {
 				.requiredSigners()
 				?.values()
 				.map((hash) => hash.toCore()) ?? [],
+		fee: body.fee(),
+		hasBalanceFields:
+			(body.certs()?.size() ?? 0) > 0 ||
+			(body.withdrawals()?.size ?? 0) > 0 ||
+			(body.mint()?.size ?? 0) > 0 ||
+			body.votingProcedures() != null ||
+			(body.proposalProcedures()?.size() ?? 0) > 0 ||
+			body.donation() != null ||
+			body.currentTreasuryValue() != null,
 		validityStart: start == null ? null : Number(start),
 		ttl: ttl == null ? null : Number(ttl),
 	};
@@ -311,12 +325,15 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 			return { status: 409, body: deny };
 		};
 
-		let walletInput: { address: string; lovelace: bigint };
+		let walletInput: VerifyInput['walletInput'];
 		try {
-			walletInput = await options.resolveWalletInput({
-				txHash: request.walletUtxoRef.split('#')[0],
-				outputIndex: Number(request.walletUtxoRef.split('#')[1]),
-			});
+			walletInput = await options.resolveWalletInput(
+				{
+					txHash: request.walletUtxoRef.split('#')[0],
+					outputIndex: Number(request.walletUtxoRef.split('#')[1]),
+				},
+				request.context,
+			);
 		} catch {
 			return denyBatch('utxo_unknown', 'The wallet input could not be resolved on chain.', 'stale_ref');
 		}
