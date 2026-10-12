@@ -61,7 +61,11 @@ export async function recoverGuardedDeposit(input: { transferId: string }, scope
 		}
 		const message = error instanceof Error ? error.message : String(error);
 		logger.warn('The node refused to recover a guarded wallet deposit', { transferId: transfer.id, error: message });
-		throw createHttpError(409, `The node would not recover this deposit: ${message}`);
+		// A deposit already recovered, or one the head took in after all, is refused too: the status read tells which.
+		throw createHttpError(
+			409,
+			`The node would not recover this deposit: ${message}. If recovery was already requested, read the status`,
+		);
 	}
 	logger.info('Requested recovery of a guarded wallet deposit', { transferId: transfer.id });
 	return { transfer: transferView(transfer), reason: null };

@@ -82,6 +82,9 @@ describe('recoverGuardedDeposit', () => {
 
 	it('maps a node refusal to 409', async () => {
 		mockDelete.mockRejectedValue(new Error('DepositNotRecoverable'));
-		await expect(recoverGuardedDeposit({ transferId: 'tr-1' }, scope)).rejects.toMatchObject({ status: 409 });
+		await expect(recoverGuardedDeposit({ transferId: 'tr-1' }, scope)).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringMatching(/read the status/),
+		});
 	});
 });
