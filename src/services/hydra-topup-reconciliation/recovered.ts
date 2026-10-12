@@ -13,10 +13,13 @@
  * it, and after a recovery request the only thing that could is the recovery.
  */
 
-import { HydraTopupStatus } from '@/generated/prisma/client';
+import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
+import { HydraTopupStatus, Network as NetworkEnum } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
+import { CONFIG } from '@masumi/payment-core/config';
 import { mapWithConcurrency } from '@/utils/map-with-concurrency';
 import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 import type { Network } from '@/generated/prisma/client';
@@ -53,6 +56,32 @@ const MAX_SETTLED_CHECKS_PER_TICK = 20;
  * much a tick gets through, since the work is I/O-bound.
  */
 const RECOVERY_LOOKUP_CONCURRENCY = 6;
+
+/**
+ * How long past its TTL a Failed deposit is still checked.
+ *
+ * Failed means the deposit was not on chain past its TTL plus a short grace,
+ * so it can never be recovered or absorbed. A deposit that never landed has
+ * no transaction to read, and checking it forever only logs a lookup failure
+ * on every tick. The window covers an L1 observer that lagged past the grace:
+ * a deposit found on chain inside it goes back to Confirmed.
+ */
+export const FAILED_DEPOSIT_RECHECK_WINDOW_MS = 15 * 60 * 1000;
+
+const MESH_NETWORK = { [NetworkEnum.Mainnet]: 'mainnet', [NetworkEnum.Preprod]: 'preprod' } as const;
+
+/** Failed rows still inside the recheck window, one filter per network (slot numbers differ). */
+function recentlyFailedFilters(nowMs: number) {
+	return Object.values(NetworkEnum).map((network) => ({
+		status: HydraTopupStatus.Failed,
+		invalidHereafterSlot: {
+			gte: BigInt(
+				unixTimeToEnclosingSlot(nowMs - FAILED_DEPOSIT_RECHECK_WINDOW_MS, SLOT_CONFIG_NETWORK[MESH_NETWORK[network]]),
+			),
+		},
+		LocalParticipant: { Wallet: { PaymentSource: { network } } },
+	}));
+}
 
 /**
  * Whether every output of this deposit transaction has been spent.
@@ -129,8 +158,8 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 	// promotion to Confirmed waits on BLOCK_CONFIRMATIONS_THRESHOLD, but the head
 	// absorbs on its own schedule, and the deposit's own output being spent is
 	// stronger evidence than a confirmation count — it cannot be spent without
-	// being on chain first. Confirmed and Failed are the rows that may still turn
-	// out recovered or absorbed after the fact.
+	// being on chain first. Confirmed rows may still turn out recovered or
+	// absorbed after the fact; Failed rows only within their recheck window.
 	const [pending, settled] = await Promise.all([
 		prisma.hydraTopup.findMany({
 			where: { status: HydraTopupStatus.Pending, depositTxHash: { not: null } },
@@ -139,7 +168,10 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 			take: MAX_PENDING_CHECKS_PER_TICK,
 		}),
 		prisma.hydraTopup.findMany({
-			where: { status: { in: [HydraTopupStatus.Confirmed, HydraTopupStatus.Failed] }, depositTxHash: { not: null } },
+			where: {
+				depositTxHash: { not: null },
+				OR: [{ status: HydraTopupStatus.Confirmed }, ...recentlyFailedFilters(Date.now())],
+			},
 			include: candidateInclude,
 			orderBy: { updatedAt: 'asc' },
 			take: MAX_SETTLED_CHECKS_PER_TICK,
@@ -160,6 +192,31 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 				rpcProviderApiKey,
 				depositTxHash: candidate.depositTxHash,
 			});
+			if (candidate.status === HydraTopupStatus.Failed && outcome === 'unspent') {
+				// The deposit is on chain after all: the observer lagged past the TTL
+				// grace when the row was failed. Back to Confirmed, which is always
+				// checked, so its later spend (fold-in or recovery) is still seen
+				// after the Failed recheck window has passed. Only at the same depth
+				// a normal promotion to Confirmed waits for: a shallower block can
+				// still roll back, and past its TTL the deposit cannot land again.
+				const depth = await lookupConfirmedChainTx({
+					network: candidate.LocalParticipant.Wallet.PaymentSource.network,
+					rpcProviderApiKey,
+					txHash: candidate.depositTxHash,
+					requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+				});
+				if (depth === 'confirmed-valid') {
+					const restored = await prisma.hydraTopup.updateMany({
+						where: { id: candidate.id, status: HydraTopupStatus.Failed },
+						data: { status: HydraTopupStatus.Confirmed },
+					});
+					if (restored.count === 1) {
+						logger.warn(`hydra: deposit ${candidate.depositTxHash} was marked Failed but is on chain; now Confirmed`);
+					}
+					return;
+				}
+				// Not deep enough yet: rotated below like any other unresolved row.
+			}
 			if (outcome !== 'recovered' && outcome !== 'absorbed') {
 				// Rotate the row to the back of the queue. Both reads are ordered by
 				// `updatedAt` and take a fixed budget, so a row that never gets an
