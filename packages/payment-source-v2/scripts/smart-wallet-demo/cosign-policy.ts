@@ -203,6 +203,10 @@ export function verifyIntentAgainstBody(input: VerifyInput): PolicyOutcome {
 				`This wallet governs ${policy.governedAsset}; purchase ${intent.purchaseId} names ${intent.asset}.`,
 			);
 		}
+		// A zero intent would let a token wallet's ride-along lovelace leave uncounted by any cap.
+		if (BigInt(intent.amount) <= 0n) {
+			return batchDenied('body_mismatch', `Purchase ${intent.purchaseId} declares no amount.`);
+		}
 		if ([...output.assets.keys()].some((unit) => unit !== governedUnit)) {
 			return batchDenied(
 				'asset_not_listed',

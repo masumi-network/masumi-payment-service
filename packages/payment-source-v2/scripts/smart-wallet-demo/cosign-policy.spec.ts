@@ -211,6 +211,13 @@ describe('token wallet', () => {
 		expect(reason(tokenVerify({ amount: '4000000' }))).toMatch(/^body_mismatch: Purchase p1 declares/);
 	});
 
+	it('refuses a zero intent, whose ride-along lovelace no cap would count', () => {
+		const lock = lockOutput(3_000_000n, []);
+		expect(
+			reason(tokenVerify({ lock, amount: '0', continuingLovelace: 47_000_000n, continuingTokens: 100_000_000n })),
+		).toMatch(/declares no amount/);
+	});
+
 	it('refuses ride-along lovelace above the cap', () => {
 		const lock = lockOutput(4_000_000n, [[TUSDM, 5_000_000n]]);
 		expect(reason(tokenVerify({ lock, continuingLovelace: 46_000_000n }))).toMatch(/beside the token/);
