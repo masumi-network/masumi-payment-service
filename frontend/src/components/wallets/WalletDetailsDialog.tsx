@@ -676,6 +676,7 @@ export function WalletDetailsDialog({
             )}
             {canGuardWallet && (
               <GuardedWalletSection
+                hotWalletId={wallet.id}
                 network={network}
                 state={guardedWallet.state}
                 isLoading={guardedWallet.isLoading}

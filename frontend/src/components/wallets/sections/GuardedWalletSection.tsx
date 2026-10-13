@@ -6,6 +6,7 @@ import { WalletLink } from '@/components/ui/wallet-link';
 import { formatLovelaceAsAda } from '@/lib/format-lovelace-display';
 import type { GetWalletGuardedResponses } from '@/lib/api/generated';
 import type { GuardedAttachForm } from '@/components/wallets/useGuardedWallet';
+import { GuardedHydraSection } from './GuardedHydraSection';
 
 type GuardedState = GetWalletGuardedResponses[200]['data'];
 
@@ -23,6 +24,7 @@ const MANDATE_FIELDS: Array<{ key: keyof GuardedAttachForm; label: string }> = [
  * owns the state through useGuardedWallet; this only renders and forwards.
  */
 export function GuardedWalletSection({
+  hotWalletId,
   network,
   state,
   isLoading,
@@ -33,6 +35,7 @@ export function GuardedWalletSection({
   onAttach,
   onDetach,
 }: {
+  hotWalletId: string;
   network: 'Preprod' | 'Mainnet';
   state: GuardedState | null;
   isLoading: boolean;
@@ -77,6 +80,11 @@ export function GuardedWalletSection({
           <div className="font-mono text-xs">
             Exchain wallet: {guarded.exchainWalletId ?? 'not registered'}
           </div>
+          <GuardedHydraSection
+            hotWalletId={hotWalletId}
+            ownerAddress={guarded.ownerAddress}
+            network={network}
+          />
           <Button
             variant="outline"
             size="sm"
