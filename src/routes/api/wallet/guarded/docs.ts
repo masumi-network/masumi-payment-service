@@ -6,6 +6,8 @@ import {
 	deleteGuardedWalletSchemaOutput,
 	getGuardedWalletSchemaInput,
 	getGuardedWalletSchemaOutput,
+	postGuardedPolicySchemaInput,
+	postGuardedPolicySchemaOutput,
 	postGuardedWalletSchemaInput,
 	postGuardedWalletSchemaOutput,
 } from '@/routes/api/wallet/guarded/schemas';
@@ -130,6 +132,42 @@ export function registerGuardedWalletPaths({ registry, apiKeyAuth }: SwaggerRegi
 			401: { description: 'Unauthorized' },
 			404: { description: 'Hot wallet not found or not guarded' },
 			409: { description: 'The hot wallet is busy with a transaction' },
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/wallet/guarded/policy',
+		description:
+			"Builds the owner's UpdatePolicy transaction: it replaces the wallet's per-asset limits and moves the deposit from the owner address into the wallet. Counters of assets that stay listed keep their value; a new asset starts at 0. The owner address pays the fee and any min-UTxO top-up and lends the collateral. The node keeps no record: the owner's wallet signs and submits the returned transaction. Refused while a Hydra move or a purchase lock is open, when the wallet is not on L1, and when the limits would drop lovelace, the payment asset or an asset the wallet holds, list the state token, or change a payment-asset limit Exchain has registered.",
+		summary: 'Prepare new limits and a deposit for a guarded wallet. (admin access required)',
+		tags: ['wallet'],
+		security: secured,
+		request: {
+			body: {
+				description: 'The new limits and the deposit',
+				content: {
+					'application/json': {
+						schema: postGuardedPolicySchemaInput.openapi({
+							example: {
+								hotWalletId: recordExample.hotWalletId,
+								limits: guardedAssetsExample.map(({ unit, limit }) => ({ unit, amount: limit })),
+								deposit: [{ unit: guardedAssetsExample[1].unit, amount: '50000000' }],
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Unsigned UpdatePolicy transaction', postGuardedPolicySchemaOutput, {
+				unsignedTx: '84a400d90102818258...',
+				txHash: 'e'.repeat(64),
+				walletUtxoRef: `${'f'.repeat(64)}#0`,
+			}),
+			400: { description: 'The limits or deposit would leave the wallet unusable' },
+			401: { description: 'Unauthorized' },
+			404: { description: 'Hot wallet not found or not guarded' },
+			409: { description: 'A move or lock is open, the wallet is not on L1, or the owner cannot pay' },
 		},
 	});
 }

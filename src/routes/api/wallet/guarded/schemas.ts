@@ -121,6 +121,42 @@ export const getGuardedWalletSchemaOutput = z.object({
 	chainError: z.string().nullable().describe('Why the chain read failed'),
 });
 
+const assetUnit = z
+	.string()
+	.regex(/^(lovelace|[0-9a-f]{56}([0-9a-f]{2}){0,32})$/, 'lovelace or <policy><nameHex>')
+	.describe('lovelace or <policy><nameHex>');
+const assetAmount = z.object({
+	unit: assetUnit,
+	amount: z
+		.string()
+		.regex(/^\d{1,19}$/, 'an integer of minor units')
+		.describe('Minor units (lovelace for ADA)'),
+});
+
+export const postGuardedPolicySchemaInput = z.object({
+	hotWalletId: z.string().min(1).describe('The guarded Purchasing hot wallet'),
+	limits: z
+		.array(assetAmount)
+		.min(1)
+		.max(16)
+		.describe(
+			'The new limit per period for every asset the wallet may move. Replaces the whole limit; must list lovelace, the payment asset and every asset the wallet holds',
+		),
+	deposit: z
+		.array(assetAmount)
+		.max(16)
+		.default([])
+		.describe('Value the owner address moves into the wallet in the same transaction. Every asset must be in limits'),
+});
+
+export const postGuardedPolicySchemaOutput = z.object({
+	unsignedTx: z.string().describe('The UpdatePolicy transaction. The owner signs and submits it from their wallet'),
+	txHash: z.string(),
+	walletUtxoRef: z
+		.string()
+		.describe('The wallet UTxO it spends (txHash#index); a purchase lock spending it first voids it'),
+});
+
 export const deleteGuardedWalletSchemaInput = z.object({
 	hotWalletId: z.string().min(1).describe('The Purchasing hot wallet to detach'),
 });

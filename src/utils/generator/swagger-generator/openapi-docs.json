@@ -37889,6 +37889,175 @@
                 }
             }
         },
+        "/wallet/guarded/policy": {
+            "post": {
+                "description": "Builds the owner's UpdatePolicy transaction: it replaces the wallet's per-asset limits and moves the deposit from the owner address into the wallet. Counters of assets that stay listed keep their value; a new asset starts at 0. The owner address pays the fee and any min-UTxO top-up and lends the collateral. The node keeps no record: the owner's wallet signs and submits the returned transaction. Refused while a Hydra move or a purchase lock is open, when the wallet is not on L1, and when the limits would drop lovelace, the payment asset or an asset the wallet holds, list the state token, or change a payment-asset limit Exchain has registered.",
+                "summary": "Prepare new limits and a deposit for a guarded wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The new limits and the deposit",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The guarded Purchasing hot wallet"
+                                    },
+                                    "limits": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "unit": {
+                                                    "type": "string",
+                                                    "pattern": "^(lovelace|[0-9a-f]{56}([0-9a-f]{2}){0,32})$",
+                                                    "description": "lovelace or <policy><nameHex>"
+                                                },
+                                                "amount": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d{1,19}$",
+                                                    "description": "Minor units (lovelace for ADA)"
+                                                }
+                                            },
+                                            "required": [
+                                                "unit",
+                                                "amount"
+                                            ]
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 16,
+                                        "description": "The new limit per period for every asset the wallet may move. Replaces the whole limit; must list lovelace, the payment asset and every asset the wallet holds"
+                                    },
+                                    "deposit": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "unit": {
+                                                    "type": "string",
+                                                    "pattern": "^(lovelace|[0-9a-f]{56}([0-9a-f]{2}){0,32})$",
+                                                    "description": "lovelace or <policy><nameHex>"
+                                                },
+                                                "amount": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d{1,19}$",
+                                                    "description": "Minor units (lovelace for ADA)"
+                                                }
+                                            },
+                                            "required": [
+                                                "unit",
+                                                "amount"
+                                            ]
+                                        },
+                                        "maxItems": 16,
+                                        "default": [],
+                                        "description": "Value the owner address moves into the wallet in the same transaction. Every asset must be in limits"
+                                    }
+                                },
+                                "required": [
+                                    "hotWalletId",
+                                    "limits"
+                                ],
+                                "example": {
+                                    "hotWalletId": "cmg1hotwallet000example",
+                                    "limits": [
+                                        {
+                                            "unit": "lovelace",
+                                            "amount": "1000000000"
+                                        },
+                                        {
+                                            "unit": "16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d",
+                                            "amount": "100000000"
+                                        }
+                                    ],
+                                    "deposit": [
+                                        {
+                                            "unit": "16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d",
+                                            "amount": "50000000"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Unsigned UpdatePolicy transaction",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "unsignedTx": {
+                                                    "type": "string",
+                                                    "description": "The UpdatePolicy transaction. The owner signs and submits it from their wallet"
+                                                },
+                                                "txHash": {
+                                                    "type": "string"
+                                                },
+                                                "walletUtxoRef": {
+                                                    "type": "string",
+                                                    "description": "The wallet UTxO it spends (txHash#index); a purchase lock spending it first voids it"
+                                                }
+                                            },
+                                            "required": [
+                                                "unsignedTx",
+                                                "txHash",
+                                                "walletUtxoRef"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "unsignedTx": "84a400d90102818258...",
+                                            "txHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                                            "walletUtxoRef": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff#0"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "The limits or deposit would leave the wallet unusable"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hot wallet not found or not guarded"
+                    },
+                    "409": {
+                        "description": "A move or lock is open, the wallet is not on L1, or the owner cannot pay"
+                    }
+                }
+            }
+        },
         "/wallet/guarded/hydra": {
             "get": {
                 "description": "Returns where the guarded smart wallet of a hot wallet is now: L2 inside a connected Hydra head, L1 on chain, or Unknown when neither can be read. Includes the wallet datum and balance at that location and the most recent deposits and withdrawals.",

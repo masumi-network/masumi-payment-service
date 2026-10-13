@@ -6,8 +6,11 @@ import {
 	getGuardedWalletSchemaInput,
 	getGuardedWalletSchemaOutput,
 	postGuardedWalletSchemaInput,
+	postGuardedPolicySchemaInput,
+	postGuardedPolicySchemaOutput,
 	postGuardedWalletSchemaOutput,
 } from './schemas';
+import { prepareGuardedPolicyUpdate } from './policy';
 import { detachGuardedWallet } from './detach';
 import { attachGuardedWallet, getGuardedWallet } from './service';
 
@@ -26,6 +29,15 @@ export const getGuardedWalletEndpointGet = adminAuthenticatedEndpointFactory.bui
 	output: getGuardedWalletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof getGuardedWalletSchemaInput>; ctx: AuthContext }) =>
 		getGuardedWallet(input.hotWalletId, ctx),
+});
+
+/** Owner-signed limits and deposit: returns the UpdatePolicy for the owner's wallet to sign and submit. */
+export const postGuardedPolicyEndpointPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: postGuardedPolicySchemaInput,
+	output: postGuardedPolicySchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof postGuardedPolicySchemaInput>; ctx: AuthContext }) =>
+		prepareGuardedPolicyUpdate(input, ctx),
 });
 
 /** Detach only changes the node: the funds stay in the smart wallet, Exchain keeps its record. */

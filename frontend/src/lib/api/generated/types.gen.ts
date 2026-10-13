@@ -15946,6 +15946,88 @@ export type PostWalletGuardedResponses = {
 
 export type PostWalletGuardedResponse = PostWalletGuardedResponses[keyof PostWalletGuardedResponses];
 
+export type PostWalletGuardedPolicyData = {
+    /**
+     * The new limits and the deposit
+     */
+    body?: {
+        /**
+         * The guarded Purchasing hot wallet
+         */
+        hotWalletId: string;
+        /**
+         * The new limit per period for every asset the wallet may move. Replaces the whole limit; must list lovelace, the payment asset and every asset the wallet holds
+         */
+        limits: Array<{
+            /**
+             * lovelace or <policy><nameHex>
+             */
+            unit: string;
+            /**
+             * Minor units (lovelace for ADA)
+             */
+            amount: string;
+        }>;
+        /**
+         * Value the owner address moves into the wallet in the same transaction. Every asset must be in limits
+         */
+        deposit?: Array<{
+            /**
+             * lovelace or <policy><nameHex>
+             */
+            unit: string;
+            /**
+             * Minor units (lovelace for ADA)
+             */
+            amount: string;
+        }>;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/guarded/policy';
+};
+
+export type PostWalletGuardedPolicyErrors = {
+    /**
+     * The limits or deposit would leave the wallet unusable
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hot wallet not found or not guarded
+     */
+    404: unknown;
+    /**
+     * A move or lock is open, the wallet is not on L1, or the owner cannot pay
+     */
+    409: unknown;
+};
+
+export type PostWalletGuardedPolicyResponses = {
+    /**
+     * Unsigned UpdatePolicy transaction
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * The UpdatePolicy transaction. The owner signs and submits it from their wallet
+             */
+            unsignedTx: string;
+            txHash: string;
+            /**
+             * The wallet UTxO it spends (txHash#index); a purchase lock spending it first voids it
+             */
+            walletUtxoRef: string;
+        };
+    };
+};
+
+export type PostWalletGuardedPolicyResponse = PostWalletGuardedPolicyResponses[keyof PostWalletGuardedPolicyResponses];
+
 export type GetWalletGuardedHydraData = {
     body?: never;
     path?: never;

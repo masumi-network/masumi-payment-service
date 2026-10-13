@@ -103,6 +103,7 @@ import { exchainReadTokenEndpointPost } from './exchain';
 import {
 	deleteGuardedWalletEndpointDelete,
 	getGuardedWalletEndpointGet,
+	postGuardedPolicyEndpointPost,
 	postGuardedWalletEndpointPost,
 } from './wallet/guarded';
 import {
@@ -364,6 +365,7 @@ export const apiRouter: Routing = {
 				get: getGuardedWalletEndpointGet,
 				post: postGuardedWalletEndpointPost,
 				delete: deleteGuardedWalletEndpointDelete,
+				policy: { post: postGuardedPolicyEndpointPost },
 				hydra: {
 					get: getGuardedHydraEndpointGet,
 					deposit: {
