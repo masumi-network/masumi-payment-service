@@ -50,6 +50,7 @@ const params = {
 		scriptAddress: 'addr_test1script',
 		policyId: 'p',
 		stateTokenName: 't',
+		governedAsset: 'lovelace',
 	} as never,
 	network: 'preprod',
 	rpcApiKey: 'preprodKey',

@@ -6,6 +6,7 @@ import { createTxWindow } from '@/services/shared/tx-window';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { pickBatchCollateral } from '../../../builders/batch-helpers';
 import { coinsPerUtxoSizeOf, guardedContinuingMinLovelace } from '../../../smart-wallet/guarded-lock-builder';
+import { assetUnitOf, LOVELACE_ASSET_ID } from '../../../smart-wallet/governed-asset';
 import { assetValueGet, lovelaceOf, type WalletDatum } from '../../../smart-wallet/wallet';
 import { fetchWalletUtxo, readWalletDatum } from '../../../smart-wallet/wallet-lifecycle';
 import { cosignConfigOrNull } from './cosign-config';
@@ -62,10 +63,53 @@ export function isGuardedBudgetBound(
 
 /** What the period budget still allows, after the validator's period rollover. */
 export function guardedBudgetLeftLovelace(datum: WalletDatum, windowLowerMs: bigint): bigint {
-	const limit = assetValueGet(datum.limit, LOVELACE_POLICY, LOVELACE_NAME) ?? 0n;
+	return guardedBudgetLeft(datum, windowLowerMs, LOVELACE_POLICY, LOVELACE_NAME);
+}
+
+/** Per-asset `guardedBudgetLeftLovelace`. An unlisted asset has no budget: it is frozen. */
+function guardedBudgetLeft(datum: WalletDatum, windowLowerMs: bigint, policyId: string, assetName: string): bigint {
+	const limit = assetValueGet(datum.limit, policyId, assetName) ?? 0n;
 	const rolledOver = windowLowerMs >= datum.periodStart + datum.periodLength;
-	const spent = rolledOver ? 0n : (assetValueGet(datum.spentInPeriod, LOVELACE_POLICY, LOVELACE_NAME) ?? 0n);
+	const spent = rolledOver ? 0n : (assetValueGet(datum.spentInPeriod, policyId, assetName) ?? 0n);
 	return limit - spent;
+}
+
+const isLovelaceUnit = (unit: string) => unit === '' || unit.toLowerCase() === 'lovelace';
+
+/**
+ * Whether a purchase may lock from a guarded wallet that pays in `governedAsset`
+ * (Exchain form). Judged on the price the buyer asked for, before packing adds
+ * min-UTxO lovelace: a lovelace wallet takes ADA-only prices, a token wallet
+ * takes prices in exactly its token. Exchain co-signs one asset per wallet, so
+ * anything else would only be refused after the batch was built.
+ */
+export function guardedPurchaseFits(governedAsset: string, paidFunds: Array<{ unit: string }>): boolean {
+	if (paidFunds.length === 0) return false;
+	if (governedAsset === LOVELACE_ASSET_ID) return paidFunds.every((fund) => isLovelaceUnit(fund.unit));
+	const governedUnit = assetUnitOf(governedAsset);
+	return paidFunds.every((fund) => fund.unit === governedUnit);
+}
+
+/**
+ * The governed token a guarded wallet can lock in one transaction: its balance,
+ * capped by the period budget. Tokens have no reserve; the lovelace floor is
+ * checked separately.
+ */
+export function guardedSpendableToken(
+	datum: WalletDatum,
+	walletUtxo: UTxO,
+	windowLowerMs: bigint,
+	unit: string,
+): { spendable: bigint; isBudgetBound: boolean } {
+	const policyId = unit.slice(0, 56);
+	const assetName = unit.slice(56);
+	const balance = walletUtxo.output.amount
+		.filter((asset) => asset.unit === unit)
+		.reduce((sum, asset) => sum + BigInt(asset.quantity), 0n);
+	const limit = assetValueGet(datum.limit, policyId, assetName) ?? 0n;
+	const budgetLeft = guardedBudgetLeft(datum, windowLowerMs, policyId, assetName);
+	const spendable = balance < budgetLeft ? balance : budgetLeft;
+	return { spendable: spendable > 0n ? spendable : 0n, isBudgetBound: budgetLeft < limit && budgetLeft < balance };
 }
 
 /**
@@ -79,8 +123,9 @@ export function agentCanFundGuardedLock(agentUtxos: UTxO[]): boolean {
 
 /**
  * The balance the packing loop may count for a guarded hot wallet, in the
- * loop's `{ unit, quantity }` shape: lovelace only, so a purchase with native
- * tokens never lands here.
+ * loop's `{ unit, quantity }` shape: lovelace, plus the governed token for a
+ * wallet that pays in one. `guardedPurchaseFits` keeps every other purchase
+ * away from it.
  *
  * `overheadLovelace` is added back on top because the loop charges the batch
  * overhead (fee headroom + splitter) to the first request, but a guarded lock
@@ -135,10 +180,15 @@ export async function guardedWalletAmounts(params: {
 		const window = createTxWindow(network);
 		const windowLowerMs = BigInt(slotToBeginUnixTime(window.invalidBefore, SLOT_CONFIG_NETWORK[network]));
 		const spendable = guardedSpendableLovelace(datum, walletUtxo, windowLowerMs, continuingMin);
-		return {
-			amounts: [{ unit: '', quantity: spendable + params.overheadLovelace }],
-			evaluated: !isGuardedBudgetBound(datum, walletUtxo, windowLowerMs, continuingMin),
-		};
+		const amounts = [{ unit: '', quantity: spendable + params.overheadLovelace }];
+		let isBudgetBound = isGuardedBudgetBound(datum, walletUtxo, windowLowerMs, continuingMin);
+		if (guarded.governedAsset !== LOVELACE_ASSET_ID) {
+			const unit = assetUnitOf(guarded.governedAsset);
+			const token = guardedSpendableToken(datum, walletUtxo, windowLowerMs, unit);
+			amounts.push({ unit, quantity: token.spendable });
+			isBudgetBound ||= token.isBudgetBound;
+		}
+		return { amounts, evaluated: !isBudgetBound };
 	} catch (error) {
 		logger.warn('guarded smart wallet could not be read; skipping it', {
 			hotWalletId: guarded.hotWalletId,

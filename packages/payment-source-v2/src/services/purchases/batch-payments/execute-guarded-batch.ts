@@ -35,27 +35,24 @@ import {
 	type WalletPairing,
 } from './execute-batch';
 import { classifyCosignResult, type CosignDisposition, type CosignOutcome } from './cosign-disposition';
-import { cosignIntentFor, guardedLockLovelace, recordCosignDispositionsFor } from './guarded-cosign-purchase';
+import { cosignIntentFor, guardedLockValue, recordCosignDispositionsFor } from './guarded-cosign-purchase';
 import { cosignConfigOrNull } from './cosign-config';
 import { hasOpenGuardedMove } from './guarded-open-move';
 
 /** One rebuild with the admitted set per tick; a second denial goes back to the queue. */
 const MAX_COSIGN_REBUILDS = 1;
 
-function lockLovelaceOf(request: BatchedRequest): bigint {
-	return guardedLockLovelace(request.paymentRequest);
-}
-
-function lockOutputOf(walletPairing: WalletPairing, request: BatchedRequest): GuardedLockOutput {
+function lockOutputOf(walletPairing: WalletPairing, request: BatchedRequest, governedAsset: string): GuardedLockOutput {
 	return {
 		address: walletPairing.scriptAddress,
-		amount: [{ unit: 'lovelace', quantity: lockLovelaceOf(request).toString() }],
+		amount: guardedLockValue(request.paymentRequest, governedAsset).amount,
 		datum: batchLockDatum(walletPairing, request).value,
 	};
 }
 
-function intentOf(request: BatchedRequest, outputIndex: number): CosignIntent {
-	return cosignIntentFor(request.paymentRequest, outputIndex, lockLovelaceOf(request));
+function intentOf(request: BatchedRequest, outputIndex: number, governedAsset: string): CosignIntent {
+	const { governedAmount } = guardedLockValue(request.paymentRequest, governedAsset);
+	return cosignIntentFor(request.paymentRequest, outputIndex, governedAsset, governedAmount);
 }
 
 async function recordCosignDispositions(requests: BatchedRequest[], refused: Map<string, CosignDisposition>) {
@@ -166,7 +163,7 @@ export async function executeGuardedBatch(
 					agentAddress: walletPairing.changeAddress,
 					agentUtxos,
 					cosignerVkhs,
-					locks: batched.map((request) => lockOutputOf(walletPairing, request)),
+					locks: batched.map((request) => lockOutputOf(walletPairing, request, guarded.governedAsset)),
 					constrainAfterMs: minPayByTime,
 				}),
 			);
@@ -204,7 +201,9 @@ export async function executeGuardedBatch(
 				unsignedTx: built.unsignedTx,
 				batchId,
 				walletUtxoRef,
-				intents: batched.map((request, position) => intentOf(request, built.lockOutputIndexes[position])),
+				intents: batched.map((request, position) =>
+					intentOf(request, built.lockOutputIndexes[position], guarded.governedAsset),
+				),
 				context: {
 					nodeId: cosignConfig.nodeId,
 					orgId: cosignConfig.orgId,

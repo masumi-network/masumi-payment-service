@@ -27,6 +27,7 @@ import { processL2PurchaseLocks, type L2LockPassResult } from './l2-lock';
 import { executeGuardedBatch } from './execute-guarded-batch';
 import { parkUnfundedPurchases } from './park-unfunded';
 import { guardedWalletAmounts } from './guarded-packing';
+import { isPackableForWallet } from './packing-eligibility';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import {
 	type BatchPairingOutcome,
@@ -488,10 +489,7 @@ export async function batchLatestPaymentEntriesV2() {
 								break;
 							}
 							const paymentRequest = paymentRequestsRemaining[index];
-							if (
-								paymentRequest.isLimitedToHotWallets &&
-								!paymentRequest.HotWalletLimit.some((hw) => hw.id === walletData.walletId)
-							) {
+							if (!isPackableForWallet(paymentRequest, walletData)) {
 								index++;
 								continue;
 							}

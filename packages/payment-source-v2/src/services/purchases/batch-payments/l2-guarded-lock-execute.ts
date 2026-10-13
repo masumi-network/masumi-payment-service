@@ -28,7 +28,7 @@ import { pickBatchCollateral } from '../../../builders/batch-helpers';
 import { cosignConfigOrNull } from './cosign-config';
 import { hasOpenGuardedMove } from './guarded-open-move';
 import { classifyCosignResult, type CosignOutcome } from './cosign-disposition';
-import { cosignIntentFor, guardedLockLovelace, recordCosignDispositionsFor } from './guarded-cosign-purchase';
+import { cosignIntentFor, guardedLockValue, recordCosignDispositionsFor } from './guarded-cosign-purchase';
 import { createTrustedL2LockWindow, resolveL2BuyerReturnAddress, type L2LockAttemptOutcome } from './l2-lock-helpers';
 import { planL2EscrowLock } from './l2-lock-output';
 import {
@@ -148,8 +148,8 @@ export async function executeGuardedL2Lock(params: {
 		throw new Error('the agent holds no plain in-head UTxO of at least 5 ADA to lend as collateral');
 	}
 
-	// The lovelace-only rule of a guarded wallet, checked before anything is built.
-	guardedLockLovelace(request);
+	// The one-asset rule of a guarded wallet, checked before anything is built.
+	guardedLockValue(request, guarded.governedAsset);
 	const protocolParameters = await hydraProvider.fetchProtocolParameters();
 	const buyerReturnAddress = resolveL2BuyerReturnAddress(request.buyerReturnAddress, hotWallet.collectionAddress);
 	const { valuePlan, datum } = planL2EscrowLock({
@@ -159,10 +159,8 @@ export async function executeGuardedL2Lock(params: {
 		buyerReturnAddress,
 		coinsPerUtxoSize: protocolParameters.coinsPerUtxoSize,
 	});
-	const lockLovelace = valuePlan.outputFunds.reduce(
-		(sum, fund) => (fund.unit === '' || fund.unit === 'lovelace' ? sum + fund.amount : sum),
-		0n,
-	);
+	// The planned output: the price plus the min-UTxO lovelace the escrow needs.
+	const lockValue = guardedLockValue({ id: request.id, PaidFunds: valuePlan.outputFunds }, guarded.governedAsset);
 	const cosignerVkhs = guarded.quorumVkhs.slice(0, guarded.threshold);
 
 	const tBuild = Date.now();
@@ -177,7 +175,7 @@ export async function executeGuardedL2Lock(params: {
 		locks: [
 			{
 				address: paymentContract.smartContractAddress,
-				amount: [{ unit: 'lovelace', quantity: lockLovelace.toString() }],
+				amount: lockValue.amount,
 				datum: datum.value,
 			},
 		],
@@ -197,7 +195,7 @@ export async function executeGuardedL2Lock(params: {
 			unsignedTx: built.unsignedTx,
 			batchId: randomUUID(),
 			walletUtxoRef,
-			intents: [cosignIntentFor(request, built.lockOutputIndexes[0], lockLovelace)],
+			intents: [cosignIntentFor(request, built.lockOutputIndexes[0], guarded.governedAsset, lockValue.governedAmount)],
 			context: {
 				nodeId: cosignConfig.nodeId,
 				orgId: cosignConfig.orgId,

@@ -62,7 +62,7 @@ function sourceWithBusyHeadWallet(createdAt: Date) {
 				// Auto: neither side forced a layer.
 				forceLayer: null,
 				paymentForceLayer: null,
-				PaidFunds: [],
+				PaidFunds: [{ unit: '', amount: 5_000_000n }],
 				SellerWallet: { id: 'seller-1' },
 				NextAction: { requestedAction: PurchasingAction.FundsLockingRequested, errorType: null },
 				HotWalletLimit: null,
@@ -216,7 +216,7 @@ function sourceWithFreeGuardedWallet() {
 				...busy.HotWallets[0]!,
 				lockedAt: null,
 				pendingTransactionId: null,
-				GuardedWallet: { id: 'guarded-1', policyId: 'aa'.repeat(28), stateTokenName: 'bb' },
+				GuardedWallet: { id: 'guarded-1', policyId: 'aa'.repeat(28), stateTokenName: 'bb', governedAsset: 'lovelace' },
 			},
 		],
 	};

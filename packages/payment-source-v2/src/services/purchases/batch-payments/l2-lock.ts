@@ -23,8 +23,8 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
 import { resolveEffectiveForceLayer } from '@/utils/logic/force-layer';
 import { waitForFreeWallet } from '../../l2-pass';
-import { isHotWalletEligibleForL2Lock } from './l2-lock-helpers';
 import { executeL2Lock, type L2PurchaseRequest } from './l2-lock-execute';
+import { isPackableForWallet } from './packing-eligibility';
 import { executeGuardedL2Lock, locateGuardedWalletForLock, type GuardedWalletInHead } from './l2-guarded-lock-execute';
 
 /**
@@ -146,7 +146,8 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 			let headResolutionIndeterminate = false;
 			let locked = false;
 			for (const hotWallet of paymentContract.HotWallets) {
-				if (!isHotWalletEligibleForL2Lock(request, hotWallet.id)) {
+				// Includes the asset rule: a guarded wallet only takes purchases priced in its one asset.
+				if (!isPackableForWallet(request, { walletId: hotWallet.id, guarded: hotWallet.GuardedWallet })) {
 					continue;
 				}
 				let head;

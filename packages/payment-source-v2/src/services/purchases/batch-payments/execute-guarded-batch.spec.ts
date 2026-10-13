@@ -98,6 +98,7 @@ function pairing(ids: string[]) {
 			stateTokenName: 'token',
 			scriptAddress: 'addr_script',
 			policyId: 'policy',
+			governedAsset: 'lovelace',
 		},
 	};
 }
