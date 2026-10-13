@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { AlertTriangle, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -28,9 +27,6 @@ export function OwnerWalletConnect({
   onConnect: (id: string) => void;
   onDisconnect: () => void;
 }) {
-  // Extensions inject `window.cardano` after load, so look once the panel shows.
-  useEffect(onDetect, [onDetect]);
-
   if (connectedName != null) {
     return (
       <div className="flex flex-col gap-2 rounded-md bg-muted/50 px-3 py-2">
@@ -64,6 +60,7 @@ export function OwnerWalletConnect({
           <div className="font-medium">Connect the owner wallet</div>
           <div className="text-xs text-muted-foreground">
             Each move needs one signature from the owner key. The key stays in your browser wallet.
+            Unlock the wallet first if it does not show up here.
           </div>
         </div>
       </div>

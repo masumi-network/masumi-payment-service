@@ -1,7 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BrowserWallet } from '@meshsdk/core';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { CIP30_NETWORK_ID, walletHoldsOwnerKey } from './owner-key';
+
+/**
+ * Extensions inject `window.cardano` some time after page load, and a locked
+ * wallet may only appear once it is unlocked. Look a few times early on.
+ */
+const DETECT_RETRY_MS = [500, 1500, 3000];
 
 /** A browser extension that exposes CIP-30 under `window.cardano`. */
 export type Cip30WalletOption = { id: string; name: string; icon: string };
@@ -32,6 +38,18 @@ export function useCip30Wallet() {
       BrowserWallet.getInstalledWallets().map(({ id, name, icon }) => ({ id, name, icon })),
     );
   }, []);
+
+  // Look now, a few times while extensions load, and whenever the tab regains
+  // focus (the operator may have installed or unlocked a wallet meanwhile).
+  useEffect(() => {
+    detect();
+    const timers = DETECT_RETRY_MS.map((ms) => window.setTimeout(detect, ms));
+    window.addEventListener('focus', detect);
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.removeEventListener('focus', detect);
+    };
+  }, [detect]);
 
   const connect = async (id: string) => {
     setIsConnecting(true);
