@@ -197,3 +197,28 @@ test('refuses limits and spent counters in different orders', () => {
   ];
   assert.match(problemOf(policyTx(walletValue, datum({ spent })))!, /different orders/);
 });
+
+test('refuses a datum whose pairs collide into one unit string', () => {
+  // (P, 00 14df…) and (P||00, 14df…) flatten to the same unit; the validator compares pairs.
+  const spent: Array<[string, string, bigint]> = [
+    ['', '', BigInt(5_000_000)],
+    [`${TUSDM_POLICY}00`, TUSDM.slice(58), BigInt(0)],
+  ];
+  assert.match(problemOf(policyTx(walletValue, datum({ spent })))!, /malformed/);
+});
+
+test('refuses a wallet output that gains more than the deposit', () => {
+  const extraToken = walletValue.map((asset) =>
+    asset.unit === TUSDM ? { ...asset, quantity: '60000000' } : asset,
+  );
+  assert.match(problemOf(policyTx(extraToken, datum()))!, /gain more/);
+  const extraAda = walletValue.map((asset) =>
+    asset.unit === 'lovelace' ? { ...asset, quantity: '90000000' } : asset,
+  );
+  assert.match(problemOf(policyTx(extraAda, datum()))!, /gain more lovelace/);
+});
+
+test('refuses a wallet output that gains an asset nobody deposited', () => {
+  const tx = policyTx([...walletValue, { unit: `${'9'.repeat(56)}aa`, quantity: '1' }], datum());
+  assert.match(problemOf(tx)!, /nobody deposited/);
+});

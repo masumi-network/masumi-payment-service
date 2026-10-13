@@ -22,6 +22,10 @@ export type DecodedPolicyOutput = {
 const MAX_FEE_LOVELACE = BigInt(3_000_000);
 /** 150% of the largest honest fee, rounded up. */
 const MAX_TOTAL_COLLATERAL_LOVELACE = BigInt(5_000_000);
+/** The most lovelace the builder may add so the wallet output meets its own min-UTxO. */
+const MAX_MIN_UTXO_TOP_UP_LOVELACE = BigInt(5_000_000);
+const POLICY_ID_PATTERN = /^[0-9a-f]{56}$/;
+const MAX_ASSET_NAME_HEX = 64;
 
 export type DecodedPolicyTx = {
   outputs: DecodedPolicyOutput[];
@@ -135,11 +139,15 @@ function assetValueOf(value: unknown): OrderedValue {
   const policies = new Set<string>();
   for (const policy of entriesOf(value)) {
     const policyId = bytesOf(policy.k);
+    // Fixed lengths keep `policy + name` unique, so two pairs cannot pose as one unit.
+    if (policyId !== '' && !POLICY_ID_PATTERN.test(policyId))
+      throw new Error('a policy id is malformed');
     if (policies.has(policyId)) throw new Error('a policy is listed twice');
     policies.add(policyId);
     const names = new Set<string>();
     for (const name of entriesOf(policy.v)) {
       const assetName = bytesOf(name.k);
+      if (assetName.length > MAX_ASSET_NAME_HEX) throw new Error('an asset name is too long');
       if (names.has(assetName)) throw new Error('an asset name is listed twice');
       names.add(assetName);
       if (policyId === '' && assetName !== '') throw new Error('lovelace carries an asset name');
@@ -198,12 +206,24 @@ export function policyUpdateProblem(
   if (wallet.value.get(expected.stateTokenUnit) !== BigInt(1)) {
     return 'The wallet output does not keep the state token';
   }
-  const units = new Set([...expected.heldBefore.keys(), ...expected.deposit.keys()]);
+  // The wallet must end with exactly what it holds plus the deposit: less would
+  // drain it, more would hand owner value to the agent. Only lovelace may rise,
+  // by the min-UTxO top-up the new datum and tokens need.
+  const units = new Set([...expected.heldBefore.keys(), ...expected.deposit.keys(), LOVELACE]);
+  const extraUnit = [...wallet.value.keys()].find(
+    (unit) => unit !== expected.stateTokenUnit && !units.has(unit),
+  );
+  if (extraUnit != null) return `The wallet output gains ${extraUnit}, which nobody deposited`;
   for (const unit of units) {
-    const floor =
+    const target =
       (expected.heldBefore.get(unit) ?? BigInt(0)) + (expected.deposit.get(unit) ?? BigInt(0));
-    if ((wallet.value.get(unit) ?? BigInt(0)) < floor) {
+    const actual = wallet.value.get(unit) ?? BigInt(0);
+    if (actual < target) {
       return `The wallet would hold less ${unit} than it holds now plus the deposit`;
+    }
+    const allowance = unit === LOVELACE ? MAX_MIN_UTXO_TOP_UP_LOVELACE : BigInt(0);
+    if (actual > target + allowance) {
+      return `The wallet would gain more ${unit} than the deposit`;
     }
   }
 
