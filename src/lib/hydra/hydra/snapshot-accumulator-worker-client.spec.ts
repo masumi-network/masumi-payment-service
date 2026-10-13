@@ -86,6 +86,10 @@ describe('createWorkerAccumulatorComputer', () => {
 		const next = compute(OUTPUTS);
 		expect(next).toBeInstanceOf(Promise);
 		expect(workers).toHaveLength(2);
+		// Answered, so no real watchdog outlives this file: left pending, it fired
+		// 120 s later into whichever suite the jest worker ran next, and failed it.
+		workers[1].emit('message', { id: workers[1].posted[0].id, hash: '22'.repeat(32) });
+		await expect(next).resolves.toBe('22'.repeat(32));
 	});
 
 	it('falls back to the event loop when the worker cannot be constructed', () => {
