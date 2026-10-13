@@ -61,6 +61,7 @@ import {
 	validateHydraNodeLimits,
 } from './node-api';
 import { withHistorySetting } from './node-url';
+import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { canonicalHydraHeadIdSchema, finalizedUtxoOf, headIsFinalizedMessageSchema } from './schemas';
 import { serializeHydraSnapshotOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction } from './types';
@@ -185,7 +186,11 @@ export class HydraNode extends EventEmitter {
 			reconciledHistoryCursor: config.reconciledHistoryCursor,
 		});
 		this._live = new LiveFrameProcessor(this.liveFrameHost(), this);
-		this._replay = new HydraHistoryReplay(this._historyConnection, this._ledger, this.replayHost());
+		this._replay = new HydraHistoryReplay(
+			this._historyConnection,
+			this._ledger,
+			this.replayHost(config.computeSnapshotAccumulator),
+		);
 		if (config.expectedHeadId) this.pinExpectedHeadId(config.expectedHeadId);
 	}
 
@@ -222,7 +227,7 @@ export class HydraNode extends EventEmitter {
 		};
 	}
 
-	private replayHost(): HistoryReplayHost {
+	private replayHost(computeSnapshotAccumulator: HydraAccumulatorComputer | undefined): HistoryReplayHost {
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const self = this;
 		return {
@@ -230,6 +235,7 @@ export class HydraNode extends EventEmitter {
 				return self._expectedHeadId;
 			},
 			trustLocalNodeSnapshotMetadata: this._trustLocalNodeSnapshotMetadata,
+			computeSnapshotAccumulator,
 			get persistenceRotationError(): HydraProtocolError | undefined {
 				return self._unsupportedPersistenceRotationError;
 			},

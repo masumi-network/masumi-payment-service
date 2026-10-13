@@ -113,16 +113,28 @@ describe('HydraHistoryReplay slow-work reporting', () => {
 		);
 	});
 
-	it('reports a buffered flush that held the event loop as a whole', () => {
-		const { replay, host, warnSpy, restore } = createTimedReplay(400);
+	// Worked through back to back, a long history starved every timer and socket
+	// in the process: database pool connects timed out and every job failed.
+	it('yields to the event loop once a slice of frames has spent its budget', async () => {
+		let processed = 0;
+		const { replay, host, restore } = createTimedReplay(40);
+		const advance = host.setNetworkConnected;
+		host.setNetworkConnected = (connected) => {
+			processed += 1;
+			advance(connected);
+		};
 		for (let index = 0; index < 5; index += 1) replay.processMessage(NETWORK_CONNECTED_FRAME);
 		host.expectedHeadId = PINNED_HEAD_ID;
 		replay.processBufferedUnpinnedFrames();
+
+		// 40 ms each against a 50 ms budget: two frames, then a yield.
+		expect(processed).toBe(2);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(processed).toBe(4);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(processed).toBe(5);
 		restore();
-		expect(warnSpy).toHaveBeenCalledWith(
-			'[HydraNode] Buffered history flush held the event loop',
-			expect.objectContaining({ headId: PINNED_HEAD_ID, frames: 5, elapsedMs: 2_000 }),
-		);
+		expect(mockWarn).not.toHaveBeenCalled();
 	});
 
 	it('stays quiet for fast frames', () => {
