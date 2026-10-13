@@ -18,8 +18,18 @@ export type DecodedPolicyOutput = {
   datumCbor: string | null;
 };
 
+/** A policy update is one script spend: about 0.5 ADA of fee. Anything near this is not honest. */
+const MAX_FEE_LOVELACE = BigInt(3_000_000);
+/** 150% of the largest honest fee, rounded up. */
+const MAX_TOTAL_COLLATERAL_LOVELACE = BigInt(5_000_000);
+
 export type DecodedPolicyTx = {
   outputs: DecodedPolicyOutput[];
+  fee: bigint;
+  /** Null when the body sets no total collateral, so a failed script would take every collateral input. */
+  totalCollateral: bigint | null;
+  /** Null when the body has no collateral return output. */
+  collateralReturnAddress: string | null;
   /** Certificates, withdrawals, mint, votes, proposals or donation. None belongs in a policy update. */
   hasOtherEffects: boolean;
 };
@@ -39,6 +49,9 @@ export function decodePolicyUpdateTx(unsignedTx: string): DecodedPolicyTx {
         datumCbor: output.datum()?.asInlineData()?.toCbor() ?? null,
       };
     }),
+    fee: body.fee(),
+    totalCollateral: body.totalCollateral() ?? null,
+    collateralReturnAddress: body.collateralReturn()?.address().toBech32() ?? null,
     hasOtherEffects:
       (body.certs()?.size() ?? 0) > 0 ||
       (body.withdrawals()?.size ?? 0) > 0 ||
@@ -67,12 +80,15 @@ export type PolicyUpdateExpectation = {
   deposit: Map<string, bigint>;
 };
 
+/** Units in datum order: the validator needs `limit` and `spent_in_period` in the same order. */
+type OrderedValue = Array<[string, bigint]>;
+
 type WalletDatumView = {
   agent: string;
-  limit: Map<string, bigint>;
+  limit: OrderedValue;
   periodLength: bigint;
   periodStart: bigint;
-  spentInPeriod: Map<string, bigint>;
+  spentInPeriod: OrderedValue;
   minBalance: bigint;
 };
 
@@ -109,14 +125,25 @@ function entriesOf(value: unknown): Array<{ k: unknown; v: unknown }> {
   return map as Array<{ k: unknown; v: unknown }>;
 }
 
-/** `Value` as `{policy: {name: quantity}}`, flattened to units. Lovelace is the empty policy. */
-function assetValueOf(value: unknown): Map<string, bigint> {
-  const units = new Map<string, bigint>();
+/**
+ * `Value` as `{policy: {name: quantity}}`, flattened to units in order. The
+ * validator rejects a repeated policy or name, and lovelace is the empty
+ * policy with the empty name, so those are refused here too.
+ */
+function assetValueOf(value: unknown): OrderedValue {
+  const units: OrderedValue = [];
+  const policies = new Set<string>();
   for (const policy of entriesOf(value)) {
     const policyId = bytesOf(policy.k);
+    if (policies.has(policyId)) throw new Error('a policy is listed twice');
+    policies.add(policyId);
+    const names = new Set<string>();
     for (const name of entriesOf(policy.v)) {
-      const unit = policyId === '' ? LOVELACE : `${policyId}${bytesOf(name.k)}`;
-      units.set(unit, intOf(name.v));
+      const assetName = bytesOf(name.k);
+      if (names.has(assetName)) throw new Error('an asset name is listed twice');
+      names.add(assetName);
+      if (policyId === '' && assetName !== '') throw new Error('lovelace carries an asset name');
+      units.push([policyId === '' ? LOVELACE : `${policyId}${assetName}`, intOf(name.v)]);
     }
   }
   return units;
@@ -138,8 +165,8 @@ function readWalletDatum(datumCbor: string): WalletDatumView {
   };
 }
 
-function sameEntries(a: Map<string, bigint>, b: Map<string, bigint>): boolean {
-  return a.size === b.size && [...a].every(([unit, quantity]) => b.get(unit) === quantity);
+function sameEntries(a: OrderedValue, b: Map<string, bigint>): boolean {
+  return a.length === b.size && a.every(([unit, quantity]) => b.get(unit) === quantity);
 }
 
 /** Why the owner must not sign this transaction, or null when it does what the operator asked. */
@@ -149,6 +176,13 @@ export function policyUpdateProblem(
 ): string | null {
   if (tx.hasOtherEffects) {
     return 'The transaction carries a certificate, withdrawal, mint or vote';
+  }
+  if (tx.fee > MAX_FEE_LOVELACE) return `The fee is ${tx.fee} lovelace, far above a policy update`;
+  if (tx.totalCollateral == null || tx.totalCollateral > MAX_TOTAL_COLLATERAL_LOVELACE) {
+    return 'The collateral at risk is not bounded';
+  }
+  if (tx.collateralReturnAddress != null && tx.collateralReturnAddress !== expected.ownerAddress) {
+    return 'The collateral return does not pay the owner';
   }
   const walletOutputs = tx.outputs.filter((output) => output.address === expected.scriptAddress);
   if (walletOutputs.length !== 1) {
@@ -187,6 +221,10 @@ export function policyUpdateProblem(
     return 'The datum changes the minimum balance';
   if (!sameEntries(datum.limit, expected.limits))
     return 'The datum limits differ from the ones entered';
+  const order = (value: OrderedValue) => value.map(([unit]) => unit).join(',');
+  if (order(datum.limit) !== order(datum.spentInPeriod)) {
+    return 'The datum lists limits and spent counters in different orders';
+  }
   const spent = new Map(
     [...expected.limits.keys()].map((unit) => [unit, expected.spentBefore.get(unit) ?? BigInt(0)]),
   );

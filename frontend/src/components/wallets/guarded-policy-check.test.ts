@@ -69,7 +69,12 @@ function policyTx(
     .txOut(SCRIPT, walletValue)
     .txOutInlineDatumValue(walletDatum, 'Mesh');
   for (const [address, value] of extra) builder.txOut(address, value);
-  return builder.changeAddress(OWNER).completeUnbalancedSync();
+  return builder
+    .txInCollateral('f'.repeat(64), 0, [{ unit: 'lovelace', quantity: '5000000' }], OWNER)
+    .setTotalCollateral('900000')
+    .setFee('600000')
+    .changeAddress(OWNER)
+    .completeUnbalancedSync();
 }
 
 const walletValue: Asset[] = [
@@ -154,4 +159,41 @@ test('refuses a body with other effects', () => {
     hasOtherEffects: true,
   };
   assert.match(policyUpdateProblem(decoded, expected)!, /certificate/);
+});
+
+const honest = () => decodePolicyUpdateTx(policyTx(walletValue, datum()));
+
+test('reads the fee and the collateral from the body', () => {
+  assert.equal(honest().fee, BigInt(600_000));
+  assert.equal(honest().totalCollateral, BigInt(900_000));
+});
+
+test('refuses a fee far above a policy update', () => {
+  assert.match(policyUpdateProblem({ ...honest(), fee: BigInt(500_000_000) }, expected)!, /fee/);
+});
+
+test('refuses unbounded collateral', () => {
+  assert.match(
+    policyUpdateProblem({ ...honest(), totalCollateral: null }, expected)!,
+    /collateral/,
+  );
+  assert.match(
+    policyUpdateProblem({ ...honest(), totalCollateral: BigInt(50_000_000) }, expected)!,
+    /collateral/,
+  );
+});
+
+test('refuses a collateral return to anyone but the owner', () => {
+  assert.match(
+    policyUpdateProblem({ ...honest(), collateralReturnAddress: STRANGER }, expected)!,
+    /collateral return/,
+  );
+});
+
+test('refuses limits and spent counters in different orders', () => {
+  const spent: Array<[string, string, bigint]> = [
+    [TUSDM_POLICY, TUSDM.slice(56), BigInt(0)],
+    ['', '', BigInt(5_000_000)],
+  ];
+  assert.match(problemOf(policyTx(walletValue, datum({ spent })))!, /different orders/);
 });
