@@ -138,6 +138,7 @@ export function WalletDetailsDialog({
     wallet?.type === 'Purchasing' && canManageWallet && isV2PaymentSource(selectedPaymentSource);
   const guardedWallet = useGuardedWallet({
     hotWalletId: wallet?.id,
+    network,
     enabled: isOpen && canGuardWallet,
     invalidateWalletQueries,
   });
@@ -661,6 +662,7 @@ export function WalletDetailsDialog({
             {activeTab === 'Guarded wallet' && canGuardWallet && (
               <GuardedWalletSection
                 hotWalletId={wallet.id}
+                agentVkh={wallet.walletVkey}
                 network={network}
                 state={guardedWallet.state}
                 isLoading={guardedWallet.isLoading}

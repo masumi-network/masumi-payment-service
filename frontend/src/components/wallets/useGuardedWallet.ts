@@ -11,22 +11,28 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { adaToLovelace } from '@/components/hydra/ada-amount';
+import { assetLabelOf, LOVELACE } from './guarded-assets';
 
 export type GuardedAttachBody = NonNullable<PostWalletGuardedData['body']>;
 
-/** The attach form as the operator types it. Mandate amounts are in ADA. */
+/**
+ * The attach form as the operator types it. Mandate amounts are whole units of
+ * the payment asset (ADA, USDM or USDCx), which all have 6 decimals.
+ */
 export type GuardedAttachForm = {
   ownerAddress: string;
   quorumKeys: string;
   threshold: string;
   stateTokenName: string;
+  /** Exchain `AssetId` agents pay in: `lovelace` or `<policy>.<nameHex>`. */
+  governedAsset: string;
   mode: 'existing' | 'register';
   exchainWalletId: string;
-  perTxCapAda: string;
-  dailyAda: string;
-  perSellerAda: string;
-  perAgentAda: string;
-  envelopeAda: string;
+  perTxCap: string;
+  daily: string;
+  perSeller: string;
+  perAgent: string;
+  envelope: string;
   burstPerMinute: string;
 };
 
@@ -35,13 +41,14 @@ export const EMPTY_GUARDED_ATTACH_FORM: GuardedAttachForm = {
   quorumKeys: '',
   threshold: '',
   stateTokenName: '',
+  governedAsset: LOVELACE,
   mode: 'existing',
   exchainWalletId: '',
-  perTxCapAda: '',
-  dailyAda: '',
-  perSellerAda: '',
-  perAgentAda: '',
-  envelopeAda: '',
+  perTxCap: '',
+  daily: '',
+  perSeller: '',
+  perAgent: '',
+  envelope: '',
   burstPerMinute: '',
 };
 
@@ -67,6 +74,7 @@ function parsePositiveInt(value: string): number | null {
 export function buildGuardedAttachBody(
   hotWalletId: string,
   form: GuardedAttachForm,
+  network: 'Preprod' | 'Mainnet',
 ): { body: GuardedAttachBody } | { error: string } {
   const quorumVkhs = parseQuorumKeys(form.quorumKeys);
   if (quorumVkhs.length === 0) return { error: 'Enter at least one quorum key hash' };
@@ -80,22 +88,28 @@ export function buildGuardedAttachBody(
     quorumVkhs,
     threshold,
     stateTokenName: form.stateTokenName.trim().toLowerCase(),
+    governedAsset: form.governedAsset,
   };
   if (base.ownerAddress === '') return { error: 'Enter the owner address' };
   if (base.stateTokenName === '') return { error: 'Enter the state token name' };
 
   if (form.mode === 'existing') {
+    // The node cannot read back which asset an Exchain wallet governs.
+    if (form.governedAsset !== LOVELACE) {
+      return { error: 'A wallet that pays in a token must be registered here' };
+    }
     const exchainWalletId = form.exchainWalletId.trim();
     if (exchainWalletId === '') return { error: 'Enter the Exchain wallet id' };
     return { body: { ...base, exchainWalletId } };
   }
 
+  // adaToLovelace parses any 6-decimal amount into minor units.
   const amounts = {
-    perTxCap: adaToLovelace(form.perTxCapAda),
-    daily: adaToLovelace(form.dailyAda),
-    perSeller: adaToLovelace(form.perSellerAda),
-    perAgent: adaToLovelace(form.perAgentAda),
-    envelope: adaToLovelace(form.envelopeAda),
+    perTxCap: adaToLovelace(form.perTxCap),
+    daily: adaToLovelace(form.daily),
+    perSeller: adaToLovelace(form.perSeller),
+    perAgent: adaToLovelace(form.perAgent),
+    envelope: adaToLovelace(form.envelope),
   };
   const burstPerMinute = parsePositiveInt(form.burstPerMinute);
   const { perTxCap, daily, perSeller, perAgent, envelope } = amounts;
@@ -106,7 +120,9 @@ export function buildGuardedAttachBody(
     perAgent == null ||
     envelope == null
   ) {
-    return { error: 'Every mandate limit must be a positive ADA amount' };
+    return {
+      error: `Every mandate limit must be a positive ${assetLabelOf(form.governedAsset, network)} amount`,
+    };
   }
   if (burstPerMinute == null) return { error: 'Burst per minute must be a positive whole number' };
   return {
@@ -123,10 +139,12 @@ export function guardedWalletQueryKey(hotWalletId: string | undefined) {
 
 export function useGuardedWallet({
   hotWalletId,
+  network,
   enabled,
   invalidateWalletQueries,
 }: {
   hotWalletId: string | undefined;
+  network: 'Preprod' | 'Mainnet';
   enabled: boolean;
   /** Refreshes every wallet list, so the Guarded badge follows attach and detach. */
   invalidateWalletQueries: () => Promise<void>;
@@ -169,7 +187,7 @@ export function useGuardedWallet({
 
   const attach = async () => {
     if (hotWalletId == null) return;
-    const built = buildGuardedAttachBody(hotWalletId, form);
+    const built = buildGuardedAttachBody(hotWalletId, form, network);
     if ('error' in built) {
       toast.error(built.error);
       return;

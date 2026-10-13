@@ -1,4 +1,5 @@
 import { useGuardedHydra } from '@/components/wallets/useGuardedHydra';
+import type { useCip30Wallet } from '@/lib/cip30/useCip30Wallet';
 import { GuardedHydraPanel } from './GuardedHydraPanel';
 import { OwnerWalletConnect } from './OwnerWalletConnect';
 
@@ -7,13 +8,14 @@ export function GuardedHydraSection({
   hotWalletId,
   ownerAddress,
   network,
+  ownerWallet,
 }: {
   hotWalletId: string;
   ownerAddress: string;
   network: 'Preprod' | 'Mainnet';
+  ownerWallet: ReturnType<typeof useCip30Wallet>;
 }) {
-  const hydra = useGuardedHydra({ hotWalletId, ownerAddress, network, enabled: true });
-  const { ownerWallet } = hydra;
+  const hydra = useGuardedHydra({ hotWalletId, ownerAddress, network, enabled: true, ownerWallet });
   const problem = ownerWallet.signingProblem(network, ownerAddress);
 
   return (

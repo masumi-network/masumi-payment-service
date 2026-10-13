@@ -79,7 +79,7 @@ export function useCip30Wallet() {
 
   /** Why this wallet cannot sign for `ownerAddress` on `network`, or null when it can. */
   const signingProblem = (network: 'Preprod' | 'Mainnet', ownerAddress: string): string | null => {
-    if (connection == null) return 'Connect the owner wallet above to sign this move';
+    if (connection == null) return 'Connect the owner wallet to sign';
     if (connection.networkId !== CIP30_NETWORK_ID[network]) {
       return `${connection.name} is on the wrong network. Switch it to ${network}`;
     }
@@ -95,6 +95,12 @@ export function useCip30Wallet() {
     return connection.wallet.signTx(unsignedTx, true);
   };
 
+  /** Submits a fully signed transaction through the wallet's own node; returns its hash. */
+  const submit = async (signedTx: string): Promise<string> => {
+    if (connection == null) throw new Error('Connect the owner wallet first');
+    return connection.wallet.submitTx(signedTx);
+  };
+
   return {
     options,
     detect,
@@ -105,5 +111,6 @@ export function useCip30Wallet() {
     disconnect,
     signingProblem,
     signPartial,
+    submit,
   };
 }

@@ -12,7 +12,7 @@ import {
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useHydraHeads } from '@/lib/hooks/hydra/heads';
-import { useCip30Wallet } from '@/lib/cip30/useCip30Wallet';
+import type { useCip30Wallet } from '@/lib/cip30/useCip30Wallet';
 import { hasMoveInFlight, openHeadsForWallet } from './guarded-hydra-utils';
 
 const IN_FLIGHT_POLL_MS = 5000;
@@ -20,7 +20,7 @@ const IN_FLIGHT_POLL_MS = 5000;
 export type GuardedHydraAction = 'deposit' | 'withdraw' | 'recover';
 
 /** Unwraps a generated SDK response, or throws its API error as a readable message. */
-async function dataOf<T>(
+export async function dataOf<T>(
   call: Promise<{ data?: { data: T }; error?: unknown }>,
   fallback: string,
 ): Promise<T> {
@@ -40,15 +40,17 @@ export function useGuardedHydra({
   ownerAddress,
   network,
   enabled,
+  ownerWallet,
 }: {
   hotWalletId: string;
   ownerAddress: string;
   network: 'Preprod' | 'Mainnet';
   enabled: boolean;
+  /** Shared with the other owner actions, so one connection serves them all. */
+  ownerWallet: ReturnType<typeof useCip30Wallet>;
 }) {
   const { apiClient } = useAppContext();
   const queryClient = useQueryClient();
-  const ownerWallet = useCip30Wallet();
   const { heads } = useHydraHeads(network);
   const [busy, setBusy] = useState<GuardedHydraAction | null>(null);
   const queryKey = ['guarded-hydra', hotWalletId] as const;
@@ -147,7 +149,6 @@ export function useGuardedHydra({
     isLoading: query.isLoading,
     loadError: query.error ? query.error.message : null,
     openHeads: openHeadsForWallet(heads, hotWalletId),
-    ownerWallet,
     busy,
     deposit,
     withdraw,
