@@ -24,6 +24,7 @@ import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-h
 import { resolveEffectiveForceLayer } from '@/utils/logic/force-layer';
 import { waitForFreeWallet } from '../../l2-pass';
 import { executeL2Lock, type L2PurchaseRequest } from './l2-lock-execute';
+import { isHotWalletEligibleForL2Lock } from './l2-lock-helpers';
 import { isPackableForWallet } from './packing-eligibility';
 import { executeGuardedL2Lock, locateGuardedWalletForLock, type GuardedWalletInHead } from './l2-guarded-lock-execute';
 
@@ -145,9 +146,13 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 			let headAvailable = false;
 			let headResolutionIndeterminate = false;
 			let locked = false;
+			// A guarded wallet skipped only because it pays in another asset: a
+			// forced-Hydra request then fails for that reason, not "no head".
+			let isExcludedByAsset = false;
 			for (const hotWallet of paymentContract.HotWallets) {
 				// Includes the asset rule: a guarded wallet only takes purchases priced in its one asset.
 				if (!isPackableForWallet(request, { walletId: hotWallet.id, guarded: hotWallet.GuardedWallet })) {
+					isExcludedByAsset ||= isHotWalletEligibleForL2Lock(request, hotWallet.id);
 					continue;
 				}
 				let head;
@@ -307,7 +312,12 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 			}
 
 			if (forcedHydra && !locked && !headAvailable && !headResolutionIndeterminate) {
-				await failForcedL2Request(request, 'forceLayer=Hydra but no open head is available for this request');
+				await failForcedL2Request(
+					request,
+					isExcludedByAsset
+						? "forceLayer=Hydra but no head-bearing wallet pays in this purchase's asset"
+						: 'forceLayer=Hydra but no open head is available for this request',
+				);
 			} else if (forcedHydra && !locked && headResolutionIndeterminate) {
 				logger.info('L2 lock: Hydra availability is indeterminate; leaving forced request for retry', {
 					requestId: request.id,

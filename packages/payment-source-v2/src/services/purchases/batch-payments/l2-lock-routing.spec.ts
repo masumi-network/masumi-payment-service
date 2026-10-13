@@ -308,4 +308,24 @@ describe('processL2PurchaseLocks guarded wallets', () => {
 		expect(mockExecuteGuardedL2Lock).not.toHaveBeenCalled();
 		expect(mockExecuteL2Lock).not.toHaveBeenCalled();
 	});
+	it('fails a forced-Hydra token purchase on its asset, not on a missing head', async () => {
+		const source = sourceWithFreeGuardedWallet();
+		source.PurchaseRequests[0] = {
+			...source.PurchaseRequests[0]!,
+			forceLayer: TransactionLayer.L2 as never,
+			PaidFunds: [{ unit: `${'16'.repeat(28)}0014df10745553444d`, amount: 5_000_000n }],
+		};
+		mockPaymentSourceFindMany.mockResolvedValue([source]);
+
+		await processL2PurchaseLocks();
+
+		expect(mockLocateGuardedWallet).not.toHaveBeenCalled();
+		expect(mockPurchaseRequestUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					NextAction: { create: expect.objectContaining({ errorNote: expect.stringContaining("purchase's asset") }) },
+				}),
+			}),
+		);
+	});
 });
