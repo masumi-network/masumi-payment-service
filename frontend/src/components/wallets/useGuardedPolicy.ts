@@ -64,13 +64,20 @@ export function useGuardedPolicy({
     }
     setIsBusy(true);
     try {
+      // An agent lock may have landed since the page loaded. Compare against the
+      // wallet as it is now, or an honest update looks tampered.
+      const queryKey = guardedWalletQueryKey(hotWalletId);
+      await queryClient.refetchQueries({ queryKey, exact: true });
+      const fresh = queryClient.getQueryData<{ chain: GuardedChain | null } | null>(queryKey);
+      if (fresh?.chain == null)
+        throw new Error('Could not read the wallet on L1. Is it in a head?');
       const prepared = await dataOf(
         postWalletGuardedPolicy({ client: apiClient, body: built.body }),
         'Failed to prepare the update',
       );
       const refusal = policyUpdateProblem(
         decodePolicyUpdateTx(prepared.unsignedTx),
-        policyExpectation({ guarded, chain, agentVkh, body: built.body }),
+        policyExpectation({ guarded, chain: fresh.chain, agentVkh, body: built.body }),
       );
       if (refusal != null) throw new Error(`Not signed. ${refusal}`);
       const signedTx = await ownerWallet.signPartial(prepared.unsignedTx);
