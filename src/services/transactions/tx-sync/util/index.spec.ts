@@ -1,6 +1,12 @@
-import { OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import { checkPaymentAmountsMatch, getCardanoFeesBuyer, getCardanoFeesSeller, redeemerToOnChainState } from './index';
+import {
+	checkPaymentAmountsMatch,
+	extractOnChainTransactionData,
+	getCardanoFeesBuyer,
+	getCardanoFeesSeller,
+	redeemerToOnChainState,
+} from './index';
 
 const V1 = PaymentSourceType.Web3CardanoV1;
 const V2 = PaymentSourceType.Web3CardanoV2;
@@ -278,5 +284,40 @@ describe('redeemerToOnChainState', () => {
 
 	it('returns null for unknown redeemer versions', () => {
 		expect(redeemerToOnChainState(99, noContract, valueMatches)).toBeNull();
+	});
+});
+
+describe('extractOnChainTransactionData', () => {
+	const contract = { smartContractAddress: 'addr_test1escrow', network: Network.Preprod, paymentSourceType: V2 };
+	const escrowOutput = { address: contract.smartContractAddress, inline_datum: 'd87980', reference_script_hash: null };
+	const walletInput = { address: 'addr_test1smartwallet', inline_datum: 'd87980', reference_script_hash: null };
+	/** Only the fields the classifier reads before it decodes datums. */
+	const txWith = (inputs: object[], hasRedeemers: boolean) =>
+		({
+			utxos: { inputs, outputs: [escrowOutput] },
+			transaction: { witness_set: () => ({ redeemers: () => (hasRedeemers ? { len: () => 1 } : undefined) }) },
+		}) as unknown as Parameters<typeof extractOnChainTransactionData>[0];
+
+	it('reads a plain lock with no redeemers as Initial', () => {
+		expect(extractOnChainTransactionData(txWith([], false), contract)).toEqual({
+			type: 'Initial',
+			valueOutputs: [escrowOutput],
+		});
+	});
+
+	it('reads a guarded lock, which spends the smart wallet with a redeemer, as Initial', () => {
+		// The redeemer belongs to the smart wallet script, not the escrow.
+		expect(extractOnChainTransactionData(txWith([walletInput], true), contract)).toEqual({
+			type: 'Initial',
+			valueOutputs: [escrowOutput],
+		});
+	});
+
+	it('still refuses a contract spend without a redeemer', () => {
+		const escrowInput = { ...walletInput, address: contract.smartContractAddress };
+		expect(extractOnChainTransactionData(txWith([escrowInput], false), contract)).toEqual({
+			type: 'Invalid',
+			error: 'Smart Contract redeemer invalid',
+		});
 	});
 });

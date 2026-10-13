@@ -296,14 +296,12 @@ export function extractOnChainTransactionData(
 			error: 'Smart Contract value output has reference script set',
 		};
 	}
+	// No contract input means the tx only creates escrow outputs. Its redeemers,
+	// if any, spend other scripts (a guarded lock spends the smart wallet). The
+	// Initial handlers check each output's datum and value and that the buyer
+	// address is an input; they never read redeemers.
+	if (valueInputs.length == 0) return { type: 'Initial', valueOutputs };
 	const redeemers = tx.transaction.witness_set().redeemers();
-	if (valueInputs.length == 0 && !redeemers) return { type: 'Initial', valueOutputs };
-	if (valueInputs.length == 0) {
-		return {
-			type: 'Invalid',
-			error: 'Smart Contract has redeemers but no value inputs at the contract address',
-		};
-	}
 	if (!redeemers) {
 		return {
 			type: 'Invalid',
