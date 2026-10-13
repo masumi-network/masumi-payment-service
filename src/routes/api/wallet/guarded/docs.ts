@@ -11,6 +11,17 @@ import {
 } from '@/routes/api/wallet/guarded/schemas';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 
+/** A wallet that holds tUSDM next to ADA and limits both. */
+export const guardedAssetsExample = [
+	{ unit: 'lovelace', quantity: '200000000', limit: '1000000000', spentInPeriod: '120000000' },
+	{
+		unit: '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d',
+		quantity: '50000000',
+		limit: '100000000',
+		spentInPeriod: '5000000',
+	},
+];
+
 const recordExample = {
 	id: 'cmg1guarded0000example',
 	hotWalletId: 'cmg1hotwallet000example',
@@ -21,6 +32,7 @@ const recordExample = {
 	scriptAddress: 'addr_test1_smart_wallet_address_example',
 	policyId: 'b'.repeat(56),
 	exchainWalletId: 'wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ',
+	governedAsset: 'lovelace',
 	createdAt: new Date('2026-09-29T12:00:00Z'),
 	updatedAt: new Date('2026-09-29T12:00:00Z'),
 };
@@ -46,6 +58,7 @@ export function registerGuardedWalletPaths({ registry, apiKeyAuth }: SwaggerRegi
 					periodStart: new Date('2026-09-29T09:00:00Z'),
 					periodLengthMs: '86400000',
 					minBalanceLovelace: '5000000',
+					assets: guardedAssetsExample,
 				},
 				chainError: null,
 			}),
@@ -57,7 +70,7 @@ export function registerGuardedWalletPaths({ registry, apiKeyAuth }: SwaggerRegi
 		method: 'post',
 		path: '/wallet/guarded',
 		description:
-			"Binds a Purchasing hot wallet on a V2 payment source to an Exchain quorum co-signed smart wallet the owner minted. The node derives the script from the owner address, quorum and threshold, requires exactly one state-token UTxO at it, and requires the datum's agent to be the hot wallet key. From then on the batch job locks that hot wallet's purchases from the smart wallet, and only with the quorum's co-signature. Pass exchainWalletId for a wallet already registered with Exchain, or register to register it now (the mandate's daily limit must equal the on-chain period limit).",
+			"Binds a Purchasing hot wallet on a V2 payment source to an Exchain quorum co-signed smart wallet the owner minted. The node derives the script from the owner address, quorum and threshold, requires exactly one state-token UTxO at it, and requires the datum's agent to be the hot wallet key. From then on the batch job locks that hot wallet's purchases from the smart wallet, and only with the quorum's co-signature. governedAsset is the one asset agents pay in (lovelace, or USDM / USDCx where the network has it); the on-chain limit must list it. Pass exchainWalletId for a lovelace wallet already registered with Exchain, or register to register it now (the mandate is counted in the governed asset, and its daily limit must equal that asset's on-chain period limit). A wallet that pays in a token must register now.",
 		summary: 'Attach a guarded smart wallet to a hot wallet. (admin access required)',
 		tags: ['wallet'],
 		security: secured,
@@ -73,6 +86,7 @@ export function registerGuardedWalletPaths({ registry, apiKeyAuth }: SwaggerRegi
 								quorumVkhs: recordExample.quorumVkhs,
 								threshold: 3,
 								stateTokenName: recordExample.stateTokenName,
+								governedAsset: 'lovelace',
 								exchainWalletId: recordExample.exchainWalletId,
 							},
 						}),

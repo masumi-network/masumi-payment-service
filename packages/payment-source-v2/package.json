@@ -12,6 +12,7 @@
 		"./services/tx-sync/handlers": "./src/services/tx-sync/handlers.ts",
 		"./hydra-deposit/deposit-datum": "./src/hydra-deposit/deposit-datum.ts",
 		"./hydra-deposit/recover-tx": "./src/hydra-deposit/recover-tx.ts",
+		"./smart-wallet/governed-asset": "./src/smart-wallet/governed-asset.ts",
 		"./smart-wallet/guarded-wallet": "./src/smart-wallet/guarded-wallet.ts",
 		"./smart-wallet/hydra-transfer": "./src/smart-wallet/hydra-transfer.ts",
 		"./smart-wallet/wallet-lifecycle": "./src/smart-wallet/wallet-lifecycle.ts"

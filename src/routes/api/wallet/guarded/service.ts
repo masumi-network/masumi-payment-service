@@ -6,6 +6,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { logger } from '@masumi/payment-core/logger';
 import { z } from '@masumi/payment-core/zod';
+import { governableAssetIds, governedLimitOf } from '@masumi/payment-source-v2/smart-wallet/governed-asset';
 import {
 	ExchainRegistrationError,
 	inspectGuardedWallet,
@@ -15,6 +16,7 @@ import {
 } from '@masumi/payment-source-v2/smart-wallet/guarded-wallet';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { assetsView } from './assets-view';
 import type { getGuardedWalletSchemaOutput, postGuardedWalletSchemaInput } from './schemas';
 
 type AttachInput = z.infer<typeof postGuardedWalletSchemaInput>;
@@ -73,6 +75,16 @@ export async function attachGuardedWallet(input: AttachInput, scope: Scope) {
 	if (state.agentVkh !== hotWallet.walletVkey) {
 		throw createHttpError(409, "The smart wallet's agent key is not this hot wallet's key");
 	}
+	if (!governableAssetIds(params.network).includes(input.governedAsset)) {
+		throw createHttpError(400, `Agents cannot pay in ${input.governedAsset} on ${params.network}`);
+	}
+	const governedLimit = governedLimitOf(state.assets, input.governedAsset);
+	if (governedLimit == null) {
+		throw createHttpError(
+			409,
+			`The smart wallet's on-chain limit does not list ${input.governedAsset}, so it could never pay in it`,
+		);
+	}
 
 	let exchainWalletId = input.exchainWalletId ?? null;
 	let mandateEnglish: string | null = null;
@@ -81,10 +93,10 @@ export async function attachGuardedWallet(input: AttachInput, scope: Scope) {
 		if (EXCHAIN_COSIGN_URL == null || EXCHAIN_NODE_TOKEN == null || EXCHAIN_NODE_ID == null || EXCHAIN_ORG_ID == null) {
 			throw createHttpError(503, 'Exchain co-signing is not configured on this node');
 		}
-		if (BigInt(input.register.mandate.daily) !== state.periodLimitLovelace) {
+		if (BigInt(input.register.mandate.daily) !== governedLimit) {
 			throw createHttpError(
 				400,
-				`The mandate's daily limit must equal the wallet's on-chain period limit (${state.periodLimitLovelace} lovelace)`,
+				`The mandate's daily limit must equal the wallet's on-chain period limit for ${input.governedAsset} (${governedLimit})`,
 			);
 		}
 		try {
@@ -97,6 +109,7 @@ export async function attachGuardedWallet(input: AttachInput, scope: Scope) {
 				agentVkhs: [state.agentVkh],
 				escrowAddresses: [hotWallet.PaymentSource.smartContractAddress],
 				mandate: input.register.mandate,
+				governedAsset: input.governedAsset,
 				// Real purchases name registered agents, so Exchain may check them against the registry.
 				registryGate: true,
 			});
@@ -132,6 +145,7 @@ export async function attachGuardedWallet(input: AttachInput, scope: Scope) {
 								scriptAddress: state.scriptAddress,
 								policyId: state.policyId,
 								exchainWalletId,
+								governedAsset: input.governedAsset,
 							},
 						});
 					},
@@ -175,6 +189,7 @@ export async function getGuardedWallet(
 				periodStart: new Date(Number(state.periodStartMs)),
 				periodLengthMs: state.periodLengthMs.toString(),
 				minBalanceLovelace: state.minBalanceLovelace.toString(),
+				assets: assetsView(state),
 			},
 			chainError: null,
 		};

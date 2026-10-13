@@ -47,6 +47,7 @@ const walletState = {
 	periodStartMs: 0n,
 	periodLengthMs: 86_400_000n,
 	minBalanceLovelace: 2_000_000n,
+	assets: [{ unit: 'lovelace', quantity: 10_000_000n, limit: 5_000_000n, spentInPeriod: 0n }],
 };
 const unsettled = { status: GuardedHydraTransferStatus.Submitted };
 

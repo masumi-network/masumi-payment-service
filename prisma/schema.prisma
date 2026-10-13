@@ -184,6 +184,8 @@ model GuardedWallet {
   scriptAddress   String
   policyId        String
   exchainWalletId String?
+  /// The one asset agents pay in, in Exchain AssetId form: `lovelace` or `<policy>.<nameHex>`.
+  governedAsset   String    @default("lovelace")
   HotWallet       HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
   HydraTransfers  GuardedHydraTransfer[]
 }

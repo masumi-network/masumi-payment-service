@@ -45,7 +45,10 @@ const input = {
 	quorumVkhs: ['1'.repeat(56), '2'.repeat(56)],
 	threshold: 2,
 	stateTokenName: 'b'.repeat(64),
+	governedAsset: 'lovelace',
 };
+const TUSDM_UNIT = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
+const TUSDM_ID = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde.0014df10745553444d';
 const mandate = {
 	perTxCap: '50000000',
 	daily: '1000000000',
@@ -81,6 +84,10 @@ beforeEach(() => {
 		policyId: 'c'.repeat(56),
 		agentVkh: AGENT,
 		periodLimitLovelace: 1_000_000_000n,
+		assets: [
+			{ unit: 'lovelace', quantity: 75_000_000n, limit: 1_000_000_000n, spentInPeriod: 0n },
+			{ unit: TUSDM_UNIT, quantity: 0n, limit: 100_000_000n, spentInPeriod: 0n },
+		],
 	});
 	mockUpdateMany.mockResolvedValue({ count: 1 });
 	mockCreate.mockImplementation(({ data }) => Promise.resolve({ id: 'gw-1', ...data }));
@@ -135,7 +142,7 @@ describe('attachGuardedWallet', () => {
 	});
 
 	it('refuses a smart wallet whose agent is another key', async () => {
-		mockInspect.mockResolvedValue({ scriptAddress: 's', policyId: 'p', agentVkh: 'f'.repeat(56) });
+		mockInspect.mockResolvedValue({ scriptAddress: 's', policyId: 'p', agentVkh: 'f'.repeat(56), assets: [] });
 		await expect(attachGuardedWallet(input, scope)).rejects.toMatchObject({ status: 409 });
 		expect(mockCreate).not.toHaveBeenCalled();
 	});
@@ -149,6 +156,7 @@ describe('attachGuardedWallet', () => {
 				nodeId: 'node',
 				orgId: 'org',
 				registryGate: true,
+				governedAsset: 'lovelace',
 			}),
 		);
 		expect(record).toEqual(
@@ -161,5 +169,43 @@ describe('attachGuardedWallet', () => {
 			attachGuardedWallet({ ...input, register: { mandate: { ...mandate, daily: '5' } } }, scope),
 		).rejects.toMatchObject({ status: 400 });
 		expect(mockRegister).not.toHaveBeenCalled();
+	});
+
+	it('registers a tUSDM wallet against its tUSDM limit', async () => {
+		const record = await attachGuardedWallet(
+			{ ...input, governedAsset: TUSDM_ID, register: { mandate: { ...mandate, daily: '100000000' } } },
+			scope,
+		);
+		expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({ governedAsset: TUSDM_ID }));
+		expect(mockCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ governedAsset: TUSDM_ID }) });
+		expect(record).toEqual(expect.objectContaining({ governedAsset: TUSDM_ID }));
+	});
+
+	it('refuses a tUSDM mandate measured against the lovelace limit', async () => {
+		await expect(
+			attachGuardedWallet({ ...input, governedAsset: TUSDM_ID, register: { mandate } }, scope),
+		).rejects.toMatchObject({ status: 400 });
+		expect(mockRegister).not.toHaveBeenCalled();
+	});
+
+	it('refuses an asset the on-chain limit does not list', async () => {
+		mockInspect.mockResolvedValue({
+			scriptAddress: 'addr_test1script',
+			policyId: 'c'.repeat(56),
+			agentVkh: AGENT,
+			assets: [{ unit: 'lovelace', quantity: 1n, limit: 1n, spentInPeriod: 0n }],
+		});
+		await expect(attachGuardedWallet({ ...input, governedAsset: TUSDM_ID }, scope)).rejects.toMatchObject({
+			status: 409,
+		});
+		expect(mockCreate).not.toHaveBeenCalled();
+	});
+
+	it('refuses an asset the network does not offer', async () => {
+		const usdcx = '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e34.5553444378';
+		await expect(attachGuardedWallet({ ...input, governedAsset: usdcx }, scope)).rejects.toMatchObject({
+			status: 400,
+		});
+		expect(mockCreate).not.toHaveBeenCalled();
 	});
 });

@@ -15680,6 +15680,10 @@ export type DeleteWalletGuardedResponses = {
              */
             policyId: string;
             exchainWalletId: string | null;
+            /**
+             * The one asset agents pay in: lovelace or <policy>.<nameHex>
+             */
+            governedAsset: string;
             createdAt: Date;
             updatedAt: Date;
         };
@@ -15737,6 +15741,10 @@ export type GetWalletGuardedResponses = {
                  */
                 policyId: string;
                 exchainWalletId: string | null;
+                /**
+                 * The one asset agents pay in: lovelace or <policy>.<nameHex>
+                 */
+                governedAsset: string;
                 createdAt: Date;
                 updatedAt: Date;
             } | null;
@@ -15768,6 +15776,27 @@ export type GetWalletGuardedResponses = {
                  * Reserve the wallet never spends below, in lovelace
                  */
                 minBalanceLovelace: string;
+                /**
+                 * Every asset the wallet holds or limits, the state token excluded
+                 */
+                assets: Array<{
+                    /**
+                     * lovelace or <policy><nameHex>
+                     */
+                    unit: string;
+                    /**
+                     * Held by the smart wallet, in minor units
+                     */
+                    quantity: string;
+                    /**
+                     * On-chain limit per period; null when unlisted, so the asset is frozen
+                     */
+                    limit: string | null;
+                    /**
+                     * Spent in the period the datum last recorded; null when unlisted
+                     */
+                    spentInPeriod: string | null;
+                }>;
             } | null;
             /**
              * Why the chain read failed
@@ -15805,6 +15834,10 @@ export type PostWalletGuardedData = {
          */
         stateTokenName: string;
         /**
+         * The one asset agents pay in: lovelace, or USDM / USDCx where the network has it. The on-chain limit must list it
+         */
+        governedAsset?: string;
+        /**
          * Set when the wallet is already registered with Exchain
          */
         exchainWalletId?: string;
@@ -15817,23 +15850,23 @@ export type PostWalletGuardedData = {
              */
             mandate: {
                 /**
-                 * Largest single lock Exchain co-signs, in lovelace
+                 * Largest single lock Exchain co-signs, in minor units of the governed asset
                  */
                 perTxCap: string;
                 /**
-                 * Daily limit, in lovelace. Must equal the wallet's on-chain period limit
+                 * Daily limit, in minor units of the governed asset. Must equal the wallet's on-chain period limit for it
                  */
                 daily: string;
                 /**
-                 * Daily limit per seller, in lovelace
+                 * Daily limit per seller, in minor units of the governed asset
                  */
                 perSeller: string;
                 /**
-                 * Daily limit per agent, in lovelace
+                 * Daily limit per agent, in minor units of the governed asset
                  */
                 perAgent: string;
                 /**
-                 * Lifetime limit, in lovelace
+                 * Lifetime limit, in minor units of the governed asset
                  */
                 envelope: string;
                 /**
@@ -15897,6 +15930,10 @@ export type PostWalletGuardedResponses = {
              */
             policyId: string;
             exchainWalletId: string | null;
+            /**
+             * The one asset agents pay in: lovelace or <policy>.<nameHex>
+             */
+            governedAsset: string;
             createdAt: Date;
             updatedAt: Date;
             /**
@@ -15958,6 +15995,24 @@ export type GetWalletGuardedHydraResponses = {
                 periodStart: Date;
                 periodLengthMs: string;
                 minBalanceLovelace: string;
+                assets: Array<{
+                    /**
+                     * lovelace or <policy><nameHex>
+                     */
+                    unit: string;
+                    /**
+                     * Held by the smart wallet, in minor units
+                     */
+                    quantity: string;
+                    /**
+                     * On-chain limit per period; null when unlisted, so the asset is frozen
+                     */
+                    limit: string | null;
+                    /**
+                     * Spent in the period the datum last recorded; null when unlisted
+                     */
+                    spentInPeriod: string | null;
+                }>;
             } | null;
             l1Error: string | null;
             /**

@@ -658,6 +658,8 @@ async function register(state: DemoState): Promise<void> {
 		agentVkhs,
 		escrowAddresses,
 		mandate: EXCHAIN_MANDATE,
+		// The demo wallet limits lovelace only.
+		governedAsset: 'lovelace',
 		// The demo's purchases carry synthetic agent identifiers that are not in the registry.
 		registryGate: false,
 		trustedPlaintextHosts: config.trustedPlaintextHosts,

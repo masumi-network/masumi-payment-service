@@ -1,7 +1,7 @@
 import { BlockfrostProvider, resolvePaymentKeyHash, type UTxO } from '@meshsdk/core';
 import { z } from '@masumi/payment-core/zod';
 import { assertSafeCosignUrl } from './cosign-client';
-import { assetValueGet, lovelaceOf } from './wallet';
+import { assetValueEntries, assetValueGet, lovelaceOf, type WalletDatum } from './wallet';
 import { fetchWalletUtxo, loadSmartWalletScript, readWalletDatum, type SmartWalletScript } from './wallet-lifecycle';
 
 /**
@@ -33,6 +33,16 @@ export type GuardedWalletState = {
 	periodStartMs: bigint;
 	periodLengthMs: bigint;
 	minBalanceLovelace: bigint;
+	/** Every asset the wallet holds or limits, the state token excluded. `unit` is `lovelace` or `<policy><nameHex>`. */
+	assets: GuardedWalletAsset[];
+};
+
+/** One asset of a guarded wallet. `limit` and `spentInPeriod` are null when the datum does not list it, so it is frozen. */
+export type GuardedWalletAsset = {
+	unit: string;
+	quantity: bigint;
+	limit: bigint | null;
+	spentInPeriod: bigint | null;
 };
 
 /** Derive the wallet script and read its single state-token UTxO. Throws when it is not exactly one. */
@@ -61,10 +71,32 @@ export function describeWalletUtxo(
 		periodStartMs: datum.periodStart,
 		periodLengthMs: datum.periodLength,
 		minBalanceLovelace: datum.minBalanceLovelace,
+		assets: walletAssets(datum, walletUtxo, script.policyId),
 	};
 }
 
-/** The mandate Exchain enforces, in lovelace. It cannot change once registered. */
+function walletAssets(datum: WalletDatum, walletUtxo: UTxO, stateTokenPolicyId: string): GuardedWalletAsset[] {
+	const assets = new Map<string, GuardedWalletAsset>();
+	const entry = (unit: string) => {
+		const key = unit === '' ? 'lovelace' : unit;
+		const existing = assets.get(key) ?? { unit: key, quantity: 0n, limit: null, spentInPeriod: null };
+		assets.set(key, existing);
+		return existing;
+	};
+	// Limits first, so the list keeps the datum's order and held-but-unlisted assets follow.
+	for (const { policyId, assetName, quantity } of assetValueEntries(datum.limit)) {
+		const asset = entry(`${policyId}${assetName}`);
+		asset.limit = quantity;
+		asset.spentInPeriod = assetValueGet(datum.spentInPeriod, policyId, assetName) ?? 0n;
+	}
+	for (const { unit, quantity } of walletUtxo.output.amount) {
+		if (unit.startsWith(stateTokenPolicyId)) continue;
+		entry(unit).quantity += BigInt(quantity);
+	}
+	return [...assets.values()];
+}
+
+/** The mandate Exchain enforces, in minor units of the governed asset. It cannot change once registered. */
 export type ExchainMandate = {
 	perTxCap: string;
 	daily: string;
@@ -99,6 +131,8 @@ export async function registerGuardedWalletWithExchain(params: {
 	agentVkhs: string[];
 	escrowAddresses: string[];
 	mandate: ExchainMandate;
+	/** Exchain `AssetId` the mandate is counted in: `lovelace` or `<policy>.<nameHex>`. */
+	governedAsset: string;
 	/** Whether Exchain checks each purchase's agent against the registry. */
 	registryGate: boolean;
 	trustedPlaintextHosts?: string[];
@@ -113,7 +147,8 @@ export async function registerGuardedWalletWithExchain(params: {
 		quorumKeyHashes: wallet.quorumVkhs,
 		quorumThreshold: wallet.threshold,
 		escrowAddresses: params.escrowAddresses,
-		governedAsset: { id: 'lovelace', decimals: 6 },
+		// Exchain accepts only 6-decimal assets; ADA, USDM and USDCx all are.
+		governedAsset: { id: params.governedAsset, decimals: 6 },
 		constitution: { params: params.mandate },
 		network: wallet.network,
 		orgId: params.orgId,

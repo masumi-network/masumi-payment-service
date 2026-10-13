@@ -1,5 +1,6 @@
 import { GuardedHydraTransferDirection, GuardedHydraTransferStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
+import { guardedWalletAssetSchema } from '../schemas';
 
 const hotWalletId = z.string().min(1).describe('The guarded Purchasing hot wallet');
 const cborHex = z
@@ -45,6 +46,7 @@ export const getGuardedHydraSchemaOutput = z.object({
 			periodStart: z.date(),
 			periodLengthMs: z.string(),
 			minBalanceLovelace: z.string(),
+			assets: z.array(guardedWalletAssetSchema),
 		})
 		.nullable()
 		.describe('The wallet datum and balance where the wallet is now'),

@@ -6,6 +6,7 @@ import {
 	type GuardedWalletState,
 } from '@masumi/payment-source-v2/smart-wallet/guarded-wallet';
 import { DEPOSIT_L1_GRACE_MS, WITHDRAW_SETTLE_TIMEOUT_MS } from '@masumi/payment-source-v2/smart-wallet/hydra-transfer';
+import { assetsView } from '../assets-view';
 import { findGuardedWalletInHead } from './location';
 import { loadGuardedHotWallet, transferView } from './transfers';
 
@@ -25,6 +26,7 @@ function stateView(state: GuardedWalletState) {
 		periodStart: new Date(Number(state.periodStartMs)),
 		periodLengthMs: state.periodLengthMs.toString(),
 		minBalanceLovelace: state.minBalanceLovelace.toString(),
+		assets: assetsView(state),
 	};
 }
 

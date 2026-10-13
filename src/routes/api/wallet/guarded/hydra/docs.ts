@@ -1,6 +1,7 @@
 // Colocated OpenAPI docs for this route area. When you add or change an
 // endpoint here, update THIS file in the same PR. CI regenerates
 // openapi-docs.json and fails on drift.
+import { guardedAssetsExample } from '../docs';
 import {
 	getGuardedHydraSchemaInput,
 	getGuardedHydraSchemaOutput,
@@ -83,6 +84,7 @@ export function registerGuardedHydraPaths({ registry, apiKeyAuth }: SwaggerRegis
 					periodStart: new Date('2026-10-12T09:00:00Z'),
 					periodLengthMs: '86400000',
 					minBalanceLovelace: '5000000',
+					assets: guardedAssetsExample,
 				},
 				l1Error: null,
 				transfers: [

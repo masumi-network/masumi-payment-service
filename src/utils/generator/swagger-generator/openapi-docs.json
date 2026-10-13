@@ -37282,6 +37282,10 @@
                                                             "type": "string",
                                                             "nullable": true
                                                         },
+                                                        "governedAsset": {
+                                                            "type": "string",
+                                                            "description": "The one asset agents pay in: lovelace or <policy>.<nameHex>"
+                                                        },
                                                         "createdAt": {
                                                             "type": "string",
                                                             "format": "date-time"
@@ -37301,6 +37305,7 @@
                                                         "scriptAddress",
                                                         "policyId",
                                                         "exchainWalletId",
+                                                        "governedAsset",
                                                         "createdAt",
                                                         "updatedAt"
                                                     ],
@@ -37334,6 +37339,39 @@
                                                         "minBalanceLovelace": {
                                                             "type": "string",
                                                             "description": "Reserve the wallet never spends below, in lovelace"
+                                                        },
+                                                        "assets": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string",
+                                                                        "description": "lovelace or <policy><nameHex>"
+                                                                    },
+                                                                    "quantity": {
+                                                                        "type": "string",
+                                                                        "description": "Held by the smart wallet, in minor units"
+                                                                    },
+                                                                    "limit": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "description": "On-chain limit per period; null when unlisted, so the asset is frozen"
+                                                                    },
+                                                                    "spentInPeriod": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "description": "Spent in the period the datum last recorded; null when unlisted"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "quantity",
+                                                                    "limit",
+                                                                    "spentInPeriod"
+                                                                ]
+                                                            },
+                                                            "description": "Every asset the wallet holds or limits, the state token excluded"
                                                         }
                                                     },
                                                     "required": [
@@ -37342,7 +37380,8 @@
                                                         "spentInPeriodLovelace",
                                                         "periodStart",
                                                         "periodLengthMs",
-                                                        "minBalanceLovelace"
+                                                        "minBalanceLovelace",
+                                                        "assets"
                                                     ],
                                                     "description": "Null when not guarded or the chain read failed"
                                                 },
@@ -37380,6 +37419,7 @@
                                                 "scriptAddress": "addr_test1_smart_wallet_address_example",
                                                 "policyId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                                                 "exchainWalletId": "wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ",
+                                                "governedAsset": "lovelace",
                                                 "createdAt": "2026-09-29T12:00:00.000Z",
                                                 "updatedAt": "2026-09-29T12:00:00.000Z"
                                             },
@@ -37389,7 +37429,21 @@
                                                 "spentInPeriodLovelace": "120000000",
                                                 "periodStart": "2026-09-29T09:00:00.000Z",
                                                 "periodLengthMs": "86400000",
-                                                "minBalanceLovelace": "5000000"
+                                                "minBalanceLovelace": "5000000",
+                                                "assets": [
+                                                    {
+                                                        "unit": "lovelace",
+                                                        "quantity": "200000000",
+                                                        "limit": "1000000000",
+                                                        "spentInPeriod": "120000000"
+                                                    },
+                                                    {
+                                                        "unit": "16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d",
+                                                        "quantity": "50000000",
+                                                        "limit": "100000000",
+                                                        "spentInPeriod": "5000000"
+                                                    }
+                                                ]
                                             },
                                             "chainError": null
                                         }
@@ -37407,7 +37461,7 @@
                 }
             },
             "post": {
-                "description": "Binds a Purchasing hot wallet on a V2 payment source to an Exchain quorum co-signed smart wallet the owner minted. The node derives the script from the owner address, quorum and threshold, requires exactly one state-token UTxO at it, and requires the datum's agent to be the hot wallet key. From then on the batch job locks that hot wallet's purchases from the smart wallet, and only with the quorum's co-signature. Pass exchainWalletId for a wallet already registered with Exchain, or register to register it now (the mandate's daily limit must equal the on-chain period limit).",
+                "description": "Binds a Purchasing hot wallet on a V2 payment source to an Exchain quorum co-signed smart wallet the owner minted. The node derives the script from the owner address, quorum and threshold, requires exactly one state-token UTxO at it, and requires the datum's agent to be the hot wallet key. From then on the batch job locks that hot wallet's purchases from the smart wallet, and only with the quorum's co-signature. governedAsset is the one asset agents pay in (lovelace, or USDM / USDCx where the network has it); the on-chain limit must list it. Pass exchainWalletId for a lovelace wallet already registered with Exchain, or register to register it now (the mandate is counted in the governed asset, and its daily limit must equal that asset's on-chain period limit). A wallet that pays in a token must register now.",
                 "summary": "Attach a guarded smart wallet to a hot wallet. (admin access required)",
                 "tags": [
                     "wallet"
@@ -37457,6 +37511,12 @@
                                         "pattern": "^[0-9a-f]{64}$",
                                         "description": "Asset name of the wallet state token (32-byte hex)"
                                     },
+                                    "governedAsset": {
+                                        "type": "string",
+                                        "pattern": "^(lovelace|[0-9a-f]{56}\\.([0-9a-f]{2}){0,32})$",
+                                        "default": "lovelace",
+                                        "description": "The one asset agents pay in: lovelace, or USDM / USDCx where the network has it. The on-chain limit must list it"
+                                    },
                                     "exchainWalletId": {
                                         "type": "string",
                                         "pattern": "^wal_[0-9A-HJKMNP-TV-Z]{26}$",
@@ -37471,27 +37531,27 @@
                                                     "perTxCap": {
                                                         "type": "string",
                                                         "pattern": "^\\d+$",
-                                                        "description": "Largest single lock Exchain co-signs, in lovelace"
+                                                        "description": "Largest single lock Exchain co-signs, in minor units of the governed asset"
                                                     },
                                                     "daily": {
                                                         "type": "string",
                                                         "pattern": "^\\d+$",
-                                                        "description": "Daily limit, in lovelace. Must equal the wallet's on-chain period limit"
+                                                        "description": "Daily limit, in minor units of the governed asset. Must equal the wallet's on-chain period limit for it"
                                                     },
                                                     "perSeller": {
                                                         "type": "string",
                                                         "pattern": "^\\d+$",
-                                                        "description": "Daily limit per seller, in lovelace"
+                                                        "description": "Daily limit per seller, in minor units of the governed asset"
                                                     },
                                                     "perAgent": {
                                                         "type": "string",
                                                         "pattern": "^\\d+$",
-                                                        "description": "Daily limit per agent, in lovelace"
+                                                        "description": "Daily limit per agent, in minor units of the governed asset"
                                                     },
                                                     "envelope": {
                                                         "type": "string",
                                                         "pattern": "^\\d+$",
-                                                        "description": "Lifetime limit, in lovelace"
+                                                        "description": "Lifetime limit, in minor units of the governed asset"
                                                     },
                                                     "burstPerMinute": {
                                                         "type": "integer",
@@ -37533,6 +37593,7 @@
                                     ],
                                     "threshold": 3,
                                     "stateTokenName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                    "governedAsset": "lovelace",
                                     "exchainWalletId": "wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ"
                                 }
                             }
@@ -37589,6 +37650,10 @@
                                                     "type": "string",
                                                     "nullable": true
                                                 },
+                                                "governedAsset": {
+                                                    "type": "string",
+                                                    "description": "The one asset agents pay in: lovelace or <policy>.<nameHex>"
+                                                },
                                                 "createdAt": {
                                                     "type": "string",
                                                     "format": "date-time"
@@ -37613,6 +37678,7 @@
                                                 "scriptAddress",
                                                 "policyId",
                                                 "exchainWalletId",
+                                                "governedAsset",
                                                 "createdAt",
                                                 "updatedAt",
                                                 "mandateEnglish"
@@ -37639,6 +37705,7 @@
                                             "scriptAddress": "addr_test1_smart_wallet_address_example",
                                             "policyId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                                             "exchainWalletId": "wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ",
+                                            "governedAsset": "lovelace",
                                             "createdAt": "2026-09-29T12:00:00.000Z",
                                             "updatedAt": "2026-09-29T12:00:00.000Z",
                                             "mandateEnglish": null
@@ -37752,6 +37819,10 @@
                                                     "type": "string",
                                                     "nullable": true
                                                 },
+                                                "governedAsset": {
+                                                    "type": "string",
+                                                    "description": "The one asset agents pay in: lovelace or <policy>.<nameHex>"
+                                                },
                                                 "createdAt": {
                                                     "type": "string",
                                                     "format": "date-time"
@@ -37771,6 +37842,7 @@
                                                 "scriptAddress",
                                                 "policyId",
                                                 "exchainWalletId",
+                                                "governedAsset",
                                                 "createdAt",
                                                 "updatedAt"
                                             ]
@@ -37796,6 +37868,7 @@
                                             "scriptAddress": "addr_test1_smart_wallet_address_example",
                                             "policyId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                                             "exchainWalletId": "wal_01M3P5ZM0EP8R4NCQWS7TBWZFZ",
+                                            "governedAsset": "lovelace",
                                             "createdAt": "2026-09-29T12:00:00.000Z",
                                             "updatedAt": "2026-09-29T12:00:00.000Z"
                                         }
@@ -37898,6 +37971,38 @@
                                                         },
                                                         "minBalanceLovelace": {
                                                             "type": "string"
+                                                        },
+                                                        "assets": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string",
+                                                                        "description": "lovelace or <policy><nameHex>"
+                                                                    },
+                                                                    "quantity": {
+                                                                        "type": "string",
+                                                                        "description": "Held by the smart wallet, in minor units"
+                                                                    },
+                                                                    "limit": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "description": "On-chain limit per period; null when unlisted, so the asset is frozen"
+                                                                    },
+                                                                    "spentInPeriod": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "description": "Spent in the period the datum last recorded; null when unlisted"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "quantity",
+                                                                    "limit",
+                                                                    "spentInPeriod"
+                                                                ]
+                                                            }
                                                         }
                                                     },
                                                     "required": [
@@ -37906,7 +38011,8 @@
                                                         "spentInPeriodLovelace",
                                                         "periodStart",
                                                         "periodLengthMs",
-                                                        "minBalanceLovelace"
+                                                        "minBalanceLovelace",
+                                                        "assets"
                                                     ],
                                                     "description": "The wallet datum and balance where the wallet is now"
                                                 },
@@ -38025,7 +38131,21 @@
                                                 "spentInPeriodLovelace": "120000000",
                                                 "periodStart": "2026-10-12T09:00:00.000Z",
                                                 "periodLengthMs": "86400000",
-                                                "minBalanceLovelace": "5000000"
+                                                "minBalanceLovelace": "5000000",
+                                                "assets": [
+                                                    {
+                                                        "unit": "lovelace",
+                                                        "quantity": "200000000",
+                                                        "limit": "1000000000",
+                                                        "spentInPeriod": "120000000"
+                                                    },
+                                                    {
+                                                        "unit": "16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d",
+                                                        "quantity": "50000000",
+                                                        "limit": "100000000",
+                                                        "spentInPeriod": "5000000"
+                                                    }
+                                                ]
                                             },
                                             "l1Error": null,
                                             "transfers": [
