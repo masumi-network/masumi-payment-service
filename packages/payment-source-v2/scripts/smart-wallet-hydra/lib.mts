@@ -14,7 +14,8 @@ loadEnv({ path: path.join(REPO, '.env'), quiet: true });
 export const NETWORK = 'preprod' as const;
 export const NETWORK_ID = 0;
 export const ADA = 1_000_000n;
-export const STATE_DIR = path.join(HERE, '.state');
+/** A second proof (`SW_PROOF=usdm`) gets its own keys and state, so it never touches the first wallet. */
+export const STATE_DIR = path.join(HERE, '.state', process.env.SW_PROOF?.trim() ?? '');
 export const PREPROD_DIR = path.join(REPO, 'hydra-l2-flow', 'preprod');
 export const NODE_API = process.env.SW_HYDRA_NODE ?? 'http://127.0.0.1:4001';
 

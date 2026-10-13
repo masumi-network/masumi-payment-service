@@ -11,8 +11,8 @@
  *
  *   pnpm exec tsx packages/payment-source-v2/scripts/smart-wallet-hydra/prove.mts <stage>
  *
- * Stages: fund-seller, mint, register, attach, topup, deposit, purchase <label>,
- * withdraw, status.
+ * Stages: fund-seller, mint, register, attach, policy <whole units>, topup, deposit,
+ * purchase <label> <whole units>, withdraw, status.
  */
 import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { assetValueData } from '../../src/smart-wallet/wallet';
@@ -35,8 +35,14 @@ const API = `${process.env.SW_API ?? 'http://127.0.0.1:3011'}/api/v1`;
 const ADMIN_KEY = process.env.ADMIN_KEY?.trim();
 if (!ADMIN_KEY) throw new Error('ADMIN_KEY is not set; export the proof env first');
 
-const WALLET_FUND_LOVELACE = 100n * ADA;
+const WALLET_FUND_LOVELACE = BigInt(process.env.SW_WALLET_FUND_ADA ?? '100') * ADA;
 const WALLET_PERIOD_LIMIT_LOVELACE = 50n * ADA;
+/** Exchain `AssetId` the wallet pays in: `lovelace` (default) or `<policy>.<nameHex>`, as the mock's. */
+const GOVERNED_ASSET = process.env.SW_GOVERNED_ASSET?.trim() || 'lovelace';
+/** The governed asset as a chain unit (`<policy><nameHex>`), or null for lovelace. */
+const GOVERNED_UNIT = GOVERNED_ASSET === 'lovelace' ? null : GOVERNED_ASSET.replace('.', '');
+/** Token period limit; tUSDM and USDCx have 6 decimals, like ADA. */
+const WALLET_PERIOD_LIMIT_TOKEN = 100n * ADA;
 const WALLET_MIN_BALANCE_LOVELACE = 5n * ADA;
 const WALLET_PERIOD_MS = 86_400_000n;
 const SELLER_FUND_LOVELACE = 25n * ADA;
@@ -101,13 +107,21 @@ async function script() {
 	};
 }
 
+/** The head whose local hot wallet is this proof's agent key: each proof has its own. */
 async function hotWallet() {
 	if (state.hotWalletId != null && state.hydraHeadId != null) return;
+	const { address } = await wallets();
+	const agentVkh = resolvePaymentKeyHash(await address('agent'));
 	const heads = await api<{
 		heads: Array<{ id: string; status: string; LocalParticipant: { walletId: string } | null }>;
 	}>('GET', '/hydra/head?limit=10');
-	const head = heads.heads.find((entry) => entry.LocalParticipant != null);
-	if (head?.LocalParticipant == null) throw new Error('no Hydra head with a local participant');
+	const purchasing = await api<{ Wallets: Array<{ id: string; walletVkey: string }> }>(
+		'GET',
+		`/wallet/list?paymentSourceId=${await paymentSourceId()}&walletType=Purchasing&take=20`,
+	);
+	const agentWalletId = purchasing.Wallets.find((entry) => entry.walletVkey === agentVkh)?.id;
+	const head = heads.heads.find((entry) => entry.LocalParticipant?.walletId === agentWalletId);
+	if (head?.LocalParticipant == null) throw new Error(`no Hydra head whose local wallet is the agent ${agentVkh}`);
 	state.hydraHeadId = head.id;
 	state.hotWalletId = head.LocalParticipant.walletId;
 	save();
@@ -123,14 +137,18 @@ async function escrowAddress(): Promise<string> {
 	return address;
 }
 
-/** The service's Selling hot wallet: it registers the agent and is the purchase seller. */
-async function sellerWallet(): Promise<{ walletVkey: string; walletAddress: string }> {
+async function paymentSourceId(): Promise<string> {
 	const sources = await api<{ PaymentSources: Array<{ id: string }> }>('GET', '/payment-source?take=10');
 	const sourceId = sources.PaymentSources[0]?.id;
 	if (sourceId == null) throw new Error('no payment source');
+	return sourceId;
+}
+
+/** The service's Selling hot wallet: it registers the agent and is the purchase seller. */
+async function sellerWallet(): Promise<{ walletVkey: string; walletAddress: string }> {
 	const list = await api<{ Wallets: Array<{ walletVkey: string; walletAddress: string }> }>(
 		'GET',
-		`/wallet/list?paymentSourceId=${sourceId}&walletType=Selling&take=5`,
+		`/wallet/list?paymentSourceId=${await paymentSourceId()}&walletType=Selling&take=5`,
 	);
 	const seller = list.Wallets[0];
 	if (seller == null) throw new Error('no selling wallet');
@@ -173,10 +191,17 @@ async function mint(): Promise<void> {
 		fundLovelace: WALLET_FUND_LOVELACE,
 		datum: {
 			agent: resolvePaymentKeyHash(agentAddress),
-			limit: assetValueData([{ unit: 'lovelace', quantity: WALLET_PERIOD_LIMIT_LOVELACE.toString() }]),
+			// The on-chain limit must list the governed asset; the owner deposits it later (stage `policy`).
+			limit: assetValueData([
+				{ unit: 'lovelace', quantity: WALLET_PERIOD_LIMIT_LOVELACE.toString() },
+				...(GOVERNED_UNIT == null ? [] : [{ unit: GOVERNED_UNIT, quantity: WALLET_PERIOD_LIMIT_TOKEN.toString() }]),
+			]),
 			periodLength: WALLET_PERIOD_MS,
 			periodStart: BigInt(Date.now()),
-			spentInPeriod: assetValueData([{ unit: 'lovelace', quantity: '0' }]),
+			spentInPeriod: assetValueData([
+				{ unit: 'lovelace', quantity: '0' },
+				...(GOVERNED_UNIT == null ? [] : [{ unit: GOVERNED_UNIT, quantity: '0' }]),
+			]),
 			minBalanceLovelace: WALLET_MIN_BALANCE_LOVELACE,
 		},
 	});
@@ -255,9 +280,49 @@ async function attach(): Promise<void> {
 		quorumVkhs,
 		threshold: THRESHOLD,
 		stateTokenName: state.wallet.stateTokenName,
+		governedAsset: GOVERNED_ASSET,
+		// A token wallet must register with Exchain (here: the mock) now; its daily limit is the on-chain one.
+		...(GOVERNED_UNIT == null
+			? {}
+			: {
+					register: {
+						mandate: {
+							perTxCap: (20n * ADA).toString(),
+							daily: WALLET_PERIOD_LIMIT_TOKEN.toString(),
+							perSeller: WALLET_PERIOD_LIMIT_TOKEN.toString(),
+							perAgent: WALLET_PERIOD_LIMIT_TOKEN.toString(),
+							envelope: (10n * WALLET_PERIOD_LIMIT_TOKEN).toString(),
+							burstPerMinute: 10,
+						},
+					},
+				}),
 	});
 	evidence({ stage: 'attach', record: JSON.stringify(record) });
 	log('attach', JSON.stringify(record));
+}
+
+/** The owner deposits the governed token through `UpdatePolicy`, keeping the limits minted. */
+async function policy(depositWhole: bigint): Promise<void> {
+	await hotWallet();
+	if (GOVERNED_UNIT == null) throw new Error('set SW_GOVERNED_ASSET to a token first');
+	const prepared = await api<{ unsignedTx: string; txHash: string; walletUtxoRef: string }>(
+		'POST',
+		'/wallet/guarded/policy',
+		{
+			hotWalletId: state.hotWalletId,
+			limits: [
+				{ unit: 'lovelace', amount: WALLET_PERIOD_LIMIT_LOVELACE.toString() },
+				{ unit: GOVERNED_UNIT, amount: WALLET_PERIOD_LIMIT_TOKEN.toString() },
+			],
+			deposit: [{ unit: GOVERNED_UNIT, amount: (depositWhole * ADA).toString() }],
+		},
+	);
+	log('policy', `prepared ${prepared.txHash} spending ${prepared.walletUtxoRef}`);
+	const { all } = await wallets();
+	const txHash = await all.owner.submitTx(await ownerSign(prepared.unsignedTx));
+	await waitForL1Tx(txHash);
+	evidence({ stage: 'policy', txHash, walletUtxoRef: prepared.walletUtxoRef, deposit: depositWhole.toString() });
+	log('policy', `confirmed ${txHash}`);
 }
 
 /** In-head ADA for the agent: the collateral every guarded script spend in the head needs. */
@@ -329,7 +394,7 @@ type PurchaseView = {
 	CurrentTransaction: { txHash: string | null; layer?: string } | null;
 };
 
-async function purchase(label: string, lovelace: bigint): Promise<void> {
+async function purchase(label: string, amount: bigint): Promise<void> {
 	if (state.agentIdentifier == null) throw new Error('register first');
 	const sellerVkey = (await sellerWallet()).walletVkey;
 	state.purchases ??= {};
@@ -348,7 +413,7 @@ async function purchase(label: string, lovelace: bigint): Promise<void> {
 			agentIdentifier: state.agentIdentifier,
 			inputHash,
 			identifierFromPurchaser,
-			RequestedFunds: [{ unit: '', amount: lovelace.toString() }],
+			RequestedFunds: [{ unit: GOVERNED_UNIT ?? '', amount: amount.toString() }],
 			supportedPaymentSourceIndex: 0,
 			// The head's payByTime check needs room; results are never submitted in this proof.
 			payByTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
@@ -365,7 +430,7 @@ async function purchase(label: string, lovelace: bigint): Promise<void> {
 			submitResultTime: payment.submitResultTime,
 			unlockTime: payment.unlockTime,
 			externalDisputeUnlockTime: payment.externalDisputeUnlockTime,
-			Amounts: [{ unit: '', amount: lovelace.toString() }],
+			Amounts: [{ unit: GOVERNED_UNIT ?? '', amount: amount.toString() }],
 			supportedPaymentSourceIndex: 0,
 		});
 		entry = { purchaseId: created.id, blockchainIdentifier: payment.blockchainIdentifier };
@@ -406,6 +471,7 @@ const stages: Record<string, () => Promise<unknown>> = {
 	topup,
 	deposit: () => move('deposit', 'L2'),
 	purchase: () => purchase(arg ?? 'allowed', BigInt(adaArg ?? '10') * ADA),
+	policy: () => policy(BigInt(arg ?? '50')),
 	withdraw: () => move('withdraw', 'L1'),
 	status,
 };
