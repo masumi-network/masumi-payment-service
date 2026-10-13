@@ -67,6 +67,10 @@ const mockFetch = jest.fn<typeof fetch>();
 
 // Import AFTER mock setup
 const { HydraNode } = await import('./node');
+// Frames here are driven one by one and asserted synchronously; yielding is
+// covered by the queue's own spec.
+const { historyReplayYieldSettings } = await import('./node-history-frame-queue');
+historyReplayYieldSettings.budgetMs = Number.POSITIVE_INFINITY;
 
 function makeHydraTransaction(seed: number, description = '') {
 	const body = TransactionBody.new(

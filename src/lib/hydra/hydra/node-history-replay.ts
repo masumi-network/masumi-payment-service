@@ -137,6 +137,7 @@ export class HydraHistoryReplay {
 	private readonly _queue = new HistoryFrameQueue(
 		(frame) => this.processQueuedFrame(frame),
 		(frame) => frame.pass === this._pass && !this._failed && !this.host.persistenceRotationError,
+		{ pause: () => this.connection.pauseReceiving(), resume: () => this.connection.resumeReceiving() },
 	);
 	private _pass = 0;
 

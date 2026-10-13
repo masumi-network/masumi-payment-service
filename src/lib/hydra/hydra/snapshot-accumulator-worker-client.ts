@@ -23,7 +23,10 @@ export type HydraAccumulatorComputer = (serializedOutputs: string[]) => string |
 
 /**
  * Generous: a maximum-size snapshot (4095 outputs) takes a few seconds on a
- * developer machine. A worker that runs past this is wedged, not busy.
+ * developer machine. A worker that answers nothing for this long while it
+ * holds requests is wedged, not busy. Measured from its last answer, not from
+ * when a request was sent: the worker answers in order, and a request queued
+ * behind other heads' snapshots is waiting, not stuck.
  */
 const ACCUMULATOR_WORKER_TIMEOUT_MS = 120_000;
 
@@ -32,10 +35,14 @@ type PendingRequest = {
 	outputs: string[];
 	resolve: (hash: string) => void;
 	reject: (error: Error) => void;
-	timeout: NodeJS.Timeout;
 };
 /** One started worker and the requests only it can answer. */
-type WorkerSlot = { worker: Worker; pending: Map<number, PendingRequest>; hasReplied: boolean };
+type WorkerSlot = {
+	worker: Worker;
+	pending: Map<number, PendingRequest>;
+	hasReplied: boolean;
+	watchdog: NodeJS.Timeout | undefined;
+};
 
 /**
  * The worker entry, resolved against this module's own location. Under `tsx`
@@ -49,7 +56,6 @@ function accumulatorWorkerUrl(): URL {
 }
 
 function settleInProcess(request: PendingRequest): void {
-	clearTimeout(request.timeout);
 	try {
 		request.resolve(computeHydraAccumulatorHash(request.outputs));
 	} catch (error) {
@@ -58,10 +64,9 @@ function settleInProcess(request: PendingRequest): void {
 }
 
 function rejectAll(slot: WorkerSlot, error: Error): void {
-	for (const request of slot.pending.values()) {
-		clearTimeout(request.timeout);
-		request.reject(error);
-	}
+	clearTimeout(slot.watchdog);
+	slot.watchdog = undefined;
+	for (const request of slot.pending.values()) request.reject(error);
 	slot.pending.clear();
 }
 
@@ -75,6 +80,23 @@ export function createWorkerAccumulatorComputer(
 	const retire = (slot: WorkerSlot) => {
 		if (current === slot) current = undefined;
 		void slot.worker.terminate().catch(() => undefined);
+	};
+
+	/** (Re)arm the slot's watchdog while it holds requests; disarm it otherwise. */
+	const watch = (slot: WorkerSlot) => {
+		clearTimeout(slot.watchdog);
+		slot.watchdog = undefined;
+		if (slot.pending.size === 0) return;
+		slot.watchdog = setTimeout(() => {
+			// Wedged: every later request would wait behind it, so retire the
+			// worker and fail what it still holds. The next request starts afresh.
+			retire(slot);
+			rejectAll(
+				slot,
+				new HydraTransportError(`Hydra accumulator worker answered nothing for ${ACCUMULATOR_WORKER_TIMEOUT_MS}ms`),
+			);
+		}, ACCUMULATOR_WORKER_TIMEOUT_MS);
+		slot.watchdog.unref();
 	};
 
 	const markUnavailable = (error: unknown) => {
@@ -92,14 +114,14 @@ export function createWorkerAccumulatorComputer(
 			markUnavailable(error);
 			return undefined;
 		}
-		const slot: WorkerSlot = { worker, pending: new Map(), hasReplied: false };
+		const slot: WorkerSlot = { worker, pending: new Map(), hasReplied: false, watchdog: undefined };
 		worker.unref();
 		worker.on('message', ({ id, hash, error }: AccumulatorReply) => {
 			slot.hasReplied = true;
 			const request = slot.pending.get(id);
 			if (!request) return;
 			slot.pending.delete(id);
-			clearTimeout(request.timeout);
+			watch(slot);
 			if (hash !== undefined) request.resolve(hash);
 			else request.reject(new HydraProtocolError(error ?? 'Hydra accumulator worker returned no result'));
 		});
@@ -110,6 +132,7 @@ export function createWorkerAccumulatorComputer(
 				// missing build file, a broken loader): it never will, so stop trying
 				// and answer what was already asked on the event loop.
 				markUnavailable(error);
+				clearTimeout(slot.watchdog);
 				for (const request of slot.pending.values()) settleInProcess(request);
 				slot.pending.clear();
 				return;
@@ -129,16 +152,8 @@ export function createWorkerAccumulatorComputer(
 		if (!slot) return computeHydraAccumulatorHash(serializedOutputs);
 		const id = nextRequestId++;
 		return new Promise<string>((resolve, reject) => {
-			const timeout = setTimeout(() => {
-				// Wedged: every later request would wait behind it, so retire the
-				// worker and fail what it still holds. The next request starts afresh.
-				retire(slot);
-				rejectAll(
-					slot,
-					new HydraTransportError(`Hydra accumulator worker did not answer within ${ACCUMULATOR_WORKER_TIMEOUT_MS}ms`),
-				);
-			}, ACCUMULATOR_WORKER_TIMEOUT_MS);
-			slot.pending.set(id, { outputs: serializedOutputs, resolve, reject, timeout });
+			slot.pending.set(id, { outputs: serializedOutputs, resolve, reject });
+			if (slot.pending.size === 1) watch(slot);
 			slot.worker.postMessage({ id, outputs: serializedOutputs });
 		});
 	};

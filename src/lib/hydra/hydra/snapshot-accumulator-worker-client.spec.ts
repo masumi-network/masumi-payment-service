@@ -97,6 +97,23 @@ describe('createWorkerAccumulatorComputer', () => {
 		await expect(next).resolves.toBe('11'.repeat(32));
 	});
 
+	// The worker answers in order. A request behind other heads' snapshots is
+	// waiting, not stuck, and timing it from when it was sent failed every head.
+	it('times a worker from its last answer, not from when a request was sent', async () => {
+		jest.useFakeTimers();
+		const { workers, create } = fakeWorkers();
+		const compute = createWorkerAccumulatorComputer(create);
+		const first = compute(OUTPUTS);
+		const second = compute(OUTPUTS);
+		jest.advanceTimersByTime(100_000);
+		workers[0].emit('message', { id: workers[0].posted[0].id, hash: '00'.repeat(32) });
+		await expect(first).resolves.toBe('00'.repeat(32));
+		jest.advanceTimersByTime(100_000);
+		workers[0].emit('message', { id: workers[0].posted[1].id, hash: '11'.repeat(32) });
+		await expect(second).resolves.toBe('11'.repeat(32));
+		expect(workers[0].terminated).toBe(false);
+	});
+
 	it('retires a worker that does not answer in time', async () => {
 		jest.useFakeTimers();
 		const { workers, create } = fakeWorkers();

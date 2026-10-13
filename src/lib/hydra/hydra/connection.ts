@@ -283,6 +283,19 @@ export class Connection extends EventEmitter {
 		return this._status === HydraHeadStatus.Connected;
 	}
 
+	/**
+	 * Stop reading frames from the current socket until `resumeReceiving`.
+	 * Backpressure for a consumer that cannot keep up; a replacement socket
+	 * starts reading regardless.
+	 */
+	pauseReceiving(): void {
+		this._websocket?.pause();
+	}
+
+	resumeReceiving(): void {
+		this._websocket?.resume();
+	}
+
 	invalidate(error: Error): void {
 		const websocket = this._websocket;
 		if (!websocket) return;
