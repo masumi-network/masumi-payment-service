@@ -12,6 +12,11 @@ import { computeHydraAccumulatorHash } from './lib/hydra/hydra/snapshot-accumula
 
 type AccumulatorRequest = { id: number; outputs: string[] };
 
+// Reached only once every import above has loaded: the main thread treats a
+// failure before this as an entry that can never load, and one after it as a
+// worker that can be replaced.
+parentPort?.postMessage({ ready: true });
+
 parentPort?.on('message', ({ id, outputs }: AccumulatorRequest) => {
 	try {
 		parentPort?.postMessage({ id, hash: computeHydraAccumulatorHash(outputs) });

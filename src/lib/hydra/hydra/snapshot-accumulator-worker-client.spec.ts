@@ -72,6 +72,22 @@ describe('createWorkerAccumulatorComputer', () => {
 		expect(workers).toHaveLength(1);
 	});
 
+	// One maximum-size snapshot running a worker out of memory is that worker's
+	// failure, not proof the entry can never load: falling back for good would
+	// bring back the starvation the worker exists to prevent.
+	it('replaces a worker that fails after it loaded instead of falling back', async () => {
+		const { workers, create } = fakeWorkers();
+		const compute = createWorkerAccumulatorComputer(create);
+		const result = compute(OUTPUTS);
+		workers[0].emit('message', { ready: true });
+		workers[0].emit('error', new Error('ERR_WORKER_OUT_OF_MEMORY'));
+		await expect(result).rejects.toThrow(HydraTransportError);
+
+		const next = compute(OUTPUTS);
+		expect(next).toBeInstanceOf(Promise);
+		expect(workers).toHaveLength(2);
+	});
+
 	it('falls back to the event loop when the worker cannot be constructed', () => {
 		const compute = createWorkerAccumulatorComputer(() => {
 			throw new Error('no worker threads here');
@@ -132,10 +148,13 @@ describe('createWorkerAccumulatorComputer', () => {
 			() =>
 				new Worker(
 					`const { parentPort } = require('node:worker_threads');
+					parentPort.postMessage({ ready: true });
 					parentPort.on('message', ({ id, outputs }) => parentPort.postMessage({ id, hash: outputs.join('') }));`,
 					{ eval: true },
 				),
 		);
 		await expect(compute(OUTPUTS)).resolves.toBe(OUTPUTS.join(''));
-	});
+		// Starting a thread is a full Node bootstrap; under a loaded full suite
+		// that alone outran the 5 s default.
+	}, 30_000);
 });

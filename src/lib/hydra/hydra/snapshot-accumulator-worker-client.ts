@@ -30,7 +30,7 @@ export type HydraAccumulatorComputer = (serializedOutputs: string[]) => string |
  */
 const ACCUMULATOR_WORKER_TIMEOUT_MS = 120_000;
 
-type AccumulatorReply = { id: number; hash?: string; error?: string };
+type AccumulatorReply = { ready: true } | { id: number; hash?: string; error?: string };
 type PendingRequest = {
 	outputs: string[];
 	resolve: (hash: string) => void;
@@ -40,7 +40,8 @@ type PendingRequest = {
 type WorkerSlot = {
 	worker: Worker;
 	pending: Map<number, PendingRequest>;
-	hasReplied: boolean;
+	/** The entry loaded: it posts `ready` once every import has resolved. */
+	isReady: boolean;
 	watchdog: NodeJS.Timeout | undefined;
 };
 
@@ -114,10 +115,14 @@ export function createWorkerAccumulatorComputer(
 			markUnavailable(error);
 			return undefined;
 		}
-		const slot: WorkerSlot = { worker, pending: new Map(), hasReplied: false, watchdog: undefined };
+		const slot: WorkerSlot = { worker, pending: new Map(), isReady: false, watchdog: undefined };
 		worker.unref();
-		worker.on('message', ({ id, hash, error }: AccumulatorReply) => {
-			slot.hasReplied = true;
+		worker.on('message', (reply: AccumulatorReply) => {
+			if ('ready' in reply) {
+				slot.isReady = true;
+				return;
+			}
+			const { id, hash, error } = reply;
 			const request = slot.pending.get(id);
 			if (!request) return;
 			slot.pending.delete(id);
@@ -127,10 +132,12 @@ export function createWorkerAccumulatorComputer(
 		});
 		worker.on('error', (error) => {
 			retire(slot);
-			if (!slot.hasReplied) {
-				// Failing before its first reply means the entry itself cannot load (a
+			if (!slot.isReady) {
+				// Failing before it is ready means the entry itself cannot load (a
 				// missing build file, a broken loader): it never will, so stop trying
-				// and answer what was already asked on the event loop.
+				// and answer what was already asked on the event loop. A failure after
+				// that — out of memory on one huge snapshot — is this worker's alone,
+				// and the next request starts a fresh one.
 				markUnavailable(error);
 				clearTimeout(slot.watchdog);
 				for (const request of slot.pending.values()) settleInProcess(request);
