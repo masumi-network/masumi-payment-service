@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Share, ArrowLeftRight, PlusCircle } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -15,10 +15,9 @@ import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { isHotWalletType } from '@/lib/wallet-type';
-import { WalletLink } from '@/components/ui/wallet-link';
+import { Tabs } from '@/components/ui/tabs';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
-import { CopyButton } from '@/components/ui/copy-button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
@@ -57,6 +56,8 @@ import { FundTransfersSection } from '@/components/wallets/sections/FundTransfer
 import { useCollectionAddressEditor } from '@/components/wallets/useCollectionAddressEditor';
 import { LowBalanceRuleDeleteDialog } from './LowBalanceRuleDeleteDialog';
 import { GuardedWalletSection } from '@/components/wallets/sections/GuardedWalletSection';
+import { WalletIdentitySection } from '@/components/wallets/sections/WalletIdentitySection';
+import { WalletActionsBar } from '@/components/wallets/sections/WalletActionsBar';
 import { useGuardedWallet } from '@/components/wallets/useGuardedWallet';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 
@@ -101,6 +102,13 @@ export function WalletDetailsDialog({
   const [swapTxCursor, setSwapTxCursor] = useState<string | undefined>(undefined);
   const [hasMoreSwapTx, setHasMoreSwapTx] = useState(true);
   const SWAP_TX_LIMIT = 5;
+  // The dialog stays mounted across wallets; each one opens on its overview.
+  const [activeTab, setActiveTab] = useState('Overview');
+  const [tabWalletId, setTabWalletId] = useState(wallet?.id);
+  if (tabWalletId !== wallet?.id) {
+    setTabWalletId(wallet?.id);
+    setActiveTab('Overview');
+  }
 
   // Swap action state: which tx is being cancelled/acknowledged/polled
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -524,32 +532,26 @@ export function WalletDetailsDialog({
           </DialogHeader>
 
           <div className="space-y-4 mt-4">
-            {/* Wallet Address Section */}
-            <div className="bg-muted rounded-lg p-4">
-              <div className="text-sm font-medium">Wallet Address</div>
-              <div className="mt-1">
-                <WalletLink address={wallet.walletAddress} network={network} />
-              </div>
-            </div>
-
-            {/* Wallet Note Section */}
-            {wallet.note && (
-              <div className="bg-muted rounded-lg p-4">
-                <div className="text-sm font-medium">Note</div>
-                <div className="text-sm mt-1 wrap-break-word">{wallet.note}</div>
-              </div>
+            <Tabs
+              tabs={[
+                { name: 'Overview' },
+                ...(wallet.type !== 'Collection' && canManageWallet
+                  ? [{ name: 'Monitoring', count: lowRules.length, variant: 'alert' as const }]
+                  : []),
+                ...(canGuardWallet ? [{ name: 'Guarded wallet' }] : []),
+              ]}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+            />
+            {activeTab === 'Overview' && (
+              <WalletIdentitySection
+                address={wallet.walletAddress}
+                note={wallet.note}
+                vkey={wallet.walletVkey}
+                network={network}
+              />
             )}
-
-            {/* vKey Section */}
-            <div className="bg-muted rounded-lg p-4">
-              <div className="text-sm font-medium">vKey</div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="font-mono text-xs break-all">{wallet.walletVkey}</span>
-                <CopyButton value={wallet.walletVkey} />
-              </div>
-            </div>
-
-            {wallet.type !== 'Collection' && canManageWallet && (
+            {activeTab === 'Monitoring' && wallet.type !== 'Collection' && canManageWallet && (
               <LowBalanceRulesSection
                 monitoringSummary={monitoringSummary}
                 configuredRules={configuredRules}
@@ -586,95 +588,77 @@ export function WalletDetailsDialog({
               />
             )}
 
-            <TokenBalanceSection
-              isLoading={balances.isLoading}
-              error={balances.error}
-              tokenBalances={balances.tokenBalances}
-              network={network}
-              formatTokenBalance={balances.formatTokenBalance}
-              isUSDCx={balances.isUSDCx}
-              isUSDM={balances.isUSDM}
-            />
+            {activeTab === 'Overview' && (
+              <>
+                <TokenBalanceSection
+                  isLoading={balances.isLoading}
+                  error={balances.error}
+                  tokenBalances={balances.tokenBalances}
+                  network={network}
+                  formatTokenBalance={balances.formatTokenBalance}
+                  isUSDCx={balances.isUSDCx}
+                  isUSDM={balances.isUSDM}
+                />
 
-            {canManageWallet && network === 'Mainnet' && swapTransactions.length > 0 && (
-              <SwapTransactionsSection
-                swapTransactions={swapTransactions}
-                swapTxLoading={swapTxLoading}
-                hasMoreSwapTx={hasMoreSwapTx}
-                swapTxCursor={swapTxCursor}
-                pollingTxId={pollingTxId}
-                actionLoadingId={actionLoadingId}
-                network={network}
-                onRefresh={() => {
-                  setSwapTxCursor(undefined);
-                  fetchSwapTransactions();
-                }}
-                onLoadMore={(cursor) => fetchSwapTransactions(cursor)}
-                onCancelSwap={handleCancelSwap}
-                onAcknowledgeTimeout={handleAcknowledgeTimeout}
-                onStartPollingConfirm={startPollingConfirm}
-              />
-            )}
-
-            {canManageWallet && (
-              <FundTransfersSection walletAddress={wallet.walletAddress} network={network} />
-            )}
-
-            {wallet.type !== 'Collection' && canManageWallet && (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleExport}
-                  disabled={isExporting}
-                  title="Export Wallet"
-                >
-                  <Share className="h-4 w-4" />
-                  <span>Export Wallet</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedWalletForTopup(wallet)}
-                  title="Top Up"
-                >
-                  <PlusCircle className="h-4 w-4" />
-                  <span>Top Up</span>
-                </Button>
-                {network === 'Mainnet' && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setSelectedWalletForSwap(wallet)}
-                    title="Swap Assets"
-                  >
-                    <ArrowLeftRight className="h-4 w-4" />
-                    <span>Swap Assets</span>
-                  </Button>
+                {canManageWallet && network === 'Mainnet' && swapTransactions.length > 0 && (
+                  <SwapTransactionsSection
+                    swapTransactions={swapTransactions}
+                    swapTxLoading={swapTxLoading}
+                    hasMoreSwapTx={hasMoreSwapTx}
+                    swapTxCursor={swapTxCursor}
+                    pollingTxId={pollingTxId}
+                    actionLoadingId={actionLoadingId}
+                    network={network}
+                    onRefresh={() => {
+                      setSwapTxCursor(undefined);
+                      fetchSwapTransactions();
+                    }}
+                    onLoadMore={(cursor) => fetchSwapTransactions(cursor)}
+                    onCancelSwap={handleCancelSwap}
+                    onAcknowledgeTimeout={handleAcknowledgeTimeout}
+                    onStartPollingConfirm={startPollingConfirm}
+                  />
                 )}
-              </div>
-            )}
-            {exportedMnemonic && (
-              <WalletExportSection
-                exportedMnemonic={exportedMnemonic}
-                onClose={() => setExportedMnemonic(null)}
-                onCopyMnemonic={handleCopyMnemonic}
-                onDownload={() => setIsDownloadConfirmOpen(true)}
-              />
-            )}
 
-            {/* Linked Collection Wallet Section */}
-            {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && canManageWallet && (
-              <CollectionAddressSection
-                walletType={wallet.type}
-                network={network}
-                collectionAddress={collectionAddressEditor.collectionAddress}
-                isEditing={collectionAddressEditor.isEditing}
-                newCollectionAddress={collectionAddressEditor.draft}
-                onNewCollectionAddressChange={collectionAddressEditor.setDraft}
-                onSave={collectionAddressEditor.save}
-                onCancelEdit={collectionAddressEditor.cancelEdit}
-                onStartEdit={collectionAddressEditor.startEdit}
-              />
+                {canManageWallet && (
+                  <FundTransfersSection walletAddress={wallet.walletAddress} network={network} />
+                )}
+
+                {wallet.type !== 'Collection' && canManageWallet && (
+                  <WalletActionsBar
+                    network={network}
+                    isExporting={isExporting}
+                    onExport={handleExport}
+                    onTopUp={() => setSelectedWalletForTopup(wallet)}
+                    onSwap={() => setSelectedWalletForSwap(wallet)}
+                  />
+                )}
+                {exportedMnemonic && (
+                  <WalletExportSection
+                    exportedMnemonic={exportedMnemonic}
+                    onClose={() => setExportedMnemonic(null)}
+                    onCopyMnemonic={handleCopyMnemonic}
+                    onDownload={() => setIsDownloadConfirmOpen(true)}
+                  />
+                )}
+
+                {/* Linked Collection Wallet Section */}
+                {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && canManageWallet && (
+                  <CollectionAddressSection
+                    walletType={wallet.type}
+                    network={network}
+                    collectionAddress={collectionAddressEditor.collectionAddress}
+                    isEditing={collectionAddressEditor.isEditing}
+                    newCollectionAddress={collectionAddressEditor.draft}
+                    onNewCollectionAddressChange={collectionAddressEditor.setDraft}
+                    onSave={collectionAddressEditor.save}
+                    onCancelEdit={collectionAddressEditor.cancelEdit}
+                    onStartEdit={collectionAddressEditor.startEdit}
+                  />
+                )}
+              </>
             )}
-            {canGuardWallet && (
+            {activeTab === 'Guarded wallet' && canGuardWallet && (
               <GuardedWalletSection
                 hotWalletId={wallet.id}
                 network={network}
