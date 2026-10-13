@@ -129,12 +129,12 @@ beforeEach(async () => {
 		memberMnemonics: ['test'],
 		apiKey: 'test',
 		threshold: 1,
-		maxOutflowLovelace: 10n,
-		maxPerIntentLovelace: 10n,
+		maxOutflow: 10n,
+		maxPerIntent: 10n,
 		maxValiditySlots: VALIDITY_SLOTS,
 		agentVkhs: [MEMBER],
 		escrowAddresses: ['addr_test1wescrow'],
-		resolveWalletInput: async () => ({ address: WALLET, lovelace: 10n }),
+		resolveWalletInput: async () => ({ address: WALLET, lovelace: 10n, assets: new Map() }),
 		decisionsFile: path.join(directory, 'decisions.jsonl'),
 		port: 0,
 	});
@@ -233,5 +233,28 @@ describe('signed mock reservations follow decoded validity', () => {
 			expect(reply.body.requiredSigners).toEqual([MEMBER]);
 			expect(reply.body.schemaVersion).toBe('1.1');
 		}
+	});
+});
+
+describe('mock wallet registration', () => {
+	const register = async (governedAsset: string) => {
+		const response = await fetch(`${server.url}/v1/wallets`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test' },
+			body: JSON.stringify({ walletAddress: WALLET, stateToken: 'policy.token', governedAsset: { id: governedAsset } }),
+		});
+		return { status: response.status, body: (await response.json()) as { walletId?: string; error?: string } };
+	};
+
+	it('hands out a stable Exchain-shaped id: 201 first, 200 on a repeat', async () => {
+		const first = await register('lovelace');
+		const repeat = await register('lovelace');
+		expect(first.status).toBe(201);
+		expect(first.body.walletId).toMatch(/^wal_[0-9A-HJKMNP-TV-Z]{26}$/);
+		expect(repeat).toEqual({ status: 200, body: { walletId: first.body.walletId } });
+	});
+
+	it('refuses a registration for an asset the mock does not govern', async () => {
+		expect(await register('aa.bb')).toMatchObject({ status: 409, body: { error: 'asset_not_listed' } });
 	});
 });

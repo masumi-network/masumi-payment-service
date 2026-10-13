@@ -14,6 +14,7 @@ import type {
 	CosignMemberVerdict,
 	CosignRequest,
 } from '../../src/smart-wallet/cosign-client';
+import { assetUnitOf, LOVELACE_ASSET_ID } from '../../src/smart-wallet/governed-asset';
 
 export type TxRef = { txHash: string; outputIndex: number };
 
@@ -28,10 +29,8 @@ export type DecodedEscrowLock = {
 export type DecodedOutput = {
 	address: string;
 	lovelace: bigint;
-	/** True when the output carries any asset other than lovelace. */
-	hasOtherAssets: boolean;
-	/** Asset units (policy id + asset name hex) the output holds with quantity 1. */
-	singleUnits: string[];
+	/** Every other asset the output holds, by unit (policy id + asset name hex). */
+	assets: Map<string, bigint>;
 	/** Null when the address is a script address or cannot be parsed. */
 	paymentKeyHash: string | null;
 	/** Null when the output carries no inline datum that decodes as a V2 escrow datum. */
@@ -52,10 +51,14 @@ export type DecodedTxBody = {
 export type CosignPolicy = {
 	memberVkhs: string[];
 	threshold: number;
-	/** Cumulative outflow admitted per transaction. Stands in for a rolling-window rule. */
-	maxOutflowLovelace: bigint;
-	/** Largest single lock admitted. Stands in for `per_tx_cap`. */
-	maxPerIntentLovelace: bigint;
+	/** The one asset the mandate counts, in Exchain form (`lovelace` or `<policy>.<nameHex>`). */
+	governedAsset: string;
+	/** Cumulative outflow admitted per transaction, in the governed asset. Stands in for a rolling-window rule. */
+	maxOutflow: bigint;
+	/** Largest single lock admitted, in the governed asset. Stands in for `per_tx_cap`. */
+	maxPerIntent: bigint;
+	/** Token wallet only: the min-UTxO lovelace each token lock output may carry beside the token. */
+	maxRideAlongLovelace: bigint;
 	maxValiditySlots: number;
 	/** From registration: the hot keys allowed to spend, and where their change may go. */
 	agentVkhs: string[];
@@ -75,7 +78,16 @@ function allowedMember(intent: CosignIntent): CosignMemberVerdict {
 	return { purchaseId: intent.purchaseId, outputIndex: intent.outputIndex, verdict: 'allowed' };
 }
 
-const ada = (lovelace: bigint) => `${(Number(lovelace) / 1e6).toFixed(6)} tADA`;
+/** A readable name for a 6-decimal unit: tADA, or the asset name with any CIP-67 label bytes dropped. */
+function assetLabel(unit: string): string {
+	if (unit === 'lovelace') return 'tADA';
+	const name = Buffer.from(unit.slice(56), 'hex')
+		.toString('latin1')
+		.replace(/[^\x20-\x7e]/g, '');
+	return name === '' ? `${unit.slice(0, 8)}…` : name;
+}
+
+const amountOf = (quantity: bigint, unit: string) => `${(Number(quantity) / 1e6).toFixed(6)} ${assetLabel(unit)}`;
 
 export type VerifyInput = {
 	request: CosignRequest;
@@ -85,7 +97,7 @@ export type VerifyInput = {
 	 * input comes from a snapshot proof, whose refs are not signed, so it also
 	 * names the wallet's state token for the continuing-output check.
 	 */
-	walletInput: { address: string; lovelace: bigint; stateTokenUnit?: string };
+	walletInput: { address: string; lovelace: bigint; assets: Map<string, bigint>; stateTokenUnit?: string };
 	policy: CosignPolicy;
 	nowMs: number;
 };
@@ -115,7 +127,7 @@ export function verifyIntentAgainstBody(input: VerifyInput): PolicyOutcome {
 	// token, so this ties the input the body really spends to the wallet the
 	// input value was read from. Wallets of one configuration share an address.
 	const stateTokenUnit = input.walletInput.stateTokenUnit;
-	if (stateTokenUnit != null && !walletOutputs[0].singleUnits.includes(stateTokenUnit)) {
+	if (stateTokenUnit != null && walletOutputs[0].assets.get(stateTokenUnit) !== 1n) {
 		return batchDenied('body_mismatch', "The continuing wallet output does not carry this wallet's state token.");
 	}
 
@@ -170,7 +182,10 @@ export function verifyIntentAgainstBody(input: VerifyInput): PolicyOutcome {
 		}
 	}
 
+	const isLovelaceWallet = policy.governedAsset === LOVELACE_ASSET_ID;
+	const governedUnit = isLovelaceWallet ? 'lovelace' : assetUnitOf(policy.governedAsset);
 	let declaredOutflow = 0n;
+	let rideAlongLovelace = 0n;
 	for (const intent of request.intents) {
 		const output = body.outputs[intent.outputIndex];
 		if (output == null) {
@@ -182,24 +197,34 @@ export function verifyIntentAgainstBody(input: VerifyInput): PolicyOutcome {
 		if (!escrowAddresses.has(output.address)) {
 			return batchDenied('payee_unpinned', `Purchase ${intent.purchaseId} does not pay a registered escrow address.`);
 		}
-		if (intent.asset !== 'lovelace') {
-			// The mock governs lovelace only. The live service governs tUSDM.
+		if (intent.asset !== policy.governedAsset) {
 			return batchDenied(
 				'asset_not_listed',
-				`This wallet governs lovelace; purchase ${intent.purchaseId} names ${intent.asset}.`,
+				`This wallet governs ${policy.governedAsset}; purchase ${intent.purchaseId} names ${intent.asset}.`,
 			);
 		}
-		if (output.hasOtherAssets) {
+		if ([...output.assets.keys()].some((unit) => unit !== governedUnit)) {
 			return batchDenied(
 				'asset_not_listed',
 				`Output ${intent.outputIndex} carries an asset the mandate does not list.`,
 			);
 		}
-		if (output.lovelace !== BigInt(intent.amount)) {
+		const carried = isLovelaceWallet ? output.lovelace : (output.assets.get(governedUnit) ?? 0n);
+		if (carried !== BigInt(intent.amount)) {
 			return batchDenied(
 				'body_mismatch',
-				`Purchase ${intent.purchaseId} declares ${intent.amount} lovelace; output ${intent.outputIndex} carries ${output.lovelace}.`,
+				`Purchase ${intent.purchaseId} declares ${intent.amount} ${governedUnit}; output ${intent.outputIndex} carries ${carried}.`,
 			);
+		}
+		// A token lock output also carries its min-UTxO lovelace. Bound it, so ADA cannot leave unseen.
+		if (!isLovelaceWallet) {
+			if (output.lovelace > policy.maxRideAlongLovelace) {
+				return batchDenied(
+					'body_mismatch',
+					`Output ${intent.outputIndex} carries ${amountOf(output.lovelace, 'lovelace')} beside the token; the mandate allows ${amountOf(policy.maxRideAlongLovelace, 'lovelace')}.`,
+				);
+			}
+			rideAlongLovelace += output.lovelace;
 		}
 		const lock = output.lock;
 		if (lock == null || !lock.fundsLocked) {
@@ -223,14 +248,23 @@ export function verifyIntentAgainstBody(input: VerifyInput): PolicyOutcome {
 		declaredOutflow += BigInt(intent.amount);
 	}
 
-	// Outflow is what the WALLET loses, taken from the resolved input value, not
-	// from a self-reported number: no wallet value may reach change.
-	const outflow = input.walletInput.lovelace - walletOutputs[0].lovelace;
-	if (outflow !== declaredOutflow) {
-		return batchDenied(
-			'body_mismatch',
-			`The wallet loses ${ada(outflow)} but the purchases declare ${ada(declaredOutflow)}.`,
-		);
+	// Outflow is what the WALLET loses, per asset, taken from the resolved input
+	// value, not from a self-reported number: no wallet value may reach change.
+	// A token wallet loses the declared token plus the ride-along lovelace; every
+	// other asset must stay.
+	const expectedOutflow = new Map([['lovelace', isLovelaceWallet ? declaredOutflow : rideAlongLovelace]]);
+	if (!isLovelaceWallet) expectedOutflow.set(governedUnit, declaredOutflow);
+	const inputValue = new Map([['lovelace', input.walletInput.lovelace], ...input.walletInput.assets]);
+	const continuingValue = new Map([['lovelace', walletOutputs[0].lovelace], ...walletOutputs[0].assets]);
+	for (const unit of new Set([...inputValue.keys(), ...continuingValue.keys()])) {
+		const outflow = (inputValue.get(unit) ?? 0n) - (continuingValue.get(unit) ?? 0n);
+		const expected = expectedOutflow.get(unit) ?? 0n;
+		if (outflow !== expected) {
+			return batchDenied(
+				'body_mismatch',
+				`The wallet loses ${amountOf(outflow, unit)} but the purchases declare ${amountOf(expected, unit)}.`,
+			);
+		}
 	}
 
 	const members: CosignMemberVerdict[] = [];
@@ -238,28 +272,28 @@ export function verifyIntentAgainstBody(input: VerifyInput): PolicyOutcome {
 	let used = 0n;
 	for (const intent of request.intents) {
 		const attempted = BigInt(intent.amount);
-		if (attempted > policy.maxPerIntentLovelace) {
+		if (attempted > policy.maxPerIntent) {
 			members.push({
 				purchaseId: intent.purchaseId,
 				outputIndex: intent.outputIndex,
 				verdict: 'denied',
 				denied: 'per_tx_cap',
-				reasonEnglish: `This payment is ${ada(attempted)}. The mandate allows ${ada(policy.maxPerIntentLovelace)} in a single payment.`,
-				bound: policy.maxPerIntentLovelace.toString(),
+				reasonEnglish: `This payment is ${amountOf(attempted, governedUnit)}. The mandate allows ${amountOf(policy.maxPerIntent, governedUnit)} in a single payment.`,
+				bound: policy.maxPerIntent.toString(),
 				used: used.toString(),
 				attempted: attempted.toString(),
 			});
 			continue;
 		}
-		if (used + attempted > policy.maxOutflowLovelace) {
+		if (used + attempted > policy.maxOutflow) {
 			const windowResetsAt = new Date(input.nowMs + 3_600_000).toISOString();
 			members.push({
 				purchaseId: intent.purchaseId,
 				outputIndex: intent.outputIndex,
 				verdict: 'denied',
 				denied: 'hourly_outflow',
-				reasonEnglish: `This would take the hour's spending to ${ada(used + attempted)}. The mandate allows ${ada(policy.maxOutflowLovelace)}.`,
-				bound: policy.maxOutflowLovelace.toString(),
+				reasonEnglish: `This would take the hour's spending to ${amountOf(used + attempted, governedUnit)}. The mandate allows ${amountOf(policy.maxOutflow, governedUnit)}.`,
+				bound: policy.maxOutflow.toString(),
 				used: used.toString(),
 				attempted: attempted.toString(),
 				retryAfterSec: 3_600,

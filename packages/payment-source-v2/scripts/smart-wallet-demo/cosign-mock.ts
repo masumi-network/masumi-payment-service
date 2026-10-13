@@ -25,6 +25,7 @@ import {
 	TransactionWitnessSet,
 } from '@meshsdk/core-cst';
 import { logger } from '@masumi/payment-core/logger';
+import { z } from '@masumi/payment-core/zod';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
@@ -44,19 +45,25 @@ import {
 	type TxRef,
 	type VerifyInput,
 } from './cosign-policy';
+import { LOVELACE_ASSET_ID } from '../../src/smart-wallet/governed-asset';
 
 const MAX_BODY_BYTES = 1_000_000;
 const FEED_SIZE = 100;
 const REBUILD_HOLD_MS = 120_000;
 const NETWORK = 'preprod' as const;
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+/** About twice the min-UTxO of a one-token escrow output with its datum. */
+const DEFAULT_MAX_RIDE_ALONG_LOVELACE = 3_000_000n;
 
 export type MockCosignOptions = {
 	memberMnemonics: string[];
 	apiKey: string;
 	threshold: number;
-	maxOutflowLovelace: bigint;
-	maxPerIntentLovelace: bigint;
+	/** Exchain `AssetId` the caps count in; defaults to lovelace. */
+	governedAsset?: string;
+	maxOutflow: bigint;
+	maxPerIntent: bigint;
+	maxRideAlongLovelace?: bigint;
 	maxValiditySlots: number;
 	/** From registration: hot keys allowed to spend, and the escrow addresses they may pay. */
 	agentVkhs: string[];
@@ -80,7 +87,10 @@ type DecisionRecord = {
 	intents: number;
 	admitted: number;
 	deniedPurchaseIds: string[];
-	outflowLovelace: string;
+	/** In `asset` units. Lines written before token wallets carry `outflowLovelace` instead. */
+	outflow?: string;
+	asset?: string;
+	outflowLovelace?: string;
 };
 
 /** Every JSON body the contract carries, including the plain error shapes. */
@@ -94,11 +104,21 @@ export async function memberVkhOf(mnemonic: string): Promise<string> {
 	return resolvePaymentKeyHash((await wallet.getUnusedAddresses())[0]);
 }
 
-function ulid(prefix: string): string {
+function crockfordOf(bytes: Uint8Array): string {
 	let out = '';
-	for (const byte of randomBytes(26)) out += CROCKFORD[byte % CROCKFORD.length];
-	return `${prefix}${out}`;
+	for (const byte of bytes.subarray(0, 26)) out += CROCKFORD[byte % CROCKFORD.length];
+	return out;
 }
+
+function ulid(prefix: string): string {
+	return `${prefix}${crockfordOf(randomBytes(26))}`;
+}
+
+const walletRegistrationSchema = z.object({
+	walletAddress: z.string().min(1),
+	stateToken: z.string().min(1),
+	governedAsset: z.object({ id: z.string().min(1) }),
+});
 
 /**
  * The request carries the BODY only. Wrapping it as `[body, {}, true, null]`
@@ -150,10 +170,9 @@ function decodeTxBody(txBodyHex: string): DecodedTxBody {
 			return {
 				address,
 				lovelace: value.coin(),
-				hasOtherAssets: (value.multiasset()?.size ?? 0) > 0,
-				singleUnits: [...(value.multiasset() ?? new Map<string, bigint>())]
-					.filter(([, quantity]) => quantity === 1n)
-					.map(([unit]) => String(unit)),
+				assets: new Map(
+					[...(value.multiasset() ?? new Map<string, bigint>())].map(([unit, quantity]) => [String(unit), quantity]),
+				),
 				paymentKeyHash: paymentKeyHashOf(address),
 				lock: decodeEscrowLock(output.datum()?.asInlineData()?.toCbor(), address),
 			};
@@ -192,6 +211,12 @@ function readFeed(decisionsFile: string): DecisionRecord[] {
 		.reverse();
 }
 
+function feedAmount(record: DecisionRecord): string {
+	const quantity = Number(BigInt(record.outflow ?? record.outflowLovelace ?? '0')) / 1e6;
+	const asset = record.asset ?? LOVELACE_ASSET_ID;
+	return `${quantity.toFixed(2)} ${asset === LOVELACE_ASSET_ID ? 'tADA' : asset}`;
+}
+
 function renderFeed(records: DecisionRecord[]): string {
 	const rows = records
 		.map(
@@ -200,7 +225,7 @@ function renderFeed(records: DecisionRecord[]): string {
 	<td><strong>${escapeHtml(record.outcome)}</strong>${record.denied ? `<br><code>${escapeHtml(record.denied)}</code>` : ''}</td>
 	<td class="hash"><code title="${escapeHtml(record.txBodyHash)}">${escapeHtml(record.txBodyHash)}</code></td>
 	<td>${record.admitted} / ${record.intents}</td>
-	<td>${escapeHtml((Number(BigInt(record.outflowLovelace)) / 1e6).toFixed(2))} tADA</td>
+	<td>${escapeHtml(feedAmount(record))}</td>
 	<td>${record.deniedPurchaseIds.length > 0 ? escapeHtml(record.deniedPurchaseIds.join(', ')) : '—'}</td>
 </tr>`,
 		)
@@ -254,8 +279,10 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 	const policy: CosignPolicy = {
 		memberVkhs: members.map((member) => member.vkh),
 		threshold: options.threshold,
-		maxOutflowLovelace: options.maxOutflowLovelace,
-		maxPerIntentLovelace: options.maxPerIntentLovelace,
+		governedAsset: options.governedAsset ?? LOVELACE_ASSET_ID,
+		maxOutflow: options.maxOutflow,
+		maxPerIntent: options.maxPerIntent,
+		maxRideAlongLovelace: options.maxRideAlongLovelace ?? DEFAULT_MAX_RIDE_ALONG_LOVELACE,
 		maxValiditySlots: options.maxValiditySlots,
 		agentVkhs: options.agentVkhs,
 		escrowAddresses: options.escrowAddresses,
@@ -282,7 +309,8 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 			intents: request.intents.length,
 			admitted: members_.filter((member) => member.verdict === 'allowed').length,
 			deniedPurchaseIds: members_.filter((member) => member.verdict === 'denied').map((member) => member.purchaseId),
-			outflowLovelace: request.intents.reduce((sum, intent) => sum + BigInt(intent.amount), 0n).toString(),
+			outflow: request.intents.reduce((sum, intent) => sum + BigInt(intent.amount), 0n).toString(),
+			asset: policy.governedAsset,
 		};
 		fs.appendFileSync(options.decisionsFile, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
 		logger.info('mock co-sign decision', { decisionId, outcome: entry.outcome, denied });
@@ -410,6 +438,28 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 		return { status: 200, body: allow };
 	};
 
+	/**
+	 * `POST /v1/wallets`: the mock's policy is fixed at start, so it only checks
+	 * that the registration counts the same asset, and hands back a stable id.
+	 * 201 for a new wallet, 200 for a repeat, like Exchain.
+	 */
+	const registered = new Map<string, string>();
+	const register = (json: unknown): { status: number; body: object } => {
+		const parsed = walletRegistrationSchema.safeParse(json);
+		if (!parsed.success) return { status: 400, body: { ...envelope(), error: 'bad_request' } };
+		if (parsed.data.governedAsset.id !== policy.governedAsset) {
+			return {
+				status: 409,
+				body: { ...envelope(), error: 'asset_not_listed', detail: `this mock governs ${policy.governedAsset}` },
+			};
+		}
+		const key = `${parsed.data.walletAddress}|${parsed.data.stateToken}`;
+		const existing = registered.get(key);
+		const walletId = existing ?? `wal_${crockfordOf(createHash('sha256').update(key).digest())}`;
+		registered.set(key, walletId);
+		return { status: existing == null ? 201 : 200, body: { walletId } };
+	};
+
 	const handle = async (request: http.IncomingMessage, response: http.ServerResponse) => {
 		const send = (status: number, payload: ReplyBody) =>
 			response.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(payload));
@@ -424,7 +474,7 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 				.end(renderFeed(readFeed(options.decisionsFile)));
 			return;
 		}
-		if (request.method !== 'POST' || path !== '/v1/cosign') {
+		if (request.method !== 'POST' || (path !== '/v1/cosign' && path !== '/v1/wallets')) {
 			send(404, { ...envelope(), error: 'not_found' });
 			return;
 		}
@@ -442,6 +492,11 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 			json = JSON.parse(raw);
 		} catch {
 			send(400, { ...envelope(), error: 'bad_request', detail: 'request body is not JSON' });
+			return;
+		}
+		if (path === '/v1/wallets') {
+			const reply = register(json);
+			response.writeHead(reply.status, { 'Content-Type': 'application/json' }).end(JSON.stringify(reply.body));
 			return;
 		}
 		const parsed = cosignRequestSchema.safeParse(json);
@@ -506,19 +561,19 @@ export async function startMockCosignServer(options: MockCosignOptions): Promise
 /** Remaining room under each mock rule after this batch, in the contract's shape. */
 function boundsAfter(request: CosignRequest, policy: CosignPolicy): CosignAllow['boundsRemaining'] {
 	const used = request.intents.reduce((sum, intent) => sum + BigInt(intent.amount), 0n);
-	const remaining = policy.maxOutflowLovelace > used ? policy.maxOutflowLovelace - used : 0n;
+	const remaining = policy.maxOutflow > used ? policy.maxOutflow - used : 0n;
 	const largest = request.intents.reduce(
 		(max, intent) => (BigInt(intent.amount) > max ? BigInt(intent.amount) : max),
 		0n,
 	);
 	return {
 		per_tx_cap: {
-			limit: policy.maxPerIntentLovelace.toString(),
+			limit: policy.maxPerIntent.toString(),
 			used: largest.toString(),
-			remaining: (policy.maxPerIntentLovelace > largest ? policy.maxPerIntentLovelace - largest : 0n).toString(),
+			remaining: (policy.maxPerIntent > largest ? policy.maxPerIntent - largest : 0n).toString(),
 		},
 		hourly_outflow: {
-			limit: policy.maxOutflowLovelace.toString(),
+			limit: policy.maxOutflow.toString(),
 			used: used.toString(),
 			remaining: remaining.toString(),
 			windowResetsAt: new Date(Date.now() + 3_600_000).toISOString(),

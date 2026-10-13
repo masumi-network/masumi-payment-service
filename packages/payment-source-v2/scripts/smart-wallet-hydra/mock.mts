@@ -26,6 +26,8 @@ import type { TxRef, VerifyInput } from '../smart-wallet-demo/cosign-policy';
 import { ADA, blockfrostKey, loadMnemonics, loadWallets, log, readState, STATE_DIR, writeState } from './lib.mjs';
 
 const PORT = Number(process.env.SW_MOCK_PORT ?? 4600);
+/** Exchain `AssetId` the mock's caps count in: `lovelace` (default) or `<policy>.<nameHex>`. */
+const GOVERNED_ASSET = process.env.SW_GOVERNED_ASSET?.trim() || 'lovelace';
 const ESCROW_ADDRESS = process.env.SW_ESCROW_ADDRESS?.trim();
 const API_KEY = process.env.EXCHAIN_COSIGN_API_KEY?.trim();
 // Wide enough for the L2 lock window; the policy still bounds it.
@@ -111,16 +113,26 @@ async function resolveWalletInput(ref: TxRef, context: CosignContext): Promise<V
 		newestSnapshot.set(context.hydraHeadId, Math.max(newest, proof.number));
 		// Synchronous, and before the policy check and signing: no await can run between the check and the save.
 		writeState(SNAPSHOT_MARKS, Object.fromEntries(newestSnapshot));
-		const lovelace = output.value.lovelace;
+		const { lovelace, ...policies } = output.value;
 		if (typeof lovelace !== 'string') throw new Error('wallet output has no lovelace');
+		const assets = new Map<string, bigint>();
+		for (const [policyId, names] of Object.entries(policies)) {
+			if (typeof names === 'string') throw new Error(`wallet output value has a bare quantity under ${policyId}`);
+			for (const [name, quantity] of Object.entries(names)) assets.set(`${policyId}${name}`, BigInt(quantity));
+		}
 		log('mock', `in-head wallet input ${walletUtxoRef} proven by snapshot ${proof.number}`);
-		return { address: output.address, lovelace: BigInt(lovelace), stateTokenUnit };
+		return { address: output.address, lovelace: BigInt(lovelace), assets, stateTokenUnit };
 	}
 	const body = await blockfrost<{ outputs: BlockfrostOutput[] }>(`/txs/${ref.txHash}/utxos`);
 	const output = body.outputs.find((entry) => entry.output_index === ref.outputIndex);
 	if (output == null) throw new Error(`utxo_unknown ${walletUtxoRef}`);
 	const lovelace = output.amount.find((asset) => asset.unit === 'lovelace')?.quantity ?? '0';
-	return { address: output.address, lovelace: BigInt(lovelace) };
+	const assets = new Map(
+		output.amount
+			.filter((asset) => asset.unit !== 'lovelace')
+			.map((asset) => [asset.unit, BigInt(asset.quantity)] as const),
+	);
+	return { address: output.address, lovelace: BigInt(lovelace), assets };
 }
 
 async function main(): Promise<void> {
@@ -134,8 +146,10 @@ async function main(): Promise<void> {
 		memberMnemonics: [mnemonics.quorum1, mnemonics.quorum2, mnemonics.quorum3].map((words) => words.join(' ')),
 		apiKey: API_KEY,
 		threshold: 2,
-		maxOutflowLovelace: 40n * ADA,
-		maxPerIntentLovelace: 20n * ADA,
+		// Caps are in the governed asset's minor units; tUSDM and ADA both have 6 decimals.
+		governedAsset: GOVERNED_ASSET,
+		maxOutflow: 40n * ADA,
+		maxPerIntent: 20n * ADA,
 		maxValiditySlots: MAX_VALIDITY_SLOTS,
 		agentVkhs: [agentVkh],
 		escrowAddresses: [ESCROW_ADDRESS],

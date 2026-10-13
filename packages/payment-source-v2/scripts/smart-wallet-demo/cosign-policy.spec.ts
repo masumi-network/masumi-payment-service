@@ -10,8 +10,7 @@ const OTHER_WALLET_TOKEN = `${'98'.repeat(28)}${'dd'.repeat(32)}`;
 const continuing = (singleUnits: string[]): DecodedOutput => ({
 	address: WALLET_ADDRESS,
 	lovelace: 90n,
-	hasOtherAssets: true,
-	singleUnits,
+	assets: new Map(singleUnits.map((unit) => [unit, 1n])),
 	paymentKeyHash: null,
 	lock: null,
 });
@@ -30,8 +29,10 @@ const request = { batchId: 'b', walletUtxoRef: WALLET_REF, intents: [] } as unkn
 const policy = {
 	memberVkhs: ['m1'],
 	threshold: 1,
-	maxOutflowLovelace: 10n,
-	maxPerIntentLovelace: 10n,
+	governedAsset: 'lovelace',
+	maxOutflow: 10n,
+	maxPerIntent: 10n,
+	maxRideAlongLovelace: 0n,
 	maxValiditySlots: 1000,
 	agentVkhs: [],
 	escrowAddresses: [],
@@ -40,7 +41,7 @@ const verify = (singleUnits: string[]) =>
 	verifyIntentAgainstBody({
 		request,
 		body: body(singleUnits),
-		walletInput: { address: WALLET_ADDRESS, lovelace: 100n, stateTokenUnit: STATE_TOKEN },
+		walletInput: { address: WALLET_ADDRESS, lovelace: 100n, assets: new Map(), stateTokenUnit: STATE_TOKEN },
 		policy,
 		nowMs: 0,
 	});
@@ -70,7 +71,12 @@ describe('in-head body shape check', () => {
 		verifyIntentAgainstBody({
 			request,
 			body: { ...body([STATE_TOKEN]), ...change },
-			walletInput: { address: WALLET_ADDRESS, lovelace: 90n, stateTokenUnit: inHead ? STATE_TOKEN : undefined },
+			walletInput: {
+				address: WALLET_ADDRESS,
+				lovelace: 90n,
+				assets: new Map([[STATE_TOKEN, 1n]]),
+				stateTokenUnit: inHead ? STATE_TOKEN : undefined,
+			},
 			policy,
 			nowMs: 0,
 		});
@@ -80,7 +86,7 @@ describe('in-head body shape check', () => {
 		...continuing([]),
 		address: 'addr_test1agent',
 		lovelace: 7n,
-		hasOtherAssets: false,
+		assets: new Map(),
 	};
 
 	it('refuses a second input', () => {
@@ -106,5 +112,120 @@ describe('in-head body shape check', () => {
 
 	it('does not apply to an L1 spend (no state token named)', () => {
 		expect(reason(shapeVerify({ fee: 1n }, false))).not.toContain('only the wallet');
+	});
+});
+
+describe('token wallet', () => {
+	// A wallet that pays in tUSDM: 100 tUSDM and 50 ADA in, one 5 tUSDM lock out.
+	const TUSDM = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
+	const TUSDM_ID = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde.0014df10745553444d';
+	const ESCROW = 'addr_test1escrow';
+	const SELLER = 'e'.repeat(56);
+	const AGENT = 'f'.repeat(56);
+	const lockOutput = (lovelace: bigint, assets: Array<[string, bigint]>): DecodedOutput => ({
+		address: ESCROW,
+		lovelace,
+		assets: new Map(assets),
+		paymentKeyHash: null,
+		lock: { blockchainIdentifier: 'bid', buyerPaymentKeyHash: AGENT, sellerPaymentKeyHash: SELLER, fundsLocked: true },
+	});
+	const tokenVerify = (params: {
+		lock?: DecodedOutput;
+		continuingLovelace?: bigint;
+		continuingTokens?: bigint;
+		asset?: string;
+		amount?: string;
+		/** Another token the wallet holds that the body does not keep. */
+		leakedToken?: [string, bigint];
+	}) =>
+		verifyIntentAgainstBody({
+			request: {
+				batchId: 'b',
+				walletUtxoRef: WALLET_REF,
+				intents: [
+					{
+						purchaseId: 'p1',
+						outputIndex: 1,
+						counterparty: `sellerVkeyHash:${SELLER}`,
+						amount: params.amount ?? '5000000',
+						asset: params.asset ?? TUSDM_ID,
+						jobHash: 'j',
+						agentIdentifier: 'a',
+					},
+				],
+			} as unknown as CosignRequest,
+			body: {
+				...body([STATE_TOKEN]),
+				outputs: [
+					{
+						...continuing([STATE_TOKEN]),
+						lovelace: params.continuingLovelace ?? 48_500_000n,
+						assets: new Map([
+							[STATE_TOKEN, 1n],
+							[TUSDM, params.continuingTokens ?? 95_000_000n],
+						]),
+					},
+					params.lock ?? lockOutput(1_500_000n, [[TUSDM, 5_000_000n]]),
+				],
+			},
+			walletInput: {
+				address: WALLET_ADDRESS,
+				lovelace: 50_000_000n,
+				assets: new Map([
+					[STATE_TOKEN, 1n],
+					[TUSDM, 100_000_000n],
+					...(params.leakedToken == null ? [] : [params.leakedToken]),
+				]),
+			},
+			policy: {
+				...policy,
+				governedAsset: TUSDM_ID,
+				maxOutflow: 40_000_000n,
+				maxPerIntent: 20_000_000n,
+				maxRideAlongLovelace: 3_000_000n,
+				agentVkhs: [AGENT],
+				escrowAddresses: [ESCROW],
+			},
+			nowMs: 0,
+		});
+	const reason = (outcome: ReturnType<typeof verifyIntentAgainstBody>) =>
+		outcome.kind === 'batch-denied' ? `${outcome.code}: ${outcome.reasonEnglish}` : outcome.kind;
+
+	it('admits a token lock with its ride-along lovelace', () => {
+		expect(reason(tokenVerify({}))).toBe('allow');
+	});
+
+	it('refuses an intent in another asset', () => {
+		expect(reason(tokenVerify({ asset: 'lovelace' }))).toMatch(/^asset_not_listed/);
+	});
+
+	it('refuses a lock output that carries a token the mandate does not list', () => {
+		const lock = lockOutput(1_500_000n, [
+			[TUSDM, 5_000_000n],
+			[`${'0'.repeat(56)}ab`, 1n],
+		]);
+		expect(reason(tokenVerify({ lock }))).toMatch(/^asset_not_listed/);
+	});
+
+	it('refuses a token amount other than the declared one', () => {
+		expect(reason(tokenVerify({ amount: '4000000' }))).toMatch(/^body_mismatch: Purchase p1 declares/);
+	});
+
+	it('refuses ride-along lovelace above the cap', () => {
+		const lock = lockOutput(4_000_000n, [[TUSDM, 5_000_000n]]);
+		expect(reason(tokenVerify({ lock, continuingLovelace: 46_000_000n }))).toMatch(/beside the token/);
+	});
+
+	it('refuses lovelace that leaves the wallet beyond the ride-along', () => {
+		expect(reason(tokenVerify({ continuingLovelace: 48_000_000n }))).toMatch(/wallet loses 2\.000000 tADA/);
+	});
+
+	it('refuses tokens that leave the wallet beyond the declared amount', () => {
+		expect(reason(tokenVerify({ continuingTokens: 94_000_000n }))).toMatch(/wallet loses 6\.000000 tUSDM/);
+	});
+
+	it('refuses a body that lets another held token leave the wallet', () => {
+		const leakedToken: [string, bigint] = [`${'1'.repeat(56)}4f54484552`, 3_000_000n];
+		expect(reason(tokenVerify({ leakedToken }))).toMatch(/wallet loses 3\.000000 OTHER/);
 	});
 });

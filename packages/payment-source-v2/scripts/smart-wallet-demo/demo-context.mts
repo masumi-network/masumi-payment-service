@@ -247,8 +247,8 @@ export async function withCosigner<T>(state: DemoState, work: (cosign: CosignCon
 		memberMnemonics: state.memberMnemonics,
 		apiKey: state.mockApiKey,
 		threshold: state.threshold,
-		maxOutflowLovelace: config.mockCapLovelace,
-		maxPerIntentLovelace: config.mockPerTxCapLovelace,
+		maxOutflow: config.mockCapLovelace,
+		maxPerIntent: config.mockPerTxCapLovelace,
 		maxValiditySlots: MOCK_MAX_VALIDITY_SLOTS,
 		...registration,
 		resolveWalletInput,
@@ -266,11 +266,16 @@ export async function withCosigner<T>(state: DemoState, work: (cosign: CosignCon
 export async function resolveWalletInput(ref: {
 	txHash: string;
 	outputIndex: number;
-}): Promise<{ address: string; lovelace: bigint }> {
+}): Promise<{ address: string; lovelace: bigint; assets: Map<string, bigint> }> {
 	const utxos = await provider.fetchUTxOs(ref.txHash, ref.outputIndex);
 	const utxo = utxos.find((candidate) => candidate.input.outputIndex === ref.outputIndex);
 	if (utxo == null) throw new Error(`input ${ref.txHash}#${ref.outputIndex} not found`);
-	return { address: utxo.output.address, lovelace: lovelaceFromUtxo(utxo) };
+	const assets = new Map(
+		utxo.output.amount
+			.filter((asset) => asset.unit !== 'lovelace')
+			.map((asset) => [asset.unit, BigInt(asset.quantity)] as const),
+	);
+	return { address: utxo.output.address, lovelace: lovelaceFromUtxo(utxo), assets };
 }
 
 async function lookupChainTx(txHash: string): Promise<ChainTx | null> {
