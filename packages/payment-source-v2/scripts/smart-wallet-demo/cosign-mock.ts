@@ -52,8 +52,12 @@ const FEED_SIZE = 100;
 const REBUILD_HOLD_MS = 120_000;
 const NETWORK = 'preprod' as const;
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-/** About twice the min-UTxO of a one-token escrow output with its datum. */
-const DEFAULT_MAX_RIDE_ALONG_LOVELACE = 3_000_000n;
+/**
+ * Lovelace a one-token escrow output may carry. Packing pads the output's
+ * min-UTxO: a 5 tUSDM preprod lock carried 4.469470 ADA (2026-10-14), so
+ * this leaves about 1.5 ADA of margin.
+ */
+const DEFAULT_MAX_RIDE_ALONG_LOVELACE = 6_000_000n;
 
 export type MockCosignOptions = {
 	memberMnemonics: string[];
