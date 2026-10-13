@@ -48,8 +48,8 @@ import {
 import { HydraHistoryReplay, type HistoryReplayHost } from './node-history-replay';
 import { HydraHttpClient } from './node-http';
 import {
-	LIVE_SESSION_READY_EVENT,
 	LIVE_SESSION_REJECTED_EVENT,
+	waitForLiveSessionReady,
 	LiveFrameProcessor,
 	type LiveFrameHost,
 } from './node-live-frames';
@@ -322,34 +322,7 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private waitForPinnedLiveSession(): Promise<void> {
-		if (this._live.isLiveSessionReady()) return Promise.resolve();
-
-		return new Promise<void>((resolve, reject) => {
-			const cleanup = () => {
-				clearTimeout(timeout);
-				this.removeListener(LIVE_SESSION_READY_EVENT, handleReady);
-				this.removeListener(LIVE_SESSION_REJECTED_EVENT, handleRejected);
-			};
-			const handleReady = () => {
-				cleanup();
-				resolve();
-			};
-			const handleRejected = (error: unknown) => {
-				cleanup();
-				reject(
-					error instanceof Error ? error : new HydraProtocolError('Hydra live session identity verification failed'),
-				);
-			};
-			const timeout = setTimeout(() => {
-				handleRejected(
-					new HydraTransportError(
-						`Hydra websocket did not provide a matching identity-bearing Greetings within ${this._connectTimeoutMs}ms`,
-					),
-				);
-			}, this._connectTimeoutMs);
-			this.on(LIVE_SESSION_READY_EVENT, handleReady);
-			this.on(LIVE_SESSION_REJECTED_EVENT, handleRejected);
-		});
+		return waitForLiveSessionReady(this, () => this._live.isLiveSessionReady(), this._connectTimeoutMs);
 	}
 
 	private assertPersistenceReplayIsSupported(message: unknown): void {
