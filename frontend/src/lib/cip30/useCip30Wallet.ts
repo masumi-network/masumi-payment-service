@@ -61,7 +61,7 @@ export function useCip30Wallet() {
 
   /** Why this wallet cannot sign for `ownerAddress` on `network`, or null when it can. */
   const signingProblem = (network: 'Preprod' | 'Mainnet', ownerAddress: string): string | null => {
-    if (connection == null) return 'Connect the owner wallet first';
+    if (connection == null) return 'Connect the owner wallet above to sign this move';
     if (connection.networkId !== CIP30_NETWORK_ID[network]) {
       return `${connection.name} is on the wrong network. Switch it to ${network}`;
     }

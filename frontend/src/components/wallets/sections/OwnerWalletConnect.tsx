@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { AlertTriangle, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import type { Cip30WalletOption } from '@/lib/cip30/useCip30Wallet';
@@ -32,38 +33,52 @@ export function OwnerWalletConnect({
 
   if (connectedName != null) {
     return (
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Owner wallet</span>
-          <span>{connectedName}</span>
+      <div className="flex flex-col gap-2 rounded-md bg-muted/50 px-3 py-2">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="flex items-center gap-2">
+            <span
+              className={`h-2 w-2 rounded-full ${problem ? 'bg-amber-500' : 'bg-green-500'}`}
+              aria-hidden
+            />
+            Signing with <span className="font-medium">{connectedName}</span>
+          </span>
           <Button variant="ghost" size="sm" className="h-7" onClick={onDisconnect}>
             Disconnect
           </Button>
         </div>
-        {problem && <div className="text-xs text-destructive">{problem}</div>}
+        {problem && (
+          <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {problem}
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="text-xs text-muted-foreground">
-        Connect the browser wallet that holds the owner key. It signs each move; the key never
-        leaves the extension.
+    <div className="flex flex-col gap-2 rounded-md border border-dashed px-3 py-3">
+      <div className="flex items-start gap-2">
+        <Wallet className="mt-0.5 h-4 w-4 text-muted-foreground" />
+        <div className="text-sm">
+          <div className="font-medium">Connect the owner wallet</div>
+          <div className="text-xs text-muted-foreground">
+            Each move needs one signature from the owner key. The key stays in your browser wallet.
+          </div>
+        </div>
       </div>
       {options.length === 0 ? (
-        <div className="flex items-center gap-2 text-sm">
-          No CIP-30 wallet found in this browser.
-          <Button variant="ghost" size="sm" className="h-7" onClick={onDetect}>
-            Look again
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          No Cardano browser wallet found. Install Eternl or Lace, then
+          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onDetect}>
+            look again
           </Button>
         </div>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {options.map((option) => (
             <Button
               key={option.id}
-              variant="outline"
               size="sm"
               className="h-8"
               disabled={isConnecting}
@@ -71,7 +86,7 @@ export function OwnerWalletConnect({
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- extension data URI */}
               <img src={option.icon} alt="" className="h-4 w-4" />
-              {option.name}
+              Connect {option.name}
             </Button>
           ))}
           {isConnecting && <Spinner size={16} />}

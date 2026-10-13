@@ -6,7 +6,7 @@ import { WalletLink } from '@/components/ui/wallet-link';
 import { formatLovelaceAsAda } from '@/lib/format-lovelace-display';
 import type { GetWalletGuardedResponses } from '@/lib/api/generated';
 import type { GuardedAttachForm } from '@/components/wallets/useGuardedWallet';
-import { GuardedHydraSection } from './GuardedHydraSection';
+import { GuardedWalletSummary } from './GuardedWalletSummary';
 
 type GuardedState = GetWalletGuardedResponses[200]['data'];
 
@@ -51,50 +51,21 @@ export function GuardedWalletSection({
   const guarded = state?.guardedWallet ?? null;
 
   return (
-    <div className="flex flex-col gap-2 mt-2 border-t pt-4">
-      <div className="text-xs text-muted-foreground">Guarded smart wallet (Exchain co-sign)</div>
+    <div className="flex flex-col gap-2">
       {isLoading ? (
         <Spinner size={16} />
       ) : loadError ? (
         <div className="text-sm text-destructive">{loadError}</div>
       ) : guarded ? (
-        <div className="flex flex-col gap-1 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">Script</span>
-            <WalletLink address={guarded.scriptAddress} network={network} shorten={15} />
-          </div>
-          {state?.chain ? (
-            <>
-              <div>Balance: {formatLovelaceAsAda(state.chain.lovelace)}</div>
-              <div>
-                Spent this period: {formatLovelaceAsAda(state.chain.spentInPeriodLovelace)} of{' '}
-                {formatLovelaceAsAda(state.chain.periodLimitLovelace)}
-              </div>
-            </>
-          ) : (
-            <div className="text-destructive">Chain read failed: {state?.chainError}</div>
-          )}
-          <div>
-            Quorum: {guarded.threshold} of {guarded.quorumVkhs.length}
-          </div>
-          <div className="font-mono text-xs">
-            Exchain wallet: {guarded.exchainWalletId ?? 'not registered'}
-          </div>
-          <GuardedHydraSection
-            hotWalletId={hotWalletId}
-            ownerAddress={guarded.ownerAddress}
-            network={network}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 w-fit"
-            onClick={onDetach}
-            disabled={isSubmitting}
-          >
-            Remove guard
-          </Button>
-        </div>
+        <GuardedWalletSummary
+          hotWalletId={hotWalletId}
+          network={network}
+          guarded={guarded}
+          chain={state?.chain ?? null}
+          chainError={state?.chainError ?? null}
+          isSubmitting={isSubmitting}
+          onDetach={onDetach}
+        />
       ) : (
         <div className="flex flex-col gap-2">
           <Input

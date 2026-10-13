@@ -31,3 +31,11 @@ export function isRecoverable(transfer: GuardedHydraTransfer, now: Date): boolea
     new Date(transfer.recoverableAt).getTime() <= now.getTime()
   );
 }
+
+/** Share of the period limit already spent, 0 to 100. Lovelace strings, so no float drift. */
+export function periodUsePercent(spentLovelace: string, limitLovelace: string): number {
+  const limit = BigInt(limitLovelace);
+  if (limit <= BigInt(0)) return 0;
+  const percent = Number((BigInt(spentLovelace) * BigInt(100)) / limit);
+  return Math.min(percent, 100);
+}

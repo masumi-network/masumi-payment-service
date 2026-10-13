@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, Layers } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Select,
   SelectContent,
@@ -32,8 +34,74 @@ const STATUS_VARIANT: Record<
   Failed: 'destructive',
 };
 
+const LOCATION = {
+  L1: { label: 'On chain (L1)', variant: 'secondary' },
+  L2: { label: 'In Hydra head', variant: 'success' },
+  Unknown: { label: 'Moving', variant: 'processing' },
+} as const;
+
 function headLabel(head: HydraHead): string {
-  return head.headIdentifier == null ? head.id : `${head.headIdentifier.slice(0, 12)}…`;
+  return head.headIdentifier == null ? head.id : `Head ${head.headIdentifier.slice(0, 10)}…`;
+}
+
+function formatWhen(value: Date | string): string {
+  return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function TransferRow({
+  transfer,
+  network,
+  now,
+  busy,
+  onRecover,
+}: {
+  transfer: GuardedHydraTransfer;
+  network: 'Preprod' | 'Mainnet';
+  now: Date;
+  busy: GuardedHydraAction | null;
+  onRecover: (transferId: string) => void;
+}) {
+  const isDeposit = transfer.direction === 'Deposit';
+  return (
+    <div className="flex flex-col gap-1 px-4 py-2.5">
+      <div className="flex items-center gap-2 text-sm">
+        {isDeposit ? (
+          <ArrowDownToLine className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <ArrowUpFromLine className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        <span>{isDeposit ? 'Into head' : 'Back to L1'}</span>
+        <Badge variant={STATUS_VARIANT[transfer.status]} className="ml-auto">
+          {transfer.status}
+        </Badge>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 pl-5 text-xs text-muted-foreground">
+        <span>{formatWhen(transfer.createdAt)}</span>
+        {isDeposit ? (
+          <TxLink label="Tx" hash={transfer.txHash} network={network} fallback={null} />
+        ) : (
+          <InHeadTxId label="In-head tx" hash={transfer.txHash} />
+        )}
+      </div>
+      {transfer.failureReason && (
+        <div className="pl-5 text-xs text-muted-foreground">{transfer.failureReason}</div>
+      )}
+      {isRecoverable(transfer, now) && (
+        <div className="pl-5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7"
+            disabled={busy != null}
+            onClick={() => onRecover(transfer.id)}
+          >
+            {busy === 'recover' && <Spinner size={12} />}
+            Recover to L1
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -46,7 +114,7 @@ export function GuardedHydraPanel({
   isLoading,
   loadError,
   openHeads,
-  canSign,
+  blockedReason,
   busy,
   ownerWallet,
   onDeposit,
@@ -58,8 +126,8 @@ export function GuardedHydraPanel({
   isLoading: boolean;
   loadError: string | null;
   openHeads: HydraHead[];
-  /** False while no connected wallet can sign for the owner. */
-  canSign: boolean;
+  /** Why a move cannot be signed now; null when the owner wallet is ready. */
+  blockedReason: string | null;
   busy: GuardedHydraAction | null;
   ownerWallet: React.ReactNode;
   onDeposit: (hydraHeadId: string) => void;
@@ -67,122 +135,139 @@ export function GuardedHydraPanel({
   onRecover: (transferId: string) => void;
 }) {
   const [selectedHeadId, setSelectedHeadId] = useState<string | null>(null);
-  const headId = selectedHeadId ?? openHeads[0]?.id ?? null;
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const headId =
+    openHeads.find((head) => head.id === selectedHeadId)?.id ?? openHeads[0]?.id ?? null;
   const now = new Date();
+  const location = state == null ? null : LOCATION[state.location];
+  const balance = state?.state ? formatLovelaceAsAda(state.state.lovelace) : null;
+  const hasRecoverable = state?.transfers.some((transfer) => isRecoverable(transfer, now)) ?? false;
+  const depositBlocked =
+    blockedReason ??
+    (openHeads.length === 0 ? 'No open head has this wallet as a participant' : null);
 
   return (
-    <div className="flex flex-col gap-2 mt-2 border-t pt-3">
-      <div className="text-xs text-muted-foreground">Hydra head</div>
-      {isLoading ? (
-        <Spinner size={16} />
-      ) : loadError ? (
-        <div className="text-sm text-destructive">{loadError}</div>
-      ) : state ? (
-        <>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Location</span>
-            <Badge variant={state.location === 'Unknown' ? 'pending' : 'secondary'}>
-              {state.location === 'L2'
-                ? 'Inside a head (L2)'
-                : state.location === 'L1'
-                  ? 'On chain (L1)'
-                  : 'Moving'}
-            </Badge>
-            {state.state && <span>{formatLovelaceAsAda(state.state.lovelace)}</span>}
+    <div className="overflow-hidden rounded-lg border">
+      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
+        <div className="flex items-start gap-2">
+          <Layers className="mt-0.5 h-4 w-4 text-primary" />
+          <div>
+            <div className="text-sm font-medium">Hydra head</div>
+            <div className="text-xs text-muted-foreground">
+              Inside a head, purchases settle in seconds and cost no L1 fees.
+            </div>
           </div>
-          {state.l1Error && state.location !== 'L2' && (
-            <div className="text-xs text-muted-foreground">{state.l1Error}</div>
-          )}
+        </div>
+        {location && (
+          <Badge variant={location.variant} className="shrink-0 whitespace-nowrap">
+            {location.label}
+          </Badge>
+        )}
+      </div>
 
-          {ownerWallet}
+      <div className="flex flex-col gap-3 px-4 py-3">
+        {isLoading ? (
+          <Spinner size={16} />
+        ) : loadError ? (
+          <div className="text-sm text-destructive">{loadError}</div>
+        ) : state ? (
+          <>
+            {state.location !== 'Unknown' && ownerWallet}
 
-          {state.location === 'L1' &&
-            (openHeads.length === 0 ? (
-              <div className="text-xs text-muted-foreground">
-                No open head has this hot wallet as a participant.
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Select value={headId ?? undefined} onValueChange={setSelectedHeadId}>
-                  <SelectTrigger className="h-8 w-56" aria-label="Head to deposit into">
-                    <SelectValue placeholder="Choose a head" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {openHeads.map((head) => (
-                      <SelectItem key={head.id} value={head.id}>
-                        {headLabel(head)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {state.location === 'L1' && (
+              <div className="flex flex-col gap-2">
+                {openHeads.length > 1 && (
+                  <Select value={headId ?? undefined} onValueChange={setSelectedHeadId}>
+                    <SelectTrigger className="h-9" aria-label="Head to move into">
+                      <SelectValue placeholder="Choose a head" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {openHeads.map((head) => (
+                        <SelectItem key={head.id} value={head.id}>
+                          {headLabel(head)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <Button
-                  size="sm"
-                  className="h-8"
-                  disabled={!canSign || busy != null || headId == null}
+                  disabled={depositBlocked != null || busy != null || headId == null}
                   onClick={() => headId && onDeposit(headId)}
                 >
-                  {busy === 'deposit' ? <Spinner size={14} /> : null}
-                  Move into head
-                </Button>
-              </div>
-            ))}
-          {state.location === 'L2' && (
-            <Button
-              size="sm"
-              className="h-8 w-fit"
-              disabled={!canSign || busy != null}
-              onClick={onWithdraw}
-            >
-              {busy === 'withdraw' ? <Spinner size={14} /> : null}
-              Move to L1
-            </Button>
-          )}
-          {state.location === 'Unknown' && (
-            <div className="text-xs text-muted-foreground">
-              The wallet is between L1 and the head. This view refreshes every few seconds.
-            </div>
-          )}
-
-          {state.transfers.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {state.transfers.slice(0, SHOWN_TRANSFERS).map((transfer) => (
-                <div key={transfer.id} className="flex flex-wrap items-center gap-2 text-xs">
-                  <Badge variant={STATUS_VARIANT[transfer.status]}>{transfer.status}</Badge>
-                  <span>{transfer.direction === 'Deposit' ? 'Into head' : 'To L1'}</span>
-                  <span className="text-muted-foreground">
-                    {new Date(transfer.createdAt).toLocaleString()}
-                  </span>
-                  {transfer.direction === 'Deposit' ? (
-                    <TxLink
-                      label="Deposit"
-                      hash={transfer.txHash}
-                      network={network}
-                      fallback={null}
-                    />
+                  {busy === 'deposit' ? (
+                    <Spinner size={14} />
                   ) : (
-                    <InHeadTxId label="Decommit" hash={transfer.txHash} />
+                    <ArrowDownToLine className="h-4 w-4" />
                   )}
-                  {isRecoverable(transfer, now) && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6"
-                      disabled={busy != null}
-                      onClick={() => onRecover(transfer.id)}
-                    >
-                      {busy === 'recover' ? <Spinner size={12} /> : null}
-                      Recover to L1
-                    </Button>
-                  )}
-                  {transfer.failureReason && (
-                    <span className="w-full text-muted-foreground">{transfer.failureReason}</span>
-                  )}
+                  Move {balance ?? 'wallet'} into{' '}
+                  {openHeads.length === 1 ? headLabel(openHeads[0]) : 'the head'}
+                </Button>
+                <div className="text-xs text-muted-foreground">
+                  {depositBlocked ??
+                    'You sign once. The head takes the wallet in after about 6 minutes; until then it stays on L1.'}
                 </div>
+              </div>
+            )}
+
+            {state.location === 'L2' && (
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  disabled={blockedReason != null || busy != null}
+                  onClick={onWithdraw}
+                >
+                  {busy === 'withdraw' ? (
+                    <Spinner size={14} />
+                  ) : (
+                    <ArrowUpFromLine className="h-4 w-4" />
+                  )}
+                  Move {balance ?? 'wallet'} back to L1
+                </Button>
+                <div className="text-xs text-muted-foreground">
+                  {blockedReason ??
+                    'You sign once. The wallet is back on L1 within a minute or two.'}
+                </div>
+              </div>
+            )}
+
+            {state.location === 'Unknown' && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner size={14} />
+                The wallet is moving between L1 and the head. This updates by itself.
+              </div>
+            )}
+
+            {state.l1Error && state.location === 'L1' && (
+              <div className="text-xs text-muted-foreground">{state.l1Error}</div>
+            )}
+          </>
+        ) : null}
+      </div>
+
+      {state != null && state.transfers.length > 0 && (
+        <Collapsible open={isHistoryOpen || hasRecoverable} onOpenChange={setIsHistoryOpen}>
+          <CollapsibleTrigger className="flex w-full items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground hover:bg-muted/50">
+            Recent moves ({Math.min(state.transfers.length, SHOWN_TRANSFERS)})
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${isHistoryOpen || hasRecoverable ? 'rotate-180' : ''}`}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="divide-y border-t">
+              {state.transfers.slice(0, SHOWN_TRANSFERS).map((transfer) => (
+                <TransferRow
+                  key={transfer.id}
+                  transfer={transfer}
+                  network={network}
+                  now={now}
+                  busy={busy}
+                  onRecover={onRecover}
+                />
               ))}
             </div>
-          )}
-        </>
-      ) : null}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
     </div>
   );
 }

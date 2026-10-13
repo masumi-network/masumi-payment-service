@@ -23,7 +23,7 @@ export function GuardedHydraSection({
       isLoading={hydra.isLoading}
       loadError={hydra.loadError}
       openHeads={hydra.openHeads}
-      canSign={problem == null}
+      blockedReason={problem}
       busy={hydra.busy}
       ownerWallet={
         <OwnerWalletConnect

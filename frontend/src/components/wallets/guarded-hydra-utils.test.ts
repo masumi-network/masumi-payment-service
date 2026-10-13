@@ -5,6 +5,7 @@ import {
   hasMoveInFlight,
   isRecoverable,
   openHeadsForWallet,
+  periodUsePercent,
   type GuardedHydraState,
   type GuardedHydraTransfer,
 } from './guarded-hydra-utils';
@@ -71,4 +72,11 @@ test('isRecoverable needs a submitted deposit past its recoverable time', () => 
   assert.equal(isRecoverable(transfer({ status: 'Confirmed' }), after), false);
   assert.equal(isRecoverable(transfer({ direction: 'Withdraw' }), after), false);
   assert.equal(isRecoverable(transfer({ recoverableAt: null }), after), false);
+});
+
+test('periodUsePercent clamps to 0..100 and survives a zero limit', () => {
+  assert.equal(periodUsePercent('5000000', '50000000'), 10);
+  assert.equal(periodUsePercent('0', '50000000'), 0);
+  assert.equal(periodUsePercent('60000000', '50000000'), 100);
+  assert.equal(periodUsePercent('1', '0'), 0);
 });
