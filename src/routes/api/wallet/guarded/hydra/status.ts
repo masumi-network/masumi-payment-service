@@ -20,6 +20,7 @@ const WITHDRAW_NOT_TAKEN = 'The head still holds the wallet; it did not take the
 const DEPOSIT_NOT_ABSORBED = 'The head did not absorb the deposit; the wallet is on L1';
 const DEPOSIT_ELSEWHERE = 'The wallet went into another head; this deposit can never apply';
 const WITHDRAW_FANNED_OUT = 'The head closed before this withdraw reached L1; the fanout returned the wallet';
+const WITHDRAW_NO_EXIT = 'The wallet is on L1 but never left the head through a decrement or fanout';
 
 function stateView(state: GuardedWalletState) {
 	return {
@@ -125,7 +126,12 @@ export async function getGuardedHydraStatus(hotWalletId: string, scope: Scope) {
 		// A fanout also brings the wallet to L1. Only a decrement, the exit a withdraw
 		// makes, confirms one; after a fanout an open withdraw never reached L1.
 		const openWithdraw = await prisma.guardedHydraTransfer.findFirst({
-			where: { guardedWalletId: guarded.id, direction: GuardedHydraTransferDirection.Withdraw, ...unsettled },
+			where: {
+				guardedWalletId: guarded.id,
+				direction: GuardedHydraTransferDirection.Withdraw,
+				createdAt: lastConfirmed != null ? { gt: lastConfirmed.createdAt } : undefined,
+				...unsettled,
+			},
 			select: { id: true },
 		});
 		let exit: WalletHydraExit | null = null;
@@ -145,12 +151,17 @@ export async function getGuardedHydraStatus(hotWalletId: string, scope: Scope) {
 				});
 			}
 		}
-		if (exit === 'decrement') {
+		// A walk too long to finish confirms, as before: the wallet is on L1, and an
+		// open withdraw must not block every later move.
+		if (exit === 'decrement' || exit === 'unknown') {
 			await confirmNewest(GuardedHydraTransferDirection.Withdraw);
-		} else if (exit === 'fanout') {
+		} else if (exit === 'fanout' || exit === 'none') {
 			await prisma.guardedHydraTransfer.updateMany({
 				where: { guardedWalletId: guarded.id, direction: GuardedHydraTransferDirection.Withdraw, ...unsettled },
-				data: { status: GuardedHydraTransferStatus.Failed, failureReason: WITHDRAW_FANNED_OUT },
+				data: {
+					status: GuardedHydraTransferStatus.Failed,
+					failureReason: exit === 'fanout' ? WITHDRAW_FANNED_OUT : WITHDRAW_NO_EXIT,
+				},
 			});
 		}
 		// On L1 again after the recovery deadline, or after the deposit tx expired

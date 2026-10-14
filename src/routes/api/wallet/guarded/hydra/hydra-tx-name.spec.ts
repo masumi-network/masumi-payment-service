@@ -55,6 +55,7 @@ describe('findWalletHydraExit', () => {
 				inputs: [
 					{ tx_hash: 'fee', amount: [{ unit: 'lovelace', quantity: '9' }] },
 					{ tx_hash: 'collateral', collateral: true, amount: [{ unit: TOKEN, quantity: '1' }] },
+					{ tx_hash: 'reference', reference: true, amount: [{ unit: TOKEN, quantity: '1' }] },
 					walletInput('tx-1'),
 				],
 			},
@@ -67,15 +68,15 @@ describe('findWalletHydraExit', () => {
 
 	it('finds no exit when another hydra tx or the mint comes first', async () => {
 		chain({ 'tx-0': { metadata: named('HydraV2/RecoverTx') } });
-		await expect(find()).resolves.toBeNull();
+		await expect(find()).resolves.toBe('none');
 		chain({ 'tx-0': { metadata: [], inputs: [{ tx_hash: 'seed', amount: [{ unit: 'lovelace', quantity: '1' }] }] } });
-		await expect(find()).resolves.toBeNull();
+		await expect(find()).resolves.toBe('none');
 	});
 
 	it('gives up after a bounded walk', async () => {
 		mockTxsMetadata.mockResolvedValue([]);
 		mockTxsUtxos.mockImplementation(async (hash) => ({ inputs: [walletInput(`${hash}'`)] }));
-		await expect(find()).resolves.toBeNull();
+		await expect(find()).resolves.toBe('unknown');
 		expect(mockTxsMetadata).toHaveBeenCalledTimes(20);
 	});
 

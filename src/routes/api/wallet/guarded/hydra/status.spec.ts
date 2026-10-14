@@ -267,13 +267,10 @@ describe('getGuardedHydraStatus', () => {
 		expect(calls[1].data).toMatchObject({ status: GuardedHydraTransferStatus.Failed });
 	});
 
-	it.each([
-		['the exit cannot be traced', () => mockFindExit.mockRejectedValue(new Error('metadata lookup failed'))],
-		['the wallet left no head through a decrement or fanout', () => mockFindExit.mockResolvedValue(null)],
-	])('leaves the open withdraw when %s', async (_case, arrange) => {
+	it('leaves the open withdraw when the exit cannot be traced', async () => {
 		mockFindInHead.mockResolvedValue(null);
 		mockInspect.mockResolvedValue(walletState);
-		arrange();
+		mockFindExit.mockRejectedValue(new Error('metadata lookup failed'));
 		mockFindFirst.mockResolvedValue({ id: 'tr-w', walletUtxoRef: IN_HEAD_REF });
 
 		const result = await getGuardedHydraStatus('hw-1', scope);
@@ -284,6 +281,57 @@ describe('getGuardedHydraStatus', () => {
 		);
 		expect(withdrawSweeps).toHaveLength(0);
 		expect(result).toMatchObject({ location: 'L1', l1Error: null });
+	});
+
+	// The newest hydra tx is a deposit or recover: the wallet never left a head, so the withdraw never applied.
+	it('fails the open withdraw when the wallet left no head', async () => {
+		mockFindInHead.mockResolvedValue(null);
+		mockInspect.mockResolvedValue(walletState);
+		mockFindExit.mockResolvedValue('none');
+		mockFindFirst.mockResolvedValue({ id: 'tr-w', walletUtxoRef: IN_HEAD_REF });
+
+		await getGuardedHydraStatus('hw-1', scope);
+
+		expect(mockUpdate).not.toHaveBeenCalled();
+		const [, withdrawSweep] = updateCalls();
+		expect(withdrawSweep.where).toMatchObject({ direction: GuardedHydraTransferDirection.Withdraw });
+		expect(withdrawSweep.data).toMatchObject({
+			status: GuardedHydraTransferStatus.Failed,
+			failureReason: expect.stringContaining('never left the head'),
+		});
+	});
+
+	// A walk too long to finish must not leave the withdraw blocking every later move.
+	it('confirms the newest withdraw when the exit is unknown', async () => {
+		mockFindInHead.mockResolvedValue(null);
+		mockInspect.mockResolvedValue(walletState);
+		mockFindExit.mockResolvedValue('unknown');
+		mockFindFirst.mockResolvedValue({ id: 'tr-w', walletUtxoRef: IN_HEAD_REF });
+
+		await getGuardedHydraStatus('hw-1', scope);
+
+		expect(mockUpdate).toHaveBeenCalledWith({ where: { id: 'tr-w' }, data: confirmed });
+	});
+
+	// A withdraw older than the last confirmed move never took effect: it is not worth a trace.
+	it('traces only withdraws created after the last confirmed move', async () => {
+		const lastConfirmedAt = new Date('2026-10-12T08:00:00Z');
+		mockFindInHead.mockResolvedValue(null);
+		mockInspect.mockResolvedValue(walletState);
+		mockLastConfirmed.mockResolvedValue({ createdAt: lastConfirmedAt });
+
+		await getGuardedHydraStatus('hw-1', scope);
+
+		expect(mockFindFirst).toHaveBeenCalledWith({
+			where: {
+				guardedWalletId: 'gw-1',
+				direction: GuardedHydraTransferDirection.Withdraw,
+				createdAt: { gt: lastConfirmedAt },
+				...unsettled,
+			},
+			select: { id: true },
+		});
+		expect(mockFindExit).not.toHaveBeenCalled();
 	});
 
 	it('does not trace the exit when no withdraw is open', async () => {
