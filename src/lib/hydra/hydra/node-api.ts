@@ -7,6 +7,7 @@
 
 import { Protocol, UTxO } from '@meshsdk/core';
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraTransaction } from './types';
 
@@ -111,6 +112,8 @@ export interface HydraNodeClientConfig {
 	maxUnreconciledTransactions?: number;
 	/** Explicit aggregate budget for retained confirmation CBOR. */
 	maxRetainedTransactionCborBytes?: number;
+	/** Computes history snapshot accumulators; defaults to the event loop. */
+	computeSnapshotAccumulator?: HydraAccumulatorComputer;
 }
 
 export interface ResolvedHydraNodeLimits {

@@ -12,7 +12,7 @@
 import { EventEmitter } from 'node:events';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraHeadStatus } from '@/generated/prisma/client';
-import { HydraProtocolError } from './errors';
+import { HydraProtocolError, HydraTransportError } from './errors';
 import { type HydraHeadClock } from './node-api';
 import {
 	assertExpectedFrameHeadId,
@@ -29,6 +29,45 @@ import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, StatusChangeD
 
 export const LIVE_SESSION_READY_EVENT = 'hydraLiveSessionReady';
 export const LIVE_SESSION_REJECTED_EVENT = 'hydraLiveSessionRejected';
+
+/**
+ * Resolve once `emitter` reports a ready live session, reject on its rejection
+ * or after `timeoutMs`. Resolves at once if `isReady()` already holds.
+ */
+export function waitForLiveSessionReady(
+	emitter: EventEmitter,
+	isReady: () => boolean,
+	timeoutMs: number,
+): Promise<void> {
+	if (isReady()) return Promise.resolve();
+
+	return new Promise<void>((resolve, reject) => {
+		const cleanup = () => {
+			clearTimeout(timeout);
+			emitter.removeListener(LIVE_SESSION_READY_EVENT, handleReady);
+			emitter.removeListener(LIVE_SESSION_REJECTED_EVENT, handleRejected);
+		};
+		const handleReady = () => {
+			cleanup();
+			resolve();
+		};
+		const handleRejected = (error: unknown) => {
+			cleanup();
+			reject(
+				error instanceof Error ? error : new HydraProtocolError('Hydra live session identity verification failed'),
+			);
+		};
+		const timeout = setTimeout(() => {
+			handleRejected(
+				new HydraTransportError(
+					`Hydra websocket did not provide a matching identity-bearing Greetings within ${timeoutMs}ms`,
+				),
+			);
+		}, timeoutMs);
+		emitter.on(LIVE_SESSION_READY_EVENT, handleReady);
+		emitter.on(LIVE_SESSION_REJECTED_EVENT, handleRejected);
+	});
+}
 const EARLIEST_PLAUSIBLE_HEAD_CLOCK_MS = Date.UTC(2017, 8, 23);
 const MAX_HEAD_CLOCK_FUTURE_SKEW_MS = 5 * 60 * 1000;
 

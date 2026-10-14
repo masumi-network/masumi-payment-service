@@ -44,6 +44,7 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 				// headers separately. Copying the config field by field is what made
 				// that possible; the omission is invisible at the call site.
 				authToken: nodeConfig.authToken,
+				computeSnapshotAccumulator: nodeConfig.computeSnapshotAccumulator,
 			});
 			this._nodes[nodeConfig.walletId] = node;
 			this._connected[nodeConfig.walletId] = false;

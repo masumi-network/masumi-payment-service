@@ -3,6 +3,10 @@
 	"version": "0.1.0",
 	"description": "A Payment service for MASUMI AI Nodes",
 	"main": "dist/index.js",
+	"exports": {
+		".": "./dist/index.js",
+		"./hydra-accumulator-worker": "./dist/hydra-accumulator-worker.js"
+	},
 	"author": "NMKR",
 	"license": "MIT",
 	"type": "module",

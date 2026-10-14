@@ -1,4 +1,5 @@
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 
 export enum MessageTag {
 	Greetings = 'Greetings',
@@ -222,5 +223,7 @@ export type HydraNodeConfig = {
 	 * header only — `node-url.ts` rejects credentials embedded in the URL.
 	 */
 	authToken?: string;
+	/** Computes history snapshot accumulators; defaults to the event loop. */
+	computeSnapshotAccumulator?: HydraAccumulatorComputer;
 	walletId: string;
 };
