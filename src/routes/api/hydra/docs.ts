@@ -88,7 +88,6 @@ import {
 
 const HEAD_ID = 'cuid_v2_auto_generated';
 const TAG = ['hydra'];
-
 const jsonBody = (schema: Parameters<typeof successResponse>[1], example: unknown) => ({
 	content: { 'application/json': { schema: schema.openapi({ example }) } },
 });
