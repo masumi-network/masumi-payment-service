@@ -85,9 +85,9 @@ export type PolicyUpdateExpectation = {
 };
 
 /** Units in datum order: the validator needs `limit` and `spent_in_period` in the same order. */
-type OrderedValue = Array<[string, bigint]>;
+export type OrderedValue = Array<[string, bigint]>;
 
-type WalletDatumView = {
+export type WalletDatumView = {
   agent: string;
   limit: OrderedValue;
   periodLength: bigint;
@@ -96,26 +96,27 @@ type WalletDatumView = {
   minBalance: bigint;
 };
 
-type PlutusJson = {
+export type PlutusJson = {
   constructor?: unknown;
   fields?: unknown;
   bytes?: unknown;
   int?: unknown;
   map?: unknown;
+  list?: unknown;
 };
 
-function asJson(value: unknown): PlutusJson {
+export function asJson(value: unknown): PlutusJson {
   if (typeof value !== 'object' || value == null) throw new Error('not Plutus data');
   return value as PlutusJson;
 }
 
-function bytesOf(value: unknown): string {
+export function bytesOf(value: unknown): string {
   const { bytes } = asJson(value);
   if (typeof bytes !== 'string') throw new Error('expected bytes');
   return bytes.toLowerCase();
 }
 
-function intOf(value: unknown): bigint {
+export function intOf(value: unknown): bigint {
   const { int } = asJson(value);
   if (typeof int !== 'number' && typeof int !== 'bigint' && typeof int !== 'string') {
     throw new Error('expected an integer');
@@ -123,7 +124,7 @@ function intOf(value: unknown): bigint {
   return BigInt(int);
 }
 
-function entriesOf(value: unknown): Array<{ k: unknown; v: unknown }> {
+export function entriesOf(value: unknown): Array<{ k: unknown; v: unknown }> {
   const { map } = asJson(value);
   if (!Array.isArray(map)) throw new Error('expected a map');
   return map as Array<{ k: unknown; v: unknown }>;
@@ -158,7 +159,12 @@ function assetValueOf(value: unknown): OrderedValue {
 }
 
 function readWalletDatum(datumCbor: string): WalletDatumView {
-  const datum = asJson(deserializeDatum(datumCbor));
+  return walletDatumFromJson(deserializeDatum(datumCbor));
+}
+
+/** The wallet datum from Mesh's JSON form of Plutus data. Throws when it is not one. */
+export function walletDatumFromJson(json: unknown): WalletDatumView {
+  const datum = asJson(json);
   const fields = datum.fields;
   if (Number(datum.constructor) !== 0 || !Array.isArray(fields) || fields.length !== 6) {
     throw new Error('the wallet datum is not constructor 0 with 6 fields');
@@ -173,7 +179,7 @@ function readWalletDatum(datumCbor: string): WalletDatumView {
   };
 }
 
-function sameEntries(a: OrderedValue, b: Map<string, bigint>): boolean {
+export function sameEntries(a: OrderedValue, b: Map<string, bigint>): boolean {
   return a.length === b.size && a.every(([unit, quantity]) => b.get(unit) === quantity);
 }
 

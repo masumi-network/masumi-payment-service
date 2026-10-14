@@ -9,13 +9,25 @@ export function GuardedHydraSection({
   ownerAddress,
   network,
   ownerWallet,
+  guarded,
+  agentVkh,
 }: {
   hotWalletId: string;
   ownerAddress: string;
   network: 'Preprod' | 'Mainnet';
   ownerWallet: ReturnType<typeof useCip30Wallet>;
+  guarded: { scriptAddress: string; policyId: string; stateTokenName: string };
+  agentVkh: string;
 }) {
-  const hydra = useGuardedHydra({ hotWalletId, ownerAddress, network, enabled: true, ownerWallet });
+  const hydra = useGuardedHydra({
+    hotWalletId,
+    ownerAddress,
+    network,
+    enabled: true,
+    ownerWallet,
+    guarded,
+    agentVkh,
+  });
   const problem = ownerWallet.signingProblem(network, ownerAddress);
 
   return (

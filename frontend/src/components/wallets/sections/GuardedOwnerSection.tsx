@@ -54,6 +54,8 @@ export function GuardedOwnerSection({
         ownerAddress={guarded.ownerAddress}
         network={network}
         ownerWallet={ownerWallet}
+        guarded={guarded}
+        agentVkh={agentVkh}
       />
     </>
   );

@@ -14,6 +14,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useHydraHeads } from '@/lib/hooks/hydra/heads';
 import type { useCip30Wallet } from '@/lib/cip30/useCip30Wallet';
 import { hasMoveInFlight, openHeadsForWallet } from './guarded-hydra-utils';
+import { decodeMoveTx, moveExpectation, moveProblem } from './guarded-move-check';
 
 const IN_FLIGHT_POLL_MS = 5000;
 
@@ -41,11 +42,16 @@ export function useGuardedHydra({
   network,
   enabled,
   ownerWallet,
+  guarded,
+  agentVkh,
 }: {
   hotWalletId: string;
   ownerAddress: string;
   network: 'Preprod' | 'Mainnet';
   enabled: boolean;
+  /** What the move must carry: the wallet's script and state token. */
+  guarded: { scriptAddress: string; policyId: string; stateTokenName: string };
+  agentVkh: string;
   /** Shared with the other owner actions, so one connection serves them all. */
   ownerWallet: ReturnType<typeof useCip30Wallet>;
 }) {
@@ -80,14 +86,35 @@ export function useGuardedHydra({
     }
   };
 
-  /** Prepare, sign in the browser, submit. Checks the wallet first so no transfer is prepared for nothing. */
+  /**
+   * Prepare, check in the browser, sign, submit. Checks the wallet first so no
+   * transfer is prepared for nothing. The check compares the prepared body with
+   * the wallet as a fresh status read shows it.
+   */
   const signedMove = async (
+    direction: 'deposit' | 'withdraw',
+    hydraHeadId: string | null,
     prepare: () => Promise<{ transfer: { id: string }; unsignedTx: string }>,
     submit: (transferId: string, signedTx: string) => Promise<unknown>,
   ) => {
     const problem = ownerWallet.signingProblem(network, ownerAddress);
     if (problem != null) throw new Error(problem);
+    const fresh = await query.refetch();
+    if (fresh.data == null) throw new Error('Could not read where the guarded wallet is');
+    const expected = moveExpectation({
+      direction,
+      status: fresh.data,
+      guarded,
+      agentVkh,
+      headIdentifier:
+        hydraHeadId == null
+          ? null
+          : (heads.find((head) => head.id === hydraHeadId)?.headIdentifier ?? null),
+      ownerUtxoRefs: await ownerWallet.ownUtxoRefs(),
+    });
     const prepared = await prepare();
+    const refusal = moveProblem(decodeMoveTx(prepared.unsignedTx), expected);
+    if (refusal != null) throw new Error(`Not signed. ${refusal}`);
     const signedTx = await ownerWallet.signPartial(prepared.unsignedTx);
     await submit(prepared.transfer.id, signedTx);
   };
@@ -95,6 +122,8 @@ export function useGuardedHydra({
   const deposit = (hydraHeadId: string) =>
     run('deposit', async () => {
       await signedMove(
+        'deposit',
+        hydraHeadId,
         () =>
           dataOf(
             postWalletGuardedHydraDeposit({
@@ -118,6 +147,8 @@ export function useGuardedHydra({
   const withdraw = () =>
     run('withdraw', async () => {
       await signedMove(
+        'withdraw',
+        null,
         () =>
           dataOf(
             postWalletGuardedHydraWithdraw({ client: apiClient, body: { hotWalletId } }),

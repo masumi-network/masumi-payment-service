@@ -95,6 +95,18 @@ export function useCip30Wallet() {
     return connection.wallet.signTx(unsignedTx, true);
   };
 
+  /** The wallet's own UTxOs and collateral as `<txHash>#<index>`, so a check can refuse spending them. */
+  const ownUtxoRefs = async (): Promise<Set<string>> => {
+    if (connection == null) throw new Error('Connect the owner wallet first');
+    const [utxos, collateral] = await Promise.all([
+      connection.wallet.getUtxos(),
+      connection.wallet.getCollateral(),
+    ]);
+    return new Set(
+      [...utxos, ...collateral].map((utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}`),
+    );
+  };
+
   /** Submits a fully signed transaction through the wallet's own node; returns its hash. */
   const submit = async (signedTx: string): Promise<string> => {
     if (connection == null) throw new Error('Connect the owner wallet first');
@@ -111,6 +123,7 @@ export function useCip30Wallet() {
     disconnect,
     signingProblem,
     signPartial,
+    ownUtxoRefs,
     submit,
   };
 }
