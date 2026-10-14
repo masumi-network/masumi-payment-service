@@ -32,6 +32,7 @@ import {
 	queryWalletEndpointGet,
 	postWalletFundEndpointPost,
 	getWalletFundEndpointGet,
+	postWalletConsolidateEndpointPost,
 	queryWalletListEndpointGet,
 } from './wallet';
 import {
@@ -146,6 +147,7 @@ import {
 	listTopupsGet,
 	withdrawHeadPost,
 	listWithdrawalsGet,
+	consolidateHeadPost,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
@@ -347,6 +349,8 @@ export const apiRouter: Routing = {
 				get: getWalletFundEndpointGet,
 				post: postWalletFundEndpointPost,
 			},
+			// A transfer back to itself that merges the wallet's UTxOs.
+			consolidate: { post: postWalletConsolidateEndpointPost },
 		},
 		'payment-source-extended': {
 			get: paymentSourceExtendedEndpointGet,
@@ -555,6 +559,8 @@ export const apiRouter: Routing = {
 					post: withdrawHeadPost,
 					get: listWithdrawalsGet,
 				},
+				// Merges the wallet's in-head UTxOs; nothing leaves the head.
+				consolidate: { post: consolidateHeadPost },
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
 				// Read-only: the head's state on L1, from an independent observer.

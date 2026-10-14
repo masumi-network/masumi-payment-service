@@ -87,7 +87,7 @@ export function amountOf(utxo: UTxO, unit: string): bigint {
  * earned in the head ineligible to withdraw, which is how a head holding 24.80
  * USDM answered "Only 0 of that asset is eligible to withdraw".
  */
-function isPlainValue(utxo: UTxO): boolean {
+export function isPlainValue(utxo: UTxO): boolean {
 	return (
 		(utxo.output.scriptRef === undefined || utxo.output.scriptRef === null) &&
 		(utxo.output.scriptHash === undefined || utxo.output.scriptHash === null)
