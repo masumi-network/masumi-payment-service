@@ -27,6 +27,12 @@ import {
 
 /** The hydra 2.4.x deposit validator. The service pins the same hash (`HYDRA_DEPOSIT_SCRIPT_HASH`). */
 const HYDRA_DEPOSIT_SCRIPT_HASH = 'eafae2c32f99ab347c7bb15961e0e84c74305f9088c1a7b8abf88e7f';
+/**
+ * hydra-node sets the deposit deadline 3 deposit periods ahead (preprod: 881 s
+ * after the block for a 300 s period). Recovery waits for it, so a far deadline
+ * locks the wallet. This allows a deposit period of up to 2 hours.
+ */
+const MAX_DEPOSIT_DEADLINE_AHEAD_MS = BigInt(6 * 60 * 60 * 1000);
 
 export type DecodedMoveTx = {
   /** `<txHash>#<index>`. */
@@ -72,6 +78,8 @@ export type MoveExpectation = {
   walletUtxoRef: string | null;
   /** The owner's own L1 UTxOs, as the CIP-30 wallet lists them. None may be spent. */
   ownerUtxoRefs: Set<string>;
+  /** When the check runs, for the deposit deadline. */
+  nowMs: bigint;
 };
 
 /** The wallet as the status read shows it, as a move must carry it. */
@@ -110,6 +118,7 @@ export function moveExpectation(params: {
     headIdentifier: params.headIdentifier,
     walletUtxoRef: status.walletUtxoRef,
     ownerUtxoRefs: params.ownerUtxoRefs,
+    nowMs: BigInt(Date.now()),
   };
 }
 
@@ -218,7 +227,7 @@ function depositProblem(tx: DecodedMoveTx, expected: MoveExpectation): string | 
   if (deposit.datumCbor == null) return 'The deposit output has no inline datum';
   try {
     // hydra 2.4.1 `DepositDatum`: (head id, deadline, [Commit { input, preSerializedOutput }]).
-    const [headId, , commitsJson] = constrFields(
+    const [headId, deadline, commitsJson] = constrFields(
       deserializeDatum(deposit.datumCbor),
       0,
       3,
@@ -226,6 +235,11 @@ function depositProblem(tx: DecodedMoveTx, expected: MoveExpectation): string | 
     );
     if (bytesOf(headId) !== expected.headIdentifier.toLowerCase())
       return 'The deposit goes to another head';
+    const deadlineMs = intOf(deadline);
+    if (deadlineMs <= expected.nowMs) return 'The deposit deadline has already passed';
+    if (deadlineMs > expected.nowMs + MAX_DEPOSIT_DEADLINE_AHEAD_MS) {
+      return 'The deposit deadline is so far ahead that a failed deposit would lock the wallet';
+    }
     const commits = listOf(commitsJson, 'commits');
     if (commits.length !== 1)
       return `The deposit commits ${commits.length} outputs, not the wallet alone`;

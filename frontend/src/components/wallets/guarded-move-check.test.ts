@@ -30,6 +30,8 @@ const HEAD_ID = 'b'.repeat(56);
 const WALLET_TX = '1'.repeat(64);
 const NODE_TX = '2'.repeat(64);
 const WALLET_REF = `${WALLET_TX}#0`;
+const NOW_MS = BigInt(1_800_000_000_000);
+const DEADLINE_MS = NOW_MS + BigInt(900_000);
 
 const walletValue: Asset[] = [
   { unit: 'lovelace', quantity: '75000000' },
@@ -81,14 +83,19 @@ function committedOutput(options: { paymentHash?: string; agent?: string } = {})
 }
 
 function depositDatum(
-  options: { headId?: string; commitRef?: [string, number]; output?: string } = {},
+  options: {
+    headId?: string;
+    commitRef?: [string, number];
+    output?: string;
+    deadline?: bigint;
+  } = {},
 ): Data {
   const [txHash, index] = options.commitRef ?? [WALLET_TX, 0];
   return {
     alternative: 0,
     fields: [
       options.headId ?? HEAD_ID,
-      BigInt(1_800_000_000_000),
+      options.deadline ?? DEADLINE_MS,
       [
         {
           alternative: 0,
@@ -154,6 +161,7 @@ const expected: MoveExpectation = {
   headIdentifier: HEAD_ID,
   walletUtxoRef: null,
   ownerUtxoRefs: new Set(),
+  nowMs: NOW_MS,
 };
 
 const depositProblemOf = (tx: string, overrides: Partial<MoveExpectation> = {}) =>
@@ -202,6 +210,18 @@ test('refuses a commit of a UTxO the deposit does not spend', () => {
 test('refuses a deposit output that does not carry the whole wallet', () => {
   const value = walletValue.filter((asset) => asset.unit !== TUSDM);
   assert.match(depositProblemOf(depositTx({ value }))!, /but the wallet holds/);
+});
+
+test('refuses a deposit deadline far enough ahead to lock the wallet', () => {
+  const datum = depositDatum({ deadline: NOW_MS + BigInt(365 * 24 * 60 * 60 * 1000) });
+  assert.match(depositProblemOf(depositTx({ datum }))!, /so far ahead/);
+});
+
+test('refuses a deposit deadline that has passed', () => {
+  assert.match(
+    depositProblemOf(depositTx({ datum: depositDatum({ deadline: NOW_MS - BigInt(1) }) }))!,
+    /already passed/,
+  );
 });
 
 test("refuses a move that spends the owner's own UTxO", () => {
