@@ -21,6 +21,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { CosignTransportError, mergeCosignWitnesses, requestCosign } from '../../../smart-wallet/cosign-client';
 import { buildGuardedL2LockTx } from '../../../smart-wallet/guarded-l2-lock-builder';
+import { cosignerKeyHashes } from '../../../smart-wallet/wallet';
 import { toHydraSnapshotProof } from '../../../smart-wallet/hydra-snapshot/build-proof';
 import type { HydraSnapshotProof } from '../../../smart-wallet/hydra-snapshot/snapshot-proof';
 import { loadSmartWalletScript, readWalletDatum } from '../../../smart-wallet/wallet-lifecycle';
@@ -161,7 +162,7 @@ export async function executeGuardedL2Lock(params: {
 	});
 	// The planned output: the price plus the min-UTxO lovelace the escrow needs.
 	const lockValue = guardedLockValue({ id: request.id, PaidFunds: valuePlan.outputFunds }, guarded.governedAsset);
-	const cosignerVkhs = guarded.quorumVkhs.slice(0, guarded.threshold);
+	const cosignerVkhs = cosignerKeyHashes(guarded, script.owner);
 
 	const tBuild = Date.now();
 	const built = await buildGuardedL2LockTx({

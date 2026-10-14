@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { serializeData, type UTxO } from '@meshsdk/core';
 import { describeWalletUtxo } from './guarded-wallet';
-import { assetValueData, walletDatumData } from './wallet';
+import { assetValueData, cosignerKeyHashes, walletDatumData } from './wallet';
 
 const POLICY = 'c'.repeat(56);
 const STATE_TOKEN = `${POLICY}${'d'.repeat(64)}`;
@@ -62,6 +62,21 @@ describe('describeWalletUtxo assets', () => {
 			['lovelace', 5_000_000n],
 			[TUSDM, 0n],
 		]);
+	});
+});
+
+describe('cosignerKeyHashes', () => {
+	const owner = '1'.repeat(56);
+	const a = '2'.repeat(56);
+	const b = '3'.repeat(56);
+
+	it('takes the first threshold quorum keys', () => {
+		expect(cosignerKeyHashes({ quorumVkhs: [a, b], threshold: 1 }, owner)).toEqual([a]);
+	});
+
+	// The owner never counts on chain and Exchain cannot sign for it.
+	it('skips the owner key when it sits in the quorum', () => {
+		expect(cosignerKeyHashes({ quorumVkhs: [owner, a, b], threshold: 2 }, owner)).toEqual([a, b]);
 	});
 });
 

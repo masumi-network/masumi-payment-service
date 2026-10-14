@@ -19,6 +19,7 @@ import {
 	type GuardedLockBuild,
 	type GuardedLockOutput,
 } from '../../../smart-wallet/guarded-lock-builder';
+import { cosignerKeyHashes } from '../../../smart-wallet/wallet';
 import {
 	fetchWalletUtxo,
 	GuardedWalletNotOnL1Error,
@@ -122,7 +123,7 @@ export async function executeGuardedBatch(
 			note: 'A deposit of the guarded wallet into a Hydra head is in flight; retrying',
 		});
 	}
-	const cosignerVkhs = guarded.quorumVkhs.slice(0, guarded.threshold);
+	const cosignerVkhs = cosignerKeyHashes(guarded, script.owner);
 	const rpcApiKey = paymentContract.PaymentSourceConfig.rpcProviderApiKey;
 	const hotWallet = paymentContract.HotWallets.find((candidate) => candidate.id === walletId);
 	if (hotWallet == null) return preSubmitFailed(new Error(`hot wallet ${walletId} is not in this payment source`));

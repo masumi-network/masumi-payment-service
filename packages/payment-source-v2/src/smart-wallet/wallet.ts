@@ -389,3 +389,12 @@ export function assertDeployableWallet(params: {
 		throw new Error('the initial funding is below min_balance_lovelace, so the agent could never spend');
 	}
 }
+
+/**
+ * The quorum keys Exchain co-signs with: the first `threshold` keys that count on
+ * chain. The owner key may sit in the quorum but never counts, and Exchain cannot
+ * sign for it, so it is skipped.
+ */
+export function cosignerKeyHashes(guarded: { quorumVkhs: string[]; threshold: number }, ownerVkh: string): string[] {
+	return guarded.quorumVkhs.filter((vkh) => vkh !== ownerVkh).slice(0, guarded.threshold);
+}
