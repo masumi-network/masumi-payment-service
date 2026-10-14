@@ -25,6 +25,8 @@ export type GuardedWalletParams = {
 export type GuardedWalletState = {
 	scriptAddress: string;
 	policyId: string;
+	/** Hash of the tx that created the wallet UTxO. */
+	utxoTxHash: string;
 	/** The datum's agent key hash: the hot wallet that may spend. */
 	agentVkh: string;
 	lovelace: bigint;
@@ -64,6 +66,7 @@ export function describeWalletUtxo(
 	return {
 		scriptAddress: script.address,
 		policyId: script.policyId,
+		utxoTxHash: walletUtxo.input.txHash,
 		agentVkh: datum.agent,
 		lovelace: lovelaceOf(walletUtxo.output.amount),
 		periodLimitLovelace: assetValueGet(datum.limit, LOVELACE_POLICY, LOVELACE_NAME) ?? 0n,

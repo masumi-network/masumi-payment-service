@@ -64,3 +64,16 @@ describe('describeWalletUtxo assets', () => {
 		]);
 	});
 });
+
+describe('describeWalletUtxo origin', () => {
+	it('keeps the hash of the tx that created the wallet UTxO', () => {
+		const state = describeWalletUtxo(
+			{ address: 'addr_test1script', policyId: POLICY },
+			walletUtxo([
+				{ unit: 'lovelace', quantity: '10000000' },
+				{ unit: STATE_TOKEN, quantity: '1' },
+			]),
+		);
+		expect(state.utxoTxHash).toBe('f'.repeat(64));
+	});
+});

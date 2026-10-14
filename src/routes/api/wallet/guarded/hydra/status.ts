@@ -7,6 +7,7 @@ import {
 } from '@masumi/payment-source-v2/smart-wallet/guarded-wallet';
 import { DEPOSIT_L1_GRACE_MS, WITHDRAW_SETTLE_TIMEOUT_MS } from '@masumi/payment-source-v2/smart-wallet/hydra-transfer';
 import { assetsView } from '../assets-view';
+import { isHydraFanoutTx } from './hydra-tx-name';
 import { findGuardedWalletInHead } from './location';
 import { loadGuardedHotWallet, transferView } from './transfers';
 
@@ -17,6 +18,7 @@ const RECENT_TRANSFERS = 10;
 const WITHDRAW_NOT_TAKEN = 'The head still holds the wallet; it did not take the withdraw';
 const DEPOSIT_NOT_ABSORBED = 'The head did not absorb the deposit; the wallet is on L1';
 const DEPOSIT_ELSEWHERE = 'The wallet went into another head; this deposit can never apply';
+const WITHDRAW_FANNED_OUT = 'The head closed and fanned the wallet out; it did not take the withdraw';
 
 function stateView(state: GuardedWalletState) {
 	return {
@@ -119,7 +121,27 @@ export async function getGuardedHydraStatus(hotWalletId: string, scope: Scope) {
 			},
 		});
 	} else if (l1State != null) {
-		await confirmNewest(GuardedHydraTransferDirection.Withdraw);
+		// A fanout also brings the wallet to L1. Only a withdraw that the head took
+		// (a decrement or a later L1 tx) confirms; after a fanout, an open withdraw failed.
+		let fannedOut: boolean | null = null;
+		try {
+			fannedOut = await isHydraFanoutTx(
+				hotWallet.PaymentSource.network,
+				hotWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+				l1State.utxoTxHash,
+			);
+		} catch (error) {
+			// Unknown origin: leave open withdraws as they are; the next read settles them.
+			l1Error = error instanceof Error ? error.message : String(error);
+		}
+		if (fannedOut === false) {
+			await confirmNewest(GuardedHydraTransferDirection.Withdraw);
+		} else if (fannedOut === true) {
+			await prisma.guardedHydraTransfer.updateMany({
+				where: { guardedWalletId: guarded.id, direction: GuardedHydraTransferDirection.Withdraw, ...unsettled },
+				data: { status: GuardedHydraTransferStatus.Failed, failureReason: WITHDRAW_FANNED_OUT },
+			});
+		}
 		// On L1 again after the recovery deadline, or after the deposit tx expired
 		// unseen: either way the head never took the deposit in.
 		await prisma.guardedHydraTransfer.updateMany({

@@ -12,6 +12,7 @@ const mockFindInHead = jest.fn<AsyncFn>();
 const mockLoadGuardedHotWallet = jest.fn<AsyncFn>();
 const mockInspect = jest.fn<AsyncFn>();
 const mockDescribe = jest.fn<(...args: unknown[]) => unknown>();
+const mockIsFanout = jest.fn<AsyncFn>();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -24,6 +25,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 	},
 }));
+jest.unstable_mockModule('./hydra-tx-name', () => ({ isHydraFanoutTx: mockIsFanout }));
 jest.unstable_mockModule('./location', () => ({ findGuardedWalletInHead: mockFindInHead }));
 jest.unstable_mockModule('./transfers', () => ({
 	loadGuardedHotWallet: mockLoadGuardedHotWallet,
@@ -40,7 +42,9 @@ const { getGuardedHydraStatus } = await import('./status');
 
 const scope = { networkLimit: [Network.Preprod], walletScopeIds: null };
 const params = { ownerAddress: 'addr_test1owner' };
+const L1_TX_HASH = 'b'.repeat(64);
 const walletState = {
+	utxoTxHash: L1_TX_HASH,
 	lovelace: 10_000_000n,
 	periodLimitLovelace: 5_000_000n,
 	spentInPeriodLovelace: 0n,
@@ -80,7 +84,10 @@ function expectStaleWithdrawSweep(call: UpdateManyArgs) {
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockLoadGuardedHotWallet.mockResolvedValue({
-		hotWallet: { id: 'hw-1', PaymentSource: { PaymentSourceConfig: { rpcProviderApiKey: 'preprodKey' } } },
+		hotWallet: {
+			id: 'hw-1',
+			PaymentSource: { network: Network.Preprod, PaymentSourceConfig: { rpcProviderApiKey: 'preprodKey' } },
+		},
 		guarded: { id: 'gw-1', scriptAddress: 'addr_test1script', policyId: 'p'.repeat(56) },
 		params,
 	});
@@ -89,6 +96,7 @@ beforeEach(() => {
 	mockFindFirst.mockResolvedValue(null);
 	mockLastConfirmed.mockResolvedValue(null);
 	mockUpdate.mockResolvedValue({});
+	mockIsFanout.mockResolvedValue(false);
 });
 
 const IN_HEAD_REF = `${'a'.repeat(64)}#1`;
@@ -226,6 +234,43 @@ describe('getGuardedHydraStatus', () => {
 		const expiredBefore = (calls[1].where as { OR: [unknown, { signBefore: { lte: Date } }] }).OR[1].signBefore.lte;
 		expect(Date.now() - expiredBefore.getTime()).toBeGreaterThanOrEqual(DEPOSIT_L1_GRACE_MS);
 		expect(result).toMatchObject({ location: 'L1', hydraHeadId: null, walletUtxoRef: null, l1Error: null });
+	});
+
+	// The wallet reached L1 through a fanout: the head closed with it inside, so the open withdraw never applied.
+	it('fails the open withdraw when a fanout put the wallet on L1', async () => {
+		mockFindInHead.mockResolvedValue(null);
+		mockInspect.mockResolvedValue(walletState);
+		mockIsFanout.mockResolvedValue(true);
+		mockFindFirst.mockResolvedValue({ id: 'tr-w', walletUtxoRef: IN_HEAD_REF });
+
+		await getGuardedHydraStatus('hw-1', scope);
+
+		expect(mockIsFanout).toHaveBeenCalledWith(Network.Preprod, 'preprodKey', L1_TX_HASH);
+		expect(mockUpdate).not.toHaveBeenCalled();
+		const calls = updateCalls();
+		expect(calls).toHaveLength(3);
+		expect(calls[1].where).toEqual({
+			guardedWalletId: 'gw-1',
+			direction: GuardedHydraTransferDirection.Withdraw,
+			...unsettled,
+		});
+		expect(calls[1].data).toMatchObject({ status: GuardedHydraTransferStatus.Failed });
+	});
+
+	it('leaves the open withdraw when the origin of the L1 wallet cannot be read', async () => {
+		mockFindInHead.mockResolvedValue(null);
+		mockInspect.mockResolvedValue(walletState);
+		mockIsFanout.mockRejectedValue(new Error('metadata lookup failed'));
+		mockFindFirst.mockResolvedValue({ id: 'tr-w', walletUtxoRef: IN_HEAD_REF });
+
+		const result = await getGuardedHydraStatus('hw-1', scope);
+
+		expect(mockUpdate).not.toHaveBeenCalled();
+		const withdrawSweeps = updateCalls().filter(
+			(call) => (call.where as { direction?: string }).direction === GuardedHydraTransferDirection.Withdraw,
+		);
+		expect(withdrawSweeps).toHaveLength(0);
+		expect(result).toMatchObject({ location: 'L1', l1Error: 'metadata lookup failed' });
 	});
 
 	it('reports Unknown and confirms nothing when L1 cannot be read', async () => {
