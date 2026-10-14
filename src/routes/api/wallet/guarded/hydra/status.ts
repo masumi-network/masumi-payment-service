@@ -1,5 +1,6 @@
 import { GuardedHydraTransferDirection, GuardedHydraTransferStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import {
 	describeWalletUtxo,
 	inspectGuardedWallet,
@@ -7,7 +8,7 @@ import {
 } from '@masumi/payment-source-v2/smart-wallet/guarded-wallet';
 import { DEPOSIT_L1_GRACE_MS, WITHDRAW_SETTLE_TIMEOUT_MS } from '@masumi/payment-source-v2/smart-wallet/hydra-transfer';
 import { assetsView } from '../assets-view';
-import { isHydraFanoutTx } from './hydra-tx-name';
+import { findWalletHydraExit, type WalletHydraExit } from './hydra-tx-name';
 import { findGuardedWalletInHead } from './location';
 import { loadGuardedHotWallet, transferView } from './transfers';
 
@@ -18,7 +19,7 @@ const RECENT_TRANSFERS = 10;
 const WITHDRAW_NOT_TAKEN = 'The head still holds the wallet; it did not take the withdraw';
 const DEPOSIT_NOT_ABSORBED = 'The head did not absorb the deposit; the wallet is on L1';
 const DEPOSIT_ELSEWHERE = 'The wallet went into another head; this deposit can never apply';
-const WITHDRAW_FANNED_OUT = 'The head closed and fanned the wallet out; it did not take the withdraw';
+const WITHDRAW_FANNED_OUT = 'The head closed before this withdraw reached L1; the fanout returned the wallet';
 
 function stateView(state: GuardedWalletState) {
 	return {
@@ -121,22 +122,32 @@ export async function getGuardedHydraStatus(hotWalletId: string, scope: Scope) {
 			},
 		});
 	} else if (l1State != null) {
-		// A fanout also brings the wallet to L1. Only a withdraw that the head took
-		// (a decrement or a later L1 tx) confirms; after a fanout, an open withdraw failed.
-		let fannedOut: boolean | null = null;
-		try {
-			fannedOut = await isHydraFanoutTx(
-				hotWallet.PaymentSource.network,
-				hotWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
-				l1State.utxoTxHash,
-			);
-		} catch (error) {
-			// Unknown origin: leave open withdraws as they are; the next read settles them.
-			l1Error = error instanceof Error ? error.message : String(error);
+		// A fanout also brings the wallet to L1. Only a decrement, the exit a withdraw
+		// makes, confirms one; after a fanout an open withdraw never reached L1.
+		const openWithdraw = await prisma.guardedHydraTransfer.findFirst({
+			where: { guardedWalletId: guarded.id, direction: GuardedHydraTransferDirection.Withdraw, ...unsettled },
+			select: { id: true },
+		});
+		let exit: WalletHydraExit | null = null;
+		if (openWithdraw != null) {
+			try {
+				exit = await findWalletHydraExit({
+					network: hotWallet.PaymentSource.network,
+					rpcApiKey: hotWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+					utxoTxHash: l1State.utxoTxHash,
+					stateTokenUnit: `${guarded.policyId}${guarded.stateTokenName}`,
+				});
+			} catch (error) {
+				// Unknown exit: leave open withdraws as they are; the next read settles them.
+				logger.warn('Could not trace how the guarded wallet left its head', {
+					guardedWalletId: guarded.id,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
 		}
-		if (fannedOut === false) {
+		if (exit === 'decrement') {
 			await confirmNewest(GuardedHydraTransferDirection.Withdraw);
-		} else if (fannedOut === true) {
+		} else if (exit === 'fanout') {
 			await prisma.guardedHydraTransfer.updateMany({
 				where: { guardedWalletId: guarded.id, direction: GuardedHydraTransferDirection.Withdraw, ...unsettled },
 				data: { status: GuardedHydraTransferStatus.Failed, failureReason: WITHDRAW_FANNED_OUT },

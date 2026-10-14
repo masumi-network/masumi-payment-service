@@ -12,7 +12,7 @@ const mockFindInHead = jest.fn<AsyncFn>();
 const mockLoadGuardedHotWallet = jest.fn<AsyncFn>();
 const mockInspect = jest.fn<AsyncFn>();
 const mockDescribe = jest.fn<(...args: unknown[]) => unknown>();
-const mockIsFanout = jest.fn<AsyncFn>();
+const mockFindExit = jest.fn<AsyncFn>();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -25,7 +25,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 	},
 }));
-jest.unstable_mockModule('./hydra-tx-name', () => ({ isHydraFanoutTx: mockIsFanout }));
+jest.unstable_mockModule('./hydra-tx-name', () => ({ findWalletHydraExit: mockFindExit }));
 jest.unstable_mockModule('./location', () => ({ findGuardedWalletInHead: mockFindInHead }));
 jest.unstable_mockModule('./transfers', () => ({
 	loadGuardedHotWallet: mockLoadGuardedHotWallet,
@@ -88,7 +88,12 @@ beforeEach(() => {
 			id: 'hw-1',
 			PaymentSource: { network: Network.Preprod, PaymentSourceConfig: { rpcProviderApiKey: 'preprodKey' } },
 		},
-		guarded: { id: 'gw-1', scriptAddress: 'addr_test1script', policyId: 'p'.repeat(56) },
+		guarded: {
+			id: 'gw-1',
+			scriptAddress: 'addr_test1script',
+			policyId: 'p'.repeat(56),
+			stateTokenName: 's'.repeat(64),
+		},
 		params,
 	});
 	mockUpdateMany.mockResolvedValue({ count: 0 });
@@ -96,7 +101,7 @@ beforeEach(() => {
 	mockFindFirst.mockResolvedValue(null);
 	mockLastConfirmed.mockResolvedValue(null);
 	mockUpdate.mockResolvedValue({});
-	mockIsFanout.mockResolvedValue(false);
+	mockFindExit.mockResolvedValue('decrement');
 });
 
 const IN_HEAD_REF = `${'a'.repeat(64)}#1`;
@@ -240,12 +245,17 @@ describe('getGuardedHydraStatus', () => {
 	it('fails the open withdraw when a fanout put the wallet on L1', async () => {
 		mockFindInHead.mockResolvedValue(null);
 		mockInspect.mockResolvedValue(walletState);
-		mockIsFanout.mockResolvedValue(true);
+		mockFindExit.mockResolvedValue('fanout');
 		mockFindFirst.mockResolvedValue({ id: 'tr-w', walletUtxoRef: IN_HEAD_REF });
 
 		await getGuardedHydraStatus('hw-1', scope);
 
-		expect(mockIsFanout).toHaveBeenCalledWith(Network.Preprod, 'preprodKey', L1_TX_HASH);
+		expect(mockFindExit).toHaveBeenCalledWith({
+			network: Network.Preprod,
+			rpcApiKey: 'preprodKey',
+			utxoTxHash: L1_TX_HASH,
+			stateTokenUnit: `${'p'.repeat(56)}${'s'.repeat(64)}`,
+		});
 		expect(mockUpdate).not.toHaveBeenCalled();
 		const calls = updateCalls();
 		expect(calls).toHaveLength(3);
@@ -257,10 +267,13 @@ describe('getGuardedHydraStatus', () => {
 		expect(calls[1].data).toMatchObject({ status: GuardedHydraTransferStatus.Failed });
 	});
 
-	it('leaves the open withdraw when the origin of the L1 wallet cannot be read', async () => {
+	it.each([
+		['the exit cannot be traced', () => mockFindExit.mockRejectedValue(new Error('metadata lookup failed'))],
+		['the wallet left no head through a decrement or fanout', () => mockFindExit.mockResolvedValue(null)],
+	])('leaves the open withdraw when %s', async (_case, arrange) => {
 		mockFindInHead.mockResolvedValue(null);
 		mockInspect.mockResolvedValue(walletState);
-		mockIsFanout.mockRejectedValue(new Error('metadata lookup failed'));
+		arrange();
 		mockFindFirst.mockResolvedValue({ id: 'tr-w', walletUtxoRef: IN_HEAD_REF });
 
 		const result = await getGuardedHydraStatus('hw-1', scope);
@@ -270,7 +283,17 @@ describe('getGuardedHydraStatus', () => {
 			(call) => (call.where as { direction?: string }).direction === GuardedHydraTransferDirection.Withdraw,
 		);
 		expect(withdrawSweeps).toHaveLength(0);
-		expect(result).toMatchObject({ location: 'L1', l1Error: 'metadata lookup failed' });
+		expect(result).toMatchObject({ location: 'L1', l1Error: null });
+	});
+
+	it('does not trace the exit when no withdraw is open', async () => {
+		mockFindInHead.mockResolvedValue(null);
+		mockInspect.mockResolvedValue(walletState);
+
+		await getGuardedHydraStatus('hw-1', scope);
+
+		expect(mockFindExit).not.toHaveBeenCalled();
+		expect(mockUpdate).not.toHaveBeenCalled();
 	});
 
 	it('reports Unknown and confirms nothing when L1 cannot be read', async () => {
@@ -292,6 +315,7 @@ describe('getGuardedHydraStatus', () => {
 		mockFindInHead.mockResolvedValue(null);
 		mockInspect.mockResolvedValue(walletState);
 		mockLastConfirmed.mockResolvedValue({ createdAt: lastConfirmedAt });
+		mockFindFirst.mockResolvedValue({ id: 'tr-w', walletUtxoRef: IN_HEAD_REF });
 
 		await getGuardedHydraStatus('hw-1', scope);
 
