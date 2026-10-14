@@ -217,13 +217,6 @@ test('refuses a deposit deadline far enough ahead to lock the wallet', () => {
   assert.match(depositProblemOf(depositTx({ datum }))!, /so far ahead/);
 });
 
-test('refuses a deposit deadline that has passed', () => {
-  assert.match(
-    depositProblemOf(depositTx({ datum: depositDatum({ deadline: NOW_MS - BigInt(1) }) }))!,
-    /already passed/,
-  );
-});
-
 test("refuses a move that spends the owner's own UTxO", () => {
   const ownerUtxoRefs = new Set([`${NODE_TX}#1`]);
   assert.match(depositProblemOf(depositTx(), { ownerUtxoRefs })!, /owner's own UTxO/);

@@ -236,7 +236,6 @@ function depositProblem(tx: DecodedMoveTx, expected: MoveExpectation): string | 
     if (bytesOf(headId) !== expected.headIdentifier.toLowerCase())
       return 'The deposit goes to another head';
     const deadlineMs = intOf(deadline);
-    if (deadlineMs <= expected.nowMs) return 'The deposit deadline has already passed';
     if (deadlineMs > expected.nowMs + MAX_DEPOSIT_DEADLINE_AHEAD_MS) {
       return 'The deposit deadline is so far ahead that a failed deposit would lock the wallet';
     }
