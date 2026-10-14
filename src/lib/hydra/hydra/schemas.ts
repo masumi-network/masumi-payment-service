@@ -2,6 +2,7 @@ import { z } from '@masumi/payment-core/zod';
 
 import { HydraScriptLanguage, HydraTransactionType } from './types';
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './snapshot-limits';
 
 export const MAX_HYDRA_WS_FRAME_BYTES = 4 * 1024 * 1024;
 // Mainnet's maxTxSize is normally 16 KiB. Allow protocol-parameter headroom,
@@ -10,7 +11,7 @@ export const MAX_HYDRA_WS_FRAME_BYTES = 4 * 1024 * 1024;
 const MAX_HYDRA_TRANSACTION_CBOR_HEX_LENGTH = 128 * 1024;
 const MAX_HYDRA_TRANSACTION_DESCRIPTION_LENGTH = 1024;
 const MAX_HYDRA_CONFIRMED_TRANSACTIONS_PER_FRAME = 1024;
-export const MAX_HYDRA_SNAPSHOT_OUTPUTS = 4095;
+export { MAX_HYDRA_SNAPSHOT_OUTPUTS };
 
 const boundedTagSchema = z.string().min(1).max(64);
 const boundedHeadIdSchema = z.string().min(1).max(128);

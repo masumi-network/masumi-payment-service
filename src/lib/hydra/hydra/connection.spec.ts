@@ -4,6 +4,8 @@ import { EventEmitter } from 'node:events';
 class WsMock extends EventEmitter {
 	readyState = 1;
 	readonly send = jest.fn<(data: string) => void>();
+	readonly pause = jest.fn<() => void>();
+	readonly resume = jest.fn<() => void>();
 	readonly close = jest.fn<(code?: number) => void>().mockImplementation((code) => {
 		queueMicrotask(() => {
 			this.readyState = 3;
@@ -84,6 +86,16 @@ describe('Connection', () => {
 		const conn = new Connection('ws://localhost:4001');
 		await conn.connect();
 		expect(conn.isOpen()).toBe(false);
+	});
+
+	it('pauses and resumes reading on the current socket', async () => {
+		const conn = new Connection('ws://localhost:4001');
+		conn.pauseReceiving();
+		await conn.connect();
+		conn.pauseReceiving();
+		conn.resumeReceiving();
+		expect(currentWsMock.pause).toHaveBeenCalledTimes(1);
+		expect(currentWsMock.resume).toHaveBeenCalledTimes(1);
 	});
 
 	it('isOpen() returns true after WebSocket fires onopen', async () => {

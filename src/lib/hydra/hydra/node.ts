@@ -48,8 +48,8 @@ import {
 import { HydraHistoryReplay, type HistoryReplayHost } from './node-history-replay';
 import { HydraHttpClient } from './node-http';
 import {
-	LIVE_SESSION_READY_EVENT,
 	LIVE_SESSION_REJECTED_EVENT,
+	waitForLiveSessionReady,
 	LiveFrameProcessor,
 	type LiveFrameHost,
 } from './node-live-frames';
@@ -61,6 +61,7 @@ import {
 	validateHydraNodeLimits,
 } from './node-api';
 import { withHistorySetting } from './node-url';
+import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { canonicalHydraHeadIdSchema, finalizedUtxoOf, headIsFinalizedMessageSchema } from './schemas';
 import { serializeHydraSnapshotOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction } from './types';
@@ -185,7 +186,11 @@ export class HydraNode extends EventEmitter {
 			reconciledHistoryCursor: config.reconciledHistoryCursor,
 		});
 		this._live = new LiveFrameProcessor(this.liveFrameHost(), this);
-		this._replay = new HydraHistoryReplay(this._historyConnection, this._ledger, this.replayHost());
+		this._replay = new HydraHistoryReplay(
+			this._historyConnection,
+			this._ledger,
+			this.replayHost(config.computeSnapshotAccumulator),
+		);
 		if (config.expectedHeadId) this.pinExpectedHeadId(config.expectedHeadId);
 	}
 
@@ -222,7 +227,7 @@ export class HydraNode extends EventEmitter {
 		};
 	}
 
-	private replayHost(): HistoryReplayHost {
+	private replayHost(computeSnapshotAccumulator: HydraAccumulatorComputer | undefined): HistoryReplayHost {
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const self = this;
 		return {
@@ -230,6 +235,7 @@ export class HydraNode extends EventEmitter {
 				return self._expectedHeadId;
 			},
 			trustLocalNodeSnapshotMetadata: this._trustLocalNodeSnapshotMetadata,
+			computeSnapshotAccumulator,
 			get persistenceRotationError(): HydraProtocolError | undefined {
 				return self._unsupportedPersistenceRotationError;
 			},
@@ -322,34 +328,7 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private waitForPinnedLiveSession(): Promise<void> {
-		if (this._live.isLiveSessionReady()) return Promise.resolve();
-
-		return new Promise<void>((resolve, reject) => {
-			const cleanup = () => {
-				clearTimeout(timeout);
-				this.removeListener(LIVE_SESSION_READY_EVENT, handleReady);
-				this.removeListener(LIVE_SESSION_REJECTED_EVENT, handleRejected);
-			};
-			const handleReady = () => {
-				cleanup();
-				resolve();
-			};
-			const handleRejected = (error: unknown) => {
-				cleanup();
-				reject(
-					error instanceof Error ? error : new HydraProtocolError('Hydra live session identity verification failed'),
-				);
-			};
-			const timeout = setTimeout(() => {
-				handleRejected(
-					new HydraTransportError(
-						`Hydra websocket did not provide a matching identity-bearing Greetings within ${this._connectTimeoutMs}ms`,
-					),
-				);
-			}, this._connectTimeoutMs);
-			this.on(LIVE_SESSION_READY_EVENT, handleReady);
-			this.on(LIVE_SESSION_REJECTED_EVENT, handleRejected);
-		});
+		return waitForLiveSessionReady(this, () => this._live.isLiveSessionReady(), this._connectTimeoutMs);
 	}
 
 	private assertPersistenceReplayIsSupported(message: unknown): void {

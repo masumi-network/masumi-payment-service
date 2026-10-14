@@ -246,10 +246,31 @@ export function resolveVerifiedHydraFanoutReference(
 	return matchingReferences.length === 1 ? matchingReferences[0] : null;
 }
 
+/**
+ * A snapshot whose party signatures verified, with its canonical outputs ready
+ * for the accumulator check.
+ *
+ * Signatures and the accumulator are split so the expensive half — KZG field
+ * arithmetic over the whole UTxO set — can run off the event loop. A frame is
+ * not verified until `completeHydraSnapshotVerification` accepts it.
+ */
+export type SignedHydraSnapshot = {
+	frame: HydraSnapshotVerificationFrame;
+	outputs: Map<string, string>;
+};
+
 export function verifyHydraSnapshot(
 	frame: HydraSnapshotVerificationFrame,
 	orderedVerificationKeys: readonly string[],
 ): VerifiedHydraSnapshot {
+	const signed = verifyHydraSnapshotSignatures(frame, orderedVerificationKeys);
+	return completeHydraSnapshotVerification(signed, computeHydraAccumulatorHash(signed.outputs.values()));
+}
+
+export function verifyHydraSnapshotSignatures(
+	frame: HydraSnapshotVerificationFrame,
+	orderedVerificationKeys: readonly string[],
+): SignedHydraSnapshot {
 	if (frame.headId !== frame.snapshot.headId) {
 		throw new HydraProtocolError('SnapshotConfirmed top-level and signed snapshot head identifiers differed');
 	}
@@ -282,8 +303,14 @@ export function verifyHydraSnapshot(
 	// KZG recomputation is intentionally after the cheap Ed25519 gate. An
 	// unauthenticated websocket peer must not be able to force polynomial/MSM
 	// work with arbitrary maximum-size states.
-	const outputs = canonicalSnapshotOutputs(frame.snapshot);
-	const computedAccumulator = computeHydraAccumulatorHash(outputs.values());
+	return { frame, outputs: canonicalSnapshotOutputs(frame.snapshot) };
+}
+
+/** Accept a signature-verified snapshot whose accumulator `computedAccumulator` was computed from its outputs. */
+export function completeHydraSnapshotVerification(
+	{ frame, outputs }: SignedHydraSnapshot,
+	computedAccumulator: string,
+): VerifiedHydraSnapshot {
 	if (computedAccumulator !== frame.snapshot.accumulator.toLowerCase()) {
 		throw new HydraProtocolError('SnapshotConfirmed accumulator did not match its full canonical UTxO state');
 	}

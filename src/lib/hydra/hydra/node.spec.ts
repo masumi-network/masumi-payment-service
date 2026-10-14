@@ -67,6 +67,10 @@ const mockFetch = jest.fn<typeof fetch>();
 
 // Import AFTER mock setup
 const { HydraNode } = await import('./node');
+// Frames here are driven one by one and asserted synchronously; yielding is
+// covered by the queue's own spec.
+const { historyReplayYieldSettings } = await import('./node-history-frame-queue');
+historyReplayYieldSettings.budgetMs = Number.POSITIVE_INFINITY;
 
 function makeHydraTransaction(seed: number, description = '') {
 	const body = TransactionBody.new(
@@ -2305,5 +2309,109 @@ describe('HydraNode', () => {
 				expect(node.headClock).toBeUndefined();
 			});
 		});
+	});
+});
+
+// History replay verifies every signed snapshot's KZG accumulator over the
+// head's whole UTxO set. On the event loop that held it for seconds per frame,
+// back to back, and starved the process; the service computes it on a worker.
+describe('HydraNode history replay with an off-loop accumulator', () => {
+	type AccumulatorRequest = { outputs: string[]; resolve: (hash: string) => void; reject: (error: Error) => void };
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+		mockConnectionInstances.length = 0;
+		mockConnectionUrls.length = 0;
+	});
+
+	const flush = async () => {
+		await new Promise((resolve) => setImmediate(resolve));
+	};
+
+	async function startNodeWithDeferredAccumulator() {
+		const requests: AccumulatorRequest[] = [];
+		const started = await startSignedNode({
+			computeSnapshotAccumulator: (outputs) =>
+				new Promise<string>((resolve, reject) => requests.push({ outputs, resolve, reject })),
+		});
+		return { ...started, requests };
+	}
+
+	const answer = (request: AccumulatorRequest) => request.resolve(computeHydraAccumulatorHash(request.outputs));
+
+	it('judges frames in order, each after its accumulator, and completes the pass', async () => {
+		const { node, historyConnection, requests } = await startNodeWithDeferredAccumulator();
+		const chain = signedHistoryChain();
+		for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+		finishHistoryReplay(historyConnection);
+
+		// Nothing overtakes a frame that waits: the second snapshot is not even
+		// asked for, and the closing Greetings is not read.
+		expect(requests).toHaveLength(1);
+		expect(node.confirmedTransactionHistoryReady).toBe(false);
+
+		for (let index = 0; index < chain.frames.length; index += 1) {
+			answer(requests[index]);
+			await flush();
+		}
+
+		expect(requests).toHaveLength(3);
+		expect(node.confirmedTransactionHistoryReady).toBe(true);
+		expect(node.getConfirmedTransaction(chain.transactions[2].txId)).not.toBeNull();
+		expect(historyConnection.invalidate).not.toHaveBeenCalled();
+	});
+
+	it('rejects a snapshot whose accumulator does not match, as on the event loop', async () => {
+		const { node, historyConnection, requests } = await startNodeWithDeferredAccumulator();
+		const chain = signedHistoryChain();
+		for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+		finishHistoryReplay(historyConnection);
+
+		requests[0].resolve('ff'.repeat(32));
+		await flush();
+
+		expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+		expect(requests).toHaveLength(1);
+		expect(node.confirmedTransactionHistoryReady).toBe(false);
+	});
+
+	it('fails the pass when the accumulator cannot be computed', async () => {
+		const { node, historyConnection, requests } = await startNodeWithDeferredAccumulator();
+		const chain = signedHistoryChain();
+		historyConnection.emit('message', JSON.stringify(chain.frames[0]));
+
+		requests[0].reject(new HydraTransportError('Hydra accumulator worker exited with code 1'));
+		await flush();
+
+		expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+		expect(node.confirmedTransactionHistoryReady).toBe(false);
+	});
+
+	// The socket the frame came from is gone. Its verdict, either way, belongs
+	// to nobody: a rejection must not tear down the fresh pass, and an
+	// acceptance must not anchor it.
+	it('drops the verdict on a frame whose pass ended while it waited', async () => {
+		const { node, historyConnection, requests } = await startNodeWithDeferredAccumulator();
+		const chain = signedHistoryChain();
+		historyConnection.emit('message', JSON.stringify(chain.frames[0]));
+		historyConnection.emit('message', JSON.stringify(chain.frames[1]));
+		historyConnection.emit('close');
+
+		requests[0].resolve('ff'.repeat(32));
+		await flush();
+
+		expect(historyConnection.invalidate).not.toHaveBeenCalled();
+		// Its queued successor went with the pass.
+		expect(requests).toHaveLength(1);
+
+		// The fresh pass replays from the beginning and completes on its own.
+		historyConnection.emit('message', JSON.stringify(headIsOpen()));
+		for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+		finishHistoryReplay(historyConnection);
+		for (let index = 1; index < 4; index += 1) {
+			answer(requests[index]);
+			await flush();
+		}
+		expect(node.confirmedTransactionHistoryReady).toBe(true);
 	});
 });

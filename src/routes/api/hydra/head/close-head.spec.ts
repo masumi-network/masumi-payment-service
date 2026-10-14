@@ -323,6 +323,45 @@ describe('Hydra head state convergence', () => {
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(2);
 	});
 
+	// Connecting starts the head's history replay. Awaited, a long history kept
+	// the request open through it, and the response query then failed behind
+	// the replay: the UI said "still disabled" for a head that was enabled.
+	it('answers a re-enable once the flag is durable, without waiting for the head to connect', async () => {
+		const staleHead = {
+			...openHead,
+			isEnabled: false,
+			headIdentifier: 'a'.repeat(56),
+			initTxHash: 'b'.repeat(64),
+			updatedAt: new Date('2026-07-23T01:00:00Z'),
+			contestationPeriod: 86_400n,
+			HydraRelation: {},
+		};
+		const quarantinedHead = { ...staleHead, initTxHash: null, updatedAt: new Date('2026-07-23T01:01:00Z') };
+		const enabledHead = { ...quarantinedHead, isEnabled: true, initTxHash: 'c'.repeat(64) };
+		mockFindHead.mockResolvedValueOnce(staleHead).mockResolvedValueOnce(enabledHead);
+		mockUpdateHead.mockResolvedValue(quarantinedHead);
+		mockReleaseClose.mockResolvedValue({ count: 1 });
+		// The quarantine reconcile settles; the connect after enable never does.
+		mockReconcileEnabledState.mockResolvedValueOnce(false).mockReturnValueOnce(new Promise(() => undefined));
+		const verify = jest.fn<(headId: string) => Promise<{ headIdentifier: string; initTxHash: string }>>(async () => ({
+			headIdentifier: staleHead.headIdentifier,
+			initTxHash: 'c'.repeat(64),
+		}));
+
+		await expect(updateHydraHeadEnabledState('head-1', true, verify)).resolves.toBe(enabledHead);
+		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(2);
+	});
+
+	it('answers a re-enable even when connecting the head fails', async () => {
+		const liveHead = { ...openHead, headIdentifier: 'a'.repeat(56), initTxHash: 'b'.repeat(64) };
+		mockFindHead.mockResolvedValue(liveHead);
+		mockReconcileEnabledState.mockRejectedValueOnce(new Error('pool timeout'));
+
+		await expect(updateHydraHeadEnabledState('head-1', true, jest.fn() as AnyMock)).resolves.toBe(liveHead);
+		// The rejection is handled, not left unhandled for the process to crash on.
+		await new Promise((resolve) => setImmediate(resolve));
+	});
+
 	it('leaves an established head disabled when fresh L1 evidence is still unavailable', async () => {
 		const staleHead = {
 			...openHead,
