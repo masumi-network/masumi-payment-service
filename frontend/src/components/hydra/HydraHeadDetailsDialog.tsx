@@ -29,6 +29,7 @@ import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraHeadInHeadBalance } from '@/components/hydra/HydraHeadInHeadBalance';
 import { HydraHeadTopupButton } from '@/components/hydra/HydraHeadTopupButton';
 import { HydraHeadWithdrawButton } from '@/components/hydra/HydraHeadWithdrawButton';
+import { HydraHeadConsolidateButton } from '@/components/hydra/HydraHeadConsolidateButton';
 import { HeadStatusHint } from '@/components/hydra/hydra-hints';
 import {
   WalletRoleBadge,
@@ -341,6 +342,8 @@ export function HydraHeadDetailsDialog({
           <HydraHeadTopupButton headId={head.id} isOpen={head.status === 'Open'} />
 
           <HydraHeadWithdrawButton headId={head.id} isOpen={head.status === 'Open'} />
+
+          <HydraHeadConsolidateButton headId={head.id} isOpen={head.status === 'Open'} />
 
           {/* Open whenever there are any. The section only renders when the count
               is non-zero, so collapsing it by default meant the card advertised

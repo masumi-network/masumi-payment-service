@@ -212,6 +212,29 @@ export async function withdrawFromHydraHead(
   return ensureData(response?.data?.data, 'The withdrawal response was not returned by the API');
 }
 
+/** Merge this node's in-head UTxOs. Resolves once the head has confirmed it. */
+export async function consolidateHydraHead(apiClient: Client, payload: { headId: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<{
+        200: ApiEnvelope<{
+          headId: string;
+          txId: string;
+          inputCount: number;
+          outputCount: number;
+          remainingCount: number;
+        }>;
+      }>({
+        responseType: 'json',
+        url: '/hydra/head/consolidate',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to consolidate the Hydra head UTxOs' },
+  );
+
+  return ensureData(response?.data?.data, 'The consolidation response was not returned by the API');
+}
+
 /** What the node's own key holds, read before an L1 action rather than after it fails. */
 export async function readHydraNodeFunding(apiClient: Client, payload: { id: string }) {
   const response = await handleApiCall(
