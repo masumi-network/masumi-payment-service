@@ -12,7 +12,7 @@
  * check someone performs and a hex address is one they click past.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -40,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
+import { createInvitePreviewGate } from '@/lib/invite-preview-gate';
 import type { ReactNode } from 'react';
 import {
   DepositPeriodHint,
@@ -98,6 +99,13 @@ export function RedeemHydraInviteDialog({
   const [hotWalletId, setHotWalletId] = useState('');
 
   const [preview, setPreview] = useState<HydraInvitePreview | null>(null);
+  // Redeeming submits the gate's accepted code, never the live field, so the
+  // terms on screen and the invite redeemed are one invite.
+  const previewGate = useRef(createInvitePreviewGate()).current;
+  // Bumped on close. A redeem that settles after the dialog was closed still
+  // reports its outcome, but must not close or reset whatever invite the
+  // operator has opened since.
+  const dialogEpochRef = useRef(0);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [allowInsecureExchangeHttp, setAllowInsecureExchangeHttp] = useState(false);
   const [allowPrivateExchangeNetwork, setAllowPrivateExchangeNetwork] = useState(false);
@@ -126,6 +134,9 @@ export function RedeemHydraInviteDialog({
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
+      dialogEpochRef.current += 1;
+      previewGate.invalidate();
+      setIsLoading(false);
       setCode('');
       setHotWalletId('');
       setPreview(null);
@@ -146,6 +157,7 @@ export function RedeemHydraInviteDialog({
       setErrors({ code: 'Paste the invite code you were sent.' });
       return;
     }
+    const ticket = previewGate.begin(code.trim());
     setIsLoading(true);
     try {
       setAllowInsecureExchangeHttp(false);
@@ -154,11 +166,16 @@ export function RedeemHydraInviteDialog({
       // the tick referred to, so the tick goes with them.
       setAcceptedTerms(false);
       setErrors({});
-      setPreview(await previewHydraInvite(apiClient, { code: code.trim() }));
+      const result = await previewHydraInvite(apiClient, { code: ticket.code });
+      // Edited, closed, or re-read while this was in flight: these terms belong
+      // to a code that is no longer the one on screen.
+      if (!previewGate.accept(ticket)) return;
+      setPreview(result);
     } catch (error) {
+      if (!previewGate.isCurrent(ticket)) return;
       toast.error(error instanceof Error ? error.message : 'Failed to read the invite');
     } finally {
-      setIsLoading(false);
+      if (previewGate.isCurrent(ticket)) setIsLoading(false);
     }
   }
 
@@ -187,10 +204,16 @@ export function RedeemHydraInviteDialog({
       );
       return;
     }
+    const previewedCode = previewGate.acceptedCode();
+    if (previewedCode === null) {
+      toast.error('Read the invite again before redeeming.');
+      return;
+    }
+    const epoch = dialogEpochRef.current;
     setIsLoading(true);
     try {
       const result = await redeemHydraInvite(apiClient, {
-        code: code.trim(),
+        code: previewedCode,
         hotWalletId,
         allowInsecureExchangeHttp,
         allowPrivateExchangeNetwork,
@@ -203,11 +226,11 @@ export function RedeemHydraInviteDialog({
         predicate: (query) => String(query.queryKey[0]).startsWith('hydra'),
       });
       onRedeemed();
-      handleOpenChange(false);
+      if (epoch === dialogEpochRef.current) handleOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to redeem the invite');
     } finally {
-      setIsLoading(false);
+      if (epoch === dialogEpochRef.current) setIsLoading(false);
     }
   }
 
@@ -241,7 +264,12 @@ export function RedeemHydraInviteDialog({
               className="font-mono text-xs"
               placeholder="masumi-hydra-invite-1.…"
               value={code}
-              onChange={(event) => setCode(event.target.value)}
+              onChange={(event) => {
+                // A pending preview was for the old text; drop it.
+                previewGate.invalidate();
+                setIsLoading(false);
+                setCode(event.target.value);
+              }}
             />
             <p className="text-xs text-muted-foreground">
               Reading it starts nothing and tells the sender nothing.
@@ -478,9 +506,13 @@ export function RedeemHydraInviteDialog({
               <Button
                 type="button"
                 variant="outline"
+                // Not while a redeem is in flight: its result would land over
+                // whatever invite is read next.
+                disabled={isLoading}
                 onClick={() => {
                   // The next invite may be from the other side, which makes a
                   // wallet chosen here invalid rather than merely stale.
+                  previewGate.invalidate();
                   setPreview(null);
                   setAcceptedTerms(false);
                   setHotWalletId('');
