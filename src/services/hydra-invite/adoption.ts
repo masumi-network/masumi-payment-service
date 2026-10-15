@@ -157,6 +157,20 @@ type AdoptionResult = 'adopted' | 'rejected' | 'skipped';
  * at it. The node's keys are released last of all, and only once the Host has
  * actually let go of the node, so a refusal leaves the keys with us rather than
  * leaving a running node nobody holds keys for.
+ *
+ * `force` skips the Host's head-state guard. By the time a redemption is
+ * polled the Host has already given the node the redeemer as its peer, so a
+ * plain removal is refused as a node that may hold head state, and the node and
+ * its fuel stay until someone intervenes. Pass it only when no head here claims
+ * the node: there is then no head state on it that this service could ever need.
+ *
+ * A redemption whose signature fails is marked `Failed` and its node is removed
+ * with force. It cannot hold state we need: no head was recorded here, and only
+ * an admin action makes our node take part in one. The one exception is a node
+ * a head already claims: it is kept, because force would skip the guard that
+ * protects that head.
+ * The nonce is not reopened. Whoever posted the forgery holds it, so the
+ * operator issues a new invite instead.
  */
 async function discardUnadoptableRedemption(
 	invite: {
@@ -166,11 +180,12 @@ async function discardUnadoptableRedemption(
 		hostNodeId: string;
 		HydraHost: { baseUrl: string; encryptedAdminToken: string | null; allowInsecureHttp: boolean };
 	},
-	removeNode: boolean,
+	options: { removeNode: boolean; failedVerification: boolean; force: boolean },
 ): Promise<void> {
+	const { removeNode, failedVerification, force } = options;
 	const discarded = await prisma.hydraHeadInvite.updateMany({
 		where: { id: invite.id, status: HydraInviteStatus.Issued },
-		data: { status: HydraInviteStatus.Revoked },
+		data: { status: failedVerification ? HydraInviteStatus.Failed : HydraInviteStatus.Revoked },
 	});
 	if (discarded.count !== 1) return;
 
@@ -190,7 +205,7 @@ async function discardUnadoptableRedemption(
 			try {
 				if (await canRemoveReservedHostNode(invite.hydraHostId, invite.hostNodeId))
 					await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
-						force: false,
+						force,
 						...transport,
 					});
 			} catch (error) {
@@ -263,9 +278,18 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 	} catch (error) {
 		logger.error(
 			`hydra: invite ${record.nonce} was redeemed with a signature that does not verify (${(error as Error).message}); ` +
-				'discarding it and removing the node it reserved',
+				'marking it failed and removing the node it reserved; issue a new invite to retry',
 		);
-		await discardUnadoptableRedemption(invite, true);
+		// Force skips the Host's head-state guard, so keep the node if a head
+		// claims it, as the no-participant path below does.
+		const boundToHead = await prisma.hydraLocalParticipant.count({
+			where: { hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId, hydraHeadId: { not: null } },
+		});
+		await discardUnadoptableRedemption(invite, {
+			removeNode: boundToHead === 0,
+			failedVerification: true,
+			force: true,
+		});
 		return 'rejected';
 	}
 
@@ -285,7 +309,13 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 			`hydra: invite ${record.nonce} has no unbound local participant to attach to a head; discarding it` +
 				(claimed > 0 ? `, but leaving node ${invite.hostNodeId} in place because a head still claims it` : ''),
 		);
-		await discardUnadoptableRedemption(invite, claimed === 0);
+		// No participant at all means no head can be bound to the node, so force
+		// is safe, and without it the Host refuses because the peer is set.
+		await discardUnadoptableRedemption(invite, {
+			removeNode: claimed === 0,
+			failedVerification: false,
+			force: claimed === 0,
+		});
 		return 'rejected';
 	}
 

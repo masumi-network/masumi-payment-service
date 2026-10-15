@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import { HotWalletType, PaymentSourceType, PurchasingAction } from '@/generated/prisma/client';
 
 const mockPaymentSourceFindMany = jest.fn<(_args: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
@@ -85,7 +86,7 @@ beforeEach(() => {
 	jest.clearAllMocks();
 	mockPaymentSourceFindMany.mockResolvedValue([]);
 	mockResolveHead.mockResolvedValue({ hydraHead: { id: 'head-1' } });
-	mockGetProvider.mockReturnValue({});
+	mockGetProvider.mockReturnValue({ getHeadClock: () => undefined });
 	mockGetNode.mockReturnValue({ networkConnected: true });
 });
 
@@ -237,5 +238,60 @@ describe('processL2PurchaseLocks counterparty health', () => {
 		expect(mockHotWalletFindUnique).not.toHaveBeenCalled();
 		// Not failed: a peer outage may be brief, and payByTime still ends the wait.
 		expect(mockPurchaseRequestUpdate).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * A head whose only wallet is held by an expired L2 reservation cannot lock
+ * anything until reconciliation proves that body dead, which an idle head can
+ * take a long time to do. It is not ready, the same as a head whose
+ * counterparty is down: auto routing goes to L1 at once instead of waiting.
+ */
+describe('processL2PurchaseLocks with a head wallet held by an expired reservation', () => {
+	const nowMs = Date.UTC(2026, 9, 15, 12, 0, 0);
+
+	function sourceWithHeldHeadWallet(forceLayer: 'L2' | null, validUntilMs: number) {
+		const source = sourceWithBusyHeadWallet(new Date());
+		return {
+			...source,
+			HotWallets: [
+				{
+					...source.HotWallets[0]!,
+					PendingTransaction: {
+						layer: 'L2',
+						status: 'Pending',
+						invalidHereafterSlot: BigInt(unixTimeToEnclosingSlot(validUntilMs, SLOT_CONFIG_NETWORK.preprod)),
+					},
+				},
+			],
+			PurchaseRequests: [{ ...source.PurchaseRequests[0]!, forceLayer }],
+		};
+	}
+
+	beforeEach(() => {
+		reportWalletBusy();
+		mockGetProvider.mockReturnValue({ getHeadClock: () => ({ chainTimeMs: nowMs, receivedAtMs: nowMs }) });
+	});
+
+	it('leaves an auto request to L1 at once', async () => {
+		mockPaymentSourceFindMany.mockResolvedValue([sourceWithHeldHeadWallet(null, nowMs - 10 * 60_000)]);
+
+		await expect(processL2PurchaseLocks()).resolves.toEqual({ deferredRequestIds: [] });
+		expect(mockHotWalletFindUnique).not.toHaveBeenCalled();
+	});
+
+	it('leaves a forced request for retry instead of failing it', async () => {
+		mockPaymentSourceFindMany.mockResolvedValue([sourceWithHeldHeadWallet('L2', nowMs - 10 * 60_000)]);
+
+		await expect(processL2PurchaseLocks()).resolves.toEqual({ deferredRequestIds: [] });
+		expect(mockPurchaseRequestUpdate).not.toHaveBeenCalled();
+		// Skipped by the gate, not merely waited on as a busy wallet.
+		expect(mockHotWalletFindUnique).not.toHaveBeenCalled();
+	});
+
+	it('still holds an auto request off L1 while the lock holding the wallet is within its validity', async () => {
+		mockPaymentSourceFindMany.mockResolvedValue([sourceWithHeldHeadWallet(null, nowMs + 60_000)]);
+
+		await expect(processL2PurchaseLocks()).resolves.toEqual({ deferredRequestIds: ['purchase-1'] });
 	});
 });

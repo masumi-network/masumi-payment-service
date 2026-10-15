@@ -110,6 +110,21 @@ describe('releaseRejectedL2Reservation', () => {
 		);
 	});
 
+	it('refuses when a nudge was recorded after the release decision read the row', async () => {
+		mockFindUnique.mockResolvedValue(
+			pendingRejected({ l2RejectedByHeadAt: null, l2ReleaseNudgeInputRef: `${'c'.repeat(64)}#1` }),
+		);
+
+		await expect(
+			releaseRejectedL2Reservation(
+				{ ...reservation, l2ReleaseNudgeInputRef: null },
+				prisma as never,
+				'inputs-unspent-after-expiry',
+			),
+		).resolves.toBe(false);
+		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
+	});
+
 	// TxValid may already have paired the seller's PaymentRequest, which a
 	// release does not undo.
 	it('still refuses a TxValid (hashed) transaction under the input proof', async () => {

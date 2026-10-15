@@ -250,6 +250,10 @@ model Transaction {
   /// Set when the reservation was auto-released on that input proof. A later
   /// confirmation of such a body halts the head's replay (invariant breach).
   l2ReleasedByInputProofAt                   DateTime?
+  /// The wallet UTxO (`txHash#index`) a release nudge self-sends so an idle head
+  /// confirms a newer snapshot. Release waits until it is spent, so a nudge still
+  /// in flight can never meet a new lock on the freed wallet.
+  l2ReleaseNudgeInputRef                     String?
   BlocksWallet                               HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
@@ -2250,6 +2254,9 @@ enum HydraInviteStatus {
   Expired
   /// Withdrawn by the operator before anyone redeemed it.
   Revoked
+  /// Redeemed with a signature that did not verify. The node was removed and
+  /// the nonce stays spent; the operator issues a new invite to retry.
+  Failed
 }
 
 /// A signed proposal to open the next [[Hydra Head]] on a relation.

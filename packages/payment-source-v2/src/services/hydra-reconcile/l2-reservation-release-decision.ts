@@ -19,10 +19,18 @@
  *
  * The caller passes in only reservations whose expiry the head clock has
  * already passed (`canReportExpiredL2Reservation`).
+ *
+ * An idle head never confirms that newer snapshot on its own, and the wallet
+ * this reservation pins is what our side would need to make one. So
+ * `await-snapshot` asks the caller to nudge the head with a self-send of an
+ * unreserved wallet UTxO (`./l2-reservation-nudge`). Once a nudge input is
+ * recorded, release also waits until that input is spent: freeing the wallet
+ * while the nudge is still in flight would let a new lock select its input.
  */
 export type L2ReservationReleaseDecision =
 	| { action: 'hold' }
 	| { action: 'baseline'; snapshotNumber: bigint }
+	| { action: 'await-snapshot' }
 	| { action: 'release' };
 
 export function decideL2ReservationRelease(params: {
@@ -30,16 +38,21 @@ export function decideL2ReservationRelease(params: {
 	snapshotNumber: bigint;
 	/** The node's own confirmed snapshot number, read after expiry, if recorded. */
 	baselineSnapshotNumber: bigint | undefined;
+	/** The wallet UTxO a release nudge spends, once one was recorded. */
+	nudgeInputRef: string | null;
 	/** Null when the output is spent, partitioned, or the snapshot is not the verified one. */
 	readVerifiedOutput: (reference: string, snapshotNumber: bigint) => string | null;
 }): L2ReservationReleaseDecision {
-	const { inputRefs, snapshotNumber, baselineSnapshotNumber, readVerifiedOutput } = params;
+	const { inputRefs, snapshotNumber, baselineSnapshotNumber, nudgeInputRef, readVerifiedOutput } = params;
 	// Reservations made before inputs were recorded cannot be proven dead.
 	if (inputRefs.length === 0) return { action: 'hold' };
 	if (!inputRefs.every((reference) => readVerifiedOutput(reference, snapshotNumber) !== null)) {
 		return { action: 'hold' };
 	}
 	if (baselineSnapshotNumber === undefined) return { action: 'baseline', snapshotNumber };
-	if (snapshotNumber <= baselineSnapshotNumber) return { action: 'hold' };
+	if (snapshotNumber <= baselineSnapshotNumber) return { action: 'await-snapshot' };
+	if (nudgeInputRef !== null && readVerifiedOutput(nudgeInputRef, snapshotNumber) !== null) {
+		return { action: 'await-snapshot' };
+	}
 	return { action: 'release' };
 }
