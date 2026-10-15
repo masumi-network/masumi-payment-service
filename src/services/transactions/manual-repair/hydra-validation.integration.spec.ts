@@ -44,7 +44,9 @@ const confirmedTransaction = jest.fn() as AnyMock;
 const node = {
 	hasVerifiedPinnedSessions: true,
 	confirmedTransactionHistoryReady: true,
-	getVerifiedCurrentOutput: currentOutput,
+	verifiedSnapshotNumber: 3n,
+	getVerifiedCurrentOutput: (reference: string, expected: bigint) =>
+		expected === node.verifiedSnapshotNumber ? currentOutput(reference) : null,
 	getConfirmedTransaction: confirmedTransaction,
 };
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
@@ -168,7 +170,7 @@ function fixture() {
 		reconciliationCompletedAt: null,
 		status: HydraHeadStatus.Open,
 		ownerEpoch: 3n,
-		latestSnapshotNumber: 3n,
+		latestSnapshotNumber: 0n,
 		HydraRelation: { LocalHotWallet: buyer, RemoteWallet: seller },
 	});
 	currentOutput.mockReturnValue(serializeCardanoTransactionOutput(output));
