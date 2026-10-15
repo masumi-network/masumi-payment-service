@@ -36,7 +36,9 @@ const config: Config.InitialOptions = {
 			'ts-jest',
 			{
 				useESM: true,
-				tsconfig: 'tsconfig.json',
+				// Transpile-only: `isolatedModules` makes ts-jest skip the per-file
+				// type check. Types are checked once by `pnpm run typecheck:backend`.
+				tsconfig: 'tsconfig.jest.json',
 			},
 		],
 	},
