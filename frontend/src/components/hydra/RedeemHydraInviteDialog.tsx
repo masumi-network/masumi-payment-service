@@ -102,6 +102,9 @@ export function RedeemHydraInviteDialog({
   // Redeeming submits the gate's accepted code, never the live field, so the
   // terms on screen and the invite redeemed are one invite.
   const previewGate = useRef(createInvitePreviewGate()).current;
+  // Closing mid-redeem would let its result land on whatever invite is read
+  // next, so the dialog stays open until the redeem settles.
+  const isRedeemingRef = useRef(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [allowInsecureExchangeHttp, setAllowInsecureExchangeHttp] = useState(false);
   const [allowPrivateExchangeNetwork, setAllowPrivateExchangeNetwork] = useState(false);
@@ -129,6 +132,7 @@ export function RedeemHydraInviteDialog({
     preview !== null && preview.exchangeUsesPrivateNetwork !== false;
 
   function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && isRedeemingRef.current) return;
     if (!nextOpen) {
       previewGate.invalidate();
       setIsLoading(false);
@@ -204,6 +208,7 @@ export function RedeemHydraInviteDialog({
       toast.error('Read the invite again before redeeming.');
       return;
     }
+    isRedeemingRef.current = true;
     setIsLoading(true);
     try {
       const result = await redeemHydraInvite(apiClient, {
@@ -220,10 +225,12 @@ export function RedeemHydraInviteDialog({
         predicate: (query) => String(query.queryKey[0]).startsWith('hydra'),
       });
       onRedeemed();
+      isRedeemingRef.current = false;
       handleOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to redeem the invite');
     } finally {
+      isRedeemingRef.current = false;
       setIsLoading(false);
     }
   }
