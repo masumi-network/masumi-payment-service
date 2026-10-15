@@ -76,7 +76,6 @@ describe('expired L2 reservation reporting', () => {
 		const snapshot = { number: 7n, nodeNumber: 7n };
 		const unspent = new Set(options.unspentRefs ?? options.inputRefs ?? []);
 		const database = {
-			hydraHead: { findUnique: jest.fn(async () => ({ latestSnapshotNumber: snapshot.number })) },
 			transaction: {
 				findMany: jest.fn(async () =>
 					Array.from({ length: options.candidateCount ?? 1 }, (_, index) => ({
@@ -100,6 +99,11 @@ describe('expired L2 reservation reporting', () => {
 			hasVerifiedPinnedSessions: true,
 			confirmedTransactionHistoryReady: true,
 			headClock: { chainTimeMs: recoveryNowMs, receivedAtMs: recoveryNowMs },
+			// Release reads the node's verified snapshot. The persisted head tip
+			// is never advanced by snapshot confirmations, so the harness has none.
+			get verifiedSnapshotNumber(): bigint | undefined {
+				return snapshot.number;
+			},
 			getConfirmedTransactionsForReconciliation: jest.fn(() => []),
 			getConfirmedTransaction: jest.fn(() => (options.confirmed ? { txId: intendedTxHash } : null)),
 			getVerifiedCurrentOutput: jest.fn((reference: string, number: bigint) =>
@@ -313,6 +317,15 @@ describe('expired L2 reservation reporting', () => {
 			expect(mutationClient.transaction.update).toHaveBeenCalledWith(
 				expect.objectContaining({ data: expect.objectContaining({ status: TransactionStatus.RolledBack }) }),
 			);
+		});
+
+		it('holds and records no baseline while the node has no verified snapshot', async () => {
+			const h = harness({ inputRefs: refs, idPrefix: 'unverified' });
+			withMutations(h);
+			Object.defineProperty(h.node, 'verifiedSnapshotNumber', { get: () => undefined });
+			await expect(scan(h, 'head-unverified')).resolves.toBe(1);
+			expect(h.node.get).not.toHaveBeenCalled();
+			expect(h.database.$transaction).not.toHaveBeenCalled();
 		});
 
 		it('never releases when any input is spent, because the body may have applied', async () => {

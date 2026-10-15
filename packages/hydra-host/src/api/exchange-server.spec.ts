@@ -380,3 +380,102 @@ describe('redemption failure disclosure', () => {
 		expect(answers[0].status).toBe(409);
 	});
 });
+
+describe('incomplete redemption bodies', () => {
+	async function openIncomplete(target: Server): Promise<Socket> {
+		const socket = new Socket();
+		await new Promise<void>((resolve, reject) => {
+			socket.once('error', reject);
+			socket.connect((target.address() as AddressInfo).port, '127.0.0.1', () => {
+				socket.write('POST /exchange/redeem HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n{');
+				resolve();
+			});
+		});
+		return socket;
+	}
+
+	it('keeps redemption slots available while bodies remain incomplete', async () => {
+		const limited = createExchangePlane({ store, logger, onRedeemed, limits: { maxInFlight: 1 } });
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const socket = await openIncomplete(limited);
+		try {
+			await issue('nonce-bodyread1');
+			const response = await fetch(`http://127.0.0.1:${(limited.address() as AddressInfo).port}/exchange/redeem`, {
+				method: 'POST',
+				headers: { Connection: 'close' },
+				body: JSON.stringify({ nonce: 'nonce-bodyread1', redeemer: MATERIAL, signature: SIGNATURE }),
+			});
+			expect(response.status).toBe(200);
+		} finally {
+			socket.destroy();
+			limited.closeAllConnections();
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
+	});
+
+	it('bounds readers per source while another source can redeem', async () => {
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			trustProxy: true,
+			limits: { maxInFlight: 16, ...{ maxBodyReaders: 2, maxBodyReadersPerSource: 1 } },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const socket = await openIncomplete(limited);
+		const url = `http://127.0.0.1:${(limited.address() as AddressInfo).port}/exchange/redeem`;
+		try {
+			await issue('nonce-bodyread3');
+			const body = JSON.stringify({ nonce: 'nonce-bodyread3', redeemer: MATERIAL, signature: SIGNATURE });
+			const blocked = await fetch(url, { method: 'POST', headers: { Connection: 'close' }, body });
+			expect(blocked.status).toBe(503);
+			const allowed = await fetch(url, {
+				method: 'POST',
+				headers: { Connection: 'close', 'X-Forwarded-For': '198.51.100.7' },
+				body,
+			});
+			expect(allowed.status).toBe(200);
+		} finally {
+			socket.destroy();
+			limited.closeAllConnections();
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
+	});
+
+	it('closes incomplete bodies at an absolute deadline and releases reader capacity', async () => {
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			limits: { maxInFlight: 1, ...{ bodyTimeoutMs: 40, maxBodyReaders: 1 } },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const socket = await openIncomplete(limited);
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const drip = setInterval(() => socket.write(' '), 10);
+				const deadline = setTimeout(() => {
+					clearInterval(drip);
+					socket.destroy();
+					reject(new Error('body deadline did not close the socket'));
+				}, 500);
+				socket.once('close', () => {
+					clearInterval(drip);
+					clearTimeout(deadline);
+					resolve();
+				});
+			});
+			await issue('nonce-bodyread2');
+			const response = await fetch(`http://127.0.0.1:${(limited.address() as AddressInfo).port}/exchange/redeem`, {
+				method: 'POST',
+				headers: { Connection: 'close' },
+				body: JSON.stringify({ nonce: 'nonce-bodyread2', redeemer: MATERIAL, signature: SIGNATURE }),
+			});
+			expect(response.status).toBe(200);
+		} finally {
+			socket.destroy();
+			limited.closeAllConnections();
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
+	});
+});

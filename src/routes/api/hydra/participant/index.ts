@@ -183,10 +183,10 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 	//
 	// `swept` is not good enough, for the same reason it is not good enough in
 	// `releaseReservedParticipants`: a submitted sweep can still be evicted or
-	// rolled back. Only an address the chain reports as empty — `dust` — or a
-	// participant with no key at all settles this.
+	// rolled back. Only `dust` after the latest address transaction reaches confirmation
+	// depth permits cleanup. A missing key can still live on the Host.
 	const sweep = await withdrawNodeFunds(id);
-	if (sweep.code !== 'dust' && sweep.code !== 'no-key') {
+	if (sweep.code !== 'dust') {
 		// Four of the refusal codes report a zero balance — the funds are not the
 		// reason, something else is holding the participant — so the balance is
 		// named only when there is one. Leading with "still holds 0 lovelace" and

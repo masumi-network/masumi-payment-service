@@ -35,14 +35,9 @@ export async function repairHydraRequest(params: {
 				if (!(await lockHydraMutationAdmission(tx, evidence.headId))) throw new RepairConflictError(params.requestId);
 				const head = await tx.hydraHead.findUnique({
 					where: { id: evidence.headId },
-					select: { ownerEpoch: true, status: true, isClosing: true, latestSnapshotNumber: true },
+					select: { ownerEpoch: true, status: true, isClosing: true },
 				});
-				if (
-					head?.ownerEpoch !== evidence.ownerEpoch ||
-					head.status !== HydraHeadStatus.Open ||
-					head.isClosing ||
-					head.latestSnapshotNumber !== evidence.snapshotNumber
-				) {
+				if (head?.ownerEpoch !== evidence.ownerEpoch || head.status !== HydraHeadStatus.Open || head.isClosing) {
 					throw new RepairConflictError(params.requestId);
 				}
 				const select = {
@@ -95,6 +90,7 @@ export async function repairHydraRequest(params: {
 				) {
 					throw new RepairConflictError(params.requestId);
 				}
+				// assertFresh is the snapshot compare-and-set: it rejects if the node's verified snapshot moved.
 				evidence.assertFresh();
 				const transactionId = await ensureObservedTransaction(tx, {
 					hydraHeadId: evidence.headId,

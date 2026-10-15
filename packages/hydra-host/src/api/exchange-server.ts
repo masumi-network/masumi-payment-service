@@ -27,6 +27,9 @@ import type { SupervisorLogger } from '../supervisor/supervisor.js';
 /** Smaller than the control plane's: an invite is a few hundred bytes. */
 const MAX_BODY_BYTES = 64 * 1024;
 const DEFAULT_MAX_IN_FLIGHT = 16;
+const DEFAULT_MAX_BODY_READERS = 32;
+const DEFAULT_MAX_BODY_READERS_PER_SOURCE = 4;
+const DEFAULT_BODY_TIMEOUT_MS = 5_000;
 const DEFAULT_REQUESTS_PER_MINUTE = 120;
 
 /**
@@ -106,7 +109,14 @@ export type ExchangeDeps = {
 	/** Read X-Forwarded-For only when a trusted HTTP proxy is the sole caller. */
 	trustProxy?: boolean;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
-	limits?: { maxInFlight?: number; requestsPerMinute?: number; maxTrackedSources?: number };
+	limits?: {
+		maxInFlight?: number;
+		requestsPerMinute?: number;
+		maxTrackedSources?: number;
+		maxBodyReaders?: number;
+		maxBodyReadersPerSource?: number;
+		bodyTimeoutMs?: number;
+	};
 };
 
 function send(response: ServerResponse, status: number, body: unknown): void {
@@ -114,24 +124,29 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 	response.end(JSON.stringify(body ?? null));
 }
 
-async function readBody(request: IncomingMessage): Promise<unknown> {
-	const chunks: Buffer[] = [];
-	let size = 0;
-	for await (const chunk of request) {
-		const buffer = chunk as Buffer;
-		size += buffer.length;
-		if (size > MAX_BODY_BYTES) {
-			throw new Error('request body is too large');
-		}
-		chunks.push(buffer);
-	}
-	if (size === 0) {
-		return null;
-	}
+async function readBody(request: IncomingMessage, timeoutMs: number): Promise<unknown> {
+	const timeout = setTimeout(() => request.destroy(new Error('request body timed out')), timeoutMs);
 	try {
-		return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-	} catch {
-		throw new Error('request body is not valid JSON');
+		const chunks: Buffer[] = [];
+		let size = 0;
+		for await (const chunk of request) {
+			const buffer = chunk as Buffer;
+			size += buffer.length;
+			if (size > MAX_BODY_BYTES) {
+				throw new Error('request body is too large');
+			}
+			chunks.push(buffer);
+		}
+		if (size === 0) {
+			return null;
+		}
+		try {
+			return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+		} catch {
+			throw new Error('request body is not valid JSON');
+		}
+	} finally {
+		clearTimeout(timeout);
 	}
 }
 
@@ -155,7 +170,12 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
 	const maxTrackedSources = deps.limits?.maxTrackedSources ?? MAX_TRACKED_SOURCES;
+	const maxBodyReaders = deps.limits?.maxBodyReaders ?? DEFAULT_MAX_BODY_READERS;
+	const maxBodyReadersPerSource = deps.limits?.maxBodyReadersPerSource ?? DEFAULT_MAX_BODY_READERS_PER_SOURCE;
+	const bodyTimeoutMs = deps.limits?.bodyTimeoutMs ?? DEFAULT_BODY_TIMEOUT_MS;
 	let inFlight = 0;
+	let bodyReaders = 0;
+	const bodyReadersBySource = new Map<string, number>();
 	// Per source rather than one shared counter: a single abusive caller must not
 	// be able to spend the whole minute's budget and 429 the one counterparty
 	// this plane exists to serve. Keyed on the socket address, which is what the
@@ -204,25 +224,15 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			send(response, 429, { error: 'too many requests' });
 			return;
 		}
-		if (inFlight >= maxInFlight) {
-			response.setHeader('Retry-After', '1');
-			send(response, 503, { error: 'exchange is busy' });
-			return;
-		}
 
-		inFlight += 1;
-		void handle(request, response, source, pathname)
-			.catch((error: unknown) => {
-				// Never echo the message: this is an unauthenticated surface and the
-				// error text can describe internal state.
-				logger.error(`[exchange] ${(error as Error).message}`);
-				if (!response.headersSent) {
-					send(response, 400, { error: 'bad request' });
-				}
-			})
-			.finally(() => {
-				inFlight -= 1;
-			});
+		void handle(request, response, source, pathname).catch((error: unknown) => {
+			// Never echo the message: this is an unauthenticated surface and the
+			// error text can describe internal state.
+			logger.error(`[exchange] ${(error as Error).message}`);
+			if (!response.headersSent && !response.destroyed) {
+				send(response, 400, { error: 'bad request' });
+			}
+		});
 	});
 	server.headersTimeout = 15_000;
 	server.requestTimeout = 30_000;
@@ -250,40 +260,67 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	}
 
 	async function handleRedeem(request: IncomingMessage, response: ServerResponse, source: string): Promise<void> {
-		const body = readRedeemBody(await readBody(request));
+		const sourceReaders = bodyReadersBySource.get(source) ?? 0;
+		if (bodyReaders >= maxBodyReaders || sourceReaders >= maxBodyReadersPerSource) {
+			response.setHeader('Connection', 'close');
+			response.setHeader('Retry-After', '1');
+			send(response, 503, { error: 'exchange is busy' });
+			return;
+		}
+		bodyReaders += 1;
+		bodyReadersBySource.set(source, sourceReaders + 1);
+		let body: RedeemBody | null;
+		try {
+			body = readRedeemBody(await readBody(request, bodyTimeoutMs));
+		} finally {
+			bodyReaders -= 1;
+			const remaining = (bodyReadersBySource.get(source) ?? 1) - 1;
+			if (remaining === 0) bodyReadersBySource.delete(source);
+			else bodyReadersBySource.set(source, remaining);
+		}
 		if (body === null || !isExchangeMaterial(body.redeemer) || !isExchangeSignature(body.signature)) {
 			send(response, 400, { error: 'malformed redemption' });
 			return;
 		}
 
-		const result = await store.redeem(body.nonce, body.redeemer, body.signature);
-		if (!result.ok) {
-			const failures = (failuresInWindow.get(source) ?? 0) + 1;
-			failuresInWindow.set(source, failures);
-			// The operator sees the real reason either way: it is logged here and
-			// the invite's own state is on the control plane.
-			logger.warn(`[exchange] redemption refused (${result.status} ${result.reason})`);
-			if (failures > MAX_DISCLOSED_REDEEM_FAILURES) {
-				send(response, 404, { error: 'no such invite' });
-				return;
-			}
-			send(response, result.status, { error: result.reason });
+		if (inFlight >= maxInFlight) {
+			response.setHeader('Retry-After', '1');
+			send(response, 503, { error: 'exchange is busy' });
 			return;
 		}
-
-		// The reply carries nothing the counterparty must trust — everything they
-		// need was signed inside the invite — so this is an acknowledgement, and
-		// the Host never has to speak for its operator's wallet.
-		send(response, 200, { redeemed: true });
-
-		// After answering: the counterparty can neither help nor wait if this
-		// fails, and the failure belongs in the operator's poll.
+		inFlight += 1;
 		try {
-			await onRedeemed(body.nonce, result.invite.hostNodeId);
-		} catch (error) {
-			const message = (error as Error).message;
-			logger.error(`[exchange] node ${result.invite.hostNodeId} failed to start after redemption: ${message}`);
-			await store.recordStartError(body.nonce, message).catch(() => undefined);
+			const result = await store.redeem(body.nonce, body.redeemer, body.signature);
+			if (!result.ok) {
+				const failures = (failuresInWindow.get(source) ?? 0) + 1;
+				failuresInWindow.set(source, failures);
+				// The operator sees the real reason either way: it is logged here and
+				// the invite's own state is on the control plane.
+				logger.warn(`[exchange] redemption refused (${result.status} ${result.reason})`);
+				if (failures > MAX_DISCLOSED_REDEEM_FAILURES) {
+					send(response, 404, { error: 'no such invite' });
+					return;
+				}
+				send(response, result.status, { error: result.reason });
+				return;
+			}
+
+			// The reply carries nothing the counterparty must trust — everything they
+			// need was signed inside the invite — so this is an acknowledgement, and
+			// the Host never has to speak for its operator's wallet.
+			send(response, 200, { redeemed: true });
+
+			// After answering: the counterparty can neither help nor wait if this
+			// fails, and the failure belongs in the operator's poll.
+			try {
+				await onRedeemed(body.nonce, result.invite.hostNodeId);
+			} catch (error) {
+				const message = (error as Error).message;
+				logger.error(`[exchange] node ${result.invite.hostNodeId} failed to start after redemption: ${message}`);
+				await store.recordStartError(body.nonce, message).catch(() => undefined);
+			}
+		} finally {
+			inFlight -= 1;
 		}
 	}
 }

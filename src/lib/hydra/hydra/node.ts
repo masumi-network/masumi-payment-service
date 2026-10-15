@@ -413,6 +413,12 @@ export class HydraNode extends EventEmitter {
 		return readVerifiedCurrentOutput(this.hasVerifiedPinnedSessions, this._live.status, this._replay.verifiedSnapshot, reference, expectedSnapshotNumber);
 	}
 
+	/** Newest replay-verified snapshot number. Snapshot confirmations never advance `HydraHead.latestSnapshotNumber`. */
+	get verifiedSnapshotNumber(): bigint | undefined {
+		const snapshot = this._replay.verifiedSnapshot;
+		return this.hasVerifiedPinnedSessions && snapshot ? BigInt(snapshot.number) : undefined;
+	}
+
 	/** Both evidence sockets have authenticated the same explicitly pinned head. */
 	get hasVerifiedPinnedSessions(): boolean {
 		return (

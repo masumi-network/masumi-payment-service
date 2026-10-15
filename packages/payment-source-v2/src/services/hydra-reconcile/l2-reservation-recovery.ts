@@ -113,10 +113,6 @@ export async function reportExpiredL2Reservations(params: {
 		},
 	});
 	pruneReleaseBaselines(hydraHeadId, new Set(candidates.map((candidate) => candidate.id)), nowMs);
-	const head =
-		candidates.length > 0
-			? await database.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { latestSnapshotNumber: true } })
-			: null;
 
 	let reported = 0;
 	const transactionIdSamples: string[] = [];
@@ -144,9 +140,11 @@ export async function reportExpiredL2Reservations(params: {
 		// A node can relay a lock before expiry, withhold its signed snapshot,
 		// and report TxInvalid for the same body. Expiry excludes future acceptance,
 		// not past acceptance, so rejection alone never releases. Only the
-		// verified-snapshot input proof does.
+		// verified-snapshot input proof does. The proof reads the node's own
+		// verified snapshot: snapshot confirmations never advance the persisted tip.
+		const verifiedSnapshotNumber = node.verifiedSnapshotNumber;
 		if (
-			head &&
+			verifiedSnapshotNumber !== undefined &&
 			canReportExpiredL2Reservation({
 				hasVerifiedPinnedSessions: node.hasVerifiedPinnedSessions,
 				historyReady: node.confirmedTransactionHistoryReady,
@@ -156,7 +154,7 @@ export async function reportExpiredL2Reservations(params: {
 				validityUpperBoundTimeMs,
 				graceMs: L2_RESERVATION_RELEASE_GRACE_MS,
 			}) &&
-			(await releaseIfProvenDead(candidate, head.latestSnapshotNumber, node, hydraHeadId, database, nowMs))
+			(await releaseIfProvenDead(candidate, verifiedSnapshotNumber, node, hydraHeadId, database, nowMs))
 		) {
 			continue;
 		}

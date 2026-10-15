@@ -59,9 +59,11 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 let releaseReservedParticipants: typeof import('./release-reservation').releaseReservedParticipants;
 let releaseAbandonedReservations: typeof import('./release-reservation').releaseAbandonedReservations;
+let canRemoveReservedHostNode: typeof import('./release-reservation').canRemoveReservedHostNode;
 
 beforeAll(async () => {
-	({ releaseReservedParticipants, releaseAbandonedReservations } = await import('./release-reservation'));
+	({ releaseReservedParticipants, releaseAbandonedReservations, canRemoveReservedHostNode } =
+		await import('./release-reservation'));
 });
 
 const RESERVATION = { hydraHostId: 'host-1', hostNodeId: 'node-1' };
@@ -104,11 +106,12 @@ describe('releaseReservedParticipants', () => {
 		expect(result).toEqual({ released: 0, retained: 1 });
 	});
 
-	// Nothing is behind a key that does not exist here, so keeping the row would
-	// protect nothing.
-	it('deletes a node whose key was never stored here', async () => {
+	// The last signer can still be on the Host.
+	it('keeps a node whose Cardano key is only on the Host', async () => {
 		mockWithdrawNodeFunds.mockResolvedValue(sweep('no-key'));
-		expect(await releaseReservedParticipants(RESERVATION)).toEqual({ released: 1, retained: 0 });
+		expect(await releaseReservedParticipants(RESERVATION)).toEqual({ released: 0, retained: 1 });
+		expect(mockRemoveHostNode).not.toHaveBeenCalled();
+		expect(mockSecretDeleteMany).not.toHaveBeenCalled();
 	});
 
 	// The defect this exists for: the balance is unknown, not zero. Deleting the
@@ -160,6 +163,23 @@ describe('releaseReservedParticipants', () => {
 
 		expect(await releaseReservedParticipants(RESERVATION)).toEqual({ released: 0, retained: 0 });
 		expect(mockWithdrawNodeFunds).not.toHaveBeenCalled();
+	});
+});
+
+describe('early Host node removal', () => {
+	it('keeps a legacy Host signer before invite cleanup checks its funds', async () => {
+		mockParticipantFindMany.mockResolvedValue([{ HydraSecretKey: { cardanoSK: null } }]);
+		expect(await canRemoveReservedHostNode('host-1', 'node-1')).toBe(false);
+	});
+
+	it('allows early removal when every participant has an escrowed Cardano signer', async () => {
+		mockParticipantFindMany.mockResolvedValue([{ HydraSecretKey: { cardanoSK: 'encrypted-signer' } }]);
+		expect(await canRemoveReservedHostNode('host-1', 'node-1')).toBe(true);
+	});
+
+	it('allows removal when no local participant claims the node', async () => {
+		mockParticipantFindMany.mockResolvedValue([]);
+		expect(await canRemoveReservedHostNode('host-1', 'node-1')).toBe(true);
 	});
 });
 
