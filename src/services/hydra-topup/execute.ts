@@ -116,6 +116,10 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	 * wallet, mid-carve.
 	 */
 	let holdsWalletLock = false;
+	// After promotion, only the caller that wins the Pending-to-terminal update
+	// may release. Row absence alone can mean the scheduler released already.
+	let walletReleaseTransferred = false;
+	let ownsTerminalTransition = false;
 
 	try {
 		// Inside the try, all four of them. Raised before it, none of these reached
@@ -341,11 +345,15 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					committedLovelace,
 					committedAssets,
 				},
-				async () =>
-					await hydraHead.cardanoTransaction(
+				async () => {
+					// Promotion succeeded before this callback. Transfer ownership before
+					// submission can throw or race the scheduled reconciliation.
+					walletReleaseTransferred = true;
+					return await hydraHead.cardanoTransaction(
 						{ type: HydraTransactionType.TxConwayEra, description: '', cborHex: validatedDraft.signedCommitTx },
 						localParticipant.walletId,
-					),
+					);
+				},
 			));
 		} catch (error) {
 			if (error instanceof HydraTopupReservationConflictError) throw createHttpError(409, error.message);
@@ -363,6 +371,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		});
 
 		depositConfirmed = reconciliation === 'confirmed';
+		ownsTerminalTransition = reconciliation === 'confirmed' || reconciliation === 'failed';
 
 		if (!interpreted.ok && reconciliation !== 'confirmed') {
 			throw createHttpError(
@@ -445,7 +454,11 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// batch tick build over them and lose one of the two to `BadInputsUTxO`.
 		// Nothing tracks a carve after this returns, so the lock is left for the
 		// stale-lock sweep, which frees it half an hour later.
-		if (holdsWalletLock && canReleaseTopupWallet({ outstandingOwnTopup, carveTxHash, depositConfirmed })) {
+		if (
+			holdsWalletLock &&
+			(!walletReleaseTransferred || ownsTerminalTransition) &&
+			canReleaseTopupWallet({ outstandingOwnTopup, carveTxHash, depositConfirmed })
+		) {
 			try {
 				await releaseHotWalletAfterL1(localParticipant.walletId);
 			} catch (releaseError: unknown) {
