@@ -10,7 +10,7 @@
  * Deliberately shaped like the wallet mnemonic flow: reveal, copy, confirm.
  */
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { AlertTriangle, Eye, EyeOff, KeyRound, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button } from '@/components/ui/button';
@@ -79,25 +79,49 @@ export function BackUpNodeKeysDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const requestGeneration = useRef(0);
+  const pendingRequest = useRef(false);
+
+  useLayoutEffect(() => {
+    requestGeneration.current += 1;
+    pendingRequest.current = false;
+    setKeys(null);
+    setSaved(false);
+    setIsLoading(false);
+    return () => {
+      requestGeneration.current += 1;
+    };
+  }, [open, participantId, apiClient]);
+
   async function handleReveal() {
-    if (!participantId) return;
+    if (!open || !participantId || pendingRequest.current) return;
+    const generation = requestGeneration.current;
+    pendingRequest.current = true;
     setIsLoading(true);
     try {
-      setKeys(await revealHydraNodeKeys(apiClient, { id: participantId }));
+      const revealedKeys = await revealHydraNodeKeys(apiClient, { id: participantId });
       // The reveal is what changes the record — it is one-time and the service
       // marks it so. Refreshing here rather than on Done means a window closed
       // with escape or the corner cross does not leave the node still offering
       // a backup that can no longer be taken.
       onDone();
+      if (generation === requestGeneration.current) setKeys(revealedKeys);
     } catch (error) {
+      if (generation !== requestGeneration.current) return;
       toast.error(error instanceof Error ? error.message : 'Failed to read the node keys');
     } finally {
-      setIsLoading(false);
+      if (generation === requestGeneration.current) {
+        pendingRequest.current = false;
+        setIsLoading(false);
+      }
     }
   }
 
   function handleClose(nextOpen: boolean) {
     if (!nextOpen) {
+      requestGeneration.current += 1;
+      pendingRequest.current = false;
+      setIsLoading(false);
       setKeys(null);
       setSaved(false);
     }

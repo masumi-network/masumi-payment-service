@@ -12,7 +12,7 @@
  * plainly that it is a bearer capability and is single-use.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Loader2, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
@@ -195,8 +195,32 @@ export function IssueHydraInviteDialog({
     setAdvancedOpen(false);
   }
 
+  const requestGeneration = useRef(0);
+  const pendingRequest = useRef(false);
+
+  useLayoutEffect(() => {
+    requestGeneration.current += 1;
+    pendingRequest.current = false;
+    reset();
+    setIsLoading(false);
+    return () => {
+      requestGeneration.current += 1;
+    };
+    // Reset only when the dialog or API context changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    open,
+    apiClient,
+    network,
+    selectedPaymentSource?.id,
+    selectedPaymentSource?.paymentSourceType,
+  ]);
+
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
+      requestGeneration.current += 1;
+      pendingRequest.current = false;
+      setIsLoading(false);
       reset();
     }
     onOpenChange(nextOpen);
@@ -250,6 +274,7 @@ export function IssueHydraInviteDialog({
   }
 
   async function handleIssue() {
+    if (!open || pendingRequest.current || !isHeadCapableSource) return;
     const problems = validate();
     setErrors(problems);
     if (Object.keys(problems).length > 0) {
@@ -263,6 +288,8 @@ export function IssueHydraInviteDialog({
       return;
     }
 
+    const generation = requestGeneration.current;
+    pendingRequest.current = true;
     setIsLoading(true);
     try {
       const invite = await createHydraInvite(apiClient, {
@@ -272,12 +299,18 @@ export function IssueHydraInviteDialog({
         contestationPeriodSeconds: contestationSeconds,
         unsyncedPeriodSeconds: unsyncedSeconds,
       });
-      setIssued({ code: invite.code, expiresAt: invite.expiresAt });
       onIssued();
+      if (generation === requestGeneration.current) {
+        setIssued({ code: invite.code, expiresAt: invite.expiresAt });
+      }
     } catch (error) {
+      if (generation !== requestGeneration.current) return;
       toast.error(error instanceof Error ? error.message : 'Failed to create the invite');
     } finally {
-      setIsLoading(false);
+      if (generation === requestGeneration.current) {
+        pendingRequest.current = false;
+        setIsLoading(false);
+      }
     }
   }
 
