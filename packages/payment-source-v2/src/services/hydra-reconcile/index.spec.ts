@@ -44,6 +44,8 @@ const mockGetVerifiedFanoutReferences = jest.fn<(_snapshotNumber: number) => unk
 const mockGetVerifiedFanoutReference = jest.fn<(_reference: string, _snapshotNumber: number) => unknown>();
 const mockVerifyHydraFanout = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockFlushHeadStatus = jest.fn<(_hydraHeadId: string) => Promise<void>>();
+const mockFindNothingToApply =
+	jest.fn<(_paymentSourceId: string, _candidates: Array<{ blockchainIdentifier: string }>) => Promise<Set<string>>>();
 
 const FANOUT_TX_HASH = 'f'.repeat(64);
 const HEAD_IDENTIFIER = 'a'.repeat(56);
@@ -190,6 +192,16 @@ jest.unstable_mockModule('@/utils/converter/network-convert', () => ({
 
 jest.unstable_mockModule('@/utils/logic/l2-datum-validation', () => ({
 	smartContractStateToOnChainState: jest.fn(() => OnChainState.ResultSubmitted),
+}));
+
+// Pass-through memo: these specs reuse output references across cases, and the
+// settled-row skip is covered by live-escrow-memo.spec.ts.
+jest.unstable_mockModule('./live-escrow-memo', () => ({
+	memoizedLiveEscrowDecode: (_hydraHeadId: string, _input: unknown, decode: () => unknown) => decode(),
+	memoizedTransactionEvidence: (_hydraHeadId: string, _txHash: string, cborHex: string) => mockParseEvidence(cborHex),
+	pruneLiveEscrowMemo: jest.fn(),
+	retainLiveEscrowMemoHeads: jest.fn(),
+	findIdentifiersWithNothingToApply: mockFindNothingToApply,
 }));
 
 jest.unstable_mockModule('./l2-reservation-recovery', () => ({
@@ -370,6 +382,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockFindLocallyRelevantIdentifiers.mockImplementation(
 			async (_paymentSourceId, identifiers) => new Set(identifiers),
 		);
+		mockFindNothingToApply.mockResolvedValue(new Set());
 	});
 
 	it('selects and revalidates only enabled heads with durable init evidence', async () => {
@@ -411,6 +424,40 @@ describe('Hydra live-snapshot reconciliation', () => {
 		await reconcileHydraHeadEscrowStates();
 
 		expect(mockApplyDatum).toHaveBeenCalledTimes(2);
+		expect(mockDisconnect).not.toHaveBeenCalled();
+	});
+
+	it('skips the apply transaction for outputs with nothing to apply but still checks their evidence', async () => {
+		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-settled'), liveUtxo('tx-open')]);
+		mockFindNothingToApply.mockResolvedValue(new Set(['tx-settled']));
+		mockApplyDatum.mockResolvedValue('applied');
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockFindNothingToApply).toHaveBeenCalledWith('source-1', [
+			expect.objectContaining({
+				blockchainIdentifier: 'tx-settled',
+				outputReference: { txHash: 'tx-settled', outputIndex: 0 },
+			}),
+			expect.objectContaining({
+				blockchainIdentifier: 'tx-open',
+				outputReference: { txHash: 'tx-open', outputIndex: 0 },
+			}),
+		]);
+		expect(mockApplyDatum).toHaveBeenCalledTimes(1);
+		expect(mockApplyDatum).toHaveBeenCalledWith(expect.objectContaining({ txId: 'tx-open' }));
+		expect(mockParseEvidence).toHaveBeenCalledWith('tx-settled');
+		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+	});
+
+	it('keeps a finalized head connected when a skipped output lost its confirmed evidence', async () => {
+		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-settled')]);
+		mockFindNothingToApply.mockResolvedValue(new Set(['tx-settled']));
+		mockGetConfirmedTransaction.mockReturnValue(null);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockApplyDatum).not.toHaveBeenCalled();
 		expect(mockDisconnect).not.toHaveBeenCalled();
 	});
 
