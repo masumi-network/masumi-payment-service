@@ -79,7 +79,8 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 			},
 		},
 	});
-	retainLiveEscrowMemoHeads(heads.map((head) => head.id));
+	// A completed head never runs a live pass again, so its memo is dropped too.
+	retainLiveEscrowMemoHeads(heads.filter((head) => head.reconciliationCompletedAt == null).map((head) => head.id));
 	if (heads.length === 0) {
 		return;
 	}
@@ -233,7 +234,8 @@ async function reconcileHead(
 		if (!datumCbor) {
 			continue;
 		}
-		// An output reference is immutable, so its decode is computed once per head.
+		// An output reference is immutable, so its decode is reused per head while
+		// the datum bytes stay the same.
 		const observation = memoizedLiveEscrowDecode(hydraHeadId, utxo.input, datumCbor, () => {
 			let decoded: DecodedV1ContractDatum | null;
 			try {

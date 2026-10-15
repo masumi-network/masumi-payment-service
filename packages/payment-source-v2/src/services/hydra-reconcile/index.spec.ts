@@ -44,6 +44,7 @@ const mockGetVerifiedFanoutReferences = jest.fn<(_snapshotNumber: number) => unk
 const mockGetVerifiedFanoutReference = jest.fn<(_reference: string, _snapshotNumber: number) => unknown>();
 const mockVerifyHydraFanout = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockFlushHeadStatus = jest.fn<(_hydraHeadId: string) => Promise<void>>();
+const mockRetainMemoHeads = jest.fn<(_hydraHeadIds: string[]) => void>();
 const mockIsLivePassDue = jest.fn<(_hydraHeadId: string, _intervalMs: number) => boolean>();
 const mockRecordLivePass = jest.fn<(_hydraHeadId: string, _isClean: boolean) => void>();
 const mockFindNothingToApply =
@@ -203,7 +204,7 @@ jest.unstable_mockModule('./live-escrow-memo', () => ({
 		decode(),
 	memoizedTransactionEvidence: (_hydraHeadId: string, _txHash: string, cborHex: string) => mockParseEvidence(cborHex),
 	pruneLiveEscrowMemo: jest.fn(),
-	retainLiveEscrowMemoHeads: jest.fn(),
+	retainLiveEscrowMemoHeads: mockRetainMemoHeads,
 	isLivePassDue: mockIsLivePassDue,
 	recordLivePass: mockRecordLivePass,
 	findIdentifiersWithNothingToApply: mockFindNothingToApply,
@@ -495,6 +496,18 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockReportExpiredL2Reservations).toHaveBeenCalled();
 		expect(mockFetchAddressUtxos).not.toHaveBeenCalled();
 		expect(mockRecordLivePass).not.toHaveBeenCalled();
+	});
+
+	it('drops the memo of heads whose final reconciliation is complete', async () => {
+		const [head] = (await mockHydraHeadFindMany({})) as Array<Record<string, unknown>>;
+		mockHydraHeadFindMany.mockResolvedValue([
+			{ ...head, reconciliationCompletedAt: new Date('2026-07-22T13:00:00Z') },
+			{ ...head, id: 'head-2' },
+		]);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockRetainMemoHeads).toHaveBeenCalledWith(['head-2']);
 	});
 
 	it('never throttles or skips the live snapshot of a finalized head', async () => {
