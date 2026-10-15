@@ -205,6 +205,8 @@ export interface L2FundingUtxo {
 		address: string;
 		amount: Array<{ unit: string; quantity: string }>;
 		plutusData?: string | null;
+		scriptRef?: string | null;
+		scriptHash?: string | null;
 	};
 }
 
@@ -229,8 +231,14 @@ const amountOfUnit = (u: L2FundingUtxo, unit: string): bigint =>
  * cannot answer, so `complete()` would hang. Here we hand mesh fully-specified
  * inputs and let it balance the (possibly multi-asset) change.
  *
- * Non-script UTxOs only — a UTxO carrying plutusData is an escrow output, not
- * spendable buyer funds. Largest-ADA first so the fewest inputs cover the need.
+ * The caller passes only UTxOs at the buyer's own key address, so escrow
+ * outputs (which sit at the script address) never reach this function. A datum
+ * at a key address locks nothing, and V2 escrow payouts and refunds carry one on
+ * purpose, so datum UTxOs are spent like any other. Skipping them hid most of a
+ * buyer's in-head funds once payouts arrived. A UTxO marked with a reference
+ * script is left alone, the same rule the withdrawal applies. Note that the
+ * Hydra snapshot codec does not map reference scripts today, so on the live path
+ * that rule sees none. Largest-ADA first so the fewest inputs cover the need.
  * Throws (with the per-unit shortfall) when the wallet cannot cover the target.
  */
 export function selectInHeadFundingUtxos<T extends L2FundingUtxo>(
@@ -246,11 +254,13 @@ export function selectInHeadFundingUtxos<T extends L2FundingUtxo>(
 	computeChangeMinUtxo?: (changeAssets: Array<{ unit: string; quantity: bigint }>) => bigint,
 ): T[] {
 	const spendable = walletUtxos
-		.filter((u) => !u.output.plutusData)
+		.filter((u) => u.output.scriptRef == null && u.output.scriptHash == null)
 		.slice()
 		.sort((a, b) => Number(amountOfUnit(b, 'lovelace') - amountOfUnit(a, 'lovelace')));
 	if (spendable.length === 0) {
-		throw new Error('buyer wallet has no spendable (non-script) in-head UTxOs to fund the lock');
+		throw new Error(
+			'buyer wallet has no spendable in-head UTxOs to fund the lock (reference-script UTxOs are never spent)',
+		);
 	}
 
 	const required = new Map<string, bigint>();
