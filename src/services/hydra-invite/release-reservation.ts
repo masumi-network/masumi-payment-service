@@ -51,10 +51,19 @@ const ORPHAN_MIN_AGE_MS = 60 * 60 * 1000;
  * being on chain: it can still be evicted from the mempool, rolled back, or
  * expire against its own TTL. Deleting the key on that evidence is the one
  * mistake here with no recovery, so a swept node keeps its row and is released
- * by a later pass — by which time the chain itself reports the address empty
- * and the outcome is `dust`.
+ * by a later pass after the latest address transaction reaches confirmation
+ * depth and the outcome is `dust`. A legacy signer can still live on the Host.
  */
-const SETTLED_CODES = new Set(['dust', 'no-key']);
+const SETTLED_CODES = new Set(['dust']);
+
+/** Keep the Host's signer until cleanup verifies a legacy node's funds. */
+export async function canRemoveReservedHostNode(hydraHostId: string, hostNodeId: string): Promise<boolean> {
+	const participants = await prisma.hydraLocalParticipant.findMany({
+		where: { hydraHostId, hostNodeId },
+		select: { HydraSecretKey: { select: { cardanoSK: true } } },
+	});
+	return participants.every((participant) => participant.HydraSecretKey?.cardanoSK != null);
+}
 
 /**
  * Return a reserved node's fuel, and say whether its key may now be destroyed.

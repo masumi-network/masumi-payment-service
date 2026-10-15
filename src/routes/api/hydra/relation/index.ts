@@ -184,8 +184,8 @@ export const deleteRelationDelete = adminAuthenticatedEndpointFactory.build({
  * The participant endpoint has swept before deleting since it was written; this
  * path was the one that did not. Same rule as there: `swept` is not enough,
  * because a submitted sweep can still be evicted or rolled back, so only an
- * address the chain reports as empty — `dust` — or a participant with no key
- * settles it.
+ * dust result after the latest address transaction reaches confirmation depth
+ * settles it. A missing Cardano key can still live on the Host.
  *
  * Outside the transaction, and before quiesce, on purpose: this reads the chain
  * and may submit, neither of which belongs inside a serializable block, and a
@@ -195,7 +195,7 @@ async function sweepRelationNodeFunds(heads: Array<{ LocalParticipant: { id: str
 	for (const { LocalParticipant } of heads) {
 		if (!LocalParticipant) continue;
 		const sweep = await withdrawNodeFunds(LocalParticipant.id);
-		if (sweep.code === 'dust' || sweep.code === 'no-key') continue;
+		if (sweep.code === 'dust') continue;
 		// Named only when there is one: several refusal codes report a zero
 		// balance, so the funds are not the reason the sweep did not happen.
 		const held =
