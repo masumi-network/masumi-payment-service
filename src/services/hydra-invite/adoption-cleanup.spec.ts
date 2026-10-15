@@ -16,6 +16,7 @@ let removalRequested = false;
 const release = jest.fn<() => Promise<void>>();
 const remove = jest.fn<() => Promise<void>>();
 const forget = jest.fn<() => Promise<void>>();
+const canRemove = jest.fn<() => Promise<boolean>>();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -42,7 +43,10 @@ jest.unstable_mockModule('./invite-signing', () => ({
 	},
 }));
 jest.unstable_mockModule('./orchestrator', () => ({ createHeadFromExchange: jest.fn() }));
-jest.unstable_mockModule('./release-reservation', () => ({ releaseReservedParticipants: release }));
+jest.unstable_mockModule('./release-reservation', () => ({
+	releaseReservedParticipants: release,
+	canRemoveReservedHostNode: canRemove,
+}));
 jest.unstable_mockModule('@/services/hydra-node-funding/service', () => ({ fundHydraNodeNow: jest.fn() }));
 
 const { pollHydraRedemptions } = await import('./adoption');
@@ -50,6 +54,7 @@ const { pollHydraRedemptions } = await import('./adoption');
 beforeEach(() => {
 	jest.clearAllMocks();
 	removalRequested = false;
+	canRemove.mockResolvedValue(true);
 	remove.mockImplementation(async () => {
 		removalRequested = true;
 	});
@@ -65,4 +70,12 @@ it('cancels rejected redemption setup before forgetting its durable material', a
 	expect(forget).toHaveBeenCalledTimes(1);
 	expect(release).toHaveBeenCalledTimes(1);
 	expect(remove.mock.invocationCallOrder[0]).toBeLessThan(forget.mock.invocationCallOrder[0]);
+});
+
+it('keeps the Host signer when rejected redemption belongs to a legacy participant', async () => {
+	canRemove.mockResolvedValue(false);
+	forget.mockResolvedValue(undefined);
+	expect(await pollHydraRedemptions()).toMatchObject({ rejected: 1 });
+	expect(remove).not.toHaveBeenCalled();
+	expect(release).toHaveBeenCalledTimes(1);
 });

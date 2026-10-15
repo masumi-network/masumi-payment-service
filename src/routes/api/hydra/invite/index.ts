@@ -28,7 +28,7 @@ import {
 import { MIN_UNSYNCED_PERIOD_SECONDS } from '@/services/hydra-invite/provisioning';
 import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
-import { releaseReservedParticipants } from '@/services/hydra-invite/release-reservation';
+import { canRemoveReservedHostNode, releaseReservedParticipants } from '@/services/hydra-invite/release-reservation';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
 import { inspectExchangeNetwork } from '@/services/hydra-invite/exchange-client';
 import {
@@ -471,10 +471,11 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		// could start the node we are about to delete.
 		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
 		try {
-			await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
-				force: false,
-				...transport,
-			});
+			if (await canRemoveReservedHostNode(invite.hydraHostId, invite.hostNodeId))
+				await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
+					force: false,
+					...transport,
+				});
 		} catch (error) {
 			// A node the Host no longer has is the outcome this asks for — the same
 			// tolerance the reaper and the adoption discard already have. Without it

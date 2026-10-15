@@ -24,7 +24,7 @@ import {
 } from '@/services/hydra-host/client';
 import { verifyHydraRedemption } from './invite-signing';
 import { createHeadFromExchange } from './orchestrator';
-import { releaseReservedParticipants } from './release-reservation';
+import { canRemoveReservedHostNode, releaseReservedParticipants } from './release-reservation';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 
 /**
@@ -188,10 +188,11 @@ async function discardUnadoptableRedemption(
 		if (removeNode) {
 			const { removeHostNode } = await import('@/services/hydra-host/client');
 			try {
-				await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
-					force: false,
-					...transport,
-				});
+				if (await canRemoveReservedHostNode(invite.hydraHostId, invite.hostNodeId))
+					await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
+						force: false,
+						...transport,
+					});
 			} catch (error) {
 				// A node the Host no longer has is the outcome this asks for.
 				if (!(error instanceof HydraHostRequestError && error.status === 404)) throw error;
@@ -396,10 +397,11 @@ export async function reapExpiredInvites(): Promise<number> {
 				// to delete.
 				await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
 				try {
-					await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
-						force: false,
-						...transport,
-					});
+					if (await canRemoveReservedHostNode(invite.hydraHostId, invite.hostNodeId))
+						await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
+							force: false,
+							...transport,
+						});
 				} catch (error) {
 					// A node the Host no longer has is the outcome this asks for. It
 					// happens whenever a previous sweep removed the node and died
