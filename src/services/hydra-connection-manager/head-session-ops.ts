@@ -18,6 +18,7 @@ import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-sem
 import WebSocket, { type RawData } from 'ws';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { HydraHeadUpdateInput } from '@/generated/prisma/models';
+import { MAX_HYDRA_WS_FRAME_BYTES } from '@/lib/hydra/hydra/schemas';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 
@@ -239,6 +240,7 @@ export function probeHeadCurrentSlot(
 		const finish = (value: number | null) => {
 			if (settled) return;
 			settled = true;
+			clearTimeout(timeout);
 			try {
 				socket.close();
 			} catch {
@@ -248,11 +250,15 @@ export function probeHeadCurrentSlot(
 		};
 		const authHeaders = hydraAuthHeaders(authToken);
 		const socket = new WebSocket(`${wsUrl}?history=no`, {
+			maxPayload: MAX_HYDRA_WS_FRAME_BYTES,
+			perMessageDeflate: false,
 			...(Object.keys(authHeaders).length === 0 ? {} : { headers: authHeaders }),
 		});
 		const timeout = setTimeout(() => finish(null), 8000);
 		timeout.unref?.();
-		socket.on('message', (data: RawData) => {
+		socket.on('message', (data: RawData, isBinary: boolean) => {
+			if (settled) return;
+			if (isBinary) return finish(null);
 			const text = Buffer.isBuffer(data)
 				? data.toString('utf8')
 				: Array.isArray(data)
