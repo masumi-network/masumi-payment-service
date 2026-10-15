@@ -37,9 +37,8 @@ import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import {
 	amountOf,
-	countNativeAssets,
 	coverAssetForCarve,
-	coverLovelace,
+	planLovelaceWithdrawal,
 	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
 	isAlreadyCarved,
 	requiredChangeLovelace,
@@ -424,49 +423,35 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			}
 		} else if (params.lovelace != null) {
 			const requestedLovelace = params.lovelace;
-			// An eligible UTxO already holding exactly the requested amount is
-			// decommitted whole. `coverLovelace` picks largest-first, so without this
-			// check it would carve a bigger UTxO down to this amount even with an
-			// exact match sitting right there — leaving a stray exact-amount UTxO
-			// behind on every refused or retried withdrawal instead of reusing it.
-			//
-			// Pure ADA only: `selection.eligible` excludes reference scripts but not
-			// native assets, and a decommit removes the WHOLE output it spends. A UTxO
-			// that happens to hold the exact lovelace plus some unrelated token (an
-			// agent's registry NFT, say) is not what an amount-only withdrawal asked
-			// for, and taking it whole would carry that asset out of the head
-			// silently. Such a UTxO falls back to the ordinary split path instead,
-			// which carves the amount off a pure UTxO and leaves the asset behind.
-			const exactMatch = selection.eligible.find(
-				(utxo) => lovelaceOf(utxo) === requestedLovelace && countNativeAssets(utxo) === 0,
-			);
-			const covering = exactMatch != null ? [exactMatch] : coverLovelace(selection.eligible, requestedLovelace);
-			if (covering === null) {
+			const plan = planLovelaceWithdrawal({
+				eligible: selection.eligible,
+				amount: requestedLovelace,
+				baseChangeLovelace: MIN_SPLIT_REMAINDER_LOVELACE,
+				perAssetChangeLovelace: PER_ASSET_CHANGE_LOVELACE,
+			});
+			if (plan.kind === 'insufficient') {
 				throw createHttpError(
 					400,
 					`Only ${selection.eligibleLovelace} lovelace is eligible to withdraw, which is less than the ${requestedLovelace} requested`,
 				);
 			}
-			const covered = covering.reduce((total, utxo) => total + lovelaceOf(utxo), 0n);
-			if (covered === requestedLovelace) {
-				// The chosen UTxOs already come to exactly the amount, so the split
-				// would be a transaction that changes nothing.
-				decommitInputs = covering;
+			if (plan.kind === 'remainder-too-small') {
+				throw createHttpError(
+					400,
+					`Withdrawing ${requestedLovelace} lovelace would leave ${plan.remainder} behind, which is below the minimum a UTxO may hold. ` +
+						'Withdraw a little less, or leave the amount out to take whole UTxOs.',
+				);
+			}
+			if (plan.kind === 'whole') {
+				decommitInputs = plan.inputs;
 			} else {
-				if (covered - requestedLovelace < MIN_SPLIT_REMAINDER_LOVELACE) {
-					throw createHttpError(
-						400,
-						`Withdrawing ${requestedLovelace} lovelace would leave ${covered - requestedLovelace} behind, which is below the minimum a UTxO may hold. ` +
-							'Withdraw a little less, or leave the amount out to take whole UTxOs.',
-					);
-				}
 				const split = await splitExactAmountInHead({
 					wallet,
 					provider,
 					hydraHead,
 					address,
 					network,
-					inputs: covering,
+					inputs: plan.inputs,
 					unit: '',
 					amount: requestedLovelace,
 					decommitId: claim.id,

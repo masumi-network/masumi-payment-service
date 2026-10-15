@@ -5,6 +5,7 @@ import {
 	coverLovelace,
 	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
 	isAlreadyCarved,
+	planLovelaceWithdrawal,
 	requiredChangeLovelace,
 	selectDecommittableUtxos,
 	topUpCarveInputs,
@@ -407,5 +408,51 @@ describe('requiredChangeLovelace', () => {
 				perAssetLovelace: PER_ASSET,
 			}),
 		).toBe(BASE + PER_ASSET);
+	});
+});
+
+describe('planLovelaceWithdrawal', () => {
+	const TOKEN = `${'c'.repeat(56)}746f6b656e`;
+	const tokenUtxo = (txHash: string, lovelace: bigint) =>
+		utxo(txHash, lovelace, {
+			amount: [
+				{ unit: 'lovelace', quantity: lovelace.toString() },
+				{ unit: TOKEN, quantity: '1' },
+			],
+		});
+	const plan = (eligible: UTxO[], amount: bigint) =>
+		planLovelaceWithdrawal({ eligible, amount, baseChangeLovelace: 2_000_000n, perAssetChangeLovelace: 500_000n });
+
+	it('takes an exact pure-ADA match whole', () => {
+		const exact = utxo('a'.repeat(64), 10_000_000n);
+		expect(plan([utxo('b'.repeat(64), 50_000_000n), exact], 10_000_000n)).toEqual({ kind: 'whole', inputs: [exact] });
+	});
+
+	it('takes pure-ADA inputs whole when they sum to the amount', () => {
+		const result = plan([utxo('a'.repeat(64), 6_000_000n), utxo('b'.repeat(64), 4_000_000n)], 10_000_000n);
+		expect(result.kind).toBe('whole');
+	});
+
+	// The audit finding: a token-bearing UTxO completed the lovelace sum and the
+	// whole-input shortcut carried its token out on an amount-only request.
+	it('never takes a token-bearing UTxO whole, even when the sum is exact', () => {
+		const withToken = tokenUtxo('a'.repeat(64), 6_000_000n);
+		const pure = utxo('b'.repeat(64), 4_000_000n);
+		const spare = utxo('d'.repeat(64), 5_000_000n);
+		const result = plan([withToken, pure, spare], 10_000_000n);
+		expect(result.kind).toBe('split');
+		if (result.kind !== 'split') return;
+		const covered = result.inputs.reduce((sum, input) => sum + BigInt(input.output.amount[0]!.quantity), 0n);
+		// Room for the amount plus a change output that keeps the token.
+		expect(covered).toBeGreaterThanOrEqual(10_000_000n + 2_500_000n);
+	});
+
+	it('refuses when no change can keep the token', () => {
+		const result = plan([tokenUtxo('a'.repeat(64), 6_000_000n), utxo('b'.repeat(64), 4_000_000n)], 10_000_000n);
+		expect(result).toEqual({ kind: 'remainder-too-small', remainder: 0n });
+	});
+
+	it('reports a short balance', () => {
+		expect(plan([utxo('a'.repeat(64), 4_000_000n)], 10_000_000n)).toEqual({ kind: 'insufficient' });
 	});
 });
