@@ -18,10 +18,12 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-transaction-
 
 const {
 	findIdentifiersWithNothingToApply,
+	isLivePassDue,
 	isRowSettledOnOutput,
 	memoizedLiveEscrowDecode,
 	memoizedTransactionEvidence,
 	pruneLiveEscrowMemo,
+	recordLivePass,
 	retainLiveEscrowMemoHeads,
 } = await import('./live-escrow-memo');
 
@@ -51,7 +53,7 @@ describe('live escrow memo', () => {
 
 	it('decodes an output reference once per head until it leaves the live set', () => {
 		const decode = jest.fn(() => ({ decoded: { blockchainIdentifier: 'id-1' }, newState: OnChainState.FundsLocked }));
-		const memoDecode = () => memoizedLiveEscrowDecode('head-1', OUTPUT, decode as never);
+		const memoDecode = () => memoizedLiveEscrowDecode('head-1', OUTPUT, 'datum-a', decode as never);
 
 		memoDecode();
 		memoDecode();
@@ -64,9 +66,33 @@ describe('live escrow memo', () => {
 
 	it('memoizes an undecodable output as null', () => {
 		const decode = jest.fn(() => null);
-		expect(memoizedLiveEscrowDecode('head-1', OUTPUT, decode)).toBeNull();
-		expect(memoizedLiveEscrowDecode('head-1', OUTPUT, decode)).toBeNull();
+		expect(memoizedLiveEscrowDecode('head-1', OUTPUT, 'datum-a', decode)).toBeNull();
+		expect(memoizedLiveEscrowDecode('head-1', OUTPUT, 'datum-a', decode)).toBeNull();
 		expect(decode).toHaveBeenCalledTimes(1);
+	});
+
+	it('re-decodes an output reference when its datum bytes differ', () => {
+		const decode = jest.fn(() => null);
+		memoizedLiveEscrowDecode('head-1', OUTPUT, 'datum-a', decode);
+		memoizedLiveEscrowDecode('head-1', OUTPUT, 'datum-b', decode);
+		expect(decode).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps a live pass due until a clean pass, then throttles for the interval', () => {
+		expect(isLivePassDue('head-1', 60_000, 1_000)).toBe(true);
+		recordLivePass('head-1', false, 1_000);
+		expect(isLivePassDue('head-1', 60_000, 2_000)).toBe(true);
+		recordLivePass('head-1', true, 2_000);
+		expect(isLivePassDue('head-1', 60_000, 61_999)).toBe(false);
+		expect(isLivePassDue('head-1', 60_000, 62_000)).toBe(true);
+		recordLivePass('head-1', false, 62_000);
+		expect(isLivePassDue('head-1', 60_000, 62_001)).toBe(true);
+	});
+
+	it('forgets the throttle window of a head that is no longer reconciled', () => {
+		recordLivePass('head-1', true, 1_000);
+		retainLiveEscrowMemoHeads([]);
+		expect(isLivePassDue('head-1', 60_000, 1_001)).toBe(true);
 	});
 
 	it('re-parses evidence when the CBOR for a tx hash changes, and after the head is dropped', () => {

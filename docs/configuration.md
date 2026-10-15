@@ -48,7 +48,7 @@ If you run the service with Docker:
   - **WEBHOOK_CLEANUP_INTERVAL**: interval in seconds for deleting old webhook deliveries
   - **LOW_BALANCE_CHECK_INTERVAL**: interval in seconds for monitored wallet low-balance checks
   - **CHECK_HYDRA_TX_INTERVAL**: interval in seconds for the Hydra L2 passes and deposit reconciliation (minimum 5, default 10)
-  - **HYDRA_ESCROW_RECONCILE_INTERVAL**: interval in seconds for the Hydra L2 escrow-state reconcile, the safety net behind live in-head confirmations (minimum 5, default 60)
+  - **HYDRA_ESCROW_RECONCILE_INTERVAL**: minimum seconds between live-snapshot passes of the Hydra L2 escrow-state reconcile per head, the safety net behind live in-head confirmations; replay catch-up and finalized heads still run every CHECK_HYDRA_TX_INTERVAL (minimum 5, default 60)
 
 ### Seeding a new database
 

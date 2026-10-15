@@ -142,8 +142,9 @@ const walletLockTimeoutInterval = parseNumberEnv(
 
 const checkHydraTxInterval = parseNumberEnv('CHECK_HYDRA_TX_INTERVAL', process.env.CHECK_HYDRA_TX_INTERVAL, '10', 5);
 
-// The L2 escrow-state reconcile is a safety net behind the live TxConfirmed
-// handler, so it runs on its own, slower cadence than the other Hydra passes.
+// Minimum seconds between live-snapshot passes of the L2 escrow-state reconcile
+// per head. That pass is a safety net behind the live TxConfirmed handler; the
+// ordered replay drain in the same job still runs every CHECK_HYDRA_TX_INTERVAL.
 const hydraEscrowReconcileInterval = parseNumberEnv(
 	'HYDRA_ESCROW_RECONCILE_INTERVAL',
 	process.env.HYDRA_ESCROW_RECONCILE_INTERVAL,

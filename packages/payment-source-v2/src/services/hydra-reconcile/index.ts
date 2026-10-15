@@ -48,9 +48,11 @@ import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
 import {
 	findIdentifiersWithNothingToApply,
+	isLivePassDue,
 	memoizedLiveEscrowDecode,
 	memoizedTransactionEvidence,
 	pruneLiveEscrowMemo,
+	recordLivePass,
 	retainLiveEscrowMemoHeads,
 } from './live-escrow-memo';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
@@ -59,8 +61,9 @@ const MAX_REPLAY_TRANSACTIONS_PER_HEAD_PER_RUN = 250;
 
 /**
  * Reconcile every enabled active/final head's in-head escrow UTxOs against this node's
- * own payment/purchase requests. Safe to run on the same cadence as the pending
- * L2 tx handler; idempotent.
+ * own payment/purchase requests. Runs on the pending L2 tx handler cadence so the
+ * ordered replay drains promptly; the live-snapshot pass is throttled per head by
+ * HYDRA_ESCROW_RECONCILE_INTERVAL. Idempotent.
  */
 export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	const heads = await prisma.hydraHead.findMany({
@@ -213,6 +216,12 @@ async function reconcileHead(
 	if (!(node?.hasVerifiedPinnedSessions && node.confirmedTransactionHistoryReady)) return;
 	await reportExpiredL2Reservations({ hydraHeadId, network: source.network, node });
 
+	// The live snapshot is a safety net behind the TxConfirmed handler, so it is
+	// throttled per head. A finalized head is never throttled or skipped: there a
+	// 'retry' outcome gates the fan-out handoff and disconnect.
+	const isFinalized = finalizedAt != null;
+	if (!isFinalized && !isLivePassDue(hydraHeadId, CONFIG.HYDRA_ESCROW_RECONCILE_INTERVAL * 1000)) return;
+
 	const utxos = await provider.fetchAddressUTxOs(source.smartContractAddress);
 	const observations: Array<{
 		utxo: UTxO;
@@ -225,7 +234,7 @@ async function reconcileHead(
 			continue;
 		}
 		// An output reference is immutable, so its decode is computed once per head.
-		const observation = memoizedLiveEscrowDecode(hydraHeadId, utxo.input, () => {
+		const observation = memoizedLiveEscrowDecode(hydraHeadId, utxo.input, datumCbor, () => {
 			let decoded: DecodedV1ContractDatum | null;
 			try {
 				decoded = decodeV2ContractDatum(
@@ -268,16 +277,18 @@ async function reconcileHead(
 	);
 	// Most live outputs are already applied; one batched read finds them so the
 	// pass skips their per-output serializable transaction.
-	const identifiersWithNothingToApply = await findIdentifiersWithNothingToApply(
-		source.id,
-		observations
-			.filter((observation) => identifierCounts.get(observation.decoded.blockchainIdentifier) === 1)
-			.map((observation) => ({
-				blockchainIdentifier: observation.decoded.blockchainIdentifier,
-				newState: observation.newState,
-				outputReference: observation.utxo.input,
-			})),
-	);
+	const identifiersWithNothingToApply = isFinalized
+		? new Set<string>()
+		: await findIdentifiersWithNothingToApply(
+				source.id,
+				observations
+					.filter((observation) => identifierCounts.get(observation.decoded.blockchainIdentifier) === 1)
+					.map((observation) => ({
+						blockchainIdentifier: observation.decoded.blockchainIdentifier,
+						newState: observation.newState,
+						outputReference: observation.utxo.input,
+					})),
+			);
 	for (const observation of observations) {
 		// Yield between outputs so API requests are not starved by a long pass.
 		await yieldToEventLoop();
@@ -301,6 +312,8 @@ async function reconcileHead(
 		);
 		hasRetryableLiveObservation ||= outcome === 'retry';
 	}
+	// A pass with retryable outputs stays due, so it reruns on the next tick.
+	recordLivePass(hydraHeadId, !hasRetryableLiveObservation);
 
 	// A finalized head can be disconnected only after the history socket's
 	// Greetings marker proves replay completion and every queued tx was resolved.

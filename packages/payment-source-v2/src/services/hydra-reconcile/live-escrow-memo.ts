@@ -1,6 +1,9 @@
 /**
  * Steady-state cost cutters for the L2 live-snapshot pass.
  *
+ * `isLivePassDue` / `recordLivePass` throttle the pass per head; the ordered
+ * replay drain before it is not throttled.
+ *
  * Every pass sees the same live escrow outputs again. An output reference is
  * immutable, so its decoded datum and its transaction's parsed CBOR never
  * change: memoize both per head instead of re-running deserializeDatum and the
@@ -27,11 +30,24 @@ export type LiveEscrowDecode = { decoded: DecodedV1ContractDatum; newState: OnCh
 type OutputReference = { txHash: string; outputIndex: number };
 
 type HeadMemo = {
-	decodes: Map<string, LiveEscrowDecode>;
+	decodes: Map<string, { datumCbor: string; result: LiveEscrowDecode }>;
 	evidence: Map<string, { cborHex: string; evidence: HydraTransactionEvidence | null }>;
 };
 
 const memoByHead = new Map<string, HeadMemo>();
+const lastLivePassAtByHead = new Map<string, number>();
+
+/** True when this head's live-snapshot pass has not completed cleanly within `intervalMs`. */
+export function isLivePassDue(hydraHeadId: string, intervalMs: number, nowMs = Date.now()): boolean {
+	const lastLivePassAt = lastLivePassAtByHead.get(hydraHeadId);
+	return lastLivePassAt == null || nowMs - lastLivePassAt >= intervalMs;
+}
+
+/** Start the throttle window after a clean pass; a pass with retryable outputs stays due. */
+export function recordLivePass(hydraHeadId: string, isClean: boolean, nowMs = Date.now()): void {
+	if (isClean) lastLivePassAtByHead.set(hydraHeadId, nowMs);
+	else lastLivePassAtByHead.delete(hydraHeadId);
+}
 
 function headMemo(hydraHeadId: string): HeadMemo {
 	let memo = memoByHead.get(hydraHeadId);
@@ -49,13 +65,17 @@ function outputReferenceKey(input: OutputReference): string {
 export function memoizedLiveEscrowDecode(
 	hydraHeadId: string,
 	input: OutputReference,
+	datumCbor: string,
 	decode: () => LiveEscrowDecode,
 ): LiveEscrowDecode {
 	const decodes = headMemo(hydraHeadId).decodes;
 	const key = outputReferenceKey(input);
-	if (decodes.has(key)) return decodes.get(key) ?? null;
+	const cached = decodes.get(key);
+	// Compare the bytes too: the evidence check reads the live datum fresh, so the
+	// decode must never come from different bytes than the ones it verifies.
+	if (cached && cached.datumCbor === datumCbor) return cached.result;
 	const result = decode();
-	decodes.set(key, result);
+	decodes.set(key, { datumCbor, result });
 	return result;
 }
 
@@ -86,6 +106,8 @@ export function pruneLiveEscrowMemo(hydraHeadId: string, liveInputs: OutputRefer
 export function retainLiveEscrowMemoHeads(hydraHeadIds: Iterable<string>): void {
 	const keep = new Set(hydraHeadIds);
 	for (const hydraHeadId of memoByHead.keys()) if (!keep.has(hydraHeadId)) memoByHead.delete(hydraHeadId);
+	for (const hydraHeadId of lastLivePassAtByHead.keys())
+		if (!keep.has(hydraHeadId)) lastLivePassAtByHead.delete(hydraHeadId);
 }
 
 type LiveEscrowCandidate = {
