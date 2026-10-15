@@ -439,7 +439,9 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			if (plan.kind === 'remainder-too-small') {
 				throw createHttpError(
 					400,
-					plan.remainder === 0n
+					// A whole-UTxO withdrawal would take those assets out too, so
+					// it is not suggested here.
+					plan.coverHoldsAssets
 						? `The ${requestedLovelace} lovelace that covers this withdrawal sits on UTxOs that also hold native assets, ` +
 								'and no spare ADA is eligible to keep those assets in the head. Add funds to the head, or withdraw a little less.'
 						: `Withdrawing ${requestedLovelace} lovelace would leave ${plan.remainder} behind, which is below the minimum a UTxO may hold. ` +

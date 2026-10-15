@@ -334,7 +334,7 @@ export type LovelaceWithdrawalPlan =
 	| { kind: 'whole'; inputs: UTxO[] }
 	| { kind: 'split'; inputs: UTxO[] }
 	| { kind: 'insufficient' }
-	| { kind: 'remainder-too-small'; remainder: bigint };
+	| { kind: 'remainder-too-small'; remainder: bigint; coverHoldsAssets: boolean };
 
 /**
  * The inputs for an amount-only ADA withdrawal, and whether they leave whole.
@@ -385,7 +385,13 @@ export function planLovelaceWithdrawal(params: {
 			perAssetLovelace: perAssetChangeLovelace,
 		});
 		const extra = topUpCarveInputs({ chosen: inputs, eligible, needed: amount + changeFloor });
-		if (extra === null) return { kind: 'remainder-too-small', remainder: covered - amount };
+		if (extra === null) {
+			return {
+				kind: 'remainder-too-small',
+				remainder: covered - amount,
+				coverHoldsAssets: covering.some((utxo) => countNativeAssets(utxo) > 0),
+			};
+		}
 		if (extra.length === 0) return { kind: 'split', inputs };
 		inputs = [...inputs, ...extra];
 	}

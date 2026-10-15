@@ -449,7 +449,7 @@ describe('planLovelaceWithdrawal', () => {
 
 	it('refuses when no change can keep the token', () => {
 		const result = plan([tokenUtxo('a'.repeat(64), 6_000_000n), utxo('b'.repeat(64), 4_000_000n)], 10_000_000n);
-		expect(result).toEqual({ kind: 'remainder-too-small', remainder: 0n });
+		expect(result).toEqual({ kind: 'remainder-too-small', remainder: 0n, coverHoldsAssets: true });
 	});
 
 	// A borrowed UTxO's own token also lands on the change, so its floor grows.
