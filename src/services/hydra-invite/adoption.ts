@@ -157,6 +157,13 @@ type AdoptionResult = 'adopted' | 'rejected' | 'skipped';
  * at it. The node's keys are released last of all, and only once the Host has
  * actually let go of the node, so a refusal leaves the keys with us rather than
  * leaving a running node nobody holds keys for.
+ *
+ * `force` skips the Host's head-state guard. By the time a redemption is
+ * polled the Host has already given the node the redeemer as its peer, so a
+ * plain removal is refused as a node that may hold head state, and the node and
+ * its fuel stay until someone intervenes. Pass it only when no participant here
+ * claims the node: nothing can then bind it to a head, so there is no head
+ * state on it that this service could ever need.
  */
 async function discardUnadoptableRedemption(
 	invite: {
@@ -167,6 +174,7 @@ async function discardUnadoptableRedemption(
 		HydraHost: { baseUrl: string; encryptedAdminToken: string | null; allowInsecureHttp: boolean };
 	},
 	removeNode: boolean,
+	force = false,
 ): Promise<void> {
 	const discarded = await prisma.hydraHeadInvite.updateMany({
 		where: { id: invite.id, status: HydraInviteStatus.Issued },
@@ -190,7 +198,7 @@ async function discardUnadoptableRedemption(
 			try {
 				if (await canRemoveReservedHostNode(invite.hydraHostId, invite.hostNodeId))
 					await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
-						force: false,
+						force,
 						...transport,
 					});
 			} catch (error) {
@@ -285,7 +293,9 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 			`hydra: invite ${record.nonce} has no unbound local participant to attach to a head; discarding it` +
 				(claimed > 0 ? `, but leaving node ${invite.hostNodeId} in place because a head still claims it` : ''),
 		);
-		await discardUnadoptableRedemption(invite, claimed === 0);
+		// No participant at all means no head can be bound to the node, so force
+		// is safe, and without it the Host refuses because the peer is set.
+		await discardUnadoptableRedemption(invite, claimed === 0, claimed === 0);
 		return 'rejected';
 	}
 
