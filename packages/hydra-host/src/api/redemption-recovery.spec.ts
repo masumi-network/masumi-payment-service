@@ -7,6 +7,7 @@ import { NodeRegistryStore } from '../registry/store.js';
 import { PortAllocator } from '../registry/ports.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 import { createRedemptionRecovery } from './redemption-recovery.js';
+import { stageAndConfirm } from '../registry/exchange-test-support.js';
 
 const material = {
 	walletAddress: 'addr_test1them',
@@ -50,9 +51,10 @@ beforeEach(async () => {
 		redeemedAt: null,
 		redeemer: null,
 		redeemerSignature: null,
+		staged: [],
 		startError: null,
 	});
-	await exchange.redeem('nonce-pending', material, { signature: 'sig', key: 'key' });
+	await stageAndConfirm(exchange, 'nonce-pending', material, { signature: 'sig', key: 'key' });
 });
 afterEach(async () => {
 	jest.restoreAllMocks();

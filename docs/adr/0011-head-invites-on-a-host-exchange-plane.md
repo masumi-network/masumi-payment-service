@@ -104,6 +104,20 @@ nonce this Host issued, while it is unspent and unexpired. It validates every
 redeemer value before persistence. Unknown public paths return 404, request
 bodies are bounded, and connection timeouts are short.
 
+**Amendment: redemptions are staged until verified.** The first version spent
+the nonce and configured the node on the public POST, before the payment
+service had verified the signature. That was wrong. Anyone who obtained an
+invite could post forged material first, and the intended redeemer was then
+refused. The cleanup removal was also refused, because the node already had a
+peer. Now the Exchange Plane stages each POST as an unverified candidate (at
+most 8 for each invite) and answers `202 { staged: true }`. The nonce stays
+open. On its poll, the issuing payment service verifies each candidate. It
+drops a forged candidate with `POST /v1/invites/{nonce}/reject`. It confirms
+the first valid candidate with `POST /v1/invites/{nonce}/confirm`. That call
+spends the nonce and configures the reserved node, and only an admin-token
+caller can make it. So the node in decision 3 starts after the poll verifies
+the redemption, not when the POST arrives.
+
 **8. Approval names the counterparty.** Before redeeming, the operator is shown
 the issuer's registry entries — assets at that address under the network's V2
 registry policy, resolved to their on-chain metadata names. A hex address is a

@@ -26,7 +26,9 @@ export type RouteKind =
 	| 'peerAllowlist'
 	| 'registerInvite'
 	| 'listInvites'
-	| 'forgetInvite';
+	| 'forgetInvite'
+	| 'confirmRedemption'
+	| 'rejectRedemption';
 
 export type RouteMatch = {
 	kind: RouteKind;
@@ -74,6 +76,12 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 		}
 		if (segments.length === 3 && method === 'DELETE' && NONCE_PATTERN.test(segments[2])) {
 			return { kind: 'forgetInvite', tier: 'admin', nonce: segments[2] };
+		}
+		// The owning service's verdict on a staged redemption. Confirming spends
+		// the nonce; rejecting drops a candidate whose signature did not hold.
+		if (segments.length === 4 && method === 'POST' && NONCE_PATTERN.test(segments[2])) {
+			if (segments[3] === 'confirm') return { kind: 'confirmRedemption', tier: 'admin', nonce: segments[2] };
+			if (segments[3] === 'reject') return { kind: 'rejectRedemption', tier: 'admin', nonce: segments[2] };
 		}
 		return null;
 	}

@@ -1,16 +1,16 @@
 /**
  * What the Host knows about an exchange.
  *
- * Deliberately less than the payment service knows. The Host never verifies a
+ * Deliberately less than the payment service knows.  The Host never verifies a
  * signature: doing so would mean pulling Mesh and its CSL bindings into an
- * image whose whole point is to be small. The Host instead accepts redemption
+ * image whose whole point is to be small. The Host instead stages a redemption
  * only for an issued, unspent, unexpired nonce, validates every value it later
- * passes to another parser, and stores the signature for the payment service to
+ * passes to another parser, and keeps the signature for the payment service to
  * verify when it polls.
  *
- * That split is what keeps the Exchange Plane safe to expose: everything it can
- * do without cryptography is reversible, and everything irreversible waits for
- * a service that holds keys.
+ * That split is what keeps the Exchange Plane safe to expose: a staged
+ * candidate spends nothing, and the nonce is consumed only when the service
+ * that holds keys confirms a candidate whose signature it verified.
  */
 
 import { parsePeerAdvertise } from '../peer-address.js';
@@ -51,6 +51,22 @@ export type ExchangeSignature = {
 };
 
 /**
+ * A redemption the Exchange Plane accepted but nobody has verified yet.
+ *
+ * Staging does not spend the nonce. Only the owning payment service, after it
+ * verifies the signature, can confirm one candidate, and that confirmation is
+ * what consumes the nonce and configures the peer. A forged candidate is
+ * rejected and dropped, and the intended redeemer can still redeem.
+ */
+export type StagedRedemption = {
+	/** Content hash of the material and signature, so a retried POST is one candidate. */
+	id: string;
+	stagedAt: number;
+	redeemer: ExchangeMaterial;
+	signature: ExchangeSignature;
+};
+
+/**
  * An invite this Host will honour, registered by the owning payment service
  * when it mints one.
  *
@@ -67,6 +83,8 @@ export type InviteRecord = {
 	redeemedAt: number | null;
 	redeemer: ExchangeMaterial | null;
 	redeemerSignature: ExchangeSignature | null;
+	/** Unverified candidates. Cleared when one is confirmed. */
+	staged: StagedRedemption[];
 	/** Set when the Host could not start the node after redemption. */
 	startError: string | null;
 };

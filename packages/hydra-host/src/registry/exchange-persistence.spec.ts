@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ExchangeStore } from './exchange-store.js';
 import type { ExchangeMaterial, InviteRecord } from './exchange-types.js';
+import { stageAndConfirm } from './exchange-test-support.js';
 
 const REDEEMER: ExchangeMaterial = {
 	hydraVerificationKey: `5820${'ab'.repeat(32)}`,
@@ -28,6 +29,7 @@ beforeEach(async () => {
 		redeemedAt: null,
 		redeemer: null,
 		redeemerSignature: null,
+		staged: [],
 		startError: null,
 	};
 	await store.registerInvite(invite);
@@ -51,10 +53,10 @@ describe('exchange persistence failures', () => {
 
 	it('keeps a failed redemption unspent and permits its retry', async () => {
 		jest.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('injected rename failure'));
-		await expect(store.redeem(invite.nonce, REDEEMER, SIGNATURE)).rejects.toThrow('injected rename failure');
+		await expect(stageAndConfirm(store, invite.nonce, REDEEMER, SIGNATURE)).rejects.toThrow('injected rename failure');
 		expect((await store.listInvites())[0].redeemedAt).toBeNull();
 		expect((await new ExchangeStore(directory).listInvites())[0].redeemedAt).toBeNull();
-		await expect(store.redeem(invite.nonce, REDEEMER, SIGNATURE)).resolves.toMatchObject({ ok: true });
+		await expect(stageAndConfirm(store, invite.nonce, REDEEMER, SIGNATURE)).resolves.toMatchObject({ ok: true });
 		expect((await new ExchangeStore(directory).listInvites())[0].redeemer).toEqual(REDEEMER);
 	});
 

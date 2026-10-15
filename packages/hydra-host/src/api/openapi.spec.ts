@@ -23,6 +23,8 @@ const EVERY_ROUTE_KIND: Record<RouteKind, true> = {
 	registerInvite: true,
 	listInvites: true,
 	forgetInvite: true,
+	confirmRedemption: true,
+	rejectRedemption: true,
 };
 
 function concretePath(template: string): string {

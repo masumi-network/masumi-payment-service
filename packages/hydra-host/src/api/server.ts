@@ -30,7 +30,7 @@ import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type Provis
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { buildProxyQuery, isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
 import { buildPeerAllowlist, renderNftables, resolvePeerAllowlist } from './peer-allowlist.js';
-import { registerInvite } from './exchange-admin.js';
+import { confirmRedemption, registerInvite, rejectRedemption } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
@@ -45,6 +45,12 @@ export type ServerDeps = {
 	supervisor: Supervisor;
 	provision: ProvisionDeps;
 	logger: SupervisorLogger;
+	/**
+	 * Configure the node an invite reserved, once its redemption is confirmed.
+	 * Durable replay: a failure is recorded on the invite and retried on the
+	 * next supervisor tick.
+	 */
+	onRedemptionConfirmed?: () => Promise<void>;
 };
 
 /**
@@ -344,13 +350,33 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			case 'listInvites': {
 				// A watermark rather than a per-invite poll: the owning service asks
-				// once and learns about every redemption since it last asked.
+				// once and learns about every redemption since it last asked. Invites
+				// with staged candidates are always included: they wait on the
+				// owning service's verdict and carry no `redeemedAt` to compare.
 				const since = Number(new URL(request.url ?? '/', 'http://host.invalid').searchParams.get('redeemedSince') ?? 0);
 				const { invites, now } = await exchange.listInvitesWithWatermark();
 				const changed = Number.isFinite(since)
-					? invites.filter((invite) => invite.redeemedAt !== null && invite.redeemedAt > since)
+					? invites.filter(
+							(invite) => (invite.redeemedAt !== null && invite.redeemedAt > since) || invite.staged.length > 0,
+						)
 					: invites;
 				send(response, 200, { invites: changed, now });
+				return;
+			}
+
+			case 'confirmRedemption': {
+				const confirmed = await confirmRedemption(exchange, nonce ?? '', await readBody(request));
+				await deps.onRedemptionConfirmed?.();
+				tickSupervisor();
+				// Re-read so a peer-setup failure from the step above is reported.
+				const current = (await exchange.listInvites()).find((invite) => invite.nonce === confirmed.nonce);
+				send(response, 200, { invite: current ?? confirmed });
+				return;
+			}
+
+			case 'rejectRedemption': {
+				await rejectRedemption(exchange, nonce ?? '', await readBody(request));
+				send(response, 200, { rejected: true });
 				return;
 			}
 

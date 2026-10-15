@@ -12,10 +12,12 @@
  *  - redemption requires a nonce this Host issued, unspent and unexpired;
  *  - bodies are capped and connection timeouts are short.
  *
- * No signature is checked here. That is the payment service's job when it
- * polls, and the division is deliberate: everything this plane can do without
- * cryptography is reversible — a node can be deleted — while everything
- * irreversible waits for a service that holds keys.
+ * No signature is checked here, so nothing here spends the nonce either. A
+ * redemption is staged as an unverified candidate. The payment service
+ * verifies the signature when it polls, and only its confirmation, on the
+ * control plane, consumes the nonce and configures the reserved node. A
+ * forged candidate is rejected there and leaves the invite open for the
+ * intended redeemer.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -98,14 +100,6 @@ export function exchangeRequestSource(
 export type ExchangeDeps = {
 	store: ExchangeStore;
 	logger: SupervisorLogger;
-	/**
-	 * Configure and start the node reserved for this invite.
-	 *
-	 * Separated from the transport so the plane can be tested without a
-	 * supervisor, and so a start failure is recorded rather than thrown at a
-	 * counterparty who can do nothing about it.
-	 */
-	onRedeemed: (nonce: string, hostNodeId: string) => Promise<void>;
 	/** Read X-Forwarded-For only when a trusted HTTP proxy is the sole caller. */
 	trustProxy?: boolean;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
@@ -166,7 +160,7 @@ function readRedeemBody(body: unknown): RedeemBody | null {
 }
 
 export function createExchangePlane(deps: ExchangeDeps): Server {
-	const { store, logger, onRedeemed } = deps;
+	const { store, logger } = deps;
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
 	const maxTrackedSources = deps.limits?.maxTrackedSources ?? MAX_TRACKED_SOURCES;
@@ -290,7 +284,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		}
 		inFlight += 1;
 		try {
-			const result = await store.redeem(body.nonce, body.redeemer, body.signature);
+			const result = await store.stage(body.nonce, body.redeemer, body.signature);
 			if (!result.ok) {
 				const failures = (failuresInWindow.get(source) ?? 0) + 1;
 				failuresInWindow.set(source, failures);
@@ -301,24 +295,16 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 					send(response, 404, { error: 'no such invite' });
 					return;
 				}
+				if (result.status === 429) response.setHeader('Retry-After', '60');
 				send(response, result.status, { error: result.reason });
 				return;
 			}
 
-			// The reply carries nothing the counterparty must trust — everything they
-			// need was signed inside the invite — so this is an acknowledgement, and
-			// the Host never has to speak for its operator's wallet.
-			send(response, 200, { redeemed: true });
-
-			// After answering: the counterparty can neither help nor wait if this
-			// fails, and the failure belongs in the operator's poll.
-			try {
-				await onRedeemed(body.nonce, result.invite.hostNodeId);
-			} catch (error) {
-				const message = (error as Error).message;
-				logger.error(`[exchange] node ${result.invite.hostNodeId} failed to start after redemption: ${message}`);
-				await store.recordStartError(body.nonce, message).catch(() => undefined);
-			}
+			// Accepted, not yet redeemed. The reply carries nothing the counterparty
+			// must trust, since everything they need was signed inside the invite.
+			// The issuer's payment service verifies the signature and then
+			// confirms the redemption on the control plane.
+			send(response, 202, { staged: true });
 		} finally {
 			inFlight -= 1;
 		}

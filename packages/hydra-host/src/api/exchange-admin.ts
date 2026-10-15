@@ -90,8 +90,39 @@ export async function registerInvite(
 		redeemedAt: null,
 		redeemer: null,
 		redeemerSignature: null,
+		staged: [],
 		startError: null,
 	};
 	await store.registerInvite(record);
 	return { nonce: record.nonce };
+}
+
+const STAGED_ID_PATTERN = /^[0-9a-f]{32}$/;
+
+function readStagedId(body: unknown): string {
+	const stagedId = typeof body === 'object' && body !== null ? (body as { stagedId?: unknown }).stagedId : undefined;
+	if (typeof stagedId !== 'string' || !STAGED_ID_PATTERN.test(stagedId)) {
+		throw new ProvisionError('stagedId must be the 32-character id of a staged redemption', 400);
+	}
+	return stagedId;
+}
+
+/**
+ * Spend the invite's nonce on a staged candidate the owning service verified.
+ *
+ * This is the only path that consumes a nonce. The Exchange Plane stages, and
+ * a candidate becomes the redemption only once a caller that holds the admin
+ * token, and so the keys to verify the signature, names it here.
+ */
+export async function confirmRedemption(store: ExchangeStore, nonce: string, body: unknown): Promise<InviteRecord> {
+	const result = await store.confirmStaged(nonce, readStagedId(body));
+	if (!result.ok) {
+		throw new ProvisionError(result.reason, result.status);
+	}
+	return result.invite;
+}
+
+/** Drop a staged candidate whose signature did not verify, so the invite stays open. */
+export async function rejectRedemption(store: ExchangeStore, nonce: string, body: unknown): Promise<void> {
+	await store.rejectStaged(nonce, readStagedId(body));
 }

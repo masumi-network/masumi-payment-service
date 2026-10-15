@@ -34,6 +34,8 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 		invites: [{ nonce: 'nonce', redeemedAt: Date.now(), redeemer: {}, redeemerSignature: {} }],
 	}),
 	forgetHostInvite: forget,
+	confirmHostRedemption: jest.fn(),
+	rejectHostRedemption: jest.fn(),
 	removeHostNode: remove,
 	HydraHostRequestError: class extends Error {},
 }));

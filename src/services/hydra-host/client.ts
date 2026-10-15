@@ -382,7 +382,19 @@ export type HostInviteRecord = {
 	redeemedAt: number | null;
 	redeemer: ExchangeMaterial | null;
 	redeemerSignature: { signature: string; key: string } | null;
+	/**
+	 * Unverified redemptions. The Host spends the nonce only when we confirm
+	 * one of these. Absent on Hosts that predate staging.
+	 */
+	staged?: HostStagedRedemption[];
 	startError: string | null;
+};
+
+export type HostStagedRedemption = {
+	id: string;
+	stagedAt: number;
+	redeemer: ExchangeMaterial;
+	signature: { signature: string; key: string };
 };
 
 /**
@@ -428,4 +440,40 @@ export async function forgetHostInvite(
 	transport: HostTransportOptions,
 ): Promise<void> {
 	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, transport, { method: 'DELETE' });
+}
+
+/**
+ * Spend the invite's nonce on a staged redemption whose signature we verified.
+ * The Host configures the reserved node before it answers.
+ */
+export async function confirmHostRedemption(
+	baseUrl: string,
+	adminToken: string,
+	nonce: string,
+	stagedId: string,
+	transport: HostTransportOptions,
+): Promise<HostInviteRecord> {
+	const body = await request(baseUrl, `/v1/invites/${nonce}/confirm`, adminToken, transport, {
+		method: 'POST',
+		body: { stagedId },
+	});
+	const invite = isPlainObject(body) ? getOwnValue(body, 'invite') : undefined;
+	if (!isPlainObject(invite)) {
+		throw new HydraProtocolError('hydra host returned a malformed confirmed redemption');
+	}
+	return invite as HostInviteRecord;
+}
+
+/** Drop a staged redemption whose signature did not verify. The invite stays open. */
+export async function rejectHostRedemption(
+	baseUrl: string,
+	adminToken: string,
+	nonce: string,
+	stagedId: string,
+	transport: HostTransportOptions,
+): Promise<void> {
+	await request(baseUrl, `/v1/invites/${nonce}/reject`, adminToken, transport, {
+		method: 'POST',
+		body: { stagedId },
+	});
 }

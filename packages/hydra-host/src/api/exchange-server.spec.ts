@@ -5,7 +5,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createExchangePlane, exchangeRequestSource, OVERFLOW_SOURCE, rateLimitKey } from './exchange-server.js';
-import { ExchangeStore } from '../registry/exchange-store.js';
+import { ExchangeStore, MAX_STAGED_REDEMPTIONS } from '../registry/exchange-store.js';
+import { stageAndConfirm } from '../registry/exchange-test-support.js';
 
 // The keys are the real shape a `.vk` envelope carries — `5820` and 32 bytes —
 // because that is what the redemption is checked against: they are written
@@ -23,7 +24,6 @@ let server: Server;
 let store: ExchangeStore;
 let base: string;
 let dataDir: string;
-let onRedeemed: jest.Mock<(nonce: string, hostNodeId: string) => Promise<void>>;
 
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
@@ -43,17 +43,6 @@ describe('Exchange Plane request source', () => {
 });
 
 /** Poll until the value is set, for work the handler does after answering. */
-async function eventually<T>(read: () => Promise<T | null>, timeoutMs = 2_000): Promise<T | null> {
-	const deadline = Date.now() + timeoutMs;
-	for (;;) {
-		const value = await read();
-		if (value !== null || Date.now() > deadline) {
-			return value;
-		}
-		await new Promise((resolve) => setTimeout(resolve, 10));
-	}
-}
-
 async function post(pathname: string, body: unknown) {
 	const response = await fetch(`${base}${pathname}`, {
 		method: 'POST',
@@ -67,8 +56,7 @@ beforeEach(async () => {
 	jest.clearAllMocks();
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-exchange-'));
 	store = new ExchangeStore(dataDir);
-	onRedeemed = jest.fn(async () => undefined) as typeof onRedeemed;
-	server = createExchangePlane({ store, logger, onRedeemed });
+	server = createExchangePlane({ store, logger });
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -88,6 +76,7 @@ async function issue(nonce: string, ttlMs = 60_000) {
 		redeemedAt: null,
 		redeemer: null,
 		redeemerSignature: null,
+		staged: [],
 		startError: null,
 	});
 }
@@ -126,7 +115,7 @@ describe('search-engine exclusion', () => {
 	// robots.txt must be answered ahead of the limiter: a 429/5xx robots.txt is
 	// a temporary full crawl block that would hide the noindex header.
 	it('serves robots.txt even when the rate limiter is saturated', async () => {
-		const limited = createExchangePlane({ store, logger, onRedeemed, limits: { requestsPerMinute: 1 } });
+		const limited = createExchangePlane({ store, logger, limits: { requestsPerMinute: 1 } });
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
 		const limitedBase = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
 		try {
@@ -142,7 +131,7 @@ describe('search-engine exclusion', () => {
 });
 
 describe('redeeming an invite', () => {
-	it('accepts a redemption for an invite this host issued', async () => {
+	it('stages a redemption for an invite this host issued', async () => {
 		await issue('nonce-aaaaaaaa');
 
 		const result = await post('/exchange/redeem', {
@@ -151,8 +140,8 @@ describe('redeeming an invite', () => {
 			signature: SIGNATURE,
 		});
 
-		expect(result.status).toBe(200);
-		expect(result.body).toEqual({ redeemed: true });
+		expect(result.status).toBe(202);
+		expect(result.body).toEqual({ staged: true });
 	});
 
 	// The whole point of pre-allocation: the reply carries nothing the
@@ -164,18 +153,50 @@ describe('redeeming an invite', () => {
 			redeemer: MATERIAL,
 			signature: SIGNATURE,
 		});
-		expect(Object.keys(result.body)).toEqual(['redeemed']);
+		expect(Object.keys(result.body)).toEqual(['staged']);
 	});
 
-	it('starts the reserved node with the redeemer as its peer', async () => {
+	// The Host cannot verify a signature, so a POST must not spend the nonce.
+	it('stages the candidate without spending the nonce', async () => {
 		await issue('nonce-cccccccc');
 		await post('/exchange/redeem', { nonce: 'nonce-cccccccc', redeemer: MATERIAL, signature: SIGNATURE });
-		expect(onRedeemed).toHaveBeenCalledWith('nonce-cccccccc', 'node-1');
+		const [invite] = await store.listInvites();
+		expect(invite.redeemedAt).toBeNull();
+		expect(invite.staged).toHaveLength(1);
+		expect(invite.staged[0]).toMatchObject({ redeemer: MATERIAL, signature: SIGNATURE });
 	});
 
-	it('refuses a second redemption of the same nonce', async () => {
+	// The audit finding: a forged POST used to burn the nonce before anyone
+	// verified it, and the intended redeemer was then refused.
+	it('lets the intended redeemer stage after a forged candidate', async () => {
+		await issue('nonce-forged00');
+		const forged = await post('/exchange/redeem', {
+			nonce: 'nonce-forged00',
+			redeemer: { ...MATERIAL, walletAddress: 'addr_test1attacker' },
+			signature: { signature: 'forged', key: 'forged' },
+		});
+		const genuine = await post('/exchange/redeem', {
+			nonce: 'nonce-forged00',
+			redeemer: MATERIAL,
+			signature: SIGNATURE,
+		});
+		expect(forged.status).toBe(202);
+		expect(genuine.status).toBe(202);
+		expect((await store.listInvites())[0].staged).toHaveLength(2);
+	});
+
+	it('keeps a retried POST as one candidate', async () => {
+		await issue('nonce-retry000');
+		await post('/exchange/redeem', { nonce: 'nonce-retry000', redeemer: MATERIAL, signature: SIGNATURE });
+		await post('/exchange/redeem', { nonce: 'nonce-retry000', redeemer: MATERIAL, signature: SIGNATURE });
+		expect((await store.listInvites())[0].staged).toHaveLength(1);
+	});
+
+	it('refuses a nonce whose redemption was already confirmed', async () => {
 		await issue('nonce-dddddddd');
 		await post('/exchange/redeem', { nonce: 'nonce-dddddddd', redeemer: MATERIAL, signature: SIGNATURE });
+		const [staged] = (await store.listInvites())[0].staged;
+		expect(await store.confirmStaged('nonce-dddddddd', staged.id)).toMatchObject({ ok: true });
 
 		const second = await post('/exchange/redeem', {
 			nonce: 'nonce-dddddddd',
@@ -183,7 +204,6 @@ describe('redeeming an invite', () => {
 			signature: SIGNATURE,
 		});
 		expect(second.status).toBe(409);
-		expect(onRedeemed).toHaveBeenCalledTimes(1);
 	});
 
 	it('refuses a nonce it never issued', async () => {
@@ -193,7 +213,6 @@ describe('redeeming an invite', () => {
 			signature: SIGNATURE,
 		});
 		expect(result.status).toBe(404);
-		expect(onRedeemed).not.toHaveBeenCalled();
 	});
 
 	it('refuses an expired invite', async () => {
@@ -204,7 +223,7 @@ describe('redeeming an invite', () => {
 			signature: SIGNATURE,
 		});
 		expect(result.status).toBe(410);
-		expect(onRedeemed).not.toHaveBeenCalled();
+		expect((await store.listInvites())[0]?.staged ?? []).toHaveLength(0);
 	});
 
 	it('rejects material that is missing fields', async () => {
@@ -217,7 +236,7 @@ describe('redeeming an invite', () => {
 		expect(result.status).toBe(400);
 	});
 
-	it('rejects peer addresses containing nftables syntax before redeeming the nonce', async () => {
+	it('rejects peer addresses containing nftables syntax before staging', async () => {
 		await issue('nonce-injection');
 		const result = await post('/exchange/redeem', {
 			nonce: 'nonce-injection',
@@ -226,33 +245,30 @@ describe('redeeming an invite', () => {
 		});
 
 		expect(result.status).toBe(400);
-		expect(onRedeemed).not.toHaveBeenCalled();
-		expect((await store.listInvites())[0].redeemedAt).toBeNull();
+		const [invite] = await store.listInvites();
+		expect(invite.redeemedAt).toBeNull();
+		expect(invite.staged).toHaveLength(0);
 	});
 
-	// A node that fails to start must not report success to the counterparty as
-	// an error either: they cannot act on it, and the operator can.
-	it('still acknowledges when the node fails to start, and records why', async () => {
-		await issue('nonce-gggggggg');
-		onRedeemed.mockRejectedValueOnce(new Error('etcd refused the cluster'));
-
+	// Each candidate is written before anyone verifies it, so the count is bounded.
+	it('caps the unverified candidates one invite may hold', async () => {
+		await issue('nonce-capped00');
+		for (let index = 0; index < MAX_STAGED_REDEMPTIONS; index += 1) {
+			await store.stage('nonce-capped00', MATERIAL, { signature: `sig-${index}`, key: 'key' });
+		}
 		const result = await post('/exchange/redeem', {
-			nonce: 'nonce-gggggggg',
+			nonce: 'nonce-capped00',
 			redeemer: MATERIAL,
 			signature: SIGNATURE,
 		});
-
-		// The acknowledgement is sent before the node is touched, so the error is
-		// recorded after the response the test already has.
-		expect(result.status).toBe(200);
-		expect(await eventually(async () => (await store.listInvites())[0].startError)).toBe('etcd refused the cluster');
+		expect(result.status).toBe(429);
 	});
 });
 
 describe('public surface hardening', () => {
 	it('rate-limits the anonymous endpoint before work reaches the store', async () => {
 		await new Promise<void>((resolve) => server.close(() => resolve()));
-		server = createExchangePlane({ store, logger, onRedeemed, limits: { requestsPerMinute: 1 } });
+		server = createExchangePlane({ store, logger, limits: { requestsPerMinute: 1 } });
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 		base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
@@ -301,16 +317,14 @@ describe('what the exchange plane does not expose', () => {
 
 	it('never echoes an internal error message', async () => {
 		await issue('nonce-hhhhhhhh');
-		onRedeemed.mockRejectedValueOnce(new Error('/data/nodes/node-1/keys/hydra.sk is unreadable'));
+		jest.spyOn(store, 'stage').mockRejectedValueOnce(new Error('/data/nodes/node-1/keys/hydra.sk is unreadable'));
 		const result = await post('/exchange/redeem', {
 			nonce: 'nonce-hhhhhhhh',
 			redeemer: MATERIAL,
 			signature: SIGNATURE,
 		});
+		expect(result.status).toBe(400);
 		expect(JSON.stringify(result.body)).not.toContain('hydra.sk');
-		// Settle the write this triggered before the fixture removes the data
-		// directory out from under it.
-		await eventually(async () => (await store.listInvites())[0].startError);
 	});
 });
 
@@ -350,11 +364,15 @@ describe('redemption failure disclosure', () => {
 	async function redeem(nonce: string) {
 		return await post('/exchange/redeem', { nonce, redeemer: MATERIAL, signature: SIGNATURE });
 	}
+	// A POST only stages; the owning service's confirmation spends the nonce.
+	async function spend(nonce: string) {
+		await stageAndConfirm(store, nonce, MATERIAL, SIGNATURE);
+	}
 
 	it('still tells a genuine caller why their redemption failed', async () => {
 		await issue('nonce-disclose1', -1_000);
 		await issue('nonce-disclose2');
-		await redeem('nonce-disclose2');
+		await spend('nonce-disclose2');
 
 		expect((await redeem('nonce-disclose1')).body.error).toBe('invite expired');
 		expect((await redeem('nonce-disclose2')).body.error).toBe('invite already redeemed');
@@ -362,7 +380,7 @@ describe('redemption failure disclosure', () => {
 
 	it('stops distinguishing a spent nonce from an unknown one after a few tries', async () => {
 		await issue('nonce-probe0001');
-		await redeem('nonce-probe0001');
+		await spend('nonce-probe0001');
 
 		const answers: Array<{ status: number; error: unknown }> = [];
 		for (let attempt = 0; attempt < 6; attempt++) {
@@ -395,7 +413,7 @@ describe('incomplete redemption bodies', () => {
 	}
 
 	it('keeps redemption slots available while bodies remain incomplete', async () => {
-		const limited = createExchangePlane({ store, logger, onRedeemed, limits: { maxInFlight: 1 } });
+		const limited = createExchangePlane({ store, logger, limits: { maxInFlight: 1 } });
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
 		const socket = await openIncomplete(limited);
 		try {
@@ -405,7 +423,7 @@ describe('incomplete redemption bodies', () => {
 				headers: { Connection: 'close' },
 				body: JSON.stringify({ nonce: 'nonce-bodyread1', redeemer: MATERIAL, signature: SIGNATURE }),
 			});
-			expect(response.status).toBe(200);
+			expect(response.status).toBe(202);
 		} finally {
 			socket.destroy();
 			limited.closeAllConnections();
@@ -417,7 +435,6 @@ describe('incomplete redemption bodies', () => {
 		const limited = createExchangePlane({
 			store,
 			logger,
-			onRedeemed,
 			trustProxy: true,
 			limits: { maxInFlight: 16, ...{ maxBodyReaders: 2, maxBodyReadersPerSource: 1 } },
 		});
@@ -434,7 +451,7 @@ describe('incomplete redemption bodies', () => {
 				headers: { Connection: 'close', 'X-Forwarded-For': '198.51.100.7' },
 				body,
 			});
-			expect(allowed.status).toBe(200);
+			expect(allowed.status).toBe(202);
 		} finally {
 			socket.destroy();
 			limited.closeAllConnections();
@@ -446,7 +463,6 @@ describe('incomplete redemption bodies', () => {
 		const limited = createExchangePlane({
 			store,
 			logger,
-			onRedeemed,
 			limits: { maxInFlight: 1, ...{ bodyTimeoutMs: 40, maxBodyReaders: 1 } },
 		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
@@ -471,7 +487,7 @@ describe('incomplete redemption bodies', () => {
 				headers: { Connection: 'close' },
 				body: JSON.stringify({ nonce: 'nonce-bodyread2', redeemer: MATERIAL, signature: SIGNATURE }),
 			});
-			expect(response.status).toBe(200);
+			expect(response.status).toBe(202);
 		} finally {
 			socket.destroy();
 			limited.closeAllConnections();

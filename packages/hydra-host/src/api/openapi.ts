@@ -65,6 +65,22 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 		tier: 'admin',
 		summary: 'Withdraw an invite',
 	},
+	{
+		path: '/v1/invites/{nonce}/confirm',
+		method: 'post',
+		kind: 'confirmRedemption',
+		tier: 'admin',
+		summary: 'Confirm a verified staged redemption',
+		description:
+			'Spends the nonce on the staged candidate named by `stagedId` and configures the reserved node. Call only after verifying its signature.',
+	},
+	{
+		path: '/v1/invites/{nonce}/reject',
+		method: 'post',
+		kind: 'rejectRedemption',
+		tier: 'admin',
+		summary: 'Drop a staged redemption whose signature did not verify',
+	},
 	{ path: '/v1/nodes', method: 'get', kind: 'listNodes', tier: 'admin', summary: 'List supervised hydra-nodes' },
 	{
 		path: '/v1/nodes',

@@ -23,6 +23,7 @@ import {
 	type HostInviteRecord,
 } from '@/services/hydra-host/client';
 import { verifyHydraRedemption } from './invite-signing';
+import { settleStagedRedemptions } from './staged-redemption';
 import { createHeadFromExchange } from './orchestrator';
 import { canRemoveReservedHostNode, releaseReservedParticipants } from './release-reservation';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
@@ -90,9 +91,25 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		// head, and only a restart (which falls back to the cold-start lookback)
 		// ever picked it up again.
 		let retryFromMs: number | null = null;
-		for (const record of redemptions.invites) {
+		for (const listed of redemptions.invites) {
+			let record = listed;
 			let result: AdoptionResult;
 			try {
+				// A staged redemption is verified here before the Host spends the
+				// nonce. Forged candidates are dropped and the invite stays open.
+				if (record.redeemedAt === null && (record.staged?.length ?? 0) > 0) {
+					const settled = await settleStagedRedemptions(
+						{
+							baseUrl: host.baseUrl,
+							adminToken: decrypt(host.encryptedAdminToken),
+							transport: { allowInsecureHttp: host.allowInsecureHttp },
+						},
+						record,
+					);
+					outcome.rejected += settled.rejected;
+					if (settled.confirmed === null) continue;
+					record = settled.confirmed;
+				}
 				result = await adoptRedemption(record);
 			} catch (error) {
 				if (record.redeemedAt !== null) {
@@ -220,11 +237,11 @@ async function discardUnadoptableRedemption(
 /**
  * Turn one Host-side redemption into a head, if it checks out.
  *
- * This is where the signature the Host could not verify is verified. The Host
- * accepted the material on the strength of a nonce alone and started the node;
- * if the signature does not hold, the head is never recorded and the operator
- * is left with a node to remove — which is the reversible half of the bargain
- * that made an unauthenticated Exchange Plane acceptable.
+ * Current Hosts only hand over a redemption that `settleStagedRedemptions`
+ * already verified and confirmed. The signature is checked again here because
+ * a Host that predates staging spends the nonce on any POST and configures
+ * the node at once; for those, a failed check still discards the invite and
+ * removes the node it reserved.
  */
 async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult> {
 	if (record.redeemedAt === null || record.redeemer === null || record.redeemerSignature === null) {
@@ -386,8 +403,14 @@ export async function reapExpiredInvites(): Promise<number> {
 				// head whose peer will never join and us with nothing to reconstruct
 				// it from. Adoption gets the next tick instead; the sweep gets it
 				// afterwards, when the invite is Completed or still unredeemed.
+				// Staged candidates count too: one may verify on the next poll.
 				const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
-				if (held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
+				if (
+					held.invites.some(
+						(record) =>
+							record.nonce === invite.nonce && (record.redeemedAt !== null || (record.staged?.length ?? 0) > 0),
+					)
+				) {
 					logger.info(`hydra: not reaping expired invite ${invite.nonce}; the Host is holding its redemption`);
 					continue;
 				}

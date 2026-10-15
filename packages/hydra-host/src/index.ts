@@ -170,6 +170,8 @@ async function main(): Promise<void> {
 		supervisor,
 		provision: provisionDeps,
 		logger,
+		// Confirming a verified redemption is what configures the reserved node.
+		onRedemptionConfirmed: recoverRedemptions,
 	});
 	// Without this the listen failure surfaces as an unhandled 'error' event and
 	// a raw stack trace. The two ways this fails in production — the port is
@@ -188,17 +190,13 @@ async function main(): Promise<void> {
 		logger.info(`[host] control plane listening on :${config.listenPort}`);
 	});
 
-	// A second listener, not a second path. Redeeming an invite configures and
-	// starts the node that invite reserved — the only thing a counterparty can
-	// cause here, and the reason the node existed at all.
+	// A second listener, not a second path. A counterparty can only stage a
+	// redemption here; the owning service verifies it and confirms it on the
+	// control plane, which is what configures the node the invite reserved.
 	const exchangePlane = createExchangePlane({
 		store: exchange,
 		logger,
 		trustProxy: config.exchangeTrustProxy,
-		onRedeemed: async () => {
-			await recoverRedemptions();
-			tickSupervisor('exchange redemption');
-		},
 	});
 	exchangePlane.on('error', (error: NodeJS.ErrnoException) => {
 		const detail = error.code === 'EADDRINUSE' ? `port ${config.exchangePort} is already in use` : error.message;

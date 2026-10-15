@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ExchangeStore } from './exchange-store.js';
 import { NodeRegistryStore } from './store.js';
 import type { NodeRecord } from './types.js';
+import { stageAndConfirm } from './exchange-test-support.js';
 
 let dataDir: string;
 let exchange: ExchangeStore;
@@ -29,6 +30,7 @@ beforeEach(async () => {
 		redeemedAt: null,
 		redeemer: null,
 		redeemerSignature: null,
+		staged: [],
 		startError: null,
 	});
 });
@@ -39,7 +41,7 @@ afterEach(async () => {
 
 describe('redemption setup retention', () => {
 	it('retains a redemption until peer setup completes, even when adoption forgets it', async () => {
-		await exchange.redeem('nonce-pending', material, { signature: 'sig', key: 'key' });
+		await stageAndConfirm(exchange, 'nonce-pending', material, { signature: 'sig', key: 'key' });
 		jest.spyOn(nodes, 'read').mockResolvedValue({ peers: [] } as unknown as NodeRecord);
 		const forget = exchange.forgetInvite.bind(exchange) as (
 			nonce: string,
@@ -50,13 +52,13 @@ describe('redemption setup retention', () => {
 	});
 
 	it('allows forgetting a redeemed invite after removal is requested', async () => {
-		await exchange.redeem('nonce-pending', material, { signature: 'sig', key: 'key' });
+		await stageAndConfirm(exchange, 'nonce-pending', material, { signature: 'sig', key: 'key' });
 		jest.spyOn(nodes, 'read').mockResolvedValue({ peers: [], removalRequested: true } as unknown as NodeRecord);
 		expect(await exchange.forgetInvite('nonce-pending', nodes)).toBe(true);
 	});
 
 	it('allows forgetting a redeemed invite after its node is missing', async () => {
-		await exchange.redeem('nonce-pending', material, { signature: 'sig', key: 'key' });
+		await stageAndConfirm(exchange, 'nonce-pending', material, { signature: 'sig', key: 'key' });
 		expect(await exchange.forgetInvite('nonce-pending', nodes)).toBe(true);
 	});
 

@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ExchangeStore } from './exchange-store.js';
 import type { ExchangeMaterial, ExchangeSignature } from './exchange-types.js';
+import { stageAndConfirm } from './exchange-test-support.js';
 
 const REDEEMER: ExchangeMaterial = {
 	hydraVerificationKey: `5820${'ab'.repeat(32)}`,
@@ -42,6 +43,7 @@ beforeEach(async () => {
 		redeemedAt: null,
 		redeemer: null,
 		redeemerSignature: null,
+		staged: [],
 		startError: null,
 	});
 });
@@ -57,7 +59,7 @@ describe('the redemption watermark', () => {
 		// watermark or the poller will step straight over it.
 		const [polled, redeemed] = await Promise.all([
 			store.listInvitesWithWatermark(),
-			store.redeem('nonce-one', REDEEMER, SIGNATURE),
+			stageAndConfirm(store, 'nonce-one', REDEEMER, SIGNATURE),
 		]);
 
 		expect(redeemed.ok).toBe(true);
@@ -68,7 +70,7 @@ describe('the redemption watermark', () => {
 
 	it('returns the redemption to the next poll that uses that watermark', async () => {
 		const first = await store.listInvitesWithWatermark();
-		await store.redeem('nonce-one', REDEEMER, SIGNATURE);
+		await stageAndConfirm(store, 'nonce-one', REDEEMER, SIGNATURE);
 
 		const { invites } = await store.listInvitesWithWatermark();
 		const changed = invites.filter((invite) => invite.redeemedAt !== null && invite.redeemedAt > first.now);
