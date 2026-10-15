@@ -329,3 +329,70 @@ export function requiredChangeLovelace(params: {
 	}
 	return baseLovelace + perAssetLovelace * BigInt(remaining.size);
 }
+
+export type LovelaceWithdrawalPlan =
+	| { kind: 'whole'; inputs: UTxO[] }
+	| { kind: 'split'; inputs: UTxO[] }
+	| { kind: 'insufficient' }
+	| { kind: 'remainder-too-small'; remainder: bigint; coverHoldsAssets: boolean };
+
+/**
+ * The inputs for an amount-only ADA withdrawal, and whether they leave whole.
+ *
+ * A decommit removes the WHOLE output it spends, and `selection.eligible`
+ * excludes reference scripts but not native assets. A UTxO that holds the
+ * requested lovelace plus some unrelated token (an agent's registry NFT, say)
+ * is not what an amount-only withdrawal asked for, and taking it whole would
+ * carry that asset out of the head silently. So inputs leave whole only when
+ * every one of them is pure ADA; anything else is split first, and the token
+ * stays behind on the change.
+ *
+ * An eligible pure UTxO already holding exactly the amount is taken whole.
+ * `coverLovelace` picks largest-first, so without this check it would carve a
+ * bigger UTxO down to this amount even with an exact match right there, leaving
+ * a stray exact-amount UTxO behind on every refused or retried withdrawal.
+ *
+ * A split needs room for its change, which keeps every asset the inputs carry,
+ * so lovelace is borrowed from other eligible UTxOs when the cover is short.
+ */
+export function planLovelaceWithdrawal(params: {
+	eligible: readonly UTxO[];
+	amount: bigint;
+	baseChangeLovelace: bigint;
+	perAssetChangeLovelace: bigint;
+}): LovelaceWithdrawalPlan {
+	const { eligible, amount, baseChangeLovelace, perAssetChangeLovelace } = params;
+	const exactMatch = eligible.find((utxo) => lovelaceOf(utxo) === amount && countNativeAssets(utxo) === 0);
+	if (exactMatch !== undefined) return { kind: 'whole', inputs: [exactMatch] };
+
+	const covering = coverLovelace(eligible, amount);
+	if (covering === null) return { kind: 'insufficient' };
+	const covered = covering.reduce((total, utxo) => total + lovelaceOf(utxo), 0n);
+	if (covered === amount && covering.every((utxo) => countNativeAssets(utxo) === 0)) {
+		// Already exactly the amount, so a split would change nothing.
+		return { kind: 'whole', inputs: covering };
+	}
+
+	// Borrowed inputs can bring assets of their own onto the change, which
+	// raises its floor, so the floor is re-sized until the inputs stop growing.
+	let inputs = covering;
+	for (;;) {
+		const changeFloor = requiredChangeLovelace({
+			inputs,
+			carvedUnit: '',
+			carvedAmount: amount,
+			baseLovelace: baseChangeLovelace,
+			perAssetLovelace: perAssetChangeLovelace,
+		});
+		const extra = topUpCarveInputs({ chosen: inputs, eligible, needed: amount + changeFloor });
+		if (extra === null) {
+			return {
+				kind: 'remainder-too-small',
+				remainder: covered - amount,
+				coverHoldsAssets: covering.some((utxo) => countNativeAssets(utxo) > 0),
+			};
+		}
+		if (extra.length === 0) return { kind: 'split', inputs };
+		inputs = [...inputs, ...extra];
+	}
+}
