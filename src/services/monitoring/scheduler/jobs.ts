@@ -505,9 +505,10 @@ export const scheduledJobs: JobDefinition[] = [
 		// L2 mirror of L1 tx-sync: reads each enabled head's in-head escrow UTxOs and
 		// advances this node's own payment/purchase rows to the observed state, so a
 		// counterparty-driven in-head transition is not missed (payment/purchase
-		// onChainState divergence). Idempotent; runs on the hydra cadence.
+		// onChainState divergence). Idempotent; a safety net behind the live
+		// TxConfirmed handler, so it runs on its own slower cadence.
 		initialDelayMs: 20500,
-		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		intervalMs: CONFIG.HYDRA_ESCROW_RECONCILE_INTERVAL * 1000,
 		startMessage: 'Starting L2 hydra escrow-state reconcile',
 		shouldRun: isHydraInUse,
 		finishMessage: 'Finished L2 hydra escrow-state reconcile',
