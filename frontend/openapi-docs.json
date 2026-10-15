@@ -10543,6 +10543,98 @@
                 }
             }
         },
+        "/wallet/consolidate": {
+            "post": {
+                "description": "Merges a hot wallet's L1 UTxOs by queuing a fund transfer back to the wallet itself. The amount is the whole balance less 2 ADA, which pays the fee and becomes the change output, so the transfer spends nearly every UTxO and leaves about two. Runs through the same background processor as any transfer: poll GET /wallet/transfer-funds with the returned id.",
+                "summary": "Merge a wallet's UTxOs. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Consolidation request",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletAddress": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "The Cardano address of the hot wallet whose UTxOs to merge"
+                                    }
+                                },
+                                "required": [
+                                    "walletAddress"
+                                ],
+                                "example": {
+                                    "walletAddress": "addr_test1..."
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Consolidation queued",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/WalletFundTransfer"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "unique_cuid_v2_of_fund_transfer",
+                                            "status": "Confirmed",
+                                            "txHash": "a3f8c12d9e4b71d2f0e5c8a9b3d6e7f1a2b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8",
+                                            "toAddress": "addr_test1qz8x...purchasing_wallet_address",
+                                            "lovelaceAmount": "100000000",
+                                            "assets": null,
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastCheckedAt": "1970-01-20T20:00:36.260Z",
+                                            "errorNote": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (fewer than two UTxOs, under 4 ADA in the wallet, over 150 UTxOs, or over 40 distinct assets)"
+                    },
+                    "404": {
+                        "description": "Not Found (wallet not found)"
+                    },
+                    "409": {
+                        "description": "Conflict (the wallet is mid-transaction, or a fund transfer from it is still pending)"
+                    },
+                    "502": {
+                        "description": "Bad Gateway (the chain provider could not list the wallet UTxOs)"
+                    }
+                }
+            }
+        },
         "/payment": {
             "get": {
                 "description": "Gets the payment status. It needs to be created first with a POST request.",
@@ -34984,6 +35076,124 @@
                     },
                     "404": {
                         "description": "Hydra head not found"
+                    }
+                }
+            }
+        },
+        "/hydra/head/consolidate": {
+            "post": {
+                "summary": "Merge the local wallet's in-head UTxOs. (admin access required)",
+                "description": "An in-head self-send that spends every plain UTxO at the local participant's address (datum or not) and produces one UTxO carrying everything, plus a pure-ADA collateral UTxO of 5 ADA when the funds allow it. Free, and nothing leaves the head. UTxOs still being folded in by a deposit, or carrying a reference script, are left alone. One round spends at most 100 UTxOs; `remainingCount` above zero means call again. Waits for the head to confirm.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "headId": {
+                                        "type": "string",
+                                        "description": "The Hydra head whose local wallet UTxOs to merge"
+                                    }
+                                },
+                                "required": [
+                                    "headId"
+                                ],
+                                "example": {
+                                    "headId": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Consolidated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "txId": {
+                                                    "type": "string",
+                                                    "description": "The confirmed in-head self-send"
+                                                },
+                                                "inputCount": {
+                                                    "type": "integer",
+                                                    "description": "UTxOs spent"
+                                                },
+                                                "outputCount": {
+                                                    "type": "integer",
+                                                    "description": "UTxOs produced: one carrying everything, plus a pure-ADA collateral UTxO when the funds allow it"
+                                                },
+                                                "remainingCount": {
+                                                    "type": "integer",
+                                                    "description": "Eligible UTxOs left for another round, because one round spends at most 100. Non-zero means call again."
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "txId",
+                                                "inputCount",
+                                                "outputCount",
+                                                "remainingCount"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "txId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                                            "inputCount": 63,
+                                            "outputCount": 2,
+                                            "remainingCount": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Head has no local participant, or the wallet has nothing to consolidate"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Head not open or disabled, its node is still catching up, a withdrawal is in progress or still settling, or the wallet is busy"
+                    },
+                    "502": {
+                        "description": "No live connection to the head"
+                    },
+                    "504": {
+                        "description": "The head accepted the self-send but did not confirm it in time"
                     }
                 }
             }

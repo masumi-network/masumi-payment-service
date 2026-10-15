@@ -201,6 +201,12 @@ const fundTransferSchema = z
 
 export const postWalletFundSchemaOutput = fundTransferSchema;
 
+export const postWalletConsolidateSchemaInput = z.object({
+	walletAddress: z.string().min(1).max(250).describe('The Cardano address of the hot wallet whose UTxOs to merge'),
+});
+
+export const postWalletConsolidateSchemaOutput = fundTransferSchema;
+
 export const getWalletFundSchemaInput = z
 	.object({
 		id: z.string().min(1).max(250).optional().describe('Query a specific fund transfer by id'),

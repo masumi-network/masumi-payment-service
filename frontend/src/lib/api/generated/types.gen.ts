@@ -5077,6 +5077,52 @@ export type PostWalletTransferFundsResponses = {
 
 export type PostWalletTransferFundsResponse = PostWalletTransferFundsResponses[keyof PostWalletTransferFundsResponses];
 
+export type PostWalletConsolidateData = {
+    /**
+     * Consolidation request
+     */
+    body?: {
+        /**
+         * The Cardano address of the hot wallet whose UTxOs to merge
+         */
+        walletAddress: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/consolidate';
+};
+
+export type PostWalletConsolidateErrors = {
+    /**
+     * Bad Request (fewer than two UTxOs, under 4 ADA in the wallet, over 150 UTxOs, or over 40 distinct assets)
+     */
+    400: unknown;
+    /**
+     * Not Found (wallet not found)
+     */
+    404: unknown;
+    /**
+     * Conflict (the wallet is mid-transaction, or a fund transfer from it is still pending)
+     */
+    409: unknown;
+    /**
+     * Bad Gateway (the chain provider could not list the wallet UTxOs)
+     */
+    502: unknown;
+};
+
+export type PostWalletConsolidateResponses = {
+    /**
+     * Consolidation queued
+     */
+    200: {
+        status: 'success';
+        data: WalletFundTransfer;
+    };
+};
+
+export type PostWalletConsolidateResponse = PostWalletConsolidateResponses[keyof PostWalletConsolidateResponses];
+
 export type GetPaymentData = {
     body?: never;
     path?: never;
@@ -14702,6 +14748,75 @@ export type PostHydraHeadWithdrawResponses = {
 };
 
 export type PostHydraHeadWithdrawResponse = PostHydraHeadWithdrawResponses[keyof PostHydraHeadWithdrawResponses];
+
+export type PostHydraHeadConsolidateData = {
+    body?: {
+        /**
+         * The Hydra head whose local wallet UTxOs to merge
+         */
+        headId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/consolidate';
+};
+
+export type PostHydraHeadConsolidateErrors = {
+    /**
+     * Head has no local participant, or the wallet has nothing to consolidate
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not open or disabled, its node is still catching up, a withdrawal is in progress or still settling, or the wallet is busy
+     */
+    409: unknown;
+    /**
+     * No live connection to the head
+     */
+    502: unknown;
+    /**
+     * The head accepted the self-send but did not confirm it in time
+     */
+    504: unknown;
+};
+
+export type PostHydraHeadConsolidateResponses = {
+    /**
+     * Consolidated
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            /**
+             * The confirmed in-head self-send
+             */
+            txId: string;
+            /**
+             * UTxOs spent
+             */
+            inputCount: number;
+            /**
+             * UTxOs produced: one carrying everything, plus a pure-ADA collateral UTxO when the funds allow it
+             */
+            outputCount: number;
+            /**
+             * Eligible UTxOs left for another round, because one round spends at most 100. Non-zero means call again.
+             */
+            remainingCount: number;
+        };
+    };
+};
+
+export type PostHydraHeadConsolidateResponse = PostHydraHeadConsolidateResponses[keyof PostHydraHeadConsolidateResponses];
 
 export type GetHydraHeadBalanceData = {
     body?: never;
