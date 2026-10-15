@@ -2250,6 +2250,9 @@ enum HydraInviteStatus {
   Expired
   /// Withdrawn by the operator before anyone redeemed it.
   Revoked
+  /// Redeemed with a signature that did not verify. The node was removed and
+  /// the nonce stays spent; the operator issues a new invite to retry.
+  Failed
 }
 
 /// A signed proposal to open the next [[Hydra Head]] on a relation.
