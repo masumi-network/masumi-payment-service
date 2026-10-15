@@ -32222,7 +32222,8 @@
                                 "Started",
                                 "Completed",
                                 "Expired",
-                                "Revoked"
+                                "Revoked",
+                                "Failed"
                             ]
                         },
                         "required": false,
@@ -32294,7 +32295,8 @@
                                                                     "Started",
                                                                     "Completed",
                                                                     "Expired",
-                                                                    "Revoked"
+                                                                    "Revoked",
+                                                                    "Failed"
                                                                 ]
                                                             },
                                                             "createdAt": {
@@ -32548,7 +32550,8 @@
                                                         "Started",
                                                         "Completed",
                                                         "Expired",
-                                                        "Revoked"
+                                                        "Revoked",
+                                                        "Failed"
                                                     ]
                                                 }
                                             },

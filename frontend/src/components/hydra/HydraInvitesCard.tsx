@@ -37,6 +37,9 @@ function describe(invite: HydraInvite): string {
   if (invite.status === 'Issued') {
     return `Waiting to be redeemed · expires ${new Date(invite.expiresAt).toLocaleDateString()}`;
   }
+  if (invite.status === 'Failed') {
+    return 'Redemption signature did not verify · issue a new invite';
+  }
   return invite.status;
 }
 

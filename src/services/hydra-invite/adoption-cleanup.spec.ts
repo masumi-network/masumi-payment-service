@@ -21,12 +21,20 @@ const invite = {
 let removalRequested = false;
 const release = jest.fn<() => Promise<void>>();
 const remove =
-	jest.fn<(baseUrl: string, adminToken: string, nodeId: string, options: { force: boolean }) => Promise<void>>();
+	jest.fn<
+		(
+			baseUrl: string,
+			token: string,
+			nodeId: string,
+			options: { force: boolean; allowInsecureHttp: boolean },
+		) => Promise<void>
+	>();
 const forget = jest.fn<() => Promise<void>>();
 const canRemove = jest.fn<() => Promise<boolean>>();
-const verify = jest.fn<() => Promise<void>>();
+const updateMany = jest.fn<(args: { data: { status: string } }) => Promise<{ count: number }>>();
+const participantCount = jest.fn<(args: { where: { hydraHeadId?: { not: null } } }) => Promise<number>>();
 const unboundParticipant = jest.fn<() => Promise<{ id: string; autoFund: boolean } | null>>();
-const claimingParticipants = jest.fn<() => Promise<number>>();
+const verify = jest.fn<() => Promise<void>>();
 
 class HydraHostRequestError extends Error {
 	constructor(
@@ -40,8 +48,8 @@ class HydraHostRequestError extends Error {
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHost: { findMany: async () => [host] },
-		hydraHeadInvite: { findUnique: async () => invite, updateMany: async () => ({ count: 1 }) },
-		hydraLocalParticipant: { findFirst: unboundParticipant, count: claimingParticipants },
+		hydraHeadInvite: { findUnique: async () => invite, updateMany },
+		hydraLocalParticipant: { count: participantCount, findFirst: unboundParticipant },
 	},
 }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -57,9 +65,7 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	removeHostNode: remove,
 	HydraHostRequestError,
 }));
-jest.unstable_mockModule('./invite-signing', () => ({
-	verifyHydraRedemption: verify,
-}));
+jest.unstable_mockModule('./invite-signing', () => ({ verifyHydraRedemption: verify }));
 jest.unstable_mockModule('./orchestrator', () => ({ createHeadFromExchange: jest.fn() }));
 jest.unstable_mockModule('./release-reservation', () => ({
 	releaseReservedParticipants: release,
@@ -80,9 +86,20 @@ beforeEach(() => {
 		if (!removalRequested) throw new Error('redemption peer setup is still pending');
 	});
 	release.mockResolvedValue(undefined);
-	verify.mockRejectedValue(new Error('invalid signature'));
+	updateMany.mockResolvedValue({ count: 1 });
+	participantCount.mockResolvedValue(0);
 	unboundParticipant.mockResolvedValue(null);
-	claimingParticipants.mockResolvedValue(0);
+	verify.mockRejectedValue(new Error('invalid signature'));
+});
+
+it('marks a forged redemption failed and force-removes the node it peered', async () => {
+	expect(await pollHydraRedemptions()).toMatchObject({ rejected: 1 });
+	expect(updateMany.mock.calls[0][0].data.status).toBe('Failed');
+	// The Host refuses a plain removal once the forged peer is set.
+	expect(remove).toHaveBeenCalledWith('https://host.example', 'token', 'node', {
+		force: true,
+		allowInsecureHttp: false,
+	});
 });
 
 it('cancels rejected redemption setup before forgetting its durable material', async () => {
@@ -164,7 +181,7 @@ it('removes the node of a verified redemption nobody here claims, past the Host 
 
 it('keeps the node of a verified redemption when a head still claims it', async () => {
 	verify.mockResolvedValue(undefined);
-	claimingParticipants.mockResolvedValue(1);
+	participantCount.mockResolvedValue(1);
 	forget.mockResolvedValue(undefined);
 	const store = await driveRealHostGuard();
 
@@ -172,4 +189,28 @@ it('keeps the node of a verified redemption when a head still claims it', async 
 	expect(remove).not.toHaveBeenCalled();
 	expect(await store.read('node')).toMatchObject({ state: 'Running' });
 	expect(release).not.toHaveBeenCalled();
+});
+
+it('keeps a node a head claims, even for a forged redemption', async () => {
+	participantCount.mockResolvedValue(1);
+	forget.mockResolvedValue(undefined);
+	expect(await pollHydraRedemptions()).toMatchObject({ rejected: 1 });
+	expect(updateMany.mock.calls[0][0].data.status).toBe('Failed');
+	expect(participantCount.mock.calls[0][0].where).toEqual({
+		hydraHostId: 'host',
+		hostNodeId: 'node',
+		hydraHeadId: { not: null },
+	});
+	expect(remove).not.toHaveBeenCalled();
+	expect(release).not.toHaveBeenCalled();
+});
+
+it('revokes with force when a verified redemption has no participant', async () => {
+	verify.mockResolvedValue(undefined);
+	expect(await pollHydraRedemptions()).toMatchObject({ rejected: 1 });
+	expect(updateMany.mock.calls[0][0].data.status).toBe('Revoked');
+	expect(remove).toHaveBeenCalledWith('https://host.example', 'token', 'node', {
+		force: true,
+		allowInsecureHttp: false,
+	});
 });
