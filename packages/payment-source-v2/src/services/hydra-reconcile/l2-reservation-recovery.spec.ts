@@ -68,6 +68,7 @@ describe('expired L2 reservation reporting', () => {
 			inputRefs?: string[];
 			unspentRefs?: string[];
 			idPrefix?: string;
+			nudgeInputRef?: string | null;
 		} = {},
 	) {
 		const intendedTxHash = 'a'.repeat(64);
@@ -86,6 +87,7 @@ describe('expired L2 reservation reporting', () => {
 						l2ReservationPreviousTransactionId: options.initialLock ? null : 'previous-transaction',
 						l2RejectedByHeadAt: options.rejected ? new Date(recoveryNowMs - 120_000) : null,
 						l2ReservationInputRefs: options.inputRefs ?? [],
+						l2ReleaseNudgeInputRef: options.nudgeInputRef ?? null,
 						l2ReservationPreviousLayer: null,
 						l2ReservationPreviousSmartContractWalletId: null,
 						l2ReservationPreviousBuyerReturnAddress: null,
@@ -115,7 +117,9 @@ describe('expired L2 reservation reporting', () => {
 				snapshot: { headId: 'f'.repeat(56), number: Number(snapshot.nodeNumber) },
 			})),
 		};
-		return { database, node, snapshot };
+		// Stubbed so no test reaches a live head; the deadlock tests drive it.
+		const nudge = jest.fn(async (_candidate: unknown): Promise<unknown> => true);
+		return { database, node, snapshot, unspent, nudge };
 	}
 
 	it.each([
@@ -293,8 +297,78 @@ describe('expired L2 reservation reporting', () => {
 				node: h.node as never,
 				nowMs: releaseNowMs,
 				database: h.database as never,
+				nudge: h.nudge,
 			});
 		}
+
+		describe('idle head', () => {
+			const nudgeRef = `${'d'.repeat(64)}#3`;
+
+			it('nudges an idle head instead of holding the wallet forever, then releases', async () => {
+				const h = harness({ inputRefs: refs, idPrefix: 'idle' });
+				const mutationClient = withMutations(h);
+
+				await expect(scan(h, 'head-idle')).resolves.toBe(1); // baseline
+				expect(h.nudge).not.toHaveBeenCalled();
+
+				// The head is idle: the snapshot never moves on its own. Without a
+				// nudge this scan repeats forever and the wallet stays pinned.
+				await expect(scan(h, 'head-idle')).resolves.toBe(1);
+				expect(h.nudge).toHaveBeenCalledTimes(1);
+				expect(h.nudge).toHaveBeenCalledWith({
+					id: 'idle-1',
+					l2ReservationInputRefs: refs,
+					l2ReleaseNudgeInputRef: null,
+				});
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+
+				// The nudge lands: a newer snapshot, the reserved inputs untouched.
+				h.snapshot.number = 8n;
+				await expect(scan(h, 'head-idle')).resolves.toBe(0);
+				expect(mutationClient.hotWallet.updateMany).toHaveBeenCalledWith({
+					where: { pendingTransactionId: 'idle-1' },
+					data: { lockedAt: null, pendingTransactionId: null },
+				});
+			});
+
+			it('keeps the wallet pinned while a recorded nudge input is still unspent', async () => {
+				const h = harness({
+					inputRefs: refs,
+					unspentRefs: [...refs, nudgeRef],
+					idPrefix: 'inflight',
+					nudgeInputRef: nudgeRef,
+				});
+				const mutationClient = withMutations(h);
+				// The release re-read sees the nudge the row records.
+				mutationClient.transaction.findUnique.mockImplementation(async () => ({
+					status: TransactionStatus.Pending,
+					txHash: null,
+					l2RejectedByHeadAt: null,
+					l2ReleaseNudgeInputRef: nudgeRef,
+					PurchaseRequestCurrent: [{ id: 'purchase-1', nextActionId: 'action-1' }],
+				}));
+				await expect(scan(h, 'head-inflight')).resolves.toBe(1); // baseline
+
+				// A peer transaction confirms a newer snapshot, but the nudge has not
+				// applied. Releasing now would let a new lock select its input.
+				h.snapshot.number = 8n;
+				await expect(scan(h, 'head-inflight')).resolves.toBe(1);
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+				expect(h.nudge).toHaveBeenCalledWith(expect.objectContaining({ l2ReleaseNudgeInputRef: nudgeRef }));
+
+				h.unspent.delete(nudgeRef);
+				await expect(scan(h, 'head-inflight')).resolves.toBe(0);
+				expect(h.database.$transaction).toHaveBeenCalledTimes(1);
+			});
+
+			it('does not nudge when a reserved input is spent', async () => {
+				const h = harness({ inputRefs: refs, unspentRefs: [refs[1]], idPrefix: 'nonudge' });
+				withMutations(h);
+				await scan(h, 'head-nonudge');
+				await scan(h, 'head-nonudge');
+				expect(h.nudge).not.toHaveBeenCalled();
+			});
+		});
 
 		it('releases once a newer verified snapshot still holds every input', async () => {
 			const h = harness({ inputRefs: refs, idPrefix: 'release' });

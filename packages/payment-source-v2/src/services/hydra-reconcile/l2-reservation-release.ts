@@ -23,6 +23,8 @@ export interface ReleasableL2Reservation {
 	l2ReservationPreviousSmartContractWalletId: string | null;
 	l2ReservationPreviousBuyerReturnAddress: string | null;
 	l2ReservationPreviousCollateralReturn: bigint | null;
+	/** The release nudge input the release decision saw, when it read one. */
+	l2ReleaseNudgeInputRef?: string | null;
 }
 
 /**
@@ -50,6 +52,7 @@ export async function releaseRejectedL2Reservation(
 						status: true,
 						txHash: true,
 						l2RejectedByHeadAt: true,
+						l2ReleaseNudgeInputRef: true,
 						PurchaseRequestCurrent: { select: { id: true, nextActionId: true } },
 					},
 				});
@@ -59,7 +62,11 @@ export async function releaseRejectedL2Reservation(
 					// A TxValid row (txHash set) may already be paired with the seller's
 					// PaymentRequest, which this helper does not restore. Keep those manual.
 					current.txHash != null ||
-					(proof === 'head-rejection' && current.l2RejectedByHeadAt == null)
+					(proof === 'head-rejection' && current.l2RejectedByHeadAt == null) ||
+					// A nudge recorded after the decision may still be in flight; freeing
+					// the wallet now would let a new lock select its input.
+					(reservation.l2ReleaseNudgeInputRef !== undefined &&
+						(current.l2ReleaseNudgeInputRef ?? null) !== reservation.l2ReleaseNudgeInputRef)
 				) {
 					return false;
 				}
