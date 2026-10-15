@@ -102,9 +102,10 @@ export function RedeemHydraInviteDialog({
   // Redeeming submits the gate's accepted code, never the live field, so the
   // terms on screen and the invite redeemed are one invite.
   const previewGate = useRef(createInvitePreviewGate()).current;
-  // Closing mid-redeem would let its result land on whatever invite is read
-  // next, so the dialog stays open until the redeem settles.
-  const isRedeemingRef = useRef(false);
+  // Bumped on close. A redeem that settles after the dialog was closed still
+  // reports its outcome, but must not close or reset whatever invite the
+  // operator has opened since.
+  const dialogEpochRef = useRef(0);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [allowInsecureExchangeHttp, setAllowInsecureExchangeHttp] = useState(false);
   const [allowPrivateExchangeNetwork, setAllowPrivateExchangeNetwork] = useState(false);
@@ -132,8 +133,8 @@ export function RedeemHydraInviteDialog({
     preview !== null && preview.exchangeUsesPrivateNetwork !== false;
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && isRedeemingRef.current) return;
     if (!nextOpen) {
+      dialogEpochRef.current += 1;
       previewGate.invalidate();
       setIsLoading(false);
       setCode('');
@@ -208,7 +209,7 @@ export function RedeemHydraInviteDialog({
       toast.error('Read the invite again before redeeming.');
       return;
     }
-    isRedeemingRef.current = true;
+    const epoch = dialogEpochRef.current;
     setIsLoading(true);
     try {
       const result = await redeemHydraInvite(apiClient, {
@@ -225,13 +226,11 @@ export function RedeemHydraInviteDialog({
         predicate: (query) => String(query.queryKey[0]).startsWith('hydra'),
       });
       onRedeemed();
-      isRedeemingRef.current = false;
-      handleOpenChange(false);
+      if (epoch === dialogEpochRef.current) handleOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to redeem the invite');
     } finally {
-      isRedeemingRef.current = false;
-      setIsLoading(false);
+      if (epoch === dialogEpochRef.current) setIsLoading(false);
     }
   }
 
