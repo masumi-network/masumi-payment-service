@@ -9,8 +9,20 @@ export function createRedemptionRecovery(
 	logger: SupervisorLogger,
 ): () => Promise<void> {
 	let running: Promise<void> | undefined;
-	return () => {
-		running ??= recover()
+	let next: Promise<void> | undefined;
+	const trigger = (): Promise<void> => {
+		if (running !== undefined) {
+			// A pass already in flight may have read the invites before the
+			// caller's change, such as a redemption confirmed a moment ago, so
+			// sharing it would answer too early. Queue one pass after it; every
+			// caller that arrives meanwhile shares that one.
+			next ??= running.then(() => {
+				next = undefined;
+				return trigger();
+			});
+			return next;
+		}
+		running = recover()
 			.catch((error: unknown) => {
 				const message = error instanceof Error ? error.message : String(error);
 				logger.error(`[exchange] redemption recovery failed: ${message}`);
@@ -20,6 +32,7 @@ export function createRedemptionRecovery(
 			});
 		return running;
 	};
+	return trigger;
 
 	async function recover(): Promise<void> {
 		for (const invite of await exchange.listInvites()) {

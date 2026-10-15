@@ -62,6 +62,26 @@ afterEach(async () => {
 });
 
 describe('durable redemption recovery', () => {
+	// A confirm awaits recovery, and an interval pass may already be running
+	// with an invite list read before the confirm. Sharing that pass returned
+	// before the peer was configured.
+	it('runs a fresh pass for a caller that arrives while one is in flight', async () => {
+		let release: () => void = () => undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		jest.spyOn(exchange, 'listInvites').mockImplementationOnce(async () => {
+			await gate;
+			return [];
+		});
+		const recover = createRedemptionRecovery(exchange, deps, logger);
+		const stale = recover();
+		const fresh = recover();
+		release();
+		await stale;
+		await fresh;
+		expect((await deps.store.read('node-1'))?.peers).toHaveLength(1);
+	});
 	it('logs a failed exchange read without blocking supervision and permits the next retry', async () => {
 		jest.spyOn(exchange, 'listInvites').mockRejectedValueOnce(new Error('exchange is temporarily unreadable'));
 		const recover = createRedemptionRecovery(exchange, deps, logger);
