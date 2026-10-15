@@ -351,8 +351,26 @@ describe('selectInHeadFundingUtxos', () => {
 		expect(selected).toHaveLength(3);
 	});
 
-	it('ignores script (plutusData) UTxOs — they are escrow outputs, not spendable', () => {
-		const utxos = [utxo(0, [ada(50_000_000n)], 'd8799fff')];
+	// V2 escrow payouts and refunds land at the buyer's key address with a datum.
+	// Skipping them made a head showing 281 ADA fail every lock as 3.3 ADA short.
+	it('spends datum-carrying UTxOs at the buyer address', () => {
+		const utxos = [
+			utxo(0, [ada(6_000_000n)], 'd8799fff'),
+			utxo(1, [ada(6_000_000n)], 'd8799fff'),
+			utxo(2, [ada(2_000_000n)]),
+		];
+		const selected = selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE);
+		expect(selected.map((u) => u.input.txHash)).toEqual(['tx0', 'tx1']);
+	});
+
+	// Other transactions may point at a reference script, so it is never spent.
+	it('leaves UTxOs holding a reference script alone', () => {
+		const utxos: L2FundingUtxo[] = [
+			{
+				input: { txHash: 'tx0', outputIndex: 0 },
+				output: { address: 'addr_buyer', amount: [ada(50_000_000n)], scriptRef: '82008201' },
+			},
+		];
 		expect(() => selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE)).toThrow(
 			/no spendable/i,
 		);
