@@ -118,6 +118,9 @@ export function BackUpNodeKeysDialog({
   }
 
   function handleClose(nextOpen: boolean) {
+    // The service seals the keys when the reveal starts, so closing now would
+    // drop the only copy it will ever hand out.
+    if (!nextOpen && pendingRequest.current) return;
     if (!nextOpen) {
       requestGeneration.current += 1;
       pendingRequest.current = false;
@@ -181,7 +184,12 @@ export function BackUpNodeKeysDialog({
         <DialogFooter>
           {keys === null ? (
             <>
-              <Button type="button" variant="outline" onClick={() => handleClose(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleClose(false)}
+                disabled={isLoading}
+              >
                 Not now
               </Button>
               <Button type="button" onClick={() => void handleReveal()} disabled={isLoading}>
