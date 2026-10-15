@@ -37,6 +37,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import {
 	amountOf,
+	countNativeAssets,
 	coverAssetForCarve,
 	planLovelaceWithdrawal,
 	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
@@ -438,8 +439,11 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			if (plan.kind === 'remainder-too-small') {
 				throw createHttpError(
 					400,
-					`Withdrawing ${requestedLovelace} lovelace would leave ${plan.remainder} behind, which is below the minimum a UTxO may hold. ` +
-						'Withdraw a little less, or leave the amount out to take whole UTxOs.',
+					plan.remainder === 0n
+						? `The ${requestedLovelace} lovelace that covers this withdrawal sits on UTxOs that also hold native assets, ` +
+								'and no spare ADA is eligible to keep those assets in the head. Add funds to the head, or withdraw a little less.'
+						: `Withdrawing ${requestedLovelace} lovelace would leave ${plan.remainder} behind, which is below the minimum a UTxO may hold. ` +
+								'Withdraw a little less, or leave the amount out to take whole UTxOs.',
 				);
 			}
 			if (plan.kind === 'whole') {
@@ -702,7 +706,9 @@ async function splitExactAmountInHead(params: {
 		(utxo) =>
 			utxo.output.address === address &&
 			amountOf(utxo, isLovelace ? '' : unit) === amount &&
-			(isLovelace || lovelaceOf(utxo) === TOKEN_OUTPUT_LOVELACE),
+			// A lovelace carve's change can hold the same lovelace plus the
+			// tokens it kept. Only the pure output may leave the head.
+			(isLovelace ? countNativeAssets(utxo) === 0 : lovelaceOf(utxo) === TOKEN_OUTPUT_LOVELACE),
 	);
 	if (!exact) {
 		throw createHttpError(

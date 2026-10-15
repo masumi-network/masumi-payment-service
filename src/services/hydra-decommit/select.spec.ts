@@ -452,6 +452,28 @@ describe('planLovelaceWithdrawal', () => {
 		expect(result).toEqual({ kind: 'remainder-too-small', remainder: 0n });
 	});
 
+	// A borrowed UTxO's own token also lands on the change, so its floor grows.
+	it('re-sizes the change floor for assets on borrowed inputs', () => {
+		const OTHER = `${'e'.repeat(56)}6f74686572`;
+		const withToken = tokenUtxo('a'.repeat(64), 10_000_000n);
+		const borrowedUtxo = (txHash: string) =>
+			utxo(txHash, 1_000_000n, {
+				amount: [
+					{ unit: 'lovelace', quantity: '1000000' },
+					{ unit: OTHER, quantity: '1' },
+				],
+			});
+		// Sized for one asset, pure ADA first: 10 + 1.6 + 1 = 12.6 ADA, which
+		// covers 10 + 2.5 but not 10 + 3 once the borrowed asset joins the change.
+		const spare = utxo('d'.repeat(64), 1_600_000n);
+		const result = plan([withToken, spare, borrowedUtxo('b'.repeat(64)), borrowedUtxo('f'.repeat(64))], 10_000_000n);
+		expect(result.kind).toBe('split');
+		if (result.kind !== 'split') return;
+		const covered = result.inputs.reduce((sum, input) => sum + BigInt(input.output.amount[0]!.quantity), 0n);
+		// Two assets stay behind: 2 ADA base plus 0.5 ADA each.
+		expect(covered).toBeGreaterThanOrEqual(10_000_000n + 3_000_000n);
+	});
+
 	it('reports a short balance', () => {
 		expect(plan([utxo('a'.repeat(64), 4_000_000n)], 10_000_000n)).toEqual({ kind: 'insufficient' });
 	});

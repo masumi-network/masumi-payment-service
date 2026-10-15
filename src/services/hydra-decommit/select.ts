@@ -373,14 +373,20 @@ export function planLovelaceWithdrawal(params: {
 		return { kind: 'whole', inputs: covering };
 	}
 
-	const changeFloor = requiredChangeLovelace({
-		inputs: covering,
-		carvedUnit: '',
-		carvedAmount: amount,
-		baseLovelace: baseChangeLovelace,
-		perAssetLovelace: perAssetChangeLovelace,
-	});
-	const extra = topUpCarveInputs({ chosen: covering, eligible, needed: amount + changeFloor });
-	if (extra === null) return { kind: 'remainder-too-small', remainder: covered - amount };
-	return { kind: 'split', inputs: [...covering, ...extra] };
+	// Borrowed inputs can bring assets of their own onto the change, which
+	// raises its floor, so the floor is re-sized until the inputs stop growing.
+	let inputs = covering;
+	for (;;) {
+		const changeFloor = requiredChangeLovelace({
+			inputs,
+			carvedUnit: '',
+			carvedAmount: amount,
+			baseLovelace: baseChangeLovelace,
+			perAssetLovelace: perAssetChangeLovelace,
+		});
+		const extra = topUpCarveInputs({ chosen: inputs, eligible, needed: amount + changeFloor });
+		if (extra === null) return { kind: 'remainder-too-small', remainder: covered - amount };
+		if (extra.length === 0) return { kind: 'split', inputs };
+		inputs = [...inputs, ...extra];
+	}
 }

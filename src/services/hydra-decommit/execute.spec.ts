@@ -382,6 +382,51 @@ describe('exact-amount withdrawals reuse an existing UTxO instead of re-splittin
 		// asset-carrying UTxO.
 		expect(mockTxIn).toHaveBeenCalledWith('f'.repeat(64), 0, expect.anything(), 'addr_test1_local');
 	});
+
+	// A token-bearing cover is split, and its change can hold the same lovelace
+	// as the carved output plus the token. Matching on lovelace alone could pick
+	// the change and carry the token out, whatever order the head lists them in.
+	it('decommits the pure carved output, never a change of equal lovelace that kept a token', async () => {
+		const TOKEN = 'a'.repeat(56) + '746f6b656e';
+		mockDecommitCall.mockResolvedValue(undefined);
+		mockFetchAddressUTxOs.mockResolvedValue([
+			{
+				input: { txHash: 'c'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '5000000' }] },
+			},
+			{
+				input: { txHash: 'e'.repeat(64), outputIndex: 0 },
+				output: {
+					address: 'addr_test1_local',
+					amount: [
+						{ unit: 'lovelace', quantity: '20000000' },
+						{ unit: TOKEN, quantity: '1' },
+					],
+				},
+			},
+		]);
+		mockFetchUTxOs.mockResolvedValue([
+			{
+				input: { txHash: 'f'.repeat(64), outputIndex: 1 },
+				output: {
+					address: 'addr_test1_local',
+					amount: [
+						{ unit: 'lovelace', quantity: '10000000' },
+						{ unit: TOKEN, quantity: '1' },
+					],
+				},
+			},
+			{
+				input: { txHash: 'f'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '10000000' }] },
+			},
+		]);
+
+		await executeHydraDecommit({ headId: 'head-1', lovelace: 10_000_000n });
+
+		expect(mockTxIn).toHaveBeenCalledWith('f'.repeat(64), 0, expect.anything(), 'addr_test1_local');
+		expect(mockTxIn).not.toHaveBeenCalledWith('f'.repeat(64), 1, expect.anything(), expect.anything());
+	});
 });
 
 /**
