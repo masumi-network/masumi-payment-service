@@ -99,9 +99,8 @@ export function RedeemHydraInviteDialog({
   const [hotWalletId, setHotWalletId] = useState('');
 
   const [preview, setPreview] = useState<HydraInvitePreview | null>(null);
-  // The code the shown preview was read from. Redeeming submits this, never the
-  // live field, so the terms on screen and the invite redeemed are one invite.
-  const [previewedCode, setPreviewedCode] = useState('');
+  // Redeeming submits the gate's accepted code, never the live field, so the
+  // terms on screen and the invite redeemed are one invite.
   const previewGate = useRef(createInvitePreviewGate()).current;
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [allowInsecureExchangeHttp, setAllowInsecureExchangeHttp] = useState(false);
@@ -136,7 +135,6 @@ export function RedeemHydraInviteDialog({
       setCode('');
       setHotWalletId('');
       setPreview(null);
-      setPreviewedCode('');
       setAllowInsecureExchangeHttp(false);
       setAllowPrivateExchangeNetwork(false);
       // Consent is to one invite's numbers, and those numbers are fixed for the
@@ -166,8 +164,7 @@ export function RedeemHydraInviteDialog({
       const result = await previewHydraInvite(apiClient, { code: ticket.code });
       // Edited, closed, or re-read while this was in flight: these terms belong
       // to a code that is no longer the one on screen.
-      if (!previewGate.isCurrent(ticket)) return;
-      setPreviewedCode(ticket.code);
+      if (!previewGate.accept(ticket)) return;
       setPreview(result);
     } catch (error) {
       if (!previewGate.isCurrent(ticket)) return;
@@ -200,6 +197,11 @@ export function RedeemHydraInviteDialog({
       toast.error(
         'Confirm that this exchange may connect to private or special-use network space.',
       );
+      return;
+    }
+    const previewedCode = previewGate.acceptedCode();
+    if (previewedCode === null) {
+      toast.error('Read the invite again before redeeming.');
       return;
     }
     setIsLoading(true);
@@ -498,12 +500,14 @@ export function RedeemHydraInviteDialog({
               <Button
                 type="button"
                 variant="outline"
+                // Not while a redeem is in flight: its result would land over
+                // whatever invite is read next.
+                disabled={isLoading}
                 onClick={() => {
                   // The next invite may be from the other side, which makes a
                   // wallet chosen here invalid rather than merely stale.
                   previewGate.invalidate();
                   setPreview(null);
-                  setPreviewedCode('');
                   setAcceptedTerms(false);
                   setHotWalletId('');
                   setErrors({});
