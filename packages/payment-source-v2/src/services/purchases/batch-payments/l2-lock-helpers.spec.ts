@@ -1,10 +1,13 @@
 import { describe, it, expect } from '@jest/globals';
+import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
+import { Network, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import {
 	buildL2LockDatumParams,
 	inHeadChangeMinimum,
 	createTrustedL2LockWindow,
 	isHotWalletEligibleForL2Lock,
+	isWalletHeldByExpiredL2Body,
 	L2_LOCK_HEAD_CLOCK_MAX_AGE_MS,
 	mapPaidFundsToAssets,
 	planL2LockValue,
@@ -475,4 +478,49 @@ it('funds change containing eight full-length assets beyond the count-based esti
 	const paid = [{ unit: '', amount: 5000000n }];
 	expect(() => selectInHeadFundingUtxos([bundle], paid, 2000000n, 2000000n, minimum)).toThrow('short 129300');
 	expect(selectInHeadFundingUtxos([bundle, topup], paid, 2000000n, 2000000n, minimum)).toEqual([bundle, topup]);
+});
+
+describe('isWalletHeldByExpiredL2Body', () => {
+	const nowMs = Date.UTC(2026, 9, 15, 12, 0, 0);
+	const expiredSlot = BigInt(unixTimeToEnclosingSlot(nowMs - 10 * 60_000, SLOT_CONFIG_NETWORK.preprod));
+	const held = (
+		overrides: Record<string, unknown> = {},
+		headClock: { chainTimeMs: number } | null = { chainTimeMs: nowMs },
+	) =>
+		isWalletHeldByExpiredL2Body({
+			pendingTransaction: {
+				layer: TransactionLayer.L2,
+				status: TransactionStatus.Pending,
+				invalidHereafterSlot: expiredSlot,
+				...overrides,
+			},
+			headClock: headClock ?? undefined,
+			network: Network.Preprod,
+		});
+
+	it('is held once the head clock passes the body validity plus grace', () => {
+		expect(held()).toBe(true);
+	});
+
+	it.each([
+		['an L1 pending transaction', { layer: TransactionLayer.L1 }],
+		['a body already resolved', { status: TransactionStatus.Confirmed }],
+		['a body without signed validity', { invalidHereafterSlot: null }],
+	] as const)('is not held for %s', (_label, overrides) => {
+		expect(held(overrides)).toBe(false);
+	});
+
+	it('is not held when the head clock is unknown', () => {
+		expect(held({}, null)).toBe(false);
+	});
+
+	it('is not held for a free wallet', () => {
+		expect(
+			isWalletHeldByExpiredL2Body({
+				pendingTransaction: null,
+				headClock: { chainTimeMs: nowMs },
+				network: Network.Preprod,
+			}),
+		).toBe(false);
+	});
 });

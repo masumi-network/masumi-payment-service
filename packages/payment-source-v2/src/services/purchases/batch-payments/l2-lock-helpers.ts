@@ -10,6 +10,11 @@ import { getOutputMinLovelace } from '@meshsdk/core';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { createTxWindow, type TxWindow } from '@/services/shared/tx-window';
+import { Network, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
+import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
+import { convertNetwork } from '@/utils/converter/network-convert';
+import { L2_RESERVATION_EXPIRY_GRACE_MS } from '../../hydra-reconcile/l2-reservation-recovery';
 import type { V2DatumInput } from '../../../datum-builder';
 
 /** Request fields the L2-lock datum reads (narrowed from the Prisma payload). */
@@ -397,4 +402,37 @@ export function inHeadChangeMinimum(
 		{ address, amount: assets.map((asset) => ({ unit: asset.unit, quantity: asset.quantity.toString() })) },
 		coinsPerUtxoSize,
 	);
+}
+
+/**
+ * Whether the head wallet is held by an L2 body the head clock has passed the
+ * validity of. Such a body can no longer confirm, and the wallet stays held
+ * until reconciliation proves it dead, which an idle head can take a long time
+ * to do. Routing treats that head as not ready. Unknown clock or slot config:
+ * not held, so the ordinary busy-wallet wait applies.
+ */
+export function isWalletHeldByExpiredL2Body(params: {
+	pendingTransaction: {
+		layer: TransactionLayer;
+		status: TransactionStatus;
+		invalidHereafterSlot: bigint | null;
+	} | null;
+	headClock: { chainTimeMs: number } | undefined;
+	network: Network;
+}): boolean {
+	const { pendingTransaction, headClock, network } = params;
+	if (
+		pendingTransaction == null ||
+		pendingTransaction.layer !== TransactionLayer.L2 ||
+		pendingTransaction.status !== TransactionStatus.Pending ||
+		headClock == null ||
+		!Number.isSafeInteger(headClock.chainTimeMs)
+	) {
+		return false;
+	}
+	const validUntilMs = hydraValidityUpperBoundTimeMs(
+		{ validityUpperSlot: pendingTransaction.invalidHereafterSlot },
+		resolveHydraL2EvidenceSlotConfig(convertNetwork(network)),
+	);
+	return validUntilMs != null && BigInt(headClock.chainTimeMs) > validUntilMs + BigInt(L2_RESERVATION_EXPIRY_GRACE_MS);
 }

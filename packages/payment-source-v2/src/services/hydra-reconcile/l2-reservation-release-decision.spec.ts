@@ -11,20 +11,22 @@ describe('decideL2ReservationRelease', () => {
 				inputRefs: refs,
 				snapshotNumber: 10n,
 				baselineSnapshotNumber: undefined,
+				nudgeInputRef: null,
 				readVerifiedOutput: allUnspent,
 			}),
 		).toEqual({ action: 'baseline', snapshotNumber: 10n });
 	});
 
-	it('holds on the baseline snapshot itself', () => {
+	it('awaits a newer snapshot on the baseline snapshot itself', () => {
 		expect(
 			decideL2ReservationRelease({
 				inputRefs: refs,
 				snapshotNumber: 10n,
 				baselineSnapshotNumber: 10n,
+				nudgeInputRef: null,
 				readVerifiedOutput: allUnspent,
 			}),
-		).toEqual({ action: 'hold' });
+		).toEqual({ action: 'await-snapshot' });
 	});
 
 	it('releases on a newer snapshot that still holds every input', () => {
@@ -33,6 +35,7 @@ describe('decideL2ReservationRelease', () => {
 				inputRefs: refs,
 				snapshotNumber: 11n,
 				baselineSnapshotNumber: 10n,
+				nudgeInputRef: null,
 				readVerifiedOutput: allUnspent,
 			}),
 		).toEqual({ action: 'release' });
@@ -44,6 +47,7 @@ describe('decideL2ReservationRelease', () => {
 				inputRefs: refs,
 				snapshotNumber: 11n,
 				baselineSnapshotNumber: 10n,
+				nudgeInputRef: null,
 				readVerifiedOutput: (reference) => (reference === refs[0] ? 'output-bytes' : null),
 			}),
 		).toEqual({ action: 'hold' });
@@ -55,8 +59,49 @@ describe('decideL2ReservationRelease', () => {
 				inputRefs: [],
 				snapshotNumber: 11n,
 				baselineSnapshotNumber: 10n,
+				nudgeInputRef: null,
 				readVerifiedOutput: allUnspent,
 			}),
 		).toEqual({ action: 'hold' });
+	});
+
+	describe('with a release nudge recorded', () => {
+		const nudgeRef = `${'c'.repeat(64)}#1`;
+
+		it('awaits the nudge while its input is still unspent, even on a newer snapshot', () => {
+			expect(
+				decideL2ReservationRelease({
+					inputRefs: refs,
+					snapshotNumber: 11n,
+					baselineSnapshotNumber: 10n,
+					nudgeInputRef: nudgeRef,
+					readVerifiedOutput: allUnspent,
+				}),
+			).toEqual({ action: 'await-snapshot' });
+		});
+
+		it('releases once the nudge input is spent and every reserved input is not', () => {
+			expect(
+				decideL2ReservationRelease({
+					inputRefs: refs,
+					snapshotNumber: 11n,
+					baselineSnapshotNumber: 10n,
+					nudgeInputRef: nudgeRef,
+					readVerifiedOutput: (reference) => (reference === nudgeRef ? null : 'output-bytes'),
+				}),
+			).toEqual({ action: 'release' });
+		});
+
+		it('still holds when a reserved input is spent', () => {
+			expect(
+				decideL2ReservationRelease({
+					inputRefs: refs,
+					snapshotNumber: 11n,
+					baselineSnapshotNumber: 10n,
+					nudgeInputRef: nudgeRef,
+					readVerifiedOutput: (reference) => (reference === refs[0] ? 'output-bytes' : null),
+				}),
+			).toEqual({ action: 'hold' });
+		});
 	});
 });

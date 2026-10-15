@@ -23,7 +23,7 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
 import { resolveEffectiveForceLayer } from '@/utils/logic/force-layer';
 import { waitForFreeWallet } from '../../l2-pass';
-import { isHotWalletEligibleForL2Lock } from './l2-lock-helpers';
+import { isHotWalletEligibleForL2Lock, isWalletHeldByExpiredL2Body } from './l2-lock-helpers';
 import { executeL2Lock, type L2PurchaseRequest } from './l2-lock-execute';
 
 /**
@@ -96,6 +96,7 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				},
 				include: {
 					Secret: true,
+					PendingTransaction: { select: { layer: true, status: true, invalidHereafterSlot: true } },
 				},
 			},
 		},
@@ -179,6 +180,24 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 						peerConnected,
 					});
 					if (peerConnected === null || forcedHydra) headResolutionIndeterminate = true;
+					continue;
+				}
+				// A wallet held by an expired L2 body cannot lock until reconciliation
+				// proves that body dead. Not ready, like a down peer: auto falls to L1
+				// now; forced retries until payByTime fails it.
+				if (
+					isWalletHeldByExpiredL2Body({
+						pendingTransaction: hotWallet.PendingTransaction,
+						headClock: provider.getHeadClock(),
+						network: paymentContract.network,
+					})
+				) {
+					logger.info('L2 lock: head wallet is held by an expired L2 reservation; not routing to this head', {
+						requestId: request.id,
+						hydraHeadId: head.hydraHead.id,
+						walletId: hotWallet.id,
+					});
+					if (forcedHydra) headResolutionIndeterminate = true;
 					continue;
 				}
 				// A head exists for this pair — record it BEFORE the wallet-busy check so

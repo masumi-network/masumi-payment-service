@@ -8,6 +8,7 @@ import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context'
 import { fetchHydraConfirmedSnapshotNumber } from '@/lib/hydra/hydra/node-control-queries';
 import { decideL2ReservationRelease } from './l2-reservation-release-decision';
 import { releaseRejectedL2Reservation } from './l2-reservation-release';
+import { nudgeIdleHeadForRelease, type L2ReleaseNudgeCandidate } from './l2-reservation-nudge';
 
 export const L2_RESERVATION_EXPIRY_GRACE_MS = 60_000;
 export const EXPIRED_L2_RESERVATION_WARNING_INTERVAL_MS = 60 * 60_000;
@@ -85,8 +86,14 @@ export async function reportExpiredL2Reservations(params: {
 	node: HydraNode;
 	nowMs?: number;
 	database?: typeof prisma;
+	/** Makes an idle head confirm the newer snapshot release waits for. */
+	nudge?: (candidate: L2ReleaseNudgeCandidate) => Promise<unknown>;
 }): Promise<number> {
 	const { hydraHeadId, network, node, nowMs = Date.now(), database = prisma } = params;
+	const nudge =
+		params.nudge ??
+		((candidate: L2ReleaseNudgeCandidate) =>
+			nudgeIdleHeadForRelease({ hydraHeadId, candidate, node, nowMs, database }));
 	const queue = node.getConfirmedTransactionsForReconciliation();
 	if (!node.hasVerifiedPinnedSessions || !node.confirmedTransactionHistoryReady || queue.length !== 0) return 0;
 
@@ -106,6 +113,7 @@ export async function reportExpiredL2Reservations(params: {
 			intendedTxHash: true,
 			invalidHereafterSlot: true,
 			l2ReservationInputRefs: true,
+			l2ReleaseNudgeInputRef: true,
 			l2ReservationPreviousLayer: true,
 			l2ReservationPreviousSmartContractWalletId: true,
 			l2ReservationPreviousBuyerReturnAddress: true,
@@ -154,7 +162,7 @@ export async function reportExpiredL2Reservations(params: {
 				validityUpperBoundTimeMs,
 				graceMs: L2_RESERVATION_RELEASE_GRACE_MS,
 			}) &&
-			(await releaseIfProvenDead(candidate, verifiedSnapshotNumber, node, hydraHeadId, database, nowMs))
+			(await releaseIfProvenDead(candidate, verifiedSnapshotNumber, node, hydraHeadId, database, nowMs, nudge))
 		) {
 			continue;
 		}
@@ -184,21 +192,33 @@ async function releaseIfProvenDead(
 	candidate: Parameters<typeof releaseRejectedL2Reservation>[0] & {
 		intendedTxHash: string | null;
 		l2ReservationInputRefs: string[];
+		l2ReleaseNudgeInputRef?: string | null;
 	},
 	snapshotNumber: bigint,
 	node: HydraNode,
 	hydraHeadId: string,
 	database: typeof prisma,
 	nowMs: number,
+	nudge: (candidate: L2ReleaseNudgeCandidate) => Promise<unknown>,
 ): Promise<boolean> {
+	const nudgeInputRef = candidate.l2ReleaseNudgeInputRef ?? null;
 	const decision = decideL2ReservationRelease({
 		inputRefs: candidate.l2ReservationInputRefs,
+		nudgeInputRef,
 		snapshotNumber,
 		baselineSnapshotNumber: releaseBaselines.get(candidate.id)?.snapshotNumber,
 		readVerifiedOutput: (reference, number) => node.getVerifiedCurrentOutput(reference, number),
 	});
 	if (decision.action === 'baseline') {
 		await recordReleaseBaseline(candidate.id, hydraHeadId, decision.snapshotNumber, node, nowMs);
+		return false;
+	}
+	if (decision.action === 'await-snapshot') {
+		await nudge({
+			id: candidate.id,
+			l2ReservationInputRefs: candidate.l2ReservationInputRefs,
+			l2ReleaseNudgeInputRef: nudgeInputRef,
+		});
 		return false;
 	}
 	if (decision.action !== 'release') return false;
