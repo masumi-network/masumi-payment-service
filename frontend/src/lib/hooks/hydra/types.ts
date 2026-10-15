@@ -236,7 +236,7 @@ export type HydraInvite = {
   nonce: string;
   network: 'Preprod' | 'Mainnet';
   role: 'Issuer' | 'Redeemer';
-  status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+  status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
   createdAt: string;
   expiresAt: string;
   hydraHostId: string;

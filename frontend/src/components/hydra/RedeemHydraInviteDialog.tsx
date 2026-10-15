@@ -554,7 +554,7 @@ export function InviteStatusBadge({ status }: { status: string }) {
       ? 'default'
       : status === 'Issued'
         ? 'secondary'
-        : status === 'Expired' || status === 'Revoked'
+        : status === 'Expired' || status === 'Revoked' || status === 'Failed'
           ? 'outline'
           : 'secondary';
   return <Badge variant={tone as 'default' | 'secondary' | 'outline'}>{status}</Badge>;

@@ -13564,7 +13564,7 @@ export type DeleteHydraInviteResponses = {
         status: 'success';
         data: {
             id: string;
-            status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+            status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
         };
     };
 };
@@ -13576,7 +13576,7 @@ export type GetHydraInviteData = {
     path?: never;
     query?: {
         limit?: number;
-        status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+        status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
         /**
          * Filter by Cardano network
          */
@@ -13604,7 +13604,7 @@ export type GetHydraInviteResponses = {
                 nonce: string;
                 network: 'Preprod' | 'Mainnet';
                 role: 'Issuer' | 'Redeemer';
-                status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+                status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
                 createdAt: string;
                 expiresAt: string;
                 hydraHostId: string;
