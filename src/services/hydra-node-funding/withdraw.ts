@@ -40,6 +40,17 @@ import { CONFIG } from '@masumi/payment-core/config';
 export const MINIMUM_WITHDRAWABLE_LOVELACE = 2_000_000n;
 
 /**
+ * Depth the latest node address transaction needs before `dust` lets a caller
+ * delete the node's key.
+ *
+ * Key deletion cannot be undone, so it does not follow the payment-sync
+ * threshold down: that one defaults to 1 and accepts 0. A shallow sweep that a
+ * rollback evicts would leave the funds at an address nothing here can sign
+ * for. A higher configured threshold still wins.
+ */
+export const KEY_RELEASE_MIN_CONFIRMATIONS = 20;
+
+/**
  * What happened, in a form a caller can branch on.
  *
  * `reason` is prose for an operator; this is the same answer for code. The
@@ -204,7 +215,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 					network,
 					rpcProviderApiKey,
 					txHash: latest.tx_hash,
-					requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+					requiredConfirmations: Math.max(CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD, KEY_RELEASE_MIN_CONFIRMATIONS),
 				});
 				if (status !== 'confirmed-valid') {
 					return {

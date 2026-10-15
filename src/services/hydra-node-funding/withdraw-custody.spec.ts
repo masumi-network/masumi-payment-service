@@ -8,6 +8,7 @@ const confirmation = jest.fn<(params: { txHash: string; requiredConfirmations: n
 const complete = jest.fn<() => Promise<string>>();
 const submit = jest.fn<() => Promise<string>>();
 const txIn = jest.fn();
+const config = { BLOCK_CONFIRMATIONS_THRESHOLD: 0 };
 const builder = { txIn, changeAddress: () => builder, setNetwork: () => builder, complete };
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
@@ -20,6 +21,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn() },
 }));
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({ CONFIG: config }));
 jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value: string) => value }));
 jest.unstable_mockModule('./node-address', () => ({ nodeCardanoAddress: () => 'node-address' }));
 jest.unstable_mockModule('./service', () => ({ recentlySentTo: () => ({}) }));
@@ -46,7 +48,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 	resolveTxHash: () => 'a'.repeat(64),
 }));
 
-const { withdrawNodeFunds } = await import('./withdraw');
+const { KEY_RELEASE_MIN_CONFIRMATIONS, withdrawNodeFunds } = await import('./withdraw');
 const storedParticipant = {
 	id: 'participant',
 	hostNodeId: 'node',
@@ -76,6 +78,7 @@ const tokenUtxo: UTxO = {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	config.BLOCK_CONFIRMATIONS_THRESHOLD = 0;
 	participant.mockResolvedValue(storedParticipant);
 	utxos.mockResolvedValue([]);
 	history.mockResolvedValue([{ tx_hash: 'a'.repeat(64) }]);
@@ -111,13 +114,21 @@ it.each(['pending', 'not-found', 'transient-error', 'confirmed-invalid'])(
 	},
 );
 
-it('allows dust cleanup after the latest address transaction reaches configured depth', async () => {
+it('allows dust cleanup only at key-release depth even when the sync threshold is 0', async () => {
 	expect((await withdrawNodeFunds('participant')).code).toBe('dust');
 	expect(confirmation).toHaveBeenCalledWith(
 		expect.objectContaining({
 			txHash: 'a'.repeat(64),
-			requiredConfirmations: expect.any(Number),
+			requiredConfirmations: KEY_RELEASE_MIN_CONFIRMATIONS,
 		}),
+	);
+});
+
+it('uses a configured threshold deeper than the key-release floor', async () => {
+	config.BLOCK_CONFIRMATIONS_THRESHOLD = KEY_RELEASE_MIN_CONFIRMATIONS + 5;
+	await withdrawNodeFunds('participant');
+	expect(confirmation).toHaveBeenCalledWith(
+		expect.objectContaining({ requiredConfirmations: KEY_RELEASE_MIN_CONFIRMATIONS + 5 }),
 	);
 });
 
