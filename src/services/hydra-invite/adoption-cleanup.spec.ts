@@ -1,4 +1,10 @@
-import { beforeEach, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, expect, it, jest } from '@jest/globals';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { NodeRegistryStore } from '@masumi/hydra-host/registry/store';
+import { requestRemoval } from '@masumi/hydra-host/api/transitions';
+import type { HostApiError } from '@masumi/hydra-host/api/http-error';
 
 const host = { id: 'host', baseUrl: 'https://host.example', encryptedAdminToken: 'token', allowInsecureHttp: false };
 const invite = {
@@ -27,13 +33,23 @@ const forget = jest.fn<() => Promise<void>>();
 const canRemove = jest.fn<() => Promise<boolean>>();
 const updateMany = jest.fn<(args: { data: { status: string } }) => Promise<{ count: number }>>();
 const participantCount = jest.fn<(args: { where: { hydraHeadId?: { not: null } } }) => Promise<number>>();
+const unboundParticipant = jest.fn<() => Promise<{ id: string; autoFund: boolean } | null>>();
 const verify = jest.fn<() => Promise<void>>();
+
+class HydraHostRequestError extends Error {
+	constructor(
+		message: string,
+		readonly status: number | null,
+	) {
+		super(message);
+	}
+}
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHost: { findMany: async () => [host] },
 		hydraHeadInvite: { findUnique: async () => invite, updateMany },
-		hydraLocalParticipant: { count: participantCount, findFirst: async () => null },
+		hydraLocalParticipant: { count: participantCount, findFirst: unboundParticipant },
 	},
 }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -47,7 +63,7 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	}),
 	forgetHostInvite: forget,
 	removeHostNode: remove,
-	HydraHostRequestError: class extends Error {},
+	HydraHostRequestError,
 }));
 jest.unstable_mockModule('./invite-signing', () => ({ verifyHydraRedemption: verify }));
 jest.unstable_mockModule('./orchestrator', () => ({ createHeadFromExchange: jest.fn() }));
@@ -72,6 +88,7 @@ beforeEach(() => {
 	release.mockResolvedValue(undefined);
 	updateMany.mockResolvedValue({ count: 1 });
 	participantCount.mockResolvedValue(0);
+	unboundParticipant.mockResolvedValue(null);
 	verify.mockRejectedValue(new Error('invalid signature'));
 });
 
@@ -101,6 +118,79 @@ it('keeps the Host signer when rejected redemption belongs to a legacy participa
 	expect(release).toHaveBeenCalledTimes(1);
 });
 
+// The Host's own removal guard, on a node in the state a redemption leaves it:
+// escrow acknowledged at issuance, and the redeemer set as its peer.
+let dataDir: string;
+afterEach(async () => {
+	if (dataDir) await fs.rm(dataDir, { recursive: true, force: true });
+});
+
+async function driveRealHostGuard(): Promise<NodeRegistryStore> {
+	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'adoption-cleanup-'));
+	const store = new NodeRegistryStore(dataDir);
+	await store.write({
+		nodeId: 'node',
+		state: 'Running',
+		desired: 'Running',
+		network: 'preprod',
+		apiPort: 4001,
+		peerPort: 5001,
+		monitoringPort: 6001,
+		advertise: 'hydra1.example.com:5001',
+		peers: [
+			{
+				advertise: 'redeemer.example.com:5001',
+				hydraVerificationKey: `5820${'ab'.repeat(32)}`,
+				cardanoVerificationKey: `5820${'cd'.repeat(32)}`,
+			},
+		],
+		contestationPeriodSeconds: 220,
+		depositPeriodSeconds: 300,
+		depositActivationSeconds: 300,
+		unsyncedPeriodSeconds: 1800,
+		hydraVerificationKey: '5820aa',
+		cardanoVerificationKey: '5820bb',
+		escrowAckedAt: '2026-07-28T11:00:00.000Z',
+		idempotencyKey: 'idem-1',
+		createdAt: '2026-07-28T11:00:00.000Z',
+		updatedAt: '2026-07-28T11:00:00.000Z',
+		startAttempts: 0,
+		lastStopUndrained: false,
+	});
+	remove.mockImplementation(async (_baseUrl, _adminToken, nodeId, { force }) => {
+		try {
+			await requestRemoval(store, nodeId, { force });
+		} catch (error) {
+			throw new HydraHostRequestError((error as Error).message, (error as HostApiError).status);
+		}
+		removalRequested = true;
+	});
+	return store;
+}
+
+it('removes the node of a verified redemption nobody here claims, past the Host guard', async () => {
+	verify.mockResolvedValue(undefined);
+	const store = await driveRealHostGuard();
+
+	expect(await pollHydraRedemptions()).toMatchObject({ rejected: 1 });
+	expect(await store.read('node')).toMatchObject({ state: 'Removing', removalRequested: true });
+	expect(remove).toHaveBeenCalledWith(host.baseUrl, 'token', 'node', expect.objectContaining({ force: true }));
+	expect(forget).toHaveBeenCalledTimes(1);
+	expect(release).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the node of a verified redemption when a head still claims it', async () => {
+	verify.mockResolvedValue(undefined);
+	participantCount.mockResolvedValue(1);
+	forget.mockResolvedValue(undefined);
+	const store = await driveRealHostGuard();
+
+	expect(await pollHydraRedemptions()).toMatchObject({ rejected: 1 });
+	expect(remove).not.toHaveBeenCalled();
+	expect(await store.read('node')).toMatchObject({ state: 'Running' });
+	expect(release).not.toHaveBeenCalled();
+});
+
 it('keeps a node a head claims, even for a forged redemption', async () => {
 	participantCount.mockResolvedValue(1);
 	forget.mockResolvedValue(undefined);
@@ -115,12 +205,12 @@ it('keeps a node a head claims, even for a forged redemption', async () => {
 	expect(release).not.toHaveBeenCalled();
 });
 
-it('revokes without force when a verified redemption has no participant', async () => {
+it('revokes with force when a verified redemption has no participant', async () => {
 	verify.mockResolvedValue(undefined);
 	expect(await pollHydraRedemptions()).toMatchObject({ rejected: 1 });
 	expect(updateMany.mock.calls[0][0].data.status).toBe('Revoked');
 	expect(remove).toHaveBeenCalledWith('https://host.example', 'token', 'node', {
-		force: false,
+		force: true,
 		allowInsecureHttp: false,
 	});
 });
