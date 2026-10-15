@@ -47,8 +47,6 @@ const makeEvidence = () => ({
 	currentTransactionId: 'transaction',
 	requestUpdatedAt: updatedAt,
 	ownerEpoch: 1n,
-	snapshotNumber: 3n,
-	latestSnapshotNumber: 3n,
 	outputAmounts: [{ unit: 'lovelace', quantity: '4460850' }],
 	assertFresh: fresh,
 });
@@ -92,12 +90,7 @@ beforeEach(() => {
 	request = makeRequest();
 	validate.mockResolvedValue(makeEvidence());
 	admission.mockResolvedValue(true);
-	head.mockResolvedValue({
-		ownerEpoch: 1n,
-		snapshotNumber: 3n,
-		latestSnapshotNumber: 3n,
-		status: HydraHeadStatus.Open,
-	});
+	head.mockResolvedValue({ ownerEpoch: 1n, status: HydraHeadStatus.Open });
 	fresh.mockReset();
 });
 
@@ -263,16 +256,10 @@ it('rejects a validator snapshot newer than the preview', async () => {
 it.each([
 	['admission revoked', () => admission.mockResolvedValue(false)],
 	[
-		'snapshot changed',
-		() => head.mockResolvedValue({ ownerEpoch: 1n, status: HydraHeadStatus.Open, latestSnapshotNumber: 4n }),
-	],
-	[
 		'closing',
 		() =>
 			head.mockResolvedValue({
 				ownerEpoch: 1n,
-				snapshotNumber: 3n,
-				latestSnapshotNumber: 3n,
 				status: HydraHeadStatus.Open,
 				isClosing: true,
 			}),
@@ -283,8 +270,6 @@ it.each([
 		() =>
 			head.mockResolvedValue({
 				ownerEpoch: 1n,
-				snapshotNumber: 3n,
-				latestSnapshotNumber: 3n,
 				status: HydraHeadStatus.Closed,
 			}),
 	],

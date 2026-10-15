@@ -55,7 +55,8 @@ const makeHead = () => ({
 	reconciliationCompletedAt: null,
 	status: HydraHeadStatus.Open,
 	ownerEpoch: 3n,
-	latestSnapshotNumber: 3n,
+	// Production reality: snapshot confirmations never advance the DB tip of an Open head.
+	latestSnapshotNumber: 0n,
 	HydraRelation: { LocalHotWallet: buyer, RemoteWallet: seller },
 });
 let head = makeHead();
@@ -84,10 +85,15 @@ const decoded = {
 	collateralReturnLovelace: 2000000n,
 	payByTime: 100n,
 };
+const currentOutput = jest.fn((): string | null => 'serialized-output');
 const node = {
 	hasVerifiedPinnedSessions: true,
 	confirmedTransactionHistoryReady: true,
-	getVerifiedCurrentOutput: jest.fn((): string | null => 'serialized-output'),
+	verifiedSnapshotNumber: 3n as bigint | undefined,
+	// Mirrors readVerifiedCurrentOutput: only the node's verified snapshot number yields the output.
+	getVerifiedCurrentOutput: jest.fn((_reference: string, expected: bigint) =>
+		expected === node.verifiedSnapshotNumber ? currentOutput() : null,
+	),
 	getConfirmedTransaction: jest.fn(() => ({ cborHex: 'cbor', confirmedAtMs: 50 })),
 };
 const manager = { flushHeadStatus: jest.fn(async () => {}), getNode: jest.fn(() => node) };
@@ -140,7 +146,8 @@ beforeEach(() => {
 	evidence = makeEvidence();
 	node.hasVerifiedPinnedSessions = true;
 	node.confirmedTransactionHistoryReady = true;
-	node.getVerifiedCurrentOutput.mockReturnValue('serialized-output');
+	node.verifiedSnapshotNumber = 3n;
+	currentOutput.mockReturnValue('serialized-output');
 	manager.getNode.mockReturnValue(node);
 	canonicalCheck.mockReturnValue({ valid: true, errorNote: null });
 	datumMismatch.mockReturnValue(null);
@@ -159,8 +166,18 @@ describe('Hydra repair evidence admission', () => {
 		});
 		expect(canonicalCheck.mock.calls).toContainEqual([decoded, request.PaidFunds, output.amount, 50]);
 		result.assertFresh();
-		node.getVerifiedCurrentOutput.mockReturnValue(null);
+		currentOutput.mockReturnValue(null);
 		expect(result.assertFresh).toThrow('evidence changed');
+	});
+	it('rejects a verified snapshot that moved after validation', async () => {
+		const result = await validate();
+		node.verifiedSnapshotNumber = 4n;
+		currentOutput.mockReturnValue('serialized-output');
+		expect(result.assertFresh).toThrow('evidence changed');
+	});
+	it('rejects a node without a verified snapshot', async () => {
+		node.verifiedSnapshotNumber = undefined;
+		await expect(validate()).rejects.toThrow('Current unspent');
 	});
 	it('rejects an already-valid request', async () => {
 		request.onChainState = OnChainState.FundsLocked;
@@ -179,7 +196,7 @@ describe('Hydra repair evidence admission', () => {
 		await expect(validate()).rejects.toThrow('Verified Hydra history');
 	});
 	it('rejects spent outputs', async () => {
-		node.getVerifiedCurrentOutput.mockReturnValue(null);
+		currentOutput.mockReturnValue(null);
 		await expect(validate()).rejects.toThrow('Current unspent');
 	});
 	it('rejects duplicate request outputs', async () => {
