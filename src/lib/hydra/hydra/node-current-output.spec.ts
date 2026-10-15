@@ -51,3 +51,19 @@ describe('Hydra current output evidence accessor', () => {
 		expect(readOutput(true, HydraHeadStatus.Open, undefined, 3n, partition)).toBeNull();
 	});
 });
+
+describe('Hydra verified snapshot number accessor', () => {
+	const getter = Object.getOwnPropertyDescriptor(HydraNode.prototype, 'verifiedSnapshotNumber')!.get!;
+	const read = (verified: boolean, verifiedSnapshot: { number: number } | undefined) =>
+		getter.call({ hasVerifiedPinnedSessions: verified, _replay: { verifiedSnapshot } }) as bigint | undefined;
+
+	it('returns the replay-verified snapshot number', () => {
+		expect(read(true, { number: 3 })).toBe(3n);
+	});
+	it('is undefined for an unverified session', () => {
+		expect(read(false, { number: 3 })).toBeUndefined();
+	});
+	it('is undefined before any snapshot is verified', () => {
+		expect(read(true, undefined)).toBeUndefined();
+	});
+});
