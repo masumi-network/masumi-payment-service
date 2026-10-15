@@ -118,6 +118,20 @@ spends the nonce and configures the reserved node, and only an admin-token
 caller can make it. So the node in decision 3 starts after the poll verifies
 the redemption, not when the POST arrives.
 
+Known limits of staging, accepted for now:
+
+- Two holders of one invite can both sign validly. Both get `202`, the
+  earliest valid candidate wins, and the loser is not told. It builds a head
+  that the issuer never joins. Invites stay bearer tokens (decision 3), so
+  this is the cost of sharing one with two parties. A verdict signal for the
+  redeemer is a follow-up.
+- A holder of the invite can refill the 8 staging slots after each poll, so
+  the intended redeemer may get `429` until the issuer's poll clears them.
+- Deploy order: upgrade the payment service before the Host. A new payment
+  service works with an old Host, through the legacy verify-then-discard path.
+  An old payment service never confirms a staged redemption, so with a new
+  Host no invite completes.
+
 **8. Approval names the counterparty.** Before redeeming, the operator is shown
 the issuer's registry entries — assets at that address under the network's V2
 registry policy, resolved to their on-chain metadata names. A hex address is a
