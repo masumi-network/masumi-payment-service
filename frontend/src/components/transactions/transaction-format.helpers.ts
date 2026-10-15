@@ -79,6 +79,24 @@ export const formatOnChainState = (state: string | null | undefined): string => 
   }
 };
 
+/**
+ * A payment the timeout job invalidated because the buyer never locked funds
+ * before payByTime. The job reuses `FundsOrDatumInvalid` but attaches no
+ * transaction, while a real invalid lock always carries the observed tx hash.
+ */
+export const isPaymentNeverReceived = (transaction: Transaction): boolean =>
+  transaction.type === 'payment' &&
+  transaction.onChainState === 'FundsOrDatumInvalid' &&
+  getLatestTxHash(transaction) === null;
+
+export const NO_PAYMENT_RECEIVED_LABEL = 'No Payment Received';
+
+/** On-chain state label for a row, with the never-locked payment timeout called out. */
+export const formatTransactionState = (transaction: Transaction): string =>
+  isPaymentNeverReceived(transaction)
+    ? NO_PAYMENT_RECEIVED_LABEL
+    : formatOnChainState(transaction.onChainState);
+
 /** Human-readable label for a `NextAction.requestedAction` value (covers both payment and purchase actions). */
 export const formatRequestedAction = (action: string | null | undefined): string => {
   switch (action) {

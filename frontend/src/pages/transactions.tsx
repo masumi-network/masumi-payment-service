@@ -36,7 +36,9 @@ import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSour
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
 import {
   getLatestTxHash,
+  isPaymentNeverReceived,
   isTransactionErrorRecoverable,
+  NO_PAYMENT_RECEIVED_LABEL,
 } from '@/components/transactions/transaction-format.helpers';
 import { BulkActionBar } from '@/components/ui/bulk-action-bar';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -655,6 +657,8 @@ export default function Transactions() {
                                 <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
                                 {formatStatus(transaction.onChainState)}
                               </span>
+                            ) : isPaymentNeverReceived(transaction) ? (
+                              NO_PAYMENT_RECEIVED_LABEL
                             ) : (
                               formatStatus(transaction.onChainState)
                             )}
