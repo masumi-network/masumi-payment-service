@@ -1,0 +1,48 @@
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -404,6 +404,11 @@
+             return this._evaluateRequestMissResult(req);
+         }
+ 
++        // Request directives and clock skew cannot override response restrictions.
++        if (!this._allowsReuseWithoutRevalidation()) {
++            return this._evaluateRequestMissResult(req);
++        }
++
+         // When presented with a request, a cache MUST NOT reuse a stored response, unless:
+         // the presented request does not contain the no-cache pragma (Section 5.4), nor the no-cache cache directive,
+         // unless the stored response is successfully validated (Section 4.3), and
+@@ -705,8 +710,21 @@
+     /**
+      * @returns {boolean} `true` if `stale-if-error` condition allows use of a stale response.
+      */
++    _allowsReuseWithoutRevalidation() {
++        return Boolean(
++            this.storable() &&
++            !this._rescc['no-cache'] &&
++            !this._rescc['must-revalidate'] &&
++            (!this._isShared ||
++                (!this._rescc['proxy-revalidate'] &&
++                    (!this._resHeaders['set-cookie'] ||
++                        this._rescc.public || this._rescc.immutable)))
++        );
++    }
++
+     _useStaleIfError() {
+-        return this.maxAge() + toNumberOrZero(this._rescc['stale-if-error']) > this.age();
++        return this._allowsReuseWithoutRevalidation() &&
++            this.maxAge() + toNumberOrZero(this._rescc['stale-if-error']) > this.age();
+     }
+ 
+     /** See `evaluateRequest()` for a more complete solution
+@@ -714,7 +732,8 @@
+      */
+     useStaleWhileRevalidate() {
+         const swr = toNumberOrZero(this._rescc['stale-while-revalidate']);
+-        return swr > 0 && this.maxAge() + swr > this.age();
++        return this._allowsReuseWithoutRevalidation() &&
++            swr > 0 && this.maxAge() + swr > this.age();
+     }
+ 
+     /**
