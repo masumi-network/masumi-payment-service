@@ -116,6 +116,7 @@ docker create --name hydra-host \
   --network host \
   --restart no \
   --stop-timeout 250 \
+  --memory 4g \
   -v /mnt/hydra_data:/data \
   -v /srv/hydra/blockfrost.txt:/run/secrets/blockfrost.txt:ro \
   -e HYDRA_HOST_PUBLIC_HOST=hydra1.example.com \
@@ -155,6 +156,13 @@ transaction ids`.
 `docker create` rather than `docker run -d`: the container is created here and
 started by systemd in the next step, so there is exactly one thing that decides
 when it runs.
+
+`--memory` caps what the container can take from the droplet. Under
+`--network host` the peer plane is open to every address the nftables ruleset
+admits, so a flood from a peer must not be able to take the whole machine.
+`4g` is an example: size it for the number of heads this Host runs, and leave
+headroom for the OS. It is the same limit as `HYDRA_HOST_MEMORY_LIMIT` in the
+compose file.
 
 Pin an immutable digest. A floating `latest` replaces reviewed code at the next
 pull, and both sides of a head must run the same `hydra-node` version.
