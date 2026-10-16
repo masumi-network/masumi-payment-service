@@ -56,6 +56,7 @@ import { AutomaticFundingDialog } from '@/components/hydra/AutomaticFundingDialo
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
+import { HydraHostMaintenance } from '@/components/hydra/HydraHostMaintenance';
 import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
 import {
   checkHydraHost,
@@ -431,6 +432,8 @@ export function HydraNodeDetailsDialog({
               </p>
             </HydraNotice>
           )}
+
+          <HydraHostMaintenance host={host} />
 
           <section className="space-y-2">
             <div className="flex items-center gap-2">
