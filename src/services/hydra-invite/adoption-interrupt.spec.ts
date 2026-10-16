@@ -357,6 +357,7 @@ jest.unstable_mockModule('./invite-code', () => ({ encodeInviteCode: jest.fn() }
 jest.unstable_mockModule('./provisioning', () => ({
 	MIN_UNSYNCED_PERIOD_SECONDS: 0,
 	assertContestationPeriodAllowed: jest.fn(),
+	assertHeadPeriodsAllowed: jest.fn(),
 	defaultPeriodsFor: jest.fn(),
 	periodsFromInvite: jest.fn(),
 	reserveNodeForExchange: jest.fn(),
