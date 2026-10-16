@@ -20,6 +20,8 @@
 # production
 /build
 
+/public/monaco
+
 # misc
 .DS_Store
 *.pem

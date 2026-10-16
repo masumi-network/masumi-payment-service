@@ -54,6 +54,27 @@ export async function applyConfirmedHydraTransaction(
 	});
 
 	if (!tx) {
+		// A body auto-released on the input proof must never confirm. If one
+		// does, its purchase may already be locked again: stop this head's replay
+		// here, loudly, rather than let datum sync guess against the new state.
+		const released = await prisma.transaction.findFirst({
+			where: {
+				OR: [{ txHash: txId }, { intendedTxHash: txId }],
+				layer: 'L2',
+				hydraHeadId,
+				status: TransactionStatus.RolledBack,
+				l2ReleasedByInputProofAt: { not: null },
+			},
+			select: { id: true },
+		});
+		if (released) {
+			logger.error('[HydraConnectionManager] auto-released L2 reservation confirmed in a snapshot; holding replay', {
+				hydraHeadId,
+				txId,
+				transactionId: released.id,
+			});
+			return 'retry';
+		}
 		return await syncHydraDatumStateFromConfirmedTx(host, hydraHeadId, txId, confirmedTransaction);
 	}
 

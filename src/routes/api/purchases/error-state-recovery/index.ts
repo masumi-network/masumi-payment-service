@@ -14,6 +14,7 @@ import { purchaseResponseSchema } from '..';
 import { z } from '@masumi/payment-core/zod';
 import { getPurchaseRetryAction } from '@/utils/shared/error-recovery';
 import { selectRecoveryTransaction } from '@/routes/api/shared/recovery-transaction';
+import { assertFundsLockingRetryAllowed } from './retry-guard';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier of the purchase request'),
@@ -97,6 +98,12 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 		if (input.retryPreviousAction && retryAction == null) {
 			throw createHttpError(400, 'The immediately preceding purchase action is not retryable.');
 		}
+		if (input.retryPreviousAction) {
+			assertFundsLockingRetryAllowed(retryAction, purchaseRequest.onChainState, [
+				...purchaseRequest.TransactionHistory,
+				...(purchaseRequest.CurrentTransaction ? [purchaseRequest.CurrentTransaction] : []),
+			]);
+		}
 
 		if (
 			!purchaseRequest.onChainState &&
@@ -162,6 +169,29 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 				() =>
 					prisma.$transaction(
 						async (tx) => {
+							const isFundsLockingRetry =
+								input.retryPreviousAction && retryAction === PurchasingAction.FundsLockingRequested;
+							if (isFundsLockingRetry) {
+								const current = await tx.purchaseRequest.findFirst({
+									where: {
+										id: purchaseRequest.id,
+										updatedAt: purchaseRequest.updatedAt,
+										nextActionId: purchaseRequest.nextActionId,
+									},
+									select: {
+										onChainState: true,
+										CurrentTransaction: { select: { status: true, txHash: true } },
+										TransactionHistory: { select: { status: true, txHash: true } },
+									},
+								});
+								if (current == null) {
+									throw createHttpError(409, 'Purchase state changed concurrently; retry against the new state');
+								}
+								assertFundsLockingRetryAllowed(retryAction, current.onChainState, [
+									...current.TransactionHistory,
+									...(current.CurrentTransaction ? [current.CurrentTransaction] : []),
+								]);
+							}
 							for (const transaction of transactionsToFail) {
 								await tx.transaction.update({
 									where: { id: transaction.id },
@@ -183,24 +213,18 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 							//     `CurrentTransaction: { is: null }`, so a row that keeps its
 							//     rolled-back tx would never re-batch — the endpoint would
 							//     return 200 and the request would stall forever. Clear it.
-							if (lastSuccessfulTransaction != null) {
-								await tx.purchaseRequest.update({
-									where: { id: purchaseRequest.id },
-									data: { currentTransactionId: lastSuccessfulTransaction.id },
-								});
-							} else if (purchaseRequest.onChainState == null) {
-								await tx.purchaseRequest.update({
-									where: { id: purchaseRequest.id },
-									data: { currentTransactionId: null },
-								});
-							}
-
 							return await tx.purchaseRequest.update({
 								where: {
 									id: purchaseRequest.id,
 									nextActionId: purchaseRequest.nextActionId,
+									...(isFundsLockingRetry ? { updatedAt: purchaseRequest.updatedAt } : {}),
 								},
 								data: {
+									...(lastSuccessfulTransaction != null
+										? { CurrentTransaction: { connect: { id: lastSuccessfulTransaction.id } } }
+										: purchaseRequest.onChainState == null
+											? { CurrentTransaction: { disconnect: true } }
+											: {}),
 									ActionHistory: {
 										connect: {
 											id: purchaseRequest.nextActionId,

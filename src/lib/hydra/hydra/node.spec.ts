@@ -37,7 +37,9 @@ class MockConnection extends EventEmitter {
 		await this.connect();
 	});
 	disconnect = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
-	send = jest.fn<(data: unknown) => Promise<void>>().mockResolvedValue(undefined);
+	send = jest
+		.fn<(data: unknown, options?: { signal?: AbortSignal; onQueued?: () => void }) => Promise<void>>()
+		.mockResolvedValue(undefined);
 	isOpen = jest.fn<() => boolean>().mockReturnValue(false);
 	invalidate = jest.fn<(error: Error) => void>();
 }
@@ -48,7 +50,7 @@ const mockConnectionUrls: string[] = [];
 const mockLoggerError = jest.fn();
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { error: mockLoggerError },
+	logger: { error: mockLoggerError, warn: jest.fn(), info: jest.fn() },
 }));
 
 jest.unstable_mockModule('./connection', () => ({
@@ -65,6 +67,10 @@ const mockFetch = jest.fn<typeof fetch>();
 
 // Import AFTER mock setup
 const { HydraNode } = await import('./node');
+// Frames here are driven one by one and asserted synchronously; yielding is
+// covered by the queue's own spec.
+const { historyReplayYieldSettings } = await import('./node-history-frame-queue');
+historyReplayYieldSettings.budgetMs = Number.POSITIVE_INFINITY;
 
 function makeHydraTransaction(seed: number, description = '') {
 	const body = TransactionBody.new(
@@ -1638,7 +1644,10 @@ describe('HydraNode', () => {
 			node.connect();
 
 			const initPromise = node.init();
-			expect(mockConnectionInstance.send).toHaveBeenCalledWith({ tag: 'Init' });
+			expect(mockConnectionInstance.send).toHaveBeenCalledWith(
+				{ tag: 'Init' },
+				{ signal: expect.any(AbortSignal), onQueued: expect.any(Function) },
+			);
 
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing', headId: HEAD_ID_A }));
 			await expect(initPromise).resolves.toBeUndefined();
@@ -1687,6 +1696,103 @@ describe('HydraNode', () => {
 			mockConnectionInstance.send.mockClear();
 			await expect(node.init()).resolves.toBeUndefined();
 			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
+		});
+
+		/**
+		 * hydra-node parks commands while it is catching up with the chain
+		 * (`WaitOnNodeInSync`) and is meant to release them on `NodeSynced`.
+		 * Observed live 2026-09-07 on preprod: Init sent to a node whose Greetings
+		 * said `CatchingUp`, `NodeSynced` 49s later, and then nothing — no InitTx
+		 * posted, no `PostTxOnChainFailed`, no frame at all, until the 300s
+		 * observe timeout raised an ambiguous error for a transaction that had
+		 * never been sent. So Init is not handed to a node that has said it is
+		 * behind; it waits for the node to report synced first. Unknown sync
+		 * state (no Greetings yet) sends as before — only a positive "behind" holds.
+		 */
+		it('holds Init while the node reports CatchingUp and sends it on NodeSynced', async () => {
+			jest.useFakeTimers();
+			try {
+				const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+				node.connect();
+				mockConnectionInstance.emit(
+					'message',
+					JSON.stringify({ tag: 'Greetings', headStatus: 'Idle', chainSyncedStatus: 'CatchingUp' }),
+				);
+				mockConnectionInstance.send.mockClear();
+
+				const initPromise = node.init();
+				// Well inside the sync budget: still behind, still held.
+				await jest.advanceTimersByTimeAsync(5_000);
+				expect(mockConnectionInstance.send).not.toHaveBeenCalledWith(
+					{ tag: 'Init' },
+					{ signal: expect.any(AbortSignal), onQueued: expect.any(Function) },
+				);
+
+				mockConnectionInstance.emit(
+					'message',
+					JSON.stringify({ tag: 'NodeSynced', chainSlot: 1807, chainTime: '2026-09-07T08:16:46Z', drift: 1.48 }),
+				);
+				// One poll interval is enough for the watcher to see the transition.
+				await jest.advanceTimersByTimeAsync(1_000);
+				expect(mockConnectionInstance.send).toHaveBeenCalledWith(
+					{ tag: 'Init' },
+					{ signal: expect.any(AbortSignal), onQueued: expect.any(Function) },
+				);
+
+				mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing', headId: HEAD_ID_A }));
+				await expect(initPromise).resolves.toBeUndefined();
+			} finally {
+				jest.useRealTimers();
+			}
+		});
+
+		it('tracks the sync state Init gates on: unknown until Greetings, then the transitions', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			expect(node.isChainSynced()).toBeUndefined();
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Idle', chainSyncedStatus: 'InSync' }),
+			);
+			expect(node.isChainSynced()).toBe(true);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'NodeUnsynced', chainSlot: 1790, chainTime: '2026-09-07T08:16:29Z', drift: 18.45 }),
+			);
+			expect(node.isChainSynced()).toBe(false);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'NodeSynced', chainSlot: 1807, chainTime: '2026-09-07T08:16:46Z', drift: 1.48 }),
+			);
+			expect(node.isChainSynced()).toBe(true);
+		});
+
+		it('refuses to send Init to a node that stays behind the chain, as not-dispatched', async () => {
+			jest.useFakeTimers();
+			try {
+				const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+				node.connect();
+				mockConnectionInstance.emit(
+					'message',
+					JSON.stringify({ tag: 'Greetings', headStatus: 'Idle', chainSyncedStatus: 'CatchingUp' }),
+				);
+				mockConnectionInstance.send.mockClear();
+
+				const initPromise = node.init();
+				const outcome = expect(initPromise).rejects.toBeInstanceOf(HydraTransportError);
+				await jest.advanceTimersByTimeAsync(HydraNode.INIT_SYNC_WAIT_MS + 1000);
+				await outcome;
+				// Nothing was ever handed to the socket, so there is nothing to reconcile.
+				expect(mockConnectionInstance.send).not.toHaveBeenCalledWith(
+					{ tag: 'Init' },
+					{ signal: expect.any(AbortSignal), onQueued: expect.any(Function) },
+				);
+			} finally {
+				jest.useRealTimers();
+			}
 		});
 	});
 
@@ -1822,6 +1928,38 @@ describe('HydraNode', () => {
 			} as Response);
 
 			await expect(node.post('/commit', {})).rejects.toThrow('Hydra HTTP request failed with 400 Bad Request');
+		});
+
+		// 2.4.1's POST /commit dry-runs the increment and can reject with
+		// DepositTooLarge. Without the node's own tag in the message, every 4xx
+		// commit refusal read identically as "Hydra HTTP request failed with 400
+		// Bad Request" — indistinguishable from an oversized deposit, a stale
+		// draft, or a malformed request, and that generic text is exactly what
+		// reaches the operator via `HydraTopup`'s recorded head error.
+		// The body is the one a real 2.4.1 node returned, not a hand-written {tag}:
+		// recorded 2026-09-07 from `POST /commit` on a live devnet head whose
+		// merged head output would have exceeded maxValueSize (the deposit carried
+		// 120 native assets on top of the 120 already in the head). Keeping the
+		// four size fields here proves the reason survives a full body rather than
+		// only the one-key shape the modelled test used to assert.
+		it('post() names the node-reported reason for a 400 rejection, e.g. DepositTooLarge', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			mockFetch.mockResolvedValue({
+				ok: false,
+				status: 400,
+				statusText: 'Bad Request',
+				json: async () => ({
+					estimatedTxSize: 12021,
+					estimatedValueSize: 8576,
+					maximumTxSize: 16384,
+					maximumValueSize: 5000,
+					tag: 'DepositTooLarge',
+				}),
+			} as Response);
+
+			await expect(node.post('/commit', {})).rejects.toThrow(
+				'Hydra HTTP request failed with 400 Bad Request (DepositTooLarge)',
+			);
 		});
 
 		it('post() treats response transport failures after dispatch as ambiguous', async () => {
@@ -2171,5 +2309,109 @@ describe('HydraNode', () => {
 				expect(node.headClock).toBeUndefined();
 			});
 		});
+	});
+});
+
+// History replay verifies every signed snapshot's KZG accumulator over the
+// head's whole UTxO set. On the event loop that held it for seconds per frame,
+// back to back, and starved the process; the service computes it on a worker.
+describe('HydraNode history replay with an off-loop accumulator', () => {
+	type AccumulatorRequest = { outputs: string[]; resolve: (hash: string) => void; reject: (error: Error) => void };
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+		mockConnectionInstances.length = 0;
+		mockConnectionUrls.length = 0;
+	});
+
+	const flush = async () => {
+		await new Promise((resolve) => setImmediate(resolve));
+	};
+
+	async function startNodeWithDeferredAccumulator() {
+		const requests: AccumulatorRequest[] = [];
+		const started = await startSignedNode({
+			computeSnapshotAccumulator: (outputs) =>
+				new Promise<string>((resolve, reject) => requests.push({ outputs, resolve, reject })),
+		});
+		return { ...started, requests };
+	}
+
+	const answer = (request: AccumulatorRequest) => request.resolve(computeHydraAccumulatorHash(request.outputs));
+
+	it('judges frames in order, each after its accumulator, and completes the pass', async () => {
+		const { node, historyConnection, requests } = await startNodeWithDeferredAccumulator();
+		const chain = signedHistoryChain();
+		for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+		finishHistoryReplay(historyConnection);
+
+		// Nothing overtakes a frame that waits: the second snapshot is not even
+		// asked for, and the closing Greetings is not read.
+		expect(requests).toHaveLength(1);
+		expect(node.confirmedTransactionHistoryReady).toBe(false);
+
+		for (let index = 0; index < chain.frames.length; index += 1) {
+			answer(requests[index]);
+			await flush();
+		}
+
+		expect(requests).toHaveLength(3);
+		expect(node.confirmedTransactionHistoryReady).toBe(true);
+		expect(node.getConfirmedTransaction(chain.transactions[2].txId)).not.toBeNull();
+		expect(historyConnection.invalidate).not.toHaveBeenCalled();
+	});
+
+	it('rejects a snapshot whose accumulator does not match, as on the event loop', async () => {
+		const { node, historyConnection, requests } = await startNodeWithDeferredAccumulator();
+		const chain = signedHistoryChain();
+		for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+		finishHistoryReplay(historyConnection);
+
+		requests[0].resolve('ff'.repeat(32));
+		await flush();
+
+		expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+		expect(requests).toHaveLength(1);
+		expect(node.confirmedTransactionHistoryReady).toBe(false);
+	});
+
+	it('fails the pass when the accumulator cannot be computed', async () => {
+		const { node, historyConnection, requests } = await startNodeWithDeferredAccumulator();
+		const chain = signedHistoryChain();
+		historyConnection.emit('message', JSON.stringify(chain.frames[0]));
+
+		requests[0].reject(new HydraTransportError('Hydra accumulator worker exited with code 1'));
+		await flush();
+
+		expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+		expect(node.confirmedTransactionHistoryReady).toBe(false);
+	});
+
+	// The socket the frame came from is gone. Its verdict, either way, belongs
+	// to nobody: a rejection must not tear down the fresh pass, and an
+	// acceptance must not anchor it.
+	it('drops the verdict on a frame whose pass ended while it waited', async () => {
+		const { node, historyConnection, requests } = await startNodeWithDeferredAccumulator();
+		const chain = signedHistoryChain();
+		historyConnection.emit('message', JSON.stringify(chain.frames[0]));
+		historyConnection.emit('message', JSON.stringify(chain.frames[1]));
+		historyConnection.emit('close');
+
+		requests[0].resolve('ff'.repeat(32));
+		await flush();
+
+		expect(historyConnection.invalidate).not.toHaveBeenCalled();
+		// Its queued successor went with the pass.
+		expect(requests).toHaveLength(1);
+
+		// The fresh pass replays from the beginning and completes on its own.
+		historyConnection.emit('message', JSON.stringify(headIsOpen()));
+		for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+		finishHistoryReplay(historyConnection);
+		for (let index = 1; index < 4; index += 1) {
+			answer(requests[index]);
+			await flush();
+		}
+		expect(node.confirmedTransactionHistoryReady).toBe(true);
 	});
 });

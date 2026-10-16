@@ -38,7 +38,6 @@ function x402Chain(overrides: Partial<X402ReadinessInput['chains'][number]> = {}
 		facilitatorUrl: null as string | null,
 		sellingWalletCount: 1,
 		purchasingWalletCount: 0,
-		fundedBudgetCount: 0,
 		...overrides,
 	};
 }
@@ -203,12 +202,11 @@ describe('evaluateX402Readiness', () => {
 		expect(detailOf(rail, 'x402.facilitator')).toContain('configure exactly one');
 	});
 
-	it('stays ready without a purchasing wallet or budget, since paying is optional', () => {
-		const rail = evaluateX402Readiness({ chains: [x402Chain({ purchasingWalletCount: 0, fundedBudgetCount: 0 })] });
+	it('stays ready without a purchasing wallet, since paying is optional', () => {
+		const rail = evaluateX402Readiness({ chains: [x402Chain({ purchasingWalletCount: 0 })] });
 
 		expect(rail.isReady).toBe(true);
 		expect(isComplete(rail, 'x402.purchasing_wallet')).toBe(false);
-		expect(isComplete(rail, 'x402.budget')).toBe(false);
 	});
 
 	it('ignores disabled chains when picking the reported chain', () => {

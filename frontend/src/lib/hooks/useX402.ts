@@ -3,7 +3,6 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { isTestnetEnv } from '@/lib/x402-rail';
 import {
-  getX402Budgets,
   getX402LowBalance,
   getX402Networks,
   getX402NetworksAvailable,
@@ -12,7 +11,6 @@ import {
   getX402SettlementsCount,
   getX402Wallets,
   getX402WalletsBalance,
-  X402Budget,
   X402LowBalanceRule,
   X402AvailableNetwork,
   X402Network,
@@ -52,10 +50,9 @@ export function useX402Networks(options?: {
   const enabled = options?.enabled ?? true;
 
   const query = useQuery({
-    // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
-    // not share one cache entry and race on which onError handler runs, and by env so
-    // switching the top selector refetches the right environment's chains.
-    queryKey: ['x402-networks', silentErrors, allEnvironments ? 'all' : isTestnet],
+    // Keyed by env only. silentErrors must not split the cache: the same chain list
+    // was fetched twice on pages that mount both a silent selector and a toasting tab.
+    queryKey: ['x402-networks', allEnvironments ? 'all' : isTestnet],
     queryFn: async () => {
       const response = await handleApiCall(
         () =>
@@ -102,7 +99,7 @@ export function useAvailableX402Networks(options?: {
   const query = useQuery({
     // Keep this under the shared x402-networks prefix so chain mutations invalidate
     // both the admin projection and this pay-authenticated safe projection.
-    queryKey: ['x402-networks', 'available', silentErrors, allEnvironments ? 'all' : isTestnet],
+    queryKey: ['x402-networks', 'available', allEnvironments ? 'all' : isTestnet],
     queryFn: async () => {
       const response = await handleApiCall(
         () =>
@@ -181,10 +178,10 @@ export function useX402NetworksForSession(options?: {
 
 /**
  * Eagerly loads every managed EVM wallet (paging through /x402/wallets). Used by
- * the chain/budget pickers and setup flows that need the full set to choose
- * from. `enabled` lets form dialogs defer the load until opened. Pass `type` to
- * fetch only Purchasing (budget) or Selling (facilitator) wallets. Read-only
- * labels should use the denormalized address on the network/budget instead.
+ * the chain pickers and setup flows that need the full set to choose from.
+ * `enabled` lets form dialogs defer the load until opened. Pass `type` to
+ * fetch only Purchasing or Selling (facilitator) wallets. Read-only
+ * labels should use the denormalized address on the network instead.
  */
 export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networkId?: string) {
   const { apiClient, authorized, capabilities } = useAppContext();
@@ -283,31 +280,6 @@ export function useX402WalletsPaginated() {
     hasMore: Boolean(query.hasNextPage),
     isFetchingNextPage: query.isFetchingNextPage,
     loadMore,
-    isRefetching: query.isRefetching,
-    refetch: async () => {
-      await query.refetch();
-    },
-  };
-}
-
-export function useX402Budgets() {
-  const { apiClient, authorized } = useAppContext();
-
-  const query = useQuery({
-    queryKey: ['x402-budgets'],
-    queryFn: async () => {
-      const response = await handleApiCall(() => getX402Budgets({ client: apiClient, query: {} }), {
-        errorMessage: 'Failed to fetch budgets',
-      });
-      return response?.data?.data?.Budgets ?? [];
-    },
-    enabled: !!apiClient && authorized,
-    staleTime: 30000,
-  });
-
-  return {
-    budgets: (query.data ?? []) as X402Budget[],
-    isLoading: query.isLoading,
     isRefetching: query.isRefetching,
     refetch: async () => {
       await query.refetch();

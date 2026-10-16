@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { ArrowRight, Wallet, Key, Bot, CheckCircle2, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatNetworkDisplay } from '@/components/setup/setup-helpers';
@@ -23,7 +23,7 @@ export function SuccessScreen({
   ];
 
   return (
-    <Card className="w-full max-w-lg border shadow-xl bg-gradient-to-b from-card to-card/80 overflow-hidden animate-scale-in-bounce">
+    <Card className="relative w-full max-w-lg border shadow-xl bg-gradient-to-b from-card to-card/80 overflow-hidden animate-scale-in-bounce">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-green-500/50 to-transparent" />
       <CardHeader className="text-center pb-4 pt-10">
         <div className="mx-auto mb-6 relative animate-fade-in-up">
@@ -32,12 +32,12 @@ export function SuccessScreen({
             <CheckCircle2 className="h-10 w-10 text-green-600 dark:text-green-500" />
           </div>
         </div>
-        <CardTitle
-          className="text-3xl font-bold animate-fade-in-up animate-delay-75"
+        <h1
+          className="text-balance text-3xl font-bold leading-tight tracking-tight outline-none opacity-0 animate-fade-in-up animate-delay-75"
           style={{ animationFillMode: 'forwards' }}
         >
           You&apos;re all set!
-        </CardTitle>
+        </h1>
         <CardDescription
           className="text-base mt-2 opacity-0 animate-fade-in-up animate-delay-100"
           style={{ animationFillMode: 'forwards' }}

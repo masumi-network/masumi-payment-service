@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Home, Search } from 'lucide-react';
 import Link from 'next/link';
 import MasumiLogo from '@/components/MasumiLogo';
+import { MASUMI_DEV_HUB_URL } from '@/lib/masumi-links';
 
 export default function NotFound() {
   return (
@@ -51,11 +52,7 @@ export default function NotFound() {
                   </Link>
                 </Button>
                 <Button asChild variant="outline" size="lg" className="gap-2">
-                  <Link
-                    href="https://www.masumi.network/dev/masumi"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <Link href={MASUMI_DEV_HUB_URL} target="_blank" rel="noopener noreferrer">
                     <Search className="h-4 w-4" />
                     Browse Documentation
                   </Link>

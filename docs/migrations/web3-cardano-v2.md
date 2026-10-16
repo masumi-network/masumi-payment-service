@@ -47,16 +47,17 @@ Reverting after Migration B requires accepting:
 
 ## Seed behaviour
 
-`prisma/seed.ts` creates one `PaymentSource` per network per Type (V1 + V2 = 2 sources per network). Set `SEED_ONLY_IF_EMPTY=true` for production-safe re-runs — the guard now checks both `apiKey.count()` and `paymentSource.count()` and bails if either is non-empty.
+`prisma/seed.ts` creates **Web3CardanoV2** payment sources by default for each configured network. Set `SEED_ONLY_IF_EMPTY=true` for production-safe re-runs — per-type gating skips a network/type pair when a source of that type already exists, so a V1-only deployment can receive V2 sources on re-seed without duplicating either type.
 
-V2 wallet mnemonics are required via environment variables and the seed will throw if any are missing:
+Legacy **Web3CardanoV1** sources are opt-in: set `SEED_V1_LEGACY=true`. When seeding both V1 and V2 in the same run, supply distinct `PURCHASE_WALLET_V2_*` / `SELLING_WALLET_V2_*` mnemonics so HotWallet vkeys do not collide with the V1 wallets.
 
-- `PURCHASE_WALLET_V2_PREPROD_MNEMONIC`
-- `SELLING_WALLET_V2_PREPROD_MNEMONIC`
-- `PURCHASE_WALLET_V2_MAINNET_MNEMONIC`
-- `SELLING_WALLET_V2_MAINNET_MNEMONIC`
+For a normal new installation, configure:
 
-The seed refuses to brew random V2 mnemonics because contract addresses are derived from wallet identities — a brewed mnemonic would produce a V2 PaymentSource whose deployed contract you don't actually control. V1 retains the brew fallback for backwards compatibility.
+- `PURCHASE_WALLET_PREPROD_MNEMONIC` / `SELLING_WALLET_PREPROD_MNEMONIC` (and mainnet equivalents when mainnet seeding is configured)
+- `BLOCKFROST_API_KEY_PREPROD` (required — see MAS-474 validation)
+- `DATABASE_URL`, `ENCRYPTION_KEY`
+
+Blank wallet mnemonics are treated as missing: the seed brews new phrases and prints each generated mnemonic once after the payment source transaction succeeds. Supplied mnemonics are never logged.
 
 ## Mesh-SDK version policy
 

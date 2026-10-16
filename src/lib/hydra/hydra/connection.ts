@@ -208,6 +208,9 @@ export class Connection extends EventEmitter {
 		websocket.removeAllListeners('message');
 		if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
 			try {
+				// A socket paused for backpressure never reads the peer's close frame,
+				// and lingers until ws's close timeout destroys it.
+				websocket.resume();
 				websocket.close(1011);
 			} catch {
 				// The failed socket is already unusable; generation invalidation is enough.
@@ -283,13 +286,26 @@ export class Connection extends EventEmitter {
 		return this._status === HydraHeadStatus.Connected;
 	}
 
+	/**
+	 * Stop reading frames from the current socket until `resumeReceiving`.
+	 * Backpressure for a consumer that cannot keep up; a replacement socket
+	 * starts reading regardless.
+	 */
+	pauseReceiving(): void {
+		this._websocket?.pause();
+	}
+
+	resumeReceiving(): void {
+		this._websocket?.resume();
+	}
+
 	invalidate(error: Error): void {
 		const websocket = this._websocket;
 		if (!websocket) return;
 		this.handleTransportFailure(error, websocket, this._socketGeneration);
 	}
 
-	send(data: unknown): Promise<void> {
+	send(data: unknown, options: { signal?: AbortSignal; onQueued?: () => void } = {}): Promise<void> {
 		if (this._isManuallyDisconnected || this._isDisconnecting) {
 			return Promise.reject(new HydraTransportError('Hydra websocket is disconnecting; command not sent'));
 		}
@@ -316,6 +332,7 @@ export class Connection extends EventEmitter {
 				if (timers.interval) clearInterval(timers.interval);
 				if (timers.timeout) clearTimeout(timers.timeout);
 				this.removeListener('close', handleClose);
+				options.signal?.removeEventListener('abort', handleAbort);
 			};
 			const settle = (error?: Error) => {
 				if (settled) return;
@@ -333,12 +350,15 @@ export class Connection extends EventEmitter {
 				if (websocket?.readyState !== WebSocket.OPEN) return;
 				try {
 					websocket.send(serializedData);
-					settle();
 				} catch (error) {
 					settle(
 						new HydraTransportError('Hydra websocket rejected the command before it was queued', { cause: error }),
 					);
+					return;
 				}
+				// Record dispatch before promise reactions or deadline handlers can run.
+				options.onQueued?.();
+				settle();
 			};
 			const handleClose = (error: unknown) => {
 				settle(
@@ -348,7 +368,15 @@ export class Connection extends EventEmitter {
 				);
 			};
 
+			const handleAbort = () => {
+				settle(new HydraTransportError('Hydra command was cancelled before it was queued'));
+			};
 			this.on('close', handleClose);
+			options.signal?.addEventListener('abort', handleAbort, { once: true });
+			if (options.signal?.aborted) {
+				handleAbort();
+				return;
+			}
 			trySend();
 			if (settled) return;
 			timers.interval = setInterval(trySend, SEND_RETRY_INTERVAL_MS);
@@ -361,6 +389,8 @@ export class Connection extends EventEmitter {
 
 async function closeWebSocketGracefully(websocket: WebSocket): Promise<void> {
 	if (websocket.readyState === WebSocket.CLOSED) return;
+	// Paused for backpressure, it would not read the close handshake it waits for.
+	websocket.resume();
 
 	await new Promise<void>((resolve) => {
 		let settled = false;

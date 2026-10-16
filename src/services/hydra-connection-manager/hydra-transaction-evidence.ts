@@ -202,7 +202,8 @@ export function parseHydraTransactionEvidence(cborHex: string): HydraTransaction
 						const quantity = assets.get(assetName);
 						if (!quantity) continue;
 						amount.push({
-							unit: `${policyId.to_hex()}${assetName.to_hex()}`,
+							// AssetName.to_hex() includes the CBOR bytestring header; units use raw name bytes.
+							unit: `${policyId.to_hex()}${Buffer.from(assetName.name()).toString('hex')}`,
 							quantity: quantity.to_str(),
 						});
 					}
@@ -282,4 +283,17 @@ export function requireHydraValidityUpperSlot(cborHex: string): bigint {
 		throw new Error('L2 submission requires a valid signed invalid_hereafter slot');
 	}
 	return evidence.validityUpperSlot;
+}
+
+/**
+ * Require the signed body's input references, in the snapshot's `txHash#index`
+ * key form. A durable L2 reservation stores them: release proves an ambiguous
+ * body dead only by finding its inputs unspent after expiry.
+ */
+export function requireHydraInputRefs(cborHex: string): string[] {
+	const evidence = parseHydraTransactionEvidence(cborHex);
+	if (evidence == null || evidence.inputs.length === 0) {
+		throw new Error('L2 submission requires a parseable signed body with inputs');
+	}
+	return evidence.inputs.map((input) => `${input.txHash}#${input.outputIndex}`.toLowerCase());
 }

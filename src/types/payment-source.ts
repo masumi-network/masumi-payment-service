@@ -11,6 +11,7 @@ export {
 	supportedPaymentSourceMetadataSchema,
 	supportedPaymentSourcePricingSchema,
 	supportedPaymentSourcesSchema,
+	unixTimeMsStringSchema,
 	validateSupportedPaymentSourcesOrThrow,
 	type RegistryMetadataPaymentSource,
 	type SupportedPaymentSource,

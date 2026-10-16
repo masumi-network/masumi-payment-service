@@ -19,7 +19,7 @@ import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { convertNetwork } from '@masumi/payment-core/network';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
-import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
+import { isDefinitiveNodeRejection, isStaleInputRejection } from '@masumi/payment-core/submit-error-classifier';
 import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@masumi/payment-core/config';
@@ -963,8 +963,14 @@ export async function batchLatestPaymentEntriesV1() {
 								// transient pre-submit cause (Blockfrost 5xx / transport drop during
 								// build) is not a real failure — requeue to FundsLockingRequested so
 								// the next tick re-batches instead of parking an operator ticket.
+								//
+								// A node rejection for an input the ledger no longer holds is the
+								// same kind of non-failure: the wallet funded an earlier batch and
+								// the UTxO snapshot this build used was stale. Nothing was
+								// broadcast, and the next tick rebuilds from a fresh snapshot.
 								const isRetryableTransient =
-									outcome.status === 'pre-submit-failed' && isTransientPreSubmitError(outcome.error);
+									(outcome.status === 'pre-submit-failed' && isTransientPreSubmitError(outcome.error)) ||
+									(outcome.status === 'submit-rejected' && isStaleInputRejection(outcome.error));
 								const errNote =
 									outcome.status === 'submit-rejected'
 										? 'Batching payments rejected by node: ' + interpretBlockchainError(outcome.error)

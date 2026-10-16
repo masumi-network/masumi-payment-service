@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { ArrowRight, Wallet, Key, Bot, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatNetworkDisplay } from '@/components/setup/setup-helpers';
@@ -29,7 +29,9 @@ export function WelcomeScreen({
             <Sparkles className="h-8 w-8 text-primary" />
           </div>
         </div>
-        <CardTitle className="text-3xl font-bold animate-fade-in-up">Welcome!</CardTitle>
+        <h1 className="text-balance text-3xl font-bold leading-tight tracking-tight outline-none animate-fade-in-up">
+          Welcome!
+        </h1>
         <CardDescription className="text-base mt-2 animate-fade-in-up animate-delay-75">
           Let&apos;s set up your{' '}
           <Badge variant="outline" className="font-medium text-foreground mx-1">
@@ -45,11 +47,10 @@ export function WelcomeScreen({
               key={index}
               className={cn(
                 'flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3',
-                'transition-colors duration-150 hover:bg-muted/50',
                 'opacity-0 animate-slide-in-left',
                 index === 0 && 'animate-delay-100',
-                index === 1 && 'animate-delay-125',
-                index === 2 && 'animate-delay-150',
+                index === 1 && '[animation-delay:200ms]',
+                index === 2 && '[animation-delay:300ms]',
               )}
               style={{ animationFillMode: 'forwards' }}
             >

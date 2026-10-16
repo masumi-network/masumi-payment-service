@@ -6,14 +6,16 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
 }));
 
-const { extractHeadOutputTxId } = await import('./head-output-tx');
+const { extractHeadOutputTxId, extractPendingDecommitRefs } = await import('./head-output-tx');
 
 const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
 const CLOSE_TX = 'f96e9b1375c44ac6865c19682df5043911f15682db436ba27948421d75ccc2f5';
 const OTHER_TX = '8cea6c121fe2cbb5' + 'a'.repeat(48);
 
 function headState(spendableUTxO: Record<string, unknown>): unknown {
-	return { tag: 'Closed', chainState: { spendableUTxO, recordedAt: null } };
+	// The real shape hydra-node emits (2.3.0 and 2.4.1): chainState nests under
+	// `contents`, not at the top level of the head state.
+	return { tag: 'Closed', contents: { chainState: { spendableUTxO, recordedAt: null } } };
 }
 
 /** An output carrying the head's state token, as hydra reports it. */
@@ -21,6 +23,30 @@ function headOutput(): Record<string, unknown> {
 	return {
 		address: 'addr_test1wq2b91a7e6',
 		value: { lovelace: 232498020, [HEAD_ID]: { HydraHeadV1: 1 } },
+	};
+}
+
+/**
+ * The real shape hydra-node's `GET /head` emits while Open: the confirmed
+ * snapshot's `utxoToDecommit` nests under
+ * `contents.coordinatedHeadState.confirmedSnapshot.snapshot`, alongside the
+ * sibling `decommitTx` and version fields that say whether that snapshot's
+ * decommit is still unresolved.
+ */
+function decommitHeadState(
+	utxoToDecommit: unknown,
+	options: { decommitTx?: unknown; version?: unknown; snapshotVersion?: unknown } = {},
+): unknown {
+	const { decommitTx = {}, version = 1, snapshotVersion = 1 } = options;
+	return {
+		tag: 'Open',
+		contents: {
+			coordinatedHeadState: {
+				decommitTx,
+				version,
+				confirmedSnapshot: { snapshot: { version: snapshotVersion, utxoToDecommit } },
+			},
+		},
 	};
 }
 
@@ -111,6 +137,16 @@ describe('extractHeadOutputTxId', () => {
 
 	it('handles an Idle head state, which carries no chain state at all', () => {
 		expect(extractHeadOutputTxId({ tag: 'Idle' }, HEAD_ID)).toBeUndefined();
+		expect(extractHeadOutputTxId({ tag: 'Idle', contents: {} }, HEAD_ID)).toBeUndefined();
+	});
+
+	it('still accepts the flat shape, with chainState at the top level rather than under contents', () => {
+		const state = {
+			tag: 'Closed',
+			chainState: { spendableUTxO: { [`${CLOSE_TX}#0`]: headOutput() }, recordedAt: null },
+		};
+
+		expect(extractHeadOutputTxId(state, HEAD_ID)).toBe(CLOSE_TX);
 	});
 
 	/**
@@ -167,5 +203,97 @@ describe('extractHeadOutputTxId', () => {
 		});
 
 		expect(extractHeadOutputTxId(state, HEAD_ID)).toBe(CLOSE_TX);
+	});
+});
+
+describe('extractPendingDecommitRefs', () => {
+	it('returns the pending decommit output references, lower-cased', () => {
+		const state = decommitHeadState({ [`${CLOSE_TX.toUpperCase()}#0`]: headOutput() });
+
+		expect(extractPendingDecommitRefs(state)).toEqual([`${CLOSE_TX}#0`]);
+	});
+
+	it('returns no pending refs when utxoToDecommit is null', () => {
+		expect(extractPendingDecommitRefs(decommitHeadState(null))).toEqual([]);
+	});
+
+	it('returns no pending refs for an Idle head state, which carries no coordinatedHeadState at all', () => {
+		expect(extractPendingDecommitRefs({ tag: 'Idle' })).toEqual([]);
+		expect(extractPendingDecommitRefs({ tag: 'Idle', contents: {} })).toEqual([]);
+	});
+
+	it('still accepts the flat shape, with coordinatedHeadState at the top level rather than under contents', () => {
+		const state = {
+			tag: 'Open',
+			coordinatedHeadState: {
+				// A held decommitTx, so this is testing the flat-vs-nested shape only —
+				// not also, by omission, the "both signals unreadable" case covered below.
+				decommitTx: {},
+				confirmedSnapshot: { snapshot: { utxoToDecommit: { [`${CLOSE_TX}#0`]: headOutput() } } },
+			},
+		};
+
+		expect(extractPendingDecommitRefs(state)).toEqual([`${CLOSE_TX}#0`]);
+	});
+
+	/**
+	 * The bug this fixes: `utxoToDecommit` stays populated in the LAST
+	 * confirmed snapshot until a NEW snapshot is produced, which only happens
+	 * once another transaction arrives — so it lags a finalized decommit
+	 * indefinitely. `decommitTx: null` plus the chain having moved past the
+	 * snapshot version (`coordinatedHeadState.version` > `snapshot.version`) is
+	 * the live shape once `DecommitFinalized` fires (observed 8 vs 7).
+	 */
+	it('returns no pending refs once decommitTx is cleared and the chain has moved past the snapshot version', () => {
+		const state = decommitHeadState(
+			{ [`${CLOSE_TX}#0`]: headOutput() },
+			{ decommitTx: null, version: 8, snapshotVersion: 7 },
+		);
+
+		expect(extractPendingDecommitRefs(state)).toEqual([]);
+	});
+
+	it('still returns pending refs when decommitTx is null but the chain has not moved past the snapshot version', () => {
+		const state = decommitHeadState(
+			{ [`${CLOSE_TX}#0`]: headOutput() },
+			{ decommitTx: null, version: 7, snapshotVersion: 7 },
+		);
+
+		expect(extractPendingDecommitRefs(state)).toEqual([`${CLOSE_TX}#0`]);
+	});
+
+	it('still returns pending refs while the node holds a decommitTx, even past the snapshot version', () => {
+		const state = decommitHeadState(
+			{ [`${CLOSE_TX}#0`]: headOutput() },
+			{ decommitTx: { cbor: 'deadbeef' }, version: 8, snapshotVersion: 7 },
+		);
+
+		expect(extractPendingDecommitRefs(state)).toEqual([`${CLOSE_TX}#0`]);
+	});
+
+	/**
+	 * The deadlock this guards against: with no decommitTx held AND no readable
+	 * version pair, the old formula defaulted `chainNotPastSnapshot` to `true`
+	 * (fail-closed), so `!decommitTxHeld && !chainNotPastSnapshot` was always
+	 * false and the withdrawal stayed refused forever — even though the same
+	 * "cannot tell" outcome fails OPEN one layer up, in
+	 * `fetchHydraPendingDecommitRefs`'s transport-error catch. Both signals
+	 * unreadable must resolve the same way: no pending refs, logged.
+	 */
+	it('returns no pending refs, and logs, when neither decommitTx nor the version pair can be read', () => {
+		mockWarn.mockClear();
+		const state = {
+			tag: 'Open',
+			contents: {
+				coordinatedHeadState: {
+					// decommitTx omitted entirely: cannot be read as an object.
+					confirmedSnapshot: { snapshot: { utxoToDecommit: { [`${CLOSE_TX}#0`]: headOutput() } } },
+					// version and snapshot.version both omitted: not numbers.
+				},
+			},
+		};
+
+		expect(extractPendingDecommitRefs(state)).toEqual([]);
+		expect(mockWarn).toHaveBeenCalledTimes(1);
 	});
 });

@@ -13,6 +13,7 @@ import {
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
+import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 const settledTerminalStates = [OnChainState.Withdrawn, OnChainState.RefundWithdrawn] as const;
 
@@ -194,6 +195,9 @@ async function assertHydraHeadsCleanupEligible(
 					}
 
 					if (options.disable) {
+						// Disabled for deletion: automatic recovery must not re-enable them.
+						// Dropped before the write, so a recovery running meanwhile finds no mark.
+						for (const headId of uniqueHeadIds) forgetHeadFailedClosed(headId);
 						const disabled = await tx.hydraHead.updateMany({
 							where: {
 								id: { in: [...uniqueHeadIds] },

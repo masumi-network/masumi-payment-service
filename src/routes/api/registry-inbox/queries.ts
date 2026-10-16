@@ -37,6 +37,18 @@ function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationStat
 	return undefined;
 }
 
+// Mirrors parseInboxAgentStatus in frontend/src/pages/inbox-agents.tsx so search matches the displayed label.
+const registrationStateLabels: Partial<Record<RegistrationState, string>> = {
+	[RegistrationState.RegistrationRequested]: 'Pending',
+	[RegistrationState.RegistrationInitiated]: 'Registering',
+	[RegistrationState.RegistrationConfirmed]: 'Registered',
+	[RegistrationState.RegistrationFailed]: 'Registration Failed',
+	[RegistrationState.DeregistrationRequested]: 'Pending',
+	[RegistrationState.DeregistrationInitiated]: 'Deregistering',
+	[RegistrationState.DeregistrationConfirmed]: 'Deregistered',
+	[RegistrationState.DeregistrationFailed]: 'Deregistration Failed',
+};
+
 export async function getInboxRegistryEntriesForQuery(
 	input: InboxRegistryListQueryInput,
 	walletScopeIds: AuthContext['walletScopeIds'],
@@ -51,7 +63,8 @@ export async function getInboxRegistryEntriesForQuery(
 						.replace(/([A-Z])/g, ' $1')
 						.trim()
 						.toLowerCase()
-						.includes(searchLower),
+						.includes(searchLower) ||
+					registrationStateLabels[state]?.toLowerCase().includes(searchLower) === true,
 			)
 		: undefined;
 

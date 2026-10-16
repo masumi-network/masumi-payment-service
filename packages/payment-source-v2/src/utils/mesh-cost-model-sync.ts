@@ -21,6 +21,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { Mutex } from 'async-mutex';
 import {
 	getCachedRawCostModels,
+	withMeshCostModelLock,
 	syncMeshCostModelsFromChain as syncSharedMeshCostModels,
 } from '@/utils/mesh-cost-model-sync';
 
@@ -30,7 +31,7 @@ import {
 // `syncSharedMeshCostModels` fetch is awaited above this lock); without the
 // lock, a second writer could begin its swap while the first writer is still
 // in the middle of validating its next-payload. One module-level mutex is
-// sufficient because mutations are infrequent (5-minute TTL) and short.
+// sufficient because mutations are synchronous and short.
 const replaceMutex = new Mutex();
 
 /**
@@ -59,10 +60,6 @@ function replaceListInPlace(target: number[], next: unknown): boolean {
 	return true;
 }
 
-const TTL_MS = 5 * 60 * 1000;
-type V2SyncMarker = { at: number };
-const lastV2SyncByKey = new Map<string, V2SyncMarker>();
-
 /**
  * Sync the V2 mesh-sdk's bundled Plutus cost-model arrays with chain. Reuses
  * the shared helper's Blockfrost fetch + cache (so V1 + V2 share one
@@ -79,17 +76,15 @@ export async function syncMeshCostModelsFromChainV2(
 	blockfrostApiKey: string,
 	options: { forceRefresh?: boolean } = {},
 ): Promise<unknown> {
+	return await withMeshCostModelLock(blockfrostApiKey, () => syncChainModelsLocked(blockfrostApiKey, options));
+}
+
+async function syncChainModelsLocked(blockfrostApiKey: string, options: { forceRefresh?: boolean }): Promise<unknown> {
 	// First, ensure the shared helper has run for this key — that's what
 	// populates `getCachedRawCostModels(...)`. Side effect: V1 arrays get
 	// patched too. That's harmless (V1 codepaths use them) and avoids a
 	// second Blockfrost roundtrip from the V2 side.
 	const sharedProtocol = await syncSharedMeshCostModels(blockfrostApiKey, options);
-
-	const now = Date.now();
-	const lastV2 = lastV2SyncByKey.get(blockfrostApiKey);
-	if (!options.forceRefresh && lastV2 != null && now - lastV2.at < TTL_MS) {
-		return sharedProtocol;
-	}
 
 	const raw = getCachedRawCostModels(blockfrostApiKey);
 	if (raw == null) {
@@ -116,14 +111,6 @@ export async function syncMeshCostModelsFromChainV2(
 			v2Length: DEFAULT_V2_COST_MODEL_LIST.length,
 			v3Length: DEFAULT_V3_COST_MODEL_LIST.length,
 		});
-
-		// Only record the TTL marker when every list was actually patched. If a
-		// malformed raw payload left any array on its stale/bundled default,
-		// suppressing re-patch for the full TTL would strand V2 tx building on
-		// wrong cost models (PPViewHashesDontMatch) with no retry until expiry.
-		if (v1Patched && v2Patched && v3Patched) {
-			lastV2SyncByKey.set(blockfrostApiKey, { at: now });
-		}
 	});
 	return sharedProtocol;
 }
@@ -149,7 +136,7 @@ export type HeadRawCostModels = {
  * For a real preprod head the head's cost models equal preprod's, so this
  * patches to the same values `syncMeshCostModelsFromChainV2` would. For a local
  * devnet head they are the devnet's. ⚠️ This mutates PROCESS-GLOBAL arrays
- * shared with the L1 build path; callers MUST hold the per-payment-source mesh
+ * shared with the L1 build path; callers MUST hold the global mesh
  * cost-model lock around BOTH this call and the subsequent
  * `txBuilder.complete()` / `wallet.signTx(...)`, exactly as the L1 path does
  * (see `withMeshCostModelLock`). Returns `true` only if at least one language
@@ -157,6 +144,10 @@ export type HeadRawCostModels = {
  * failure rather than silently building against stale defaults).
  */
 export async function syncMeshCostModelsFromHeadV2(raw: HeadRawCostModels): Promise<boolean> {
+	return await withMeshCostModelLock('hydra', () => syncHeadModelsLocked(raw));
+}
+
+async function syncHeadModelsLocked(raw: HeadRawCostModels): Promise<boolean> {
 	return await replaceMutex.runExclusive(() => {
 		const v1Patched = replaceListInPlace(DEFAULT_V1_COST_MODEL_LIST, raw.PlutusV1);
 		const v2Patched = replaceListInPlace(DEFAULT_V2_COST_MODEL_LIST, raw.PlutusV2);
@@ -164,12 +155,6 @@ export async function syncMeshCostModelsFromHeadV2(raw: HeadRawCostModels): Prom
 
 		const anyPatched = v1Patched || v2Patched || v3Patched;
 		if (anyPatched) {
-			// The chain sync's TTL marker now describes arrays that no longer hold
-			// chain values. Left alone, the next L1 build inside the TTL window took
-			// its early return and built against the head's cost models — the exact
-			// drift this module exists to remove, with the same
-			// `PPViewHashesDontMatch` at the end of it.
-			lastV2SyncByKey.clear();
 			logger.info('Synced mesh-sdk Plutus cost models from Hydra head (V2 mesh line)', {
 				v1: v1Patched,
 				v2: v2Patched,

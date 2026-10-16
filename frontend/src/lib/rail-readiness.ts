@@ -27,14 +27,6 @@ export function isCheckComplete(
   return rail?.Checks.find((check) => check.id === id)?.isComplete ?? false;
 }
 
-/** Every listed check complete — used for multi-check setup steps. */
-export function areChecksComplete(
-  rail: RailReadinessRail | null | undefined,
-  ids: RailReadinessCheckId[],
-): boolean {
-  return ids.every((id) => isCheckComplete(rail, id));
-}
-
 /** The backend's explanation for a check, when it offered one. */
 export function checkDetail(
   rail: RailReadinessRail | null | undefined,

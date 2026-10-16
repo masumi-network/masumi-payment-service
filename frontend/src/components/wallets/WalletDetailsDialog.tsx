@@ -6,14 +6,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   getWallet,
-  patchWallet,
   getSwapTransactions,
   postSwapCancel,
   postSwapAcknowledgeTimeout,
   getSwapConfirm,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
+import { handleApiCall } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { isHotWalletType } from '@/lib/wallet-type';
 import { WalletLink } from '@/components/ui/wallet-link';
@@ -28,7 +27,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { fetchAllUtxos } from '@/lib/wallet-balance';
 import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 import {
   extractSwapAcknowledgePayload,
@@ -58,6 +56,7 @@ import {
 import { WalletExportSection } from '@/components/wallets/sections/WalletExportSection';
 import { CollectionAddressSection } from '@/components/wallets/sections/CollectionAddressSection';
 import { FundTransfersSection } from '@/components/wallets/sections/FundTransfersSection';
+import { useCollectionAddressEditor } from '@/components/wallets/useCollectionAddressEditor';
 
 // Re-exported for the many call sites that import these types from this module.
 export type { TokenBalance, WalletWithBalance } from '@/components/wallets/wallet-details-utils';
@@ -94,14 +93,7 @@ export function WalletDetailsDialog({
   );
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [isEditingCollectionAddress, setIsEditingCollectionAddress] = useState(false);
-  const [newCollectionAddress, setNewCollectionAddress] = useState('');
-  // Local echo of a just-saved collection address for immediate UI feedback.
-  // `undefined` means "no local save yet" — fall through to the wallet prop.
-  const [savedCollectionAddress, setSavedCollectionAddress] = useState<string | null | undefined>(
-    undefined,
-  );
-
+  const [isDownloadConfirmOpen, setIsDownloadConfirmOpen] = useState(false);
   const [swapTransactions, setSwapTransactions] = useState<SwapTx[]>([]);
   const [swapTxLoading, setSwapTxLoading] = useState(false);
   const [swapTxCursor, setSwapTxCursor] = useState<string | undefined>(undefined);
@@ -128,6 +120,10 @@ export function WalletDetailsDialog({
 
   const balances = useTokenBalances(wallet);
   const rules = useLowBalanceRules({ wallet, invalidateWalletQueries });
+  const collectionAddressEditor = useCollectionAddressEditor({
+    wallet,
+    invalidateWalletQueries,
+  });
 
   const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {
     setSwapTransactions((prev) => prev.map((tx) => (tx.id === txId ? { ...tx, ...updates } : tx)));
@@ -342,11 +338,12 @@ export function WalletDetailsDialog({
 
   useEffect(() => {
     if (isOpen && wallet) {
-      // Reset states when dialog is opened. Token + rule state reset inside
-      // their hooks (fetchTokenBalances resets at call start; resetForNewWallet
-      // clears rule drafts and the add-rule form).
+      // Reset states when the dialog opens or switches wallet. Token, rule and
+      // collection-address state reset inside their hooks (fetchTokenBalances
+      // resets at call start; each resetForNewWallet clears its own drafts).
       setExportedMnemonic(null);
-      setSavedCollectionAddress(undefined);
+      setIsDownloadConfirmOpen(false);
+      collectionAddressEditor.resetForNewWallet();
       setSwapTransactions([]);
       setSwapTxCursor(undefined);
       setHasMoreSwapTx(true);
@@ -406,6 +403,7 @@ export function WalletDetailsDialog({
   };
 
   const handleDownload = () => {
+    setIsDownloadConfirmOpen(false);
     if (!wallet || !exportedMnemonic) return;
     const data = {
       walletAddress: wallet.walletAddress,
@@ -424,72 +422,11 @@ export function WalletDetailsDialog({
     URL.revokeObjectURL(url);
   };
 
-  const collectionAddress =
-    savedCollectionAddress !== undefined
-      ? savedCollectionAddress
-      : (wallet?.collectionAddress ?? null);
-
-  const handleEditCollectionAddress = () => {
-    setIsEditingCollectionAddress(true);
-    setNewCollectionAddress(collectionAddress || '');
-  };
-
-  const handleSaveCollection = async () => {
-    if (!wallet) return;
-
-    // Validate the address if provided
-    if (newCollectionAddress.trim()) {
-      const validation = validateCardanoAddress(newCollectionAddress.trim(), network);
-      if (!validation.isValid) {
-        toast.error('Invalid collection address: ' + validation.error);
-        return;
-      }
-      let isAddressUnused = false;
-      try {
-        const utxos = await fetchAllUtxos(apiClient, network, newCollectionAddress.trim());
-        isAddressUnused = utxos.length === 0;
-      } catch {
-        isAddressUnused = true;
-      }
-      if (isAddressUnused) {
-        toast.warning(
-          'Collection address has not been used yet, please check if this is the correct address',
-        );
-      }
-    }
-    await handleApiCall(
-      () =>
-        patchWallet({
-          client: apiClient,
-          body: {
-            id: wallet.id,
-            newCollectionAddress: newCollectionAddress.trim() || null,
-          },
-        }),
-      {
-        onSuccess: () => {
-          toast.success('Collection address updated successfully');
-          setIsEditingCollectionAddress(false);
-          setSavedCollectionAddress(newCollectionAddress.trim() || null);
-          void invalidateWalletQueries();
-        },
-        onError: (error: unknown) => {
-          toast.error(extractApiErrorMessage(error, 'Failed to update collection address'));
-        },
-        errorMessage: 'Failed to update collection address',
-      },
-    );
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditingCollectionAddress(false);
-    setNewCollectionAddress('');
-  };
-
   const handleDialogClose = useCallback(() => {
     // Drop the plaintext seed phrase immediately on close so it never
     // lingers in state or paints for the next wallet's dialog.
     setExportedMnemonic(null);
+    setIsDownloadConfirmOpen(false);
     setSelectedWalletForSwap(null);
     setSelectedWalletForTopup(null);
     rules.setPendingDeleteRule(null);
@@ -539,7 +476,10 @@ export function WalletDetailsDialog({
           size="md"
           variant={isChild ? 'slide-from-right' : 'default'}
           isPushedBack={
-            !!selectedWalletForTopup || !!selectedWalletForSwap || !!rules.pendingDeleteRule
+            !!selectedWalletForTopup ||
+            !!selectedWalletForSwap ||
+            !!rules.pendingDeleteRule ||
+            isDownloadConfirmOpen
           }
           hideOverlay={isChild}
           onBack={isChild ? handleDialogClose : undefined}
@@ -707,7 +647,7 @@ export function WalletDetailsDialog({
                 exportedMnemonic={exportedMnemonic}
                 onClose={() => setExportedMnemonic(null)}
                 onCopyMnemonic={handleCopyMnemonic}
-                onDownload={handleDownload}
+                onDownload={() => setIsDownloadConfirmOpen(true)}
               />
             )}
 
@@ -716,13 +656,13 @@ export function WalletDetailsDialog({
               <CollectionAddressSection
                 walletType={wallet.type}
                 network={network}
-                collectionAddress={collectionAddress}
-                isEditing={isEditingCollectionAddress}
-                newCollectionAddress={newCollectionAddress}
-                onNewCollectionAddressChange={setNewCollectionAddress}
-                onSave={handleSaveCollection}
-                onCancelEdit={handleCancelEdit}
-                onStartEdit={handleEditCollectionAddress}
+                collectionAddress={collectionAddressEditor.collectionAddress}
+                isEditing={collectionAddressEditor.isEditing}
+                newCollectionAddress={collectionAddressEditor.draft}
+                onNewCollectionAddressChange={collectionAddressEditor.setDraft}
+                onSave={collectionAddressEditor.save}
+                onCancelEdit={collectionAddressEditor.cancelEdit}
+                onStartEdit={collectionAddressEditor.startEdit}
               />
             )}
           </div>
@@ -747,6 +687,16 @@ export function WalletDetailsDialog({
         isLoading={
           rules.pendingDeleteRule != null && rules.mutatingRuleIds.has(rules.pendingDeleteRule.id)
         }
+      />
+
+      <ConfirmDialog
+        open={isDownloadConfirmOpen}
+        onClose={() => setIsDownloadConfirmOpen(false)}
+        elevatedGrandchildStack={elevatedChildStack}
+        title="Download seed phrase file?"
+        description="This saves the wallet's seed phrase as an unencrypted .json file. Anyone with the file can spend this wallet's funds. Continue only if you will store it securely."
+        confirmLabel="Download"
+        onConfirm={handleDownload}
       />
 
       <SwapDialog

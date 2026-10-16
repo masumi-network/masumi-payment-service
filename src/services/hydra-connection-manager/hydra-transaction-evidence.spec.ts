@@ -17,6 +17,8 @@ import {
 	ScriptHash,
 	Transaction,
 	TransactionBody,
+	TransactionHash,
+	TransactionInput,
 	TransactionInputs,
 	TransactionOutput,
 	TransactionOutputs,
@@ -31,6 +33,7 @@ import {
 	hydraValidityLowerBoundTimeMs,
 	hydraValidityUpperBoundTimeMs,
 	parseHydraTransactionEvidence,
+	requireHydraInputRefs,
 } from './hydra-transaction-evidence';
 
 describe('canonical Hydra values', () => {
@@ -72,6 +75,28 @@ function transactionHash(body: TransactionBody) {
 }
 
 describe('parseHydraTransactionEvidence', () => {
+	it.each(['', '0014df105553444d', '00' + 'ab'.repeat(22), 'ab'.repeat(24), 'ab'.repeat(32)])(
+		'preserves raw token name bytes %s without a CBOR length prefix',
+		(nameHex) => {
+			const policyHex = 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad';
+			const assets = Assets.new();
+			assets.insert(AssetName.new(Buffer.from(nameHex, 'hex')), BigNum.from_str('900000'));
+			const multiAsset = MultiAsset.new();
+			multiAsset.insert(ScriptHash.from_hex(policyHex), assets);
+			const outputs = TransactionOutputs.new();
+			outputs.add(TransactionOutput.new(makeAddress(1), Value.new_with_assets(BigNum.from_str('4460850'), multiAsset)));
+			const transaction = Transaction.new(
+				TransactionBody.new(TransactionInputs.new(), outputs, BigNum.from_str('0')),
+				TransactionWitnessSet.new(),
+			);
+			const evidence = parseHydraTransactionEvidence(transaction.to_hex());
+			expect(evidence?.outputs[0].amount).toEqual([
+				{ unit: 'lovelace', quantity: '4460850' },
+				{ unit: policyHex + nameHex, quantity: '900000' },
+			]);
+		},
+	);
+
 	it('extracts immutable output index, address, amounts, and inline datum CBOR', () => {
 		const outputs = TransactionOutputs.new();
 		outputs.add(TransactionOutput.new(makeAddress(1), Value.new(BigNum.from_str('2000000'))));
@@ -102,7 +127,7 @@ describe('parseHydraTransactionEvidence', () => {
 			address: contractAddress.to_bech32(),
 			amount: [
 				{ unit: 'lovelace', quantity: '10000000' },
-				{ unit: `${policyId.to_hex()}${assetName.to_hex()}`, quantity: '42' },
+				{ unit: `${policyId.to_hex()}aabb`, quantity: '42' },
 			],
 			plutusData: Buffer.from(datum.to_bytes()).toString('hex'),
 		});
@@ -218,5 +243,31 @@ describe('parseHydraTransactionEvidence', () => {
 		const transaction = Transaction.new(body, witnessSet);
 
 		expect(parseHydraTransactionEvidence(Buffer.from(transaction.to_bytes()).toString('hex'))).toBeNull();
+	});
+});
+
+describe('requireHydraInputRefs', () => {
+	it('returns each signed body input as the lowercase snapshot key', () => {
+		const inputs = TransactionInputs.new();
+		inputs.add(TransactionInput.new(TransactionHash.from_hex('AB'.repeat(32)), 0));
+		inputs.add(TransactionInput.new(TransactionHash.from_hex('cd'.repeat(32)), 3));
+		const body = TransactionBody.new(inputs, TransactionOutputs.new(), BigNum.from_str('0'));
+		const transaction = Transaction.new(body, TransactionWitnessSet.new());
+
+		expect([...requireHydraInputRefs(transaction.to_hex())].sort()).toEqual([
+			`${'ab'.repeat(32)}#0`,
+			`${'cd'.repeat(32)}#3`,
+		]);
+	});
+
+	it('throws for a body without inputs', () => {
+		const body = TransactionBody.new(TransactionInputs.new(), TransactionOutputs.new(), BigNum.from_str('0'));
+		const transaction = Transaction.new(body, TransactionWitnessSet.new());
+
+		expect(() => requireHydraInputRefs(transaction.to_hex())).toThrow('parseable signed body with inputs');
+	});
+
+	it('throws for unparseable CBOR', () => {
+		expect(() => requireHydraInputRefs('not-cbor')).toThrow('parseable signed body with inputs');
 	});
 });

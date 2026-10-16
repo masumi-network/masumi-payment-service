@@ -1,9 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
 import {
+	coverAssetForCarve,
 	coverLovelace,
 	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
 	isAlreadyCarved,
+	planLovelaceWithdrawal,
 	requiredChangeLovelace,
 	selectDecommittableUtxos,
 	topUpCarveInputs,
@@ -91,23 +93,39 @@ describe('selectDecommittableUtxos', () => {
 		expect(result.excluded.get(`${'a'.repeat(64)}#0`)).toContain('deposit');
 	});
 
-	// Anything with a datum is part of an arrangement rather than plain funds.
-	// Taking it out would remove it from whatever depends on it while leaving
-	// that thing looking intact.
-	it('refuses UTxOs carrying a datum or a script', () => {
+	// A reference script is something other transactions point at; taking it out
+	// of the head would break them while leaving them looking intact.
+	it('refuses UTxOs carrying a reference script', () => {
 		const result = selectDecommittableUtxos({
-			utxos: [
-				utxo('a'.repeat(64), 20_000_000n, { dataHash: 'd'.repeat(64) }),
-				utxo('b'.repeat(64), 20_000_000n, { scriptRef: 'ref' }),
-				utxo('c'.repeat(64), 20_000_000n),
-			],
+			utxos: [utxo('b'.repeat(64), 20_000_000n, { scriptRef: 'ref' }), utxo('c'.repeat(64), 20_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
 			drain: true,
 		});
 
 		expect(result.eligible).toHaveLength(1);
 		expect(result.eligible[0]!.input.txHash).toBe('c'.repeat(64));
-		expect(result.excluded.get(`${'a'.repeat(64)}#0`)).toContain('datum');
+		expect(result.excluded.get(`${'b'.repeat(64)}#0`)).toContain('reference script');
+	});
+
+	// The reported refusal: V2 escrow payouts tag every collection output with an
+	// inline datum, so all USDM the wallet earned in the head read as ineligible.
+	// A datum at the participant's own key address locks nothing.
+	it('accepts escrow payouts that carry an inline datum tag', () => {
+		const payout = utxo('a'.repeat(64), 2_000_000n, {
+			amount: [
+				{ unit: 'lovelace', quantity: '2000000' },
+				{ unit: 'cc'.repeat(28) + '5553444d', quantity: '20000000' },
+			],
+			plutusData: 'd8799f5820' + 'ab'.repeat(32) + '00ff',
+		});
+		const result = selectDecommittableUtxos({
+			utxos: [payout, utxo('b'.repeat(64), 20_000_000n, { dataHash: 'd'.repeat(64) })],
+			pendingIncrementRefs: NO_PENDING,
+			drain: true,
+		});
+
+		expect(result.eligible).toHaveLength(2);
+		expect(result.excluded.size).toBe(0);
 	});
 
 	it('reports nothing eligible for an empty wallet', () => {
@@ -115,6 +133,16 @@ describe('selectDecommittableUtxos', () => {
 
 		expect(result.eligible).toHaveLength(0);
 		expect(result.eligibleLovelace).toBe(0n);
+	});
+
+	it('names the UTxO it held back', () => {
+		const result = selectDecommittableUtxos({
+			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 6_000_000n)],
+			pendingIncrementRefs: NO_PENDING,
+			drain: false,
+		});
+
+		expect(result.reserved?.input.txHash).toBe('b'.repeat(64));
 	});
 
 	it('names the reserve at the amount the collateral service actually needs', () => {
@@ -193,6 +221,50 @@ describe('isAlreadyCarved', () => {
 
 	it('refuses an empty set', () => {
 		expect(isAlreadyCarved([], TOKEN, 1000n, CARRIER)).toBe(false);
+	});
+});
+
+describe('coverAssetForCarve', () => {
+	const TOKEN = 'cc'.repeat(28) + '7444';
+
+	function tokenUtxo(txHash: string, lovelace: bigint, quantity: bigint): UTxO {
+		return utxo(txHash, lovelace, {
+			amount: [
+				{ unit: 'lovelace', quantity: lovelace.toString() },
+				{ unit: TOKEN, quantity: quantity.toString() },
+			],
+		});
+	}
+
+	it('covers from eligible UTxOs and leaves the reserve alone when it can', () => {
+		const holder = tokenUtxo('holder', 2_000_000n, 30n);
+		const reserve = tokenUtxo('reserve', 10_000_000n, 30n);
+
+		const result = coverAssetForCarve({ eligible: [holder], reserved: reserve, unit: TOKEN, amount: 20n });
+
+		expect(result).toEqual({ inputs: [holder], borrowsReserve: false });
+	});
+
+	// Every UTxO big enough to be collateral holds the token, so without this the
+	// token could only leave the head by draining it.
+	it('borrows the reserve when only it holds enough of the asset', () => {
+		const reserve = tokenUtxo('reserve', 10_000_000n, 20_000_000n);
+
+		const result = coverAssetForCarve({
+			eligible: [utxo('plain', 3_000_000n)],
+			reserved: reserve,
+			unit: TOKEN,
+			amount: 20_000_000n,
+		});
+
+		expect(result).toEqual({ inputs: [reserve], borrowsReserve: true });
+	});
+
+	it('returns null when even the reserve cannot reach the amount', () => {
+		const reserve = tokenUtxo('reserve', 10_000_000n, 5n);
+
+		expect(coverAssetForCarve({ eligible: [], reserved: reserve, unit: TOKEN, amount: 20n })).toBeNull();
+		expect(coverAssetForCarve({ eligible: [], reserved: null, unit: TOKEN, amount: 20n })).toBeNull();
 	});
 });
 
@@ -336,5 +408,73 @@ describe('requiredChangeLovelace', () => {
 				perAssetLovelace: PER_ASSET,
 			}),
 		).toBe(BASE + PER_ASSET);
+	});
+});
+
+describe('planLovelaceWithdrawal', () => {
+	const TOKEN = `${'c'.repeat(56)}746f6b656e`;
+	const tokenUtxo = (txHash: string, lovelace: bigint) =>
+		utxo(txHash, lovelace, {
+			amount: [
+				{ unit: 'lovelace', quantity: lovelace.toString() },
+				{ unit: TOKEN, quantity: '1' },
+			],
+		});
+	const plan = (eligible: UTxO[], amount: bigint) =>
+		planLovelaceWithdrawal({ eligible, amount, baseChangeLovelace: 2_000_000n, perAssetChangeLovelace: 500_000n });
+
+	it('takes an exact pure-ADA match whole', () => {
+		const exact = utxo('a'.repeat(64), 10_000_000n);
+		expect(plan([utxo('b'.repeat(64), 50_000_000n), exact], 10_000_000n)).toEqual({ kind: 'whole', inputs: [exact] });
+	});
+
+	it('takes pure-ADA inputs whole when they sum to the amount', () => {
+		const result = plan([utxo('a'.repeat(64), 6_000_000n), utxo('b'.repeat(64), 4_000_000n)], 10_000_000n);
+		expect(result.kind).toBe('whole');
+	});
+
+	// The audit finding: a token-bearing UTxO completed the lovelace sum and the
+	// whole-input shortcut carried its token out on an amount-only request.
+	it('never takes a token-bearing UTxO whole, even when the sum is exact', () => {
+		const withToken = tokenUtxo('a'.repeat(64), 6_000_000n);
+		const pure = utxo('b'.repeat(64), 4_000_000n);
+		const spare = utxo('d'.repeat(64), 5_000_000n);
+		const result = plan([withToken, pure, spare], 10_000_000n);
+		expect(result.kind).toBe('split');
+		if (result.kind !== 'split') return;
+		const covered = result.inputs.reduce((sum, input) => sum + BigInt(input.output.amount[0]!.quantity), 0n);
+		// Room for the amount plus a change output that keeps the token.
+		expect(covered).toBeGreaterThanOrEqual(10_000_000n + 2_500_000n);
+	});
+
+	it('refuses when no change can keep the token', () => {
+		const result = plan([tokenUtxo('a'.repeat(64), 6_000_000n), utxo('b'.repeat(64), 4_000_000n)], 10_000_000n);
+		expect(result).toEqual({ kind: 'remainder-too-small', remainder: 0n, coverHoldsAssets: true });
+	});
+
+	// A borrowed UTxO's own token also lands on the change, so its floor grows.
+	it('re-sizes the change floor for assets on borrowed inputs', () => {
+		const OTHER = `${'e'.repeat(56)}6f74686572`;
+		const withToken = tokenUtxo('a'.repeat(64), 10_000_000n);
+		const borrowedUtxo = (txHash: string) =>
+			utxo(txHash, 1_000_000n, {
+				amount: [
+					{ unit: 'lovelace', quantity: '1000000' },
+					{ unit: OTHER, quantity: '1' },
+				],
+			});
+		// Sized for one asset, pure ADA first: 10 + 1.6 + 1 = 12.6 ADA, which
+		// covers 10 + 2.5 but not 10 + 3 once the borrowed asset joins the change.
+		const spare = utxo('d'.repeat(64), 1_600_000n);
+		const result = plan([withToken, spare, borrowedUtxo('b'.repeat(64)), borrowedUtxo('f'.repeat(64))], 10_000_000n);
+		expect(result.kind).toBe('split');
+		if (result.kind !== 'split') return;
+		const covered = result.inputs.reduce((sum, input) => sum + BigInt(input.output.amount[0]!.quantity), 0n);
+		// Two assets stay behind: 2 ADA base plus 0.5 ADA each.
+		expect(covered).toBeGreaterThanOrEqual(10_000_000n + 3_000_000n);
+	});
+
+	it('reports a short balance', () => {
+		expect(plan([utxo('a'.repeat(64), 4_000_000n)], 10_000_000n)).toEqual({ kind: 'insufficient' });
 	});
 });

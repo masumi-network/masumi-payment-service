@@ -6,9 +6,15 @@
  * datum shape — are unit-testable without the side-effecting wallet / provider /
  * prisma machinery around them.
  */
+import { getOutputMinLovelace } from '@meshsdk/core';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { createTxWindow, type TxWindow } from '@/services/shared/tx-window';
+import { Network, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
+import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
+import { convertNetwork } from '@/utils/converter/network-convert';
+import { L2_RESERVATION_EXPIRY_GRACE_MS } from '../../hydra-reconcile/l2-reservation-recovery';
 import type { V2DatumInput } from '../../../datum-builder';
 
 /** Request fields the L2-lock datum reads (narrowed from the Prisma payload). */
@@ -204,6 +210,8 @@ export interface L2FundingUtxo {
 		address: string;
 		amount: Array<{ unit: string; quantity: string }>;
 		plutusData?: string | null;
+		scriptRef?: string | null;
+		scriptHash?: string | null;
 	};
 }
 
@@ -228,8 +236,14 @@ const amountOfUnit = (u: L2FundingUtxo, unit: string): bigint =>
  * cannot answer, so `complete()` would hang. Here we hand mesh fully-specified
  * inputs and let it balance the (possibly multi-asset) change.
  *
- * Non-script UTxOs only — a UTxO carrying plutusData is an escrow output, not
- * spendable buyer funds. Largest-ADA first so the fewest inputs cover the need.
+ * The caller passes only UTxOs at the buyer's own key address, so escrow
+ * outputs (which sit at the script address) never reach this function. A datum
+ * at a key address locks nothing, and V2 escrow payouts and refunds carry one on
+ * purpose, so datum UTxOs are spent like any other. Skipping them hid most of a
+ * buyer's in-head funds once payouts arrived. A UTxO marked with a reference
+ * script is left alone, the same rule the withdrawal applies. Note that the
+ * Hydra snapshot codec does not map reference scripts today, so on the live path
+ * that rule sees none. Largest-ADA first so the fewest inputs cover the need.
  * Throws (with the per-unit shortfall) when the wallet cannot cover the target.
  */
 export function selectInHeadFundingUtxos<T extends L2FundingUtxo>(
@@ -245,11 +259,13 @@ export function selectInHeadFundingUtxos<T extends L2FundingUtxo>(
 	computeChangeMinUtxo?: (changeAssets: Array<{ unit: string; quantity: bigint }>) => bigint,
 ): T[] {
 	const spendable = walletUtxos
-		.filter((u) => !u.output.plutusData)
+		.filter((u) => u.output.scriptRef == null && u.output.scriptHash == null)
 		.slice()
 		.sort((a, b) => Number(amountOfUnit(b, 'lovelace') - amountOfUnit(a, 'lovelace')));
 	if (spendable.length === 0) {
-		throw new Error('buyer wallet has no spendable (non-script) in-head UTxOs to fund the lock');
+		throw new Error(
+			'buyer wallet has no spendable in-head UTxOs to fund the lock (reference-script UTxOs are never spent)',
+		);
 	}
 
 	const required = new Map<string, bigint>();
@@ -374,4 +390,49 @@ export function buildL2LockDatumParams(args: {
 		newCooldownTimeBuyer: BigInt(0),
 		state: SmartContractState.FundsLocked,
 	};
+}
+
+/** Count actual policy, name and quantity bytes rather than a per-token estimate. */
+export function inHeadChangeMinimum(
+	address: string,
+	assets: Array<{ unit: string; quantity: bigint }>,
+	coinsPerUtxoSize: number,
+): bigint {
+	return getOutputMinLovelace(
+		{ address, amount: assets.map((asset) => ({ unit: asset.unit, quantity: asset.quantity.toString() })) },
+		coinsPerUtxoSize,
+	);
+}
+
+/**
+ * Whether the head wallet is held by an L2 body the head clock has passed the
+ * validity of. Such a body can no longer confirm, and the wallet stays held
+ * until reconciliation proves it dead, which an idle head can take a long time
+ * to do. Routing treats that head as not ready. Unknown clock or slot config:
+ * not held, so the ordinary busy-wallet wait applies.
+ */
+export function isWalletHeldByExpiredL2Body(params: {
+	pendingTransaction: {
+		layer: TransactionLayer;
+		status: TransactionStatus;
+		invalidHereafterSlot: bigint | null;
+	} | null;
+	headClock: { chainTimeMs: number } | undefined;
+	network: Network;
+}): boolean {
+	const { pendingTransaction, headClock, network } = params;
+	if (
+		pendingTransaction == null ||
+		pendingTransaction.layer !== TransactionLayer.L2 ||
+		pendingTransaction.status !== TransactionStatus.Pending ||
+		headClock == null ||
+		!Number.isSafeInteger(headClock.chainTimeMs)
+	) {
+		return false;
+	}
+	const validUntilMs = hydraValidityUpperBoundTimeMs(
+		{ validityUpperSlot: pendingTransaction.invalidHereafterSlot },
+		resolveHydraL2EvidenceSlotConfig(convertNetwork(network)),
+	);
+	return validUntilMs != null && BigInt(headClock.chainTimeMs) > validUntilMs + BigInt(L2_RESERVATION_EXPIRY_GRACE_MS);
 }

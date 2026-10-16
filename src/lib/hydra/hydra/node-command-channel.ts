@@ -35,11 +35,15 @@ export function sendHydraCommandAndWait(
 	return new Promise<void>((resolve, reject) => {
 		let isSettled = false;
 		let wasQueued = false;
+		const pendingSend = new AbortController();
 		let retryInterval: ReturnType<typeof setInterval> | undefined;
 
 		const cleanup = () => {
 			clearTimeout(timeout);
 			if (retryInterval) clearInterval(retryInterval);
+			// A command deadline can precede Connection.send's open deadline. Stop
+			// that pending send before releasing a never-dispatched reservation.
+			pendingSend.abort();
 			connection.removeListener('message', handleMessage);
 			connection.removeListener('close', handleClose);
 		};
@@ -98,7 +102,12 @@ export function sendHydraCommandAndWait(
 		};
 		const send = () => {
 			void connection
-				.send(payload)
+				.send(payload, {
+					signal: pendingSend.signal,
+					onQueued: () => {
+						wasQueued = true;
+					},
+				})
 				.then(() => {
 					wasQueued = true;
 				})

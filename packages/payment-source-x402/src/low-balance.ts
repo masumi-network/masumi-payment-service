@@ -200,7 +200,7 @@ export async function evaluateX402LowBalanceRules(): Promise<X402LowBalanceAlert
 		const network = networkById.get(caip2Network);
 		if (network == null) continue; // network disabled/removed since the rule was set
 		try {
-			const client = buildPublicClient(network);
+			const client = await buildPublicClient(network);
 			// Verify the RPC serves the chain it claims before trusting its balance, so a
 			// misconfigured RPC cannot raise (or suppress) alerts off the wrong chain.
 			await assertRpcServesDeclaredChain(client, caip2Network);

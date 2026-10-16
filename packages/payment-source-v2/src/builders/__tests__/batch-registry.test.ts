@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
+import { withCostModelLock } from '@/utils/mesh-cost-model-sync/build-lock';
 
 /**
  * Regression coverage for the V2 batch registry mint/burn builders.
@@ -30,6 +31,7 @@ type MintLeg = {
 };
 
 const builtBuilders: FakeMeshTxBuilder[] = [];
+let beforeComplete: (() => Promise<void>) | undefined;
 
 class FakeMeshTxBuilder {
 	addingPlutusMint = false;
@@ -138,6 +140,7 @@ class FakeMeshTxBuilder {
 	}
 
 	async complete() {
+		await beforeComplete?.();
 		// mesh flushes the last pending leg at complete()
 		if (this.mintItem) {
 			this.queueMint();
@@ -152,6 +155,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 
 jest.unstable_mockModule('@/utils/mesh-cost-model-sync', () => ({
 	getCachedChainProtocolParameters: () => null,
+	withMeshCostModelLock: async <T>(_key: string, operation: () => Promise<T>) => await withCostModelLock(operation),
 }));
 
 jest.unstable_mockModule('../../utils/mesh-cost-model-sync', () => ({
@@ -194,6 +198,7 @@ const fetcher = {
 
 beforeEach(() => {
 	builtBuilders.length = 0;
+	beforeComplete = undefined;
 });
 
 describe('generateRegistryBatchMintTransaction', () => {
@@ -418,4 +423,79 @@ describe('generateRegistryBatchUpdateTransactionAutomaticFees', () => {
 			),
 		).rejects.toThrow(/overlaps with a spending input/);
 	});
+});
+
+it.each(['mint', 'burn', 'update'] as const)('holds the model lock through %s completion', async (kind) => {
+	let entered!: () => void;
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		entered = resolve;
+	});
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	beforeComplete = async () => {
+		beforeComplete = undefined;
+		entered();
+		await gate;
+	};
+	const oldName = 'aa';
+	const assetUtxo = utxo('1111', 0, '2000000', [{ unit: POLICY_ID + oldName, quantity: '1' }]);
+	const collateral = utxo('cccc', 0);
+	const wallet = [collateral, utxo('dddd', 0)];
+	const provider = {
+		fetchProtocolParameters: async () => PROTOCOL_PARAMS,
+		evaluateTx: async () => [{ tag: 'MINT', index: 0, budget: { mem: 1_000_000, steps: 500_000_000 } }],
+	} as never;
+	const common = {
+		recipientWalletAddress: 'addr_test1recipient',
+		fundingLovelace: '2000000',
+		metadata: { name: 'Agent' },
+	};
+	const build =
+		kind === 'mint'
+			? generateRegistryBatchMintTransaction(
+					provider,
+					'preprod',
+					SCRIPT,
+					'addr_test1holder',
+					POLICY_ID,
+					[{ ...common, assetName: oldName, firstUtxo: assetUtxo }],
+					collateral,
+					wallet,
+				)
+			: kind === 'burn'
+				? generateRegistryBatchDeregisterTransactionAutomaticFees(
+						provider,
+						'preprod',
+						SCRIPT,
+						'addr_test1holder',
+						POLICY_ID,
+						[{ assetName: oldName, assetUtxo }],
+						collateral,
+						wallet,
+					)
+				: generateRegistryBatchUpdateTransactionAutomaticFees(
+						provider,
+						'preprod',
+						SCRIPT,
+						'addr_test1holder',
+						POLICY_ID,
+						[{ ...common, oldAssetName: oldName, newAssetName: 'bb', assetUtxo }],
+						collateral,
+						wallet,
+					);
+	await held;
+	let competingSyncEntered = false;
+	const competingSync = withCostModelLock(async () => {
+		competingSyncEntered = true;
+	});
+	try {
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(competingSyncEntered).toBe(false);
+	} finally {
+		release();
+		await Promise.all([build, competingSync]);
+	}
+	expect(competingSyncEntered).toBe(true);
 });

@@ -51,12 +51,7 @@ export async function loadX402ReadinessInput(network: Network): Promise<X402Read
 			facilitatorUrl: true,
 			Wallets: {
 				where: { deletedAt: null },
-				select: {
-					type: true,
-					// A budget only enables spending while it is enabled AND still has
-					// funds left; a spent-out grant is not a usable budget.
-					_count: { select: { Budgets: { where: { enabled: true, remainingAmount: { gt: 0 } } } } },
-				},
+				select: { type: true },
 			},
 		},
 	});
@@ -70,11 +65,6 @@ export async function loadX402ReadinessInput(network: Network): Promise<X402Read
 			facilitatorUrl: chain.facilitatorUrl,
 			sellingWalletCount: chain.Wallets.filter((wallet) => wallet.type === X402EvmWalletType.Selling).length,
 			purchasingWalletCount: chain.Wallets.filter((wallet) => wallet.type === X402EvmWalletType.Purchasing).length,
-			// Budgets are attached to purchasing wallets, so only count those.
-			fundedBudgetCount: chain.Wallets.filter((wallet) => wallet.type === X402EvmWalletType.Purchasing).reduce(
-				(total, wallet) => total + wallet._count.Budgets,
-				0,
-			),
 		})),
 	};
 }

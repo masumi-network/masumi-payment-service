@@ -24,7 +24,11 @@ import {
 import { resolveTxHash } from '@meshsdk/core';
 import { describe, expect, it, jest } from '@jest/globals';
 
-import { DEFAULT_HYDRA_HEAD_SCRIPT_HASH, HYDRA_HEAD_V2_ASSET_NAME_HEX } from './head-init-validation';
+import {
+	DEFAULT_HYDRA_HEAD_SCRIPT_HASH,
+	HYDRA_HEAD_V2_ASSET_NAME_HEX,
+	LEGACY_HYDRA_HEAD_SCRIPT_HASHES,
+} from './head-init-validation';
 import {
 	HydraFanoutValidationError,
 	verifyHydraFanoutOnChain,
@@ -39,12 +43,13 @@ const HEAD_INPUT_HASH = '33'.repeat(32);
 const STATE_UNIT = `${HEAD_ID}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
 const LOCAL_UNIT = `${HEAD_ID}${LOCAL_PARTICIPANT}`;
 const REMOTE_UNIT = `${HEAD_ID}${REMOTE_PARTICIPANT}`;
-const HEAD_ADDRESS = EnterpriseAddress.new(
-	0,
-	Credential.from_scripthash(ScriptHash.from_hex(DEFAULT_HYDRA_HEAD_SCRIPT_HASH)),
-)
-	.to_address()
-	.to_bech32();
+function headAddressForScriptHash(scriptHash: string): string {
+	return EnterpriseAddress.new(0, Credential.from_scripthash(ScriptHash.from_hex(scriptHash)))
+		.to_address()
+		.to_bech32();
+}
+
+const HEAD_ADDRESS = headAddressForScriptHash(DEFAULT_HYDRA_HEAD_SCRIPT_HASH);
 const OUTPUT_ADDRESS = EnterpriseAddress.new(0, Credential.from_keyhash(Ed25519KeyHash.from_hex('44'.repeat(28))))
 	.to_address()
 	.to_bech32();
@@ -368,6 +373,23 @@ describe('verifyHydraFanoutOnChain', () => {
 		const other = buildFanout({ fee: '200001' });
 		jest.mocked(value.observer.txsCbor).mockResolvedValue({ cbor: other.cbor });
 		await expect(verify(value)).rejects.toThrow('CBOR hash');
+	});
+
+	it('accepts a legacy 2.3.0 head script hash after the current pin moves on', async () => {
+		const legacyHash = LEGACY_HYDRA_HEAD_SCRIPT_HASHES[0];
+		if (!legacyHash) throw new Error('no legacy head script hash configured');
+		expect(legacyHash).not.toBe(DEFAULT_HYDRA_HEAD_SCRIPT_HASH);
+		const value = fixture({ headAddress: headAddressForScriptHash(legacyHash) });
+		await expect(verify(value)).resolves.toEqual([
+			expect.objectContaining({ txHash: value.fanout.txHash, validContract: true }),
+		]);
+	});
+
+	it('rejects a head script hash outside the known current+legacy set', async () => {
+		const foreignHash = 'ff'.repeat(28);
+		await expect(verify(fixture({ headAddress: headAddressForScriptHash(foreignHash) }))).rejects.toThrow(
+			'official vHead',
+		);
 	});
 
 	it('rejects a missing or token-substituted official vHead input', async () => {

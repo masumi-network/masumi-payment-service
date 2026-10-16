@@ -44,6 +44,11 @@ const mockGetVerifiedFanoutReferences = jest.fn<(_snapshotNumber: number) => unk
 const mockGetVerifiedFanoutReference = jest.fn<(_reference: string, _snapshotNumber: number) => unknown>();
 const mockVerifyHydraFanout = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockFlushHeadStatus = jest.fn<(_hydraHeadId: string) => Promise<void>>();
+const mockRetainMemoHeads = jest.fn<(_hydraHeadIds: string[]) => void>();
+const mockIsLivePassDue = jest.fn<(_hydraHeadId: string, _intervalMs: number) => boolean>();
+const mockRecordLivePass = jest.fn<(_hydraHeadId: string, _isClean: boolean) => void>();
+const mockFindNothingToApply =
+	jest.fn<(_paymentSourceId: string, _candidates: Array<{ blockchainIdentifier: string }>) => Promise<Set<string>>>();
 
 const FANOUT_TX_HASH = 'f'.repeat(64);
 const HEAD_IDENTIFIER = 'a'.repeat(56);
@@ -135,7 +140,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({
-	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 5 },
+	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 5, HYDRA_ESCROW_RECONCILE_INTERVAL: 60 },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -190,6 +195,19 @@ jest.unstable_mockModule('@/utils/converter/network-convert', () => ({
 
 jest.unstable_mockModule('@/utils/logic/l2-datum-validation', () => ({
 	smartContractStateToOnChainState: jest.fn(() => OnChainState.ResultSubmitted),
+}));
+
+// Pass-through memo: these specs reuse output references across cases, and the
+// settled-row skip is covered by live-escrow-memo.spec.ts.
+jest.unstable_mockModule('./live-escrow-memo', () => ({
+	memoizedLiveEscrowDecode: (_hydraHeadId: string, _input: unknown, _datumCbor: string, decode: () => unknown) =>
+		decode(),
+	memoizedTransactionEvidence: (_hydraHeadId: string, _txHash: string, cborHex: string) => mockParseEvidence(cborHex),
+	pruneLiveEscrowMemo: jest.fn(),
+	retainLiveEscrowMemoHeads: mockRetainMemoHeads,
+	isLivePassDue: mockIsLivePassDue,
+	recordLivePass: mockRecordLivePass,
+	findIdentifiersWithNothingToApply: mockFindNothingToApply,
 }));
 
 jest.unstable_mockModule('./l2-reservation-recovery', () => ({
@@ -370,7 +388,15 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockFindLocallyRelevantIdentifiers.mockImplementation(
 			async (_paymentSourceId, identifiers) => new Set(identifiers),
 		);
+		mockFindNothingToApply.mockResolvedValue(new Set());
+		mockIsLivePassDue.mockReturnValue(true);
 	});
+
+	async function useOpenHead() {
+		const [head] = (await mockHydraHeadFindMany({})) as Array<Record<string, unknown>>;
+		mockHydraHeadFindMany.mockClear();
+		mockHydraHeadFindMany.mockResolvedValue([{ ...head, finalizedAt: null }]);
+	}
 
 	it('selects and revalidates only enabled heads with durable init evidence', async () => {
 		await reconcileHydraHeadEscrowStates();
@@ -412,6 +438,89 @@ describe('Hydra live-snapshot reconciliation', () => {
 
 		expect(mockApplyDatum).toHaveBeenCalledTimes(2);
 		expect(mockDisconnect).not.toHaveBeenCalled();
+	});
+
+	it('skips the apply transaction for outputs with nothing to apply but still checks their evidence', async () => {
+		await useOpenHead();
+		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-settled'), liveUtxo('tx-open')]);
+		mockFindNothingToApply.mockResolvedValue(new Set(['tx-settled']));
+		mockApplyDatum.mockResolvedValue('applied');
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockFindNothingToApply).toHaveBeenCalledWith('source-1', [
+			expect.objectContaining({
+				blockchainIdentifier: 'tx-settled',
+				outputReference: { txHash: 'tx-settled', outputIndex: 0 },
+			}),
+			expect.objectContaining({
+				blockchainIdentifier: 'tx-open',
+				outputReference: { txHash: 'tx-open', outputIndex: 0 },
+			}),
+		]);
+		expect(mockApplyDatum).toHaveBeenCalledTimes(1);
+		expect(mockApplyDatum).toHaveBeenCalledWith(expect.objectContaining({ txId: 'tx-open' }));
+		expect(mockParseEvidence).toHaveBeenCalledWith('tx-settled');
+		expect(mockRecordLivePass).toHaveBeenCalledWith('head-1', true);
+	});
+
+	it('keeps the live pass due when a skipped output lost its confirmed evidence', async () => {
+		await useOpenHead();
+		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-settled')]);
+		mockFindNothingToApply.mockResolvedValue(new Set(['tx-settled']));
+		mockGetConfirmedTransaction.mockReturnValue(null);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockApplyDatum).not.toHaveBeenCalled();
+		expect(mockRecordLivePass).toHaveBeenCalledWith('head-1', false);
+	});
+
+	it('throttles the live snapshot of an open head but still drains replay and reports reservations', async () => {
+		await useOpenHead();
+		mockIsLivePassDue.mockReturnValue(false);
+		mockGetReconciliationQueue.mockReturnValueOnce([
+			{
+				txId: 'tx-history',
+				cborHex: 'tx-history',
+				confirmedAtMs: null,
+				snapshotSequence: 1,
+				snapshotTransactionIndex: 0,
+			},
+		]);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockIsLivePassDue).toHaveBeenCalledWith('head-1', 60000);
+		expect(mockHandleTxConfirmed).toHaveBeenCalledWith('head-1', 'tx-history', expect.anything());
+		expect(mockReportExpiredL2Reservations).toHaveBeenCalled();
+		expect(mockFetchAddressUtxos).not.toHaveBeenCalled();
+		expect(mockRecordLivePass).not.toHaveBeenCalled();
+	});
+
+	it('drops the memo of heads whose final reconciliation is complete', async () => {
+		const [head] = (await mockHydraHeadFindMany({})) as Array<Record<string, unknown>>;
+		mockHydraHeadFindMany.mockResolvedValue([
+			{ ...head, reconciliationCompletedAt: new Date('2026-07-22T13:00:00Z') },
+			{ ...head, id: 'head-2' },
+		]);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockRetainMemoHeads).toHaveBeenCalledWith(['head-2']);
+	});
+
+	it('never throttles or skips the live snapshot of a finalized head', async () => {
+		mockIsLivePassDue.mockReturnValue(false);
+		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-applied'), liveUtxo('tx-irrelevant')]);
+		mockFindNothingToApply.mockResolvedValue(new Set(['tx-applied', 'tx-irrelevant']));
+		mockApplyDatum.mockResolvedValueOnce('applied').mockResolvedValueOnce('irrelevant');
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockFindNothingToApply).not.toHaveBeenCalled();
+		expect(mockApplyDatum).toHaveBeenCalledTimes(2);
+		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});
 
 	it('disconnects a finalized head after all live observations and replay work are resolved', async () => {
@@ -853,6 +962,15 @@ describe('Hydra live-snapshot reconciliation', () => {
 		await reconcileHydraHeadEscrowStates();
 
 		expect(mockHandleTxConfirmed).not.toHaveBeenCalled();
+		// PostgreSQL `not: value` does not match NULL. A new head starts
+		// with both marker columns NULL and must be eligible for its first stall.
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([{ reconciliationStalledTxId: null }, { reconciliationStalledReason: null }]),
+				}),
+			}),
+		);
 		// The pause is surfaced to operators as a persisted stall marker — the ONLY
 		// HydraHead write this pass may make (the cursor must not advance).
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(1);

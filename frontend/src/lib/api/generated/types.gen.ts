@@ -1050,9 +1050,29 @@ export type AgentMetadata = {
          */
         description?: string | null;
         /**
-         * Base URL of the agent API for interactions
+         * Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL
          */
         apiBaseUrl: string;
+        /**
+         * Registry entry type when encoded on-chain
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
+        /**
+         * OpenAPI spec URL for OpenApi registry entries
+         */
+        openApiSpecUrl?: string;
+        /**
+         * x402 manifest URL for X402 registry entries
+         */
+        x402ResourcesUrl?: string;
+        /**
+         * Agent Card URL for A2A registry entries
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * Declared A2A protocol versions
+         */
+        a2aProtocolVersions?: Array<string>;
         /**
          * List of example outputs from the agent
          */
@@ -1407,9 +1427,29 @@ export type AgentIdentifierMetadata = {
          */
         description?: string | null;
         /**
-         * Base URL of the agent API for interactions
+         * Primary interaction URL: MIP api base, x402 manifest URL, or OpenAPI spec URL
          */
         apiBaseUrl: string;
+        /**
+         * Registry entry type when encoded on-chain
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
+        /**
+         * OpenAPI spec URL for OpenApi registry entries
+         */
+        openApiSpecUrl?: string;
+        /**
+         * x402 manifest URL for X402 registry entries
+         */
+        x402ResourcesUrl?: string;
+        /**
+         * Agent Card URL for A2A registry entries
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * Declared A2A protocol versions
+         */
+        a2aProtocolVersions?: Array<string>;
         /**
          * List of example outputs from the agent
          */
@@ -1738,6 +1778,151 @@ export type AgentIdentifierMetadata = {
     };
 };
 
+export type RegistryListEntry = RegistryEntry & {
+    supportedPaymentSources?: Array<({
+        /**
+         * The blockchain this payment source is available on
+         */
+        chain: 'Cardano';
+        /**
+         * The Cardano network this payment source is available on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The configured payment source type
+         */
+        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * The escrow smart contract address for this payment source
+         */
+        address: string;
+        pricing: {
+            /**
+             * A fixed amount is advertised for this payment source
+             */
+            pricingType: 'Fixed';
+            fixed: Array<{
+                /**
+                 * Chain-native asset identifier
+                 */
+                asset: string;
+                /**
+                 * Atomic token amount
+                 */
+                amount: string;
+                /**
+                 * Asset decimals when required by the rail
+                 */
+                decimals?: number;
+            }>;
+        } | {
+            /**
+             * The exact positive amount is supplied dynamically for each payment request
+             */
+            pricingType: 'Dynamic';
+            dynamic?: [
+                {
+                    /**
+                     * Optional accepted asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }
+            ];
+        } | {
+            /**
+             * This payment source does not require payment
+             */
+            pricingType: 'Free';
+        };
+    } | {
+        /**
+         * The chain family used by standard x402
+         */
+        chain: 'EVM';
+        /**
+         * CAIP-2 EVM network id, for example eip155:8453
+         */
+        network: string;
+        /**
+         * The configured payment source type
+         */
+        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+        /**
+         * Alias for payTo, kept for existing payment-source shape
+         */
+        address?: string;
+        /**
+         * x402 payment scheme
+         */
+        scheme: 'Exact';
+        /**
+         * EVM address receiving the x402 payment
+         */
+        payTo: string;
+        /**
+         * Optional absolute resource URL this x402 option protects
+         */
+        resource?: string;
+        /**
+         * Additional x402 metadata
+         */
+        extra?: {
+            [key: string]: unknown;
+        };
+        pricing: {
+            /**
+             * A fixed amount is advertised for this payment source
+             */
+            pricingType: 'Fixed';
+            fixed: Array<{
+                /**
+                 * Chain-native asset identifier
+                 */
+                asset: string;
+                /**
+                 * Atomic token amount
+                 */
+                amount: string;
+                /**
+                 * Asset decimals when required by the rail
+                 */
+                decimals?: number;
+            }>;
+        } | {
+            /**
+             * The exact positive amount is supplied dynamically for each payment request
+             */
+            pricingType: 'Dynamic';
+            dynamic?: [
+                {
+                    /**
+                     * Optional accepted asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }
+            ];
+        } | {
+            /**
+             * This payment source does not require payment
+             */
+            pricingType: 'Free';
+        };
+    }) & {
+        /**
+         * Payment-node source row ID for x402 verify/settle. May change when sources are replaced.
+         */
+        id: string;
+    }> | null;
+};
+
 export type RegistryEntry = {
     /**
      * Error message if registration failed. Null if no error
@@ -1756,11 +1941,11 @@ export type RegistryEntry = {
      */
     description: string | null;
     /**
-     * The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise
+     * The agent access model. Standard for legacy/untyped entries; OpenApi, X402, or A2A otherwise
      */
-    type: 'Standard' | 'OpenApi' | 'X402';
+    type: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
     /**
-     * Base URL of the agent API for interactions. Null for OpenApi/X402 agents
+     * Base URL of the agent API for interactions. Null for OpenApi/X402 agents; required for A2A agents alongside a2aAgentCardUrl
      */
     apiBaseUrl: string | null;
     /**
@@ -1771,6 +1956,18 @@ export type RegistryEntry = {
      * URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type
      */
     x402ResourcesUrl: string | null;
+    /**
+     * URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type
+     */
+    a2aAgentCardUrl: string | null;
+    /**
+     * A2A protocol versions this agent declares support for. Empty for non-A2A agents
+     */
+    a2aProtocolVersions: Array<string>;
+    /**
+     * Which payment source version (V1/V2) this registry entry is registered under
+     */
+    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
     /**
      * Information about the AI model and version used by the agent
      */
@@ -2816,41 +3013,6 @@ export type X402WalletCreated = X402Wallet & {
     privateKey: string | null;
 };
 
-export type X402Budget = {
-    id: string;
-    /**
-     * API key the budget is granted to
-     */
-    apiKeyId: string;
-    /**
-     * Managed EVM wallet the budget draws from
-     */
-    evmWalletId: string;
-    /**
-     * Resolved address of the managed EVM wallet the budget draws from
-     */
-    evmWalletAddress: string;
-    caip2Network: string;
-    /**
-     * Token contract the budget is denominated in
-     */
-    asset: string;
-    /**
-     * Remaining spendable amount, in token base units
-     */
-    remainingAmount: string;
-    /**
-     * Amount already spent, in token base units
-     */
-    spentAmount: string;
-    /**
-     * Id of the API key that created this budget
-     */
-    createdById: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-};
-
 export type X402PaymentAttempt = {
     id: string;
     createdAt: Date;
@@ -3357,7 +3519,7 @@ export type RailReadiness = {
             /**
              * Stable check identifier. The admin UI maps setup steps onto these
              */
-            id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet' | 'x402.budget';
+            id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet';
             /**
              * Short human-readable name for the check
              */
@@ -3394,7 +3556,7 @@ export type RailReadiness = {
                 /**
                  * Stable check identifier. The admin UI maps setup steps onto these
                  */
-                id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet' | 'x402.budget';
+                id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet';
                 /**
                  * Short human-readable name for the check
                  */
@@ -3615,6 +3777,10 @@ export type GetWalletListData = {
          * Filter to wallets with this Cardano address
          */
         walletAddress?: string;
+        /**
+         * Free-text search applied before pagination, so a wallet beyond the first page is still found. Matches wallet address, collection address, note, payment key hash and id (case-insensitive substring), and the wallet type by either its API name ("Purchasing") or the label the admin UI renders ("Buying"). "%" and "_" are matched literally. Balance is not searchable: it is read from the chain, not stored. Combined with the exact filters above as a logical AND.
+         */
+        searchQuery?: string;
     };
     url: '/wallet/list';
 };
@@ -4202,7 +4368,7 @@ export type PatchApiKeyData = {
          */
         UsageCreditsToAddOrRemove?: Array<{
             /**
-             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.
+             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); "lovelace" is accepted and stored as the empty string. For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.
              */
             unit: string;
             /**
@@ -4211,11 +4377,11 @@ export type PatchApiKeyData = {
             amount: string;
         }>;
         /**
-         * Whether the API key is usage limited
+         * Whether the API key is usage limited. Omit to leave it unchanged.
          */
         usageLimited?: boolean;
         /**
-         * The status of the API key
+         * The status of the API key. Omit to leave it unchanged.
          */
         status?: 'Active' | 'Revoked';
         /**
@@ -4290,7 +4456,7 @@ export type PatchApiKeyResponse = PatchApiKeyResponses[keyof PatchApiKeyResponse
 export type PostApiKeyData = {
     body?: {
         /**
-         * Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend
+         * Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend. Omitted defaults to true for non-admin keys; admin keys are never usage limited.
          */
         usageLimited?: string;
         /**
@@ -4298,7 +4464,7 @@ export type PostApiKeyData = {
          */
         UsageCredits: Array<{
             /**
-             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.
+             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); "lovelace" is accepted and stored as the empty string. For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.
              */
             unit: string;
             /**
@@ -4315,7 +4481,7 @@ export type PostApiKeyData = {
          */
         ChainIdLimit?: Array<string>;
         /**
-         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
+         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version. Omitted means read-only; sending it together with contradictory canRead/canPay/canAdmin flags is rejected.
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
         /**
@@ -4911,6 +5077,52 @@ export type PostWalletTransferFundsResponses = {
 
 export type PostWalletTransferFundsResponse = PostWalletTransferFundsResponses[keyof PostWalletTransferFundsResponses];
 
+export type PostWalletConsolidateData = {
+    /**
+     * Consolidation request
+     */
+    body?: {
+        /**
+         * The Cardano address of the hot wallet whose UTxOs to merge
+         */
+        walletAddress: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/consolidate';
+};
+
+export type PostWalletConsolidateErrors = {
+    /**
+     * Bad Request (fewer than two UTxOs, under 4 ADA in the wallet, over 150 UTxOs, or over 40 distinct assets)
+     */
+    400: unknown;
+    /**
+     * Not Found (wallet not found)
+     */
+    404: unknown;
+    /**
+     * Conflict (the wallet is mid-transaction, or a fund transfer from it is still pending)
+     */
+    409: unknown;
+    /**
+     * Bad Gateway (the chain provider could not list the wallet UTxOs)
+     */
+    502: unknown;
+};
+
+export type PostWalletConsolidateResponses = {
+    /**
+     * Consolidation queued
+     */
+    200: {
+        status: 'success';
+        data: WalletFundTransfer;
+    };
+};
+
+export type PostWalletConsolidateResponse = PostWalletConsolidateResponses[keyof PostWalletConsolidateResponses];
+
 export type GetPaymentData = {
     body?: never;
     path?: never;
@@ -4944,7 +5156,11 @@ export type GetPaymentData = {
          */
         filterNeedsManualAction?: string;
         /**
-         * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
+         * Restrict results to one or more agents by exact agent identifier, as a comma-separated list of at most 20. Prefer this over searchQuery when filtering by agent: it is an exact (case-insensitive) match and will not match other fields. Supplying this field does not apply the default Web3CardanoV1 compatibility filter, so agents on a Web3CardanoV2 source are found too. A value naming no agent matches nothing.
+         */
+        filterAgentIdentifier?: string;
+        /**
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (5+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
         /**
@@ -5513,6 +5729,18 @@ export type GetPaymentCountData = {
          * Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * Filter by on-chain state
+         */
+        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Restrict results to one or more agents by exact agent identifier, as a comma-separated list of at most 20. Prefer this over searchQuery when filtering by agent: it is an exact (case-insensitive) match and will not match other fields. Supplying this field does not apply the default Web3CardanoV1 compatibility filter, so agents on a Web3CardanoV2 source are found too. A value naming no agent matches nothing.
+         */
+        filterAgentIdentifier?: string;
+        /**
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (5+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
+         */
+        searchQuery?: string;
     };
     url: '/payment/count';
 };
@@ -5554,6 +5782,18 @@ export type GetPurchaseCountData = {
          * Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * Filter by on-chain state
+         */
+        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Restrict results to one or more agents by exact agent identifier, as a comma-separated list of at most 20. Prefer this over searchQuery when filtering by agent: it is an exact (case-insensitive) match and will not match other fields. Supplying this field does not apply the default Web3CardanoV1 compatibility filter, so agents on a Web3CardanoV2 source are found too. A value naming no agent matches nothing.
+         */
+        filterAgentIdentifier?: string;
+        /**
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (5+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
+         */
+        searchQuery?: string;
     };
     url: '/purchase/count';
 };
@@ -7727,7 +7967,11 @@ export type GetPurchaseData = {
          */
         filterNeedsManualAction?: string;
         /**
-         * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
+         * Restrict results to one or more agents by exact agent identifier, as a comma-separated list of at most 20. Prefer this over searchQuery when filtering by agent: it is an exact (case-insensitive) match and will not match other fields. Supplying this field does not apply the default Web3CardanoV1 compatibility filter, so agents on a Web3CardanoV2 source are found too. A value naming no agent matches nothing.
+         */
+        filterAgentIdentifier?: string;
+        /**
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (5+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
         /**
@@ -9513,7 +9757,7 @@ export type GetRegistryResponses = {
     200: {
         status: string;
         data: {
-            Assets: Array<RegistryEntry>;
+            Assets: Array<RegistryListEntry>;
         };
     };
 };
@@ -9527,9 +9771,9 @@ export type PostRegistryData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions.
          */
-        type?: 'Standard' | 'OpenApi' | 'X402';
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
         /**
          * The payment key of a specific wallet used for the registration
          */
@@ -9793,6 +10037,18 @@ export type PostRegistryData = {
          */
         x402ResourcesUrl?: string;
         /**
+         * URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others.
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types.
+         */
+        a2aProtocolVersions?: Array<string>;
+        /**
+         * A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types.
+         */
+        skipAgentCardValidation?: boolean;
+        /**
          * Description of the agent
          */
         description: string;
@@ -9951,7 +10207,7 @@ export type GetRegistryDiffResponses = {
     200: {
         status: string;
         data: {
-            Assets: Array<RegistryEntry>;
+            Assets: Array<RegistryListEntry>;
         };
     };
 };
@@ -9997,9 +10253,9 @@ export type PostRegistryUpdateData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions.
          */
-        type?: 'Standard' | 'OpenApi' | 'X402';
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
         /**
          * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
          */
@@ -10258,6 +10514,18 @@ export type PostRegistryUpdateData = {
          * URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.
          */
         x402ResourcesUrl?: string;
+        /**
+         * URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others.
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types.
+         */
+        a2aProtocolVersions?: Array<string>;
+        /**
+         * A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types.
+         */
+        skipAgentCardValidation?: boolean;
         /**
          * Description of the agent
          */
@@ -11003,6 +11271,10 @@ export type PostPaymentIncomeData = {
          * Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * cardano: escrow paymentRequest income (default). x402: seller-side settled x402 attempts for the agentIdentifier on this payment node.
+         */
+        paymentRail?: 'cardano' | 'x402';
     };
     path?: never;
     query?: never;
@@ -11295,7 +11567,7 @@ export type PatchWebhooksData = {
          */
         url: string;
         /**
-         * Authentication token for extended webhook requests. Required when format is EXTENDED
+         * Authentication token for extended webhook requests. Omit to keep the stored token; required when changing a webhook to EXTENDED
          */
         authToken?: string | null;
         /**
@@ -12192,60 +12464,6 @@ export type PostX402WalletsDeleteResponses = {
 };
 
 export type PostX402WalletsDeleteResponse = PostX402WalletsDeleteResponses[keyof PostX402WalletsDeleteResponses];
-
-export type GetX402BudgetsData = {
-    body?: never;
-    path?: never;
-    query?: {
-        /**
-         * Filter budgets to a single API key
-         */
-        apiKeyId?: string;
-    };
-    url: '/x402/budgets';
-};
-
-export type GetX402BudgetsResponses = {
-    /**
-     * x402 wallet budgets
-     */
-    200: {
-        status: 'success';
-        data: {
-            Budgets: Array<X402Budget>;
-        };
-    };
-};
-
-export type GetX402BudgetsResponse = GetX402BudgetsResponses[keyof GetX402BudgetsResponses];
-
-export type PostX402BudgetsData = {
-    /**
-     * Budget to set
-     */
-    body?: {
-        apiKeyId: string;
-        evmWalletId: string;
-        caip2Network: string;
-        asset: string;
-        remainingAmount: string;
-    };
-    path?: never;
-    query?: never;
-    url: '/x402/budgets';
-};
-
-export type PostX402BudgetsResponses = {
-    /**
-     * Budget saved
-     */
-    200: {
-        status: 'success';
-        data: X402Budget;
-    };
-};
-
-export type PostX402BudgetsResponse = PostX402BudgetsResponses[keyof PostX402BudgetsResponses];
 
 export type PostX402VerifyData = {
     /**
@@ -13346,7 +13564,7 @@ export type DeleteHydraInviteResponses = {
         status: 'success';
         data: {
             id: string;
-            status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+            status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
         };
     };
 };
@@ -13358,7 +13576,7 @@ export type GetHydraInviteData = {
     path?: never;
     query?: {
         limit?: number;
-        status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+        status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
         /**
          * Filter by Cardano network
          */
@@ -13386,7 +13604,7 @@ export type GetHydraInviteResponses = {
                 nonce: string;
                 network: 'Preprod' | 'Mainnet';
                 role: 'Issuer' | 'Redeemer';
-                status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+                status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
                 createdAt: string;
                 expiresAt: string;
                 hydraHostId: string;
@@ -13418,7 +13636,7 @@ export type PostHydraInviteData = {
          */
         autoFund?: boolean;
         /**
-         * How long a deposit must settle before this head will take it. Both nodes run the value signed here. A top-up is unusable for one period and cannot be recovered for three. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.
+         * How long a deposit must settle before this head will take it — and, since this service always keeps hydra-node 2.4's deposit-activation equal to this same value, also how long before the deposit matures. Both nodes run the value signed here. A top-up is unusable until it matures, absorbable for one period after that, and cannot be recovered until two periods after it matures. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.
          */
         depositPeriodSeconds?: number;
         /**
@@ -14531,6 +14749,75 @@ export type PostHydraHeadWithdrawResponses = {
 
 export type PostHydraHeadWithdrawResponse = PostHydraHeadWithdrawResponses[keyof PostHydraHeadWithdrawResponses];
 
+export type PostHydraHeadConsolidateData = {
+    body?: {
+        /**
+         * The Hydra head whose local wallet UTxOs to merge
+         */
+        headId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/consolidate';
+};
+
+export type PostHydraHeadConsolidateErrors = {
+    /**
+     * Head has no local participant, or the wallet has nothing to consolidate
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not open or disabled, its node is still catching up, a withdrawal is in progress or still settling, or the wallet is busy
+     */
+    409: unknown;
+    /**
+     * No live connection to the head
+     */
+    502: unknown;
+    /**
+     * The head accepted the self-send but did not confirm it in time
+     */
+    504: unknown;
+};
+
+export type PostHydraHeadConsolidateResponses = {
+    /**
+     * Consolidated
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            /**
+             * The confirmed in-head self-send
+             */
+            txId: string;
+            /**
+             * UTxOs spent
+             */
+            inputCount: number;
+            /**
+             * UTxOs produced: one carrying everything, plus a pure-ADA collateral UTxO when the funds allow it
+             */
+            outputCount: number;
+            /**
+             * Eligible UTxOs left for another round, because one round spends at most 100. Non-zero means call again.
+             */
+            remainingCount: number;
+        };
+    };
+};
+
+export type PostHydraHeadConsolidateResponse = PostHydraHeadConsolidateResponses[keyof PostHydraHeadConsolidateResponses];
+
 export type GetHydraHeadBalanceData = {
     body?: never;
     path?: never;
@@ -14873,7 +15160,7 @@ export type GetHydraParticipantLocalFundErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
 };
@@ -14885,6 +15172,16 @@ export type GetHydraParticipantLocalFundResponses = {
     200: {
         status: 'success';
         data: {
+            autoFund: boolean;
+            /**
+             * Lifetime node funding limit in lovelace. Null means unlimited.
+             */
+            automaticFundingLimitLovelace: string | null;
+            /**
+             * Queued or confirmed funding to this address, including historical and manual transfers.
+             */
+            fundedLovelace: string;
+            remainingFundingLovelace: string | null;
             address: string;
             balanceLovelace: string;
             isUnderfunded: boolean;
@@ -14907,6 +15204,47 @@ export type GetHydraParticipantLocalFundResponses = {
 
 export type GetHydraParticipantLocalFundResponse = GetHydraParticipantLocalFundResponses[keyof GetHydraParticipantLocalFundResponses];
 
+export type PatchHydraParticipantLocalFundData = {
+    body?: {
+        id: string;
+        autoFund?: boolean;
+        /**
+         * Null removes the limit. Zero blocks automatic funding.
+         */
+        automaticFundingLimitLovelace?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local/fund';
+};
+
+export type PatchHydraParticipantLocalFundErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Local participant not found
+     */
+    404: unknown;
+};
+
+export type PatchHydraParticipantLocalFundResponses = {
+    /**
+     * Automatic funding settings
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            autoFund: boolean;
+            automaticFundingLimitLovelace: string | null;
+        };
+    };
+};
+
+export type PatchHydraParticipantLocalFundResponse = PatchHydraParticipantLocalFundResponses[keyof PatchHydraParticipantLocalFundResponses];
+
 export type PostHydraParticipantLocalFundData = {
     body?: {
         /**
@@ -14925,7 +15263,7 @@ export type PostHydraParticipantLocalFundErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
 };
@@ -14947,7 +15285,7 @@ export type PostHydraParticipantLocalFundResponses = {
              */
             transferredLovelace: string | null;
             /**
-             * `sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one.
+             * `sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent. The balance below is still the pre-transfer one.
              */
             outcome: 'sent' | 'sufficient' | 'in-flight';
         };
@@ -14974,7 +15312,7 @@ export type PostHydraParticipantLocalWithdrawErrors = {
      */
     401: unknown;
     /**
-     * Hydra head not found
+     * Local participant not found
      */
     404: unknown;
     /**
@@ -15355,6 +15693,62 @@ export type GetHydraParticipantRemoteResponses = {
 
 export type GetHydraParticipantRemoteResponse = GetHydraParticipantRemoteResponses[keyof GetHydraParticipantRemoteResponses];
 
+export type PostHydraHeadChainCheckData = {
+    body?: {
+        /**
+         * ID of the HydraHead to check
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/chain-check';
+};
+
+export type PostHydraHeadChainCheckErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head identifier not observed yet, or no independent L1 observer configured
+     */
+    409: unknown;
+    /**
+     * The head state could not be read on chain
+     */
+    502: unknown;
+    /**
+     * Independent L1 evidence not yet available
+     */
+    503: unknown;
+};
+
+export type PostHydraHeadChainCheckResponses = {
+    /**
+     * Head state on chain
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Head state after its newest state-token transaction; gone means fanned out
+             */
+            chainState: 'open' | 'closed' | 'gone';
+            /**
+             * Newest transaction that moved the head state token
+             */
+            latestTxHash: string;
+        };
+    };
+};
+
+export type PostHydraHeadChainCheckResponse = PostHydraHeadChainCheckResponses[keyof PostHydraHeadChainCheckResponses];
+
 export type GetRailReadinessData = {
     body?: never;
     path?: never;
@@ -15681,3 +16075,1457 @@ export type PostRequestRepairResponses = {
 };
 
 export type PostRequestRepairResponse = PostRequestRepairResponses[keyof PostRequestRepairResponses];
+
+export type GetReportsFacetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/reports/facets';
+};
+
+export type GetReportsFacetsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type GetReportsFacetsError = GetReportsFacetsErrors[keyof GetReportsFacetsErrors];
+
+export type GetReportsFacetsResponses = {
+    /**
+     * Accessible report filters
+     */
+    200: {
+        status: 'success';
+        data: {
+            fiat: {
+                isConfigured: boolean;
+                isDemoKey: boolean;
+                historyDays: number | null;
+                earliestPriceableDate: Date | null;
+                currencies: Array<string>;
+                modes: Array<'PeriodAverage' | 'AccountingDate' | 'TransactionTime'>;
+                attribution: string;
+                setupHint: string;
+            };
+            paymentSources: Array<{
+                id: string;
+                network: 'Preprod' | 'Mainnet';
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+                feeRatePermille: number;
+                smartContractAddress: string;
+                deletedAt: Date | null;
+            }>;
+            managedWallets: Array<{
+                id: string;
+                paymentSourceId: string;
+                type: 'Selling' | 'Purchasing';
+                walletAddress: string;
+                walletVkey: string;
+                collectionAddress: string | null;
+                note: string | null;
+                deletedAt: Date | null;
+            }>;
+        };
+    };
+};
+
+export type GetReportsFacetsResponse = GetReportsFacetsResponses[keyof GetReportsFacetsResponses];
+
+export type PostReportsTransactionsData = {
+    /**
+     * Payment source, wallet, role, state, accounting date, revenue, and pagination filters
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        cursor?: string;
+        limit?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/transactions';
+};
+
+export type PostReportsTransactionsErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The exchange rate provider could not price a requested asset
+     */
+    502: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsTransactionsError = PostReportsTransactionsErrors[keyof PostReportsTransactionsErrors];
+
+export type PostReportsTransactionsResponses = {
+    /**
+     * Transaction report rows
+     */
+    200: {
+        status: 'success';
+        data: {
+            rows: Array<{
+                id: string;
+                role: 'Buyer' | 'Seller';
+                requestType: 'PaymentRequest' | 'PurchaseRequest';
+                createdAt: Date;
+                blockchainIdentifier: string;
+                agentIdentifier: string | null;
+                agentName: string | null;
+                onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                metadata: string | null;
+                managedWallet: {
+                    id: string;
+                    walletAddress: string;
+                    walletVkey: string;
+                    collectionAddress: string | null;
+                    deletedAt: Date | null;
+                } | null;
+                counterpartyAddress: string | null;
+                buyerReturnAddress: string | null;
+                sellerReturnAddress: string | null;
+                timestamps: {
+                    createdAt: Date;
+                    fundsLockedAt: Date | null;
+                    sellerRevenueRecognizedAt: Date | null;
+                    buyerGrossSpendAt: Date | null;
+                    buyerReturnedAt: Date | null;
+                };
+                settlement: {
+                    resultSubmittedTxHash: string | null;
+                    settlementTxHash: string | null;
+                    settlementTxType: 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                };
+                seller: {
+                    grossRevenue: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    protocolFee: {
+                        configuredRatePermille: number;
+                        appliedRatePermille: number | null;
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }> | null;
+                        provenance: 'calculated' | 'projected' | 'exact_zero' | 'not_applicable' | 'insufficient_data';
+                        basis: 'stored_requested_plus_collateral' | 'contract_version' | null;
+                        completeness: 'exact' | 'reconstructed' | 'not_applicable' | 'insufficient_data';
+                    };
+                    cardanoFees: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    cardanoFeeTiming: 'stored_cumulative' | 'accounting_allocation';
+                    netRevenue: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    payoutCompleteness: 'complete' | 'partial';
+                } | null;
+                buyer: {
+                    grossSpend: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    returnedFunds: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    cardanoFees: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    cardanoFeeTiming: 'stored_cumulative' | 'accounting_allocation';
+                    netSpend: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    payoutCompleteness: 'complete' | 'partial';
+                } | null;
+                actorCardanoFeeAllocation: {
+                    strategy: 'accounting_allocation' | 'lifetime_cohort';
+                    completeness: 'complete' | 'partial';
+                    attachedAt: Date | null;
+                };
+                feeAllocationScope: 'single_request' | 'shared_or_unknown';
+                feeComponentScope: 'complete' | 'partial';
+                cardanoFeeReconciliation: {
+                    buyerCardanoFees: {
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    };
+                    sellerCardanoFees: {
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    };
+                    adminCardanoFees: {
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    } | null;
+                    totalCardanoFees: {
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    } | null;
+                    completeness: 'complete' | 'partial' | 'inconsistent';
+                    isAggregationOwner: boolean;
+                };
+            }>;
+            page: {
+                nextCursor: string | null;
+                hasMore: boolean;
+            };
+            metadata: {
+                generatedAt: Date;
+                asOf: Date;
+                paymentSource: {
+                    id: string;
+                    network: 'Preprod' | 'Mainnet';
+                    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+                    feeRatePermille: number;
+                    smartContractAddress: string;
+                    deletedAt: Date | null;
+                };
+                filters: {
+                    paymentSourceId: string;
+                    managedWalletIds: Array<string> | null;
+                    externalAddresses: Array<string>;
+                    roles: Array<'Buyer' | 'Seller'>;
+                    states: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+                    from: Date;
+                    to: Date;
+                    dateBasis: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+                    revenueMode: 'Billable' | 'CashReceived' | 'RequestedGross';
+                    timeZone: string;
+                };
+                fiat: {
+                    currency: string;
+                    mode: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+                    provider: 'coingecko' | 'supplied';
+                    attribution: string | null;
+                    isDemoKey: boolean;
+                    demoHistoryDays: number | null;
+                    completeness: 'complete' | 'partial';
+                    unpricedUnits: Array<string>;
+                    rates: Array<{
+                        unit: string;
+                        coinId: string | null;
+                        rate: string;
+                        source: 'supplied' | 'coingecko';
+                        provenance: {
+                            cadence: 'daily';
+                            sampleCount: number;
+                            requestedDayCount: number;
+                            firstSampleAt: string;
+                            lastSampleAt: string;
+                            currency: string;
+                        } | null;
+                    }> | null;
+                    fetchedAt: Date | null;
+                } | null;
+                warnings: Array<{
+                    code: string;
+                    message: string;
+                    rowId: string | null;
+                }>;
+            };
+        };
+    };
+};
+
+export type PostReportsTransactionsResponse = PostReportsTransactionsResponses[keyof PostReportsTransactionsResponses];
+
+export type PostReportsSummaryData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/summary';
+};
+
+export type PostReportsSummaryErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The exchange rate provider could not price a requested asset
+     */
+    502: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsSummaryError = PostReportsSummaryErrors[keyof PostReportsSummaryErrors];
+
+export type PostReportsSummaryResponses = {
+    /**
+     * Transaction report totals and history
+     */
+    200: {
+        status: 'success';
+        data: {
+            totals: {
+                transactionCount: number;
+                transactionCountCompleteness: 'complete' | 'partial';
+                sellerGrossRevenue: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                sellerPendingRevenue: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                protocolFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                sellerCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                actorCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                sellerNetRevenue: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                buyerGrossSpend: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                returnedFunds: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                buyerCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                buyerNetSpend: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                adminCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                totalCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+            };
+            wallets: Array<{
+                managedWallet: {
+                    id: string;
+                    walletAddress: string;
+                    walletVkey: string;
+                    collectionAddress: string | null;
+                    deletedAt: Date | null;
+                } | null;
+                role: 'Buyer' | 'Seller';
+                metrics: {
+                    transactionCount: number;
+                    transactionCountCompleteness: 'complete' | 'partial';
+                    sellerGrossRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerPendingRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    protocolFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    actorCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerNetRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerGrossSpend: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    returnedFunds: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerNetSpend: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    adminCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    totalCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                };
+            }>;
+            history: Array<{
+                bucketStart: Date;
+                bucketEnd: Date;
+                metrics: {
+                    transactionCount: number;
+                    transactionCountCompleteness: 'complete' | 'partial';
+                    sellerGrossRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerPendingRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    protocolFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    actorCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerNetRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerGrossSpend: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    returnedFunds: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerNetSpend: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    adminCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    totalCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                };
+            }>;
+            bucket: 'Day' | 'Week' | 'Month';
+            metadata: {
+                generatedAt: Date;
+                asOf: Date;
+                paymentSource: {
+                    id: string;
+                    network: 'Preprod' | 'Mainnet';
+                    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+                    feeRatePermille: number;
+                    smartContractAddress: string;
+                    deletedAt: Date | null;
+                };
+                filters: {
+                    paymentSourceId: string;
+                    managedWalletIds: Array<string> | null;
+                    externalAddresses: Array<string>;
+                    roles: Array<'Buyer' | 'Seller'>;
+                    states: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+                    from: Date;
+                    to: Date;
+                    dateBasis: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+                    revenueMode: 'Billable' | 'CashReceived' | 'RequestedGross';
+                    timeZone: string;
+                };
+                fiat: {
+                    currency: string;
+                    mode: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+                    provider: 'coingecko' | 'supplied';
+                    attribution: string | null;
+                    isDemoKey: boolean;
+                    demoHistoryDays: number | null;
+                    completeness: 'complete' | 'partial';
+                    unpricedUnits: Array<string>;
+                    rates: Array<{
+                        unit: string;
+                        coinId: string | null;
+                        rate: string;
+                        source: 'supplied' | 'coingecko';
+                        provenance: {
+                            cadence: 'daily';
+                            sampleCount: number;
+                            requestedDayCount: number;
+                            firstSampleAt: string;
+                            lastSampleAt: string;
+                            currency: string;
+                        } | null;
+                    }> | null;
+                    fetchedAt: Date | null;
+                } | null;
+                warnings: Array<{
+                    code: string;
+                    message: string;
+                    rowId: string | null;
+                }>;
+            };
+        };
+    };
+};
+
+export type PostReportsSummaryResponse = PostReportsSummaryResponses[keyof PostReportsSummaryResponses];
+
+export type PostReportsTransactionsCsvData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/transactions.csv';
+};
+
+export type PostReportsTransactionsCsvErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The exchange rate provider could not price a requested asset
+     */
+    502: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsTransactionsCsvError = PostReportsTransactionsCsvErrors[keyof PostReportsTransactionsCsvErrors];
+
+export type PostReportsTransactionsCsvResponses = {
+    /**
+     * Transaction rows CSV
+     */
+    200: Blob | File;
+};
+
+export type PostReportsTransactionsCsvResponse = PostReportsTransactionsCsvResponses[keyof PostReportsTransactionsCsvResponses];
+
+export type PostReportsWalletSummaryCsvData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/wallet-summary.csv';
+};
+
+export type PostReportsWalletSummaryCsvErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The exchange rate provider could not price a requested asset
+     */
+    502: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsWalletSummaryCsvError = PostReportsWalletSummaryCsvErrors[keyof PostReportsWalletSummaryCsvErrors];
+
+export type PostReportsWalletSummaryCsvResponses = {
+    /**
+     * Wallet and role totals CSV
+     */
+    200: Blob | File;
+};
+
+export type PostReportsWalletSummaryCsvResponse = PostReportsWalletSummaryCsvResponses[keyof PostReportsWalletSummaryCsvResponses];
+
+export type PostReportsTotalsCsvData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/totals.csv';
+};
+
+export type PostReportsTotalsCsvErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The exchange rate provider could not price a requested asset
+     */
+    502: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsTotalsCsvError = PostReportsTotalsCsvErrors[keyof PostReportsTotalsCsvErrors];
+
+export type PostReportsTotalsCsvResponses = {
+    /**
+     * Payment source totals CSV
+     */
+    200: Blob | File;
+};
+
+export type PostReportsTotalsCsvResponse = PostReportsTotalsCsvResponses[keyof PostReportsTotalsCsvResponses];
+
+export type PostReportsExportZipData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/export.zip';
+};
+
+export type PostReportsExportZipErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The exchange rate provider could not price a requested asset
+     */
+    502: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsExportZipError = PostReportsExportZipErrors[keyof PostReportsExportZipErrors];
+
+export type PostReportsExportZipResponses = {
+    /**
+     * Complete transaction report ZIP archive
+     */
+    200: Blob | File;
+};
+
+export type PostReportsExportZipResponse = PostReportsExportZipResponses[keyof PostReportsExportZipResponses];

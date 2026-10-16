@@ -62,14 +62,35 @@ export function isX402RailPath(pathname: string): boolean {
   return pathname === '/x402' || pathname.startsWith('/x402/') || pathname === X402_SETUP_PATH;
 }
 
+/**
+ * Whether a session sitting on an x402 route should have the EVM rail restored.
+ *
+ * This exists for deep links: someone opens /x402/wallets with a persisted Cardano rail
+ * and the sidebar has to follow the page. It must NOT fire for the opposite case, where
+ * someone standing on an x402 page picks a Cardano source in the sidebar, because the
+ * rail is then already 'cardano' while `pathname` still points at the old page for one
+ * render.
+ *
+ * `isRouteChanging` was meant to cover that window and cannot. Next emits
+ * `routeChangeStart` only after an `await matchesMiddleware(...)` inside `router.push`,
+ * so the flag is still false when React flushes the click's effects. The switch was
+ * therefore reverted to x402, and the pending navigation to '/' then landed on a
+ * Cardano-only page with the rail restored, which bounced it on to /x402/dashboard.
+ * `railJustSwitchedAway` closes the window with a value that is known synchronously.
+ */
 export function shouldRestoreX402Rail(
   pathname: string,
   areChainsLoading: boolean,
   availableChainCount: number,
   isRouteChanging = false,
+  railJustSwitchedAway = false,
 ): boolean {
   return (
-    isX402RailPath(pathname) && !isRouteChanging && !areChainsLoading && availableChainCount > 0
+    isX402RailPath(pathname) &&
+    !isRouteChanging &&
+    !railJustSwitchedAway &&
+    !areChainsLoading &&
+    availableChainCount > 0
   );
 }
 

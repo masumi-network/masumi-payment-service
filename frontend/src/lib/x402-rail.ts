@@ -1,4 +1,4 @@
-import type { X402Budget, X402Network, X402Wallet } from '@/lib/api/generated';
+import type { X402Network, X402Wallet } from '@/lib/api/generated';
 import type { NetworkType } from '@/lib/contexts/AppContext';
 
 /**
@@ -9,6 +9,7 @@ export const X402_ACCENT = {
   badge:
     'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300',
   icon: 'text-indigo-600 dark:text-indigo-400',
+  iconRing: 'from-indigo-500/20 to-indigo-500/5 ring-indigo-500/30',
 } as const;
 
 /**
@@ -56,16 +57,36 @@ export function filterX402PaymentSourceChains<
       chain.caip2Id.toLowerCase().includes(query),
   );
 }
+/**
+ * Whether outbound payments are actually possible: a Purchasing wallet bound to a chain
+ * that is ENABLED in the supplied scope. A wallet on a disabled chain cannot pay —
+ * `POST /x402/pay` rejects it with "The wallet network is not enabled" — so it must not
+ * count as a configured paying side and must not suppress the setup guide.
+ */
+/** Native gas token symbol for a CAIP-2 EVM chain id. */
+export function getEvmNativeSymbol(caip2Id: string): string {
+  const chainId = caip2Id.replace(/^eip155:/, '');
+  switch (chainId) {
+    case '137':
+    case '80002':
+      return 'POL';
+    case '56':
+    case '97':
+      return 'BNB';
+    case '43114':
+    case '43113':
+      return 'AVAX';
+    default:
+      return 'ETH';
+  }
+}
 
-/** Whether any budget belongs to an enabled network in the supplied environment scope. */
-export function hasBudgetOnEnabledNetworks(
-  budgets: Pick<X402Budget, 'caip2Network'>[],
+export function hasPurchasingWalletOnEnabledNetworks(
+  wallets: X402Wallet[],
   networks: X402Network[],
 ): boolean {
-  const enabledNetworkIds = new Set(
-    networks.filter((network) => network.isEnabled).map((network) => network.caip2Id),
-  );
-  return budgets.some((budget) => enabledNetworkIds.has(budget.caip2Network));
+  const enabled = networks.filter((network) => network.isEnabled);
+  return walletsForNetworks(wallets, enabled).some((wallet) => wallet.type === 'Purchasing');
 }
 
 /**

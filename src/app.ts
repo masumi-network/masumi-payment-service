@@ -12,6 +12,7 @@ import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { robotsNoindex, serveRobotsTxt } from '@/utils/middleware/robots-noindex';
+import { allowSameOriginFraming } from '@/utils/middleware/allow-same-origin-framing';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
@@ -22,6 +23,8 @@ import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
 import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
 import helmet from 'helmet';
+import { CORS_EXPOSED_HEADERS_VALUE } from '@/utils/cors-headers';
+import { startEventLoopStallMonitor } from '@/utils/monitoring/event-loop-lag';
 
 const __dirname = path.resolve();
 
@@ -83,12 +86,17 @@ function registerShutdownHandlers() {
 }
 
 export async function startApp() {
+	// First, so a stall during startup (history replay, migrations) is reported too.
+	startEventLoopStallMonitor();
 	logger.info('Initializing services');
 	await initialize();
 
 	const PORT = CONFIG.PORT;
 	logger.info('Starting web server', { component: 'server' }, { port: PORT });
 	const serverConfig = createConfig({
+		jsonParser: express.json({
+			reviver: (key: string, value: unknown): unknown => (key === '__proto__' ? undefined : value),
+		}),
 		inputSources: {
 			//read from body on get requests
 			get: ['query', 'params'],
@@ -117,6 +125,7 @@ export async function startApp() {
 							frameAncestors: ["'none'"],
 							imgSrc: ["'self'", 'data:'],
 							objectSrc: ["'none'"],
+							workerSrc: ["'self'", 'blob:'],
 							// 'wasm-unsafe-eval' lets the bundled Mesh SDK (Cardano serialization) compile
 							// its WebAssembly. It permits WASM only, not arbitrary JS eval.
 							scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"],
@@ -169,6 +178,7 @@ export async function startApp() {
 
 			app.use(
 				'/docs',
+				allowSameOriginFraming,
 				ui.serve,
 				ui.setup(JSON.parse(docsString) as JsonObject, {
 					explorer: false,
@@ -393,7 +403,7 @@ export async function startApp() {
 			'Access-Control-Max-Age': '5000',
 			'Access-Control-Allow-Origin': '*',
 			'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH',
-			'Access-Control-Expose-Headers': 'Content-Range, X-Total-Count',
+			'Access-Control-Expose-Headers': CORS_EXPOSED_HEADERS_VALUE,
 		}),
 		logger: logger,
 	});

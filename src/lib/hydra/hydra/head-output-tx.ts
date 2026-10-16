@@ -80,7 +80,11 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
 	if (!/^[0-9a-fA-F]{56}$/.test(headIdentifier)) return undefined;
 	const wanted = headIdentifier.toLowerCase();
 
-	const chainState = getOwnPlainObject(headState, 'chainState');
+	// hydra-node's real `GET /head` reply nests chainState under `contents`
+	// (`{ tag, contents: { chainState, ... } }`); a flat `{ tag, chainState }` is
+	// accepted too so either shape works.
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	const chainState = getOwnPlainObject(state, 'chainState');
 	if (chainState === undefined) return undefined;
 	const spendable = getOwnPlainObject(chainState, 'spendableUTxO');
 	if (spendable === undefined) return undefined;
@@ -114,4 +118,85 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
 	}
 
 	return producers.size === 1 ? [...producers][0] : undefined;
+}
+
+/**
+ * Output references (`txid#ix`, lower-cased) the head's confirmed snapshot is
+ * still waiting to decommit onto L1.
+ *
+ * Hydra produces no new snapshot while `utxoToDecommit` is non-empty — the
+ * node's chain follower has not yet observed the previous decommit's
+ * DecrementTx. A caller that starts another in-head split while this is
+ * non-empty gets a split that is TxValid but can never be snapshot-confirmed.
+ * This is the withdrawal-side mirror of `pendingIncrementUtxoRefs` ("still
+ * being folded into the head by a deposit"), which guards the opposite
+ * direction.
+ *
+ * But `utxoToDecommit` alone is NOT proof the decommit is still pending: it
+ * stays populated in the LAST confirmed snapshot until the head produces a
+ * NEW one, and a new snapshot only happens once another transaction arrives —
+ * which this guard blocks. Left unchecked that is a deadlock: a finalized
+ * decommit reads as "still pending" forever. Two independent signals confirm
+ * genuine resolution instead: `coordinatedHeadState.decommitTx` is cleared to
+ * `null` once the node stops holding a transaction it must post, AND
+ * `coordinatedHeadState.version` has moved past `confirmedSnapshot.snapshot`'s
+ * own `version` once the chain has observed that post. Either signal alone
+ * still showing "pending" (a held `decommitTx`, or the version not yet past
+ * the snapshot) keeps the guard active. Both signals unreadable (no
+ * `decommitTx` object AND no numeric version pair — an unrecognised shape)
+ * clears the guard instead, logged: the opposite would jam every withdrawal
+ * from the head forever rather than for one refused attempt, which is what
+ * this guard's own refinement exists to avoid, and it would contradict
+ * `fetchHydraPendingDecommitRefs`, which already fails open on a transport
+ * error one layer up.
+ *
+ * `[]` rather than throwing for every "cannot tell" case, exactly like
+ * `extractHeadOutputTxId`: this feeds a pre-flight guard, and a head whose
+ * state cannot be read must not jam every withdrawal forever.
+ */
+export function extractPendingDecommitRefs(headState: unknown): string[] {
+	if (!isPlainObject(headState)) return [];
+
+	// Same nested-vs-flat shape as extractHeadOutputTxId: hydra-node's real
+	// `GET /head` reply nests everything under `contents`.
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	const coordinatedHeadState = getOwnPlainObject(state, 'coordinatedHeadState');
+	if (coordinatedHeadState === undefined) return [];
+	const confirmedSnapshot = getOwnPlainObject(coordinatedHeadState, 'confirmedSnapshot');
+	if (confirmedSnapshot === undefined) return [];
+	const snapshot = getOwnPlainObject(confirmedSnapshot, 'snapshot');
+	if (snapshot === undefined) return [];
+	const utxoToDecommit = getOwnPlainObject(snapshot, 'utxoToDecommit');
+	if (utxoToDecommit === undefined) return [];
+
+	// The node still holds the decommit transaction it must post.
+	const decommitTxHeld = isPlainObject(getOwnValue(coordinatedHeadState, 'decommitTx'));
+	// The chain has not yet observed that post. Either field missing or not a
+	// number cannot prove resolution, so it stays on the "pending" side.
+	const version = getOwnValue(coordinatedHeadState, 'version');
+	const snapshotVersion = getOwnValue(snapshot, 'version');
+	const versionReadable = typeof version === 'number' && typeof snapshotVersion === 'number';
+	const chainNotPastSnapshot = versionReadable ? version <= snapshotVersion : true;
+
+	if (!decommitTxHeld && !chainNotPastSnapshot) return [];
+
+	// Both signals unreadable — no decommitTx object AND no numeric version
+	// pair — is not the same as "genuinely pending". The fallback above
+	// defaults an unreadable version pair to "not past" (fail-closed) so a
+	// truly pending decommit is never cleared early, but that same default
+	// means this combination can never satisfy the check above on its own: it
+	// always needs the version pair to be BOTH readable AND past. Left alone
+	// that is not a cautious guard, it is a permanent one — every withdrawal
+	// from this head refused forever. Fail open instead, the same way
+	// `fetchHydraPendingDecommitRefs` already fails open on a transport error
+	// one layer up: worst case one withdrawal is refused or left to retry,
+	// never funds actually leaving the head.
+	if (!decommitTxHeld && !versionReadable) {
+		logger.warn(
+			'[HydraNode] Pending-decommit state unreadable (no decommitTx object, no numeric version pair); treating as resolved rather than blocking withdrawals indefinitely',
+		);
+		return [];
+	}
+
+	return Object.keys(utxoToDecommit).map((key) => key.toLowerCase());
 }

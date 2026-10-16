@@ -20,7 +20,11 @@ import { Spinner } from '@/components/ui/spinner';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { postWalletTransferFunds, getWalletTransferFunds } from '@/lib/api/generated';
+import {
+  postWalletTransferFunds,
+  getWalletTransferFunds,
+  postWalletConsolidate,
+} from '@/lib/api/generated';
 import type { WalletFundTransfer } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
@@ -47,7 +51,15 @@ interface TransferFundsDialogProps {
 // mainnet) by name, or a custom token by hex unit. This mirrors the low-balance
 // rule asset model exactly, so the same units and decimals are used everywhere.
 type AssetPreset = 'stablecoin' | 'custom';
-type AssetFormRow = { preset: AssetPreset; customUnit: string; amount: string };
+type AssetFormRow = { id: string; preset: AssetPreset; customUnit: string; amount: string };
+
+let nextAssetRowId = 0;
+const createAssetRow = (): AssetFormRow => ({
+  id: `asset-row-${++nextAssetRowId}`,
+  preset: 'stablecoin',
+  customUnit: '',
+  amount: '',
+});
 type AssetPayload = { unit: string; quantity: string };
 
 // Client-side mirror of the API's postWalletFundSchemaInput, so a bad input is
@@ -163,8 +175,29 @@ export function TransferFundsDialog({
     errorMessage: 'Failed to queue fund transfer',
   });
 
-  const addAssetRow = () =>
-    setAssets((rows) => [...rows, { preset: 'stablecoin', customUnit: '', amount: '' }]);
+  const consolidate = useApiMutation({
+    mutationFn: (body: { walletAddress: string }) =>
+      postWalletConsolidate({ client: apiClient, body }),
+    errorMessage: 'Failed to queue consolidation',
+  });
+
+  // A transfer back to this wallet of nearly its whole balance, so it spends
+  // nearly every UTxO. Shown in the same card as any transfer.
+  const handleConsolidate = async () => {
+    setFormError(null);
+    try {
+      const transfer = extractApiPayload(await consolidate.mutateAsync({ walletAddress }));
+      if (transfer?.id) {
+        setCreatedTransferId(transfer.id);
+        toast.success('Consolidation queued');
+        onSuccess?.();
+      }
+    } catch {
+      // useApiMutation already surfaced the error as a toast.
+    }
+  };
+
+  const addAssetRow = () => setAssets((rows) => [...rows, createAssetRow()]);
   const updateAssetRow = (index: number, patch: Partial<AssetFormRow>) =>
     setAssets((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   const removeAssetRow = (index: number) => setAssets((rows) => rows.filter((_, i) => i !== index));
@@ -237,7 +270,7 @@ export function TransferFundsDialog({
     }
   };
 
-  const isSubmitting = createTransfer.isPending;
+  const isSubmitting = createTransfer.isPending || consolidate.isPending;
   const submitted = createdTransferId != null;
   const locked = isSubmitting || submitted;
 
@@ -294,7 +327,7 @@ export function TransferFundsDialog({
                 const isCustom = row.preset === 'custom';
                 const meta = getRuleAssetMetaFromPreset(row.preset, network, row.customUnit);
                 return (
-                  <div key={index} className="space-y-2 rounded-lg border p-2">
+                  <div key={row.id} className="space-y-2 rounded-lg border p-2">
                     <div className="flex items-center gap-2">
                       <Select
                         value={row.preset}
@@ -376,6 +409,17 @@ export function TransferFundsDialog({
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
+          {!submitted && (
+            <Button
+              variant="ghost"
+              className="mr-auto"
+              onClick={handleConsolidate}
+              disabled={isSubmitting}
+              title="Send nearly the whole balance back to this wallet, merging its UTxOs"
+            >
+              {consolidate.isPending ? <Spinner size={16} /> : 'Consolidate UTxOs'}
+            </Button>
+          )}
           <Button variant="outline" onClick={onClose}>
             {submitted ? 'Close' : 'Cancel'}
           </Button>

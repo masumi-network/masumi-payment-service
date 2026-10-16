@@ -2,13 +2,30 @@ import createHttpError from 'http-errors';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { logger } from '@masumi/payment-core/logger';
 
+function isStartOfUtcDay(date: Date): boolean {
+	return (
+		date.getUTCHours() === 0 &&
+		date.getUTCMinutes() === 0 &&
+		date.getUTCSeconds() === 0 &&
+		date.getUTCMilliseconds() === 0
+	);
+}
+
+/** Inclusive end instant for a calendar date passed as midnight UTC (ez.dateIn). */
+function inclusiveUtcEndOfDay(date: Date): Date {
+	return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
 export function parseDateRange(
 	startDate: Date | null | undefined,
 	endDate: Date | null | undefined,
 ): { periodStart: Date; periodEnd: Date } {
 	const now = new Date();
 	const periodStart = startDate ? startDate : new Date('2020-01-01');
-	const periodEnd = endDate ? endDate : now;
+	let periodEnd = endDate ? endDate : now;
+	if (endDate != null && isStartOfUtcDay(endDate)) {
+		periodEnd = inclusiveUtcEndOfDay(endDate);
+	}
 
 	if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
 		throw createHttpError(400, 'Invalid date format. Use YYYY-MM-DD format.');
@@ -19,6 +36,36 @@ export function parseDateRange(
 	}
 
 	return { periodStart, periodEnd };
+}
+
+/** Page size for the income/spending aggregation queries below. */
+export const EARNINGS_QUERY_BATCH_SIZE = 1000;
+
+/**
+ * Fetches rows via cursor pagination and hands each page to `processBatch`
+ * instead of returning the whole result set. Callers with an unbounded
+ * date range (the income/spending default) could otherwise pull an entire
+ * table's history into memory in one `findMany`; this bounds peak memory to
+ * one page regardless of total row count. Requires `orderBy` to end in a
+ * unique tiebreaker (these callers already sort by `id` last) so the cursor
+ * position is stable across pages.
+ */
+export async function fetchAndProcessInBatches<T extends { id: string }>(
+	fetchBatch: (cursorId: string | undefined) => Promise<T[]>,
+	batchSize: number,
+	processBatch: (rows: T[]) => void,
+	signal?: AbortSignal,
+): Promise<void> {
+	let cursorId: string | undefined;
+	for (;;) {
+		signal?.throwIfAborted();
+		const batch = await fetchBatch(cursorId);
+		signal?.throwIfAborted();
+		if (batch.length === 0) break;
+		processBatch(batch);
+		if (batch.length < batchSize) break;
+		cursorId = batch[batch.length - 1].id;
+	}
 }
 
 export function filterByAgentIdentifier<T extends { blockchainIdentifier: string }>(

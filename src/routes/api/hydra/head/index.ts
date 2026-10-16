@@ -2,6 +2,7 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { CONFIG } from '@masumi/payment-core/config';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, HydraInviteRole, HotWalletType, Network, Prisma } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
@@ -37,6 +38,7 @@ import { toPrismaJsonValue } from '@/utils/json-value';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { decrypt } from '@/utils/security/encryption';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
+import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 // --- Shared schemas ---
 
@@ -265,6 +267,10 @@ const hydraHeadOnChainVerificationSelect = {
 	headIdentifier: true,
 	contestationPeriod: true,
 	initChainSlot: true,
+	// The deposit period this head was opened with lives on its redeemed
+	// invite, not on the head row. hydra-node 2.4 fixes it on chain in the Open
+	// datum, so the on-chain verification below checks the two agree.
+	Invite: { select: { depositPeriodSeconds: true } },
 	LocalParticipant: {
 		select: {
 			walletId: true,
@@ -373,6 +379,9 @@ export async function verifyPersistedHydraHeadOnChain(
 		// participants' cardanoVkey, not LocalHotWallet/RemoteWallet.walletVkey.
 		expectedParticipantVkeys: [head.LocalParticipant.cardanoVkey, head.RemoteParticipants[0].cardanoVkey],
 		contestationPeriodSeconds: head.contestationPeriod,
+		// A head without an invite row predates the service keeping the value;
+		// the verifier then reports the on-chain figure without comparing it.
+		depositPeriodSeconds: head.Invite ? BigInt(head.Invite.depositPeriodSeconds) : undefined,
 	});
 	if (options.persist === false) {
 		return { headIdentifier: head.headIdentifier, initTxHash: verified.initTxHash };
@@ -573,7 +582,19 @@ export async function updateHydraHeadEnabledState(
 ): Promise<HydraHeadRecord> {
 	const existing = await prisma.hydraHead.findUnique({ where: { id } });
 	if (!existing) throw createHttpError(404, 'Hydra head not found');
+	if (isEnabled && existing.isEnabled) {
+		// Already enabled: its InitTx binding still stands. Re-proving it would
+		// mean disabling first, which drops the live session and the counterparty
+		// with it. Only reconcile, which reconnects a head that lost its session.
+		reconcileEnabledHeadInBackground(id);
+		const current = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
+		if (!current) throw createHttpError(404, 'Hydra head not found');
+		return current;
+	}
 
+	// The operator's decision now: automatic recovery must not undo it. Dropped
+	// before the write, so a recovery that runs meanwhile finds no mark.
+	if (!isEnabled) forgetHeadFailedClosed(id);
 	const manager = getHydraConnectionManager();
 	const quarantined = await prisma.hydraHead.update({
 		where: { id },
@@ -635,10 +656,31 @@ export async function updateHydraHeadEnabledState(
 		throw createHttpError(409, 'Hydra head configuration or enable state changed during verification');
 	}
 
-	await manager.reconcileEnabledState(id);
+	reconcileEnabledHeadInBackground(id);
 	const head = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
 	if (!head) throw createHttpError(404, 'Hydra head not found');
 	return head;
+}
+
+/**
+ * Connect a head whose enable flag is already durable, without holding the
+ * request on it.
+ *
+ * Connecting starts the head's history replay. Awaited here, a head with a long
+ * history kept the request open through it, and the request then failed its
+ * own response query behind the replay — reporting "still disabled" for a head
+ * that was enabled and connecting. A connect that fails here is retried by the
+ * connection manager's sweep of enabled heads.
+ */
+function reconcileEnabledHeadInBackground(id: string): void {
+	void getHydraConnectionManager()
+		.reconcileEnabledState(id)
+		.catch((error: unknown) => {
+			logger.warn('[HydraHead] Connecting a re-enabled head failed; the enabled-head sweep retries it', {
+				hydraHeadId: id,
+				error: getErrorMessage(error),
+			});
+		});
 }
 
 // --- Helpers ---

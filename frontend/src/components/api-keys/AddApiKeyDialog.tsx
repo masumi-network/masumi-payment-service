@@ -38,6 +38,8 @@ import {
 } from '@/lib/constants/defaultWallets';
 import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
 import type { ApiKey, PostApiKeyData } from '@/lib/api/generated';
+import { walletScopeProblem } from '@/components/api-keys/wallet-scope.helpers';
+import { MASUMI_API_KEY_PERMISSIONS_DOCS_URL } from '@/lib/masumi-links';
 
 interface AddApiKeyDialogProps {
   open: boolean;
@@ -69,6 +71,20 @@ const apiKeySchema = z
     x402WalletScopeIds: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
+    // Create can reach the same deny-all as update: tick the restriction, pick
+    // nothing, save. The key is then born reaching no wallet.
+    const walletScope = walletScopeProblem(val.walletScopeEnabled, val.walletScopeIds);
+    if (walletScope !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: walletScope, path: ['walletScopeIds'] });
+    }
+    const x402Scope = walletScopeProblem(val.x402WalletScopeEnabled, val.x402WalletScopeIds);
+    if (x402Scope !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: x402Scope,
+        path: ['x402WalletScopeIds'],
+      });
+    }
     if (
       val.canPay &&
       !val.canAdmin &&
@@ -275,7 +291,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     const isReadOnly = !data.canPay && !data.canAdmin;
-    const defaultCredits = [
+    const readOnlyDefaultCredits = [
       {
         unit: 'lovelace',
         amount: '1000000000', // 1000 ADA
@@ -306,7 +322,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             ? undefined
             : data.evmChains,
         UsageCredits: isReadOnly
-          ? defaultCredits
+          ? readOnlyDefaultCredits
           : data.usageLimited
             ? [
                 ...(data.credits.lovelace
@@ -546,6 +562,25 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                 )}
               </div>
 
+              {isReadOnly && (
+                <div className="rounded-md border border-muted bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Read-only keys created here have usage limits enabled and receive 1000 ADA in
+                    usage credits. Read operations do not spend these credits. This default cannot
+                    be changed here.{' '}
+                    <a
+                      href={MASUMI_API_KEY_PERMISSIONS_DOCS_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline underline-offset-4 hover:text-primary/80"
+                    >
+                      Learn more about API key permissions
+                    </a>
+                    .
+                  </p>
+                </div>
+              )}
+
               {usageLimited && !isReadOnly && (
                 <>
                   <FormField
@@ -600,12 +635,10 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                           <Checkbox
                             aria-label="Restrict to specific wallets"
                             checked={field.value}
-                            onCheckedChange={(checked) => {
-                              field.onChange(checked);
-                              if (!checked) {
-                                setValue('walletScopeIds', []);
-                              }
-                            }}
+                            // The selection survives an untick, as in the update
+                            // dialog: clearing it here let a net-zero tick save the
+                            // scope with an empty list, which reaches no wallet.
+                            onCheckedChange={(checked) => field.onChange(checked)}
                           />
                         )}
                       />
@@ -664,10 +697,14 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                           ))
                         )}
                       </div>
-                      {walletScopeIds.length > 0 && (
+                      {walletScopeIds.length > 0 ? (
                         <p className="text-xs text-muted-foreground">
                           {walletScopeIds.length} wallet{walletScopeIds.length !== 1 ? 's' : ''}{' '}
                           selected
+                        </p>
+                      ) : (
+                        <p className="text-xs text-destructive">
+                          {walletScopeProblem(true, walletScopeIds)}
                         </p>
                       )}
                     </div>

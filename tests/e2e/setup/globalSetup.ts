@@ -5,21 +5,40 @@ import { ApiClient } from '../utils/apiClient';
 import { getTestEnvironment } from '../fixtures/testData';
 import { waitForServer } from '../utils/waitFor';
 import { registerAndConfirmAgent, type ConfirmedAgent } from '../helperFunctions';
-import { validateE2EPaymentSourceWallets } from '../utils/paymentSourceHelper';
+import { getSellingWalletVkeys, validateE2EPaymentSourceWallets } from '../utils/paymentSourceHelper';
+import { assertPurchasingWalletFunded } from '../utils/walletFunding';
 import './globals';
 import { E2E_GLOBAL_STATE_ENV_KEY, encodeE2EGlobalState, type E2EGlobalState } from './e2eGlobalState';
 import { PaymentSourceType } from '@/generated/prisma/enums';
+import type { Config } from '@jest/types';
+
+/**
+ * How many agents (and therefore selling hot wallets) each payment source uses.
+ *
+ * Defaults to 1: one agent per source, shared by every flow file, which is what
+ * the suite did when its flows ran one at a time. Raise it only when the source
+ * has that many funded selling wallets seeded.
+ */
+function parseAgentsPerSource(): number {
+	const raw = process.env.E2E_AGENTS_PER_SOURCE;
+	if (raw == null || raw.trim() === '') return 1;
+	const parsed = Number(raw);
+	if (!Number.isInteger(parsed) || parsed < 1) {
+		throw new Error(`E2E_AGENTS_PER_SOURCE must be a positive integer, got "${raw}"`);
+	}
+	return parsed;
+}
 
 /**
  * Jest global setup for E2E tests.
  * Runs ONCE per Jest invocation (not per test file).
  *
- * Discovers every PaymentSource the API exposes for the test network and registers
- * an agent against each one in parallel. The resulting agents are stored under
- * their PaymentSourceType so the per-test `describe.each` blocks can pick the
- * right one without re-registering.
+ * Discovers every PaymentSource the API exposes for the test network and
+ * registers one agent per selling hot wallet, all in parallel. The resulting
+ * agents are stored under their PaymentSourceType so the flow files can pick
+ * one (see `pickAgentForSlot`) without re-registering.
  */
-export default async function globalSetup() {
+export default async function globalSetup(globalConfig: Config.GlobalConfig) {
 	const GLOBAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 	// AbortController cancels in-flight registrations when the global timeout
 	// fires. Without this, the timeout rejection wins the Promise.race but
@@ -139,30 +158,79 @@ And accessible at: ${config.apiUrl}
 			}
 		}
 
-		console.log(`🧑‍💻 [globalSetup] Registering shared E2E agents in parallel for: ${uniqueSourceTypes.join(', ')}`);
-		// Promise.allSettled (not Promise.all) so a single source's failure
-		// doesn't strand the other source's on-chain registration as an
-		// orphan. We persist whatever succeeded BEFORE throwing so teardown
-		// can deregister succeeded agents. Pass the signal so per-agent
-		// pollUntil loops bail out when the global timeout fires instead of
-		// continuing on-chain work whose result will be discarded.
+		// Flow files run concurrently, so their funds-locks are packed into one
+		// transaction from one purchasing wallet instead of arriving one at a
+		// time. `maxWorkers` bounds how many can land in a single batch. Checked
+		// here, before any on-chain work: the batch builder parks requests it
+		// cannot fund in WaitingForManualAction/InsufficientFunds, which never
+		// retries, so an underfunded wallet has to surface as a clear message
+		// rather than as a stuck flow ten minutes in.
+		console.log(
+			`🔎 [globalSetup] Checking purchasing wallet funds for ${globalConfig.maxWorkers} concurrent lock(s)...`,
+		);
+		for (const sourceType of uniqueSourceTypes) {
+			await assertPurchasingWalletFunded({
+				network: config.network,
+				paymentSourceType: sourceType,
+				concurrentLocks: globalConfig.maxWorkers,
+				apiClient,
+			});
+		}
+
+		// One agent per selling hot wallet, up to E2E_AGENTS_PER_SOURCE. Flow files
+		// run concurrently and V1 takes one request per hot wallet per scheduler
+		// tick, so giving each flow its own selling wallet lets them overlap
+		// instead of queueing. Opt-in: the default of 1 registers exactly one
+		// agent per source, which is what every flow shared before, and leaves
+		// environments that happen to have several selling wallets untouched.
+		const agentsPerSource = parseAgentsPerSource();
+		const registrationTargets: { sourceType: PaymentSourceType; sellingWalletVkey: string }[] = [];
+		for (const sourceType of uniqueSourceTypes) {
+			const availableVkeys = await getSellingWalletVkeys(config.network, sourceType, apiClient);
+			const sellingWalletVkeys = availableVkeys.slice(0, agentsPerSource);
+			if (availableVkeys.length < agentsPerSource) {
+				console.warn(
+					`⚠️ [globalSetup] ${sourceType}: E2E_AGENTS_PER_SOURCE=${agentsPerSource} but only ` +
+						`${availableVkeys.length} selling wallet(s) are seeded. Flows will share wallets and pipeline. ` +
+						`Seed more with SELLING_WALLET_<NETWORK>_MNEMONIC_2, _3, ... (each must be funded).`,
+				);
+			}
+			console.log(`🔑 [globalSetup] ${sourceType}: registering ${sellingWalletVkeys.length} agent(s)`);
+			for (const sellingWalletVkey of sellingWalletVkeys) {
+				registrationTargets.push({ sourceType, sellingWalletVkey });
+			}
+		}
+
+		console.log(`🧑‍💻 [globalSetup] Registering ${registrationTargets.length} shared E2E agent(s) in parallel...`);
+		// Promise.allSettled (not Promise.all) so a single agent's failure
+		// doesn't strand a sibling's on-chain registration as an orphan. We
+		// persist whatever succeeded BEFORE throwing so teardown can deregister
+		// succeeded agents. Pass the signal so per-agent pollUntil loops bail out
+		// when the global timeout fires instead of continuing on-chain work whose
+		// result will be discarded.
 		const registrationResults = await Promise.allSettled(
-			uniqueSourceTypes.map(async (sourceType) => {
-				const agent = await registerAndConfirmAgent(config.network, sourceType, abortController.signal);
+			registrationTargets.map(async ({ sourceType, sellingWalletVkey }) => {
+				const agent = await registerAndConfirmAgent(
+					config.network,
+					sourceType,
+					abortController.signal,
+					sellingWalletVkey,
+				);
 				return [sourceType, agent] as const;
 			}),
 		);
 
-		const agents: Partial<Record<PaymentSourceType, ConfirmedAgent>> = {};
-		const failures: { sourceType: PaymentSourceType; error: string }[] = [];
+		const agents: Partial<Record<PaymentSourceType, ConfirmedAgent[]>> = {};
+		const failures: { sourceType: PaymentSourceType; sellingWalletVkey: string; error: string }[] = [];
 		for (let i = 0; i < registrationResults.length; i++) {
 			const result = registrationResults[i];
 			if (result.status === 'fulfilled') {
 				const [sourceType, agent] = result.value;
-				agents[sourceType] = agent;
+				(agents[sourceType] ??= []).push(agent);
 			} else {
 				failures.push({
-					sourceType: uniqueSourceTypes[i],
+					sourceType: registrationTargets[i].sourceType,
+					sellingWalletVkey: registrationTargets[i].sellingWalletVkey,
 					error: result.reason instanceof Error ? result.reason.message : String(result.reason),
 				});
 			}
@@ -178,23 +246,20 @@ And accessible at: ${config.apiUrl}
 		// state and deregister the agents that did succeed.
 		process.env[E2E_GLOBAL_STATE_ENV_KEY] = encodeE2EGlobalState(state);
 
+		const registeredCount = Object.values(agents).reduce((total, list) => total + list.length, 0);
+
 		if (failures.length > 0) {
 			console.error('❌ [globalSetup] One or more agent registrations failed:');
-			for (const { sourceType, error } of failures) {
-				console.error(`   - ${sourceType}: ${error}`);
+			for (const { sourceType, sellingWalletVkey, error } of failures) {
+				console.error(`   - ${sourceType} (selling wallet ${sellingWalletVkey}): ${error}`);
 			}
-			console.error(
-				`✅ [globalSetup] ${Object.keys(agents).length} succeeded — teardown will deregister those if reached.`,
-			);
-			throw new Error(
-				`Agent registration failed for ${failures.length} of ${uniqueSourceTypes.length} source types`,
-			);
+			console.error(`✅ [globalSetup] ${registeredCount} succeeded — teardown will deregister those if reached.`);
+			throw new Error(`Agent registration failed for ${failures.length} of ${registrationTargets.length} agents`);
 		}
 
 		console.log('✅ [globalSetup] Shared agents ready:');
 		for (const sourceType of uniqueSourceTypes) {
-			const agent = agents[sourceType];
-			if (agent != null) {
+			for (const agent of agents[sourceType] ?? []) {
 				console.log(`    - ${sourceType}: ${agent.name} (${agent.agentIdentifier})`);
 			}
 		}

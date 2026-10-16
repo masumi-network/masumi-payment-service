@@ -4,16 +4,18 @@ import {
 	AuthContext,
 	checkIsAllowedNetworkOrThrowUnauthorized,
 } from '@masumi/payment-core/auth';
-import { cursorPaginationArgs } from '@/utils/shared/queries';
+import { buildHotWalletSearchFilter, cursorPaginationArgs, normalizeSearchQuery } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { HotWalletType, Prisma, WalletFundTransfer } from '@/generated/prisma/client';
+import { HotWalletType, Prisma, TransactionStatus, WalletFundTransfer } from '@/generated/prisma/client';
 import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { logger } from '@masumi/payment-core/logger';
+import { createRateLimiter } from '@/utils/middleware/rate-limit';
 import {
 	getWalletListSchemaInput,
 	getWalletListSchemaOutput,
@@ -27,9 +29,13 @@ import {
 	postWalletFundSchemaOutput,
 	getWalletFundSchemaInput,
 	getWalletFundSchemaOutput,
+	postWalletConsolidateSchemaInput,
+	postWalletConsolidateSchemaOutput,
 } from './schemas';
 import { serializeLowBalanceRecord, serializeLowBalanceSummary } from '@/services/wallets';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { planL1Consolidation } from '@/services/wallets/consolidate';
 
 export {
 	getWalletListSchemaInput,
@@ -86,6 +92,7 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 				...(input.paymentSourceId != null ? { paymentSourceId: input.paymentSourceId } : {}),
 				...(input.walletVkey != null ? { walletVkey: input.walletVkey } : {}),
 				...(input.walletAddress != null ? { walletAddress: input.walletAddress } : {}),
+				...buildHotWalletSearchFilter(normalizeSearchQuery(input.searchQuery)),
 				PaymentSource: {
 					network: { in: ctx.networkLimit },
 					deletedAt: null,
@@ -126,6 +133,8 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 		};
 	},
 });
+
+const walletSecretRevealRateLimiter = createRateLimiter({ maxRequests: 5, windowMs: 5 * 60_000 });
 
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
@@ -211,6 +220,13 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 			};
 
 			if (input.includeSecret == true) {
+				const rateLimit = walletSecretRevealRateLimiter.consume(ctx.id);
+				if (!rateLimit.allowed) {
+					throw createHttpError(429, 'Too many wallet secret reveals; try again later.');
+				}
+
+				logger.warn(`Wallet secret disclosed for ${walletTypeLabel} wallet ${result.id} (admin key ${ctx.id})`);
+
 				return {
 					...base,
 					Secret: {
@@ -351,6 +367,76 @@ export const postWalletFundEndpointPost = adminAuthenticatedEndpointFactory.buil
 			},
 		});
 
+		return serializeFundTransfer(transfer);
+	},
+});
+
+/**
+ * Merge a hot wallet's L1 UTxOs by queuing a fund transfer back to itself.
+ *
+ * The amount is the whole balance less a small reserve for fee and change, so
+ * the transfer's coin selection spends nearly every UTxO. See
+ * `@/services/wallets/consolidate` for why this rides the transfer pipeline.
+ */
+export const postWalletConsolidateEndpointPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: postWalletConsolidateSchemaInput,
+	output: postWalletConsolidateSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof postWalletConsolidateSchemaInput>; ctx: AuthContext }) => {
+		const wallet = await prisma.hotWallet.findFirst({
+			where: {
+				walletAddress: input.walletAddress,
+				deletedAt: null,
+				PaymentSource: { network: { in: ctx.networkLimit }, deletedAt: null },
+				...buildHotWalletScopeFilter(ctx.walletScopeIds),
+			},
+			include: {
+				PaymentSource: { select: { network: true, PaymentSourceConfig: { select: { rpcProviderApiKey: true } } } },
+			},
+		});
+		if (wallet == null) {
+			throw createHttpError(404, 'Wallet not found');
+		}
+
+		// A wallet mid-transaction is about to spend some of the balance read below.
+		if (wallet.lockedAt != null || wallet.pendingTransactionId != null) {
+			throw createHttpError(409, 'This wallet is busy with another transaction; retry once it has settled');
+		}
+		// A queued transfer would be paid out of the balance read below, and the
+		// consolidation would then ask for funds that are no longer there.
+		const pending = await prisma.walletFundTransfer.count({
+			where: { hotWalletId: wallet.id, status: TransactionStatus.Pending },
+		});
+		if (pending > 0) {
+			throw createHttpError(409, 'This wallet has a fund transfer in progress; retry once it has settled');
+		}
+
+		const blockfrost = getBlockfrostInstance(
+			wallet.PaymentSource.network,
+			wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		);
+		let utxos: Array<{ amount: Array<{ unit: string; quantity: string }> }>;
+		try {
+			utxos = await blockfrost.addressesUtxosAll(wallet.walletAddress);
+		} catch (error) {
+			const status = Number((error as { status_code?: number | string }).status_code);
+			if (status !== 404) throw createHttpError(502, 'Could not read the wallet UTxOs from the chain');
+			utxos = [];
+		}
+
+		const plan = planL1Consolidation(utxos);
+		if (plan === null) {
+			throw createHttpError(400, 'This wallet has nothing to consolidate, or too little ADA to pay for it');
+		}
+
+		const transfer = await prisma.walletFundTransfer.create({
+			data: {
+				hotWalletId: wallet.id,
+				toAddress: wallet.walletAddress,
+				lovelaceAmount: plan.lovelaceAmount,
+				assets: plan.assets.length > 0 ? plan.assets : Prisma.DbNull,
+			},
+		});
 		return serializeFundTransfer(transfer);
 	},
 });

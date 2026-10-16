@@ -158,6 +158,8 @@ function buildRegistryUpdateResponse() {
 		apiBaseUrl: 'https://example.com/agent',
 		openApiSpecUrl: null,
 		x402ResourcesUrl: null,
+		a2aAgentCardUrl: null,
+		a2aProtocolVersions: [],
 		capabilityName: 'demo',
 		capabilityVersion: '1.0.0',
 		authorName: 'Author',
@@ -260,6 +262,8 @@ describe('unregisterAgentPost', () => {
 		});
 		expect(mockUpdateRegistryRequest.mock.calls[0]?.[0]?.data).toEqual({
 			state: RegistrationState.DeregistrationRequested,
+			// A re-queued row must not keep the reason a previous attempt failed for.
+			error: null,
 			deregistrationHotWalletId: 'recipient-wallet-id',
 		});
 		expect(responseMock._getJSONData().data.RecipientWallet).toEqual({

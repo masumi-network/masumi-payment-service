@@ -29,14 +29,16 @@ const config: Config.InitialOptions = {
 	// continuations don't fire a `require` after the env is torn down (which
 	// crashes the worker with an UnhandledPromiseRejection). See the setup file.
 	setupFilesAfterEnv: ['<rootDir>/jest.setup.libsodium.ts'],
-	roots: ['<rootDir>/src', '<rootDir>/packages'],
+	roots: ['<rootDir>/src', '<rootDir>/packages', '<rootDir>/prisma'],
 	extensionsToTreatAsEsm: ['.ts'],
 	transform: {
 		'^.+\\.tsx?$': [
 			'ts-jest',
 			{
 				useESM: true,
-				tsconfig: 'tsconfig.json',
+				// Transpile-only: `isolatedModules` makes ts-jest skip the per-file
+				// type check. Types are checked once by `pnpm run typecheck:backend`.
+				tsconfig: 'tsconfig.jest.json',
 			},
 		],
 	},

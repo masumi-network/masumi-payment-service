@@ -41,8 +41,6 @@ model ApiKey {
   X402WalletScopes              ApiKeyX402WalletScope[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
   CreatedX402Wallets            X402EvmWallet[]
-  X402WalletBudgets             X402WalletBudget[]              @relation("X402WalletBudgetGrantee")
-  CreatedX402WalletBudgets      X402WalletBudget[]              @relation("X402WalletBudgetCreatedBy")
   CreatedX402Networks           X402Network[]
   X402PaymentAttempts           X402PaymentAttempt[]
 }
@@ -237,15 +235,25 @@ model Transaction {
   l2ReservationPreviousCollateralReturn      BigInt?
   /// When the head itself refused this transaction body, naming its hash.
   ///
-  /// The one signal that separates "we do not know what happened" from "this
-  /// can never confirm". Everything else about an unconfirmed L2 reservation is
-  /// ambiguous -- absence from replay does not prove absence from the ledger --
-  /// which is why a reservation without this stays held. With it, and once the
-  /// validity window has closed, the body is provably dead and the request can
-  /// be handed back for a fresh attempt.
+  /// Diagnostic only. A node can relay a body, withhold the snapshot that
+  /// applied it and still report it invalid, so a rejection does not prove the
+  /// body dead and never releases a reservation on its own. Release needs the
+  /// input proof (see l2ReservationInputRefs).
   l2RejectedByHeadAt                         DateTime?
   /// The head's own words for that refusal, kept for the operator.
   l2RejectedByHeadReason                     String?
+  /// Inputs (`txHash#index`) the reserved in-head body spends. A body that ever
+  /// applied consumed them, and a spent output never reappears. Finding all of
+  /// them in a verified snapshot newer than the node's own confirmed snapshot
+  /// read after expiry proves the body dead (decideL2ReservationRelease).
+  l2ReservationInputRefs                     String[]                        @default([])
+  /// Set when the reservation was auto-released on that input proof. A later
+  /// confirmation of such a body halts the head's replay (invariant breach).
+  l2ReleasedByInputProofAt                   DateTime?
+  /// The wallet UTxO (`txHash#index`) a release nudge self-sends so an idle head
+  /// confirms a newer snapshot. Release waits until it is spent, so a nudge still
+  /// in flight can never meet a new lock on the freed wallet.
+  l2ReleaseNudgeInputRef                     String?
   BlocksWallet                               HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
@@ -283,6 +291,7 @@ model Transaction {
   // co-exist; write cost is acceptable since only ambiguous-funding rows
   // populate this column.
   @@index([intendedTxHash])
+  @@index([txHash])
   @@index([layer])
   @@index([hydraHeadId])
 }
@@ -442,6 +451,10 @@ model RegistryRequest {
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
   Verifications                  AgentVerification[]
+  /// A2A-only fields, kept off this table so every other entry type does not
+  /// carry NULL columns for them. Present iff `type` is A2A (enforced at the
+  /// API boundary — a DB CHECK cannot span the relation).
+  A2ADetail                      A2ARegistryDetail?
   /// V1-only legacy pricing. V2 pricing is owned by each SupportedPaymentSource.
   Pricing                        AgentPricing?
   CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
@@ -455,6 +468,37 @@ model RegistryRequest {
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
   @@index([requestedById])
+}
+
+/// A2A (MIP-002) endpoint descriptor, split out of RegistryRequest rather than
+/// added as two more nullable columns there. Every other entry type would carry
+/// NULLs for these, and A2A is the only type whose descriptor is more than a
+/// single URL — so it is the one type that earns its own row.
+///
+/// One-to-one with RegistryRequest (the FK IS the primary key), so this adds no
+/// duplicated registry fields: name, author, legal, tags, pricing, wallet and
+/// transaction lifecycle all stay on the parent and the whole mint/sync/
+/// deregister pipeline is inherited unchanged. See ADR 0010.
+///
+/// A row exists iff `RegistryRequest.type` is A2A. That invariant is enforced at
+/// the API boundary (getRegistryEndpointError), not by a DB CHECK, which cannot
+/// span the relation — the same posture as X402Network's facilitator XOR.
+model A2ARegistryDetail {
+  /// FK and PK in one: guarantees at most one detail row per registry entry.
+  registryRequestId String   @id
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  /// URL of the agent's MIP-002 Agent Card JSON document. Fetched and validated
+  /// once at registration time (unless explicitly overridden); only the URL is
+  /// stored on chain, never the card body — same reasoning as x402ResourcesUrl.
+  /// NOT NULL: an A2A entry without a card URL is not representable here.
+  agentCardUrl      String
+  /// A2A protocol versions this agent declares, cross-checked against the
+  /// fetched card's `protocolVersions`. Emitted on chain as the raw (unchunked)
+  /// `a2a_protocol_versions` array. Non-empty is enforced at the API boundary.
+  protocolVersions  String[]
+
+  RegistryRequest RegistryRequest @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
 }
 
 /// One KERI/Veridian verification claim advertised by a registry entry. Flat,
@@ -598,7 +642,6 @@ model X402EvmWallet {
   Secret              X402WalletSecret              @relation(fields: [secretId], references: [id])
   CreatedBy           ApiKey?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
   FacilitatesNetworks X402Network[]                 @relation("X402NetworkFacilitatorWallet")
-  Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
   ApiKeyScopes        ApiKeyX402WalletScope[]
   LowBalanceRules     X402EvmWalletLowBalanceRule[]
@@ -631,32 +674,6 @@ model X402EvmWalletLowBalanceRule {
   @@unique([evmWalletId, asset])
   @@index([evmWalletId, enabled])
   @@index([enabled, status])
-}
-
-model X402WalletBudget {
-  id              String        @id @default(cuid())
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  apiKeyId        String
-  evmWalletId     String
-  // Chain is implied by the wallet's network (EvmWallet.networkId); no caip2Network here.
-  asset           String
-  remainingAmount BigInt
-  spentAmount     BigInt        @default(0)
-  // Incremented whenever an admin replaces the grant. In-flight refunds must match the
-  // generation they reserved from so they cannot credit a later replacement grant.
-  generation      Int           @default(0)
-  enabled         Boolean       @default(true)
-  createdById     String?
-  ApiKey          ApiKey        @relation("X402WalletBudgetGrantee", fields: [apiKeyId], references: [id], onDelete: Cascade)
-  CreatedBy       ApiKey?       @relation("X402WalletBudgetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  EvmWallet       X402EvmWallet @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
-
-  @@unique([apiKeyId, evmWalletId, asset])
-  @@index([apiKeyId, enabled])
-  @@index([evmWalletId, enabled])
-  @@index([evmWalletId, asset])
-  @@index([createdById])
 }
 
 model X402PaymentAttempt {
@@ -921,6 +938,7 @@ model PaymentRequest {
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
   @@index([currentTransactionId])
+  @@index([agentIdentifier, createdAt])
   @@index([currentHydraUtxoTxHash])
   @@index([unresolvedHydraTerminalTxHash])
   @@index([hydraFanoutHandoffHeadId])
@@ -1040,6 +1058,7 @@ model PurchaseRequest {
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
   @@index([currentTransactionId])
+  @@index([agentIdentifier, createdAt])
   @@index([currentHydraUtxoTxHash])
   @@index([unresolvedHydraTerminalTxHash])
   @@index([hydraFanoutHandoffHeadId])
@@ -1267,6 +1286,7 @@ enum RegistryEntryType {
   Standard
   OpenApi
   X402
+  A2A
 }
 
 enum PaymentErrorType {
@@ -1796,6 +1816,14 @@ model HydraHead {
   /// on every attach, so a flapping session hid a stuck latch from it forever.
   closingSince DateTime?
 
+  /// When the head's node refused the Close admitted above.
+  ///
+  /// The only proof the stalled-close reaper accepts that the command can no
+  /// longer execute: a node can park a Close (a node behind the chain holds it
+  /// until synced), so neither elapsed time nor a status read of `Open` shows
+  /// the Close is dead. Set only while the latch is held, cleared with it.
+  closeRefusedAt DateTime?
+
   /// L1 transaction hashes for head lifecycle events
   initTxHash   String?
   closeTxHash  String?
@@ -1845,99 +1873,6 @@ model HydraHead {
   @@index([status])
   @@index([hydraRelationId, status])
   @@index([hydraRelationId, status, isEnabled])
-}
-
-/// The local participant — this server's wallet and Hydra node config.
-/// Can exist before any head (hydraHeadId is nullable).
-/// Once assigned to a head, the @unique constraint ensures one local participant per head.
-/// Has full key material for signing transactions.
-model HydraLocalParticipant {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /// Which head this participant belongs to (nullable — can be created before a head exists)
-  hydraHeadId String?    @unique
-  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
-
-  /// The HotWallet this participant operates with (has secret mnemonic). This is
-  /// the FUNDING wallet — the source of the buyer's committed escrow funds — NOT
-  /// the head's on-chain identity (see cardanoVkey).
-  walletId String
-  Wallet   HotWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
-
-  /// The Hydra NODE's own Cardano verification-key HASH (28-byte hex). This is the
-  /// on-chain participant identity: Hydra mints the InitTx participant token for
-  /// this key and head verification checks the token against it. It is
-  /// deliberately SEPARATE from the funding HotWallet (walletId) so the node's
-  /// infrastructure key is never the custodial fund wallet — a node-host
-  /// compromise cannot reach escrowed funds, and node keys rotate independently.
-  /// (Set to the funding wallet's vkey only for legacy coupled heads.)
-  cardanoVkey String
-
-  /// Whether this service keeps the node's L1 fuel topped up from `walletId`.
-  /// False when the operator said they would fund the node key themselves: the
-  /// scheduled funding cycle then leaves it alone, and so does redemption.
-  /// Without this the documented opt-out did nothing — the cycle funds any node
-  /// held by a live invite or a non-final head, so 30 ADA left the wallet within
-  /// one tick of an invite that had asked us not to.
-  autoFund Boolean @default(true)
-
-  /// The Hydra Host this participant's node runs on. Required: every node is
-  /// provisioned through a Host, which generates its keys and supervises its
-  /// process — a node configured by hand is not representable. Restrict: a Host
-  /// with live participants must not be deleted.
-  hydraHostId String
-  HydraHost   HydraHost @relation(fields: [hydraHostId], references: [id], onDelete: Restrict)
-
-  /// Node id assigned by that Host. Together with hydraHostId this identifies
-  /// the supervised process; nodeUrl/nodeHttpUrl below are derived from the two.
-  /// Unique per Host: two participants pointing at one supervised node would
-  /// have them fighting over the same head state.
-  hostNodeId String
-
-  /// WebSocket URL for this participant's Hydra node, through its Host's proxy
-  /// (wss://host/v1/nodes/<hostNodeId>/api). Derived from hydraHostId and
-  /// hostNodeId, and stored so the connection manager does not have to resolve
-  /// the Host on every reconnect.
-  nodeUrl String
-
-  /// HTTP URL for the same node, through the same proxy.
-  nodeHttpUrl String
-
-  /// Whether this participant has committed funds to the head
-  hasCommitted Boolean @default(false)
-
-  /// L1 commit transaction hash (set after this participant commits to the head)
-  commitTxHash String?
-
-  /// Signed invalid-hereafter slot retained with the L1 commit hash. A retry is
-  /// safe only after this slot plus the rollback/indexer grace window has passed
-  /// with the hash absent. Legacy already-confirmed rows are migrated with 0.
-  commitInvalidHereafterSlot BigInt?
-
-  /// When this participant's signing keys were handed to an operator to back
-  /// up. Set by the one-time reveal and never cleared: the disclosure path
-  /// seals after the first use, mirroring the Host's own escrow so key material
-  /// cannot be pulled repeatedly out of the database through the API.
-  keysDisclosedAt DateTime?
-
-  /// Encrypted Hydra signing key (1:1)
-  hydraSecretKeyId String         @unique
-  HydraSecretKey   HydraSecretKey @relation(fields: [hydraSecretKeyId], references: [id], onDelete: Restrict)
-
-  /// Incremental-commit top-ups performed by this participant
-  Topups HydraTopup[]
-
-  /// Incremental-decommit withdrawals performed by this participant
-  Withdrawals HydraDecommit[]
-
-  /// Low in-head-balance monitoring rules for this participant
-  LowBalanceRules HydraLowBalanceRule[]
-
-  @@unique([hydraHostId, hostNodeId])
-  @@index([walletId])
-  @@index([hasCommitted, updatedAt])
 }
 
 /// Low-balance monitoring for a local participant's OWN funds inside its head.
@@ -2327,6 +2262,9 @@ enum HydraInviteStatus {
   Expired
   /// Withdrawn by the operator before anyone redeemed it.
   Revoked
+  /// Redeemed with a signature that did not verify. The node was removed and
+  /// the nonce stays spent; the operator issues a new invite to retry.
+  Failed
 }
 
 /// A signed proposal to open the next [[Hydra Head]] on a relation.

@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { getRegistry, GetRegistryData, RegistryEntry } from '@/lib/api/generated';
+import { getRegistry, getRegistryCount, GetRegistryData, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
 import { useMemo } from 'react';
@@ -37,6 +37,54 @@ function sortAgents(agents: RegistryEntry[]): RegistryEntry[] {
   return [...agents].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
+}
+
+export function useRegistryAgentCount() {
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
+  const { paymentSources, isLoading: isLoadingPaymentSources } = usePaymentSourceExtendedAll();
+
+  const hasCurrentNetworkPaymentSources = useMemo(
+    () => paymentSources.some((ps) => ps.network === network),
+    [paymentSources, network],
+  );
+  const source = resolveAgentListSource(selectedPaymentSourceId, selectedPaymentSource, network);
+  const isSourceResolving = hasCurrentNetworkPaymentSources && source == null;
+
+  const query = useQuery({
+    queryKey: [
+      'agents',
+      'count',
+      network,
+      selectedPaymentSourceId,
+      source?.paymentSourceType,
+      source?.smartContractAddress,
+    ],
+    queryFn: async () => {
+      if (!source) return 0;
+
+      const response = await getRegistryCount({
+        client: apiClient,
+        query: {
+          network: source.network,
+          filterSmartContractAddress: source.smartContractAddress,
+          filterPaymentSourceType: source.paymentSourceType,
+        },
+      });
+      if (response.error) {
+        throw response.error;
+      }
+      return response.data?.data?.total ?? 0;
+    },
+    enabled: hasCurrentNetworkPaymentSources && source != null,
+    staleTime: 15000,
+    retry: 1,
+  });
+
+  return {
+    total: query.data,
+    isLoading: isLoadingPaymentSources || isSourceResolving || query.isLoading,
+    refetch: query.refetch,
+  };
 }
 
 export function useAgents(params?: AgentListFilters) {

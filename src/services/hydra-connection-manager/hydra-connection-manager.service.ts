@@ -30,17 +30,25 @@ import { HydraNode } from '@/lib/hydra/hydra/node';
 import { applyDecommitOutcome } from '@/services/hydra-decommit/settle';
 import { type HydraDatumApplyOutcome } from './hydra-datum-sync';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
+import { createWorkerAccumulatorComputer } from '@/lib/hydra/hydra/snapshot-accumulator-worker-client';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { probeHeadCurrentSlot } from './head-session-ops';
 import { HeadSession } from './head-session';
 import { persistHeadStatus, type HeadStatusPersistenceHost } from './head-status-persistence';
+import { continueAfterStatusPersistenceRecovery } from './head-auto-disable-recovery';
 import { applyConfirmedHydraTransaction, type TxConfirmedHost } from './head-tx-confirmed';
 import {
 	HYDRA_PRE_INIT_STATUSES,
 	headConfigurationInclude,
 	loadValidatedHeadConfiguration,
 } from './head-configuration';
+
+/**
+ * Shared by every head: history replay verifies each signed snapshot's KZG
+ * accumulator, and on the event loop that starves the whole process.
+ */
+const snapshotAccumulator = createWorkerAccumulatorComputer();
 
 export class HydraConnectionManager {
 	/**
@@ -251,6 +259,7 @@ export class HydraConnectionManager {
 			// confirmed CBOR list. This opt-in names the remaining local-node trust.
 			trustLocalNodeSnapshotMetadata: true,
 			authToken: nodeAuthToken,
+			computeSnapshotAccumulator: snapshotAccumulator,
 		};
 
 		const hydraHead: CustomHydraHead = new CustomHydraHead([nodeConfig], {
@@ -615,11 +624,17 @@ export class HydraConnectionManager {
 			await this.disconnect(hydraHeadId);
 			return await this.reconcileEnabledStateInner(hydraHeadId);
 		});
-		void work.catch((error: unknown) => {
+		const continueRecovery = (connected: boolean | null) => {
+			void continueAfterStatusPersistenceRecovery(hydraHeadId, connected).catch((error: unknown) => {
+				logger.error('[HydraConnectionManager] Failed auto-disable recovery', { hydraHeadId, error });
+			});
+		};
+		void work.then(continueRecovery, (error: unknown) => {
 			logger.error('[HydraConnectionManager] Failed lifecycle-persistence recovery', {
 				hydraHeadId,
 				error,
 			});
+			continueRecovery(null);
 			this.scheduleReconnect(hydraHeadId);
 		});
 	}

@@ -9,8 +9,10 @@
  * `connected: false` rather than a stale/guessed balance.
  */
 import { HydraTopupStatus } from '@/generated/prisma/client';
+import createHttpError from 'http-errors';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getHydraConnectionManager } from './hydra-connection-manager.service';
 
 export interface HydraHeadBalanceAsset {
@@ -86,7 +88,21 @@ export function aggregateInHeadAmounts(
 export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHeadOwnBalance | null> {
 	const head = await prisma.hydraHead.findUnique({
 		where: { id: hydraHeadId },
-		select: { id: true, LocalParticipant: { select: { Wallet: { select: { walletAddress: true } } } } },
+		select: {
+			id: true,
+			LocalParticipant: {
+				select: {
+					Wallet: {
+						select: {
+							walletAddress: true,
+							PaymentSource: {
+								select: { network: true, PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
+							},
+						},
+					},
+				},
+			},
+		},
 	});
 	if (!head?.LocalParticipant?.Wallet?.walletAddress) {
 		return null;
@@ -111,17 +127,32 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 	// Cross-check against what we know L1 did with this head's deposits. A
 	// recovered deposit's funds are back in the wallet, so an in-head UTxO still
 	// carrying its reference is one the head believes in and the chain does not.
-	// Matched on the committed UTxO's own transaction, because that is the
-	// reference the head keeps: for an exact-amount top-up that is the split, and
-	// otherwise the deposit itself.
+	// The validated deposit spends exactly the committed inputs at this wallet.
+	// Read their full references from L1. A split hash also names uncommitted change.
 	const recovered = await prisma.hydraTopup.findMany({
 		where: { hydraHeadId, status: HydraTopupStatus.Recovered },
-		select: { depositTxHash: true, splitTxHash: true },
+		select: { depositTxHash: true },
 	});
-	const recoveredOrigins = new Set(
-		recovered.flatMap((row) => [row.depositTxHash, row.splitTxHash]).filter((hash): hash is string => hash != null),
-	);
-	const unbacked = utxos.filter((utxo) => recoveredOrigins.has(utxo.input.txHash));
+	const recoveredReferences = new Set<string>();
+	if (utxos.length > 0 && recovered.length > 0) {
+		const source = head.LocalParticipant.Wallet.PaymentSource;
+		const chain = getBlockfrostInstance(source.network, source.PaymentSourceConfig.rpcProviderApiKey);
+		try {
+			for (const deposit of recovered) {
+				if (deposit.depositTxHash === null) continue;
+				const transaction = await chain.txsUtxos(deposit.depositTxHash);
+				for (const input of transaction.inputs) {
+					if (input.address === address && !input.collateral && !input.reference) {
+						recoveredReferences.add(`${input.tx_hash}#${input.output_index}`);
+					}
+				}
+			}
+		} catch (error) {
+			logger.warn('[HydraBalance] could not read recovered deposit inputs', { hydraHeadId, error });
+			throw createHttpError(502, 'Could not check recovered Hydra deposits against L1');
+		}
+	}
+	const unbacked = utxos.filter((utxo) => recoveredReferences.has(`${utxo.input.txHash}#${utxo.input.outputIndex}`));
 	const unbackedLovelace = unbacked.reduce((total, utxo) => {
 		for (const asset of utxo.output.amount) {
 			if (asset.unit === '' || asset.unit.toLowerCase() === 'lovelace') return total + BigInt(asset.quantity);

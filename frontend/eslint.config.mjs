@@ -13,7 +13,9 @@ const localRulesPlugin = {
 const eslintConfig = defineConfig([
   ...nextVitals,
   prettierConfig,
-  globalIgnores(['.next/**', 'dist/**', 'node_modules/**']),
+  // 'public/monaco' is Monaco's prebuilt bundle staged by scripts/copy-monaco.mjs.
+  // Generated, gitignored, minified vendor code — linting it takes minutes.
+  globalIgnores(['.next/**', 'dist/**', 'node_modules/**', 'public/monaco/**']),
   {
     ignores: ['**/*.gen.ts', 'src/lib/api/generated/**'],
   },

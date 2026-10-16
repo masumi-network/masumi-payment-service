@@ -32,6 +32,28 @@ export type HeadPeriods = {
 	contestationPeriodSeconds: number;
 	depositPeriodSeconds: number;
 	unsyncedPeriodSeconds: number;
+	/**
+	 * hydra-node 2.4's `--deposit-activation`: how long a deposit must age before
+	 * the head will take it.
+	 *
+	 * LOCAL, not consensus — verified against `hydra-node/src/Hydra/Chain/Direct/*`
+	 * at tag 2.4.1: `HeadParameters` (the on-chain-checked pair) carries only
+	 * `{contestationPeriod, depositPeriod, parties}`, and `onIdleChainInitTx`
+	 * checks `depositPeriod` equality against the InitTx but has no equivalent
+	 * check for `depositActivation`. It therefore does NOT belong in the signed
+	 * invite payload or on `HydraHeadInvite` — see `orchestrator.ts`'s explicit
+	 * (non-spread) payload/DB field lists, which exist specifically to keep this
+	 * field from leaking into either. Both sides still agree on it in practice
+	 * because both derive it from the same network default, here.
+	 *
+	 * Set equal to `depositPeriodSeconds`: hydra-node 2.4.1 derives
+	 * usable-from as `deposit + depositActivation` and absorb-by as
+	 * `deposit + depositActivation + depositPeriod` (2.3.0 used `deposit + DP`
+	 * and `deposit + 2·DP`). Activation == DP reproduces 2.3.0's proven
+	 * schedule exactly; upstream's own default (3600s) would silently push a
+	 * preprod deposit's usable-from from +10 min to +60 min.
+	 */
+	depositActivationSeconds: number;
 };
 
 /**
@@ -107,10 +129,12 @@ export const DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS = 1800;
 export function defaultPeriodsFor(network: Network): HeadPeriods {
 	const isMainnet = network === Network.Mainnet;
 	const contestationPeriodSeconds = isMainnet ? 5 * 24 * 3600 : 12 * 3600;
+	const depositPeriodSeconds = isMainnet ? 1200 : 600;
 	return {
 		contestationPeriodSeconds,
-		depositPeriodSeconds: isMainnet ? 1200 : 600,
+		depositPeriodSeconds,
 		unsyncedPeriodSeconds: defaultUnsyncedPeriodFor(contestationPeriodSeconds),
+		depositActivationSeconds: depositPeriodSeconds,
 	};
 }
 
@@ -125,6 +149,37 @@ export function defaultUnsyncedPeriodFor(contestationPeriodSeconds: number): num
 
 /** For the callers that have no network in hand yet. */
 export const DEFAULT_PERIODS: HeadPeriods = defaultPeriodsFor(Network.Preprod);
+
+/**
+ * The periods a redeemed invite opens its head with.
+ *
+ * Every value comes from the issuer's signed payload EXCEPT the activation,
+ * which the invite deliberately never carries: it is a per-node local setting
+ * (see `HeadPeriods`), so there is nothing to exchange or sign for it.
+ *
+ * It is derived from the ISSUER'S deposit period rather than from this side's
+ * network default, and that distinction is the whole point of this function.
+ * The default is only correct when the issuer also used the default. An issuer
+ * who set `depositPeriodSeconds` explicitly — public API, min 300 — would
+ * otherwise leave the redeemer pairing the issuer's period against the
+ * redeemer's activation. Each node evaluates a deposit's absorb window
+ * `[created + activation, deadline - depositPeriod]` against its OWN local
+ * activation, so the two windows would stop overlapping and no deposit could be
+ * co-signed. Silently: both sides' `usableFrom`/`absorbBy` derive from the
+ * deadline and would still look normal.
+ */
+export function periodsFromInvite(payload: {
+	contestationPeriodSeconds: number;
+	depositPeriodSeconds: number;
+	unsyncedPeriodSeconds: number;
+}): HeadPeriods {
+	return {
+		contestationPeriodSeconds: payload.contestationPeriodSeconds,
+		depositPeriodSeconds: payload.depositPeriodSeconds,
+		unsyncedPeriodSeconds: payload.unsyncedPeriodSeconds,
+		depositActivationSeconds: payload.depositPeriodSeconds,
+	};
+}
 
 /**
  * The shortest dispute window a mainnet head may be created with.
@@ -153,11 +208,77 @@ export function assertContestationPeriodAllowed(network: Network, contestationPe
 	}
 }
 
+/**
+ * The bounds the invite route puts on the deposit and contestation periods.
+ * The route explains each number. They live here so a redeemed invite is held
+ * to the same bounds as a minted one: the issuer runs its own service, which
+ * may not enforce them.
+ */
+export const DEPOSIT_PERIOD_BOUNDS_SECONDS = { min: 300, max: 86_400 } as const;
+export const CONTESTATION_PERIOD_BOUNDS_SECONDS = { min: 300, max: 1_209_600 } as const;
+
+/**
+ * Refuse a set of periods no head of ours may run with.
+ *
+ * Called at mint and at redemption, both times before a node is reserved. A
+ * reserved node holds keys, a peer port and possibly funding, and `--peer` is
+ * startup configuration, so a node reserved for periods that are later refused
+ * can only be reaped.
+ */
+export function assertHeadPeriodsAllowed(
+	network: Network,
+	periods: { contestationPeriodSeconds: number; depositPeriodSeconds: number; unsyncedPeriodSeconds: number },
+): void {
+	const bounded = [
+		['depositPeriodSeconds', periods.depositPeriodSeconds, DEPOSIT_PERIOD_BOUNDS_SECONDS],
+		['contestationPeriodSeconds', periods.contestationPeriodSeconds, CONTESTATION_PERIOD_BOUNDS_SECONDS],
+	] as const;
+	for (const [field, value, { min, max }] of bounded) {
+		if (!Number.isInteger(value) || value < min || value > max) {
+			throw createHttpError(400, `${field} must be a whole number of seconds from ${min} to ${max}; got ${value}`);
+		}
+	}
+	if (!Number.isInteger(periods.unsyncedPeriodSeconds)) {
+		throw createHttpError(
+			400,
+			`unsyncedPeriodSeconds must be a whole number of seconds; got ${periods.unsyncedPeriodSeconds}`,
+		);
+	}
+
+	assertContestationPeriodAllowed(network, periods.contestationPeriodSeconds);
+
+	// Half the dispute window is a ceiling, not a preference. Hydra's guarantee is
+	// that an in-sync node always has at least that long to observe an on-chain
+	// event and react to it; a node allowed to go quiet for longer can still
+	// believe it is in sync while it has already lost the time it needs to
+	// contest. Raising it trades away the only protection the dispute window
+	// provides, so it is refused rather than warned about.
+	const syncCeiling = Math.floor(periods.contestationPeriodSeconds / 2);
+	if (periods.unsyncedPeriodSeconds > syncCeiling) {
+		throw createHttpError(
+			400,
+			`the out-of-sync limit cannot exceed half the dispute window (${syncCeiling}s here). Past that a node can think it is in sync while it has already run out of time to contest a close`,
+		);
+	}
+	// The floor matters as much as the ceiling, and it is the one that bit us.
+	// The out-of-sync limit is usually derived rather than given, so a short
+	// dispute window silently produces a short limit: two minutes of dispute
+	// window gives a sixty-second limit, and preprod block gaps reach 71s. The
+	// head then declares itself out of sync several times an hour and refuses
+	// commands, which reads as a broken node rather than a chosen setting.
+	if (periods.unsyncedPeriodSeconds < MIN_UNSYNCED_PERIOD_SECONDS) {
+		throw createHttpError(
+			400,
+			`the out-of-sync limit works out at ${periods.unsyncedPeriodSeconds}s, below the ${MIN_UNSYNCED_PERIOD_SECONDS}s floor. It is half the dispute window unless set, so raise the dispute window to at least ${MIN_UNSYNCED_PERIOD_SECONDS * 2}s. Ordinary block gaps cross a shorter limit and the head stops accepting commands`,
+		);
+	}
+}
+
 export type ReservedNode = {
 	hostId: string;
 	hostBaseUrl: string;
-	/** Where this Host redeems invites. From the Host itself, never assumed. */
-	hostExchangePort: number | null;
+	/** Public redemption URL reported by this Host. */
+	hostExchangeUrl: string | null;
 	allowInsecureHttp: boolean;
 	adminToken: string;
 	nodeId: string;
@@ -321,9 +442,7 @@ export async function reserveNodeForExchange(
 	return {
 		hostId: host.id,
 		hostBaseUrl: host.baseUrl,
-		// Read from the capabilities probe above when the row had none, so the
-		// very first invite on a freshly connected Host is already correct.
-		hostExchangePort: host.exchangePort ?? capabilities.exchangePort,
+		hostExchangeUrl: capabilities.exchangeUrl,
 		allowInsecureHttp: host.allowInsecureHttp,
 		adminToken: host.adminToken,
 		nodeId: provisioned.nodeId,

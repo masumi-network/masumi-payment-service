@@ -42,7 +42,7 @@ export function HydraInvitesDialog({
             node and a peer port until it is used.
           </DialogDescription>
         </DialogHeader>
-        <HydraInvitesCard hasConnectedNode={hasConnectedNode} variant="embedded" />
+        <HydraInvitesCard hasConnectedNode={hasConnectedNode} />
       </DialogContent>
     </Dialog>
   );

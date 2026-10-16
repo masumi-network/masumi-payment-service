@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { patchApiKey } from '@/lib/api/generated';
@@ -20,18 +20,27 @@ import {
 import { PatchApiKeyData, PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { useForm, Controller, useWatch } from 'react-hook-form';
-import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { X402WalletScopeField } from '@/components/api-keys/X402WalletScopeField';
 import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
+import { convertBaseUnitsToDecimal } from '@/lib/convertDecimalToBaseUnits';
 import {
-  getActiveStablecoinConfig,
-  getActiveStablecoinSymbol,
-} from '@/lib/constants/defaultWallets';
-import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
+  consolidateCreditRows,
+  creditUnitGroupsForKey,
+  creditUnitOptionsForKey,
+  type CreditUnitOption,
+} from '@/lib/api-key-credit-units';
+import { UsageCreditsField, type CreditRow } from '@/components/api-keys/UsageCreditsField';
+import {
+  buildUpdateApiKeySchema,
+  usageCreditDeltas,
+  type UpdateApiKeyFormValues,
+} from '@/components/api-keys/update-api-key-form';
+import { walletScopeProblem } from '@/components/api-keys/wallet-scope.helpers';
+import { Switch } from '@/components/ui/switch';
 
 interface UpdateApiKeyDialogProps {
   open: boolean;
@@ -49,6 +58,7 @@ interface UpdateApiKeyDialogProps {
     NetworkLimit: Array<'Preprod' | 'Mainnet'>;
     ChainIdLimit: string[];
     usageLimited: boolean;
+    RemainingUsageCredits: Array<{ unit: string; amount: string }>;
     status: 'Active' | 'Revoked';
     walletScopeEnabled: boolean;
     WalletScopes: Array<{ hotWalletId: string }>;
@@ -56,46 +66,6 @@ interface UpdateApiKeyDialogProps {
     X402WalletScopes: Array<{ evmWalletId: string }>;
   };
 }
-
-const updateApiKeySchema = z
-  .object({
-    newToken: z
-      .string()
-      .min(15, 'Token must be at least 15 characters')
-      .optional()
-      .or(z.literal('')),
-    status: z.enum(['Active', 'Revoked']),
-    credits: z.object({
-      lovelace: z.string().optional(),
-      usdcx: z.string().optional(),
-    }),
-    walletScopeEnabled: z.boolean(),
-    walletScopeIds: z.array(z.string()),
-    x402WalletScopeEnabled: z.boolean(),
-    x402WalletScopeIds: z.array(z.string()),
-    evmChains: z.array(z.string()),
-  })
-  .superRefine((val, ctx) => {
-    if (
-      val.credits?.lovelace &&
-      !isValidDecimalAmount(val.credits.lovelace, { allowNegative: true })
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Invalid ADA amount',
-        path: ['credits', 'lovelace'],
-      });
-    }
-    if (val.credits?.usdcx && !isValidDecimalAmount(val.credits.usdcx, { allowNegative: true })) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Invalid USDCx amount',
-        path: ['credits', 'usdcx'],
-      });
-    }
-  });
-
-type UpdateApiKeyFormValues = z.infer<typeof updateApiKeySchema>;
 
 /**
  * Get a human-readable permission label from flags.
@@ -109,7 +79,7 @@ function getPermissionLabel(_canRead: boolean, canPay: boolean, canAdmin: boolea
 export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateApiKeyDialogProps) {
   const [showToken, setShowToken] = useState(false);
   const tokenInputRef = useRef<HTMLInputElement | null>(null);
-  const { apiClient, network } = useAppContext();
+  const { apiClient } = useAppContext();
 
   const updateApiKey = useApiMutation({
     mutationFn: (body: NonNullable<PatchApiKeyData['body']>) =>
@@ -139,19 +109,80 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     }));
   }, [managedWallets, paymentSources]);
 
+  // One editable row per unit, not per stored row: the ledger can hold duplicates for
+  // the same unit and every consumer below assumes a unit appears once.
+  const currentCredits = useMemo(
+    () => consolidateCreditRows(apiKey.RemainingUsageCredits),
+    [apiKey.RemainingUsageCredits],
+  );
+
+  // Offer the units this key can actually spend. The form used to hard-code ADA plus
+  // the "active stablecoin", which on Mainnet is USDCx: a key paying in USDM could not
+  // be funded for the asset it spends, and an EVM key could not be funded at all.
+  const creditOptions = useMemo(
+    () =>
+      creditUnitOptionsForKey({
+        networkLimit: apiKey.NetworkLimit,
+        chainIdLimit: apiKey.ChainIdLimit,
+        evmNetworks: evmChainOptions,
+        existingUnits: currentCredits.map((credit) => credit.unit),
+      }),
+    [apiKey.NetworkLimit, apiKey.ChainIdLimit, currentCredits, evmChainOptions],
+  );
+  const creditGroups = useMemo(
+    () =>
+      creditUnitGroupsForKey({
+        networkLimit: apiKey.NetworkLimit,
+        chainIdLimit: apiKey.ChainIdLimit,
+        evmNetworks: evmChainOptions,
+        existingUnits: currentCredits.map((credit) => credit.unit),
+      }),
+    [apiKey.NetworkLimit, apiKey.ChainIdLimit, currentCredits, evmChainOptions],
+  );
+
+  // Seed with the key's stored balances so the dialog shows the ledger it edits. The
+  // old fields were always blank deltas, so the form could never say whether a key was
+  // funded at all.
+  const initialCreditRows = useMemo<CreditRow[]>(
+    () =>
+      currentCredits.map((credit) => {
+        // 0 for anything no preset describes, so the stored value round-trips exactly
+        // instead of being rescaled by an assumed 6dp.
+        const decimals = creditOptions.find((option) => option.unit === credit.unit)?.decimals ?? 0;
+        let amount = credit.amount;
+        try {
+          amount = convertBaseUnitsToDecimal(credit.amount, decimals);
+        } catch {
+          // Leave an unparseable stored value visible rather than dropping the row.
+        }
+        return { unit: credit.unit, amount, decimals };
+      }),
+    [currentCredits, creditOptions],
+  );
+
+  // Held here, not in UsageCreditsField: that field is unmounted whenever the cap is
+  // switched off, so a custom asset's name would not survive a toggle.
+  const [customCreditOptions, setCustomCreditOptions] = useState<CreditUnitOption[]>([]);
+
+  const updateApiKeySchema = useMemo(
+    () => buildUpdateApiKeySchema(currentCredits),
+    [currentCredits],
+  );
+
   const {
     register,
     handleSubmit,
     control,
     reset,
     setValue,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<UpdateApiKeyFormValues>({
     resolver: zodResolver(updateApiKeySchema),
     defaultValues: {
       newToken: '',
       status: apiKey.status,
-      credits: { lovelace: '', usdcx: '' },
+      usageLimited: apiKey.usageLimited,
+      credits: initialCreditRows,
       walletScopeEnabled: apiKey.walletScopeEnabled,
       walletScopeIds: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
       x402WalletScopeEnabled: apiKey.x402WalletScopeEnabled,
@@ -181,20 +212,63 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     defaultValue: apiKey.X402WalletScopes.map((ws) => ws.evmWalletId),
   });
 
+  const usageLimited = useWatch({
+    control,
+    name: 'usageLimited',
+    defaultValue: apiKey.usageLimited,
+  });
+  const creditRows = useWatch({ control, name: 'credits', defaultValue: initialCreditRows });
+  const evmChains = useWatch({
+    control,
+    name: 'evmChains',
+    defaultValue: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
+  });
+  // The SAVED grant, not the watched one. creditOptions is derived from
+  // apiKey.ChainIdLimit and cannot depend on a useWatch without a cycle (options feed
+  // initialCreditRows, which feed useForm, which yields control). Warning off the form
+  // therefore told the operator to fund a chain the picker below could not offer,
+  // because that chain existed only in the unsaved form. It appears once the grant is
+  // saved, which is also when it becomes actionable.
+  const evmChainsGranted = apiKey.ChainIdLimit.some((chainId) => chainId.startsWith('eip155:'));
+
+  // The EVM chain list loads after first paint, so the defaults above fall back to base
+  // units for any chain-qualified unit. Re-seed once the real decimals are known, but
+  // only while the operator has not started editing, so this can never eat their input.
+  const seededCreditsRef = useRef<string | null>(null);
+  const creditsDirty = dirtyFields.credits !== undefined;
+  useEffect(() => {
+    // dirtyFields.credits, not isDirty: the latter is form-wide, so typing a new token
+    // before the chain list arrived froze every chain-qualified row at the base-unit
+    // fallback while the label resolved to the preset, showing 5000000 next to USDC.
+    if (creditsDirty) return;
+    const signature = initialCreditRows.map((row) => `${row.unit}:${row.decimals}`).join('|');
+    if (signature === seededCreditsRef.current) return;
+    seededCreditsRef.current = signature;
+    setValue('credits', initialCreditRows);
+  }, [initialCreditRows, creditsDirty, setValue]);
+
+  // react-hook-form nests array errors as errors.credits[index].amount; flatten them to
+  // the index map the field component renders.
+  const creditRowErrors = useMemo<Record<number, string | undefined>>(() => {
+    const creditErrors = errors.credits;
+    if (!Array.isArray(creditErrors)) return {};
+    const flattened: Record<number, string | undefined> = {};
+    creditErrors.forEach((entry, index) => {
+      const message = entry?.amount?.message;
+      if (typeof message === 'string') flattened[index] = message;
+    });
+    return flattened;
+  }, [errors.credits]);
+
   const onSubmit = async (data: UpdateApiKeyFormValues) => {
-    const usageCredits: Array<{ unit: string; amount: string }> = [];
-    if (data.credits.lovelace) {
-      usageCredits.push({
-        unit: 'lovelace',
-        amount: convertDecimalToBaseUnits(data.credits.lovelace),
-      });
-    }
-    if (data.credits.usdcx) {
-      usageCredits.push({
-        unit: getActiveStablecoinConfig(network).fullAssetId,
-        amount: convertDecimalToBaseUnits(data.credits.usdcx),
-      });
-    }
+    // The endpoint takes deltas, not absolute balances, so diff the edited balances
+    // against the stored ones and send only what moved. An unchanged unit is omitted;
+    // a zero delta for a unit with no row is a 400 ('Invalid amount').
+    // Only while the cap is on. With it off the balances are neither validated nor
+    // shown, so a half-typed row would throw here (convertDecimalToBaseUnits rejects
+    // an empty string and handleSubmit re-throws, leaving the button dead), and a
+    // cleared list would send deltas that zero the ledger from a hidden section.
+    const usageCredits = usageCreditDeltas(data.usageLimited, currentCredits, data.credits);
 
     const walletScopeChanged =
       data.walletScopeEnabled !== apiKey.walletScopeEnabled ||
@@ -217,6 +291,9 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
         ...(data.status !== apiKey.status && { status: data.status }),
         ...(usageCredits.length > 0 && {
           UsageCreditsToAddOrRemove: usageCredits,
+        }),
+        ...(data.usageLimited !== apiKey.usageLimited && {
+          usageLimited: data.usageLimited,
         }),
         ...(walletScopeChanged && {
           walletScopeEnabled: data.walletScopeEnabled,
@@ -266,16 +343,22 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
           <DialogTitle>Update API key</DialogTitle>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5 text-sm">
-          <span className="text-muted-foreground">Permission:</span>
-          <Badge variant={apiKey.canAdmin ? 'default' : apiKey.canPay ? 'secondary' : 'outline'}>
+        {/* Wraps rather than shrinks: as one no-wrap flex row, a narrow dialog squeezed
+            every child below its content width and the badges broke mid-word
+            ("Read and / Pay", "Mainne / t"). */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border bg-muted/50 px-3 py-2.5 text-sm">
+          <span className="shrink-0 text-muted-foreground">Permission:</span>
+          <Badge
+            variant={apiKey.canAdmin ? 'default' : apiKey.canPay ? 'secondary' : 'outline'}
+            className="whitespace-nowrap"
+          >
             {getPermissionLabel(apiKey.canRead, apiKey.canPay, apiKey.canAdmin)}
           </Badge>
-          <Separator orientation="vertical" className="mx-1 h-4" />
-          <span className="text-muted-foreground">Networks:</span>
-          <div className="flex gap-1">
+          <Separator orientation="vertical" className="mx-1 h-4 max-sm:hidden" />
+          <span className="shrink-0 text-muted-foreground">Networks:</span>
+          <div className="flex flex-wrap gap-1">
             {apiKey.NetworkLimit.map((net) => (
-              <Badge key={net} variant="outline" className="font-normal">
+              <Badge key={net} variant="outline" className="font-normal whitespace-nowrap">
                 {net}
               </Badge>
             ))}
@@ -335,33 +418,67 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
               <Controller
                 control={control}
                 name="evmChains"
-                render={({ field }) => (
-                  <div className="flex flex-col gap-2">
-                    {evmChainOptions.map((chain) => (
-                      <div key={chain.id} className="flex items-center gap-2">
+                render={({ field }) => {
+                  // Membership, not count: ChainIdLimit can still name a chain this node
+                  // no longer configures, which makes the two counts match while the
+                  // boxes below disagree. Clicking "all" then took the already-all
+                  // branch and cleared every EVM grant on the key.
+                  const allEvmChainsSelected = evmChainOptions.every((chain) =>
+                    field.value.includes(chain.caip2Id),
+                  );
+                  return (
+                    <div className="flex flex-col gap-2">
+                      {/* Named for what it does. The node stores no "unlimited" state:
+                        an omitted ChainIdLimit is expanded to the configured chain list
+                        at creation (routes/api/api-key/index.ts), and on PATCH an omitted
+                        one means unchanged. So "all" is a snapshot of today's chains, and
+                        a chain configured later is not granted by it. */}
+                      <div className="flex items-center gap-2">
                         <Checkbox
-                          aria-label={chain.displayName}
-                          checked={field.value.includes(chain.caip2Id)}
-                          onCheckedChange={() => {
-                            if (field.value.includes(chain.caip2Id)) {
-                              field.onChange(
-                                field.value.filter((c: string) => c !== chain.caip2Id),
-                              );
-                            } else {
-                              field.onChange([...field.value, chain.caip2Id]);
-                            }
-                          }}
+                          aria-label="Select all EVM chains"
+                          // Not 'indeterminate': the shared Checkbox styles only
+                          // data-[state=checked] and always renders its Check icon, so a
+                          // partial state paints a tick with no fill and reads as checked.
+                          checked={allEvmChainsSelected}
+                          onCheckedChange={() =>
+                            field.onChange(
+                              allEvmChainsSelected
+                                ? []
+                                : evmChainOptions.map((chain) => chain.caip2Id),
+                            )
+                          }
                         />
-                        <label className="text-sm">
-                          {chain.displayName}{' '}
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {chain.caip2Id}
-                          </span>
+                        <label className="text-sm font-medium">
+                          All EVM chains configured on this node
                         </label>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <Separator className="my-1" />
+                      {evmChainOptions.map((chain) => (
+                        <div key={chain.id} className="flex items-center gap-2">
+                          <Checkbox
+                            aria-label={chain.displayName}
+                            checked={field.value.includes(chain.caip2Id)}
+                            onCheckedChange={() => {
+                              if (field.value.includes(chain.caip2Id)) {
+                                field.onChange(
+                                  field.value.filter((c: string) => c !== chain.caip2Id),
+                                );
+                              } else {
+                                field.onChange([...field.value, chain.caip2Id]);
+                              }
+                            }}
+                          />
+                          <label className="text-sm">
+                            {chain.displayName}{' '}
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {chain.caip2Id}
+                            </span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }}
               />
             </div>
           )}
@@ -388,43 +505,83 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             )}
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Add/Remove Credits</label>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="credits-ada" className="text-xs text-muted-foreground">
-                  ADA
-                </Label>
-                <Input
-                  id="credits-ada"
-                  type="number"
-                  placeholder="0.00"
-                  {...register('credits.lovelace')}
-                />
-                {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
-                  <p className="text-xs text-destructive">
-                    {(errors.credits.lovelace as any).message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="credits-usdcx" className="text-xs text-muted-foreground">
-                  {getActiveStablecoinSymbol(network)}
-                </Label>
-                <Input
-                  id="credits-usdcx"
-                  type="number"
-                  placeholder="0.00"
-                  {...register('credits.usdcx')}
-                />
-                {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
-                  <p className="text-xs text-destructive">
-                    {(errors.credits.usdcx as any).message}
-                  </p>
-                )}
-              </div>
+          {apiKey.canAdmin ? (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Spending limit</label>
+              <p className="text-xs text-muted-foreground">
+                Admin keys are never usage limited, so they ignore any stored credit balances.
+              </p>
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Same shape as every other switch in the app (ChainsTab,
+                  FundWalletSettingsForm): a bordered row, label left, control right. */}
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Limit usage credits</p>
+                  <p className="text-xs text-muted-foreground">
+                    {usageLimited
+                      ? 'Capped. The key spends only the balances below.'
+                      : 'Uncapped. The key spends whatever the wallets it can reach hold.'}
+                  </p>
+                </div>
+                <Controller
+                  control={control}
+                  name="usageLimited"
+                  render={({ field }) => (
+                    <Switch
+                      aria-label="Limit usage credits"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
+                />
+              </div>
+
+              {/* Only meaningful while the cap is on: an uncapped key ignores these
+                  balances entirely, so showing them invites edits that do nothing. */}
+              {usageLimited && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Usage credits</label>
+                  <Controller
+                    control={control}
+                    name="credits"
+                    render={({ field }) => (
+                      <UsageCreditsField
+                        options={creditOptions}
+                        groups={creditGroups}
+                        rows={field.value}
+                        current={currentCredits}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        inputRef={field.ref}
+                        rowErrors={creditRowErrors}
+                        customOptions={customCreditOptions}
+                        onCustomOptionsChange={setCustomCreditOptions}
+                      />
+                    )}
+                  />
+                  {creditRows.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      This key has no spending allowance. Payments remain blocked until you fund the
+                      matching unit.
+                    </p>
+                  )}
+                  {errors.credits?.root?.message && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {errors.credits.root.message}
+                    </p>
+                  )}
+                  {evmChainsGranted && (
+                    <p className="text-xs text-muted-foreground">
+                      x402 usage limits apply to each chain and asset. A missing or insufficient
+                      balance for the exact chain and asset is rejected with HTTP 402.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
 
           {!apiKey.canAdmin && (
             <>
@@ -438,12 +595,11 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                       <Checkbox
                         aria-label="Restrict to specific wallets"
                         checked={field.value}
-                        onCheckedChange={(checked) => {
-                          field.onChange(checked);
-                          if (!checked) {
-                            setValue('walletScopeIds', []);
-                          }
-                        }}
+                        // The selection survives an untick. Clearing it here made
+                        // untick-then-retick, a net-zero action on screen, save
+                        // walletScopeEnabled with an empty list: a deny-all key.
+                        // Submit already sends [] while the box is off.
+                        onCheckedChange={(checked) => field.onChange(checked)}
                       />
                     )}
                   />
@@ -499,10 +655,17 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                       ))
                     )}
                   </div>
-                  {walletScopeIds.length > 0 && (
+                  {walletScopeIds.length > 0 ? (
                     <p className="text-xs text-muted-foreground">
                       {walletScopeIds.length} wallet{walletScopeIds.length !== 1 ? 's' : ''}{' '}
                       selected
+                    </p>
+                  ) : (
+                    // Shown from the watched value, like the credits rule, so the reason
+                    // Update is blocked is on screen. Nothing named this state before: the
+                    // count line hid itself at zero, so a deny-all read as a tidy list.
+                    <p className="text-xs text-destructive">
+                      {walletScopeProblem(true, walletScopeIds)}
                     </p>
                   )}
                 </div>

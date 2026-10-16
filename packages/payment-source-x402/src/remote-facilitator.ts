@@ -8,7 +8,7 @@ import {
 	type SettleResponse,
 	type VerifyResponse,
 } from '@x402/core/types';
-import { assertSafeFacilitatorUrl } from './internal';
+import { assertSafeFacilitatorUrl, assertSafeFacilitatorUrlResolved } from './internal';
 
 // Must remain shorter than SETTLE_STALE_MS. A timed-out request is still ambiguous because the
 // remote may have accepted it before the client aborted, but it cannot pin an HTTP connection or
@@ -150,8 +150,10 @@ export class RemoteHTTPFacilitatorClient {
 		paymentRequirements: PaymentRequirements,
 	): Promise<VerifyResponse | SettleResponse> {
 		// Validate again immediately before every network call. This rejects unsafe legacy rows even
-		// if an instance was retained across a future configuration-validation regression.
-		assertSafeFacilitatorUrl(this.url);
+		// if an instance was retained across a future configuration-validation regression, and — since
+		// this resolves DNS — also catches a hostname whose record has since been pointed at an
+		// internal address (the constructor's literal-only check above cannot).
+		await assertSafeFacilitatorUrlResolved(this.url);
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), REMOTE_FACILITATOR_REQUEST_TIMEOUT_MS);
 		timeout.unref();

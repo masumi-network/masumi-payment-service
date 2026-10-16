@@ -2,7 +2,6 @@
 // endpoint here, update THIS file in the same PR — CI regenerates
 // openapi-docs.json and fails on drift.
 import {
-	budgetSchema,
 	createPaymentSchemaInput,
 	createPaymentSchemaOutput,
 	createWalletSchemaInput,
@@ -10,8 +9,6 @@ import {
 	deleteWalletSchemaInput,
 	deleteWalletSchemaOutput,
 	listAvailableNetworksSchemaOutput,
-	listBudgetSchemaInput,
-	listBudgetSchemaOutput,
 	listNetworksSchemaInput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaInput,
@@ -22,7 +19,6 @@ import {
 	listWalletsSchemaOutput,
 	reconcilePaymentSchemaInput,
 	reconcilePaymentSchemaOutput,
-	setBudgetSchemaInput,
 	settleSchemaOutput,
 	upsertNetworkSchemaInput,
 	verifySchemaOutput,
@@ -39,8 +35,6 @@ import {
 	deleteX402WalletBodyExample,
 	deleteX402WalletResponseExample,
 	listAvailableX402NetworksResponseExample,
-	listX402BudgetsQueryExample,
-	listX402BudgetsResponseExample,
 	listX402NetworksResponseExample,
 	listX402PaymentAttemptsQueryExample,
 	listX402PaymentAttemptsResponseExample,
@@ -48,12 +42,10 @@ import {
 	listX402SettlementsResponseExample,
 	listX402WalletsQueryExample,
 	listX402WalletsResponseExample,
-	setX402BudgetBodyExample,
 	settleX402ResponseExample,
 	upsertX402NetworkBodyExample,
 	verifyX402BodyExample,
 	verifyX402ResponseExample,
-	x402BudgetExample,
 	x402NetworkExample,
 	x402WalletExample,
 } from '@/routes/api/x402/examples';
@@ -170,7 +162,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'post',
 		path: '/x402/wallets/delete',
 		description:
-			'Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.',
+			'Retires a managed EVM wallet: soft-deletes it and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.',
 		summary: 'Retire a managed x402 EVM wallet. (admin access required; network scoped)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
@@ -187,44 +179,6 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		responses: {
 			200: successResponse('Managed wallet retired', deleteWalletSchemaOutput, deleteX402WalletResponseExample),
 		},
-	});
-
-	registry.registerPath({
-		method: 'get',
-		path: '/x402/budgets',
-		description:
-			'Lists per-API-key spend budgets for managed x402 wallets. A non-admin key always sees only its own ' +
-			'budgets, and the apiKeyId filter is ignored for it; an admin may filter by API key, or omit it for all.',
-		summary: 'List x402 wallet budgets. (pay access required)',
-		tags: ['x402'],
-		security: [{ [apiKeyAuth.name]: [] }],
-		request: {
-			query: listBudgetSchemaInput.openapi({ example: listX402BudgetsQueryExample }),
-		},
-		responses: {
-			200: successResponse('x402 wallet budgets', listBudgetSchemaOutput, listX402BudgetsResponseExample),
-		},
-	});
-
-	registry.registerPath({
-		method: 'post',
-		path: '/x402/budgets',
-		description:
-			'Sets the remaining spend budget for an (API key, managed wallet, chain, asset) tuple. Replaces the remaining amount.',
-		summary: 'Set an x402 wallet budget. (admin access required)',
-		tags: ['x402'],
-		security: [{ [apiKeyAuth.name]: [] }],
-		request: {
-			body: {
-				description: 'Budget to set',
-				content: {
-					'application/json': {
-						schema: setBudgetSchemaInput.openapi({ example: setX402BudgetBodyExample }),
-					},
-				},
-			},
-		},
-		responses: { 200: successResponse('Budget saved', budgetSchema, x402BudgetExample) },
 	});
 
 	registry.registerPath({
@@ -273,7 +227,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'post',
 		path: '/x402/pay',
 		description:
-			'Signs a payment for a forwarded 402 using a managed EVM wallet, charged against the caller budget. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.',
+			"Signs a payment for a forwarded 402 using a managed EVM wallet, debited against the caller's usage credits when the key is usage limited. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.",
 		summary: 'Sign a payment for a forwarded 402. (pay access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],

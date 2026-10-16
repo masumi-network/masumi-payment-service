@@ -133,6 +133,8 @@ export function recentlySentTo() {
  * transfer it would have duplicated.
  */
 async function claimFunding(args: {
+	participantId: string;
+	automatic: boolean;
 	hotWalletId: string;
 	address: string;
 	amount: bigint;
@@ -144,7 +146,7 @@ async function claimFunding(args: {
 	 * an operator asking for one has already decided to try again.
 	 */
 	respectFailureCooldown: boolean;
-}): Promise<'claimed' | 'already-in-flight' | 'recently-failed'> {
+}): Promise<'claimed' | 'already-in-flight' | 'recently-failed' | 'limit-reached' | 'disabled'> {
 	return await withSerializableSlotRetry(() =>
 		prisma.$transaction(
 			async (tx) => {
@@ -165,6 +167,22 @@ async function claimFunding(args: {
 						},
 					});
 					if (recentFailure !== null) return 'recently-failed' as const;
+				}
+
+				if (args.automatic) {
+					// Read settings in the claim transaction so a concurrent opt-out takes effect.
+					const settings = await tx.hydraLocalParticipant.findUnique({
+						where: { id: args.participantId },
+						select: { autoFund: true, automaticFundingLimitLovelace: true },
+					});
+					if (settings === null || !settings.autoFund) return 'disabled' as const;
+					if (settings.automaticFundingLimitLovelace !== null) {
+						const funded = await readFundingTotal(tx, args.address);
+						if (funded + args.amount > settings.automaticFundingLimitLovelace) {
+							logger.info(`hydra: automatic funding limit reached for node ${args.participantId}`);
+							return 'limit-reached' as const;
+						}
+					}
 				}
 
 				await tx.walletFundTransfer.create({
@@ -298,6 +316,8 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 		// check and create both can pass. See `claimFunding`.
 		const amount = NODE_TARGET_LOVELACE - balance;
 		const claim = await claimFunding({
+			participantId: participant.id,
+			automatic: true,
 			hotWalletId: participant.walletId,
 			address,
 			amount,
@@ -380,14 +400,23 @@ export type NodeFundingRequestOutcome = 'sent' | 'sufficient' | 'in-flight';
  * opens: Init fails with a message about a seed input, and the fix is invisible
  * and minutes away. Returns what it did so the caller can say so.
  */
-export async function fundHydraNodeNow(localParticipantId: string): Promise<{
+type NodeFundingRequestResult = {
 	address: string;
 	balanceLovelace: string;
 	transferredLovelace: string | null;
-	// Written out rather than aliased: express-zod-api compares the handler's
-	// return against the literal union the response schema produces.
-	outcome: 'sent' | 'sufficient' | 'in-flight';
-}> {
+	outcome: NodeFundingRequestOutcome;
+};
+
+type AutomaticNodeFundingResult = Omit<NodeFundingRequestResult, 'outcome'> & {
+	outcome: NodeFundingRequestOutcome | 'limit-reached' | 'disabled' | 'recently-failed';
+};
+
+export function fundHydraNodeNow(localParticipantId: string): Promise<NodeFundingRequestResult>;
+export function fundHydraNodeNow(localParticipantId: string, automatic: boolean): Promise<AutomaticNodeFundingResult>;
+export async function fundHydraNodeNow(
+	localParticipantId: string,
+	automatic = false,
+): Promise<AutomaticNodeFundingResult> {
 	const participant = await prisma.hydraLocalParticipant.findUniqueOrThrow({
 		where: { id: localParticipantId },
 		include: { Wallet: { include: { PaymentSource: { include: { PaymentSourceConfig: true } } } } },
@@ -410,10 +439,12 @@ export async function fundHydraNodeNow(localParticipantId: string): Promise<{
 	// it sent 10 ADA twice to every node opened so far.
 	const amount = NODE_TARGET_LOVELACE - balance;
 	const claim = await claimFunding({
+		participantId: participant.id,
+		automatic,
 		hotWalletId: participant.walletId,
 		address,
 		amount,
-		respectFailureCooldown: false,
+		respectFailureCooldown: automatic,
 	});
 	// Reported apart from `sufficient`, not folded into a null transfer. Both
 	// outcomes send nothing, and the callers all read that as "already funded" —
@@ -425,6 +456,36 @@ export async function fundHydraNodeNow(localParticipantId: string): Promise<{
 		return { address, balanceLovelace: balance.toString(), transferredLovelace: null, outcome: 'in-flight' };
 	}
 
+	if (claim !== 'claimed') {
+		return { address, balanceLovelace: balance.toString(), transferredLovelace: null, outcome: claim };
+	}
+
 	logger.info(`hydra: funding node ${participant.hostNodeId} with ${amount} lovelace on request`);
 	return { address, balanceLovelace: balance.toString(), transferredLovelace: amount.toString(), outcome: 'sent' };
+}
+
+/** Pending transfers reserve the allowance. Manual and historical funding also count. */
+async function readFundingTotal(tx: Pick<Prisma.TransactionClient, 'walletFundTransfer'>, address: string) {
+	const total = await tx.walletFundTransfer.aggregate({
+		where: { toAddress: address, status: { in: [TransactionStatus.Pending, TransactionStatus.Confirmed] } },
+		_sum: { lovelaceAmount: true },
+	});
+	return total._sum.lovelaceAmount ?? 0n;
+}
+
+export async function readNodeFundingPolicy(localParticipantId: string) {
+	const participant = await prisma.hydraLocalParticipant.findUniqueOrThrow({
+		where: { id: localParticipantId },
+		include: { Wallet: { include: { PaymentSource: true } } },
+	});
+	const address = nodeCardanoAddress(participant.cardanoVkey, participant.Wallet.PaymentSource.network);
+	const funded = await readFundingTotal(prisma, address);
+	const limit = participant.automaticFundingLimitLovelace;
+	const remaining = limit === null ? null : limit > funded ? limit - funded : 0n;
+	return {
+		autoFund: participant.autoFund,
+		automaticFundingLimitLovelace: limit?.toString() ?? null,
+		fundedLovelace: funded.toString(),
+		remainingFundingLovelace: remaining?.toString() ?? null,
+	};
 }

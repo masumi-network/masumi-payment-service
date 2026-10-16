@@ -12,6 +12,8 @@
  */
 
 import { useState } from 'react';
+import { getApiErrorToastMessage } from '@/lib/api-error';
+import { formatHydraNodeState } from '@/lib/display-labels';
 import { CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +33,7 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
     try {
       setState(await readHydraHeadConnection(apiClient, { headId }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to check the connection');
+      toast.error(getApiErrorToastMessage(error, 'Failed to check the connection'));
     } finally {
       setIsChecking(false);
     }
@@ -85,7 +87,7 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
               absent usually re-establishes on its own. */}
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Node</span>
-            <span>{state.nodeState}</span>
+            <span>{formatHydraNodeState(state.nodeState)}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Live session</span>

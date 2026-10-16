@@ -21,7 +21,6 @@ export const RAIL_READINESS_CHECK_IDS = [
 	'x402.facilitator',
 	'x402.selling_wallet',
 	'x402.purchasing_wallet',
-	'x402.budget',
 ] as const;
 
 export const RAIL_IDS = ['CardanoV2', 'X402'] as const;

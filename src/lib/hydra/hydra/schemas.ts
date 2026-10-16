@@ -2,6 +2,7 @@ import { z } from '@masumi/payment-core/zod';
 
 import { HydraScriptLanguage, HydraTransactionType } from './types';
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './snapshot-limits';
 
 export const MAX_HYDRA_WS_FRAME_BYTES = 4 * 1024 * 1024;
 // Mainnet's maxTxSize is normally 16 KiB. Allow protocol-parameter headroom,
@@ -10,7 +11,7 @@ export const MAX_HYDRA_WS_FRAME_BYTES = 4 * 1024 * 1024;
 const MAX_HYDRA_TRANSACTION_CBOR_HEX_LENGTH = 128 * 1024;
 const MAX_HYDRA_TRANSACTION_DESCRIPTION_LENGTH = 1024;
 const MAX_HYDRA_CONFIRMED_TRANSACTIONS_PER_FRAME = 1024;
-export const MAX_HYDRA_SNAPSHOT_OUTPUTS = 4095;
+export { MAX_HYDRA_SNAPSHOT_OUTPUTS };
 
 const boundedTagSchema = z.string().min(1).max(64);
 const boundedHeadIdSchema = z.string().min(1).max(128);
@@ -66,12 +67,17 @@ export const hydraCommandTransactionSchema = z.strictObject({
 const timedServerOutputSequenceSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
 /**
- * Head chain-clock broadcast: release hydra-nodes emit `Tick` on the API
- * websocket for every observed L1 block; Blockfrost-backed master builds emit
- * `SyncedStatusReport` (which additionally carries `drift`/`synced`). Both
- * carry the head's observed L1 time — the clock its ledger validates tx
- * validity intervals against. `chainSlot` is optional because older release
- * `Tick`s carried only `chainTime`.
+ * Head chain-clock broadcast: hydra-nodes emit `Tick` on the API websocket for
+ * every observed L1 block, carrying the head's observed L1 time — the clock its
+ * ledger validates tx validity intervals against. `chainSlot` is optional
+ * because older release `Tick`s carried only `chainTime`.
+ *
+ * `SyncedStatusReport` (which additionally carried `drift`/`synced`) was emitted
+ * by Blockfrost-backed builds up to 2.3 and was REMOVED from the WebSocket API
+ * in Hydra 2.4 — chain-sync state now arrives as `NodeSynced`/`NodeUnsynced`
+ * transitions and on `Greetings.chainSyncedStatus`. It stays in this enum
+ * because archived 2.3-era node logs still have to parse: nothing in this
+ * service asks a 2.4 node for it.
  */
 export const headClockMessageSchema = z.looseObject({
 	tag: z.enum(['Tick', 'SyncedStatusReport']),
@@ -312,6 +318,15 @@ export const hydraSnapshotUtxoSchema = z
 		`Hydra snapshot exceeded ${MAX_HYDRA_SNAPSHOT_OUTPUTS} outputs`,
 	);
 
+/** `GET /snapshot`: only the head id and confirmed number are read. */
+export const hydraConfirmedSnapshotSchema = z.union([
+	z.looseObject({
+		tag: z.literal('ConfirmedSnapshot'),
+		snapshot: z.looseObject({ headId: z.string(), number: z.number().int().nonnegative() }),
+	}),
+	z.looseObject({ tag: z.literal('InitialSnapshot'), headId: z.string() }),
+]);
+
 // Loose, like the rest of the replay path: an added sibling field must not wedge
 // a running head, and the vkey below stays required so a rename is still caught.
 const hydraPartySchema = z.looseObject({
@@ -453,6 +468,10 @@ export const snapshotConfirmedMessageSchema = z.looseObject({
 		utxo: hydraSnapshotUtxoSchema,
 		utxoToCommit: hydraSnapshotUtxoSchema.nullable(),
 		utxoToDecommit: hydraSnapshotUtxoSchema.nullable(),
+		// Hydra 2.4: the on-chain deposit this snapshot's utxoToCommit came from.
+		// Bound into the signable bytes (see hydraSnapshotSignableBytes), so a
+		// stale or absent value here would silently fail every 2.4 signature check.
+		depositTxId: canonicalHydraTransactionIdSchema.nullable().optional(),
 	}),
 });
 

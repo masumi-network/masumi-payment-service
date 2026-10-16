@@ -236,7 +236,7 @@ export type HydraInvite = {
   nonce: string;
   network: 'Preprod' | 'Mainnet';
   role: 'Issuer' | 'Redeemer';
-  status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+  status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
   createdAt: string;
   expiresAt: string;
   hydraHostId: string;
@@ -409,6 +409,10 @@ export type HydraWithdrawal = {
 };
 
 export type HydraNodeFunding = {
+  autoFund: boolean;
+  automaticFundingLimitLovelace: string | null;
+  fundedLovelace: string;
+  remainingFundingLovelace: string | null;
   address: string;
   balanceLovelace: string;
   isUnderfunded: boolean;

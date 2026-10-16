@@ -1,7 +1,9 @@
 name: Docker Build Check
 
-# Builds the Docker `backend-builder` stage on PRs to `dev` (the entry point of
+# Builds the Docker `frontend-builder` stage on PRs to `dev` (the entry point of
 # the PR->dev->main flow), so build-context regressions are caught before merge.
+# `frontend-builder` copies from `backend-builder`, so this one target builds
+# both of the stages that compile code.
 #
 # Why a Docker build and not a plain `tsc`: the failures this guards against are
 # build-CONTEXT regressions (e.g. the Dockerfile not COPYing `packages/`), which
@@ -10,8 +12,9 @@ name: Docker Build Check
 # checkout (as in dev.yml/e2e.yml) cannot catch these, because the omitted files
 # are present on disk there — the error only exists inside the Docker context.
 #
-# `backend-builder` is the stage that runs `prisma generate && tsc && pkgroll`
-# plus swagger generation — i.e. the stage that fails on a context regression.
+# `backend-builder` runs `prisma generate && tsc && pkgroll` plus swagger
+# generation. `frontend-builder` runs the API codegen and `next build`. Both
+# fail on a context regression, so both are built here.
 on:
   pull_request:
     branches:
@@ -22,7 +25,7 @@ permissions:
 
 jobs:
   docker-build:
-    name: Build backend-builder stage
+    name: Build backend-builder and frontend-builder stages
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -31,11 +34,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build backend-builder stage
+      - name: Build backend-builder and frontend-builder stages
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: backend-builder
+          target: frontend-builder
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

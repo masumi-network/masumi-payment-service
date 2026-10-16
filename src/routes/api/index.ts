@@ -11,6 +11,7 @@ import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentCountGet, queryPaymentEntryGet } from './payments';
 import { buildX402TxPost } from './payments/x402';
 import { getPaymentIncome } from './payments/income';
+import { getX402AgentPaymentActivity } from './payments/x402-activity';
 import { deleteAgentRegistration, queryRegistryCountGet, queryRegistryRequestGet, registerAgentPost } from './registry';
 import {
 	deleteInboxAgentRegistration,
@@ -31,6 +32,7 @@ import {
 	queryWalletEndpointGet,
 	postWalletFundEndpointPost,
 	getWalletFundEndpointGet,
+	postWalletConsolidateEndpointPost,
 	queryWalletListEndpointGet,
 } from './wallet';
 import {
@@ -114,6 +116,7 @@ import {
 	fundParticipantNodePost,
 	withdrawParticipantNodePost,
 	participantFundingGet,
+	participantFundingPatch,
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
 	fanoutHeadPost,
@@ -144,10 +147,12 @@ import {
 	listTopupsGet,
 	withdrawHeadPost,
 	listWithdrawalsGet,
+	consolidateHeadPost,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
 	updateHeadPatch,
+	checkHeadOnChainPost,
 } from './hydra';
 import {
 	createX402PaymentPost,
@@ -155,7 +160,6 @@ import {
 	deleteX402LowBalanceRuleDelete,
 	deleteX402WalletPost,
 	listAvailableX402NetworksGet,
-	listX402BudgetsGet,
 	listX402LowBalanceRulesGet,
 	listX402NetworksGet,
 	getX402WalletGet,
@@ -163,7 +167,6 @@ import {
 	listX402SettlementsGet,
 	listX402WalletsGet,
 	reconcileX402PaymentPost,
-	setX402BudgetPost,
 	setX402LowBalanceRulePost,
 	settleX402Post,
 	updateX402LowBalanceRulePatch,
@@ -176,6 +179,15 @@ import {
 	x402WalletBalanceGet,
 	x402WalletsCountGet,
 } from './x402';
+import {
+	reportExportZipEndpointPost,
+	reportFacetsEndpointGet,
+	reportSummaryEndpointPost,
+	reportTotalsCsvEndpointPost,
+	reportTransactionsCsvEndpointPost,
+	reportTransactionsEndpointPost,
+	reportWalletSummaryCsvEndpointPost,
+} from './reports';
 
 export const apiRouter: Routing = {
 	v1: {
@@ -240,6 +252,9 @@ export const apiRouter: Routing = {
 			},
 			income: {
 				post: getPaymentIncome,
+			},
+			'x402-activity': {
+				post: getX402AgentPaymentActivity,
 			},
 			count: {
 				get: queryPaymentCountGet,
@@ -334,6 +349,8 @@ export const apiRouter: Routing = {
 				get: getWalletFundEndpointGet,
 				post: postWalletFundEndpointPost,
 			},
+			// A transfer back to itself that merges the wallet's UTxOs.
+			consolidate: { post: postWalletConsolidateEndpointPost },
 		},
 		'payment-source-extended': {
 			get: paymentSourceExtendedEndpointGet,
@@ -401,10 +418,6 @@ export const apiRouter: Routing = {
 				available: {
 					get: listAvailableX402NetworksGet,
 				},
-			},
-			budgets: {
-				get: listX402BudgetsGet,
-				post: setX402BudgetPost,
 			},
 			'low-balance': {
 				get: listX402LowBalanceRulesGet,
@@ -546,8 +559,12 @@ export const apiRouter: Routing = {
 					post: withdrawHeadPost,
 					get: listWithdrawalsGet,
 				},
+				// Merges the wallet's in-head UTxOs; nothing leaves the head.
+				consolidate: { post: consolidateHeadPost },
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
+				// Read-only: the head's state on L1, from an independent observer.
+				'chain-check': { post: checkHeadOnChainPost },
 				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet, delete: clearHeadErrorsDelete },
 				// What the head has done, in order — the three lifecycle hashes on the
@@ -563,7 +580,7 @@ export const apiRouter: Routing = {
 					// One-time backup of the node's signing keys; seals after first use.
 					keys: { post: revealParticipantKeysPost },
 					// Fund the node's own Cardano key, without which Init cannot post.
-					fund: { post: fundParticipantNodePost, get: participantFundingGet },
+					fund: { post: fundParticipantNodePost, get: participantFundingGet, patch: participantFundingPatch },
 					// Return what the node did not spend, once its head is final.
 					withdraw: { post: withdrawParticipantNodePost },
 				},
@@ -580,6 +597,29 @@ export const apiRouter: Routing = {
 		},
 		'rail-readiness': {
 			get: railReadinessEndpointGet,
+		},
+		reports: {
+			facets: {
+				get: reportFacetsEndpointGet,
+			},
+			transactions: {
+				post: reportTransactionsEndpointPost,
+			},
+			summary: {
+				post: reportSummaryEndpointPost,
+			},
+			'transactions.csv': {
+				post: reportTransactionsCsvEndpointPost,
+			},
+			'wallet-summary.csv': {
+				post: reportWalletSummaryCsvEndpointPost,
+			},
+			'totals.csv': {
+				post: reportTotalsCsvEndpointPost,
+			},
+			'export.zip': {
+				post: reportExportZipEndpointPost,
+			},
 		},
 	},
 };

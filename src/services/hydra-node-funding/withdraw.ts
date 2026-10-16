@@ -27,6 +27,9 @@ import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-co
 import { getCachedBlockfrostProvider } from '@/utils/mesh-cost-model-sync';
 import { nodeCardanoAddress } from './node-address';
 import { recentlySentTo } from './service';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { getChainErrorStatus, lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
+import { CONFIG } from '@masumi/payment-core/config';
 
 /**
  * Below this, sweeping costs more than it returns.
@@ -37,12 +40,24 @@ import { recentlySentTo } from './service';
 export const MINIMUM_WITHDRAWABLE_LOVELACE = 2_000_000n;
 
 /**
+ * Depth the latest node address transaction needs before `dust` lets a caller
+ * delete the node's key.
+ *
+ * Key deletion cannot be undone, so it does not follow the payment-sync
+ * threshold down: that one defaults to 1 and accepts 0. A shallow sweep that a
+ * rollback evicts would leave the funds at an address nothing here can sign
+ * for. A higher configured threshold still wins.
+ */
+export const KEY_RELEASE_MIN_CONFIRMATIONS = 20;
+
+/**
  * What happened, in a form a caller can branch on.
  *
  * `reason` is prose for an operator; this is the same answer for code. The
  * distinction that matters is whether the node's key still has anything to
  * protect: releasing a reservation deletes that key, so it may only follow a
- * `dust` or a `no-key` — never an outcome where the balance is unknown, and
+ * `dust`, after the latest address transaction reaches confirmation depth.
+ * Never release a key when the balance is unknown, and
  * not even a `swept`, whose transaction has been submitted but not yet seen
  * on chain.
  */
@@ -59,6 +74,8 @@ export type NodeWithdrawalCode =
 	| 'chain-unreadable'
 	/** Fuel is on its way to this node, so what the chain shows is not the balance. */
 	| 'funding-in-flight'
+	/** The latest address transaction has not reached cleanup confirmation depth. */
+	| 'chain-unsettled'
 	/** No Cardano signing key is stored here, so nothing can move these funds. */
 	| 'no-key';
 
@@ -182,7 +199,49 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 		0n,
 	);
 
-	if (balance <= MINIMUM_WITHDRAWABLE_LOVELACE) {
+	const hasNativeAssets = utxos.some((utxo) =>
+		utxo.output.amount.some((asset) => asset.unit !== 'lovelace' && BigInt(asset.quantity) > 0n),
+	);
+	if (balance <= MINIMUM_WITHDRAWABLE_LOVELACE && !hasNativeAssets) {
+		// An empty UTxO set can reflect a sweep in a shallow block. Check the
+		// latest address activity so this survives restarts without a sweep journal.
+		const rpcProviderApiKey = participant.Wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
+		try {
+			const chain = getBlockfrostInstance(network, rpcProviderApiKey);
+			const history = await chain.addressesTransactions(address, { count: 1, page: 1, order: 'desc' });
+			const latest = history[0];
+			if (latest) {
+				const status = await lookupConfirmedChainTx({
+					network,
+					rpcProviderApiKey,
+					txHash: latest.tx_hash,
+					requiredConfirmations: Math.max(CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD, KEY_RELEASE_MIN_CONFIRMATIONS),
+				});
+				if (status !== 'confirmed-valid') {
+					return {
+						address,
+						balanceLovelace: balance.toString(),
+						txHash: null,
+						reason: 'the latest node address transaction has not been confirmed at the required depth',
+						code: 'chain-unsettled',
+					};
+				}
+			} else if (utxos.length > 0) {
+				throw createHttpError(502, 'node UTxOs exist but address history is empty');
+			}
+		} catch (error) {
+			// Only an unused, empty address can have no history. All other
+			// lookup failures keep the signer for a later cleanup attempt.
+			if (getChainErrorStatus(error) !== 404 || utxos.length > 0) {
+				return {
+					address,
+					balanceLovelace: balance.toString(),
+					txHash: null,
+					reason: 'the node address transaction history could not be verified',
+					code: 'chain-unreadable',
+				};
+			}
+		}
 		return {
 			address,
 			balanceLovelace: balance.toString(),

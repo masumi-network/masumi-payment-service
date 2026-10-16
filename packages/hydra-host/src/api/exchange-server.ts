@@ -10,23 +10,50 @@
  * authority is a signature. But it is not an open door:
  *
  *  - redemption requires a nonce this Host issued, unspent and unexpired;
+ *  - the redeemer's signature must verify against the wallet it names before
+ *    the nonce is spent, so a forged or malformed body cannot burn an invite;
+ *  - requests are limited per source and in total before any body is read;
  *  - bodies are capped and connection timeouts are short.
  *
- * No signature is checked here. That is the payment service's job when it
- * polls, and the division is deliberate: everything this plane can do without
- * cryptography is reversible — a node can be deleted — while everything
- * irreversible waits for a service that holds keys.
+ * The payment service verifies the same signature again when it adopts the
+ * redemption. The Host's check protects the nonce; the service's check decides
+ * whether a head is recorded.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { isIP } from 'node:net';
 import type { ExchangeStore } from '../registry/exchange-store.js';
-import { isExchangeMaterial, isExchangeSignature } from '../registry/exchange-types.js';
+import {
+	isExchangeMaterial,
+	isExchangeSignature,
+	type ExchangeMaterial,
+	type ExchangeSignature,
+} from '../registry/exchange-types.js';
 import type { SupervisorLogger } from '../supervisor/supervisor.js';
 
 /** Smaller than the control plane's: an invite is a few hundred bytes. */
 const MAX_BODY_BYTES = 64 * 1024;
 const DEFAULT_MAX_IN_FLIGHT = 16;
+const DEFAULT_MAX_BODY_READERS = 32;
+const DEFAULT_MAX_BODY_READERS_PER_SOURCE = 4;
+const DEFAULT_BODY_TIMEOUT_MS = 5_000;
 const DEFAULT_REQUESTS_PER_MINUTE = 120;
+
+/**
+ * One budget for every source together, spent before any body is read.
+ *
+ * The per-source limit stops one caller from starving another, but a flood from
+ * many addresses passes it: each address stays under its own limit. This cap
+ * bounds what the whole plane admits per minute, whatever the address count.
+ *
+ * Sized from what legitimate traffic can be. A redemption is one POST with no
+ * client retry (`postRedemption` in the payment service), and every invite
+ * reserves one node slot, 32 by default (`HYDRA_HOST_PEER_PORT_COUNT`). So
+ * even every outstanding invite redeemed in the same minute is 32 requests.
+ * Twice the per-source limit leaves that peak a wide margin, and one source
+ * at its own limit still leaves half the budget for everyone else.
+ */
+const DEFAULT_TOTAL_REQUESTS_PER_MINUTE = 2 * DEFAULT_REQUESTS_PER_MINUTE;
 
 /**
  * How many distinct sources the per-source counter tracks within one window.
@@ -77,6 +104,61 @@ export function rateLimitKey(remote: string, tracked: ReadonlySet<string> | Map<
 	return tracked.has(remote) || tracked.size < cap ? remote : OVERFLOW_SOURCE;
 }
 
+/**
+ * The address a limit is counted against: an IPv6 source as its /64.
+ *
+ * One IPv6 subscriber usually holds a whole /64 and can use a fresh address per
+ * request, so keying on the full address gives them a fresh per-source budget
+ * each time. IPv4, and IPv4 mapped into IPv6, stay keyed on the full address.
+ */
+export function rateLimitSource(address: string): string {
+	const unzoned = (address.split('%')[0] ?? address).toLowerCase();
+	if (isIP(unzoned) !== 6) {
+		return address;
+	}
+	const [head = '', tail = ''] = unzoned.split('::');
+	const headGroups = toGroups(head);
+	const tailGroups = toGroups(tail);
+	const groups = [...headGroups, ...Array<number>(8 - headGroups.length - tailGroups.length).fill(0), ...tailGroups];
+	// ::ffff:a.b.c.d in any spelling, including the all-hex and uncompressed ones.
+	if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) {
+		const [high = 0, low = 0] = groups.slice(6);
+		return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+	}
+	return `${groups
+		.slice(0, 4)
+		.map((group) => group.toString(16))
+		.join(':')}::/64`;
+}
+
+/** One side of `::` as 16-bit groups; a dotted IPv4 tail fills two. */
+function toGroups(part: string): number[] {
+	if (part === '') {
+		return [];
+	}
+	return part.split(':').flatMap((group) => {
+		if (!group.includes('.')) {
+			return [parseInt(group, 16)];
+		}
+		const [a = 0, b = 0, c = 0, d = 0] = group.split('.').map(Number);
+		return [(a << 8) | b, (c << 8) | d];
+	});
+}
+
+export function exchangeRequestSource(
+	remote: string | undefined,
+	forwarded: string | string[] | undefined,
+	trustProxy: boolean,
+): string {
+	const socketAddress = remote ?? 'unknown';
+	if (!trustProxy || forwarded === undefined) {
+		return socketAddress;
+	}
+	const parts = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded).split(',');
+	const candidate = parts[parts.length - 1]?.trim();
+	return candidate !== undefined && isIP(candidate) !== 0 ? candidate : socketAddress;
+}
+
 export type ExchangeDeps = {
 	store: ExchangeStore;
 	logger: SupervisorLogger;
@@ -88,8 +170,25 @@ export type ExchangeDeps = {
 	 * counterparty who can do nothing about it.
 	 */
 	onRedeemed: (nonce: string, hostNodeId: string) => Promise<void>;
+	/**
+	 * Whether the signature is the named wallet's over this redemption.
+	 *
+	 * Checked before the nonce is spent, because spending is terminal. Injected
+	 * so transport tests need not sign every body.
+	 */
+	verifyRedemption: (nonce: string, redeemer: ExchangeMaterial, signature: ExchangeSignature) => Promise<boolean>;
+	/** Read X-Forwarded-For only when a trusted HTTP proxy is the sole caller. */
+	trustProxy?: boolean;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
-	limits?: { maxInFlight?: number; requestsPerMinute?: number; maxTrackedSources?: number };
+	limits?: {
+		maxInFlight?: number;
+		requestsPerMinute?: number;
+		totalRequestsPerMinute?: number;
+		maxTrackedSources?: number;
+		maxBodyReaders?: number;
+		maxBodyReadersPerSource?: number;
+		bodyTimeoutMs?: number;
+	};
 };
 
 function send(response: ServerResponse, status: number, body: unknown): void {
@@ -97,24 +196,29 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 	response.end(JSON.stringify(body ?? null));
 }
 
-async function readBody(request: IncomingMessage): Promise<unknown> {
-	const chunks: Buffer[] = [];
-	let size = 0;
-	for await (const chunk of request) {
-		const buffer = chunk as Buffer;
-		size += buffer.length;
-		if (size > MAX_BODY_BYTES) {
-			throw new Error('request body is too large');
-		}
-		chunks.push(buffer);
-	}
-	if (size === 0) {
-		return null;
-	}
+async function readBody(request: IncomingMessage, timeoutMs: number): Promise<unknown> {
+	const timeout = setTimeout(() => request.destroy(new Error('request body timed out')), timeoutMs);
 	try {
-		return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-	} catch {
-		throw new Error('request body is not valid JSON');
+		const chunks: Buffer[] = [];
+		let size = 0;
+		for await (const chunk of request) {
+			const buffer = chunk as Buffer;
+			size += buffer.length;
+			if (size > MAX_BODY_BYTES) {
+				throw new Error('request body is too large');
+			}
+			chunks.push(buffer);
+		}
+		if (size === 0) {
+			return null;
+		}
+		try {
+			return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+		} catch {
+			throw new Error('request body is not valid JSON');
+		}
+	} finally {
+		clearTimeout(timeout);
 	}
 }
 
@@ -134,17 +238,24 @@ function readRedeemBody(body: unknown): RedeemBody | null {
 }
 
 export function createExchangePlane(deps: ExchangeDeps): Server {
-	const { store, logger, onRedeemed } = deps;
+	const { store, logger, onRedeemed, verifyRedemption } = deps;
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
+	const totalRequestsPerMinute = deps.limits?.totalRequestsPerMinute ?? DEFAULT_TOTAL_REQUESTS_PER_MINUTE;
 	const maxTrackedSources = deps.limits?.maxTrackedSources ?? MAX_TRACKED_SOURCES;
+	const maxBodyReaders = deps.limits?.maxBodyReaders ?? DEFAULT_MAX_BODY_READERS;
+	const maxBodyReadersPerSource = deps.limits?.maxBodyReadersPerSource ?? DEFAULT_MAX_BODY_READERS_PER_SOURCE;
+	const bodyTimeoutMs = deps.limits?.bodyTimeoutMs ?? DEFAULT_BODY_TIMEOUT_MS;
 	let inFlight = 0;
+	let bodyReaders = 0;
+	const bodyReadersBySource = new Map<string, number>();
 	// Per source rather than one shared counter: a single abusive caller must not
 	// be able to spend the whole minute's budget and 429 the one counterparty
 	// this plane exists to serve. Keyed on the socket address, which is what the
-	// peer allow-list already gates on.
+	// peer allow-list already gates on, with IPv6 grouped by /64.
 	let requestWindowStartedAt = Date.now();
 	const requestsInWindow = new Map<string, number>();
+	let admittedInWindow = 0;
 	const failuresInWindow = new Map<string, number>();
 
 	const server = createServer((request, response) => {
@@ -173,35 +284,33 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			requestWindowStartedAt = now;
 			requestsInWindow.clear();
 			failuresInWindow.clear();
+			admittedInWindow = 0;
 		}
-		const remote = request.socket.remoteAddress ?? 'unknown';
-		const source = rateLimitKey(remote, requestsInWindow, maxTrackedSources);
+		const remote = exchangeRequestSource(
+			request.socket.remoteAddress,
+			request.headers['x-forwarded-for'],
+			deps.trustProxy === true,
+		);
+		const source = rateLimitKey(rateLimitSource(remote), requestsInWindow, maxTrackedSources);
 		const seen = (requestsInWindow.get(source) ?? 0) + 1;
 		requestsInWindow.set(source, seen);
-		if (seen > requestsPerMinute) {
+		// Per source first, so requests one source has no budget for never spend
+		// the shared budget: one caller alone cannot exhaust it.
+		if (seen > requestsPerMinute || admittedInWindow >= totalRequestsPerMinute) {
 			response.setHeader('Retry-After', '60');
 			send(response, 429, { error: 'too many requests' });
 			return;
 		}
-		if (inFlight >= maxInFlight) {
-			response.setHeader('Retry-After', '1');
-			send(response, 503, { error: 'exchange is busy' });
-			return;
-		}
+		admittedInWindow += 1;
 
-		inFlight += 1;
-		void handle(request, response, source, pathname)
-			.catch((error: unknown) => {
-				// Never echo the message: this is an unauthenticated surface and the
-				// error text can describe internal state.
-				logger.error(`[exchange] ${(error as Error).message}`);
-				if (!response.headersSent) {
-					send(response, 400, { error: 'bad request' });
-				}
-			})
-			.finally(() => {
-				inFlight -= 1;
-			});
+		void handle(request, response, source, pathname).catch((error: unknown) => {
+			// Never echo the message: this is an unauthenticated surface and the
+			// error text can describe internal state.
+			logger.error(`[exchange] ${(error as Error).message}`);
+			if (!response.headersSent && !response.destroyed) {
+				send(response, 400, { error: 'bad request' });
+			}
+		});
 	});
 	server.headersTimeout = 15_000;
 	server.requestTimeout = 30_000;
@@ -229,40 +338,75 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	}
 
 	async function handleRedeem(request: IncomingMessage, response: ServerResponse, source: string): Promise<void> {
-		const body = readRedeemBody(await readBody(request));
+		const sourceReaders = bodyReadersBySource.get(source) ?? 0;
+		if (bodyReaders >= maxBodyReaders || sourceReaders >= maxBodyReadersPerSource) {
+			response.setHeader('Connection', 'close');
+			response.setHeader('Retry-After', '1');
+			send(response, 503, { error: 'exchange is busy' });
+			return;
+		}
+		bodyReaders += 1;
+		bodyReadersBySource.set(source, sourceReaders + 1);
+		let body: RedeemBody | null;
+		try {
+			body = readRedeemBody(await readBody(request, bodyTimeoutMs));
+		} finally {
+			bodyReaders -= 1;
+			const remaining = (bodyReadersBySource.get(source) ?? 1) - 1;
+			if (remaining === 0) bodyReadersBySource.delete(source);
+			else bodyReadersBySource.set(source, remaining);
+		}
 		if (body === null || !isExchangeMaterial(body.redeemer) || !isExchangeSignature(body.signature)) {
 			send(response, 400, { error: 'malformed redemption' });
 			return;
 		}
 
-		const result = await store.redeem(body.nonce, body.redeemer, body.signature);
-		if (!result.ok) {
-			const failures = (failuresInWindow.get(source) ?? 0) + 1;
-			failuresInWindow.set(source, failures);
-			// The operator sees the real reason either way: it is logged here and
-			// the invite's own state is on the control plane.
-			logger.warn(`[exchange] redemption refused (${result.status} ${result.reason})`);
-			if (failures > MAX_DISCLOSED_REDEEM_FAILURES) {
-				send(response, 404, { error: 'no such invite' });
-				return;
-			}
-			send(response, result.status, { error: result.reason });
+		if (inFlight >= maxInFlight) {
+			response.setHeader('Retry-After', '1');
+			send(response, 503, { error: 'exchange is busy' });
 			return;
 		}
-
-		// The reply carries nothing the counterparty must trust — everything they
-		// need was signed inside the invite — so this is an acknowledgement, and
-		// the Host never has to speak for its operator's wallet.
-		send(response, 200, { redeemed: true });
-
-		// After answering: the counterparty can neither help nor wait if this
-		// fails, and the failure belongs in the operator's poll.
+		inFlight += 1;
 		try {
-			await onRedeemed(body.nonce, result.invite.hostNodeId);
-		} catch (error) {
-			const message = (error as Error).message;
-			logger.error(`[exchange] node ${result.invite.hostNodeId} failed to start after redemption: ${message}`);
-			await store.recordStartError(body.nonce, message).catch(() => undefined);
+			// Before the store, not after: a refused signature must leave the nonce
+			// open for the real redeemer. Says nothing about whether the nonce
+			// exists, so it is not counted toward the disclosure budget below.
+			if (!(await verifyRedemption(body.nonce, body.redeemer, body.signature))) {
+				logger.warn('[exchange] redemption refused (401 signature does not verify)');
+				send(response, 401, { error: 'signature does not verify' });
+				return;
+			}
+			const result = await store.redeem(body.nonce, body.redeemer, body.signature);
+			if (!result.ok) {
+				const failures = (failuresInWindow.get(source) ?? 0) + 1;
+				failuresInWindow.set(source, failures);
+				// The operator sees the real reason either way: it is logged here and
+				// the invite's own state is on the control plane.
+				logger.warn(`[exchange] redemption refused (${result.status} ${result.reason})`);
+				if (failures > MAX_DISCLOSED_REDEEM_FAILURES) {
+					send(response, 404, { error: 'no such invite' });
+					return;
+				}
+				send(response, result.status, { error: result.reason });
+				return;
+			}
+
+			// The reply carries nothing the counterparty must trust — everything they
+			// need was signed inside the invite — so this is an acknowledgement, and
+			// the Host never has to speak for its operator's wallet.
+			send(response, 200, { redeemed: true });
+
+			// After answering: the counterparty can neither help nor wait if this
+			// fails, and the failure belongs in the operator's poll.
+			try {
+				await onRedeemed(body.nonce, result.invite.hostNodeId);
+			} catch (error) {
+				const message = (error as Error).message;
+				logger.error(`[exchange] node ${result.invite.hostNodeId} failed to start after redemption: ${message}`);
+				await store.recordStartError(body.nonce, message).catch(() => undefined);
+			}
+		} finally {
+			inFlight -= 1;
 		}
 	}
 }

@@ -7,7 +7,11 @@
 # Usage: ./95-capture-head-state.sh <label>
 set -euo pipefail
 LABEL="${1:?usage: 95-capture-head-state.sh <label>}"
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/preprod/captures/$LABEL"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Default under evidence/, not preprod/: hydra-l2-flow/.gitignore ignores the
+# whole of preprod/, which is why these captures could never ship with a PR.
+CAPTURE_ROOT="${CAPTURE_ROOT:-$HERE/evidence/captures}"
+DIR="$CAPTURE_ROOT/$LABEL"
 mkdir -p "$DIR"
 for port in 4001 4002; do
   for ep in snapshot snapshot/utxo snapshot/last-seen head; do

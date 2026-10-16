@@ -245,7 +245,9 @@ async function post(
 	try {
 		const result = await (deps.send ?? sendPinnedRequest)(url, target, Buffer.from(JSON.stringify(body)));
 		if (result.status < 200 || result.status >= 300) {
-			const detail = result.status === 409 || result.status === 410 ? result.detail.slice(0, 200) : '';
+			// 401 is the Host refusing our signature before it spent the nonce, so
+			// the invite is still open and the operator can retry.
+			const detail = [401, 409, 410].includes(result.status) ? result.detail.slice(0, 200) : '';
 			throw createHttpError(
 				502,
 				`the counterparty refused the ${what} (${result.status})${detail ? `: ${detail}` : ''}`,

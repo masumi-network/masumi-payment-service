@@ -40,6 +40,17 @@ export const formatStatus = (status: string | null) => {
   return status.replace(/([A-Z])/g, ' $1').trim();
 };
 
+/** Whether a row supports clear/retry via error-state-recovery (matches row actions menu). */
+export function isTransactionErrorRecoverable(
+  transaction: Transaction,
+  contextNetwork: string | null | undefined,
+): boolean {
+  if (!transaction.id || !transaction.NextAction?.errorType) return false;
+  if (!transaction.onChainState) return false;
+  const recoveryNetwork = transaction.PaymentSource?.network ?? contextNetwork;
+  return recoveryNetwork === 'Preprod' || recoveryNetwork === 'Mainnet';
+}
+
 /** Human-readable label for an on-chain state (e.g. `FundsLocked` -> `Funds Locked`). */
 export const formatOnChainState = (state: string | null | undefined): string => {
   switch (state?.toLowerCase()) {
@@ -67,6 +78,24 @@ export const formatOnChainState = (state: string | null | undefined): string => 
       return state ? state.charAt(0).toUpperCase() + state.slice(1) : '—';
   }
 };
+
+/**
+ * A payment the timeout job invalidated because the buyer never locked funds
+ * before payByTime. The job reuses `FundsOrDatumInvalid` but attaches no
+ * transaction, while a real invalid lock always carries the observed tx hash.
+ */
+export const isPaymentNeverReceived = (transaction: Transaction): boolean =>
+  transaction.type === 'payment' &&
+  transaction.onChainState === 'FundsOrDatumInvalid' &&
+  getLatestTxHash(transaction) === null;
+
+export const NO_PAYMENT_RECEIVED_LABEL = 'No Payment Received';
+
+/** On-chain state label for a row, with the never-locked payment timeout called out. */
+export const formatTransactionState = (transaction: Transaction): string =>
+  isPaymentNeverReceived(transaction)
+    ? NO_PAYMENT_RECEIVED_LABEL
+    : formatOnChainState(transaction.onChainState);
 
 /** Human-readable label for a `NextAction.requestedAction` value (covers both payment and purchase actions). */
 export const formatRequestedAction = (action: string | null | undefined): string => {

@@ -3,6 +3,7 @@ import type { Mock } from 'jest-mock';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
+const mockSendAssets = jest.fn() as AnyMock;
 const mockLookupConfirmedChainTx = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
@@ -21,7 +22,8 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 		sendLovelace() {
 			return this;
 		}
-		sendAssets() {
+		sendAssets(...args: unknown[]) {
+			mockSendAssets(...args);
 			return this;
 		}
 		build() {
@@ -148,6 +150,58 @@ describe('carveExactUtxo', () => {
 		const params = baseParams();
 		await carveExactUtxo(params);
 		expect(mockLookupConfirmedChainTx).toHaveBeenCalledTimes(2);
+	});
+
+	it('includes deposit-sized ADA when building an exact USDM token carve', async () => {
+		const walletAddress =
+			'addr_test1qp6ctf8vcjxzd53et7p0hlqyncn59stnfd4g8mp978v33r6dlzjvt4s2t6wn3v993pu9aea4h3z0jeyn6lsvw6hugtesfx55dd';
+		const unit = 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
+		const wallet = { signTx: jest.fn(async () => 'signed'), submitTx: jest.fn(async () => TX) };
+		await carveExactUtxo(
+			baseParams({
+				wallet,
+				walletAddress,
+				unit,
+				amount: 250_000_000n,
+				submitCarveTx: undefined,
+				blockchainProvider: {
+					fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+					fetchUTxOs: jest.fn(async () => [
+						{
+							...carvedUtxo(unit, '250000000'),
+							output: { address: walletAddress, amount: mockSendAssets.mock.calls[0][1] },
+						},
+					]),
+				},
+			}),
+		);
+		const outputAssets = mockSendAssets.mock.calls[0][1] as Array<{ unit: string; quantity: string }>;
+		expect(outputAssets).toContainEqual({ unit, quantity: '250000000' });
+		const lovelace = outputAssets.find((asset) => asset.unit === 'lovelace');
+		expect(lovelace).toBeDefined();
+		// A plain token UTxO's approximately 1.5 ADA is below the deposit minimum.
+		expect(BigInt(lovelace!.quantity)).toBeGreaterThan(1_500_000n);
+		expect(wallet.signTx).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not sign a token carve when the current minimum-ADA parameters cannot be read', async () => {
+		const wallet = { signTx: jest.fn(), submitTx: jest.fn() };
+		await expect(
+			carveExactUtxo(
+				baseParams({
+					wallet,
+					unit: 'dd'.repeat(28),
+					amount: 250n,
+					submitCarveTx: undefined,
+					blockchainProvider: {
+						fetchProtocolParameters: jest.fn(async () => {
+							throw new Error('provider unavailable');
+						}),
+					},
+				}),
+			),
+		).rejects.toThrow('provider unavailable');
+		expect(wallet.signTx).not.toHaveBeenCalled();
 	});
 
 	it('carves an exact token amount (min-ADA output ignored for the match)', async () => {

@@ -11,6 +11,7 @@ import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
 import { getHealth, getApiKeyStatus } from '@/lib/api/generated';
 import { ThemeProvider, useTheme } from '@/lib/contexts/ThemeContext';
 import { SidebarProvider } from '@/lib/contexts/SidebarContext';
+import { useIsNarrowScreen } from '@/lib/hooks/useIsNarrowScreen';
 import { QueryProvider } from '@/lib/contexts/QueryProvider';
 import { AgentDetailsDialogProvider } from '@/lib/contexts/AgentDetailsDialogContext';
 import { Spinner } from '@/components/ui/spinner';
@@ -24,7 +25,9 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { capabilitiesFromApiKeyStatus, isAdminOnlyPath, isPayOnlyPath } from '@/lib/permissions';
+import { decodeLegacyStoredKey, decryptFromStorage, encryptForStorage } from '@/lib/secure-storage';
 import { hasLegacyOnlyPaymentSources, isV2PaymentSource } from '@/lib/payment-source-type';
+import { MASUMI_DOCUMENTATION_URL } from '@/lib/masumi-links';
 import {
   deniedPathFallback,
   isSetupPath,
@@ -70,8 +73,16 @@ function ToastWrapper() {
 
 function ThemedApp({ Component, pageProps, router }: AppProps) {
   const isRouteChanging = useRef(false);
+  // Previous rail, so an explicit switch away from x402 can be told apart from a deep
+  // link that arrives already on the Cardano rail. Updated by the recorder effect
+  // below, which is declared BEFORE the guard effect so the transition is recorded
+  // before the guard reads it on the same render.
+  const previousRailRef = useRef<'cardano' | 'x402'>('cardano');
+  // Pathname the user switched away from the EVM rail on. The restore stays suppressed
+  // for that pathname until the pending navigation actually lands somewhere else.
+  const suppressRailRestoreOnPathRef = useRef<string | null>(null);
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsNarrowScreen();
   const [isMobileWarningDismissed, setIsMobileWarningDismissed] = useState(false);
   const [mounted, setMounted] = useState(false);
   const {
@@ -115,21 +126,32 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     queueMicrotask(() => setMounted(true));
   }, []);
 
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
-
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
   const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
   const { networks: x402Networks, isLoading: x402Loading } = useX402NetworksForSession({
     silentErrors: true,
   });
+
+  // Record a switch off the EVM rail before the guard effect below can act on it.
+  //
+  // Declared first and free of early returns, so the transition is observed on every
+  // run: folding this into the guard effect meant a run that bailed early (still
+  // loading, admin-only redirect) consumed the transition, and the next run could no
+  // longer tell the user's switch from a deep link.
+  //
+  // Keyed by pathname rather than by a single render, because `router.push` has not
+  // landed yet at this point. Next emits `routeChangeStart` only after an
+  // `await matchesMiddleware(...)` inside push, so `isRouteChanging` is still false
+  // here; without this key, picking a Cardano source on /x402/wallets was reverted to
+  // x402 and the pending navigation to '/' was then bounced on to /x402/dashboard.
+  useEffect(() => {
+    const switchedAway = previousRailRef.current === 'x402' && activeRail === 'cardano';
+    previousRailRef.current = activeRail;
+    if (switchedAway) {
+      suppressRailRestoreOnPathRef.current = router.pathname;
+    } else if (suppressRailRestoreOnPathRef.current !== router.pathname) {
+      suppressRailRestoreOnPathRef.current = null;
+    }
+  }, [activeRail, router.pathname]);
 
   useEffect(() => {
     // Non-admins cannot open admin-only routes — do this before waiting on
@@ -187,7 +209,13 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       apiKey &&
       isHealthy &&
       activeRail !== 'x402' &&
-      shouldRestoreX402Rail(router.pathname, x402Loading, x402ChainCount, isRouteChanging.current)
+      shouldRestoreX402Rail(
+        router.pathname,
+        x402Loading,
+        x402ChainCount,
+        isRouteChanging.current,
+        suppressRailRestoreOnPathRef.current === router.pathname,
+      )
     ) {
       setActiveRail('x402');
       return;
@@ -271,7 +299,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     // the user with the key they just signed out of.
     let cancelled = false;
 
-    const init = async () => {
+    const init = async (): Promise<void> => {
       const response = await handleApiCall(() => getHealth({ client: apiClient }), {
         onError: (error: any) => {
           console.error('Health check failed:', error);
@@ -286,14 +314,41 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         return;
       }
 
-      const hexedKey = localStorage.getItem('payment_api_key');
-      if (!hexedKey) {
+      const storedEncryptedKey = localStorage.getItem('payment_api_key');
+      if (!storedEncryptedKey) {
         setIsHealthy(true);
         setAuthorized(false);
         return;
       }
 
-      const storedApiKey = Buffer.from(hexedKey, 'hex').toString('utf-8');
+      const legacyApiKey = decodeLegacyStoredKey(storedEncryptedKey);
+      let storedApiKey: string | null = null;
+      try {
+        storedApiKey = await decryptFromStorage(storedEncryptedKey);
+      } catch {
+        if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+          if (!cancelled) await init();
+          return;
+        }
+        if (legacyApiKey == null) {
+          toast.error('Unable to read saved API key. Please try signing in again.');
+          setIsHealthy(true);
+          setAuthorized(false);
+          return;
+        }
+      }
+      if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+        if (!cancelled) await init();
+        return;
+      }
+      const shouldMigrate = storedApiKey == null && legacyApiKey != null;
+      storedApiKey ??= legacyApiKey;
+      if (!storedApiKey) {
+        localStorage.removeItem('payment_api_key');
+        setIsHealthy(true);
+        setAuthorized(false);
+        return;
+      }
       apiClient.setConfig({
         headers: {
           token: storedApiKey,
@@ -312,7 +367,10 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       // Re-read the stored key: signOut() clears it without changing this
       // effect's deps, and authorizing from the stale value would sign the
       // user straight back in.
-      if (cancelled || localStorage.getItem('payment_api_key') !== hexedKey) return;
+      if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+        if (!cancelled) await init();
+        return;
+      }
 
       if (!apiKeyStatus) {
         setIsHealthy(true);
@@ -326,6 +384,22 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         toast.error('Unauthorized access');
         signOut();
         return;
+      }
+      if (shouldMigrate) {
+        try {
+          const encryptedKey = await encryptForStorage(storedApiKey);
+          if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+            if (!cancelled) await init();
+            return;
+          }
+          localStorage.setItem('payment_api_key', encryptedKey);
+        } catch {
+          if (cancelled || localStorage.getItem('payment_api_key') !== storedEncryptedKey) {
+            if (!cancelled) await init();
+            return;
+          }
+          toast.error('Unable to upgrade saved API key. The app will retry after reload.');
+        }
       }
       setCapabilities(nextCapabilities);
       setAuthorized(true);
@@ -435,7 +509,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
             The admin interface is designed for desktop. On a narrow screen some tables and dialogs
             may be hard to use.{' '}
             <Link
-              href="https://docs.masumi.io"
+              href={MASUMI_DOCUMENTATION_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="underline underline-offset-2"

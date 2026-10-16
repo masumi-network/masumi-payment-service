@@ -4,6 +4,8 @@ import { EventEmitter } from 'node:events';
 class WsMock extends EventEmitter {
 	readyState = 1;
 	readonly send = jest.fn<(data: string) => void>();
+	readonly pause = jest.fn<() => void>();
+	readonly resume = jest.fn<() => void>();
 	readonly close = jest.fn<(code?: number) => void>().mockImplementation((code) => {
 		queueMicrotask(() => {
 			this.readyState = 3;
@@ -35,6 +37,8 @@ const MockWebSocket = jest.fn<MockWebSocketConstructor>().mockImplementation(() 
 jest.unstable_mockModule('ws', () => ({ default: MockWebSocket }));
 
 const { Connection, toWebSocketUrl } = await import('./connection');
+const { sendHydraCommandAndWait } = await import('./node-command-channel');
+const { HydraTransportError, HydraTransportAmbiguousError } = await import('./errors');
 
 describe('Connection', () => {
 	beforeEach(() => {
@@ -82,6 +86,16 @@ describe('Connection', () => {
 		const conn = new Connection('ws://localhost:4001');
 		await conn.connect();
 		expect(conn.isOpen()).toBe(false);
+	});
+
+	it('pauses and resumes reading on the current socket', async () => {
+		const conn = new Connection('ws://localhost:4001');
+		conn.pauseReceiving();
+		await conn.connect();
+		conn.pauseReceiving();
+		conn.resumeReceiving();
+		expect(currentWsMock.pause).toHaveBeenCalledTimes(1);
+		expect(currentWsMock.resume).toHaveBeenCalledTimes(1);
 	});
 
 	it('isOpen() returns true after WebSocket fires onopen', async () => {
@@ -322,6 +336,55 @@ describe('Connection', () => {
 		const sendPromise = conn.send({ tag: 'Init' });
 		expect(currentWsMock.send).toHaveBeenCalledTimes(1);
 		await sendPromise;
+	});
+
+	it('cancels a waiting send before a shorter command deadline releases its reservation', async () => {
+		jest.useFakeTimers();
+		const conn = new Connection('ws://localhost:4001');
+		await conn.connect();
+		currentWsMock.readyState = 0;
+		const command = sendHydraCommandAndWait(conn, undefined, {
+			command: 'NewTx',
+			payload: { tag: 'NewTx' },
+			timeoutMs: 20,
+			isComplete: () => false,
+			timeoutMessage: 'command deadline',
+		});
+		const rejection = expect(command).rejects.toBeInstanceOf(HydraTransportError);
+		await jest.advanceTimersByTimeAsync(20);
+		await rejection;
+		currentWsMock.readyState = 1;
+		currentWsMock.emit('open');
+		await jest.advanceTimersByTimeAsync(5000);
+		expect(currentWsMock.send).not.toHaveBeenCalled();
+		expect(conn.listenerCount('close')).toBe(0);
+	});
+
+	it('keeps a dispatched command ambiguous when its deadline expires before promise reactions', async () => {
+		jest.useFakeTimers();
+		const conn = new Connection('ws://localhost:4001');
+		await conn.connect();
+		const command = sendHydraCommandAndWait(conn, undefined, {
+			command: 'NewTx',
+			payload: { tag: 'NewTx' },
+			timeoutMs: 20,
+			isComplete: () => false,
+			timeoutMessage: 'command deadline',
+		});
+		const rejection = expect(command).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+		// Synchronous timer advancement deliberately leaves the send promise pending.
+		jest.advanceTimersByTime(20);
+		await rejection;
+		expect(currentWsMock.send).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not send when cancellation already happened', async () => {
+		const conn = new Connection('ws://localhost:4001');
+		await conn.connect();
+		const controller = new AbortController();
+		controller.abort();
+		await expect(conn.send({ tag: 'NewTx' }, { signal: controller.signal })).rejects.toThrow('cancelled');
+		expect(currentWsMock.send).not.toHaveBeenCalled();
 	});
 
 	it('send() rejects after 5 seconds if socket never reaches OPEN state', async () => {

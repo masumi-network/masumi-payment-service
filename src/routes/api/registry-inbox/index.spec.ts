@@ -179,6 +179,30 @@ describe('registerInboxAgentPost', () => {
 		);
 	});
 
+	it.each([
+		['registered', [RegistrationState.RegistrationConfirmed, RegistrationState.DeregistrationConfirmed]],
+		['pending', [RegistrationState.RegistrationRequested, RegistrationState.DeregistrationRequested]],
+		['deregistering', [RegistrationState.DeregistrationInitiated]],
+	])('matches search %s against displayed status labels', async (searchQuery, expectedStates) => {
+		const { responseMock } = await testEndpoint({
+			endpoint: queryRegistryInboxRequestGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					limit: '10',
+					searchQuery,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		const where = mockFindInboxAgentRegistrationRequests.mock.calls[0][0].where;
+		const stateClause = where.OR.find((clause: { state?: { in: RegistrationState[] } }) => clause.state);
+		expect([...stateClause.state.in].sort()).toEqual([...expectedStates].sort());
+	});
+
 	it('scopes inbox registry counts to the current managed holder wallet', async () => {
 		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));
 

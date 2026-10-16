@@ -131,6 +131,39 @@ function meshVersion() {
 	return v || '1.9.0-beta.103';
 }
 
+// The header used to hardcode "2.2.0 (native aarch64-darwin)" and "local devnet
+// (testnet-magic 42)". Both went stale silently — the version was two releases
+// behind by the time anyone noticed — and were stamped into every generated
+// report as fact. Ask the binary that actually ran, and the run that actually
+// happened, instead of remembering.
+function hydraVersion() {
+	// Mirrors hydra-native.sh's binary resolution: NATIVE_BIN wins, then the
+	// HYDRA_BIN_TAG variant, then the pinned default under .bin/.
+	const tag = process.env.HYDRA_BIN_TAG;
+	const bin =
+		process.env.NATIVE_BIN || (tag ? `hydra-l2-flow/.bin/hydra-node-${tag}` : 'hydra-l2-flow/.bin/hydra-node');
+	if (fs.existsSync(bin)) {
+		const v = sh(`"${bin}" --version`);
+		if (v) return `${v} (${process.arch}-${process.platform}, ${bin})`;
+	}
+	// No binary to ask: say so rather than print a pin as if it were observed.
+	return process.env.HYDRA_VERSION
+		? `${process.env.HYDRA_VERSION} (pinned; binary at ${bin} not found, not probed)`
+		: `(unknown — no hydra-node at ${bin} and HYDRA_VERSION unset)`;
+}
+
+function runNetwork() {
+	// run-hydra-e2e.sh exports HYDRA_FLOW_NETWORK; hydra-native.sh stamps the
+	// network it started nodes on beside their pids. Prefer the stamp: it says
+	// what the nodes are actually running, not what the caller intended.
+	const stampPath = 'hydra-l2-flow/.native-state/network';
+	const stamp = fs.existsSync(stampPath) ? fs.readFileSync(stampPath, 'utf-8').trim() : '';
+	const net = stamp || process.env.HYDRA_FLOW_NETWORK || process.env.NETWORK || '';
+	if (net === 'devnet') return 'local devnet (testnet-magic 42)';
+	if (net === 'preprod') return 'preprod (testnet-magic 1)';
+	return net || '(unknown — no network stamp and HYDRA_FLOW_NETWORK unset)';
+}
+
 function main() {
 	if (!TSV || !fs.existsSync(TSV)) {
 		console.error(`No evidence ledger at ${TSV}. Run a flow (flow1/flow2/flow3) first.`);
@@ -148,13 +181,15 @@ function main() {
 
 	const hid = headId();
 	const mesh = meshVersion();
+	const hydra = hydraVersion();
+	const network = runNetwork();
 	const now = new Date().toISOString();
 	const out = [];
 	out.push('# Masumi V2 → Hydra L2 — In-Head Escrow Execution Evidence');
 	out.push('');
 	out.push(`**Generated:** ${now}  `);
-	out.push(`**Hydra node:** 2.2.0 (native aarch64-darwin)  ·  **Mesh SDK:** \`@meshsdk/core@${mesh}\`  `);
-	out.push(`**Head id:** \`${hid}\`  ·  **Network:** local devnet (testnet-magic 42)`);
+	out.push(`**Hydra node:** ${hydra}  ·  **Mesh SDK:** \`@meshsdk/core@${mesh}\`  `);
+	out.push(`**Head id:** \`${hid}\`  ·  **Network:** ${network}`);
 	out.push('');
 	out.push(
 		'Each row is a Masumi V2 escrow operation that built a Cardano transaction, submitted it **into the open Hydra head**, and had it accepted by the head ledger (`TxValid`). The head-assigned transaction id is **byte-identical** to the hash Masumi independently computed and stored in its own database — only possible if the transaction was built by Masumi V2 and executed in L2.',

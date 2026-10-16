@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
+import { planNodeAction } from '../supervisor/plan.js';
 import {
 	requestRemoval,
 	requestRestart,
@@ -31,6 +32,7 @@ function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
 		peers: [PEER],
 		contestationPeriodSeconds: 220,
 		depositPeriodSeconds: 300,
+		depositActivationSeconds: 300,
 		unsyncedPeriodSeconds: 1800,
 		hydraVerificationKey: '5820aa',
 		cardanoVerificationKey: '5820bb',
@@ -53,6 +55,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	jest.restoreAllMocks();
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
 
@@ -85,6 +88,28 @@ describe('requestStop', () => {
 		await store.write(record({ desired: 'Running', state: 'Running' }));
 		expect((await requestStop(store, 'node-1')).desired).toBe('Stopped');
 	});
+
+	it.each([false, true])('cancels a failed node restart when its process is running: %s', async (processRunning) => {
+		await store.write(record({ state: 'Failed', desired: 'Running' }));
+		await requestRestart(store, 'node-1');
+		const stopped = await requestStop(store, 'node-1');
+
+		expect(
+			planNodeAction(
+				stopped,
+				{
+					processRunning,
+					responsive: false,
+					chainSynced: false,
+					drift: null,
+					driftSeconds: null,
+					nowMs: Date.parse('2026-07-28T12:00:00.000Z'),
+				},
+				{ maxStartAttempts: 5, escrowTtlSeconds: 3600 },
+			).kind,
+		).toBe(processRunning ? 'Stop' : 'Idle');
+		expect(stopped.restartRequested).toBe(false);
+	});
 });
 
 describe('requestRestart', () => {
@@ -106,6 +131,18 @@ describe('requestRestart', () => {
 });
 
 describe('requestRemoval', () => {
+	it('checks the current queued record when peers appear before removal commits', async () => {
+		await store.write(record({ peers: [] }));
+		const update = store.update.bind(store);
+		jest.spyOn(store, 'update').mockImplementationOnce(async (nodeId, mutate) => {
+			await update(nodeId, (current) => ({ ...current, state: 'Running', peers: [PEER] }));
+			return update(nodeId, mutate);
+		});
+		await expect(requestRemoval(store, 'node-1', { force: false })).rejects.toMatchObject({ status: 409 });
+		expect(await store.read('node-1')).toMatchObject({ state: 'Running', peers: [PEER] });
+		expect((await store.read('node-1'))?.removalRequested).not.toBe(true);
+	});
+
 	// Removal destroys the persistence directory, which is the only copy of the
 	// head state on this host.
 	it('refuses an acknowledged node without force', async () => {

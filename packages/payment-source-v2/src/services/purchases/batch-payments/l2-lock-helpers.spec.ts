@@ -1,9 +1,13 @@
 import { describe, it, expect } from '@jest/globals';
+import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
+import { Network, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import {
 	buildL2LockDatumParams,
+	inHeadChangeMinimum,
 	createTrustedL2LockWindow,
 	isHotWalletEligibleForL2Lock,
+	isWalletHeldByExpiredL2Body,
 	L2_LOCK_HEAD_CLOCK_MAX_AGE_MS,
 	mapPaidFundsToAssets,
 	planL2LockValue,
@@ -350,8 +354,26 @@ describe('selectInHeadFundingUtxos', () => {
 		expect(selected).toHaveLength(3);
 	});
 
-	it('ignores script (plutusData) UTxOs — they are escrow outputs, not spendable', () => {
-		const utxos = [utxo(0, [ada(50_000_000n)], 'd8799fff')];
+	// V2 escrow payouts and refunds land at the buyer's key address with a datum.
+	// Skipping them made a head showing 281 ADA fail every lock as 3.3 ADA short.
+	it('spends datum-carrying UTxOs at the buyer address', () => {
+		const utxos = [
+			utxo(0, [ada(6_000_000n)], 'd8799fff'),
+			utxo(1, [ada(6_000_000n)], 'd8799fff'),
+			utxo(2, [ada(2_000_000n)]),
+		];
+		const selected = selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE);
+		expect(selected.map((u) => u.input.txHash)).toEqual(['tx0', 'tx1']);
+	});
+
+	// Other transactions may point at a reference script, so it is never spent.
+	it('leaves UTxOs holding a reference script alone', () => {
+		const utxos: L2FundingUtxo[] = [
+			{
+				input: { txHash: 'tx0', outputIndex: 0 },
+				output: { address: 'addr_buyer', amount: [ada(50_000_000n)], scriptRef: '82008201' },
+			},
+		];
 		expect(() => selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE)).toThrow(
 			/no spendable/i,
 		);
@@ -427,5 +449,78 @@ describe('planL2LockValue duplicate-unit aggregation', () => {
 		// mapPaidFundsToAssets over the plan therefore yields one row per unit.
 		const units = mapPaidFundsToAssets(plan.outputFunds).map((a) => a.unit);
 		expect(new Set(units).size).toBe(units.length);
+	});
+});
+
+it('funds change containing eight full-length assets beyond the count-based estimate', () => {
+	const address =
+		'addr1qxk6pvm8uufjvmwappnl4s7zu7t0ql6rx9wnzl3e4x0zuqdcgnhgarwqwzera5canfysuau8z4rtd7exc0qrul4hcm5s5l8xwx';
+	const assets = Array.from({ length: 8 }, (_, i) => ({
+		unit: (i + 1).toString(16).padStart(2, '0').repeat(28) + 'ab'.repeat(32),
+		quantity: 1n,
+	}));
+	expect(inHeadChangeMinimum(address, assets, 4310)).toBe(3254050n);
+	const bundle: L2FundingUtxo = {
+		input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+		output: {
+			address,
+			amount: [
+				{ unit: 'lovelace', quantity: '10124750' },
+				...assets.map((a) => ({ unit: a.unit, quantity: a.quantity.toString() })),
+			],
+		},
+	};
+	const topup: L2FundingUtxo = {
+		input: { txHash: 'b'.repeat(64), outputIndex: 0 },
+		output: { address, amount: [{ unit: 'lovelace', quantity: '1000000' }] },
+	};
+	const minimum = (change: typeof assets) => inHeadChangeMinimum(address, change, 4310);
+	const paid = [{ unit: '', amount: 5000000n }];
+	expect(() => selectInHeadFundingUtxos([bundle], paid, 2000000n, 2000000n, minimum)).toThrow('short 129300');
+	expect(selectInHeadFundingUtxos([bundle, topup], paid, 2000000n, 2000000n, minimum)).toEqual([bundle, topup]);
+});
+
+describe('isWalletHeldByExpiredL2Body', () => {
+	const nowMs = Date.UTC(2026, 9, 15, 12, 0, 0);
+	const expiredSlot = BigInt(unixTimeToEnclosingSlot(nowMs - 10 * 60_000, SLOT_CONFIG_NETWORK.preprod));
+	const held = (
+		overrides: Record<string, unknown> = {},
+		headClock: { chainTimeMs: number } | null = { chainTimeMs: nowMs },
+	) =>
+		isWalletHeldByExpiredL2Body({
+			pendingTransaction: {
+				layer: TransactionLayer.L2,
+				status: TransactionStatus.Pending,
+				invalidHereafterSlot: expiredSlot,
+				...overrides,
+			},
+			headClock: headClock ?? undefined,
+			network: Network.Preprod,
+		});
+
+	it('is held once the head clock passes the body validity plus grace', () => {
+		expect(held()).toBe(true);
+	});
+
+	it.each([
+		['an L1 pending transaction', { layer: TransactionLayer.L1 }],
+		['a body already resolved', { status: TransactionStatus.Confirmed }],
+		['a body without signed validity', { invalidHereafterSlot: null }],
+	] as const)('is not held for %s', (_label, overrides) => {
+		expect(held(overrides)).toBe(false);
+	});
+
+	it('is not held when the head clock is unknown', () => {
+		expect(held({}, null)).toBe(false);
+	});
+
+	it('is not held for a free wallet', () => {
+		expect(
+			isWalletHeldByExpiredL2Body({
+				pendingTransaction: null,
+				headClock: { chainTimeMs: nowMs },
+				network: Network.Preprod,
+			}),
+		).toBe(false);
 	});
 });

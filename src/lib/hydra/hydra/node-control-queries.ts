@@ -8,12 +8,13 @@ import { Protocol, UTxO, castProtocol } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { HydraProtocolError } from './errors';
-import { extractHeadOutputTxId } from './head-output-tx';
+import { extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
 import { protocolErrorToString } from './node-frames';
 import { type HydraRawCostModels } from './node-api';
 import { reportParamsDrift } from './params-drift';
 import {
 	hydraCostModelSchema,
+	hydraConfirmedSnapshotSchema,
 	hydraCostModelsEnvelopeSchema,
 	hydraProtocolParametersSchema,
 	hydraSnapshotUtxoSchema,
@@ -90,6 +91,25 @@ export async function fetchHydraRawCostModels(transport: HydraQueryTransport): P
 	};
 }
 
+/**
+ * The node's own latest confirmed snapshot number, read from `GET /snapshot`.
+ * Unlike the replayed or persisted copies, this cannot lag the node itself.
+ */
+export async function fetchHydraConfirmedSnapshotNumber(
+	transport: HydraQueryTransport,
+): Promise<{ headId: string; number: bigint }> {
+	const response = hydraConfirmedSnapshotSchema.safeParse(await transport.get('/snapshot'));
+	if (!response.success) {
+		throw new HydraProtocolError('Hydra confirmed snapshot response failed schema validation', {
+			cause: response.error,
+		});
+	}
+	const data = response.data;
+	return data.tag === 'ConfirmedSnapshot'
+		? { headId: data.snapshot.headId, number: BigInt(data.snapshot.number) }
+		: { headId: data.headId, number: 0n };
+}
+
 export async function fetchHydraSnapshotUTxO(transport: HydraQueryTransport): Promise<UTxO[]> {
 	const response = hydraSnapshotUtxoSchema.safeParse(await transport.get('/snapshot/utxo'));
 	if (!response.success) {
@@ -124,6 +144,26 @@ export async function fetchHydraHeadOutputTxId(
 			error: protocolErrorToString(error),
 		});
 		return undefined;
+	}
+}
+
+/**
+ * Output references the head's confirmed snapshot is still waiting to
+ * decommit onto L1. See `extractPendingDecommitRefs`.
+ *
+ * Returns `[]` on any transport error: this is a pre-flight guard evaluated
+ * before every withdrawal, not the system of record on whether one is safe —
+ * a head that cannot be asked right now must not be allowed to jam every
+ * withdrawal.
+ */
+export async function fetchHydraPendingDecommitRefs(transport: HydraQueryTransport): Promise<string[]> {
+	try {
+		return extractPendingDecommitRefs(await transport.get('/head'));
+	} catch (error) {
+		logger.warn('[HydraNode] Could not read the head state for a pending decommit', {
+			error: protocolErrorToString(error),
+		});
+		return [];
 	}
 }
 

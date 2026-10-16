@@ -33,34 +33,26 @@ export const registerWebhookSchemaInput = z
 		}
 	});
 
-export const patchWebhookSchemaInput = z
-	.object({
-		webhookId: z.string().describe('The ID of the webhook to update'),
-		url: z
-			.string()
-			.url()
-			.max(500)
-			.describe('The webhook URL to receive notifications. Only public http and https destinations are allowed.'),
-		authToken: z
-			.string()
-			.min(10)
-			.max(200)
-			.optional()
-			.nullable()
-			.describe('Authentication token for extended webhook requests. Required when format is EXTENDED'),
-		format: z.nativeEnum(WebhookFormat).describe('Webhook delivery format'),
-		Events: z.array(z.nativeEnum(WebhookEventType)).min(1).max(10).describe('Array of event types to subscribe to'),
-		name: z.string().max(100).optional().nullable().describe('Human-readable name for the webhook'),
-	})
-	.superRefine((value, ctx) => {
-		if (value.format === WebhookFormat.EXTENDED && value.authToken == null) {
-			ctx.addIssue({
-				code: 'custom',
-				path: ['authToken'],
-				message: 'authToken is required when format is EXTENDED',
-			});
-		}
-	});
+export const patchWebhookSchemaInput = z.object({
+	webhookId: z.string().describe('The ID of the webhook to update'),
+	url: z
+		.string()
+		.url()
+		.max(500)
+		.describe('The webhook URL to receive notifications. Only public http and https destinations are allowed.'),
+	authToken: z
+		.string()
+		.min(10)
+		.max(200)
+		.optional()
+		.nullable()
+		.describe(
+			'Authentication token for extended webhook requests. Omit to keep the stored token; required when changing a webhook to EXTENDED',
+		),
+	format: z.nativeEnum(WebhookFormat).describe('Webhook delivery format'),
+	Events: z.array(z.nativeEnum(WebhookEventType)).min(1).max(10).describe('Array of event types to subscribe to'),
+	name: z.string().max(100).optional().nullable().describe('Human-readable name for the webhook'),
+});
 
 export const registerWebhookSchemaOutput = z.object({
 	id: z.string(),

@@ -11,7 +11,7 @@ declare global {
 	// eslint-disable-next-line no-var
 	var testAgent: ConfirmedAgent;
 	// eslint-disable-next-line no-var
-	var testAgents: Partial<Record<PaymentSourceType, ConfirmedAgent>>;
+	var testAgents: Partial<Record<PaymentSourceType, ConfirmedAgent[]>>;
 	// eslint-disable-next-line no-var
 	var __e2eErrorHandlersInstalled: boolean | undefined;
 }

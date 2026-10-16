@@ -49,6 +49,8 @@ export interface DecommitSelectionResult {
 	eligible: UTxO[];
 	/** Total lovelace across the eligible set. */
 	eligibleLovelace: bigint;
+	/** The UTxO held back as collateral, or null when none was. */
+	reserved: UTxO | null;
 	/** Why each excluded UTxO was held back, keyed by `txHash#index`. */
 	excluded: Map<string, string>;
 }
@@ -72,18 +74,21 @@ export function amountOf(utxo: UTxO, unit: string): bigint {
 }
 
 /**
- * A UTxO that is only money, and nothing else.
+ * A UTxO whose value is money, not a script someone reads.
  *
- * Anything carrying a datum or a reference script is part of some arrangement —
- * an escrow, a reference input — and taking it out of the head would remove it
- * from whatever depends on it while leaving that thing looking intact. The
- * participant's own address should never hold one; refusing them anyway costs
- * nothing and is the difference between a bug and a broken head.
+ * A reference script at this address is something other transactions point at,
+ * and taking it out of the head would break them while leaving them looking
+ * intact.
+ *
+ * A datum is different, because this is the participant's own key address, and
+ * a datum locks nothing there. V2 escrow payouts carry one on purpose: every
+ * collection output is tagged with the escrow's output reference so the
+ * validator can tell payouts apart. Refusing datums therefore made every token
+ * earned in the head ineligible to withdraw, which is how a head holding 24.80
+ * USDM answered "Only 0 of that asset is eligible to withdraw".
  */
-function isPlainValue(utxo: UTxO): boolean {
+export function isPlainValue(utxo: UTxO): boolean {
 	return (
-		(utxo.output.dataHash === undefined || utxo.output.dataHash === null) &&
-		(utxo.output.plutusData === undefined || utxo.output.plutusData === null) &&
 		(utxo.output.scriptRef === undefined || utxo.output.scriptRef === null) &&
 		(utxo.output.scriptHash === undefined || utxo.output.scriptHash === null)
 	);
@@ -108,33 +113,30 @@ export function selectDecommittableUtxos(input: DecommitSelectionInput): Decommi
 			continue;
 		}
 		if (!isPlainValue(utxo)) {
-			excluded.set(ref, 'carries a datum or script, so it is not plain funds');
+			excluded.set(ref, 'carries a reference script, so other transactions may depend on it');
 			continue;
 		}
 		candidates.push(utxo);
 	}
 
+	let reserved: UTxO | null = null;
 	if (!input.drain) {
 		// Hold back the smallest UTxO that can serve as collateral on its own.
 		// Smallest, so the reserve costs the withdrawal as little as possible;
-		// whole, because that is how collateral is chosen.
+		// whole, because that is how collateral is chosen. A token that happens
+		// to sit on it is not stranded: a carve may borrow it (coverAssetForCarve).
 		const reserveIndex = candidates
 			.map((utxo, index) => ({ index, lovelace: lovelaceOf(utxo) }))
 			.filter((entry) => entry.lovelace >= IN_HEAD_COLLATERAL_RESERVE_LOVELACE)
 			.sort((left, right) => (left.lovelace === right.lovelace ? 0 : left.lovelace < right.lovelace ? -1 : 1))[0];
 
-		if (reserveIndex === undefined) {
-			// Nothing here could act as collateral even before the withdrawal, so
-			// there is nothing to protect. Say so rather than silently taking it all.
-			return {
-				eligible: candidates,
-				eligibleLovelace: candidates.reduce((total, utxo) => total + lovelaceOf(utxo), 0n),
-				excluded,
-			};
-		}
-		const [reserved] = candidates.splice(reserveIndex.index, 1);
-		if (reserved) {
-			excluded.set(utxoRef(reserved), 'kept back as collateral so this wallet can still spend escrows in the head');
+		// Nothing here could act as collateral even before the withdrawal, so
+		// there is nothing to protect and everything stays eligible.
+		if (reserveIndex !== undefined) {
+			reserved = candidates.splice(reserveIndex.index, 1)[0] ?? null;
+			if (reserved !== null) {
+				excluded.set(utxoRef(reserved), 'kept back as collateral so this wallet can still spend escrows in the head');
+			}
 		}
 	}
 
@@ -142,6 +144,7 @@ export function selectDecommittableUtxos(input: DecommitSelectionInput): Decommi
 		eligible: candidates,
 		eligibleLovelace: candidates.reduce((total, utxo) => total + lovelaceOf(utxo), 0n),
 		excluded,
+		reserved,
 	};
 }
 
@@ -206,6 +209,30 @@ export function coverAsset(utxos: readonly UTxO[], unit: string, amount: bigint)
 		total += amountOf(utxo, unit);
 	}
 	return total >= amount ? chosen : null;
+}
+
+/**
+ * Inputs for carving `amount` of `unit`, borrowing the collateral reserve only
+ * when the eligible UTxOs cannot reach it.
+ *
+ * The reserve is withheld so a withdrawal cannot take it out of the head. A
+ * carve does not: it is an in-head transaction whose change stays in the head.
+ * So when the token sits on the reserve, the reserve can be a carve input as long as the change keeps the reserve's lovelace. The caller
+ * enforces that when `borrowsReserve` is true.
+ */
+export function coverAssetForCarve(params: {
+	eligible: readonly UTxO[];
+	reserved: UTxO | null;
+	unit: string;
+	amount: bigint;
+}): { inputs: UTxO[]; borrowsReserve: boolean } | null {
+	const { eligible, reserved, unit, amount } = params;
+	const fromEligible = coverAsset(eligible, unit, amount);
+	if (fromEligible !== null) return { inputs: fromEligible, borrowsReserve: false };
+	if (reserved === null) return null;
+	const withReserve = coverAsset([...eligible, reserved], unit, amount);
+	if (withReserve === null) return null;
+	return { inputs: withReserve, borrowsReserve: withReserve.includes(reserved) };
 }
 
 /**
@@ -301,4 +328,71 @@ export function requiredChangeLovelace(params: {
 		else remaining.set(carved, left);
 	}
 	return baseLovelace + perAssetLovelace * BigInt(remaining.size);
+}
+
+export type LovelaceWithdrawalPlan =
+	| { kind: 'whole'; inputs: UTxO[] }
+	| { kind: 'split'; inputs: UTxO[] }
+	| { kind: 'insufficient' }
+	| { kind: 'remainder-too-small'; remainder: bigint; coverHoldsAssets: boolean };
+
+/**
+ * The inputs for an amount-only ADA withdrawal, and whether they leave whole.
+ *
+ * A decommit removes the WHOLE output it spends, and `selection.eligible`
+ * excludes reference scripts but not native assets. A UTxO that holds the
+ * requested lovelace plus some unrelated token (an agent's registry NFT, say)
+ * is not what an amount-only withdrawal asked for, and taking it whole would
+ * carry that asset out of the head silently. So inputs leave whole only when
+ * every one of them is pure ADA; anything else is split first, and the token
+ * stays behind on the change.
+ *
+ * An eligible pure UTxO already holding exactly the amount is taken whole.
+ * `coverLovelace` picks largest-first, so without this check it would carve a
+ * bigger UTxO down to this amount even with an exact match right there, leaving
+ * a stray exact-amount UTxO behind on every refused or retried withdrawal.
+ *
+ * A split needs room for its change, which keeps every asset the inputs carry,
+ * so lovelace is borrowed from other eligible UTxOs when the cover is short.
+ */
+export function planLovelaceWithdrawal(params: {
+	eligible: readonly UTxO[];
+	amount: bigint;
+	baseChangeLovelace: bigint;
+	perAssetChangeLovelace: bigint;
+}): LovelaceWithdrawalPlan {
+	const { eligible, amount, baseChangeLovelace, perAssetChangeLovelace } = params;
+	const exactMatch = eligible.find((utxo) => lovelaceOf(utxo) === amount && countNativeAssets(utxo) === 0);
+	if (exactMatch !== undefined) return { kind: 'whole', inputs: [exactMatch] };
+
+	const covering = coverLovelace(eligible, amount);
+	if (covering === null) return { kind: 'insufficient' };
+	const covered = covering.reduce((total, utxo) => total + lovelaceOf(utxo), 0n);
+	if (covered === amount && covering.every((utxo) => countNativeAssets(utxo) === 0)) {
+		// Already exactly the amount, so a split would change nothing.
+		return { kind: 'whole', inputs: covering };
+	}
+
+	// Borrowed inputs can bring assets of their own onto the change, which
+	// raises its floor, so the floor is re-sized until the inputs stop growing.
+	let inputs = covering;
+	for (;;) {
+		const changeFloor = requiredChangeLovelace({
+			inputs,
+			carvedUnit: '',
+			carvedAmount: amount,
+			baseLovelace: baseChangeLovelace,
+			perAssetLovelace: perAssetChangeLovelace,
+		});
+		const extra = topUpCarveInputs({ chosen: inputs, eligible, needed: amount + changeFloor });
+		if (extra === null) {
+			return {
+				kind: 'remainder-too-small',
+				remainder: covered - amount,
+				coverHoldsAssets: covering.some((utxo) => countNativeAssets(utxo) > 0),
+			};
+		}
+		if (extra.length === 0) return { kind: 'split', inputs };
+		inputs = [...inputs, ...extra];
+	}
 }

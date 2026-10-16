@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network, PaymentSourceType } from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -88,6 +88,44 @@ describe('queryAgentByIdentifierGet', () => {
 		});
 		mockFindRegistryRequest.mockResolvedValue(null);
 	});
+
+	it.each([PaymentSourceType.Web3CardanoV1, PaymentSourceType.Web3CardanoV2])(
+		'limits A2A identifier metadata to V2 policies (%s)',
+		async (paymentSourceType) => {
+			mockFindApiKey.mockResolvedValue(asApiKey());
+			mockFindPaymentSource.mockResolvedValue({
+				id: 'payment-source-1',
+				paymentSourceType,
+				PaymentSourceConfig: { rpcProviderApiKey: 'provider-key' },
+			});
+			mockGetBlockfrostInstance.mockReturnValue({
+				assetsById: jest.fn(async () => ({
+					onchain_metadata: {
+						name: 'A2A',
+						type: 'a2aV1',
+						api_url: 'https://agent.example/a2a',
+						agent_card_url: 'https://agent.example/card',
+						a2a_protocol_versions: ['1.0'],
+						author: { name: 'Author' },
+						tags: ['ai'],
+						image: 'ipfs://image',
+						metadata_version: 2,
+					},
+				})),
+			});
+			const { responseMock } = await testEndpoint({
+				endpoint: queryAgentByIdentifierGet,
+				requestProps: {
+					method: 'GET',
+					headers: { token: 'valid' },
+					query: { network: Network.Preprod, agentIdentifier: validAgentIdentifier },
+				},
+			});
+			expect(responseMock.statusCode).toBe(paymentSourceType === PaymentSourceType.Web3CardanoV2 ? 200 : 422);
+			if (paymentSourceType === PaymentSourceType.Web3CardanoV1)
+				expect(JSON.stringify(responseMock._getJSONData())).toContain('Agent metadata is invalid or malformed');
+		},
+	);
 
 	it('rejects wallet-scoped lookups for agents not owned by the scoped holder wallet', async () => {
 		const { responseMock } = await testEndpoint({

@@ -1,33 +1,25 @@
 import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 
+const ADMIN_FAVICON = '/assets/admin_favicon.svg';
+
+/** Admin Next shell only; Swagger at `/docs` sets its own favicon. */
 export function useDynamicFavicon() {
   const router = useRouter();
 
   useEffect(() => {
-    const updateFavicon = () => {
-      const existingFavicon = document.querySelector('link[rel="icon"]') as HTMLLinkElement;
+    if (!router.isReady) return;
 
-      // Check if current URL contains "admin"
-      const currentUrl = window.location.href;
-      const isAdminRoute = currentUrl.includes('/admin');
+    const existingFavicon = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
+    const faviconPath = ADMIN_FAVICON;
 
-      // Use admin favicon for admin routes, swagger favicon for everything else
-      const faviconPath = isAdminRoute
-        ? '/assets/admin_favicon.svg'
-        : '/assets/swagger_favicon.svg';
-
-      if (existingFavicon) {
-        existingFavicon.href = faviconPath;
-      } else {
-        // Create favicon link if it doesn't exist
-        const newFavicon = document.createElement('link');
-        newFavicon.rel = 'icon';
-        newFavicon.href = faviconPath;
-        document.head.appendChild(newFavicon);
-      }
-    };
-
-    updateFavicon();
-  }, [router.pathname]);
+    if (existingFavicon) {
+      existingFavicon.href = faviconPath;
+    } else {
+      const newFavicon = document.createElement('link');
+      newFavicon.rel = 'icon';
+      newFavicon.href = faviconPath;
+      document.head.appendChild(newFavicon);
+    }
+  }, [router.isReady, router.pathname]);
 }

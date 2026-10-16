@@ -18,9 +18,11 @@ import {
 	HydraInviteStatus,
 	Network,
 	PaymentSourceType,
+	Prisma,
 	WalletType,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { logger } from '@masumi/payment-core/logger';
 import { createBoundHydraHead } from '@/routes/api/hydra/head/create-head';
 import { registerInviteOnHost, setHostNodePeers, startHostNode } from '@/services/hydra-host/client';
@@ -34,9 +36,9 @@ import {
 import { encodeInviteCode, type DecodedInvite } from './invite-code';
 import { signHydraHeadInvite, signHydraRedemption, verifyHydraHeadInvite } from './invite-signing';
 import {
-	MIN_UNSYNCED_PERIOD_SECONDS,
-	assertContestationPeriodAllowed,
+	assertHeadPeriodsAllowed,
 	defaultPeriodsFor,
+	periodsFromInvite,
 	reserveNodeForExchange,
 	type HeadPeriods,
 } from './provisioning';
@@ -89,38 +91,19 @@ async function loadWallet(hotWalletId: string): Promise<WalletContext> {
 }
 
 /**
- * Where our own invites are redeemed.
+ * The Host's own public exchange URL, or a refusal.
  *
- * The host comes from the Host's control-plane URL — same deployment, so the
- * same machine — and the port from what that Host reported about itself when it
- * was connected. Never from a service-wide setting: an invite carries this URL
- * to a counterparty, and with two Hosts a single shared value can only be right
- * for one of them. The other's invites advertise the wrong exchange, the
- * redemption reaches a Host that never issued the nonce, and the counterparty is
- * told 404 for something they did nothing wrong with.
+ * The Control Plane may be private while the Exchange Plane is public, so the
+ * URL cannot be derived from the control URL without breaking that boundary.
  */
-export function exchangeUrlForHost(baseUrl: string, exchangePort: number): string {
-	const url = new URL(baseUrl);
-	url.port = String(exchangePort);
-	url.pathname = '/exchange';
-	url.search = '';
-	return url.toString().replace(/\/+$/, '');
-}
-
-/**
- * The Host's own exchange port, or a refusal.
- *
- * Refusing beats guessing: a wrong port is baked into a signed invite and only
- * fails at the counterparty, minutes later, as a 404 they cannot act on.
- */
-function requireExchangePort(node: { hostExchangePort: number | null; hostBaseUrl: string }): number {
-	if (node.hostExchangePort === null) {
+function requireExchangeUrl(node: { hostExchangeUrl: string | null; hostBaseUrl: string }): string {
+	if (node.hostExchangeUrl === null) {
 		throw createHttpError(
 			409,
-			`the hydra host at ${node.hostBaseUrl} has not reported its exchange port yet. Press Check on the node and try again`,
+			`the hydra host at ${node.hostBaseUrl} has not reported its public exchange URL. Upgrade the Host and press Check`,
 		);
 	}
-	return node.hostExchangePort;
+	return node.hostExchangeUrl;
 }
 
 export type MintedInvite = {
@@ -159,7 +142,15 @@ export async function mintHeadInvite(input: {
 	// it means a new head.
 	const periods = input.periods ?? {
 		...defaultPeriodsFor(wallet.network),
-		...(input.depositPeriodSeconds != null ? { depositPeriodSeconds: input.depositPeriodSeconds } : {}),
+		// depositActivationSeconds rides along with an explicit depositPeriodSeconds
+		// override, not just the default: every comment on HeadPeriods asserts
+		// activation == depositPeriod, and leaving activation at the network
+		// default while a caller overrode DP would break that invariant for any
+		// head opened through this public knob (see the invite route's
+		// depositPeriodSeconds input).
+		...(input.depositPeriodSeconds != null
+			? { depositPeriodSeconds: input.depositPeriodSeconds, depositActivationSeconds: input.depositPeriodSeconds }
+			: {}),
 		...(input.contestationPeriodSeconds != null ? { contestationPeriodSeconds: input.contestationPeriodSeconds } : {}),
 		...(input.unsyncedPeriodSeconds != null ? { unsyncedPeriodSeconds: input.unsyncedPeriodSeconds } : {}),
 	};
@@ -168,39 +159,13 @@ export async function mintHeadInvite(input: {
 	// used to be checked for the first time: by then this side has a provisioned
 	// node with keys, a peer port and its funding, the counterparty has a mirror
 	// of all three, and neither can be reused.
-	assertContestationPeriodAllowed(wallet.network, periods.contestationPeriodSeconds);
-
-	// Half the dispute window is a ceiling, not a preference. Hydra's guarantee is
-	// that an in-sync node always has at least that long to observe an on-chain
-	// event and react to it; a node allowed to go quiet for longer can still
-	// believe it is in sync while it has already lost the time it needs to
-	// contest. Raising it trades away the only protection the dispute window
-	// provides, so it is refused rather than warned about.
-	const syncCeiling = Math.floor(periods.contestationPeriodSeconds / 2);
-	if (periods.unsyncedPeriodSeconds > syncCeiling) {
-		throw createHttpError(
-			400,
-			`the out-of-sync limit cannot exceed half the dispute window (${syncCeiling}s here). Past that a node can think it is in sync while it has already run out of time to contest a close`,
-		);
-	}
-	// The floor matters as much as the ceiling, and it is the one that bit us.
-	// The out-of-sync limit is usually derived rather than given, so a short
-	// dispute window silently produces a short limit: two minutes of dispute
-	// window gives a sixty-second limit, and preprod block gaps reach 71s. The
-	// head then declares itself out of sync several times an hour and refuses
-	// commands, which reads as a broken node rather than a chosen setting.
-	if (periods.unsyncedPeriodSeconds < MIN_UNSYNCED_PERIOD_SECONDS) {
-		throw createHttpError(
-			400,
-			`the out-of-sync limit works out at ${periods.unsyncedPeriodSeconds}s, below the ${MIN_UNSYNCED_PERIOD_SECONDS}s floor. It is half the dispute window unless set, so raise the dispute window to at least ${MIN_UNSYNCED_PERIOD_SECONDS * 2}s. Ordinary block gaps cross a shorter limit and the head stops accepting commands`,
-		);
-	}
+	assertHeadPeriodsAllowed(wallet.network, periods);
 
 	const nonce = createId();
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
 
 	const node = await reserveNodeForExchange(wallet.network, wallet.id, nonce, periods, input.autoFund !== false);
-	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, requireExchangePort(node));
+	const exchangeUrl = requireExchangeUrl(node);
 
 	const payload: HydraHeadInvitePayloadInput = {
 		nonce,
@@ -212,7 +177,17 @@ export async function mintHeadInvite(input: {
 		cardanoVerificationKey: node.cardanoVerificationKey,
 		advertise: node.advertise,
 		exchangeUrl,
-		...periods,
+		// Explicit, not `...periods`: `periods` also carries `depositActivationSeconds`
+		// (hydra-node 2.4's LOCAL-only `--deposit-activation`, see `HeadPeriods`),
+		// which must never enter the signed invite payload — it is not one of the
+		// on-chain-checked `HeadParameters`, so signing it would misrepresent it as
+		// something the counterparty needs to agree to. `HydraHeadInvitePayloadInput`
+		// has no such field at all, so listing keys here (matching this file's own
+		// `buildHydraHeadInvitePayload` convention) is what keeps a field added to
+		// `HeadPeriods` from silently slipping into the exchange.
+		contestationPeriodSeconds: periods.contestationPeriodSeconds,
+		depositPeriodSeconds: periods.depositPeriodSeconds,
+		unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
 		ledgerParamsHash: node.ledgerParamsHash,
 	};
 	const signature = await signHydraHeadInvite(payload, {
@@ -259,7 +234,14 @@ export async function mintHeadInvite(input: {
 			issuerExchangeUrl: exchangeUrl,
 			issuerSignature: signature.signature,
 			issuerSignerKey: signature.key,
-			...periods,
+			// Explicit for the same reason as the signed payload above: `periods`
+			// also carries the LOCAL-only `depositActivationSeconds`, and
+			// `HydraHeadInvite` has no column for it (no migration for this field —
+			// see `HeadPeriods`). A blind `...periods` here would make Prisma throw
+			// "Unknown argument" the moment this ran against the real schema.
+			contestationPeriodSeconds: periods.contestationPeriodSeconds,
+			depositPeriodSeconds: periods.depositPeriodSeconds,
+			unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
 			ledgerParamsHash: node.ledgerParamsHash,
 		},
 	});
@@ -355,6 +337,11 @@ export async function redeemHeadInvite(input: {
 	if (!freshness.fresh) {
 		throw createHttpError(409, freshness.reason);
 	}
+	// The issuer's periods, held to the bounds we mint with. A valid signature
+	// proves who chose them, not that they are safe: the issuer may run a
+	// service that never checked them, and an invite that cannot become a safe
+	// head must not cost this side a node and its fuel to discover that.
+	assertHeadPeriodsAllowed(wallet.network, payload);
 
 	const existing = await prisma.hydraHeadInvite.findUnique({ where: { nonce: payload.nonce } });
 	if (existing !== null) {
@@ -377,15 +364,7 @@ export async function redeemHeadInvite(input: {
 		throw createHttpError(409, 'the invite ledger protocol parameters do not match this service');
 	}
 
-	const periods: HeadPeriods = {
-		contestationPeriodSeconds: payload.contestationPeriodSeconds,
-		depositPeriodSeconds: payload.depositPeriodSeconds,
-		unsyncedPeriodSeconds: payload.unsyncedPeriodSeconds,
-	};
-	// The issuer's periods, judged against our own network's floor before a node
-	// is reserved for them. An invite that cannot become a head on mainnet must
-	// not cost this side a node and its fuel to discover that.
-	assertContestationPeriodAllowed(wallet.network, periods.contestationPeriodSeconds);
+	const periods: HeadPeriods = periodsFromInvite(payload);
 	// Asked here, where the answer still costs nothing. The head is only created
 	// after the redemption is posted, and a nonce is single-use: the issuer's Host
 	// burns it on first use, so a `createHeadFromExchange` that refuses — because
@@ -407,9 +386,7 @@ export async function redeemHeadInvite(input: {
 	if (node.ledgerParamsHash !== payload.ledgerParamsHash) {
 		throw createHttpError(409, 'the selected local Hydra Host does not match the invite ledger protocol parameters');
 	}
-	// The port comes from the Host's own capabilities, never from the caller: a
-	// redeemer that guesses it points the exchange at whatever is listening.
-	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, requireExchangePort(node));
+	const exchangeUrl = requireExchangeUrl(node);
 
 	const redemptionPayload = buildHydraRedemptionPayload({
 		nonce: payload.nonce,
@@ -442,7 +419,7 @@ export async function redeemHeadInvite(input: {
 	// cycle would put a chain confirmation between redeeming and being able to
 	// open the head.
 	if (input.autoFund !== false) {
-		void fundHydraNodeNow(node.localParticipantId).catch((error: unknown) => {
+		void fundHydraNodeNow(node.localParticipantId, true).catch((error: unknown) => {
 			logger.warn(`hydra: could not pre-fund node ${node.nodeId}: ${(error as Error).message}`);
 		});
 	}
@@ -484,6 +461,11 @@ export async function redeemHeadInvite(input: {
 		allowInsecureHttp: node.allowInsecureHttp,
 	});
 
+	// The invite row is written in the head's own transaction. Written after it,
+	// a crash in between left a live head no invite pointed at, and the retry
+	// could only refuse: the relation already had a head, and the nonce was spent.
+	// Cast, so the assignment inside the callback is not narrowed away.
+	let inviteId = null as string | null;
 	const head = await createHeadFromExchange({
 		network: wallet.network,
 		paymentSourceId: wallet.paymentSourceId,
@@ -495,41 +477,61 @@ export async function redeemHeadInvite(input: {
 		counterpartyCardanoVerificationKey: payload.cardanoVerificationKey,
 		counterpartyAdvertise: payload.advertise,
 		contestationPeriodSeconds: payload.contestationPeriodSeconds,
-	});
-
-	const invite = await prisma.hydraHeadInvite.create({
-		data: {
-			network: wallet.network,
-			role: HydraInviteRole.Redeemer,
-			status: HydraInviteStatus.Completed,
-			nonce: payload.nonce,
-			expiresAt: new Date(Number(payload.expiresAt)),
-			LocalHotWallet: { connect: { id: wallet.id } },
-			HydraHost: { connect: { id: node.hostId } },
-			hostNodeId: node.nodeId,
-			issuerWalletAddress: payload.issuerWalletAddress,
-			issuerHydraVerificationKey: payload.hydraVerificationKey,
-			issuerCardanoVerificationKey: payload.cardanoVerificationKey,
-			issuerAdvertise: payload.advertise,
-			issuerExchangeUrl: payload.exchangeUrl,
-			issuerSignature: signature.signature,
-			issuerSignerKey: signature.key,
-			redeemedAt: new Date(),
-			redeemerWalletAddress: wallet.walletAddress,
-			redeemerHydraVerificationKey: node.hydraVerificationKey,
-			redeemerCardanoVerificationKey: node.cardanoVerificationKey,
-			redeemerAdvertise: node.advertise,
-			redeemerExchangeUrl: exchangeUrl,
-			redeemerSignature: redemptionSignature.signature,
-			redeemerSignerKey: redemptionSignature.key,
-			...periods,
-			ledgerParamsHash: payload.ledgerParamsHash,
-			HydraHead: { connect: { id: head.hydraHeadId } },
+		linkInvite: async (tx, hydraHeadId) => {
+			// The nonce check above runs before the exchange, so a concurrent
+			// redemption of the same invite only surfaces here, as a unique error.
+			const invite = await tx.hydraHeadInvite
+				.create({
+					data: {
+						network: wallet.network,
+						role: HydraInviteRole.Redeemer,
+						status: HydraInviteStatus.Completed,
+						nonce: payload.nonce,
+						expiresAt: new Date(Number(payload.expiresAt)),
+						LocalHotWallet: { connect: { id: wallet.id } },
+						HydraHost: { connect: { id: node.hostId } },
+						hostNodeId: node.nodeId,
+						issuerWalletAddress: payload.issuerWalletAddress,
+						issuerHydraVerificationKey: payload.hydraVerificationKey,
+						issuerCardanoVerificationKey: payload.cardanoVerificationKey,
+						issuerAdvertise: payload.advertise,
+						issuerExchangeUrl: payload.exchangeUrl,
+						issuerSignature: signature.signature,
+						issuerSignerKey: signature.key,
+						redeemedAt: new Date(),
+						redeemerWalletAddress: wallet.walletAddress,
+						redeemerHydraVerificationKey: node.hydraVerificationKey,
+						redeemerCardanoVerificationKey: node.cardanoVerificationKey,
+						redeemerAdvertise: node.advertise,
+						redeemerExchangeUrl: exchangeUrl,
+						redeemerSignature: redemptionSignature.signature,
+						redeemerSignerKey: redemptionSignature.key,
+						// Explicit, not `...periods`: see the matching comment on the issuer
+						// side. `periods` here also carries the LOCAL-only
+						// `depositActivationSeconds`, which `HydraHeadInvite` has no column for.
+						contestationPeriodSeconds: periods.contestationPeriodSeconds,
+						depositPeriodSeconds: periods.depositPeriodSeconds,
+						unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
+						ledgerParamsHash: payload.ledgerParamsHash,
+						HydraHead: { connect: { id: hydraHeadId } },
+					},
+					select: { id: true },
+				})
+				.catch((error: unknown) => {
+					if (isUniqueConstraintError(error)) {
+						throw createHttpError(409, 'this invite has already been redeemed here');
+					}
+					throw error;
+				});
+			inviteId = invite.id;
 		},
 	});
+	if (inviteId === null) {
+		throw createHttpError(500, 'hydra: head was created without its invite row');
+	}
 
 	logger.info(`hydra: redeemed invite ${payload.nonce} from ${payload.issuerWalletAddress}`);
-	return { inviteId: invite.id, hydraHeadId: head.hydraHeadId, issuerWalletAddress: payload.issuerWalletAddress };
+	return { inviteId, hydraHeadId: head.hydraHeadId, issuerWalletAddress: payload.issuerWalletAddress };
 }
 
 /**
@@ -554,6 +556,8 @@ export async function createHeadFromExchange(input: {
 	counterpartyCardanoVerificationKey: string;
 	counterpartyAdvertise: string;
 	contestationPeriodSeconds: number;
+	/** Passed to createBoundHydraHead: runs in the head's transaction. */
+	linkInvite: (tx: Prisma.TransactionClient, hydraHeadId: string) => Promise<void>;
 }): Promise<{ hydraHeadId: string; hydraRelationId: string }> {
 	const { resolvePaymentKeyHash } = await import('@meshsdk/core');
 	// Derived here, never accepted from the wire: the vkey is what a Relation is
@@ -618,6 +622,7 @@ export async function createHeadFromExchange(input: {
 			contestationPeriod: BigInt(input.contestationPeriodSeconds),
 			localParticipantId: input.localParticipantId,
 			remoteParticipantId: remoteParticipant.id,
+			linkInvite: input.linkInvite,
 		});
 	} catch (error) {
 		// The participant exists only to be attached to the head this call is

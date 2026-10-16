@@ -254,17 +254,20 @@ describe('deleteHydraRelation', () => {
 		expect(mockWithdrawNodeFunds).toHaveBeenCalledWith('participant-1');
 	});
 
-	it('refuses rather than deleting a key that still has funds behind it', async () => {
-		mockWithdrawNodeFunds.mockResolvedValue({
-			address: 'addr_test1node',
-			balanceLovelace: '30000000',
-			txHash: null,
-			reason: 'the funding wallet could not be reached',
-			code: 'no-funding-wallet',
-		});
+	it.each(['no-key', 'chain-unsettled', 'chain-unreadable'])(
+		'keeps the relation and its keys when node custody reports %s',
+		async (code) => {
+			mockWithdrawNodeFunds.mockResolvedValue({
+				address: 'addr_test1node',
+				balanceLovelace: '30000000',
+				txHash: null,
+				reason: 'the node funds are not settled',
+				code,
+			});
 
-		await expect(deleteHydraRelation('relation-1')).rejects.toMatchObject({ statusCode: 409 });
-		expect(mockQuiesceHydraHeadsForDeletion).not.toHaveBeenCalled();
-		expect(mockDeleteSecrets).not.toHaveBeenCalled();
-	});
+			await expect(deleteHydraRelation('relation-1')).rejects.toMatchObject({ statusCode: 409 });
+			expect(mockQuiesceHydraHeadsForDeletion).not.toHaveBeenCalled();
+			expect(mockDeleteSecrets).not.toHaveBeenCalled();
+		},
+	);
 });

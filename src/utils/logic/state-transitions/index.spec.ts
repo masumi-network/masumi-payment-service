@@ -1,7 +1,29 @@
 import { OnChainState, PaymentAction, PurchasingAction } from '@/generated/prisma/client';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from './index';
+import { getPaymentRetryAction } from '@/utils/shared/error-recovery';
 
 describe('V2 payment source state transitions', () => {
+	it.each([PaymentAction.WithdrawRequested, PaymentAction.WithdrawInitiated])(
+		'keeps %s eligible for collection when sync observes ResultSubmitted',
+		(action) => {
+			expect(convertNewPaymentActionAndError(action, OnChainState.ResultSubmitted)).toEqual({
+				action: PaymentAction.WithdrawRequested,
+				errorNote: null,
+				errorType: null,
+			});
+		},
+	);
+
+	it('keeps a retried collection queued when sync observes the unspent result', () => {
+		const retryAction = getPaymentRetryAction(PaymentAction.WithdrawInitiated);
+		expect(retryAction).toBe(PaymentAction.WithdrawRequested);
+		expect(convertNewPaymentActionAndError(retryAction!, OnChainState.ResultSubmitted)).toEqual({
+			action: PaymentAction.WithdrawRequested,
+			errorNote: null,
+			errorType: null,
+		});
+	});
+
 	it('keeps seller side waiting when withdrawal is authorized externally', () => {
 		const result = convertNewPaymentActionAndError(
 			PaymentAction.WaitingForExternalAction,

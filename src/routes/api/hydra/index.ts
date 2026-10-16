@@ -26,7 +26,9 @@ export { closeHeadPost, fanoutHeadPost } from './head/settlement';
 
 export { topupHeadPost, listTopupsGet, recoverTopupPost } from './head/topup';
 export { withdrawHeadPost, listWithdrawalsGet } from './head/withdraw';
+export { consolidateHeadPost } from './head/consolidate';
 export { listHeadTransactionsGet } from './head/transactions';
+export { checkHeadOnChainPost } from './head/chain-check';
 
 export {
 	listHydraLowBalanceRulesGet,
@@ -41,6 +43,7 @@ export {
 	fundParticipantNodePost,
 	withdrawParticipantNodePost,
 	participantFundingGet,
+	participantFundingPatch,
 	getRemoteParticipantGet,
 	deleteRemoteParticipantDelete,
 } from './participant';

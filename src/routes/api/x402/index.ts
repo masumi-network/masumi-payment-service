@@ -6,7 +6,6 @@ import {
 } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { webhookEventsService } from '@/services/webhooks/events.service';
-import { budgetScopeFor } from './budget-scope';
 import {
 	countX402ManagedWallets,
 	countX402PaymentAttempts,
@@ -24,10 +23,8 @@ import {
 	listX402Networks,
 	listX402PaymentAttempts,
 	listX402Settlements,
-	listX402WalletBudgets,
 	setX402LowBalanceRule,
 	reconcileX402PaymentAttempt,
-	setX402WalletBudget,
 	settleX402Payment,
 	updateX402LowBalanceRule,
 	updateX402ManagedWallet,
@@ -37,7 +34,6 @@ import {
 import {
 	analyticsSchemaInput,
 	analyticsSchemaOutput,
-	budgetSchema,
 	countSchemaOutput,
 	createPaymentSchemaInput,
 	createPaymentSchemaOutput,
@@ -47,8 +43,6 @@ import {
 	deleteLowBalanceRuleSchemaOutput,
 	deleteWalletSchemaInput,
 	deleteWalletSchemaOutput,
-	listBudgetSchemaInput,
-	listBudgetSchemaOutput,
 	listAvailableNetworksSchemaOutput,
 	listLowBalanceRulesSchemaInput,
 	listLowBalanceRulesSchemaOutput,
@@ -64,7 +58,6 @@ import {
 	paymentAttemptsCountSchemaInput,
 	reconcilePaymentSchemaInput,
 	reconcilePaymentSchemaOutput,
-	setBudgetSchemaInput,
 	setLowBalanceRuleSchemaInput,
 	settleSchemaOutput,
 	settlementsCountSchemaInput,
@@ -101,28 +94,6 @@ function x402NetworkLimit(ctx: AuthContext): string[] | null {
 
 function x402TenantApiKeyId(ctx: AuthContext): string | undefined {
 	return ctx.canAdmin ? undefined : ctx.id;
-}
-
-function serializeBudget(budget: {
-	id: string;
-	apiKeyId: string;
-	evmWalletId: string;
-	EvmWallet: { address: string };
-	caip2Network: string;
-	asset: string;
-	remainingAmount: bigint;
-	spentAmount: bigint;
-	createdById: string | null;
-	createdAt: Date;
-	updatedAt: Date;
-}) {
-	const { EvmWallet, ...rest } = budget;
-	return {
-		...rest,
-		evmWalletAddress: EvmWallet.address,
-		remainingAmount: budget.remainingAmount.toString(),
-		spentAmount: budget.spentAmount.toString(),
-	};
 }
 
 function serializeLowBalanceRule(rule: Awaited<ReturnType<typeof listX402LowBalanceRules>>[number]) {
@@ -355,44 +326,6 @@ export const upsertX402NetworkPost = adminAuthenticatedEndpointFactory.build({
 	output: x402NetworkSchema,
 	handler: async ({ input, ctx }: { input: z.infer<typeof upsertNetworkSchemaInput>; ctx: AuthContext }) =>
 		upsertX402Network({ ...input, createdById: ctx.id }),
-});
-
-// Pay access: a key that can spend from a delegated wallet may read the allowance
-// governing that spend, without being made admin — which would also hand it wallet
-// creation, update and deletion. Writing a budget stays admin (setX402BudgetPost
-// below), so a key can see its allowance but never raise it.
-//
-// The filter is pinned to the caller for non-admins. `input.apiKeyId` is
-// caller-supplied and optional, and an unscoped list returns every tenant's
-// budgets, so honouring it here would let any pay key read another tenant's
-// allowances — and the response carries apiKeyId/createdById, leaking key ids
-// alongside the amounts. Only an admin may pass a filter, or omit it to see all.
-export const listX402BudgetsGet = payAuthenticatedEndpointFactory.build({
-	method: 'get',
-	input: listBudgetSchemaInput,
-	output: listBudgetSchemaOutput,
-	handler: async ({ input, ctx }: { input: z.infer<typeof listBudgetSchemaInput>; ctx: AuthContext }) => {
-		const budgets = (await listX402WalletBudgets(budgetScopeFor(ctx, input.apiKeyId))).map(serializeBudget);
-		if (ctx.canAdmin) return { Budgets: budgets };
-		// Apply the caller's chain limit here too. Every sibling wallet endpoint
-		// 404s a wallet outside the limit precisely so a scoped key cannot discover
-		// that it exists; a stale grant on a now-forbidden chain would otherwise
-		// disclose that wallet's id, address and network through this projection.
-		const allowedChains = x402NetworkLimit(ctx);
-		const visible =
-			allowedChains == null ? budgets : budgets.filter((budget) => allowedChains.includes(budget.caip2Network));
-		// createdById names the ADMIN key that granted the budget. Same reasoning as
-		// maskWalletCreator: a non-admin must not learn other keys' internal ids.
-		return { Budgets: visible.map((budget) => ({ ...budget, createdById: null })) };
-	},
-});
-
-export const setX402BudgetPost = adminAuthenticatedEndpointFactory.build({
-	method: 'post',
-	input: setBudgetSchemaInput,
-	output: budgetSchema,
-	handler: async ({ input, ctx }: { input: z.infer<typeof setBudgetSchemaInput>; ctx: AuthContext }) =>
-		serializeBudget(await setX402WalletBudget({ ...input, createdById: ctx.id })),
 });
 
 // Read access, mirroring the Cardano rail where GET /payment and /purchase are

@@ -1,0 +1,40 @@
+{
+  "generated": "2026-08-31T14:11:42.182Z",
+  "node": "http://127.0.0.1:4001",
+  "network": "Cardano preprod (blockfrost)",
+  "preCloseUtxoCount": 5,
+  "totalLovelaceSettled": "200000000",
+  "closeTx": "171d99ddaa6545fe6795bd81546aa1bd5dfc23186764dfd0b6435823fd9ba2bf",
+  "fanoutTx": "2108fdf624e313ddbd79ad83669130bf360827b7288909cd4e7b51bca52cfc83",
+  "finalStatus": "Final",
+  "nativeLog": "/Users/cryptonean/Desktop/NMKR/masumi-payment-service/hydra-l2-flow/.native-state/node1.log",
+  "utxos": [
+    {
+      "ref": "c16b1d638247f3e0a6f98963961a04c6473be2652afc6e00d488bbc5cb843097#0",
+      "lovelace": "10000000",
+      "address": "addr_test1qpx9yesfls03wgndzhlky004w4hxufdmcfyqxrpermkmjna44xhhddygcelx5v0qlp7gyxl6acpefensvr5appn52h7qu0fszr"
+    },
+    {
+      "ref": "c16b1d638247f3e0a6f98963961a04c6473be2652afc6e00d488bbc5cb843097#1",
+      "lovelace": "45000000",
+      "address": "addr_test1qpx9yesfls03wgndzhlky004w4hxufdmcfyqxrpermkmjna44xhhddygcelx5v0qlp7gyxl6acpefensvr5appn52h7qu0fszr"
+    },
+    {
+      "ref": "c3e1ef5134c083a9036962c0959621945031df78801883f61c22d90fd2b14b19#1",
+      "lovelace": "25000000",
+      "address": "addr_test1qr5mwaf40wlmlnd693ekh4nfu4j3pk625udtxs0efwxjfmuaeqakx8ue32v38vmn70ky75yvvfvgwptj3qkvft3dhudsp5a8sy"
+    },
+    {
+      "ref": "cc009ebb8f63d13028ef2b64002321846b6438a7bdd2a9616eb4c31295926981#1",
+      "lovelace": "5000000",
+      "address": "addr_test1qpx9yesfls03wgndzhlky004w4hxufdmcfyqxrpermkmjna44xhhddygcelx5v0qlp7gyxl6acpefensvr5appn52h7qu0fszr"
+    },
+    {
+      "ref": "eb1f4ccc834fa9963724e9efc3a17111f7e7c49ea66c6a235a37f1603ec8b263#0",
+      "lovelace": "115000000",
+      "address": "addr_test1vqau6vf2cc0p4s409yuyy4ep0nl0ax7zh3dj0vt4dlvtfmq48yln5"
+    }
+  ],
+  "closeTxFromLogScrape": "eb1f4ccc834fa9963724e9efc3a17111f7e7c49ea66c6a235a37f1603ec8b263",
+  "fanoutTxFromLogScrape": null
+}

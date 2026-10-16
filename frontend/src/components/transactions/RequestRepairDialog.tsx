@@ -169,16 +169,12 @@ export function RequestRepairDialog({
       }
 
       const data = response.data?.data;
-      // The repair only repoints the transaction and syncs the on-chain state.
-      // It deliberately does not touch NextAction, so a request parked in an
-      // error state stays parked until Retry/Clear is used — say so, or the
-      // operator reasonably assumes the repair finished the job.
       toast.success(
         data
           ? `Request repaired. On-chain state is now ${formatOnChainState(data.newOnChainState)}${
               data.forced ? ' (forced)' : ''
-            }. If the request is in an error state, use Retry or Clear to resume it.`
-          : 'Request repaired. If the request is in an error state, use Retry or Clear to resume it.',
+            }. Refresh the request to see its next action.`
+          : 'Request repaired. Refresh the request to see its next action.',
       );
       onRepaired();
       onClose();
@@ -216,7 +212,9 @@ export function RequestRepairDialog({
           <p className="text-sm text-muted-foreground">
             Points this {kind.toLowerCase()} at a specific transaction and syncs its on-chain state
             from that transaction&apos;s datum. Use it when the database has fallen behind the chain
-            for this request.
+            for this request. Hydra repair verifies the existing rejected lock in the current Head,
+            clears its error, and waits for the next external action. It does not send another
+            payment.
           </p>
 
           <FormField
@@ -305,7 +303,7 @@ export function RequestRepairDialog({
             <CollapsibleContent>
               <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 p-4 space-y-4">
                 <div className="space-y-1">
-                  <h5 className="text-sm font-medium">Force without chain validation</h5>
+                  <h5 className="text-sm font-medium">Force without chain validation (L1 only)</h5>
                   <p className="text-sm">
                     Forcing skips every check. The transaction is not fetched, its datum is not
                     decoded, and it is not matched against this request. The state you pick below is

@@ -142,7 +142,8 @@ export function SwapDialog({
   const [otherTokenBalances, setOtherTokenBalances] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const [fromAmount, setFromAmount] = useState<number>(1);
+  const [fromAmountInput, setFromAmountInput] = useState('1');
+  const fromAmount = Number.parseFloat(fromAmountInput) || 0;
   const { rate: adaToUsdRate } = useRate();
   const [isFetchingDetails, setIsFetchingDetails] = useState<boolean>(true);
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
@@ -287,7 +288,7 @@ export function SwapDialog({
       setShowConfirmation(false);
       setSelectedFromToken(swappableTokens[adaIndex]);
       setSelectedToToken(swappableTokens[usdmIndex]);
-      setFromAmount(1);
+      setFromAmountInput('1');
       fetchBalance();
 
       const balanceInterval = setInterval(() => {
@@ -389,7 +390,7 @@ export function SwapDialog({
       const prevToAmount = conversionRate > 0 ? fromAmount * conversionRate : fromAmount;
       setSelectedFromToken(selectedToToken);
       setSelectedToToken(selectedFromToken);
-      setFromAmount(prevToAmount);
+      setFromAmountInput(String(prevToAmount));
     }
   };
 
@@ -433,15 +434,14 @@ export function SwapDialog({
   };
 
   const handleMaxClick = () => {
-    setFromAmount(getMaxAmount(selectedFromToken.symbol));
+    setFromAmountInput(String(getMaxAmount(selectedFromToken.symbol)));
   };
 
   const handleFromAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    const filteredValue = value.replace(/[^0-9.]/g, '');
-    const parsedValue = parseFloat(filteredValue);
-    const normalizedValue = isNaN(parsedValue) ? 0 : Number(parsedValue);
-    setFromAmount(normalizedValue);
+    const value = e.target.value.replace(/[^0-9.]/g, '');
+    const dotCount = (value.match(/\./g) ?? []).length;
+    if (dotCount > 1) return;
+    setFromAmountInput(value);
   };
 
   const toAmount = fromAmount * conversionRate;
@@ -789,14 +789,14 @@ export function SwapDialog({
                       disabled={isSwapping}
                     />
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className={`w-full text-right bg-transparent focus:outline-none text-2xl font-semibold tabular-nums tracking-tight ${
                         isOverMax ? 'text-destructive' : 'text-foreground'
                       }`}
                       placeholder="0"
-                      value={fromAmount || ''}
+                      value={fromAmountInput}
                       onChange={handleFromAmountChange}
-                      step="0.1"
                     />
                   </div>
                   <div className="text-right text-xs text-muted-foreground mt-1.5">

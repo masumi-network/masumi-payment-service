@@ -1,6 +1,7 @@
 import { prisma } from '@masumi/payment-core/db';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { logger } from '@masumi/payment-core/logger';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 const BATCH = 250;
 
@@ -64,17 +65,21 @@ export async function backfillTransactionAgentIdentifiers(): Promise<void> {
 		});
 		if (chunk.length === 0) break;
 
-		await prisma.$transaction(
-			async (tx) => {
-				for (const row of chunk) {
-					const agentIdentifier = safeDecodeAgentIdentifier(row, 'paymentRequest');
-					await tx.paymentRequest.update({
-						where: { id: row.id },
-						data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
-					});
-				}
-			},
-			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+		await withSerializableSlotRetry(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						for (const row of chunk) {
+							const agentIdentifier = safeDecodeAgentIdentifier(row, 'paymentRequest');
+							await tx.paymentRequest.update({
+								where: { id: row.id },
+								data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
+							});
+						}
+					},
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+				),
+			{ label: 'backfill-agent-identifier-payment-request' },
 		);
 		paymentsDone += chunk.length;
 	}
@@ -88,17 +93,21 @@ export async function backfillTransactionAgentIdentifiers(): Promise<void> {
 		});
 		if (chunk.length === 0) break;
 
-		await prisma.$transaction(
-			async (tx) => {
-				for (const row of chunk) {
-					const agentIdentifier = safeDecodeAgentIdentifier(row, 'purchaseRequest');
-					await tx.purchaseRequest.update({
-						where: { id: row.id },
-						data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
-					});
-				}
-			},
-			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+		await withSerializableSlotRetry(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						for (const row of chunk) {
+							const agentIdentifier = safeDecodeAgentIdentifier(row, 'purchaseRequest');
+							await tx.purchaseRequest.update({
+								where: { id: row.id },
+								data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
+							});
+						}
+					},
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+				),
+			{ label: 'backfill-agent-identifier-purchase-request' },
 		);
 		purchasesDone += chunk.length;
 	}

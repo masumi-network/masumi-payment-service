@@ -18,6 +18,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { patchPaymentSourceExtended, postWallet } from '@/lib/api/generated';
 import { fetchAllUtxos } from '@/lib/wallet-balance';
 import { toast } from 'react-toastify';
@@ -46,6 +47,7 @@ import {
   getPreferredPaymentSource,
   sortPaymentSourcesByPreference,
 } from '@/lib/payment-source-type';
+import { invalidateTransactionReportFacets } from '@/lib/queries/transaction-report-cache';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -64,6 +66,7 @@ const walletSchema = z.object({
 type WalletFormValues = z.infer<typeof walletSchema>;
 
 export function AddWalletDialog({ open, onClose, onSuccess, defaultType }: AddWalletDialogProps) {
+  const queryClient = useQueryClient();
   const [type, setType] = useState<HotWalletType>('Purchasing');
   // Covers the pre-submit collection-address check; the API call itself is
   // tracked by addWallet.isPending below.
@@ -232,6 +235,7 @@ export function AddWalletDialog({ open, onClose, onSuccess, defaultType }: AddWa
         });
       if (!response) return;
 
+      void invalidateTransactionReportFacets(queryClient);
       toast.success(`${type} wallet added successfully`);
       onSuccess?.();
       onClose();

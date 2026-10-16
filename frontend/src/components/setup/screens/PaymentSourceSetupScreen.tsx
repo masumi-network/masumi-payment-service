@@ -28,6 +28,7 @@ import {
   type PaymentSourceFormValues,
 } from '@/lib/hooks/usePaymentSourceSetup';
 import { copyToClipboard, type SetupWallet } from '@/components/setup/setup-helpers';
+import { SetupStepHeader } from '@/components/setup/wizard/SetupStepParts';
 
 export function PaymentSourceSetupScreen({
   onNext,
@@ -61,19 +62,14 @@ export function PaymentSourceSetupScreen({
 
   return (
     <div className="space-y-6 w-full max-w-2xl">
-      <div className="text-center space-y-3 animate-fade-in-up">
-        <div className="inline-flex items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5 p-3 ring-1 ring-primary/20">
-          <Key className="h-6 w-6 text-primary" />
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <h1 className="text-2xl font-bold">Configure payment source</h1>
+      <SetupStepHeader
+        icon={Key}
+        title="Configure payment source"
+        badge={
           <PaymentSourceTypeBadge paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE} showDefault />
-        </div>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          Connect to Blockfrost and create the V2 source. Your wallets from the previous step will
-          be linked automatically.
-        </p>
-      </div>
+        }
+        description="Connect to Blockfrost and create the V2 source. Your wallets from the previous step are linked automatically."
+      />
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
         <div className="flex gap-3">
@@ -118,9 +114,13 @@ export function PaymentSourceSetupScreen({
                 </Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="inline-flex text-muted-foreground hover:text-foreground cursor-help transition-colors">
-                      <Info className="h-4 w-4" />
-                    </span>
+                    <button
+                      type="button"
+                      aria-label="About the Blockfrost API key"
+                      className="inline-flex rounded-full p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Info className="size-4" aria-hidden />
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>Get a free API key at blockfrost.io</p>

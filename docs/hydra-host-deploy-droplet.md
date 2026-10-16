@@ -119,15 +119,38 @@ docker create --name hydra-host \
   -v /mnt/hydra_data:/data \
   -v /srv/hydra/blockfrost.txt:/run/secrets/blockfrost.txt:ro \
   -e HYDRA_HOST_PUBLIC_HOST=hydra1.example.com \
+  -e HYDRA_HOST_PUBLIC_EXCHANGE_URL=https://hydra-exchange.example.com:8444/exchange \
+  -e HYDRA_HOST_EXCHANGE_TRUST_PROXY=false \
   -e HYDRA_HOST_NETWORK=preprod \
   -e HYDRA_HOST_ADMIN_TOKEN="$HYDRA_HOST_ADMIN_TOKEN" \
   -e HYDRA_HOST_USER_TOKEN="$HYDRA_HOST_USER_TOKEN" \
   -e BLOCKFROST_PROJECT_FILE=/run/secrets/blockfrost.txt \
+  -e HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
   -e HYDRA_HOST_PEER_PORT_START=5001 \
   -e HYDRA_HOST_PEER_PORT_COUNT=32 \
   -e HYDRA_HOST_MONITORING_ENABLED=false \
   ghcr.io/example/hydra-host@sha256:...
 ```
+
+`HYDRA_HOST_SCRIPTS_TX_IDS` holds the comma-separated transaction ids of a
+Hydra script set you published yourself:
+
+```bash
+hydra-node publish-scripts --blockfrost /srv/hydra/blockfrost.txt \
+  --cardano-signing-key /srv/hydra/publisher.sk
+```
+
+On preprod this is required from 2.4.1 on. Left empty, the Host passes
+`--network preprod` instead, the node resolves upstream's published set, and it
+dies seconds after boot with `BlockfrostClientError AssetNameMissing`
+(REPORTED, see
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)). That message
+names neither the scripts nor this variable, so it reads as a chain-data fault.
+
+The placeholder above is deliberate. An empty value is accepted silently and
+fails later at the node; the unsubstituted placeholder is refused at startup by
+name, with `HYDRA_HOST_SCRIPTS_TX_IDS must be comma-separated 64-character hex
+transaction ids`.
 
 `docker create` rather than `docker run -d`: the container is created here and
 started by systemd in the next step, so there is exactly one thing that decides
@@ -203,8 +226,8 @@ that head actually peers with.
 
 | Port        | Plane                                          | Exposed                                                                                                                            |
 | ----------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `8443`      | Control. Your payment service talks to this.   | Yes, bearer-token gated. Restrict by source.                                                                                       |
-| `8444`      | Exchange. Where counterparties redeem invites. | Yes. See below.                                                                                                                    |
+| `8443`      | Control. Your payment service talks to this.   | Through the restricted Control Plane load balancer.                                                                                |
+| `8444`      | Exchange. Where counterparties redeem invites. | Through the public TLS Exchange Plane load balancer.                                                                               |
 | `5001-5032` | Peer. One per head, etcd raft.                 | Yes, per-head source allow-list.                                                                                                   |
 | `4001-4032` | `hydra-node` API                               | **Never.** Unauthenticated, can close a head. Pinned to loopback in code.                                                          |
 | `6001-6032` | Prometheus                                     | **Never.** `hydra-node` has no `--monitoring-host`, so it cannot be bound to loopback. Keep `HYDRA_HOST_MONITORING_ENABLED=false`. |
@@ -214,14 +237,15 @@ loopback only. It never crosses the network.
 
 ### DigitalOcean cloud firewall
 
-| Type    | Protocol | Ports     | Sources                                                                   |
-| ------- | -------- | --------- | ------------------------------------------------------------------------- |
-| Inbound | TCP      | 8443      | Your load balancer, or your payment service's address. Never `0.0.0.0/0`. |
-| Inbound | TCP      | 8444      | `0.0.0.0/0`                                                               |
-| Inbound | TCP      | 5001-5032 | Counterparty addresses only                                               |
-| Inbound | TCP      | 22        | Your own administrative range                                             |
+| Type    | Protocol | Ports     | Sources                                          |
+| ------- | -------- | --------- | ------------------------------------------------ |
+| Inbound | TCP      | 8443      | Control Plane load balancer. Never `0.0.0.0/0`.  |
+| Inbound | TCP      | 8444      | Exchange Plane load balancer. Never `0.0.0.0/0`. |
+| Inbound | TCP      | 5001-5032 | Counterparty addresses only                      |
+| Inbound | TCP      | 22        | Your own administrative range                    |
 
-The exchange plane on 8444 is open on purpose. It is unauthenticated by design,
+The Exchange Plane load balancer on 8444 is open on purpose. The droplet port
+accepts traffic only from that load balancer. The plane is unauthenticated by design,
 because the invite nonce is the credential: redemption requires a nonce this Host
 issued, unspent and unexpired. Bodies are capped at 64KB, concurrency at 16, and
 requests at 120 per minute. Nothing on that plane can provision, delete,
@@ -296,8 +320,37 @@ including `/etc/nftables.d/hydra-peer.nft` from `/etc/nftables.conf` and enablin
 ## 5. TLS and the load balancer
 
 The container serves plain HTTP and honours `X-Forwarded-Proto` for logging
-only. The token, not the transport, is what authenticates. Terminate TLS outside:
-a managed load balancer in front of `8443`.
+only. Terminate TLS outside the container for both HTTP planes.
+
+Use two regional load balancers because their public access rules differ:
+
+| Load balancer  | Public rule  | Backend rule | Access                                   |
+| -------------- | ------------ | ------------ | ---------------------------------------- |
+| Control Plane  | HTTPS `443`  | HTTP `8443`  | Allow only the payment service addresses |
+| Exchange Plane | HTTPS `8444` | HTTP `8444`  | Public                                   |
+
+Set `HYDRA_HOST_PUBLIC_EXCHANGE_URL` to the Exchange Plane URL, including
+`/exchange`. The Host reports this URL through its authenticated capabilities
+response. The payment service puts that exact URL in signed invites. It no
+longer derives the public Exchange Plane address from the private Control Plane
+address.
+
+Keep `HYDRA_HOST_EXCHANGE_TRUST_PROXY=false` during initial setup.
+Before enabling it, configure the load balancer and restrict backend port `8444`
+to that load balancer in the cloud firewall. Confirm that direct access is blocked.
+Then set `HYDRA_HOST_EXCHANGE_TRUST_PROXY=true` in the container configuration.
+DigitalOcean adds
+the client address to `X-Forwarded-For`. The Host uses the last address when it
+is a valid IP. It ignores this header when the setting is false.
+
+VERIFIED on 2026-09-04: DigitalOcean regional load balancers support several
+port and protocol rules, and HTTP forwarding adds `X-Forwarded-For`. See the
+[forwarding-rule reference](https://docs.digitalocean.com/reference/doctl/reference/compute/load-balancer/add-forwarding-rules/)
+and [load-balancer feature reference](https://docs.digitalocean.com/products/networking/load-balancers/details/features/).
+
+Do not put both planes behind one public load balancer. A load balancer firewall
+applies to the load balancer, not to one forwarding rule. Making its Exchange
+Plane rule public would also make the Control Plane listener public.
 
 Keeping ACME state out of the image means the container has exactly one thing
 needing durable storage.
@@ -318,8 +371,22 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8443/v1/capabilities
 # 401 means healthy
 ```
 
-Point a load-balancer health check at `8443` with the same expectation, or at TCP
-connect if your load balancer cannot assert a status code.
+Configure a separate TCP health check on each load balancer:
+
+| Load balancer  | Health protocol | Backend port |
+| -------------- | --------------- | ------------ |
+| Control Plane  | TCP             | `8443`       |
+| Exchange Plane | TCP             | `8444`       |
+
+These ports match the forwarding rules and firewall sources above. The Exchange
+Plane load balancer cannot probe `8443` through those firewall rules.
+TCP checks confirm that a listener accepts connections. They do not test
+authentication, TLS, or head readiness. Keep the local `401` probe as a manual check.
+
+VERIFIED on 2026-09-05: DigitalOcean HTTP health checks accept status codes
+`200` through `399`, so the `401` probe cannot serve as an HTTP health check.
+TCP health checks require a successful TCP handshake. See the
+[health-check reference](https://docs.digitalocean.com/products/networking/load-balancers/how-to/manage/#health-checks).
 
 ## 7. One Host per volume
 
@@ -363,7 +430,10 @@ What a snapshot does and does not cover:
 ## 9. Upgrades
 
 Both sides of a head must run the same `hydra-node` version, so an upgrade is a
-coordinated change, not a rolling one.
+coordinated change, not a rolling one. Close and fan out every open head
+first: an upgraded node cannot use a head opened by the previous version. The
+2.3.0 to 2.4.1 move has its own steps in
+[hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md).
 
 ```bash
 systemctl stop hydra-host                          # drains, up to 250s

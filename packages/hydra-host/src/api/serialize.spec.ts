@@ -27,6 +27,7 @@ function record(): NodeRecord {
 		contestationPeriodSeconds: 120,
 		depositPeriodSeconds: 600,
 		unsyncedPeriodSeconds: 300,
+		depositActivationSeconds: 600,
 		hydraVerificationKey: `5820${'ab'.repeat(32)}`,
 		cardanoVerificationKey: `5820${'cd'.repeat(32)}`,
 		escrowAckedAt: NOW,

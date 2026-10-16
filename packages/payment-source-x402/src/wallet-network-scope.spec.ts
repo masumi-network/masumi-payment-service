@@ -53,7 +53,6 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			update: mockWalletUpdate,
 		},
 		x402WalletSecret: { findUniqueOrThrow: mockSecretFindUniqueOrThrow },
-		x402WalletBudget: { updateMany: jest.fn() },
 		x402EvmWalletLowBalanceRule: { updateMany: jest.fn() },
 		$executeRaw: mockExecuteRaw,
 		$transaction: mockTransaction,

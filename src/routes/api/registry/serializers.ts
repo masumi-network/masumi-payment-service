@@ -9,7 +9,7 @@ import {
 import { logger } from '@masumi/payment-core/logger';
 import type { RegistryListRecord } from './queries';
 
-type SupportedPaymentSourceRecord = RegistryListRecord['SupportedPaymentSources'][number];
+type SupportedPaymentSourceRecord = Omit<RegistryListRecord['SupportedPaymentSources'][number], 'id'>;
 type LegacyAgentPricingRecord = {
 	pricingType: PricingType;
 	FixedPricing: {
@@ -144,6 +144,17 @@ export function serializeSupportedPaymentSources(
 	return serialized.length === 0 ? null : serialized;
 }
 
+// A2A descriptors are persisted in a 1:1 A2ARegistryDetail row rather than as
+// nullable columns on RegistryRequest. Flatten them back onto the API shape so
+// that storage change is invisible on the wire: absent detail row (every
+// non-A2A entry) reads as null/[], exactly what the flat columns used to return.
+export function serializeA2ADetail(detail: { agentCardUrl: string; protocolVersions: string[] } | null | undefined) {
+	return {
+		a2aAgentCardUrl: detail?.agentCardUrl ?? null,
+		a2aProtocolVersions: detail?.protocolVersions ?? [],
+	};
+}
+
 export function serializeLegacyAgentPricing(pricing: LegacyAgentPricingRecord) {
 	if (pricing == null) return null;
 	return pricing.pricingType === PricingType.Fixed
@@ -172,8 +183,17 @@ export function serializeVerifications(rows: AgentVerificationRow[] | null | und
 }
 
 export function serializeRegistryEntry(item: RegistryListRecord) {
+	// Node row IDs belong only to the authenticated registry list response.
+	// Serialize each row before adding its ID so omitted rows cannot shift the mapping.
+	const supportedPaymentSources = [...item.SupportedPaymentSources]
+		.sort((left, right) => left.position - right.position)
+		.flatMap((source) =>
+			(serializeSupportedPaymentSources([source]) ?? []).map((serialized) => ({ ...serialized, id: source.id })),
+		);
 	return {
 		...item,
+		...serializeA2ADetail(item.A2ADetail),
+		paymentSourceType: item.PaymentSource.paymentSourceType,
 		Capability: {
 			name: item.capabilityName,
 			version: item.capabilityVersion,
@@ -191,7 +211,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 		},
 		AgentPricing: serializeLegacyAgentPricing(item.Pricing),
 		sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
-		supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
+		supportedPaymentSources: supportedPaymentSources.length > 0 ? supportedPaymentSources : null,
 		verifications: serializeVerifications(item.Verifications),
 		Tags: item.tags,
 		CurrentTransaction: item.CurrentTransaction

@@ -4,6 +4,7 @@ import {
 	PaymentErrorType,
 	PaymentSource,
 	PaymentSourceConfig,
+	HotWalletType,
 	Prisma,
 	PurchaseErrorType,
 	PurchasingAction,
@@ -15,6 +16,7 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Mutex } from 'async-mutex';
 import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { extractOnChainTransactionData } from './util';
+import { buildPurchaseTimeoutNote } from './timeout-note';
 import { getExtendedTxInformation, getTxsFromCardanoAfterSpecificTx } from './blockchain';
 import {
 	markCanonicalRolledBackQuarantines,
@@ -308,7 +310,20 @@ async function invalidateTimedOutPurchaseRequests() {
 				},
 			],
 		},
-		select: { id: true, nextActionId: true, payByTime: true },
+		select: {
+			id: true,
+			nextActionId: true,
+			payByTime: true,
+			NextAction: { select: { errorNote: true } },
+			PaymentSource: {
+				select: {
+					HotWallets: {
+						where: { type: HotWalletType.Purchasing, deletedAt: null, lockedAt: { not: null } },
+						select: { id: true, lockedAt: true, pendingTransactionId: true },
+					},
+				},
+			},
+		},
 	});
 
 	for (const row of timedOut) {
@@ -324,7 +339,12 @@ async function invalidateTimedOutPurchaseRequests() {
 								create: {
 									requestedAction: PurchasingAction.WaitingForManualAction,
 									errorType: PurchaseErrorType.Unknown,
-									errorNote: `Purchase request payByTime (${row.payByTime?.toString() ?? 'unset'}) passed without on-chain lock; no FundsLocked tx observed within ${TIMEOUT_GRACE_MS / 1000}s grace.`,
+									errorNote: buildPurchaseTimeoutNote({
+										payByTime: row.payByTime,
+										graceSeconds: TIMEOUT_GRACE_MS / 1000,
+										previousErrorNote: row.NextAction.errorNote,
+										heldPurchasingWallets: row.PaymentSource.HotWallets,
+									}),
 								},
 							},
 						},

@@ -17,8 +17,11 @@ const DEPOSIT_PERIOD_SECONDS = 600;
 const DEADLINE = new Date('2026-08-17T12:00:00.000Z');
 
 describe('shiftPeriods', () => {
-	// The node writes the deadline as `deposit + 3·DP` and will not take the
-	// deposit before `deposit + DP` — two periods before the deadline.
+	// hydra-node 2.4.1 writes the deadline as `deposit + activation + 2·DP`
+	// (2.3: `deposit + 3·DP`), and will not take the deposit before it matures at
+	// `deposit + activation`. That is `deadline - 2·DP` under either formula, for
+	// any activation value, which is why this offset survived the 2.4.1 upgrade
+	// unchanged. See the derivation beside `usableFrom` in topup.ts.
 	it('puts the usable-from milestone two deposit periods before the deadline', () => {
 		expect(shiftPeriods(DEADLINE, -2, DEPOSIT_PERIOD_SECONDS)).toBe('2026-08-17T11:40:00.000Z');
 	});

@@ -9,7 +9,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ChainDialog } from '@/components/x402/ChainsTab';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
+import {
+  tableActionsCellWideClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
+import { ChainDialog } from '@/components/x402/ChainForm';
 import { X402Network } from '@/lib/api/generated';
 
 /**
@@ -58,9 +63,9 @@ export function X402SourcesSection({
         </Badge>
       </div>
 
-      <div className="rounded-lg border overflow-x-auto">
+      <HorizontalScrollArea className="rounded-lg border">
         <table className="w-full">
-          <thead className="bg-muted/30 dark:bg-muted/15">
+          <thead className="table-header-surface">
             <tr className="border-b">
               <th
                 scope="col"
@@ -74,7 +79,9 @@ export function X402SourcesSection({
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Facilitator
               </th>
-              <th scope="col" className="w-20 p-4 pr-8"></th>
+              <th scope="col" className={tableActionsHeadWideClass}>
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -118,7 +125,7 @@ export function X402SourcesSection({
                   <tr
                     key={chain.id}
                     className={cn(
-                      'border-b last:border-b-0',
+                      'group border-b last:border-b-0 hover:bg-row-hover',
                       isActive && 'bg-green-50 dark:bg-green-950/20',
                     )}
                   >
@@ -149,7 +156,7 @@ export function X402SourcesSection({
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="p-4 pr-8">
+                    <td className={tableActionsCellWideClass}>
                       <div className="flex justify-end gap-2">
                         <Button
                           variant="ghost"
@@ -195,7 +202,7 @@ export function X402SourcesSection({
             )}
           </tbody>
         </table>
-      </div>
+      </HorizontalScrollArea>
 
       <ChainDialog
         key={isChainDialogOpen ? (editingChain?.id ?? 'new') : 'closed'}

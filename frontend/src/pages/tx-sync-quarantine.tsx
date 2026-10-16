@@ -5,6 +5,7 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
 import { Pagination } from '@/components/ui/pagination';
 import {
   Select,
@@ -15,7 +16,8 @@ import {
 } from '@/components/ui/select';
 import { RefreshButton } from '@/components/RefreshButton';
 import { QuarantineTable } from '@/components/tx-sync-quarantine/QuarantineTable';
-import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
+import { QuarantineTableSkeleton } from '@/components/skeletons/QuarantineTableSkeleton';
+import { tableActionsHeadWideClass } from '@/components/ui/table-actions-column';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -159,13 +161,38 @@ export default function TxSyncQuarantinePage() {
           </div>
 
           {isInitialLoading ? (
-            <div className="border rounded-lg overflow-x-auto">
+            <HorizontalScrollArea className="border rounded-lg">
               <table className="w-full">
+                <thead className="table-header-surface">
+                  <tr className="border-b">
+                    <th className="w-10 p-4 pl-6" />
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Transaction Hash
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Reason
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Status
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Attempts
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Next Retry
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">Age</th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Network
+                    </th>
+                    <th className={tableActionsHeadWideClass}>Actions</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  <TransactionTableSkeleton rows={5} />
+                  <QuarantineTableSkeleton rows={5} />
                 </tbody>
               </table>
-            </div>
+            </HorizontalScrollArea>
           ) : isError ? (
             <div className="rounded-lg border">
               <EmptyState

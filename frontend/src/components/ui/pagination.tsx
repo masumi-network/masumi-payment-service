@@ -7,9 +7,17 @@ interface PaginationProps {
   isLoading: boolean;
   onLoadMore: () => void;
   className?: string;
+  size?: 'default' | 'compact';
 }
 
-export function Pagination({ hasMore, isLoading, onLoadMore, className = '' }: PaginationProps) {
+export function Pagination({
+  hasMore,
+  isLoading,
+  onLoadMore,
+  className = '',
+  size = 'default',
+}: PaginationProps) {
+  const isCompact = size === 'compact';
   if (!hasMore && !isLoading) {
     return (
       <div className={`flex justify-center ${className}`}>
@@ -23,18 +31,21 @@ export function Pagination({ hasMore, isLoading, onLoadMore, className = '' }: P
       <Button
         variant="outline"
         size="sm"
-        className="btn-hover-lift min-w-25 relative overflow-hidden"
+        className={cn(
+          'btn-hover-lift relative overflow-hidden',
+          isCompact ? 'h-7 min-h-7 px-2.5 text-xs' : 'min-w-25',
+        )}
         onClick={onLoadMore}
         disabled={!hasMore || isLoading}
       >
         <span
           className={cn(
-            'absolute inset-0 flex items-center justify-center gap-2 transition-all duration-200',
+            'absolute inset-0 flex items-center justify-center gap-1.5 transition-all duration-200',
             isLoading ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-full',
           )}
         >
-          <Spinner size={14} />
-          <span>Loading...</span>
+          <Spinner size={isCompact ? 12 : 14} />
+          <span className={isCompact ? 'text-xs' : undefined}>Loading...</span>
         </span>
         <span
           className={cn(

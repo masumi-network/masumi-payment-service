@@ -216,6 +216,7 @@ describe('route serializers', () => {
 				blockTime: new Date('2026-01-01T00:00:00.000Z'),
 			},
 			SupportedPaymentSources: [],
+			PaymentSource: { paymentSourceType: 'Web3CardanoV1' },
 		} as unknown as Parameters<typeof serializeRegistryEntry>[0];
 
 		const serialized = serializeRegistryEntry(entry);
@@ -266,6 +267,7 @@ describe('route serializers', () => {
 				},
 			],
 			Verifications: [],
+			PaymentSource: { paymentSourceType: 'Web3CardanoV2' },
 		} as unknown as Parameters<typeof serializeRegistryEntry>[0];
 
 		expect(() => serializeRegistryEntry(entry)).toThrow(
