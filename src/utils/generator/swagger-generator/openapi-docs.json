@@ -35767,7 +35767,7 @@
                         "description": "Hydra host not found"
                     },
                     "409": {
-                        "description": "Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running. In the second case the pause is still recorded and drains; retry the force."
+                        "description": "Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running. In the second case the pause stays recorded unless the other action was a Resume; read the pause state, then retry."
                     }
                 }
             }

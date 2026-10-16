@@ -55,7 +55,7 @@ export function registerHydraHostPausePaths({ registry, apiKeyAuth }: SwaggerReg
 			200: successResponse('Pause accepted', hydraHostPauseStateSchema, PAUSED_EXAMPLE),
 			409: {
 				description:
-					'Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running. In the second case the pause is still recorded and drains; retry the force.',
+					'Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running. In the second case the pause stays recorded unless the other action was a Resume; read the pause state, then retry.',
 			},
 			...unauthorized,
 			...notFound,
