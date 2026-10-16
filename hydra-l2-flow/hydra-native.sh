@@ -152,18 +152,28 @@ resolve_tag_commit(){
 # this check existed, or dropped in by hand) is not trusted.
 BIN_RECORD="${NATIVE_BIN}.sha256"
 
+# Pins and recorded hashes are compared lowercased. Each must be exactly 64
+# hex chars: `shasum -c` picks the algorithm from the digest length and
+# ignores -a, so a 40-char value would silently be checked as SHA-1.
+is_sha256(){ [[ "$1" =~ ^[0-9a-f]{64}$ ]]; }
+lower(){ printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
 configured_pins(){
   if [ -n "$HYDRA_BIN_TAG" ]; then
-    printf '%s\n' "$HYDRA_BIN_TAG_SHA256"
+    lower "$HYDRA_BIN_TAG_SHA256"; echo
   else
-    printf '%s\n' "$HYDRA_BINARY_SHA256" "$HYDRA_RELEASE_SHA256"
+    lower "$HYDRA_BINARY_SHA256"; echo
+    lower "$HYDRA_RELEASE_SHA256"; echo
   fi
 }
 
+# Atomic write (temp file + mv), so a reader never sees a half-written record.
 record_bin(){
-  local pin="$1" sum
+  local pin sum
+  pin="$(lower "$1")"
   sum="$(shasum -a 256 "$NATIVE_BIN" | cut -d' ' -f1)" || return 1
-  printf '%s\n%s\n' "$pin" "$sum" > "$BIN_RECORD"
+  is_sha256 "$pin" && is_sha256 "$sum" || return 1
+  printf '%s\n%s\n' "$pin" "$sum" > "$BIN_RECORD.tmp" && mv -f "$BIN_RECORD.tmp" "$BIN_RECORD"
 }
 
 # Quiet check: returns 0 only for a binary that passes the rule above.
@@ -171,8 +181,12 @@ bin_is_verified(){
   [ -x "$NATIVE_BIN" ] && [ -f "$BIN_RECORD" ] || return 1
   local pin sum
   { read -r pin && read -r sum; } < "$BIN_RECORD" || return 1
-  [ -n "$pin" ] && [ -n "$sum" ] || return 1
-  configured_pins | grep -qxF "$pin" || return 1
+  pin="$(lower "$pin")"; sum="$(lower "$sum")"
+  is_sha256 "$pin" && is_sha256 "$sum" || return 1
+  # Not `configured_pins | grep -q`: grep -q exits on the first match, the
+  # next write gets SIGPIPE, and pipefail turns that match into a failure.
+  local pins; pins="$(configured_pins)"
+  grep -qxF "$pin" <<<"$pins" || return 1
   printf '%s  %s\n' "$sum" "$NATIVE_BIN" | shasum -a 256 -c - >/dev/null 2>&1
 }
 
@@ -184,11 +198,14 @@ ensure_bin(){
       c_red "  Remove it and its .sha256 record, then re-run to download and verify it again."
       exit 1
     }
-    # Normally a no-op after the first repair; re-record in case it changed
-    # the file, which was verified one step above.
-    local pin; read -r pin < "$BIN_RECORD"
+    # repair_dylibs is normally a no-op after the first install. Re-record
+    # only when it did change the file, which was verified one step above.
+    local pin sum
+    { read -r pin && read -r sum; } < "$BIN_RECORD"
     repair_dylibs
-    record_bin "$pin" || { c_red "could not record $BIN_RECORD"; exit 1; }
+    if [ "$(shasum -a 256 "$NATIVE_BIN" | cut -d' ' -f1)" != "$(lower "$sum")" ]; then
+      record_bin "$pin" || { c_red "could not record $BIN_RECORD"; exit 1; }
+    fi
     return 0
   fi
   command -v gh >/dev/null 2>&1 || { c_red "missing: gh (needed to download the native binary)"; exit 1; }
@@ -643,6 +660,9 @@ wait_no_inflight(){
 nodes_restart(){
   local try
   assert_persistence_rotation_disabled || return 1
+  # Check the binary BEFORE nodes_down: an unverified binary would otherwise
+  # leave the head with its nodes stopped and no way back up.
+  ensure_bin
   wait_no_inflight
   for try in 1 2 3; do
     nodes_down

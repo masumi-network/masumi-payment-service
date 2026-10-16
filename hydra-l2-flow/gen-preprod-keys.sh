@@ -28,6 +28,8 @@ fs.writeFileSync(path.join(outDir, "blockfrost.txt"), key.trim());
 console.log("wrote preprod/blockfrost.txt");
 ' "$REPO" "$OUT"
 
+# Reset, so a value from the caller's environment cannot skip the check.
+bin_checked=''
 for party in purchasing selling; do
   if [ ! -f "$OUT/$party-cardano.sk" ]; then
     docker run --rm -v "$OUT:/keys" --entrypoint cardano-cli "$CARDANO_IMAGE" \
