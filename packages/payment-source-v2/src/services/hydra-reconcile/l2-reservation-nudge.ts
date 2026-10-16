@@ -2,9 +2,9 @@
  * The release nudge: an in-head transaction that makes an expired L2
  * reservation provably dead.
  *
- * It spends every input of the reservation's body that the pinned wallet owns
- * and the verified snapshot still holds, into one output back to the wallet
- * with a random nonce datum. If it applies, the body can never apply, and its
+ * It spends every input of the reservation's body, all of which the pinned
+ * wallet must own, into one output back to the wallet with a random nonce
+ * datum. If it applies, the body can never apply, and its
  * output bytes are the proof release waits for (`./l2-release-nudge-proof`). If
  * the body applied first, its inputs are gone and the head rejects the nudge,
  * so the reservation stays held. The nudge also gives an idle head the new
@@ -34,6 +34,7 @@ import {
 	encodeL2ReleaseNudgeDatum,
 	L2_RELEASE_NUDGE_NONCE_BYTES,
 	readL2ReleaseNudgeProof,
+	type L2ReleaseValueFloor,
 } from './l2-release-nudge-proof';
 
 /** At most one nudge per reservation in this window. A head confirms in about a second. */
@@ -45,12 +46,11 @@ export type L2ReleaseNudgeCandidate = {
 	id: string;
 	l2ReservationInputRefs: readonly string[];
 	l2ReleaseNudgeTx: string | null;
+	/** The funds the body locks, from our records (`./l2-release-nudge-proof`). */
+	valueFloor: L2ReleaseValueFloor;
 };
 
-type NudgeNode = Pick<
-	HydraNode,
-	'verifiedSnapshotNumber' | 'getVerifiedCurrentOutput' | 'pendingIncrementUtxoRefs' | 'fetchPendingDecommitRefs'
->;
+type NudgeNode = Pick<HydraNode, 'verifiedSnapshotNumber' | 'pendingIncrementUtxoRefs' | 'fetchPendingDecommitRefs'>;
 type NudgeHead = Pick<CustomHydraHead, 'newTx'>;
 type NudgeProvider = Pick<HydraProvider, 'fetchAddressUTxOs' | 'fetchProtocolParameters'>;
 
@@ -68,33 +68,38 @@ export function toUtxoRef(utxo: UTxO): string {
 }
 
 /**
- * The reservation's inputs a nudge spends: those at the wallet's own address,
- * in the verified snapshot, and not a pending increment. Script inputs, such as
- * an escrow a non-locking action spends, are not the wallet's to spend. Lowest
- * reference first, so the body is stable across scans.
+ * Every input of the body, as the wallet's UTxOs, or null unless each one is
+ * at the wallet's own address, carries no reference script, and is not a
+ * pending increment. Script inputs, such as an escrow a non-locking action
+ * spends, are not the wallet's to spend, so such a body is never nudged.
  *
- * The snapshot read only decides which inputs are worth trying. It is not the
- * proof: the head itself refuses a nudge whose inputs are spent.
+ * Nothing here filters on what the node reports present. A compromised node
+ * could hide inputs to steer the nudge onto a subset, and the proof needs all
+ * of them. An input that is really gone makes the head refuse the nudge.
  */
 export function selectReleaseNudgeInputs(params: {
 	utxos: readonly UTxO[];
 	address: string;
 	reservedRefs: readonly string[];
 	pendingIncrementRefs: ReadonlySet<string>;
-	isVerified: (reference: string) => boolean;
-}): UTxO[] {
-	const reserved = new Set(params.reservedRefs.map((reference) => reference.toLowerCase()));
-	const selected = params.utxos.filter((utxo) => {
-		const reference = toUtxoRef(utxo);
-		return (
-			utxo.output.address === params.address &&
-			utxo.output.scriptRef == null &&
-			reserved.has(reference) &&
-			!params.pendingIncrementRefs.has(reference) &&
-			params.isVerified(reference)
-		);
-	});
-	return selected.sort((a, b) => (toUtxoRef(a) < toUtxoRef(b) ? -1 : 1));
+}): UTxO[] | null {
+	const byRef = new Map(params.utxos.map((utxo) => [toUtxoRef(utxo), utxo]));
+	const reserved = [...new Set(params.reservedRefs.map((reference) => reference.toLowerCase()))].sort();
+	if (reserved.length === 0) return null;
+	const selected: UTxO[] = [];
+	for (const reference of reserved) {
+		const utxo = byRef.get(reference);
+		if (
+			!utxo ||
+			utxo.output.address !== params.address ||
+			utxo.output.scriptRef != null ||
+			params.pendingIncrementRefs.has(reference)
+		) {
+			return null;
+		}
+		selected.push(utxo);
+	}
+	return selected;
 }
 
 /**
@@ -119,8 +124,7 @@ export async function nudgeIdleHeadForRelease(params: {
 		const provider =
 			params.provider === undefined ? getHydraConnectionManager().getProvider(hydraHeadId) : params.provider;
 		if (!provider) return false;
-		const snapshotNumber = node.verifiedSnapshotNumber;
-		if (snapshotNumber === undefined) return false;
+		if (node.verifiedSnapshotNumber === undefined) return false;
 
 		// Only the wallet this very reservation pins. Its lock owner is the dead
 		// body, so no other L2 action can be building against it.
@@ -154,7 +158,6 @@ export async function nudgeIdleHeadForRelease(params: {
 					address: wallet.walletAddress,
 					reservedRefs: candidate.l2ReservationInputRefs,
 					pendingIncrementRefs: node.pendingIncrementUtxoRefs,
-					isVerified: (reference) => node.getVerifiedCurrentOutput(reference, snapshotNumber) !== null,
 				}),
 				provider,
 				database,
@@ -186,14 +189,14 @@ async function buildAndRecordNudge(params: {
 	hydraHeadId: string;
 	candidate: L2ReleaseNudgeCandidate;
 	wallet: { walletAddress: string; Secret: { encryptedMnemonic: string }; PaymentSource: { network: Network } };
-	inputs: UTxO[];
+	inputs: UTxO[] | null;
 	provider: NudgeProvider;
 	database: typeof prisma;
 	signSpendNudge: SignSpendNudge;
 }): Promise<string | null> {
 	const { hydraHeadId, candidate, wallet, inputs, provider, database } = params;
-	if (inputs.length === 0) {
-		logger.warn('[HydraReconcile] no wallet input of the expired L2 body to nudge with; reservation stays held', {
+	if (inputs === null) {
+		logger.warn('[HydraReconcile] not every input of the expired L2 body is a wallet UTxO; reservation stays held', {
 			hydraHeadId,
 			transactionId: candidate.id,
 		});
@@ -208,9 +211,10 @@ async function buildAndRecordNudge(params: {
 		encryptedMnemonic: wallet.Secret.encryptedMnemonic,
 		provider,
 	});
-	// Never record a nudge the release proof would not accept.
-	if (readL2ReleaseNudgeProof(signedTx, candidate.l2ReservationInputRefs) === null) {
-		throw new Error('Signed release nudge does not match the release proof');
+	// Never record a nudge the release proof would not accept. This is also
+	// where input values the node under-reported fall below the floor.
+	if (readL2ReleaseNudgeProof(signedTx, candidate.l2ReservationInputRefs, candidate.valueFloor) === null) {
+		throw new Error('Signed release nudge does not meet the release proof');
 	}
 	// Record before sending, and only over no nudge: a second, different nudge
 	// could apply in place of the recorded one, and release would never see it.

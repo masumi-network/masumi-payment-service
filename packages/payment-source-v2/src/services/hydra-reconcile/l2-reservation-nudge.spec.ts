@@ -39,40 +39,40 @@ const lockInputB = utxo('b', 1, {
 	],
 	plutusData: 'd87980',
 });
-const reservedRefs = [toUtxoRef(lockInputA), toUtxoRef(lockInputB), `${'d'.repeat(64)}#0`];
+const reservedRefs = [toUtxoRef(lockInputA), toUtxoRef(lockInputB)];
+const valueFloor = [{ unit: '', amount: 8_000_000n }];
 
 describe('selectReleaseNudgeInputs', () => {
-	const select = (utxos: UTxO[], options: { pendingIncrementRefs?: Set<string>; verified?: Set<string> } = {}) =>
+	const select = (utxos: UTxO[], options: { pendingIncrementRefs?: Set<string> } = {}) =>
 		selectReleaseNudgeInputs({
 			utxos,
 			address,
 			reservedRefs,
 			pendingIncrementRefs: options.pendingIncrementRefs ?? new Set(),
-			isVerified: (reference: string) => options.verified?.has(reference) ?? true,
 		});
 
-	it('picks only inputs of the body at the wallet address, lowest reference first', () => {
-		const unreserved = utxo('c', 0);
-		expect(select([lockInputB, unreserved, lockInputA]).map(toUtxoRef)).toEqual([
+	it('takes every input of the body, lowest reference first, and nothing else', () => {
+		expect(select([lockInputB, utxo('c', 0), lockInputA])?.map(toUtxoRef)).toEqual([
 			toUtxoRef(lockInputA),
 			toUtxoRef(lockInputB),
 		]);
 	});
 
+	// A compromised node can hide an input to steer the nudge onto a cheap
+	// subset. A missing input holds the row rather than shrinking the nudge.
+	it('holds when any body input is missing from the wallet UTxOs', () => {
+		expect(select([lockInputB])).toBeNull();
+	});
+
 	it.each([
 		['a reference script', { scriptRef: '82' }],
 		['another address', { address: 'addr_test1other' }],
-	] as const)('skips an input with %s', (_label, overrides) => {
-		expect(select([utxo('a', 0, overrides as Partial<UTxO['output']>)])).toEqual([]);
+	] as const)('holds when a body input has %s', (_label, overrides) => {
+		expect(select([{ ...lockInputA, output: { ...lockInputA.output, ...overrides } }, lockInputB])).toBeNull();
 	});
 
-	it('skips pending increments and anything outside the verified snapshot', () => {
-		expect(
-			select([lockInputA, lockInputB], {
-				pendingIncrementRefs: new Set([toUtxoRef(lockInputA)]),
-				verified: new Set([toUtxoRef(lockInputA)]),
-			}),
-		).toEqual([]);
+	it('holds when a body input is a pending increment', () => {
+		expect(select([lockInputA, lockInputB], { pendingIncrementRefs: new Set([toUtxoRef(lockInputA)]) })).toBeNull();
 	});
 });
 
@@ -104,7 +104,7 @@ describe('signInHeadSpendNudge', () => {
 		expect(shape?.inputRefs.sort()).toEqual([toUtxoRef(lockInputA), toUtxoRef(lockInputB)].sort());
 		expect(shape?.outputs).toHaveLength(1);
 		expect(shape?.outputs[0].inlineDatumHex).toBe(datumHex);
-		expect(readL2ReleaseNudgeProof(signedTx, reservedRefs)).not.toBeNull();
+		expect(readL2ReleaseNudgeProof(signedTx, reservedRefs, valueFloor)).not.toBeNull();
 		// The head charges no fee, so the output holds every input's value.
 		const body = FixedTransaction.from_hex(signedTx).body();
 		expect(body.fee().to_str()).toBe('0');
@@ -147,7 +147,6 @@ describe('nudgeIdleHeadForRelease', () => {
 		};
 		const node = {
 			verifiedSnapshotNumber: 7n as bigint | undefined,
-			getVerifiedCurrentOutput: jest.fn((_reference: string, _number: bigint): string | null => 'output-bytes'),
 			pendingIncrementUtxoRefs: new Set<string>(),
 			fetchPendingDecommitRefs: jest.fn(async () => [...(options.pendingDecommits ?? [])]),
 		};
@@ -169,7 +168,7 @@ describe('nudgeIdleHeadForRelease', () => {
 		const run = (candidate: { l2ReleaseNudgeTx: string | null } = { l2ReleaseNudgeTx: null }, at = nowMs) =>
 			nudgeIdleHeadForRelease({
 				hydraHeadId: 'head-1',
-				candidate: { id: 'reservation-1', l2ReservationInputRefs: reservedRefs, ...candidate },
+				candidate: { id: 'reservation-1', l2ReservationInputRefs: reservedRefs, valueFloor, ...candidate },
 				node: node as never,
 				provider: provider as never,
 				head: (options.noHead ? null : head) as never,
@@ -231,10 +230,10 @@ describe('nudgeIdleHeadForRelease', () => {
 		expect(h.head.newTx).not.toHaveBeenCalled();
 	});
 
-	// A non-locking action whose body spends only an escrow: no input is the
+	// A non-locking action whose body spends an escrow: that input is not the
 	// wallet's, so there is nothing to prove with, and the row stays held.
-	it('holds when the body has no wallet input left to spend', async () => {
-		const h = harness({ utxos: [utxo('c', 0)] });
+	it('holds when not every body input is a wallet UTxO', async () => {
+		const h = harness({ utxos: [lockInputA, utxo('c', 0)] });
 		await expect(h.run()).resolves.toBe(false);
 		expect(h.signSpendNudge).not.toHaveBeenCalled();
 		expect(h.database.transaction.updateMany).not.toHaveBeenCalled();
@@ -244,6 +243,21 @@ describe('nudgeIdleHeadForRelease', () => {
 		const h = harness();
 		h.signSpendNudge.mockResolvedValueOnce('not-a-nudge');
 		await expect(h.run()).resolves.toBe(false);
+		expect(h.database.transaction.updateMany).not.toHaveBeenCalled();
+		expect(h.head.newTx).not.toHaveBeenCalled();
+	});
+
+	// The node reports input values. Under-reported values make the nudge
+	// output fall below the floor, so nothing is recorded or sent.
+	it('records nothing when the node under-reports the input values', async () => {
+		const h = harness({
+			utxos: [
+				{ ...lockInputA, output: { ...lockInputA.output, amount: [{ unit: 'lovelace', quantity: '1000000' }] } },
+				lockInputB,
+			],
+		});
+		await expect(h.run()).resolves.toBe(false);
+		expect(h.signSpendNudge).toHaveBeenCalledTimes(1);
 		expect(h.database.transaction.updateMany).not.toHaveBeenCalled();
 		expect(h.head.newTx).not.toHaveBeenCalled();
 	});

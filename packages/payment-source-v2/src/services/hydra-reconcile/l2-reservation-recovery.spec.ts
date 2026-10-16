@@ -105,6 +105,8 @@ describe('expired L2 reservation reporting', () => {
 			confirmed?: boolean;
 			currentTxHash?: string | null;
 			initialLock?: boolean;
+			/** Paid funds on the purchase an initial lock reserves. */
+			paidFunds?: Array<{ unit: string; amount: bigint }>;
 			rejected?: boolean;
 			inputRefs?: string[];
 			unspentRefs?: string[];
@@ -113,11 +115,6 @@ describe('expired L2 reservation reporting', () => {
 			nudgeTx?: string | null;
 			/** Exact bytes the verified snapshot holds at a reference, over `unspentRefs`. */
 			outputs?: Map<string, string>;
-			paymentRequests?: Array<{
-				currentHydraUtxoTxHash: string | null;
-				currentHydraUtxoOutputIndex: number | null;
-				NextAction: { requestedAction: PaymentAction };
-			}>;
 		} = {},
 	) {
 		const intendedTxHash = 'a'.repeat(64);
@@ -141,8 +138,8 @@ describe('expired L2 reservation reporting', () => {
 						l2ReservationPreviousSmartContractWalletId: null,
 						l2ReservationPreviousBuyerReturnAddress: null,
 						l2ReservationPreviousCollateralReturn: null,
-						PaymentRequestCurrent: options.paymentRequests ?? [],
-						PurchaseRequestCurrent: [],
+						PaymentRequestCurrent: [],
+						PurchaseRequestCurrent: [{ PaidFunds: options.paidFunds ?? [{ unit: '', amount: 10_000_000n }] }],
 					})),
 				),
 			},
@@ -313,7 +310,8 @@ describe('expired L2 reservation reporting', () => {
 	describe('proven-dead release', () => {
 		const refs = [`${'b'.repeat(64)}#0`, `${'c'.repeat(64)}#1`];
 		const nudgeTx = nudgeTxOver(refs);
-		const proof = readL2ReleaseNudgeProof(nudgeTx, refs);
+		const floor = [{ unit: '', amount: 10_000_000n }];
+		const proof = readL2ReleaseNudgeProof(nudgeTx, refs, floor);
 		if (!proof) throw new Error('fixture nudge must pass the proof');
 		// Far enough past expiry for the release grace, not only the report grace.
 		const releaseNowMs = recoveryNowMs + L2_RESERVATION_RELEASE_GRACE_MS;
@@ -326,12 +324,12 @@ describe('expired L2 reservation reporting', () => {
 						txHash: null,
 						l2RejectedByHeadAt: null,
 						l2ReleaseNudgeTx: recordedNudgeTx,
-						// The harness default reserves an action, not an initial lock.
+						// Release tests reserve an initial lock: only those carry a value floor.
 						PurchaseRequestCurrent: [
 							{
 								id: 'purchase-1',
 								nextActionId: 'action-1',
-								NextAction: { requestedAction: PurchasingAction.WithdrawRefundInitiated },
+								NextAction: { requestedAction: PurchasingAction.FundsLockingInitiated },
 							},
 						],
 						PaymentRequestCurrent: [],
@@ -362,15 +360,20 @@ describe('expired L2 reservation reporting', () => {
 		}
 
 		it('nudges a reservation with no nudge yet, and holds it', async () => {
-			const h = harness({ inputRefs: refs, idPrefix: 'first' });
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'first' });
 			withMutations(h);
 			await expect(scan(h, 'head-first')).resolves.toBe(1);
-			expect(h.nudge).toHaveBeenCalledWith({ id: 'first-1', l2ReservationInputRefs: refs, l2ReleaseNudgeTx: null });
+			expect(h.nudge).toHaveBeenCalledWith({
+				id: 'first-1',
+				l2ReservationInputRefs: refs,
+				l2ReleaseNudgeTx: null,
+				valueFloor: floor,
+			});
 			expect(h.database.$transaction).not.toHaveBeenCalled();
 		});
 
 		it('releases once the recorded nudge output is in the verified snapshot', async () => {
-			const h = harness({ inputRefs: refs, idPrefix: 'release', nudgeTx });
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'release', nudgeTx });
 			const mutationClient = withMutations(h);
 
 			// Not applied yet: the nudge is resent, nothing is freed.
@@ -399,7 +402,7 @@ describe('expired L2 reservation reporting', () => {
 		// outputs under spent references), on a newer snapshot, past expiry.
 		// The old reference proof released here. Nothing is freed now.
 		it('never releases on inputs that only read as unspent', async () => {
-			const h = harness({ inputRefs: refs, idPrefix: 'twins', nudgeTx });
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'twins', nudgeTx });
 			withMutations(h);
 			await expect(scan(h, 'head-twins')).resolves.toBe(1);
 			h.snapshot.number = 8n;
@@ -410,7 +413,7 @@ describe('expired L2 reservation reporting', () => {
 		});
 
 		it('holds when the nudge reference holds other bytes', async () => {
-			const h = harness({ inputRefs: refs, idPrefix: 'other-bytes', nudgeTx });
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'other-bytes', nudgeTx });
 			withMutations(h);
 			h.outputs.set(proof.reference, 'other-output-bytes');
 			await expect(scan(h, 'head-other-bytes')).resolves.toBe(1);
@@ -420,7 +423,7 @@ describe('expired L2 reservation reporting', () => {
 		// The body applied first: it spent the inputs, the head refused the nudge,
 		// and its output never appears. The row stays held and is reported.
 		it('holds a reservation whose body applied before the nudge', async () => {
-			const h = harness({ inputRefs: refs, unspentRefs: [], idPrefix: 'applied', nudgeTx });
+			const h = harness({ initialLock: true, inputRefs: refs, unspentRefs: [], idPrefix: 'applied', nudgeTx });
 			withMutations(h);
 			h.snapshot.number = 8n;
 			await expect(scan(h, 'head-applied')).resolves.toBe(1);
@@ -429,9 +432,9 @@ describe('expired L2 reservation reporting', () => {
 
 		it('holds a recorded nudge that spends an input the body does not', async () => {
 			const foreign = nudgeTxOver([refs[0], `${'9'.repeat(64)}#0`]);
-			const h = harness({ inputRefs: refs, idPrefix: 'foreign', nudgeTx: foreign });
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'foreign', nudgeTx: foreign });
 			withMutations(h, foreign);
-			const shape = readL2ReleaseNudgeProof(foreign, [refs[0], `${'9'.repeat(64)}#0`]);
+			const shape = readL2ReleaseNudgeProof(foreign, [refs[0], `${'9'.repeat(64)}#0`], floor);
 			if (!shape) throw new Error('fixture must parse');
 			h.outputs.set(shape.reference, shape.serializedOutput);
 			await expect(scan(h, 'head-foreign')).resolves.toBe(1);
@@ -439,7 +442,7 @@ describe('expired L2 reservation reporting', () => {
 		});
 
 		it('refuses the release when the row now records a different nudge', async () => {
-			const h = harness({ inputRefs: refs, idPrefix: 'swapped', nudgeTx });
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'swapped', nudgeTx });
 			const mutationClient = withMutations(h, nudgeTxOver(refs, 2));
 			h.outputs.set(proof.reference, proof.serializedOutput);
 			await expect(scan(h, 'head-swapped')).resolves.toBe(1);
@@ -447,7 +450,7 @@ describe('expired L2 reservation reporting', () => {
 		});
 
 		it('holds and does not nudge while the node has no verified snapshot', async () => {
-			const h = harness({ inputRefs: refs, idPrefix: 'unverified', nudgeTx });
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'unverified', nudgeTx });
 			withMutations(h);
 			Object.defineProperty(h.node, 'verifiedSnapshotNumber', { get: () => undefined });
 			h.outputs.set(proof.reference, proof.serializedOutput);
@@ -457,15 +460,42 @@ describe('expired L2 reservation reporting', () => {
 		});
 
 		it('retains reservations recorded before inputs were stored, without nudging', async () => {
-			const h = harness({ inputRefs: [], idPrefix: 'legacy' });
+			const h = harness({ initialLock: true, inputRefs: [], idPrefix: 'legacy' });
 			withMutations(h);
 			await expect(scan(h, 'head-legacy')).resolves.toBe(1);
 			expect(h.nudge).not.toHaveBeenCalled();
 			expect(h.database.$transaction).not.toHaveBeenCalled();
 		});
 
+		// The floor is what makes copying the nonce output cost at least what a
+		// false release redirects. A nudge below it proves nothing.
+		it('holds when the nudge output is below the purchase paid funds', async () => {
+			const h = harness({
+				initialLock: true,
+				inputRefs: refs,
+				idPrefix: 'below-floor',
+				nudgeTx,
+				paidFunds: [{ unit: '', amount: 10_000_001n }],
+			});
+			withMutations(h);
+			h.outputs.set(proof.reference, proof.serializedOutput);
+			await expect(scan(h, 'head-below-floor')).resolves.toBe(1);
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		// Only an initial lock has a floor from our records. Any other row is
+		// never nudged and never auto-released.
+		it('neither nudges nor releases a non-locking action', async () => {
+			const h = harness({ inputRefs: refs, idPrefix: 'action', nudgeTx });
+			withMutations(h);
+			h.outputs.set(proof.reference, proof.serializedOutput);
+			await expect(scan(h, 'head-action')).resolves.toBe(1);
+			expect(h.nudge).not.toHaveBeenCalled();
+			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
 		it('neither nudges nor releases inside the release grace', async () => {
-			const h = harness({ inputRefs: refs, idPrefix: 'grace', nudgeTx });
+			const h = harness({ initialLock: true, inputRefs: refs, idPrefix: 'grace', nudgeTx });
 			withMutations(h);
 			h.outputs.set(proof.reference, proof.serializedOutput);
 			await expect(scan(h, 'head-grace', recoveryNowMs)).resolves.toBe(1);

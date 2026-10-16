@@ -11,7 +11,7 @@ import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
-import { isL2ReservationSpentByNudge } from './l2-release-nudge-proof';
+import { isL2ReservationSpentByNudge, type L2ReleaseValueFloor } from './l2-release-nudge-proof';
 import { paymentL2ActionRetry, purchaseL2ActionRetry, releaseRejectedL2Reservation } from './l2-reservation-release';
 import { nudgeIdleHeadForRelease, type L2ReleaseNudgeCandidate } from './l2-reservation-nudge';
 
@@ -116,6 +116,7 @@ export async function reportExpiredL2Reservations(params: {
 			l2ReservationPreviousBuyerReturnAddress: true,
 			l2ReservationPreviousCollateralReturn: true,
 			l2ReservationPreviousTransactionId: true,
+			...l2ReleaseValueFloorSelect,
 		},
 	});
 
@@ -237,23 +238,54 @@ function pruneExpiredL2WarningThrottle(nowMs: number): void {
 	}
 }
 
+export const l2ReleaseValueFloorSelect = {
+	PaymentRequestCurrent: { select: { id: true } },
+	PurchaseRequestCurrent: { select: { PaidFunds: { select: { unit: true, amount: true } } } },
+} as const;
+
+/**
+ * The funds the body locks, from our own records, or null when there is no
+ * floor we can trust. Only an initial lock has one: its body moves the
+ * purchases' paid funds into escrow, and a false release would make the buyer
+ * lock them again. Any other row stays held for an operator.
+ */
+export function l2ReleaseValueFloor(candidate: {
+	l2ReservationPreviousTransactionId: string | null;
+	PaymentRequestCurrent: readonly unknown[];
+	PurchaseRequestCurrent: ReadonlyArray<{ PaidFunds: ReadonlyArray<{ unit: string; amount: bigint }> }>;
+}): L2ReleaseValueFloor | null {
+	if (
+		candidate.l2ReservationPreviousTransactionId !== null ||
+		candidate.PaymentRequestCurrent.length > 0 ||
+		candidate.PurchaseRequestCurrent.length === 0
+	) {
+		return null;
+	}
+	const floor = candidate.PurchaseRequestCurrent.flatMap((purchase) => purchase.PaidFunds);
+	return floor.some((fund) => fund.amount > 0n) ? floor : null;
+}
+
 async function releaseIfProvenDead(
-	candidate: Parameters<typeof releaseRejectedL2Reservation>[0] & {
-		intendedTxHash: string | null;
-		l2ReservationInputRefs: string[];
-		l2ReleaseNudgeTx: string | null;
-	},
+	candidate: Parameters<typeof releaseRejectedL2Reservation>[0] &
+		Parameters<typeof l2ReleaseValueFloor>[0] & {
+			intendedTxHash: string | null;
+			l2ReservationInputRefs: string[];
+			l2ReleaseNudgeTx: string | null;
+		},
 	snapshotNumber: bigint,
 	node: HydraNode,
 	hydraHeadId: string,
 	database: typeof prisma,
 	nudge: (candidate: L2ReleaseNudgeCandidate) => Promise<unknown>,
 ): Promise<boolean> {
-	// Reservations made before inputs were recorded cannot be proven dead.
-	if (candidate.l2ReservationInputRefs.length === 0) return false;
+	// Reservations made before inputs were recorded, and any without a value
+	// floor, cannot be proven dead.
+	const valueFloor = l2ReleaseValueFloor(candidate);
+	if (candidate.l2ReservationInputRefs.length === 0 || valueFloor === null) return false;
 	const spentByNudge = isL2ReservationSpentByNudge({
 		nudgeTx: candidate.l2ReleaseNudgeTx,
 		inputRefs: candidate.l2ReservationInputRefs,
+		valueFloor,
 		readOutput: (reference) => node.getVerifiedCurrentOutput(reference, snapshotNumber),
 	});
 	if (!spentByNudge) {
@@ -261,6 +293,7 @@ async function releaseIfProvenDead(
 			id: candidate.id,
 			l2ReservationInputRefs: candidate.l2ReservationInputRefs,
 			l2ReleaseNudgeTx: candidate.l2ReleaseNudgeTx,
+			valueFloor,
 		});
 		return false;
 	}
