@@ -2148,7 +2148,7 @@ export const getHydraHostPause = <ThrowOnError extends boolean = false>(options:
 /**
  * Pause a Hydra Host for maintenance. (admin access required)
  *
- * Refuses new work on every head of this Host at once: L2 locks, top-ups, withdrawals, consolidation, init and commit. The service stops the nodes once in-flight work has settled, or at once with `force`. The pause survives restarts of this service and of the Host. Keep it short: a stopped node cannot contest a close, and reserved L2 actions are parked for manual action after a little over three hours.
+ * Refuses new work on every head of this Host at once: L2 locks, top-ups, withdrawals, consolidation, init and commit. The service stops the nodes once in-flight work has settled and no head on the Host is closing or in its dispute window, or at once with `force`. The pause survives restarts of this service and of the Host. Keep it short: a stopped node cannot contest a close, and reserved L2 actions are parked for manual action after a little over three hours.
  */
 export const postHydraHostPause = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHostPauseData, ThrowOnError>): RequestResult<PostHydraHostPauseResponses, PostHydraHostPauseErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHostPauseResponses, PostHydraHostPauseErrors, ThrowOnError>({
     responseType: 'json',
@@ -2657,7 +2657,7 @@ export const postReportsExportZip = <ThrowOnError extends boolean = false>(optio
 /**
  * Compare the running release with the newest published one.
  *
- * Reports the release this service and each Hydra Host were built from, and the newest release published on GitHub. The GitHub check runs at most once every six hours. A failed check reports `latest` as null with the reason in `checkError`; it never reports a build as up to date. Hosts are listed only for an admin key, as of their last Check.
+ * Reports the release this service and each Hydra Host were built from, and the newest release published on GitHub. The GitHub check runs at most once every six hours. A failed check sets `checkError` and keeps the last good answer in `latest` and `checkedAt`. With no good answer yet, `latest` is null and `updateAvailable` is null: a build is never reported as up to date without an answer. Hosts are listed only for an admin key, as of their last Check.
  */
 export const getReleaseStatus = <ThrowOnError extends boolean = false>(options?: Options<GetReleaseStatusData, ThrowOnError>): RequestResult<GetReleaseStatusResponses, GetReleaseStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetReleaseStatusResponses, GetReleaseStatusErrors, ThrowOnError>({
     responseType: 'json',

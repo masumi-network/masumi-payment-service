@@ -3481,6 +3481,10 @@ export type HydraHostPauseState = {
         l2Transactions: number;
         topups: number;
         withdrawals: number;
+        /**
+         * Heads closing or in their dispute window. The nodes stay up until these settle.
+         */
+        closingHeads: number;
     };
     nodes: Array<{
         nodeId: string;

@@ -7073,12 +7073,17 @@ export const HydraHostPauseStateSchema = {
                 },
                 withdrawals: {
                     type: 'integer'
+                },
+                closingHeads: {
+                    type: 'integer',
+                    description: 'Heads closing or in their dispute window. The nodes stay up until these settle.'
                 }
             },
             required: [
                 'l2Transactions',
                 'topups',
-                'withdrawals'
+                'withdrawals',
+                'closingHeads'
             ]
         },
         nodes: {
