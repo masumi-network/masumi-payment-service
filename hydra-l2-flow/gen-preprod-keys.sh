@@ -37,6 +37,12 @@ for party in purchasing selling; do
     echo "generated $party-cardano.{sk,vk}"
   fi
   if [ ! -f "$OUT/$party-hydra.sk" ]; then
+    # Verify (or download and verify) the pinned binary before it makes keys.
+    # HYDRA_BIN_TAG is cleared so the check covers this exact $NATIVE_BIN.
+    if [ -z "${bin_checked:-}" ]; then
+      HYDRA_BIN_TAG='' NATIVE_BIN="$NATIVE_BIN" "$REPO/hydra-l2-flow/hydra-native.sh" bin
+      bin_checked=1
+    fi
     DYLD_FALLBACK_LIBRARY_PATH=/usr/lib "$NATIVE_BIN" gen-hydra-key --output-file "$OUT/$party-hydra"
     echo "generated $party-hydra.{sk,vk}"
   fi

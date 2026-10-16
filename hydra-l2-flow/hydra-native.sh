@@ -143,13 +143,56 @@ resolve_tag_commit(){
   echo "${commit_sha:-$ref_sha}"
 }
 
+# An installed binary cannot be checked against the upstream pin later:
+# repair_dylibs may rewrite it in place (install_name_tool + ad-hoc codesign).
+# So each verified install writes a sidecar, $NATIVE_BIN.sha256, with two
+# lines: the pin that approved the install, and the sha256 of the final file.
+# A binary is trusted only if it matches its sidecar AND the sidecar's pin is
+# one this run is configured with. A binary with no sidecar (installed before
+# this check existed, or dropped in by hand) is not trusted.
+BIN_RECORD="${NATIVE_BIN}.sha256"
+
+configured_pins(){
+  if [ -n "$HYDRA_BIN_TAG" ]; then
+    printf '%s\n' "$HYDRA_BIN_TAG_SHA256"
+  else
+    printf '%s\n' "$HYDRA_BINARY_SHA256" "$HYDRA_RELEASE_SHA256"
+  fi
+}
+
+record_bin(){
+  local pin="$1" sum
+  sum="$(shasum -a 256 "$NATIVE_BIN" | cut -d' ' -f1)" || return 1
+  printf '%s\n%s\n' "$pin" "$sum" > "$BIN_RECORD"
+}
+
+# Quiet check: returns 0 only for a binary that passes the rule above.
+bin_is_verified(){
+  [ -x "$NATIVE_BIN" ] && [ -f "$BIN_RECORD" ] || return 1
+  local pin sum
+  { read -r pin && read -r sum; } < "$BIN_RECORD" || return 1
+  [ -n "$pin" ] && [ -n "$sum" ] || return 1
+  configured_pins | grep -qxF "$pin" || return 1
+  printf '%s  %s\n' "$sum" "$NATIVE_BIN" | shasum -a 256 -c - >/dev/null 2>&1
+}
+
 ensure_bin(){
-  if [ -x "$NATIVE_BIN" ]; then
+  if [ -e "$NATIVE_BIN" ]; then
+    bin_is_verified || {
+      c_red "refusing to run $NATIVE_BIN: it does not match a pinned, verified install"
+      c_red "  (no $BIN_RECORD, a changed file, or a pin that differs from this run's)"
+      c_red "  Remove it and its .sha256 record, then re-run to download and verify it again."
+      exit 1
+    }
+    # Normally a no-op after the first repair; re-record in case it changed
+    # the file, which was verified one step above.
+    local pin; read -r pin < "$BIN_RECORD"
     repair_dylibs
+    record_bin "$pin" || { c_red "could not record $BIN_RECORD"; exit 1; }
     return 0
   fi
   command -v gh >/dev/null 2>&1 || { c_red "missing: gh (needed to download the native binary)"; exit 1; }
-  local tmp; tmp="$(mktemp -d)"
+  local tmp approved_pin=''; tmp="$(mktemp -d)"
   if [ -n "$HYDRA_BIN_TAG" ]; then
     # Same rule as the release paths: no pinned digest, no install. Checked
     # before the download so a missing pin fails at once.
@@ -163,6 +206,7 @@ ensure_bin(){
     [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
     printf '%s  %s\n' "$HYDRA_BIN_TAG_SHA256" "$tmp/hydra-node" \
       | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
+    approved_pin="$HYDRA_BIN_TAG_SHA256"
   else
     # Tagged releases published a release-zip asset through 2.3.0. 2.4.0 and
     # 2.4.1 publish none at all (`gh release view <tag> --repo
@@ -188,6 +232,7 @@ ensure_bin(){
       printf '%s  %s\n' "$HYDRA_RELEASE_SHA256" "$tmp/hydra-aarch64-darwin-${HYDRA_VERSION}.zip" \
         | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
       (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
+      approved_pin="$HYDRA_RELEASE_SHA256"
     else
       c_blu "  release asset path: none published for ${HYDRA_VERSION} — falling back to the tag's CI artifact"
       local commit_sha run_id artifact="hydra-aarch64-darwin-${HYDRA_VERSION}"
@@ -211,14 +256,17 @@ ensure_bin(){
       [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
       printf '%s  %s\n' "$HYDRA_BINARY_SHA256" "$tmp/hydra-node" \
         | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
+      approved_pin="$HYDRA_BINARY_SHA256"
     fi
   fi
   [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
   # Only the verified hydra-node is installed. hydra-tui ships unpinned in the
   # same artifact and nothing here uses it, so it is not installed.
+  [ -n "$approved_pin" ] || { c_red "internal: no pin approved this install"; exit 1; }
   install -m 0755 "$tmp/hydra-node" "$NATIVE_BIN"
   rm -rf "$tmp"
   repair_dylibs
+  record_bin "$approved_pin" || { c_red "could not record $BIN_RECORD"; exit 1; }
   c_grn "  installed -> $NATIVE_BIN ($("$NATIVE_BIN" --version 2>/dev/null | head -1))"
 }
 
@@ -626,7 +674,14 @@ nodes_restart(){
 }
 
 status(){
-  echo "binary : $([ -x "$NATIVE_BIN" ] && "$NATIVE_BIN" --version 2>/dev/null | head -1 || echo 'not installed')"
+  # Only a verified binary is executed, even just for --version.
+  if bin_is_verified; then
+    echo "binary : $("$NATIVE_BIN" --version 2>/dev/null | head -1)"
+  elif [ -e "$NATIVE_BIN" ]; then
+    echo "binary : present but not verified (run: $0 bin)"
+  else
+    echo "binary : not installed"
+  fi
   echo "bridge : $(docker ps --filter "name=^${BRIDGE_NAME}$" --format '{{.Status}}' 2>/dev/null || echo down)"
   echo "socket : $([ -S "$HOST_SOCKET" ] && echo "$HOST_SOCKET" || echo missing)"
   for i in 1 2 3; do
