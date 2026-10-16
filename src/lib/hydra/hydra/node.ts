@@ -37,7 +37,7 @@ import {
 	fetchHydraRawCostModels,
 	fetchHydraSnapshotUTxO,
 } from './node-control-queries';
-import { resolveNodeFanoutReference, resolveNodeFanoutReferences } from './node-fanout-references';
+import * as fanoutReferences from './node-fanout-references';
 import {
 	assertExpectedFrameHeadId,
 	createUnsupportedPersistenceRotationError,
@@ -453,14 +453,18 @@ export class HydraNode extends EventEmitter {
 		expectedSnapshotNumber: number,
 	): VerifiedHydraFanoutReference | null {
 		const context = this.fanoutResolutionContext(expectedSnapshotNumber);
-		if (!context) return null;
-		return resolveNodeFanoutReference(context, hydraReference);
+		return context ? fanoutReferences.resolveNodeFanoutReference(context, hydraReference) : null;
 	}
 
 	getVerifiedFanoutReferences(expectedSnapshotNumber: number): VerifiedHydraFanoutReference[] | null {
 		const context = this.fanoutResolutionContext(expectedSnapshotNumber);
-		if (!context) return null;
-		return resolveNodeFanoutReferences(context);
+		return context ? fanoutReferences.resolveNodeFanoutReferences(context) : null;
+	}
+
+	/** Spendable output bytes in the final snapshot this head fanned out; see `readFinalSnapshotOutput`. */
+	getVerifiedFinalOutput(reference: string, expectedSnapshotNumber: number): string | null {
+		const context = this.fanoutResolutionContext(expectedSnapshotNumber);
+		return context ? fanoutReferences.readFinalSnapshotOutput(context, reference) : null;
 	}
 
 	private fanoutResolutionContext(expectedSnapshotNumber: number) {

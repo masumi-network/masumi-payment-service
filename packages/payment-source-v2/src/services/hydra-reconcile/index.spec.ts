@@ -40,6 +40,9 @@ const mockDeserializeDatum = jest.fn<(_datumCbor: string) => unknown>();
 const mockDecodeDatum = jest.fn<(_datum: unknown) => unknown>();
 const mockParseEvidence = jest.fn<(_cborHex: string) => unknown>();
 const mockReportExpiredL2Reservations = jest.fn<() => Promise<number>>().mockResolvedValue(0);
+const mockReleaseFinalHeadL2Reservations = jest
+	.fn<(params: { verifyFanoutOnChain: (references: readonly unknown[]) => Promise<unknown> }) => Promise<number>>()
+	.mockResolvedValue(0);
 const mockGetVerifiedFanoutReferences = jest.fn<(_snapshotNumber: number) => unknown>();
 const mockGetVerifiedFanoutReference = jest.fn<(_reference: string, _snapshotNumber: number) => unknown>();
 const mockVerifyHydraFanout = jest.fn<(_args: unknown) => Promise<unknown>>();
@@ -212,6 +215,10 @@ jest.unstable_mockModule('./live-escrow-memo', () => ({
 
 jest.unstable_mockModule('./l2-reservation-recovery', () => ({
 	reportExpiredL2Reservations: mockReportExpiredL2Reservations,
+}));
+
+jest.unstable_mockModule('./final-l2-reservation-release', () => ({
+	releaseFinalHeadL2Reservations: mockReleaseFinalHeadL2Reservations,
 }));
 
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
@@ -556,6 +563,27 @@ describe('Hydra live-snapshot reconciliation', () => {
 			mockHydraHeadUpdateMany.mock.invocationCallOrder[0],
 		);
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+	});
+
+	// The handoff refuses a Pending L2 row, so a Final head releases the dead
+	// ones first, against the same on-chain fanout check the handoff uses.
+	it('releases dead Final head reservations before preparing the handoff', async () => {
+		mockFetchAddressUtxos.mockResolvedValue([]);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockReleaseFinalHeadL2Reservations).toHaveBeenCalledWith(
+			expect.objectContaining({ hydraHeadId: 'head-1', expectedSnapshotNumber: 3, node: mockNode }),
+		);
+		expect(mockReleaseFinalHeadL2Reservations.mock.invocationCallOrder[0]).toBeLessThan(
+			mockPaymentRequestFindMany.mock.invocationCallOrder[0],
+		);
+		mockVerifyHydraFanout.mockClear();
+		const { verifyFanoutOnChain } = mockReleaseFinalHeadL2Reservations.mock.calls[0][0];
+		await verifyFanoutOnChain([FANOUT_REFERENCE]);
+		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(
+			expect.objectContaining({ headId: HEAD_IDENTIFIER, references: [FANOUT_REFERENCE], requiredConfirmations: 5 }),
+		);
 	});
 
 	// A head too large to empty in one transaction fans out over several. Each

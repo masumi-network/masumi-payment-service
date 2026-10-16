@@ -43,9 +43,11 @@ import {
 	parseHydraTransactionEvidence,
 } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { verifyHydraFanoutOnChain, type HydraFanoutChainObserver } from '@/lib/hydra/hydra/fanout-validation';
+import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-verification';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
+import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
 import {
 	findIdentifiersWithNothingToApply,
 	isLivePassDue,
@@ -333,18 +335,28 @@ async function reconcileHead(
 			node == null
 		)
 			return;
+		const verifyFanout = (references: readonly VerifiedHydraFanoutReference[]) =>
+			verifyHydraFanoutOnChain({
+				observer: getBlockfrostInstance(
+					source.network,
+					source.PaymentSourceConfig.rpcProviderApiKey,
+				) as unknown as HydraFanoutChainObserver,
+				headId: headIdentifier,
+				participantVkeys: [localParticipantVkey, remoteParticipantVkey],
+				references,
+				requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+			});
+		// The handoff refuses any Pending L2 row, and a Final head never makes the
+		// snapshot the open head release path waits for.
+		await releaseFinalHeadL2Reservations({
+			hydraHeadId,
+			expectedSnapshotNumber,
+			node,
+			verifyFanoutOnChain: verifyFanout,
+		});
 		const preparedHandoff = await prepareFinalHandoff(hydraHeadId, expectedSnapshotNumber, node);
 		if (!preparedHandoff) return;
-		const verifiedFanoutChain = await verifyHydraFanoutOnChain({
-			observer: getBlockfrostInstance(
-				source.network,
-				source.PaymentSourceConfig.rpcProviderApiKey,
-			) as unknown as HydraFanoutChainObserver,
-			headId: headIdentifier,
-			participantVkeys: [localParticipantVkey, remoteParticipantVkey],
-			references: preparedHandoff.allFanoutReferences,
-			requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
-		});
+		const verifiedFanoutChain = await verifyFanout(preparedHandoff.allFanoutReferences);
 		if (
 			!(await markFinalHeadReconciliationComplete({
 				hydraHeadId,
