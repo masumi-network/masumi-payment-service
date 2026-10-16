@@ -33,11 +33,13 @@ function roundLabel(round: HydraSnapshotRound): string {
 }
 
 function resetDescription(round: HydraSnapshotRound): string {
-  const dropped =
+  // The round names only the transactions it would confirm. The side-load drops
+  // every unconfirmed transaction the node holds, so the list is a floor.
+  const named =
     round.txIds.length === 0
-      ? 'It holds no unconfirmed transactions.'
-      : `These ${round.txIds.length} unconfirmed transaction(s) are dropped and must be sent again:\n${round.txIds.map((txId) => shortenAddress(txId, 12)).join('\n')}`;
-  return `Our node goes back to its last confirmed snapshot, which every party already signed. Nothing new enters the head and no funds move.\n\n${dropped}\n\nThis resets our node only. If the other party's node is stuck on the same round, its operator must reset it too.`;
+      ? 'The round names no transactions.'
+      : `The round names ${round.txIds.length} transaction(s):\n${round.txIds.map((txId) => shortenAddress(txId, 12)).join('\n')}`;
+  return `Our node goes back to its last confirmed snapshot, which every party already signed. Nothing new enters the head.\n\nOur node drops every transaction it has not confirmed. ${named}\nThe node can hold more unconfirmed transactions than this list shows.\n\nDo not rebuild a dropped payment by hand. The other party's node can still hold the original, and then both can confirm.\n\nThis resets our node only. If the other party's node is stuck on the same round, its operator must reset it too.`;
 }
 
 export function HydraHeadSnapshotRoundNotice({
@@ -63,7 +65,7 @@ export function HydraHeadSnapshotRoundNotice({
         expectedSignature: pending.signature,
       });
       toast.success(
-        `Reset to confirmed snapshot ${result.confirmedSnapshotNumber}. ${result.droppedTxIds.length} transaction(s) dropped.`,
+        `Reset to confirmed snapshot ${result.confirmedSnapshotNumber}. Unconfirmed transactions were dropped, including the round's ${result.droppedTxIds.length}.`,
       );
       setPending(null);
       await resync('hydra');
@@ -114,7 +116,7 @@ export function HydraHeadSnapshotRoundNotice({
         }}
         title={pending ? `Reset stuck round ${roundLabel(pending)}?` : 'Reset stuck round?'}
         description={pending ? resetDescription(pending) : ''}
-        acknowledgementLabel="I understand the listed transactions are dropped and must be sent again."
+        acknowledgementLabel="I understand that our node drops all of its unconfirmed transactions."
         confirmLabel="Reset round"
         isLoading={isResetting}
         onConfirm={() => void handleReset()}
