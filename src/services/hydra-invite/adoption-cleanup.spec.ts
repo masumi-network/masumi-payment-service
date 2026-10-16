@@ -16,6 +16,7 @@ const invite = {
 	status: 'Issued',
 	hydraHeadId: null,
 	network: 'Preprod',
+	contestationPeriodSeconds: 86_400,
 	HydraHost: host,
 };
 let removalRequested = false;
@@ -50,6 +51,8 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		hydraHost: { findMany: async () => [host] },
 		hydraHeadInvite: { findUnique: async () => invite, updateMany },
 		hydraLocalParticipant: { count: participantCount, findFirst: unboundParticipant },
+		// No head an earlier pass orphaned, so the redemption is discarded.
+		hydraHead: { findFirst: async () => null },
 	},
 }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -65,6 +68,7 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	removeHostNode: remove,
 	HydraHostRequestError,
 }));
+jest.unstable_mockModule('./node-keys', () => ({ deriveNodeCardanoVkey: (key: string) => key }));
 jest.unstable_mockModule('./invite-signing', () => ({ verifyHydraRedemption: verify }));
 jest.unstable_mockModule('./orchestrator', () => ({ createHeadFromExchange: jest.fn() }));
 jest.unstable_mockModule('./release-reservation', () => ({

@@ -26,6 +26,12 @@ export async function createBoundHydraHead(input: {
 	contestationPeriod: bigint;
 	localParticipantId: string;
 	remoteParticipantId: string;
+	/**
+	 * Records the invite that produced this head, inside the same transaction.
+	 * Without it a crash between the head and the invite write left a head no
+	 * invite pointed at, and the next adoption pass revoked the invite.
+	 */
+	linkInvite?: (tx: Prisma.TransactionClient, hydraHeadId: string) => Promise<void>;
 }): Promise<HydraHeadRecord> {
 	const verifiedPriorFanouts = await verifyPriorHydraFanouts(input.hydraRelationId);
 	try {
@@ -224,6 +230,7 @@ export async function createBoundHydraHead(input: {
 						if (remoteClaim.count !== 1) {
 							throw createHttpError(409, 'Remote participant was concurrently assigned to another head');
 						}
+						await input.linkInvite?.(tx, head.id);
 
 						return await tx.hydraHead.findUniqueOrThrow({
 							where: { id: head.id },
