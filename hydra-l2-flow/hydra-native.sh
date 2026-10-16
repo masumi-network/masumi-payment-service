@@ -39,8 +39,9 @@
 #   HYDRA_BIN_TAG=master-6e2754c \
 #   HYDRA_BIN_RUN_ID=28878987397 \
 #   HYDRA_BIN_ARTIFACT=hydra-aarch64-darwin-2.4.1-46-g6e2754c5a \
+#   HYDRA_BIN_TAG_SHA256=<sha256 of the extracted hydra-node> \
 #     ./hydra-native.sh bin
-#   # then pass the same three env vars to `up`/`restart`/etc. to run against it.
+#   # then pass the same env vars to `up`/`restart`/etc. to run against it.
 #
 set -uo pipefail
 
@@ -86,6 +87,10 @@ HYDRA_BIN_ARTIFACT="${HYDRA_BIN_ARTIFACT:-hydra-aarch64-darwin-${HYDRA_VERSION}}
 # artifact; the binary lands at .bin/hydra-node-<tag> and is left in place for
 # reuse/rollback.
 HYDRA_BIN_TAG="${HYDRA_BIN_TAG:-}"
+# Required with HYDRA_BIN_TAG: sha256 of the extracted hydra-node binary. No
+# default, because each tag is a different build. Measure it once from a
+# trusted download (`shasum -a 256 hydra-node`) and pass it explicitly.
+HYDRA_BIN_TAG_SHA256="${HYDRA_BIN_TAG_SHA256:-}"
 
 NETWORK="${NETWORK:-devnet}"   # devnet | preprod
 PREPROD_DIR="${PREPROD_DIR:-$REPO/hydra-l2-flow/preprod}"
@@ -146,9 +151,18 @@ ensure_bin(){
   command -v gh >/dev/null 2>&1 || { c_red "missing: gh (needed to download the native binary)"; exit 1; }
   local tmp; tmp="$(mktemp -d)"
   if [ -n "$HYDRA_BIN_TAG" ]; then
+    # Same rule as the release paths: no pinned digest, no install. Checked
+    # before the download so a missing pin fails at once.
+    [ -n "$HYDRA_BIN_TAG_SHA256" ] || {
+      c_red "HYDRA_BIN_TAG_SHA256 is required with HYDRA_BIN_TAG (sha256 of the extracted hydra-node)"
+      exit 1
+    }
     c_blu "Downloading native $HYDRA_BIN_ARTIFACT (CI artifact, ~176 MiB)…"
     gh run download "$HYDRA_BIN_RUN_ID" --repo cardano-scaling/hydra \
       --name "$HYDRA_BIN_ARTIFACT" --dir "$tmp" || { c_red "download failed"; exit 1; }
+    [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
+    printf '%s  %s\n' "$HYDRA_BIN_TAG_SHA256" "$tmp/hydra-node" \
+      | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
   else
     # Tagged releases published a release-zip asset through 2.3.0. 2.4.0 and
     # 2.4.1 publish none at all (`gh release view <tag> --repo
@@ -200,8 +214,9 @@ ensure_bin(){
     fi
   fi
   [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
+  # Only the verified hydra-node is installed. hydra-tui ships unpinned in the
+  # same artifact and nothing here uses it, so it is not installed.
   install -m 0755 "$tmp/hydra-node" "$NATIVE_BIN"
-  [ -f "$tmp/hydra-tui" ] && install -m 0755 "$tmp/hydra-tui" "$BIN_DIR/hydra-tui"
   rm -rf "$tmp"
   repair_dylibs
   c_grn "  installed -> $NATIVE_BIN ($("$NATIVE_BIN" --version 2>/dev/null | head -1))"
