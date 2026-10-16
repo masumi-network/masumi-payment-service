@@ -19,6 +19,8 @@ import { formatFundUnit, getExplorerUrl, shortenAddress } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { useHydraHeadTransactions, type HydraHeadTransaction } from '@/lib/hooks/useHydraHeads';
 import { InfoHint } from '@/components/ui/info-hint';
+import { ListPager, usePagedList } from '@/components/hydra/ListPager';
+import { LIST_PAGE_SIZE } from '@/components/hydra/paging';
 
 /**
  * Lovelace crosses the wire as a string because it is a BigInt, and putting it
@@ -122,8 +124,17 @@ export function HydraHeadTransactions({
   /** 'Preprod' or 'Mainnet', passed straight to the explorer URL builder. */
   network: string;
 }) {
-  const { transactions, isLoading, isError, isFetching, refetch } =
-    useHydraHeadTransactions(headId);
+  const {
+    transactions,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+    hasMore,
+    isLoadingMore,
+    loadMore,
+  } = useHydraHeadTransactions(headId);
+  const paged = usePagedList(transactions, LIST_PAGE_SIZE);
 
   return (
     <div className="space-y-2">
@@ -172,14 +183,18 @@ export function HydraHeadTransactions({
         </div>
       ) : transactions.length === 0 ? (
         <p className="py-2 text-sm text-muted-foreground">
-          Nothing yet. Payments routed through this head show up here as they happen.
+          Nothing yet. Payments, deposits and node funding for this head show up here as they
+          happen.
         </p>
       ) : (
-        <div className="divide-y rounded-md border">
-          {transactions.map((transaction) => (
-            <TransactionRow key={transaction.id} transaction={transaction} network={network} />
-          ))}
-        </div>
+        <>
+          <div className="divide-y rounded-md border">
+            {paged.items.map((transaction) => (
+              <TransactionRow key={transaction.id} transaction={transaction} network={network} />
+            ))}
+          </div>
+          <ListPager page={paged} more={{ hasMore, isLoadingMore, loadMore }} />
+        </>
       )}
     </div>
   );

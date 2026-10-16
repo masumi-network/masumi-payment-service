@@ -34646,6 +34646,16 @@
                     },
                     {
                         "schema": {
+                            "type": "string",
+                            "description": "Inclusive cursor: the id of the last row already seen. It is returned again first."
+                        },
+                        "required": false,
+                        "description": "Inclusive cursor: the id of the last row already seen. It is returned again first.",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 50,
@@ -34918,6 +34928,16 @@
                         "required": true,
                         "description": "The Hydra head whose withdrawals to list",
                         "name": "headId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Inclusive cursor: the id of the last row already seen. It is returned again first."
+                        },
+                        "required": false,
+                        "description": "Inclusive cursor: the id of the last row already seen. It is returned again first.",
+                        "name": "cursorId",
                         "in": "query"
                     },
                     {
@@ -35643,6 +35663,16 @@
                         "required": true,
                         "description": "The Hydra head whose transactions to list",
                         "name": "headId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Inclusive cursor: the id of the last row already seen, of any kind. It is returned again first. An id this head does not list returns an empty page."
+                        },
+                        "required": false,
+                        "description": "Inclusive cursor: the id of the last row already seen, of any kind. It is returned again first. An id this head does not list returns an empty page.",
+                        "name": "cursorId",
                         "in": "query"
                     },
                     {

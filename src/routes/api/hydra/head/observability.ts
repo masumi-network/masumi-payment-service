@@ -57,7 +57,9 @@ export const listHeadErrorsGet = adminAuthenticatedEndpointFactory.build({
 
 		const errors = await prisma.hydraHeadError.findMany({
 			where: { hydraHeadId: input.headId },
-			orderBy: { errorAt: 'desc' },
+			// The id breaks ties, so a cursor on one of two errors logged in the
+			// same millisecond resumes in a fixed place.
+			orderBy: [{ errorAt: 'desc' }, { id: 'desc' }],
 			take: input.limit,
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 		});

@@ -8,13 +8,11 @@
  * and infer it, and an operator asking "what has this head done at all?" had no
  * answer available.
  *
- * Deliberately unpaginated. The list merges three sources — ledger rows, the
- * head's own deposits, and the transfers that fuel its node — and a single row
- * cursor cannot walk three tables: page two would skip rows from two of them and
- * repeat rows from the third. A head's history is bounded and this returns the
- * newest `limit` of it, which is the question anyone actually asks. Paging it
- * properly needs a composite cursor over (createdAt, kind), and offering a
- * broken `cursorId` in the meantime would be worse than offering none.
+ * The list merges three sources: ledger rows, the head's own deposits, and the
+ * transfers that fuel its node. A Prisma cursor walks one table, so page two
+ * would skip rows from two sources and repeat rows from the third. Instead the
+ * cursor id is resolved to its (createdAt, id) position once, and every source
+ * is read from that position. See newest-first-cursor.ts.
  *
  * Its own file rather than another export in index.ts, which is long past the
  * point where anything new should be added to it.
@@ -27,6 +25,12 @@ import { logger } from '@masumi/payment-core/logger';
 import { z } from '@masumi/payment-core/zod';
 import { TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import { nodeCardanoAddress } from '@/services/hydra-node-funding/node-address';
+import {
+	atOrAfter,
+	compareNewestFirst,
+	newestFirstOrder,
+	type NewestFirstPosition,
+} from '@/routes/api/hydra/head/newest-first-cursor';
 
 export const headTransactionSchema = z.object({
 	id: z.string(),
@@ -53,6 +57,12 @@ export const headTransactionSchema = z.object({
 
 export const listHeadTransactionsInput = z.object({
 	headId: z.string().min(1).describe('The Hydra head whose transactions to list'),
+	cursorId: z
+		.string()
+		.optional()
+		.describe(
+			'Inclusive cursor: the id of the last row already seen, of any kind. It is returned again first. An id this head does not list returns an empty page.',
+		),
 	limit: z.coerce.number().int().min(1).max(100).default(25).describe('Number of results'),
 });
 
@@ -77,11 +87,46 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(404, 'Hydra head not found');
 		}
 
+		// Matched by address rather than by relation: a transfer is to a node key,
+		// and only this head's participant holds that key.
+		// A key hash that cannot be turned into an address is a broken participant,
+		// not a reason to fail the whole history: the ledger rows and deposits below
+		// are still worth returning.
+		let nodeAddress: string | null = null;
+		if (head.LocalParticipant !== null) {
+			try {
+				nodeAddress = nodeCardanoAddress(head.LocalParticipant.cardanoVkey, head.HydraRelation.network);
+			} catch (error) {
+				logger.warn(
+					`hydra: head ${input.headId} has an unusable node key, so its funding transfers are omitted: ${(error as Error).message}`,
+				);
+			}
+		}
+		// The cursor names a row in one of the three sources. Each lookup is scoped
+		// to this head, so an id from another head reads as unknown rather than
+		// paging this head from a position it never listed.
+		let position: NewestFirstPosition | null = null;
+		if (input.cursorId !== undefined) {
+			const select = { id: true, createdAt: true } as const;
+			const [ledgerRow, depositRow, fundingRow] = await Promise.all([
+				prisma.transaction.findFirst({ where: { id: input.cursorId, hydraHeadId: input.headId }, select }),
+				prisma.hydraTopup.findFirst({ where: { id: input.cursorId, hydraHeadId: input.headId }, select }),
+				nodeAddress === null
+					? null
+					: prisma.walletFundTransfer.findFirst({ where: { id: input.cursorId, toAddress: nodeAddress }, select }),
+			]);
+			position = ledgerRow ?? depositRow ?? fundingRow;
+			if (position === null) {
+				return { transactions: [] };
+			}
+		}
+		const from = position === null ? {} : atOrAfter(position);
+
 		const transactions = await prisma.transaction.findMany({
-			where: { hydraHeadId: input.headId },
+			where: { hydraHeadId: input.headId, ...from },
 			// Newest first: the reason anyone opens this list is something that
 			// just happened, not something from last week.
-			orderBy: { createdAt: 'desc' },
+			orderBy: newestFirstOrder,
 			take: input.limit,
 			select: {
 				id: true,
@@ -104,8 +149,8 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 		// asking what this head has done means all three, and the pending ones
 		// most of all.
 		const deposits = await prisma.hydraTopup.findMany({
-			where: { hydraHeadId: input.headId },
-			orderBy: { createdAt: 'desc' },
+			where: { hydraHeadId: input.headId, ...from },
+			orderBy: newestFirstOrder,
 			take: input.limit,
 			select: {
 				id: true,
@@ -117,27 +162,12 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 			},
 		});
 
-		// Matched by address rather than by relation: a transfer is to a node key,
-		// and only this head's participant holds that key.
-		// A key hash that cannot be turned into an address is a broken participant,
-		// not a reason to fail the whole history: the ledger rows and deposits above
-		// are still worth returning.
-		let nodeAddress: string | null = null;
-		if (head.LocalParticipant !== null) {
-			try {
-				nodeAddress = nodeCardanoAddress(head.LocalParticipant.cardanoVkey, head.HydraRelation.network);
-			} catch (error) {
-				logger.warn(
-					`hydra: head ${input.headId} has an unusable node key, so its funding transfers are omitted: ${(error as Error).message}`,
-				);
-			}
-		}
 		const funding =
 			nodeAddress === null
 				? []
 				: await prisma.walletFundTransfer.findMany({
-						where: { toAddress: nodeAddress },
-						orderBy: { createdAt: 'desc' },
+						where: { toAddress: nodeAddress, ...from },
+						orderBy: newestFirstOrder,
 						take: input.limit,
 						select: { id: true, createdAt: true, txHash: true, status: true, lovelaceAmount: true },
 					});
@@ -208,7 +238,7 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 				blockTime: null,
 				lastCheckedAt: null,
 			})),
-		].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+		].sort(compareNewestFirst);
 
 		return { transactions: merged.slice(0, input.limit) };
 	},
