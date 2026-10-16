@@ -18,7 +18,7 @@ export type HydraHostPauseState = {
   phase: HydraHostPausePhase;
   pausedAt: string | null;
   pauseStopRequestedAt: string | null;
-  inFlight: { l2Transactions: number; topups: number; withdrawals: number };
+  inFlight: { l2Transactions: number; topups: number; withdrawals: number; closingHeads: number };
   nodes: Array<{ nodeId: string; state: string | null; error: string | null }>;
 };
 
