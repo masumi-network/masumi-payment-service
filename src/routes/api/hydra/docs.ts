@@ -2,6 +2,7 @@
 // withdrawal and consolidation docs in docs-withdraw.ts.
 import { registerHydraNodeFundingPaths } from './docs-node-funding';
 import { registerHydraWithdrawPaths } from './docs-withdraw';
+import { registerHydraSnapshotRoundPaths } from './docs-snapshot-round';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 import {
 	getHeadSchemaInput,
@@ -418,6 +419,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		},
 	});
 	registerHydraWithdrawPaths({ registry, apiKeyAuth });
+	registerHydraSnapshotRoundPaths({ registry, apiKeyAuth });
 	registry.registerPath({
 		method: 'get',
 		path: '/hydra/head/balance',

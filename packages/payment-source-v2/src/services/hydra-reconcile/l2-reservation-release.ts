@@ -9,7 +9,9 @@
  * automatic recovery never releases on it. Automatic recovery releases only
  * with `proof: 'inputs-unspent-after-expiry'`, after
  * `decideL2ReservationRelease` found every input of the body unspent in a
- * verified snapshot confirmed after expiry (see `./l2-reservation-recovery`).
+ * verified snapshot confirmed after expiry (see `./l2-reservation-recovery`),
+ * or with `proof: 'inputs-unspent-in-final-snapshot'`, after a Final head's
+ * fanned-out snapshot still held every input (see `./final-l2-reservation-release`).
  */
 
 import {
@@ -73,7 +75,7 @@ export function purchaseL2ActionRetry(action: PurchasingAction | undefined): Pur
 export async function releaseRejectedL2Reservation(
 	reservation: ReleasableL2Reservation,
 	database: typeof prisma,
-	proof: 'head-rejection' | 'inputs-unspent-after-expiry',
+	proof: 'head-rejection' | 'inputs-unspent-after-expiry' | 'inputs-unspent-in-final-snapshot',
 ): Promise<boolean> {
 	try {
 		return await database.$transaction(
@@ -145,7 +147,7 @@ export async function releaseRejectedL2Reservation(
 					data: {
 						status: TransactionStatus.RolledBack,
 						lastCheckedAt: new Date(),
-						...(proof === 'inputs-unspent-after-expiry' ? { l2ReleasedByInputProofAt: new Date() } : {}),
+						...(proof === 'head-rejection' ? {} : { l2ReleasedByInputProofAt: new Date() }),
 					},
 				});
 

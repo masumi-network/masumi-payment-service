@@ -26453,7 +26453,8 @@
                                                                         "X402_PAYMENT_SETTLED",
                                                                         "X402_PAYMENT_FAILED",
                                                                         "X402_WALLET_LOW_BALANCE",
-                                                                        "HYDRA_HEAD_LOW_BALANCE"
+                                                                        "HYDRA_HEAD_LOW_BALANCE",
+                                                                        "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                                     ]
                                                                 }
                                                             },
@@ -26631,7 +26632,8 @@
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE",
-                                                "HYDRA_HEAD_LOW_BALANCE"
+                                                "HYDRA_HEAD_LOW_BALANCE",
+                                                "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                             ]
                                         },
                                         "minItems": 1,
@@ -26712,7 +26714,8 @@
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE",
-                                                            "HYDRA_HEAD_LOW_BALANCE"
+                                                            "HYDRA_HEAD_LOW_BALANCE",
+                                                            "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                         ]
                                                     }
                                                 },
@@ -26845,7 +26848,8 @@
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE",
-                                                "HYDRA_HEAD_LOW_BALANCE"
+                                                "HYDRA_HEAD_LOW_BALANCE",
+                                                "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                             ]
                                         },
                                         "minItems": 1,
@@ -26924,7 +26928,8 @@
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE",
-                                                            "HYDRA_HEAD_LOW_BALANCE"
+                                                            "HYDRA_HEAD_LOW_BALANCE",
+                                                            "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                         ]
                                                     }
                                                 },
@@ -35197,6 +35202,289 @@
                     },
                     "504": {
                         "description": "The head accepted the self-send but did not confirm it in time"
+                    }
+                }
+            }
+        },
+        "/hydra/head/snapshot-round": {
+            "get": {
+                "summary": "Read the head's snapshot round in flight. (admin access required)",
+                "description": "Live view of the snapshot round our node reports (`GET /snapshot/last-seen`). A round needs every party to sign; when one party can never sign it, the head confirms nothing until the round is reset. `stuck` turns true once the same round has not moved for ten minutes, and the HYDRA_HEAD_SNAPSHOT_ROUND_STUCK webhook fires once per round.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "description": "The Hydra head to inspect"
+                        },
+                        "required": true,
+                        "description": "The Hydra head to inspect",
+                        "name": "headId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Snapshot round",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "inFlight": {
+                                                    "type": "boolean",
+                                                    "description": "Whether our node reports a snapshot round in flight"
+                                                },
+                                                "tag": {
+                                                    "type": "string",
+                                                    "description": "The last-seen tag our node reports, for example SeenSnapshot or LastSeenSnapshot"
+                                                },
+                                                "snapshotNumber": {
+                                                    "type": "integer",
+                                                    "nullable": true,
+                                                    "description": "The snapshot number under signature, if named"
+                                                },
+                                                "signatoryCount": {
+                                                    "type": "integer",
+                                                    "description": "Parties that have signed the round so far"
+                                                },
+                                                "txIds": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    },
+                                                    "description": "Unconfirmed transactions the round would confirm, and a reset would drop"
+                                                },
+                                                "signature": {
+                                                    "type": "string",
+                                                    "description": "Identifies this exact round. A reset must send it back unchanged."
+                                                },
+                                                "since": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "When this exact round was first recorded"
+                                                },
+                                                "stuck": {
+                                                    "type": "boolean",
+                                                    "description": "True once the same round has not moved for ten minutes. Only then can it be reset."
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "inFlight",
+                                                "tag",
+                                                "snapshotNumber",
+                                                "signatoryCount",
+                                                "txIds",
+                                                "signature",
+                                                "since",
+                                                "stuck"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "inFlight": true,
+                                            "tag": "SeenSnapshot",
+                                            "snapshotNumber": 314,
+                                            "signatoryCount": 1,
+                                            "txIds": [
+                                                "dc3edee5c3eb0b5b50809ec9fa41fb590818412383da4f03cbf645fb0c1728e7"
+                                            ],
+                                            "signature": "SeenSnapshot|314|1",
+                                            "since": "1970-01-01T00:00:00.000Z",
+                                            "stuck": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Head has no local participant"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Head not open"
+                    },
+                    "502": {
+                        "description": "No live connection to the head, or the node did not answer"
+                    }
+                }
+            }
+        },
+        "/hydra/head/snapshot-round/reset": {
+            "post": {
+                "summary": "Reset a stuck snapshot round. (admin access required)",
+                "description": "Side-loads the node's own latest confirmed snapshot, Hydra's documented recovery for a stuck head. That snapshot is already signed by every party, so nothing new enters the head: the stuck round and its unconfirmed transactions (`droppedTxIds`) are discarded. Refused unless the round in flight still matches `expectedSignature` and has been stuck for ten minutes. If the head still does not move afterwards, the other party's node holds a stuck round too and must be reset on its side.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "headId": {
+                                        "type": "string",
+                                        "maxLength": 64,
+                                        "description": "The Hydra head whose stuck round to reset"
+                                    },
+                                    "expectedSignature": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200,
+                                        "description": "The round signature from GET /hydra/head/snapshot-round. The reset is refused if the round changed."
+                                    }
+                                },
+                                "required": [
+                                    "headId",
+                                    "expectedSignature"
+                                ],
+                                "example": {
+                                    "headId": "cuid_v2_auto_generated",
+                                    "expectedSignature": "SeenSnapshot|314|1"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Round reset",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "confirmedSnapshotNumber": {
+                                                    "type": "integer",
+                                                    "description": "The signed snapshot the node was reset to"
+                                                },
+                                                "droppedTxIds": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    },
+                                                    "description": "Unconfirmed transactions the reset discarded"
+                                                },
+                                                "roundAfter": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "tag": {
+                                                            "type": "string",
+                                                            "description": "The last-seen tag our node reports, for example SeenSnapshot or LastSeenSnapshot"
+                                                        },
+                                                        "snapshotNumber": {
+                                                            "type": "integer",
+                                                            "nullable": true,
+                                                            "description": "The snapshot number under signature, if named"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "tag",
+                                                        "snapshotNumber"
+                                                    ],
+                                                    "description": "The node’s round after the reset, when it could be read"
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "confirmedSnapshotNumber",
+                                                "droppedTxIds",
+                                                "roundAfter"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "confirmedSnapshotNumber": 313,
+                                            "droppedTxIds": [
+                                                "dc3edee5c3eb0b5b50809ec9fa41fb590818412383da4f03cbf645fb0c1728e7"
+                                            ],
+                                            "roundAfter": {
+                                                "tag": "LastSeenSnapshot",
+                                                "snapshotNumber": null
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Head has no local participant"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, or the confirmed snapshot does not match the verified one"
+                    },
+                    "502": {
+                        "description": "No live connection to the head, or the node refused the reset or is still stuck"
+                    },
+                    "504": {
+                        "description": "The node did not answer the reset; read the round again before retrying"
                     }
                 }
             }

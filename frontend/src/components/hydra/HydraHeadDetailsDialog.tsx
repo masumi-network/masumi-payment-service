@@ -30,6 +30,7 @@ import { HydraHeadInHeadBalance } from '@/components/hydra/HydraHeadInHeadBalanc
 import { HydraHeadTopupButton } from '@/components/hydra/HydraHeadTopupButton';
 import { HydraHeadWithdrawButton } from '@/components/hydra/HydraHeadWithdrawButton';
 import { HydraHeadConsolidateButton } from '@/components/hydra/HydraHeadConsolidateButton';
+import { HydraHeadSnapshotRoundNotice } from '@/components/hydra/HydraHeadSnapshotRoundNotice';
 import { HeadStatusHint } from '@/components/hydra/hydra-hints';
 import {
   WalletRoleBadge,
@@ -330,6 +331,8 @@ export function HydraHeadDetailsDialog({
               )}
             </HydraNotice>
           )}
+
+          <HydraHeadSnapshotRoundNotice headId={head.id} isOpen={head.status === 'Open'} />
 
           <HydraHeadConnectionPanel headId={head.id} />
 

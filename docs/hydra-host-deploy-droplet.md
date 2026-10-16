@@ -116,6 +116,7 @@ docker create --name hydra-host \
   --network host \
   --restart no \
   --stop-timeout 250 \
+  --memory 4g \
   -v /mnt/hydra_data:/data \
   -v /srv/hydra/blockfrost.txt:/run/secrets/blockfrost.txt:ro \
   -e HYDRA_HOST_PUBLIC_HOST=hydra1.example.com \
@@ -156,12 +157,19 @@ transaction ids`.
 started by systemd in the next step, so there is exactly one thing that decides
 when it runs.
 
+`--memory` caps what the container can take from the droplet. Under
+`--network host` the peer plane is open to every address the nftables ruleset
+admits, so a flood from a peer must not be able to take the whole machine.
+`4g` is an example: size it for the number of heads this Host runs, and leave
+headroom for the OS. It is the same limit as `HYDRA_HOST_MEMORY_LIMIT` in the
+compose file.
+
 Pin an immutable digest. A floating `latest` replaces reviewed code at the next
 pull, and both sides of a head must run the same `hydra-node` version.
 
 Leave `HYDRA_HOST_LEDGER_PARAMS_FILE` and `HYDRA_HOST_USE_SYSTEM_ETCD` unset.
-The image copies the reviewed params to `/opt/hydra/params` and bakes a matching
-etcd, which are the defaults. Overriding either is how you get
+The image copies the reviewed params to `/opt/hydra/params` and bakes etcd 3.5.34
+(same 3.5 line as the copy hydra-node embeds), which are the defaults. Overriding either is how you get
 `PPViewHashesDontMatch` on the first spend inside a head.
 
 ### Why `--stop-timeout 250`

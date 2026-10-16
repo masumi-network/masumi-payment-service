@@ -40,7 +40,7 @@ import { ensureObservedTransaction, releaseBlockedWallet } from './hydra-datum-o
 // Re-exported so the split stays invisible to importers: this module was the
 // whole datum surface before it was broken up.
 export {
-	findLocallyRelevantHydraRequestIdentifiers,
+	findHydraRequestLineages,
 	hasBodyBoundActor,
 	lockHydraMutationAdmission,
 	parsePersistedHydraValue,

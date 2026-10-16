@@ -4,6 +4,7 @@ import type { StoredWebhookPayload, WebhookSendPayload, WebhookTestPayload } fro
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
+import { getWebhookEventPresentation } from './event-presentation';
 import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';
 import {
 	assertWebhookDestinationAllowed,
@@ -25,6 +26,7 @@ interface WebhookDeliveryResult {
 class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
+	private static readonly MAX_SUMMARY_TX_IDS = 5;
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
 	private static readonly LOVELACE_DECIMALS = 1_000_000n;
 	private static readonly MAINNET_USDCX_UNIT = '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378';
@@ -484,7 +486,7 @@ class WebhookSenderService {
 	}
 
 	private buildCompactSummary(payload: WebhookSendPayload): string {
-		const eventPresentation = this.getEventPresentation(payload.event_type);
+		const eventPresentation = getWebhookEventPresentation(payload.event_type);
 		const lines = [`${eventPresentation.emoji} ${eventPresentation.title}`];
 		if (payload.service_name) {
 			lines.push(`🛰️ Service: ${payload.service_name}`);
@@ -583,6 +585,18 @@ class WebhookSenderService {
 			return lines.join('\n');
 		}
 
+		if (payload.event_type === WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK) {
+			lines.push('');
+			this.appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
+			this.appendDetailLine(lines, '🏷️', 'Round', payload.data.roundTag);
+			this.appendDetailLine(lines, '🔢', 'Snapshot', payload.data.snapshotNumber?.toString());
+			this.appendDetailLine(lines, '✍️', 'Signatures', payload.data.signatoryCount.toString());
+			this.appendDetailLine(lines, '🧾', 'Transactions', this.summarizeTxIds(payload.data.txIds));
+			this.appendDetailLine(lines, '🕒', 'Stuck since', payload.data.stuckSince);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+			return lines.join('\n');
+		}
+
 		lines.push('');
 		this.appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
 		this.appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);
@@ -597,48 +611,20 @@ class WebhookSenderService {
 		return lines.join('\n');
 	}
 
+	/** A round can name thousands of transactions; the summary line shows a few and a count. */
+	private summarizeTxIds(txIds: string[]): string | null {
+		if (txIds.length === 0) return null;
+		const shown = txIds.slice(0, WebhookSenderService.MAX_SUMMARY_TX_IDS).join(', ');
+		const hidden = txIds.length - WebhookSenderService.MAX_SUMMARY_TX_IDS;
+		return hidden > 0 ? `${shown} (+${hidden} more)` : shown;
+	}
+
 	private appendDetailLine(lines: string[], emoji: string, label: string, value: string | null | undefined): void {
 		if (value == null || value === '') {
 			return;
 		}
 
 		lines.push(`${emoji} ${label}: ${value}`);
-	}
-
-	private getEventPresentation(eventType: WebhookSendPayload['event_type']): {
-		emoji: string;
-		title: string;
-	} {
-		switch (eventType) {
-			case WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED:
-				return { emoji: '💸', title: 'Payment status updated' };
-			case WebhookEventType.PURCHASE_ON_CHAIN_STATUS_CHANGED:
-				return { emoji: '🛒', title: 'Purchase status updated' };
-			case WebhookEventType.PAYMENT_ON_ERROR:
-				return { emoji: '🚨', title: 'Payment error' };
-			case WebhookEventType.PURCHASE_ON_ERROR:
-				return { emoji: '🚨', title: 'Purchase error' };
-			case WebhookEventType.WALLET_LOW_BALANCE:
-				return { emoji: '🪫', title: 'Wallet balance low' };
-			case WebhookEventType.FUND_DISTRIBUTION_SENT:
-				return { emoji: '💸', title: 'Fund distribution sent' };
-			case WebhookEventType.FUND_DISTRIBUTION_CONFIRMED:
-				return { emoji: '✅', title: 'Fund distribution confirmed' };
-			case WebhookEventType.FUND_DISTRIBUTION_FAILED:
-				return { emoji: '🚨', title: 'Fund distribution failed' };
-			case WebhookEventType.X402_PAYMENT_SETTLED:
-				return { emoji: '✅', title: 'x402 payment settled' };
-			case WebhookEventType.X402_PAYMENT_FAILED:
-				return { emoji: '🚨', title: 'x402 payment failed' };
-			case WebhookEventType.X402_WALLET_LOW_BALANCE:
-				return { emoji: '🪫', title: 'x402 wallet balance low' };
-			case WebhookEventType.HYDRA_HEAD_LOW_BALANCE:
-				return { emoji: '🪫', title: 'Hydra in-head balance low' };
-			case WEBHOOK_TEST_EVENT_TYPE:
-				return { emoji: '🧪', title: 'Test webhook delivery' };
-			default:
-				return { emoji: '🔔', title: eventType };
-		}
 	}
 
 	private formatBalanceForDisplay(rawAmount: string, assetUnit: string): string {

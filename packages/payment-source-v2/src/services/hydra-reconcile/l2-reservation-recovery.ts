@@ -197,7 +197,7 @@ export async function reportExpiredL2Reservations(params: {
 	return reported;
 }
 
-const escrowPointerSelect = {
+export const escrowPointerSelect = {
 	currentHydraUtxoTxHash: true,
 	currentHydraUtxoOutputIndex: true,
 	NextAction: { select: { requestedAction: true } },
@@ -225,7 +225,7 @@ type EscrowPointer = {
  * A row this cannot derive for (no current request, a pointer already spent)
  * stays held for an operator. That fails closed.
  */
-function reservationInputRefs(candidate: {
+export function reservationInputRefs(candidate: {
 	intendedTxHash: string | null;
 	l2ReservationInputRefs: string[];
 	PaymentRequestCurrent: Array<EscrowPointer & { NextAction: { requestedAction: PaymentAction } | null }>;

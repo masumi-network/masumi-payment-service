@@ -58,3 +58,20 @@ export function resolveNodeFanoutReference(
 export function resolveNodeFanoutReferences(context: FanoutResolutionContext): VerifiedHydraFanoutReference[] | null {
 	return resolveVerifiedHydraFanoutReferences(context.verifiedSnapshot, context.finalizedFanoutOutputs);
 }
+
+/**
+ * The output a Final head's fanned-out snapshot holds at `reference` and no
+ * body of the head ever spent, or null. Null too unless the observed fanout
+ * matches that snapshot, so a Final head without its fanout proves nothing.
+ *
+ * A deposit still in `utxoToCommit` counts: no signed snapshot folded it in, so
+ * no confirmed body spent it, and this snapshot is the last. A body that spent
+ * it only in the local ledger is dead. A pending decommit output returns null:
+ * it is leaving the head, so it proves nothing about a body that named it.
+ */
+export function readFinalSnapshotOutput(context: FanoutResolutionContext, reference: string): string | null {
+	if (!resolveNodeFanoutReferences(context)) return null;
+	const snapshot = context.verifiedSnapshot;
+	if (snapshot.decommitOutputs.has(reference)) return null;
+	return snapshot.outputs.get(reference) ?? null;
+}

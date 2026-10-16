@@ -11533,7 +11533,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -11577,7 +11577,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11625,7 +11625,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -11657,7 +11657,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11705,7 +11705,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -14817,6 +14817,165 @@ export type PostHydraHeadConsolidateResponses = {
 };
 
 export type PostHydraHeadConsolidateResponse = PostHydraHeadConsolidateResponses[keyof PostHydraHeadConsolidateResponses];
+
+export type GetHydraHeadSnapshotRoundData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head to inspect
+         */
+        headId: string;
+    };
+    url: '/hydra/head/snapshot-round';
+};
+
+export type GetHydraHeadSnapshotRoundErrors = {
+    /**
+     * Head has no local participant
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not open
+     */
+    409: unknown;
+    /**
+     * No live connection to the head, or the node did not answer
+     */
+    502: unknown;
+};
+
+export type GetHydraHeadSnapshotRoundResponses = {
+    /**
+     * Snapshot round
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            /**
+             * Whether our node reports a snapshot round in flight
+             */
+            inFlight: boolean;
+            /**
+             * The last-seen tag our node reports, for example SeenSnapshot or LastSeenSnapshot
+             */
+            tag: string;
+            /**
+             * The snapshot number under signature, if named
+             */
+            snapshotNumber: number | null;
+            /**
+             * Parties that have signed the round so far
+             */
+            signatoryCount: number;
+            /**
+             * Unconfirmed transactions the round would confirm, and a reset would drop
+             */
+            txIds: Array<string>;
+            /**
+             * Identifies this exact round. A reset must send it back unchanged.
+             */
+            signature: string;
+            /**
+             * When this exact round was first recorded
+             */
+            since: string | null;
+            /**
+             * True once the same round has not moved for ten minutes. Only then can it be reset.
+             */
+            stuck: boolean;
+        };
+    };
+};
+
+export type GetHydraHeadSnapshotRoundResponse = GetHydraHeadSnapshotRoundResponses[keyof GetHydraHeadSnapshotRoundResponses];
+
+export type PostHydraHeadSnapshotRoundResetData = {
+    body?: {
+        /**
+         * The Hydra head whose stuck round to reset
+         */
+        headId: string;
+        /**
+         * The round signature from GET /hydra/head/snapshot-round. The reset is refused if the round changed.
+         */
+        expectedSignature: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/snapshot-round/reset';
+};
+
+export type PostHydraHeadSnapshotRoundResetErrors = {
+    /**
+     * Head has no local participant
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, or the confirmed snapshot does not match the verified one
+     */
+    409: unknown;
+    /**
+     * No live connection to the head, or the node refused the reset or is still stuck
+     */
+    502: unknown;
+    /**
+     * The node did not answer the reset; read the round again before retrying
+     */
+    504: unknown;
+};
+
+export type PostHydraHeadSnapshotRoundResetResponses = {
+    /**
+     * Round reset
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            /**
+             * The signed snapshot the node was reset to
+             */
+            confirmedSnapshotNumber: number;
+            /**
+             * Unconfirmed transactions the reset discarded
+             */
+            droppedTxIds: Array<string>;
+            /**
+             * The node’s round after the reset, when it could be read
+             */
+            roundAfter: {
+                /**
+                 * The last-seen tag our node reports, for example SeenSnapshot or LastSeenSnapshot
+                 */
+                tag: string;
+                /**
+                 * The snapshot number under signature, if named
+                 */
+                snapshotNumber: number | null;
+            } | null;
+        };
+    };
+};
+
+export type PostHydraHeadSnapshotRoundResetResponse = PostHydraHeadSnapshotRoundResetResponses[keyof PostHydraHeadSnapshotRoundResetResponses];
 
 export type GetHydraHeadBalanceData = {
     body?: never;

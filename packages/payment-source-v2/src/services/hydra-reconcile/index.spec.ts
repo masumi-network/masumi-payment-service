@@ -34,12 +34,15 @@ const mockGetReconciliationQueue = jest.fn<() => unknown[]>();
 const mockMarkReconciled = jest.fn<(_txId: string) => void>();
 const mockGetConfirmedTransaction = jest.fn<(_txId: string) => unknown>();
 const mockApplyDatum = jest.fn<(_args: unknown) => Promise<ApplyOutcome>>();
-const mockFindLocallyRelevantIdentifiers =
-	jest.fn<(_paymentSourceId: string, _identifiers: Iterable<string>) => Promise<Set<string>>>();
+const mockFindRequestLineages =
+	jest.fn<(_paymentSourceId: string, _identifiers: Iterable<string>) => Promise<Map<string, unknown[]>>>();
 const mockDeserializeDatum = jest.fn<(_datumCbor: string) => unknown>();
 const mockDecodeDatum = jest.fn<(_datum: unknown) => unknown>();
 const mockParseEvidence = jest.fn<(_cborHex: string) => unknown>();
 const mockReportExpiredL2Reservations = jest.fn<() => Promise<number>>().mockResolvedValue(0);
+const mockReleaseFinalHeadL2Reservations = jest
+	.fn<(params: { verifyFanoutOnChain: (references: readonly unknown[]) => Promise<unknown> }) => Promise<number>>()
+	.mockResolvedValue(0);
 const mockGetVerifiedFanoutReferences = jest.fn<(_snapshotNumber: number) => unknown>();
 const mockGetVerifiedFanoutReference = jest.fn<(_reference: string, _snapshotNumber: number) => unknown>();
 const mockVerifyHydraFanout = jest.fn<(_args: unknown) => Promise<unknown>>();
@@ -157,7 +160,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-datum-sync', () => ({
 	applyDatumStateToLocalRequests: mockApplyDatum,
-	findLocallyRelevantHydraRequestIdentifiers: mockFindLocallyRelevantIdentifiers,
+	findHydraRequestLineages: mockFindRequestLineages,
 }));
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-transaction-evidence', () => ({
@@ -212,6 +215,10 @@ jest.unstable_mockModule('./live-escrow-memo', () => ({
 
 jest.unstable_mockModule('./l2-reservation-recovery', () => ({
 	reportExpiredL2Reservations: mockReportExpiredL2Reservations,
+}));
+
+jest.unstable_mockModule('./final-l2-reservation-release', () => ({
+	releaseFinalHeadL2Reservations: mockReleaseFinalHeadL2Reservations,
 }));
 
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
@@ -385,9 +392,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		}));
 		mockHandleTxConfirmed.mockResolvedValue('applied');
 		mockDisconnect.mockResolvedValue();
-		mockFindLocallyRelevantIdentifiers.mockImplementation(
-			async (_paymentSourceId, identifiers) => new Set(identifiers),
-		);
+		mockFindRequestLineages.mockResolvedValue(new Map());
 		mockFindNothingToApply.mockResolvedValue(new Set());
 		mockIsLivePassDue.mockReturnValue(true);
 	});
@@ -556,6 +561,32 @@ describe('Hydra live-snapshot reconciliation', () => {
 			mockHydraHeadUpdateMany.mock.invocationCallOrder[0],
 		);
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+	});
+
+	// The handoff refuses a Pending L2 row, so a Final head releases the dead
+	// ones first, against the same on-chain fanout check the handoff uses.
+	it('releases dead Final head reservations before preparing the handoff', async () => {
+		mockFetchAddressUtxos.mockResolvedValue([]);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockReleaseFinalHeadL2Reservations).toHaveBeenCalledWith(
+			expect.objectContaining({ hydraHeadId: 'head-1', expectedSnapshotNumber: 3, node: mockNode }),
+		);
+		expect(mockReleaseFinalHeadL2Reservations.mock.invocationCallOrder[0]).toBeLessThan(
+			mockPaymentRequestFindMany.mock.invocationCallOrder[0],
+		);
+		// The handoff already checked these references; the release step reuses
+		// that one observer pass.
+		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(1);
+		const { verifyFanoutOnChain } = mockReleaseFinalHeadL2Reservations.mock.calls[0][0];
+		await verifyFanoutOnChain([FANOUT_REFERENCE]);
+		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(1);
+		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(
+			expect.objectContaining({ headId: HEAD_IDENTIFIER, references: [FANOUT_REFERENCE], requiredConfirmations: 5 }),
+		);
+		await verifyFanoutOnChain([{ ...FANOUT_REFERENCE, outputIndex: 1 }]);
+		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(2);
 	});
 
 	// A head too large to empty in one transaction fans out over several. Each
@@ -1067,17 +1098,37 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockDisconnect).not.toHaveBeenCalled();
 	});
 
-	it('keeps a finalized head connected while duplicate live identifiers remain ambiguous', async () => {
-		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-first'), liveUtxo('tx-second')]);
+	it('reconciles the persisted escrow output and skips a peer copy of its identifier', async () => {
+		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-escrow'), liveUtxo('tx-peer-copy')]);
 		mockDecodeDatum.mockReturnValue({
-			blockchainIdentifier: 'duplicate-identifier',
+			blockchainIdentifier: 'local-identifier',
 			state: 'result-submitted',
 		});
+		mockFindRequestLineages.mockResolvedValue(
+			new Map([
+				[
+					'local-identifier',
+					[
+						{
+							currentHydraUtxoTxHash: 'tx-escrow',
+							currentHydraUtxoOutputIndex: 0,
+							CurrentTransaction: { txHash: 'tx-escrow', intendedTxHash: null, hydraHeadId: 'head-1' },
+							TransactionHistory: [],
+						},
+					],
+				],
+			]),
+		);
 
 		await reconcileHydraHeadEscrowStates();
 
-		expect(mockApplyDatum).not.toHaveBeenCalled();
-		expect(mockDisconnect).not.toHaveBeenCalled();
+		expect(mockFindRequestLineages).toHaveBeenCalledWith('source-1', ['local-identifier']);
+		expect(mockApplyDatum).toHaveBeenCalledTimes(1);
+		expect(mockApplyDatum).toHaveBeenCalledWith(
+			expect.objectContaining({ outputReference: { txHash: 'tx-escrow', outputIndex: 0 } }),
+		);
+		// The peer copy no longer holds the finalized head open.
+		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});
 
 	it('ignores duplicate live identifiers that have no local request', async () => {
@@ -1086,11 +1137,10 @@ describe('Hydra live-snapshot reconciliation', () => {
 			blockchainIdentifier: 'external-duplicate',
 			state: 'result-submitted',
 		});
-		mockFindLocallyRelevantIdentifiers.mockResolvedValue(new Set());
 
 		await reconcileHydraHeadEscrowStates();
 
-		expect(mockFindLocallyRelevantIdentifiers).toHaveBeenCalledWith('source-1', ['external-duplicate']);
+		expect(mockFindRequestLineages).toHaveBeenCalledWith('source-1', ['external-duplicate']);
 		expect(mockApplyDatum).not.toHaveBeenCalled();
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});

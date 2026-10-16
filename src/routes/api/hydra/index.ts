@@ -27,6 +27,7 @@ export { closeHeadPost, fanoutHeadPost } from './head/settlement';
 export { topupHeadPost, listTopupsGet, recoverTopupPost } from './head/topup';
 export { withdrawHeadPost, listWithdrawalsGet } from './head/withdraw';
 export { consolidateHeadPost } from './head/consolidate';
+export { getSnapshotRoundGet, resetSnapshotRoundPost } from './head/snapshot-round';
 export { listHeadTransactionsGet } from './head/transactions';
 export { checkHeadOnChainPost } from './head/chain-check';
 

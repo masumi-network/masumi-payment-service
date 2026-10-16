@@ -26,36 +26,39 @@ import {
 	type HydraTransactionEvidence,
 } from './hydra-transaction-evidence';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
+import type { HydraOutputReference, HydraRequestLineage } from './hydra-request-lineage';
 
-export type HydraOutputReference = { txHash: string; outputIndex: number };
+export type { HydraOutputReference } from './hydra-request-lineage';
 export type HydraDatumApplyOutcome = 'applied' | 'irrelevant' | 'retry';
 
 /**
- * Resolve only duplicate identifiers that can affect this payment source's
- * local escrow rows. Anyone can fund a script address with arbitrary datum
- * bytes, so unrelated duplicate outputs must not retain the whole head's
- * ordered replay queue.
+ * Load the local escrow rows behind duplicate identifiers. Anyone can fund a
+ * script address with arbitrary datum bytes, including a copied identifier, so
+ * a duplicate is only ambiguous for a row whose own lineage it touches.
  */
-export async function findLocallyRelevantHydraRequestIdentifiers(
+export async function findHydraRequestLineages(
 	paymentSourceId: string,
 	identifiers: Iterable<string>,
-): Promise<Set<string>> {
+): Promise<Map<string, HydraRequestLineage[]>> {
 	const uniqueIdentifiers = [...new Set(identifiers)];
-	if (uniqueIdentifiers.length === 0) return new Set();
+	const lineages = new Map<string, HydraRequestLineage[]>();
+	if (uniqueIdentifiers.length === 0) return lineages;
+	const select = {
+		blockchainIdentifier: true,
+		currentHydraUtxoTxHash: true,
+		currentHydraUtxoOutputIndex: true,
+		CurrentTransaction: { select: { txHash: true, intendedTxHash: true, hydraHeadId: true } },
+		TransactionHistory: { select: { txHash: true } },
+	} as const;
+	const where = { paymentSourceId, blockchainIdentifier: { in: uniqueIdentifiers } };
 	const [paymentRequests, purchaseRequests] = await Promise.all([
-		prisma.paymentRequest.findMany({
-			where: { paymentSourceId, blockchainIdentifier: { in: uniqueIdentifiers } },
-			select: { blockchainIdentifier: true },
-		}),
-		prisma.purchaseRequest.findMany({
-			where: { paymentSourceId, blockchainIdentifier: { in: uniqueIdentifiers } },
-			select: { blockchainIdentifier: true },
-		}),
+		prisma.paymentRequest.findMany({ where, select }),
+		prisma.purchaseRequest.findMany({ where, select }),
 	]);
-	return new Set([
-		...paymentRequests.map(({ blockchainIdentifier }) => blockchainIdentifier),
-		...purchaseRequests.map(({ blockchainIdentifier }) => blockchainIdentifier),
-	]);
+	for (const { blockchainIdentifier, ...lineage } of [...paymentRequests, ...purchaseRequests]) {
+		lineages.set(blockchainIdentifier, [...(lineages.get(blockchainIdentifier) ?? []), lineage]);
+	}
+	return lineages;
 }
 
 export function headParticipantsMatch(
