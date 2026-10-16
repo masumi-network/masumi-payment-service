@@ -17,6 +17,7 @@ import { getOwnString, isPlainObject } from '@masumi/payment-core/object-propert
 import { fetchHostCapabilities, type HostCapabilities } from './client';
 import { expectedHostCapabilitiesForNetwork } from './compatibility';
 import { assertHostCompatible } from './placement';
+import { describeRelease, type DescribedRelease } from '@/services/release/release-info';
 
 /** Shape returned to operators. Deliberately excludes both tokens. */
 export type PublicHydraHost = {
@@ -30,6 +31,8 @@ export type PublicHydraHost = {
 	publicPeerHost: string;
 	hasAdminToken: boolean;
 	hydraVersion: string | null;
+	/** Project release of the Host image, as of the last probe. */
+	release: DescribedRelease;
 	scriptCatalogueHash: string | null;
 	ledgerParamsHash: string | null;
 	status: HydraHostStatus;
@@ -51,6 +54,8 @@ type HostRow = {
 	publicPeerHost: string;
 	encryptedAdminToken: string | null;
 	hydraVersion: string | null;
+	releaseVersion: string | null;
+	releaseCommit: string | null;
 	scriptCatalogueHash: string | null;
 	ledgerParamsHash: string | null;
 	status: HydraHostStatus;
@@ -74,6 +79,7 @@ export function toPublicHydraHost(row: HostRow): PublicHydraHost {
 		// can be provisioned on, not what the credential is.
 		hasAdminToken: row.encryptedAdminToken !== null,
 		hydraVersion: row.hydraVersion,
+		release: describeRelease({ version: row.releaseVersion, commit: row.releaseCommit }),
 		scriptCatalogueHash: row.scriptCatalogueHash,
 		ledgerParamsHash: row.ledgerParamsHash,
 		status: row.status,
@@ -418,6 +424,10 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 
 	const updated = await recordHostProbe(id, compatibilityError === null, {
 		hydraVersion: capabilities.hydraVersion || null,
+		// Written even when null: a Host rolled back to an image that predates
+		// reporting its release must not keep showing the newer one.
+		releaseVersion: capabilities.release.version,
+		releaseCommit: capabilities.release.commit,
 		// Kept only when the Host reports one, so a probe against an older
 		// Host does not erase a value a newer one already supplied.
 		...(capabilities.exchangePort === null ? {} : { exchangePort: capabilities.exchangePort }),

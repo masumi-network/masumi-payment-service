@@ -13,6 +13,7 @@ import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { logger } from '@masumi/payment-core/logger';
+import { normalizeReleaseInfo, type ReleaseInfo } from '@/services/release/release-info';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -37,6 +38,8 @@ export type HostCapabilities = {
 	exchangeUrl: string | null;
 	nodeSlots: { used: number; capacity: number };
 	probeError: string | null;
+	/** Project release of the Host image. Both null on a Host that predates reporting it. */
+	release: ReleaseInfo;
 };
 
 export type ProvisionedNode = {
@@ -174,6 +177,7 @@ export async function fetchHostCapabilities(
 	const slots = getOwnValue(body, 'nodeSlots');
 	const used = isPlainObject(slots) ? getOwnValue(slots, 'used') : undefined;
 	const capacity = isPlainObject(slots) ? getOwnValue(slots, 'capacity') : undefined;
+	const release = getOwnValue(body, 'release');
 
 	return {
 		hydraVersion: getOwnString(body, 'hydraVersion') ?? '',
@@ -188,6 +192,10 @@ export async function fetchHostCapabilities(
 			capacity: typeof capacity === 'number' ? capacity : 0,
 		},
 		probeError: getOwnString(body, 'probeError') ?? null,
+		release: normalizeReleaseInfo(
+			isPlainObject(release) ? getOwnString(release, 'version') : null,
+			isPlainObject(release) ? getOwnString(release, 'commit') : null,
+		),
 	};
 }
 
