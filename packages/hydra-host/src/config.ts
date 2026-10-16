@@ -64,7 +64,7 @@ export type HostConfig = {
 	/**
 	 * Use an etcd from PATH instead of the copy hydra-node extracts.
 	 *
-	 * True in the image, which bakes a matching etcd. False when running the
+	 * True in the image, which bakes a 3.5.x etcd (3.5.33 or later). False when running the
 	 * Host natively on a machine with no system etcd — notably macOS, where the
 	 * native hydra-node is the only build that executes at all.
 	 */
