@@ -231,12 +231,23 @@ RUN node -e " \
 		if (machine !== want) { console.error(file + ' has ELF machine ' + machine + ', want ' + want); process.exit(1); } \
 	}"
 
+# The project release this image is built from, reported in /v1/capabilities so
+# the payment service can tell an operator a newer release exists. `.git` is not
+# in the build context, so the build passes them in:
+#   --build-arg MASUMI_RELEASE_VERSION="$(git describe --tags --long --match '[0-9]*.[0-9]*.[0-9]*')"
+#   --build-arg MASUMI_RELEASE_COMMIT="$(git rev-parse HEAD)"
+# Declared here, after the slow layers, so a new release does not rebuild them.
+ARG MASUMI_RELEASE_VERSION=
+ARG MASUMI_RELEASE_COMMIT=
+
 ENV NODE_ENV=production \
 	HYDRA_HOST_DATA_DIR=/data \
 	HYDRA_HOST_PORT=8443 \
 	HYDRA_NODE_BIN=/usr/local/bin/hydra-node \
 	HYDRA_VERSION=${HYDRA_VERSION} \
-	ETCD_VERSION=${ETCD_VERSION}
+	ETCD_VERSION=${ETCD_VERSION} \
+	MASUMI_RELEASE_VERSION=${MASUMI_RELEASE_VERSION} \
+	MASUMI_RELEASE_COMMIT=${MASUMI_RELEASE_COMMIT}
 
 # Run unprivileged: the supervisor and every hydra-node it spawns write keys and
 # persistence into /data, and there is no reason for any of that to be uid 0.
