@@ -116,7 +116,9 @@ function toStatus(head: HeadRow, round: HydraSnapshotRound, now: Date): Snapshot
 		txIds: round.txIds,
 		signature: round.signature,
 		since,
-		stuck: isSnapshotRoundStuck(since, now),
+		// A round without a number cannot be shown to be ahead of the confirmed
+		// snapshot, so it is never offered for a reset. The watch still alerts on it.
+		stuck: round.number !== null && isSnapshotRoundStuck(since, now),
 	};
 }
 
@@ -125,11 +127,21 @@ function toStatus(head: HeadRow, round: HydraSnapshotRound, now: Date): Snapshot
  * instance still holds the same session, the service still verifies the same
  * snapshot, and no other attachment or close started meanwhile.
  */
-async function assertStillOwned(head: HeadRow, node: HydraNode, verifiedNumber: bigint): Promise<void> {
+async function assertStillOwned(
+	head: HeadRow,
+	node: HydraNode,
+	verifiedNumber: bigint,
+	roundSignature: string,
+): Promise<void> {
+	// The round can complete while the confirmed snapshot is read; a reset then
+	// would side-load a snapshot older than the one just confirmed.
+	const roundNow = await readRound(node);
 	const current = await prisma.hydraHead.findUnique({ where: { id: head.id }, select: headSelect });
 	if (
 		getHydraConnectionManager().getNode(head.id) !== node ||
 		node.verifiedSnapshotNumber !== verifiedNumber ||
+		!roundNow.inFlight ||
+		roundNow.signature !== roundSignature ||
 		current == null ||
 		current.status !== HydraHeadStatus.Open ||
 		!current.isEnabled ||
@@ -200,7 +212,7 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(409, 'The round in flight is not newer than the confirmed snapshot');
 		}
 
-		await assertStillOwned(head, node, verifiedNumber);
+		await assertStillOwned(head, node, verifiedNumber, round.signature);
 
 		logger.warn('[HydraSnapshotRound] admin is resetting a stuck snapshot round', {
 			hydraHeadId: head.id,

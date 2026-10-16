@@ -94,8 +94,10 @@ beforeEach(() => {
 	mockFindUnique.mockResolvedValue(headRow() as never);
 	mockUpdateMany.mockResolvedValue({ count: 1 } as never);
 	// clearAllMocks keeps queued Once values, so a test that stops early would leak its read-back.
+	// Read before the checks, again right before the side-load, then after it.
 	mockFetchRound
 		.mockReset()
+		.mockResolvedValueOnce(round() as never)
 		.mockResolvedValueOnce(round() as never)
 		.mockResolvedValueOnce(idle as never);
 });
@@ -163,7 +165,18 @@ describe('resetSnapshotRound', () => {
 		await expectRefused(409);
 	});
 
-	it('refuses when a close started during the checks', async () => {
+	it.each([
+		['completed', idle],
+		['moved on to the next one', round({ number: 315, signature: 'SeenSnapshot|315|1' })],
+	])('refuses when the round %s while the confirmed snapshot was read', async (_label, roundNow) => {
+		mockFetchRound
+			.mockReset()
+			.mockResolvedValueOnce(round() as never)
+			.mockResolvedValueOnce(roundNow as never);
+		await expectRefused(409);
+	});
+
+	it('refuses a close started during the checks', async () => {
 		mockFindUnique
 			.mockResolvedValueOnce(headRow() as never)
 			.mockResolvedValueOnce(headRow({ isClosing: true }) as never);
@@ -272,6 +285,7 @@ describe('resetSnapshotRound', () => {
 		mockFetchRound
 			.mockReset()
 			.mockResolvedValueOnce(round() as never)
+			.mockResolvedValueOnce(round() as never)
 			.mockRejectedValueOnce(new Error('down') as never);
 		await expect(reset()).resolves.toMatchObject({ roundAfter: null });
 	});
@@ -294,5 +308,12 @@ describe('getSnapshotRoundStatus', () => {
 
 		mockFindUnique.mockResolvedValue(headRow({ snapshotRoundSignature: 'SeenSnapshot|313|1' }) as never);
 		await expect(getSnapshotRoundStatus('head-1')).resolves.toMatchObject({ stuck: false, since: null });
+	});
+
+	it('never offers a round without a number for a reset', async () => {
+		const unnumbered = round({ tag: 'SomeFutureTag', number: null, signature: 'SomeFutureTag|-|0' });
+		mockFetchRound.mockReset().mockResolvedValue(unnumbered as never);
+		mockFindUnique.mockResolvedValue(headRow({ snapshotRoundSignature: 'SomeFutureTag|-|0' }) as never);
+		await expect(getSnapshotRoundStatus('head-1')).resolves.toMatchObject({ inFlight: true, stuck: false });
 	});
 });
