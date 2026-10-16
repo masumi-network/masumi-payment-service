@@ -54,6 +54,13 @@ export function HydraHeadSnapshotRoundNotice({
   const [pending, setPending] = useState<HydraSnapshotRound | null>(null);
   const [isResetting, setIsResetting] = useState(false);
 
+  // A choice made for one round never carries to a later one, even one that
+  // comes back with the same signature. Set during render, not in an effect,
+  // so the dialog never paints for a round that is gone.
+  const isPendingStale =
+    pending !== null && (!isOpen || !round?.stuck || round.signature !== pending.signature);
+  if (isPendingStale && !isResetting) setPending(null);
+
   if (!isOpen || !round?.stuck) return null;
 
   const handleReset = async () => {
@@ -110,7 +117,6 @@ export function HydraHeadSnapshotRoundNotice({
 
       <ConfirmDialog
         elevatedChildStack
-        // Only for the round on screen: a round that moved is a new decision.
         open={pending !== null && pending.signature === round.signature}
         onClose={() => {
           if (!isResetting) setPending(null);
