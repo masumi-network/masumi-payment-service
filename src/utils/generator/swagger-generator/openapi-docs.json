@@ -6440,6 +6440,11 @@
                     },
                     "participantCount": {
                         "type": "number"
+                    },
+                    "pausedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Set while the Host is paused for maintenance"
                     }
                 },
                 "required": [
@@ -6458,7 +6463,8 @@
                     "status",
                     "lastHealthAt",
                     "lastHealthError",
-                    "participantCount"
+                    "participantCount",
+                    "pausedAt"
                 ]
             },
             "HydraRelationDetail": {
@@ -6966,6 +6972,83 @@
                     "initTxHash",
                     "closeTxHash",
                     "fanoutTxHash"
+                ]
+            },
+            "HydraHostPauseState": {
+                "type": "object",
+                "properties": {
+                    "hostId": {
+                        "type": "string"
+                    },
+                    "phase": {
+                        "type": "string",
+                        "enum": [
+                            "Active",
+                            "Draining",
+                            "Stopping",
+                            "Paused"
+                        ],
+                        "description": "Draining: new work refused, waiting for in-flight work. Stopping: nodes asked to stop. Paused: every node reports Stopped."
+                    },
+                    "pausedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "pauseStopRequestedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "inFlight": {
+                        "type": "object",
+                        "properties": {
+                            "l2Transactions": {
+                                "type": "integer"
+                            },
+                            "topups": {
+                                "type": "integer"
+                            },
+                            "withdrawals": {
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "l2Transactions",
+                            "topups",
+                            "withdrawals"
+                        ]
+                    },
+                    "nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "nodeId": {
+                                    "type": "string"
+                                },
+                                "state": {
+                                    "type": "string",
+                                    "nullable": true
+                                },
+                                "error": {
+                                    "type": "string",
+                                    "nullable": true
+                                }
+                            },
+                            "required": [
+                                "nodeId",
+                                "state",
+                                "error"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "hostId",
+                    "phase",
+                    "pausedAt",
+                    "pauseStopRequestedAt",
+                    "inFlight",
+                    "nodes"
                 ]
             },
             "HydraLowBalanceRule": {
@@ -35505,6 +35588,273 @@
                     },
                     "504": {
                         "description": "The node did not answer the reset; read the round again before retrying"
+                    }
+                }
+            }
+        },
+        "/hydra/host/pause": {
+            "get": {
+                "summary": "Read the pause state of a Hydra Host. (admin access required)",
+                "description": "Reports the pause phase, the in-flight work that still holds the nodes, and the state each node reports.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pause state",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHostPauseState"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "hostId": "cuid_v2_auto_generated",
+                                            "phase": "Draining",
+                                            "pausedAt": "2026-10-17T10:00:00.000Z",
+                                            "pauseStopRequestedAt": null,
+                                            "inFlight": {
+                                                "l2Transactions": 1,
+                                                "topups": 0,
+                                                "withdrawals": 0
+                                            },
+                                            "nodes": [
+                                                {
+                                                    "nodeId": "node-1",
+                                                    "state": "Running",
+                                                    "error": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Pause a Hydra Host for maintenance. (admin access required)",
+                "description": "Refuses new work on every head of this Host at once: L2 locks, top-ups, withdrawals, consolidation, init and commit. The service stops the nodes once in-flight work has settled, or at once with `force`. The pause survives restarts of this service and of the Host. Keep it short: a stopped node cannot contest a close, and reserved L2 actions are parked for manual action after a little over three hours.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "force": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Stop the nodes now, without waiting for in-flight work. That work then waits for Resume."
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated",
+                                    "force": false
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Pause accepted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHostPauseState"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "hostId": "cuid_v2_auto_generated",
+                                            "phase": "Draining",
+                                            "pausedAt": "2026-10-17T10:00:00.000Z",
+                                            "pauseStopRequestedAt": null,
+                                            "inFlight": {
+                                                "l2Transactions": 1,
+                                                "topups": 0,
+                                                "withdrawals": 0
+                                            },
+                                            "nodes": [
+                                                {
+                                                    "nodeId": "node-1",
+                                                    "state": "Running",
+                                                    "error": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    },
+                    "409": {
+                        "description": "Host has no admin token, so its nodes cannot be stopped"
+                    }
+                }
+            }
+        },
+        "/hydra/host/resume": {
+            "post": {
+                "summary": "Resume a paused Hydra Host. (admin access required)",
+                "description": "Starts the nodes the pause stopped, then accepts new work again. If a node does not start, the Host stays paused and the call can be repeated.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Resumed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHostPauseState"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "hostId": "cuid_v2_auto_generated",
+                                            "phase": "Active",
+                                            "pausedAt": null,
+                                            "pauseStopRequestedAt": null,
+                                            "inFlight": {
+                                                "l2Transactions": 0,
+                                                "topups": 0,
+                                                "withdrawals": 0
+                                            },
+                                            "nodes": [
+                                                {
+                                                    "nodeId": "node-1",
+                                                    "state": "Running",
+                                                    "error": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    },
+                    "409": {
+                        "description": "Host has no admin token"
+                    },
+                    "502": {
+                        "description": "A node did not start; the Host stays paused"
                     }
                 }
             }
