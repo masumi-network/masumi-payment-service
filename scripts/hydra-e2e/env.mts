@@ -159,8 +159,10 @@ function assertNodeBinVerified(): void {
 				...process.env,
 				NATIVE_BIN: HYDRA_NODE_BIN,
 				BIN_DIR: path.dirname(HYDRA_NODE_BIN),
-				// NATIVE_BIN is explicit; the tag only selects which pin applies.
-				HYDRA_BIN_TAG: process.env.HYDRA_BIN_TAG ?? '',
+				// The tag selects which pin applies, so it must describe the
+				// binary checked. The default path is always the release
+				// `.bin/hydra-node`; only an explicit override can be a tag build.
+				HYDRA_BIN_TAG: process.env.HYDRA_E2E_NODE_BIN ? (process.env.HYDRA_BIN_TAG ?? '') : '',
 			},
 			stdio: 'inherit',
 		});
