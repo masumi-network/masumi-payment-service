@@ -19,8 +19,9 @@ release. This guide is the procedure behind its **Update available** badge.
 
 The newest release comes from this repository's GitHub releases. The service
 asks GitHub at most once every six hours. Pre-releases count, because every
-release so far is a pre-release. If GitHub does not answer, the UI shows
+release so far is a pre-release. If GitHub has never answered, the UI shows
 **not checked**. It never reports a build as up to date without an answer.
+If a later check fails, the UI keeps the last answer.
 
 A Host shows the release from its last **Check**. Press **Check** after every
 redeploy.
