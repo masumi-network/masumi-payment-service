@@ -21,7 +21,7 @@
  */
 'use strict';
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const TSV = process.env.EVIDENCE_TSV;
 const LOG = process.env.NATIVE_LOG;
@@ -84,9 +84,13 @@ const OP_META = {
 	},
 };
 
-function sh(cmd) {
+// Cardano tx ids as run-hydra-e2e.sh writes them (or NONE when no tx reached the head).
+const TX_HASH_RE = /^[0-9a-f]{64}$/;
+
+// No shell: arguments go to the binary verbatim, so TSV/env values cannot inject commands.
+function run(file, args) {
 	try {
-		return execSync(cmd, { encoding: 'utf-8' }).trim();
+		return execFileSync(file, args, { encoding: 'utf-8' }).trim();
 	} catch {
 		return '';
 	}
@@ -106,16 +110,28 @@ function txValidInLog(hash) {
 }
 
 function dbRow(hash) {
-	const out = sh(
-		`docker exec ${DB} psql -U postgres -d masumi_hydra_test -t -A -F'|' -c "SELECT layer,status FROM \\"Transaction\\" WHERE \\"txHash\\"='${hash}' LIMIT 1;"`,
-	);
+	const out = run('docker', [
+		'exec',
+		DB,
+		'psql',
+		'-U',
+		'postgres',
+		'-d',
+		'masumi_hydra_test',
+		'-t',
+		'-A',
+		'-F',
+		'|',
+		'-c',
+		`SELECT layer,status FROM "Transaction" WHERE "txHash"='${hash}' LIMIT 1;`,
+	]);
 	if (!out) return null;
 	const [layer, status] = out.split('|');
 	return { layer, status };
 }
 
 function headId() {
-	const greet = sh(`curl -s ${NODE1}/snapshot/utxo`);
+	const greet = run('curl', ['-s', `${NODE1}/snapshot/utxo`]);
 	// headId isn't on the utxo endpoint; pull from the log's last HeadIsOpen/Greetings if present.
 	if (LOG && fs.existsSync(LOG)) {
 		const m = fs.readFileSync(LOG, 'utf-8').match(/"headId":"([0-9a-f]{56,})"/);
@@ -125,9 +141,10 @@ function headId() {
 }
 
 function meshVersion() {
-	const v = sh(
-		"node -e \"console.log(require('./packages/payment-source-v2/package.json').dependencies['@meshsdk/core'])\"",
-	);
+	const v = run('node', [
+		'-e',
+		"console.log(require('./packages/payment-source-v2/package.json').dependencies['@meshsdk/core'])",
+	]);
 	return v || '1.9.0-beta.103';
 }
 
@@ -143,7 +160,7 @@ function hydraVersion() {
 	const bin =
 		process.env.NATIVE_BIN || (tag ? `hydra-l2-flow/.bin/hydra-node-${tag}` : 'hydra-l2-flow/.bin/hydra-node');
 	if (fs.existsSync(bin)) {
-		const v = sh(`"${bin}" --version`);
+		const v = run(bin, ['--version']);
 		if (v) return `${v} (${process.arch}-${process.platform}, ${bin})`;
 	}
 	// No binary to ask: say so rather than print a pin as if it were observed.
@@ -176,6 +193,11 @@ function main() {
 		.filter(Boolean)
 		.map((l) => {
 			const [op, headTx, dbHash, match, slot, ts] = l.split('\t');
+			// headTx reaches a psql query and the generated replay commands; reject anything else.
+			if (headTx !== 'NONE' && !TX_HASH_RE.test(headTx)) {
+				console.error(`Invalid tx hash in ${TSV}: ${JSON.stringify(headTx)}`);
+				process.exit(1);
+			}
 			return { op, headTx, dbHash, match, slot, ts };
 		});
 
