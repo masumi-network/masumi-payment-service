@@ -15,6 +15,7 @@ import {
 	requireHydraInputRefs,
 	requireHydraValidityUpperSlot,
 } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
+import { isHydraHeadOnPausedHostLocked } from '@/services/hydra-host/pause';
 import { connectPreviousAction, createNextPaymentAction, createNextPurchaseAction } from '@/services/shared';
 import { LOOKUP_DEFERRED_PREFIX } from '../lookup-defer';
 
@@ -72,6 +73,12 @@ export async function lockOpenHydraHeadForL2Reservation(
 		// hard failure logged every one of them at error while the request stood
 		// down anyway.
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Hydra head ${hydraHeadId} is no longer accepting L2 reservations`);
+	}
+	// Deferred for the same reason: an operator pause ends with Resume. Checked
+	// here, before any reservation row exists, because a body submitted to a
+	// node that the pause then stops is held for reconciliation, not retried.
+	if (await isHydraHeadOnPausedHostLocked(tx, hydraHeadId)) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Hydra head ${hydraHeadId} is on a paused hydra host`);
 	}
 }
 

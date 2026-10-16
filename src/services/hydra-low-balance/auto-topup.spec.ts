@@ -8,6 +8,12 @@ const mockCount = jest.fn() as AnyMock;
 const mockExecuteHydraTopup = jest.fn() as AnyMock;
 const mockLoggerWarn = jest.fn() as AnyMock;
 
+const mockIsHydraHeadOnPausedHost = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	isHydraHeadOnPausedHost: mockIsHydraHeadOnPausedHost,
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraLowBalanceRule: { findMany: mockFindMany },
@@ -44,10 +50,20 @@ function rule(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockCount.mockResolvedValue([]);
+	mockIsHydraHeadOnPausedHost.mockResolvedValue(false);
 	mockExecuteHydraTopup.mockResolvedValue({ topupId: 't1', depositTxHash: 'a'.repeat(64) });
 });
 
 describe('runHydraAutoTopupCycle', () => {
+	it('sends no deposit to a head whose Host is paused', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockIsHydraHeadOnPausedHost.mockResolvedValue(true);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+	});
+
 	// Hydra commits WHOLE UTxOs, so a bounded selection chooses which ones and
 	// nothing more — it cannot bound the overshoot. The smallest single UTxO
 	// covering a 100 ADA rule is the wallet's entire balance whenever its change

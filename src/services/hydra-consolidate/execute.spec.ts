@@ -13,6 +13,11 @@ const mockIsTxConfirmed = jest.fn() as AnyMock;
 const mockTxIn = jest.fn() as AnyMock;
 const mockTxOut = jest.fn() as AnyMock;
 
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHead: { findUnique: mockHeadFindUnique },

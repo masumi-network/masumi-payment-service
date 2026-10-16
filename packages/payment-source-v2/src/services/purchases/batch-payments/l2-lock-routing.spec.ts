@@ -26,6 +26,10 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),
+}));
 jest.unstable_mockModule('@/utils/hydra/resolve-hydra-head', () => ({
 	resolveUsableHydraHeadForPurchase: mockResolveHead,
 }));

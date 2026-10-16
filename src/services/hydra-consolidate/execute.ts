@@ -20,6 +20,7 @@ import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-co
 import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 import { planConsolidation } from './select';
+import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 
 /** How long the head gets to confirm the self-send. Same bound as a withdrawal's split. */
 const CONSOLIDATE_CONFIRM_TIMEOUT_MS = 60_000;
@@ -46,6 +47,7 @@ export async function executeHydraConsolidation(headId: string): Promise<Execute
 	}
 	const localParticipant = head.LocalParticipant;
 	if (!localParticipant) throw createHttpError(400, 'Head has no local participant');
+	await assertHydraHeadHostNotPaused(head.id);
 
 	const cm = getHydraConnectionManager();
 	const hydraHead = cm.getHead(head.id);

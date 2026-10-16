@@ -26,6 +26,11 @@ const mockIsTxConfirmed = jest.fn() as AnyMock;
 /** Returns the split's carved output, so the decommit can spend it. */
 const mockFetchUTxOs = jest.fn() as AnyMock;
 
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHead: { findUnique: mockHeadFindUnique, update: mockHeadUpdate },

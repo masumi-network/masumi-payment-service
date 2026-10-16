@@ -205,7 +205,22 @@ describe('lockOpenHydraHeadForL2Reservation', () => {
 		await expect(
 			lockOpenHydraHeadForL2Reservation({ $queryRaw: queryRaw } as never, 'head-1'),
 		).resolves.toBeUndefined();
-		expect(queryRaw).toHaveBeenCalledTimes(1);
+		// The head row, then the Host row under FOR SHARE for the pause check.
+		expect(queryRaw).toHaveBeenCalledTimes(2);
+	});
+
+	// Deferred, not failed: the request waits for Resume instead of leaving L2.
+	it('defers a reservation on a paused Host', async () => {
+		const queryRaw = jest
+			.fn<() => Promise<unknown[]>>()
+			.mockResolvedValueOnce([
+				{ status: HydraHeadStatus.Open, isEnabled: true, isClosing: false, initTxHash: 'a'.repeat(64) },
+			])
+			.mockResolvedValueOnce([{ pausedAt: new Date() }]);
+
+		await expect(lockOpenHydraHeadForL2Reservation({ $queryRaw: queryRaw } as never, 'head-1')).rejects.toThrow(
+			'is on a paused hydra host',
+		);
 	});
 
 	it.each([
