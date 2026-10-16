@@ -42,12 +42,24 @@ export function decideL2ReservationRelease(params: {
 	nudgeInputRef: string | null;
 	/** Null when the output is spent, partitioned, or the snapshot is not the verified one. */
 	readVerifiedOutput: (reference: string, snapshotNumber: bigint) => string | null;
+	/** True when the verified snapshot holds the output as a deposit still being folded in. */
+	isPendingCommit?: (reference: string, snapshotNumber: bigint) => boolean;
 }): L2ReservationReleaseDecision {
 	const { inputRefs, snapshotNumber, baselineSnapshotNumber, nudgeInputRef, readVerifiedOutput } = params;
+	const isPendingCommit = params.isPendingCommit ?? (() => false);
 	// Reservations made before inputs were recorded cannot be proven dead.
 	if (inputRefs.length === 0) return { action: 'hold' };
-	if (!inputRefs.every((reference) => readVerifiedOutput(reference, snapshotNumber) !== null)) {
-		return { action: 'hold' };
+	const unreadable = inputRefs.filter((reference) => readVerifiedOutput(reference, snapshotNumber) === null);
+	if (unreadable.length > 0) {
+		// A pending commit proves nothing either way. After CommitFinalized the
+		// node's local ledger already holds it, so a body may have spent it there;
+		// only the next signed snapshot shows which. An idle head never makes that
+		// snapshot without a nudge, so ask for one. This branch must never release:
+		// the next snapshot shows the input spent (hold) or spendable (baseline).
+		// While the deposit stays unobserved on L1 this repeats once per nudge
+		// interval, and it ends when the head folds the deposit in or recovers it.
+		const onlyPendingCommits = unreadable.every((reference) => isPendingCommit(reference, snapshotNumber));
+		return onlyPendingCommits ? { action: 'await-snapshot' } : { action: 'hold' };
 	}
 	if (baselineSnapshotNumber === undefined) return { action: 'baseline', snapshotNumber };
 	if (snapshotNumber <= baselineSnapshotNumber) return { action: 'await-snapshot' };

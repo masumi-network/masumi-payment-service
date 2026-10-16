@@ -12,10 +12,16 @@
  * verified snapshot confirmed after expiry (see `./l2-reservation-recovery`).
  */
 
-import { Prisma, PurchasingAction, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import {
+	PaymentAction,
+	Prisma,
+	PurchasingAction,
+	TransactionLayer,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { connectPreviousAction, createNextPurchaseAction } from '@/services/shared';
+import { connectPreviousAction, createNextPaymentAction, createNextPurchaseAction } from '@/services/shared';
 
 export interface ReleasableL2Reservation {
 	id: string;
@@ -23,17 +29,46 @@ export interface ReleasableL2Reservation {
 	l2ReservationPreviousSmartContractWalletId: string | null;
 	l2ReservationPreviousBuyerReturnAddress: string | null;
 	l2ReservationPreviousCollateralReturn: bigint | null;
+	/** The escrow transaction a non-locking action replaced as the request's current one. */
+	l2ReservationPreviousTransactionId: string | null;
 	/** The release nudge input the release decision saw, when it read one. */
 	l2ReleaseNudgeInputRef?: string | null;
 }
 
 /**
- * Undo one reservation: return the purchase to "needs locking", give the wallet
- * back, and mark the dead transaction rolled back.
+ * The retry action of each non-locking L2 action, keyed by its in-flight one.
+ * Mirrors the `retryAction` its service passes to `submitReservedL2Action`.
+ */
+const PAYMENT_L2_ACTION_RETRY: Partial<Record<PaymentAction, PaymentAction>> = {
+	[PaymentAction.SubmitResultInitiated]: PaymentAction.SubmitResultRequested,
+	[PaymentAction.WithdrawInitiated]: PaymentAction.WithdrawRequested,
+	[PaymentAction.AuthorizeRefundInitiated]: PaymentAction.AuthorizeRefundRequested,
+};
+const PURCHASE_L2_ACTION_RETRY: Partial<Record<PurchasingAction, PurchasingAction>> = {
+	[PurchasingAction.WithdrawRefundInitiated]: PurchasingAction.WithdrawRefundRequested,
+	[PurchasingAction.AuthorizeWithdrawalInitiated]: PurchasingAction.AuthorizeWithdrawalRequested,
+	[PurchasingAction.SetRefundRequestedInitiated]: PurchasingAction.SetRefundRequestedRequested,
+};
+
+export function paymentL2ActionRetry(action: PaymentAction | undefined): PaymentAction | undefined {
+	return action === undefined ? undefined : PAYMENT_L2_ACTION_RETRY[action];
+}
+
+export function purchaseL2ActionRetry(action: PurchasingAction | undefined): PurchasingAction | undefined {
+	return action === undefined ? undefined : PURCHASE_L2_ACTION_RETRY[action];
+}
+
+/**
+ * Undo one reservation: mark the dead transaction rolled back, give the wallet
+ * back, and return each request to where the reservation found it. An initial
+ * lock goes back to "needs locking". A non-locking action goes back to its
+ * retry action and to the escrow transaction it replaced, as `rollbackL2Action`
+ * does for an explicit rejection.
  *
  * Serializable and guarded on the state it expects, so a reservation another
  * writer has already resolved — a late confirmation, a manual clear — is left
- * alone rather than overwritten.
+ * alone rather than overwritten. A request in an action this cannot map back is
+ * left for an operator.
  */
 export async function releaseRejectedL2Reservation(
 	reservation: ReleasableL2Reservation,
@@ -53,7 +88,16 @@ export async function releaseRejectedL2Reservation(
 						txHash: true,
 						l2RejectedByHeadAt: true,
 						l2ReleaseNudgeInputRef: true,
-						PurchaseRequestCurrent: { select: { id: true, nextActionId: true } },
+						PurchaseRequestCurrent: {
+							select: { id: true, nextActionId: true, NextAction: { select: { requestedAction: true } } },
+						},
+						PaymentRequestCurrent: {
+							select: {
+								id: true,
+								nextActionId: true,
+								NextAction: { select: { requestedAction: true, resultHash: true } },
+							},
+						},
 					},
 				});
 				if (
@@ -68,6 +112,31 @@ export async function releaseRejectedL2Reservation(
 					(reservation.l2ReleaseNudgeInputRef !== undefined &&
 						(current.l2ReleaseNudgeInputRef ?? null) !== reservation.l2ReleaseNudgeInputRef)
 				) {
+					return false;
+				}
+
+				// An initial lock only reserves a request with no current transaction,
+				// and an action always replaces one. So the reservation, not the
+				// request's action now, says which restore applies.
+				const previousTransactionId = reservation.l2ReservationPreviousTransactionId;
+				const isAction = previousTransactionId != null;
+				const actionPurchases = isAction ? current.PurchaseRequestCurrent : [];
+				const lockPurchases = isAction ? [] : current.PurchaseRequestCurrent;
+				const hasUnmappedAction =
+					actionPurchases.some(
+						(purchase) => purchaseL2ActionRetry(purchase.NextAction?.requestedAction) === undefined,
+					) ||
+					(isAction &&
+						current.PaymentRequestCurrent.some(
+							(payment) => paymentL2ActionRetry(payment.NextAction?.requestedAction) === undefined,
+						));
+				const hasActionOnLock =
+					!isAction &&
+					(current.PaymentRequestCurrent.length > 0 ||
+						lockPurchases.some(
+							(purchase) => purchaseL2ActionRetry(purchase.NextAction?.requestedAction) !== undefined,
+						));
+				if (hasUnmappedAction || hasActionOnLock) {
 					return false;
 				}
 
@@ -88,9 +157,54 @@ export async function releaseRejectedL2Reservation(
 					data: { lockedAt: null, pendingTransactionId: null },
 				});
 
+				if (isAction) {
+					const restoreCurrent = {
+						CurrentTransaction: { connect: { id: previousTransactionId } },
+						TransactionHistory: {
+							disconnect: { id: previousTransactionId },
+							connect: { id: reservation.id },
+						},
+					};
+					for (const payment of current.PaymentRequestCurrent) {
+						const resultHash = payment.NextAction?.resultHash;
+						await tx.paymentRequest.update({
+							where: {
+								id: payment.id,
+								nextActionId: payment.nextActionId,
+								currentTransactionId: reservation.id,
+								layer: TransactionLayer.L2,
+							},
+							data: {
+								...connectPreviousAction(payment.nextActionId),
+								...createNextPaymentAction(
+									paymentL2ActionRetry(payment.NextAction?.requestedAction)!,
+									resultHash == null ? undefined : { resultHash },
+								),
+								...restoreCurrent,
+							},
+						});
+					}
+					for (const purchase of actionPurchases) {
+						await tx.purchaseRequest.update({
+							where: {
+								id: purchase.id,
+								nextActionId: purchase.nextActionId,
+								currentTransactionId: reservation.id,
+								layer: TransactionLayer.L2,
+							},
+							data: {
+								...connectPreviousAction(purchase.nextActionId),
+								...createNextPurchaseAction(purchaseL2ActionRetry(purchase.NextAction?.requestedAction)!),
+								...restoreCurrent,
+							},
+						});
+					}
+					return true;
+				}
+
 				// Put the request back exactly as the reservation found it, so the next
 				// pass is free to choose a different wallet, a different head, or L1.
-				for (const purchase of current.PurchaseRequestCurrent) {
+				for (const purchase of lockPurchases) {
 					await tx.purchaseRequest.update({
 						where: { id: purchase.id, nextActionId: purchase.nextActionId },
 						data: {

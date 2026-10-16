@@ -5,13 +5,17 @@ import { executeReservedL2Submission, lockOpenHydraHeadForL2Reservation } from '
 
 const signedTx = 'signed-transaction-cbor';
 const intendedTxHash = 'intended-tx-hash';
+const inputRef = `${'e'.repeat(64)}#0`;
 
 function makeCallbacks() {
 	return {
 		signedTx,
 		resolveIntendedTxHash: () => intendedTxHash,
 		resolveValidityUpperSlot: () => 123n,
-		reserve: jest.fn(async (_hash: string, _invalidHereafterSlot: bigint) => ({ id: 'reservation-1' })),
+		resolveInputRefs: () => [inputRef],
+		reserve: jest.fn(async (_hash: string, _invalidHereafterSlot: bigint, _inputRefs: string[]) => ({
+			id: 'reservation-1',
+		})),
 		submit: jest.fn(async (_transaction: string) => intendedTxHash),
 		finalize: jest.fn(async (_reservation: { id: string }, _txHash: string, _hash: string) => undefined),
 		rollback: jest.fn(async (_reservation: { id: string }, _hash: string) => undefined),
@@ -40,7 +44,9 @@ describe('executeReservedL2Submission', () => {
 			txHash: intendedTxHash,
 		});
 		expect(events).toEqual(['reserve', 'submit', 'finalize']);
-		expect(callbacks.reserve).toHaveBeenCalledWith(intendedTxHash, 123n);
+		// The inputs are what later proves an ambiguous body dead; see
+		// decideL2ReservationRelease. Without them the wallet stays pinned forever.
+		expect(callbacks.reserve).toHaveBeenCalledWith(intendedTxHash, 123n, [inputRef]);
 		expect(callbacks.rollback).not.toHaveBeenCalled();
 	});
 
@@ -174,6 +180,17 @@ describe('executeReservedL2Submission', () => {
 		};
 
 		await expect(executeReservedL2Submission(callbacks)).rejects.toThrow('missing invalid_hereafter');
+		expect(callbacks.reserve).not.toHaveBeenCalled();
+		expect(callbacks.submit).not.toHaveBeenCalled();
+	});
+
+	it('never reserves or submits a body whose inputs cannot be read', async () => {
+		const callbacks = makeCallbacks();
+		callbacks.resolveInputRefs = () => {
+			throw new Error('no inputs');
+		};
+
+		await expect(executeReservedL2Submission(callbacks)).rejects.toThrow('no inputs');
 		expect(callbacks.reserve).not.toHaveBeenCalled();
 		expect(callbacks.submit).not.toHaveBeenCalled();
 	});

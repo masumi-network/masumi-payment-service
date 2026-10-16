@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
-import { Network, TransactionStatus } from '@/generated/prisma/client';
+import {
+	Network,
+	PaymentAction,
+	PurchasingAction,
+	TransactionLayer,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 import {
 	canReportExpiredL2Reservation,
 	EXPIRED_L2_RESERVATION_WARNING_INTERVAL_MS,
@@ -67,8 +73,14 @@ describe('expired L2 reservation reporting', () => {
 			rejected?: boolean;
 			inputRefs?: string[];
 			unspentRefs?: string[];
+			pendingCommitRefs?: string[];
 			idPrefix?: string;
 			nudgeInputRef?: string | null;
+			paymentRequests?: Array<{
+				currentHydraUtxoTxHash: string | null;
+				currentHydraUtxoOutputIndex: number | null;
+				NextAction: { requestedAction: PaymentAction };
+			}>;
 		} = {},
 	) {
 		const intendedTxHash = 'a'.repeat(64);
@@ -76,6 +88,7 @@ describe('expired L2 reservation reporting', () => {
 		// the node itself reports on GET /snapshot (it can be ahead).
 		const snapshot = { number: 7n, nodeNumber: 7n };
 		const unspent = new Set(options.unspentRefs ?? options.inputRefs ?? []);
+		const pendingCommit = new Set(options.pendingCommitRefs ?? []);
 		const database = {
 			transaction: {
 				findMany: jest.fn(async () =>
@@ -92,6 +105,8 @@ describe('expired L2 reservation reporting', () => {
 						l2ReservationPreviousSmartContractWalletId: null,
 						l2ReservationPreviousBuyerReturnAddress: null,
 						l2ReservationPreviousCollateralReturn: null,
+						PaymentRequestCurrent: options.paymentRequests ?? [],
+						PurchaseRequestCurrent: [],
 					})),
 				),
 			},
@@ -111,6 +126,9 @@ describe('expired L2 reservation reporting', () => {
 			getVerifiedCurrentOutput: jest.fn((reference: string, number: bigint) =>
 				number === snapshot.number && unspent.has(reference) ? 'output-bytes' : null,
 			),
+			isVerifiedPendingCommitOutput: jest.fn(
+				(reference: string, number: bigint) => number === snapshot.number && pendingCommit.has(reference),
+			),
 			expectedHeadId: 'f'.repeat(56),
 			get: jest.fn(async (_url: string) => ({
 				tag: 'ConfirmedSnapshot',
@@ -119,7 +137,7 @@ describe('expired L2 reservation reporting', () => {
 		};
 		// Stubbed so no test reaches a live head; the deadlock tests drive it.
 		const nudge = jest.fn(async (_candidate: unknown): Promise<unknown> => true);
-		return { database, node, snapshot, unspent, nudge };
+		return { database, node, snapshot, unspent, pendingCommit, nudge };
 	}
 
 	it.each([
@@ -275,12 +293,21 @@ describe('expired L2 reservation reporting', () => {
 						status: TransactionStatus.Pending,
 						txHash: null,
 						l2RejectedByHeadAt: null,
-						PurchaseRequestCurrent: [{ id: 'purchase-1', nextActionId: 'action-1' }],
+						// The harness default reserves an action, not an initial lock.
+						PurchaseRequestCurrent: [
+							{
+								id: 'purchase-1',
+								nextActionId: 'action-1',
+								NextAction: { requestedAction: PurchasingAction.WithdrawRefundInitiated },
+							},
+						],
+						PaymentRequestCurrent: [],
 					})),
 					update: jest.fn(),
 				},
 				hotWallet: { updateMany: jest.fn() },
 				purchaseRequest: { update: jest.fn() },
+				paymentRequest: { update: jest.fn() },
 			};
 			h.database.$transaction.mockImplementation(
 				async (callback: unknown) =>
@@ -345,7 +372,14 @@ describe('expired L2 reservation reporting', () => {
 					txHash: null,
 					l2RejectedByHeadAt: null,
 					l2ReleaseNudgeInputRef: nudgeRef,
-					PurchaseRequestCurrent: [{ id: 'purchase-1', nextActionId: 'action-1' }],
+					PurchaseRequestCurrent: [
+						{
+							id: 'purchase-1',
+							nextActionId: 'action-1',
+							NextAction: { requestedAction: PurchasingAction.WithdrawRefundInitiated },
+						},
+					],
+					PaymentRequestCurrent: [],
 				}));
 				await expect(scan(h, 'head-inflight')).resolves.toBe(1); // baseline
 
@@ -359,6 +393,57 @@ describe('expired L2 reservation reporting', () => {
 				h.unspent.delete(nudgeRef);
 				await expect(scan(h, 'head-inflight')).resolves.toBe(0);
 				expect(h.database.$transaction).toHaveBeenCalledTimes(1);
+			});
+
+			// The buyer incident: a lock spent a top-up output 4s before the head
+			// folded it in, the head then went idle, and its last snapshot still
+			// lists that output under utxoToCommit.
+			it('nudges past a snapshot that still holds an input as a pending commit, then releases', async () => {
+				const h = harness({
+					inputRefs: refs,
+					unspentRefs: [refs[0]],
+					pendingCommitRefs: [refs[1]],
+					idPrefix: 'pending-commit',
+				});
+				const mutationClient = withMutations(h);
+
+				await expect(scan(h, 'head-pending-commit')).resolves.toBe(1);
+				expect(h.nudge).toHaveBeenCalledTimes(1);
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+
+				// The nudge lands: the deposit is now ordinary spendable state.
+				h.snapshot.number = 8n;
+				h.snapshot.nodeNumber = 8n;
+				h.pendingCommit.clear();
+				h.unspent.add(refs[1]);
+				await expect(scan(h, 'head-pending-commit')).resolves.toBe(1); // baseline
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+
+				h.snapshot.number = 9n;
+				await expect(scan(h, 'head-pending-commit')).resolves.toBe(0);
+				expect(mutationClient.hotWallet.updateMany).toHaveBeenCalledWith({
+					where: { pendingTransactionId: 'pending-commit-1' },
+					data: { lockedAt: null, pendingTransactionId: null },
+				});
+			});
+
+			it('keeps nudging and never releases while the deposit stays unfolded', async () => {
+				const h = harness({
+					inputRefs: refs,
+					unspentRefs: [refs[0]],
+					pendingCommitRefs: [refs[1]],
+					idPrefix: 'still-pending',
+				});
+				withMutations(h);
+				await expect(scan(h, 'head-still-pending')).resolves.toBe(1);
+				h.snapshot.number = 8n;
+				h.snapshot.nodeNumber = 8n;
+				await expect(scan(h, 'head-still-pending')).resolves.toBe(1);
+				h.snapshot.number = 9n;
+				await expect(scan(h, 'head-still-pending')).resolves.toBe(1);
+				expect(h.nudge).toHaveBeenCalledTimes(3);
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+				expect(h.node.get).not.toHaveBeenCalled(); // no baseline recorded
 			});
 
 			it('does not nudge when a reserved input is spent', async () => {
@@ -418,6 +503,146 @@ describe('expired L2 reservation reporting', () => {
 			h.snapshot.number = 8n;
 			await expect(scan(h, 'head-legacy')).resolves.toBe(1);
 			expect(h.database.$transaction).not.toHaveBeenCalled();
+		});
+
+		// Rows from the non-locking actions written before input refs were
+		// recorded. The escrow UTxO the body spends is still on the request, and
+		// one input unspent after expiry is enough: an applied body spends all.
+		describe('legacy non-locking action', () => {
+			const escrowTxHash = 'e'.repeat(64);
+			const escrowRef = `${escrowTxHash}#2`;
+			const submitting = (txHash: string) => [
+				{
+					currentHydraUtxoTxHash: txHash,
+					currentHydraUtxoOutputIndex: 2,
+					NextAction: { requestedAction: PaymentAction.SubmitResultInitiated },
+				},
+			];
+
+			it('proves it dead from the escrow input and returns the request', async () => {
+				const h = harness({
+					inputRefs: [],
+					unspentRefs: [escrowRef],
+					idPrefix: 'legacy-action',
+					paymentRequests: submitting(escrowTxHash),
+				});
+				const mutationClient = withMutations(h);
+				(mutationClient.transaction.findUnique as jest.Mock<() => Promise<unknown>>).mockImplementation(async () => ({
+					status: TransactionStatus.Pending,
+					txHash: null,
+					l2RejectedByHeadAt: null,
+					PurchaseRequestCurrent: [],
+					PaymentRequestCurrent: [
+						{
+							id: 'payment-1',
+							nextActionId: 'action-9',
+							NextAction: { requestedAction: PaymentAction.SubmitResultInitiated, resultHash: 'r' },
+						},
+					],
+				}));
+
+				await expect(scan(h, 'head-legacy-action')).resolves.toBe(1); // baseline
+				h.snapshot.number = 8n;
+				await expect(scan(h, 'head-legacy-action')).resolves.toBe(0);
+				expect(mutationClient.paymentRequest.update).toHaveBeenCalledWith(
+					expect.objectContaining({
+						where: expect.objectContaining({ id: 'payment-1', layer: TransactionLayer.L2 }),
+					}),
+				);
+				expect(mutationClient.hotWallet.updateMany).toHaveBeenCalledWith({
+					where: { pendingTransactionId: 'legacy-action-1' },
+					data: { lockedAt: null, pendingTransactionId: null },
+				});
+			});
+
+			it('never releases once the escrow input is spent', async () => {
+				const h = harness({
+					inputRefs: [],
+					unspentRefs: [],
+					idPrefix: 'legacy-spent',
+					paymentRequests: submitting(escrowTxHash),
+				});
+				withMutations(h);
+				await expect(scan(h, 'head-legacy-spent')).resolves.toBe(1);
+				h.snapshot.number = 8n;
+				await expect(scan(h, 'head-legacy-spent')).resolves.toBe(1);
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+			});
+
+			// Then the pointer names this body's own output, not its input, and an
+			// unspent output would prove the opposite of what release needs.
+			it('holds when the escrow pointer already names this body', async () => {
+				const bodyOutput = `${'a'.repeat(64)}#2`;
+				const h = harness({
+					inputRefs: [],
+					unspentRefs: [bodyOutput],
+					idPrefix: 'legacy-advanced',
+					paymentRequests: submitting('a'.repeat(64)),
+				});
+				withMutations(h);
+				await expect(scan(h, 'head-legacy-advanced')).resolves.toBe(1);
+				h.snapshot.number = 8n;
+				await expect(scan(h, 'head-legacy-advanced')).resolves.toBe(1);
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+			});
+
+			it.each([
+				[
+					'no escrow pointer',
+					[
+						{
+							currentHydraUtxoTxHash: null,
+							currentHydraUtxoOutputIndex: null,
+							NextAction: { requestedAction: PaymentAction.SubmitResultInitiated },
+						},
+					],
+				],
+				['two requests on one row', [...submitting(escrowTxHash), ...submitting(escrowTxHash)]],
+				[
+					'a mapped and an unmapped request on one row',
+					[
+						...submitting(escrowTxHash),
+						{
+							currentHydraUtxoTxHash: escrowTxHash,
+							currentHydraUtxoOutputIndex: 3,
+							NextAction: { requestedAction: PaymentAction.WaitingForManualAction },
+						},
+					],
+				],
+			] as const)('holds with %s', async (_label, paymentRequests) => {
+				const h = harness({
+					inputRefs: [],
+					unspentRefs: [escrowRef],
+					idPrefix: `legacy-${_label.replace(/ /g, '-')}`,
+					paymentRequests: [...paymentRequests],
+				});
+				withMutations(h);
+				await expect(scan(h, `head-${_label}`)).resolves.toBe(1);
+				h.snapshot.number = 8n;
+				await expect(scan(h, `head-${_label}`)).resolves.toBe(1);
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+				expect(h.nudge).not.toHaveBeenCalled();
+			});
+
+			it('holds an action it does not know how to return', async () => {
+				const h = harness({
+					inputRefs: [],
+					unspentRefs: [escrowRef],
+					idPrefix: 'legacy-unknown',
+					paymentRequests: [
+						{
+							currentHydraUtxoTxHash: escrowTxHash,
+							currentHydraUtxoOutputIndex: 2,
+							NextAction: { requestedAction: PaymentAction.WaitingForManualAction },
+						},
+					],
+				});
+				withMutations(h);
+				await expect(scan(h, 'head-legacy-unknown')).resolves.toBe(1);
+				h.snapshot.number = 8n;
+				await expect(scan(h, 'head-legacy-unknown')).resolves.toBe(1);
+				expect(h.database.$transaction).not.toHaveBeenCalled();
+			});
 		});
 
 		it('does not release inside the release grace even with a newer snapshot', async () => {
