@@ -14,7 +14,6 @@ import {
 	Value,
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { serializeHydraSnapshotOutput } from '@/lib/hydra/hydra/snapshot-verification';
-import { decideL2ReservationRelease } from './l2-reservation-release-decision';
 import {
 	encodeL2ReleaseNudgeDatum,
 	isL2ReservationSpentByNudge,
@@ -128,29 +127,16 @@ describe('l2 release nudge proof', () => {
 
 	// The reported finding: a local node maps the body's input references onto
 	// identical outputs that still exist, here two 5 ADA collateral twins, while
-	// the real inputs are spent. Every signature stays valid. The reference
-	// proof accepts that. The nudge proof needs bytes only our nudge creates.
+	// the real inputs are spent. Every signature stays valid, and a reference
+	// read calls every input unspent. The nudge proof needs bytes only our nudge
+	// creates, so it does not release.
 	it('does not release on twin outputs mapped under spent input references', () => {
 		const twin = serializeHydraSnapshotOutput(snapshotOutput(5_000_000));
-		const forgedRead = (reference: string) => (reference === LOCK_INPUT_A || reference === LOCK_INPUT_B ? twin : null);
+		const inputRefs = [LOCK_INPUT_A, LOCK_INPUT_B];
+		const forgedRead = (reference: string) => (inputRefs.includes(reference) ? twin : null);
 
-		expect(
-			decideL2ReservationRelease({
-				inputRefs: [LOCK_INPUT_A, LOCK_INPUT_B],
-				snapshotNumber: 11n,
-				baselineSnapshotNumber: 10n,
-				nudgeInputRef: null,
-				readVerifiedOutput: forgedRead,
-			}),
-		).toEqual({ action: 'release' });
-		expect(
-			isL2ReservationSpentByNudge({
-				nudgeTx,
-				inputRefs: [LOCK_INPUT_A, LOCK_INPUT_B],
-				valueFloor: FLOOR,
-				readOutput: forgedRead,
-			}),
-		).toBe(false);
+		expect(inputRefs.every((reference) => forgedRead(reference) !== null)).toBe(true);
+		expect(isL2ReservationSpentByNudge({ nudgeTx, inputRefs, valueFloor: FLOOR, readOutput: forgedRead })).toBe(false);
 	});
 
 	// The review's attack: a compromised node hides the large input, so the

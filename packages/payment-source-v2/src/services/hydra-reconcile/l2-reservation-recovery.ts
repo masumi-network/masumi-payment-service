@@ -11,8 +11,7 @@ import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
-import { fetchHydraConfirmedSnapshotNumber } from '@/lib/hydra/hydra/node-control-queries';
-import { decideL2ReservationRelease } from './l2-reservation-release-decision';
+import { isL2ReservationSpentByNudge } from './l2-release-nudge-proof';
 import { paymentL2ActionRetry, purchaseL2ActionRetry, releaseRejectedL2Reservation } from './l2-reservation-release';
 import { nudgeIdleHeadForRelease, type L2ReleaseNudgeCandidate } from './l2-reservation-nudge';
 
@@ -29,14 +28,6 @@ const MAX_EXPIRED_L2_WARNING_SAMPLES = 10;
  * after its wall-clock expiry.
  */
 export const L2_RESERVATION_RELEASE_GRACE_MS = 5 * 60_000;
-const MAX_RELEASE_BASELINES = 10_000;
-/** Baselines for heads no longer scanned (closed, disabled) are dropped after this. */
-const RELEASE_BASELINE_MAX_AGE_MS = 24 * 60 * 60_000;
-/**
- * Transaction id → the node's own confirmed snapshot number read after expiry.
- * Losing it on restart only delays release. Pruned on every scan of its head.
- */
-const releaseBaselines = new Map<string, { hydraHeadId: string; snapshotNumber: bigint; recordedAtMs: number }>();
 
 export type L2ReservationRecoveryGate = {
 	hasVerifiedPinnedSessions: boolean;
@@ -82,9 +73,9 @@ export function canReportExpiredL2Reservation(gate: L2ReservationRecoveryGate): 
  * but cannot prove that a locally accepted transaction is absent from the live
  * ledger while it remains unsnapshotted. Releasing on negative replay evidence,
  * or on a node's TxInvalid, could authorize a conflicting retry. A reservation
- * is released only on the input proof in `decideL2ReservationRelease`: every
- * input unspent in a verified snapshot newer than the node's own confirmed
- * snapshot read after expiry. Everything else stays fail-closed and reported.
+ * is released only once its own release nudge, which spends the body's wallet
+ * inputs, shows up in a verified snapshot (`./l2-release-nudge-proof`).
+ * Everything else stays fail-closed and reported.
  */
 export async function reportExpiredL2Reservations(params: {
 	hydraHeadId: string;
@@ -119,17 +110,14 @@ export async function reportExpiredL2Reservations(params: {
 			intendedTxHash: true,
 			invalidHereafterSlot: true,
 			l2ReservationInputRefs: true,
-			l2ReleaseNudgeInputRef: true,
+			l2ReleaseNudgeTx: true,
 			l2ReservationPreviousLayer: true,
 			l2ReservationPreviousSmartContractWalletId: true,
 			l2ReservationPreviousBuyerReturnAddress: true,
 			l2ReservationPreviousCollateralReturn: true,
 			l2ReservationPreviousTransactionId: true,
-			PaymentRequestCurrent: { select: escrowPointerSelect },
-			PurchaseRequestCurrent: { select: escrowPointerSelect },
 		},
 	});
-	pruneReleaseBaselines(hydraHeadId, new Set(candidates.map((candidate) => candidate.id)), nowMs);
 
 	let reported = 0;
 	const transactionIdSamples: string[] = [];
@@ -157,8 +145,8 @@ export async function reportExpiredL2Reservations(params: {
 		// A node can relay a lock before expiry, withhold its signed snapshot,
 		// and report TxInvalid for the same body. Expiry excludes future acceptance,
 		// not past acceptance, so rejection alone never releases. Only the
-		// verified-snapshot input proof does. The proof reads the node's own
-		// verified snapshot: snapshot confirmations never advance the persisted tip.
+		// nudge proof does. It reads the node's own verified snapshot: snapshot
+		// confirmations never advance the persisted tip.
 		const verifiedSnapshotNumber = node.verifiedSnapshotNumber;
 		if (
 			verifiedSnapshotNumber !== undefined &&
@@ -171,15 +159,7 @@ export async function reportExpiredL2Reservations(params: {
 				validityUpperBoundTimeMs,
 				graceMs: L2_RESERVATION_RELEASE_GRACE_MS,
 			}) &&
-			(await releaseIfProvenDead(
-				{ ...candidate, l2ReservationInputRefs: reservationInputRefs(candidate) },
-				verifiedSnapshotNumber,
-				node,
-				hydraHeadId,
-				database,
-				nowMs,
-				nudge,
-			))
+			(await releaseIfProvenDead(candidate, verifiedSnapshotNumber, node, hydraHeadId, database, nudge))
 		) {
 			continue;
 		}
@@ -261,41 +241,32 @@ async function releaseIfProvenDead(
 	candidate: Parameters<typeof releaseRejectedL2Reservation>[0] & {
 		intendedTxHash: string | null;
 		l2ReservationInputRefs: string[];
-		l2ReleaseNudgeInputRef?: string | null;
+		l2ReleaseNudgeTx: string | null;
 	},
 	snapshotNumber: bigint,
 	node: HydraNode,
 	hydraHeadId: string,
 	database: typeof prisma,
-	nowMs: number,
 	nudge: (candidate: L2ReleaseNudgeCandidate) => Promise<unknown>,
 ): Promise<boolean> {
-	const nudgeInputRef = candidate.l2ReleaseNudgeInputRef ?? null;
-	const decision = decideL2ReservationRelease({
+	// Reservations made before inputs were recorded cannot be proven dead.
+	if (candidate.l2ReservationInputRefs.length === 0) return false;
+	const spentByNudge = isL2ReservationSpentByNudge({
+		nudgeTx: candidate.l2ReleaseNudgeTx,
 		inputRefs: candidate.l2ReservationInputRefs,
-		nudgeInputRef,
-		snapshotNumber,
-		baselineSnapshotNumber: releaseBaselines.get(candidate.id)?.snapshotNumber,
-		readVerifiedOutput: (reference, number) => node.getVerifiedCurrentOutput(reference, number),
-		isPendingCommit: (reference, number) => node.isVerifiedPendingCommitOutput(reference, number),
+		readOutput: (reference) => node.getVerifiedCurrentOutput(reference, snapshotNumber),
 	});
-	if (decision.action === 'baseline') {
-		await recordReleaseBaseline(candidate.id, hydraHeadId, decision.snapshotNumber, node, nowMs);
-		return false;
-	}
-	if (decision.action === 'await-snapshot') {
+	if (!spentByNudge) {
 		await nudge({
 			id: candidate.id,
 			l2ReservationInputRefs: candidate.l2ReservationInputRefs,
-			l2ReleaseNudgeInputRef: nudgeInputRef,
+			l2ReleaseNudgeTx: candidate.l2ReleaseNudgeTx,
 		});
 		return false;
 	}
-	if (decision.action !== 'release') return false;
-	const released = await releaseRejectedL2Reservation(candidate, database, 'inputs-unspent-after-expiry');
-	releaseBaselines.delete(candidate.id);
+	const released = await releaseRejectedL2Reservation(candidate, database, 'spent-by-release-nudge');
 	if (released) {
-		logger.warn('[HydraReconcile] released expired L2 reservation: every input unspent after expiry', {
+		logger.warn('[HydraReconcile] released expired L2 reservation: its release nudge spent the inputs', {
 			hydraHeadId,
 			transactionId: candidate.id,
 			intendedTxHash: candidate.intendedTxHash,
@@ -303,47 +274,6 @@ async function releaseIfProvenDead(
 		});
 	}
 	return released;
-}
-
-/**
- * Record the node's own confirmed snapshot number as the release baseline. Read
- * from the node, not from replay or the DB, which can both lag it.
- */
-async function recordReleaseBaseline(
-	transactionId: string,
-	hydraHeadId: string,
-	verifiedSnapshotNumber: bigint,
-	node: HydraNode,
-	nowMs: number,
-): Promise<void> {
-	if (releaseBaselines.size >= MAX_RELEASE_BASELINES) {
-		logger.warn('[HydraReconcile] L2 release baseline table full; auto-release paused', { hydraHeadId, transactionId });
-		return;
-	}
-	let nodeSnapshot: { headId: string; number: bigint };
-	try {
-		nodeSnapshot = await fetchHydraConfirmedSnapshotNumber(node);
-	} catch (error) {
-		logger.warn('[HydraReconcile] could not read node snapshot for L2 release baseline', { hydraHeadId, error });
-		return;
-	}
-	if (node.expectedHeadId == null || nodeSnapshot.headId !== node.expectedHeadId) return;
-	releaseBaselines.set(transactionId, {
-		hydraHeadId,
-		snapshotNumber: nodeSnapshot.number > verifiedSnapshotNumber ? nodeSnapshot.number : verifiedSnapshotNumber,
-		recordedAtMs: nowMs,
-	});
-}
-
-function pruneReleaseBaselines(hydraHeadId: string, liveTransactionIds: ReadonlySet<string>, nowMs: number): void {
-	for (const [transactionId, baseline] of releaseBaselines) {
-		if (
-			(baseline.hydraHeadId === hydraHeadId && !liveTransactionIds.has(transactionId)) ||
-			nowMs - baseline.recordedAtMs > RELEASE_BASELINE_MAX_AGE_MS
-		) {
-			releaseBaselines.delete(transactionId);
-		}
-	}
 }
 
 function shouldWarnExpiredL2Reservation(key: string, nowMs: number): boolean {

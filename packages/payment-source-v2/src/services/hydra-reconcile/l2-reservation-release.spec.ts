@@ -118,9 +118,9 @@ describe('releaseRejectedL2Reservation', () => {
 	it('releases without a head rejection under the input proof', async () => {
 		mockFindUnique.mockResolvedValue(pendingRejected({ l2RejectedByHeadAt: null }));
 
-		await expect(
-			releaseRejectedL2Reservation(reservation, prisma as never, 'inputs-unspent-after-expiry'),
-		).resolves.toBe(true);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'spent-by-release-nudge')).resolves.toBe(
+			true,
+		);
 		expect(mockHotWalletUpdateMany).toHaveBeenCalledTimes(1);
 		// The marker that lets a late confirmation of this body halt replay.
 		expect(mockTransactionUpdate).toHaveBeenCalledWith(
@@ -142,14 +142,14 @@ describe('releaseRejectedL2Reservation', () => {
 
 	it('refuses when a nudge was recorded after the release decision read the row', async () => {
 		mockFindUnique.mockResolvedValue(
-			pendingRejected({ l2RejectedByHeadAt: null, l2ReleaseNudgeInputRef: `${'c'.repeat(64)}#1` }),
+			pendingRejected({ l2RejectedByHeadAt: null, l2ReleaseNudgeTx: 'other-nudge-cbor' }),
 		);
 
 		await expect(
 			releaseRejectedL2Reservation(
-				{ ...reservation, l2ReleaseNudgeInputRef: null },
+				{ ...reservation, l2ReleaseNudgeTx: null },
 				prisma as never,
-				'inputs-unspent-after-expiry',
+				'spent-by-release-nudge',
 			),
 		).resolves.toBe(false);
 		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
@@ -162,9 +162,9 @@ describe('releaseRejectedL2Reservation', () => {
 			pendingRejected({ l2RejectedByHeadAt: null, txHash: 'a'.repeat(64), intendedTxHash: 'a'.repeat(64) }),
 		);
 
-		await expect(
-			releaseRejectedL2Reservation(reservation, prisma as never, 'inputs-unspent-after-expiry'),
-		).resolves.toBe(false);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'spent-by-release-nudge')).resolves.toBe(
+			false,
+		);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 	});
 
@@ -216,7 +216,7 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 		);
 
 		await expect(
-			releaseRejectedL2Reservation(actionReservation, prisma as never, 'inputs-unspent-after-expiry'),
+			releaseRejectedL2Reservation(actionReservation, prisma as never, 'spent-by-release-nudge'),
 		).resolves.toBe(true);
 
 		expect(mockPaymentUpdate).toHaveBeenCalledWith({
@@ -249,7 +249,7 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 		);
 
 		await expect(
-			releaseRejectedL2Reservation(actionReservation, prisma as never, 'inputs-unspent-after-expiry'),
+			releaseRejectedL2Reservation(actionReservation, prisma as never, 'spent-by-release-nudge'),
 		).resolves.toBe(true);
 
 		expect(mockPurchaseUpdate).toHaveBeenCalledWith({
@@ -275,7 +275,7 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 		);
 
 		await expect(
-			releaseRejectedL2Reservation(actionReservation, prisma as never, 'inputs-unspent-after-expiry'),
+			releaseRejectedL2Reservation(actionReservation, prisma as never, 'spent-by-release-nudge'),
 		).resolves.toBe(false);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
@@ -297,7 +297,7 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 		);
 
 		await expect(
-			releaseRejectedL2Reservation(actionReservation, prisma as never, 'inputs-unspent-after-expiry'),
+			releaseRejectedL2Reservation(actionReservation, prisma as never, 'spent-by-release-nudge'),
 		).resolves.toBe(false);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 		expect(mockPurchaseUpdate).not.toHaveBeenCalled();
@@ -318,9 +318,9 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 			}),
 		);
 
-		await expect(
-			releaseRejectedL2Reservation(reservation, prisma as never, 'inputs-unspent-after-expiry'),
-		).resolves.toBe(false);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'spent-by-release-nudge')).resolves.toBe(
+			false,
+		);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 	});
 
@@ -341,7 +341,7 @@ describe('releaseRejectedL2Reservation for a non-locking action', () => {
 		);
 
 		await expect(
-			releaseRejectedL2Reservation(actionReservation, prisma as never, 'inputs-unspent-after-expiry'),
+			releaseRejectedL2Reservation(actionReservation, prisma as never, 'spent-by-release-nudge'),
 		).resolves.toBe(false);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 		expect(mockPurchaseUpdate).not.toHaveBeenCalled();
