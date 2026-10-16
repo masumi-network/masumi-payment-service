@@ -68,12 +68,14 @@ const IN_FLIGHT_WITHDRAWAL_STATUSES = [
 
 const HTTP_NOT_FOUND = 404;
 /**
- * How long a pause lease lasts if its holder dies. Covers one Host request per
- * node, each bounded by the client's own timeout, for a full Host of nodes.
+ * How long a pause lease lasts if its holder dies. Covers 60 sequential Host
+ * requests at the client's 15 s timeout; a default Host has 32 node ports. A
+ * longer action can overlap the next holder, but its release cannot end theirs.
  */
 const PAUSE_LEASE_MS = 15 * 60_000;
 /** The Host's answer for a node it does not have, as opposed to a wrong URL. */
 const NODE_GONE_DETAIL = 'no such node';
+const BUSY_MESSAGE = 'another pause action is running on this hydra host; retry shortly';
 
 type PrismaReader = Pick<Prisma.TransactionClient, 'hydraLocalParticipant'>;
 
@@ -166,16 +168,19 @@ function isNodeGone(error: unknown): boolean {
  */
 async function withHostPauseLease(hostId: string, action: () => Promise<void>): Promise<boolean> {
 	const now = new Date();
+	const until = new Date(now.getTime() + PAUSE_LEASE_MS);
 	const claimed = await prisma.hydraHost.updateMany({
 		where: { id: hostId, OR: [{ pauseLeaseUntil: null }, { pauseLeaseUntil: { lt: now } }] },
-		data: { pauseLeaseUntil: new Date(now.getTime() + PAUSE_LEASE_MS) },
+		data: { pauseLeaseUntil: until },
 	});
 	if (claimed.count === 0) return false;
 	try {
 		await action();
 	} finally {
+		// Fenced on this holder's own value: after an overrun, another holder may
+		// have claimed the expired lease, and this release must not clear theirs.
 		await prisma.hydraHost
-			.updateMany({ where: { id: hostId }, data: { pauseLeaseUntil: null } })
+			.updateMany({ where: { id: hostId, pauseLeaseUntil: until }, data: { pauseLeaseUntil: null } })
 			.catch((error: unknown) => logger.warn('[HydraHostPause] could not release the pause lease', { hostId, error }));
 	}
 	return true;
@@ -277,10 +282,11 @@ export async function pauseHydraHost(hostId: string, options: { force: boolean }
 
 /**
  * Stop the paused nodes once no in-flight work needs them, or at once when
- * forced. Safe to call any number of times, from any instance.
+ * forced. Safe to call any number of times, from any instance. Returns false
+ * when another pause action holds the lease and nothing was tried.
  */
-export async function advanceHydraHostPause(hostId: string, options: { force: boolean }): Promise<HydraHostPauseState> {
-	await withHostPauseLease(hostId, async () => {
+async function stopPausedNodes(hostId: string, options: { force: boolean }): Promise<boolean> {
+	return await withHostPauseLease(hostId, async () => {
 		const host = await loadHost(hostId);
 		if (host.pausedAt === null || host.pauseStopRequestedAt !== null || host.encryptedAdminToken === null) return;
 		if (!options.force && hasInFlightWork(await countInFlight(hostId))) return;
@@ -305,6 +311,15 @@ export async function advanceHydraHostPause(hostId: string, options: { force: bo
 			data: { pauseStopRequestedAt: new Date() },
 		});
 	});
+}
+
+export async function advanceHydraHostPause(hostId: string, options: { force: boolean }): Promise<HydraHostPauseState> {
+	const acted = await stopPausedNodes(hostId, options);
+	if (!acted && options.force) {
+		// A forced pause skips the drain. Dropped silently, it would wait for the
+		// in-flight work after all.
+		throw createHttpError(409, BUSY_MESSAGE);
+	}
 	return await getHydraHostPauseState(hostId);
 }
 
@@ -346,7 +361,7 @@ export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseSta
 		});
 	});
 	if (!acted) {
-		throw createHttpError(409, 'this hydra host is stopping its nodes right now; retry Resume in a few seconds');
+		throw createHttpError(409, BUSY_MESSAGE);
 	}
 	return await getHydraHostPauseState(hostId);
 }
@@ -359,7 +374,9 @@ export async function runHydraHostPauseCycle(): Promise<void> {
 	});
 	for (const host of hosts) {
 		try {
-			await advanceHydraHostPause(host.id, { force: false });
+			// Not advanceHydraHostPause: its state read probes every node, and the
+			// scheduler has no use for the answer.
+			await stopPausedNodes(host.id, { force: false });
 		} catch (error) {
 			logger.warn('[HydraHostPause] could not advance pause', { hostId: host.id, error });
 		}
