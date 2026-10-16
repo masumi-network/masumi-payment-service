@@ -63,7 +63,7 @@ function nudgeTxOver(inputs: string[]): string {
 }
 
 const nudgeTx = nudgeTxOver([inputA, inputB]);
-const proof = readL2ReleaseNudgeProof(nudgeTx, [inputA, inputB]);
+const proof = readL2ReleaseNudgeProof(nudgeTx, [inputA, inputB], [{ unit: '', amount: 10_000_000n }]);
 if (!proof) throw new Error('fixture nudge must pass the proof');
 /** The final snapshot holds the nudge output, and nothing at any other reference. */
 const finalOutputWithNudge = (reference: string) => (reference === proof.reference ? proof.serializedOutput : null);
@@ -86,6 +86,8 @@ function pendingRow(overrides: Record<string, unknown> = {}) {
 		l2ReservationPreviousBuyerReturnAddress: null,
 		l2ReservationPreviousCollateralReturn: null,
 		l2ReservationPreviousTransactionId: null,
+		PaymentRequestCurrent: [],
+		PurchaseRequestCurrent: [{ PaidFunds: [{ unit: '', amount: 10_000_000n }] }],
 		...overrides,
 	};
 }
@@ -168,6 +170,22 @@ describe('releaseFinalHeadL2Reservations', () => {
 
 		await expect(run()).resolves.toBe(0);
 		expect(mockVerifyFanout).not.toHaveBeenCalled();
+		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	it('holds a reservation whose nudge output is below the paid funds', async () => {
+		mockFindMany.mockResolvedValue([
+			pendingRow({ PurchaseRequestCurrent: [{ PaidFunds: [{ unit: '', amount: 10_000_001n }] }] }),
+		]);
+
+		await expect(run()).resolves.toBe(0);
+		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	it('holds a non-locking action, which has no value floor', async () => {
+		mockFindMany.mockResolvedValue([pendingRow({ l2ReservationPreviousTransactionId: 'previous-tx' })]);
+
+		await expect(run()).resolves.toBe(0);
 		expect(mockRelease).not.toHaveBeenCalled();
 	});
 

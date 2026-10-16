@@ -22,6 +22,7 @@ import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-ve
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { isL2ReservationSpentByNudge } from './l2-release-nudge-proof';
 import { releaseRejectedL2Reservation } from './l2-reservation-release';
+import { l2ReleaseValueFloor, l2ReleaseValueFloorSelect } from './l2-reservation-recovery';
 
 /** Returns how many reservations were released. */
 export async function releaseFinalHeadL2Reservations(params: {
@@ -46,6 +47,7 @@ export async function releaseFinalHeadL2Reservations(params: {
 			l2ReservationPreviousBuyerReturnAddress: true,
 			l2ReservationPreviousCollateralReturn: true,
 			l2ReservationPreviousTransactionId: true,
+			...l2ReleaseValueFloorSelect,
 		},
 	});
 	const references = candidates.length === 0 ? null : node.getVerifiedFanoutReferences(expectedSnapshotNumber);
@@ -57,6 +59,7 @@ export async function releaseFinalHeadL2Reservations(params: {
 			isL2ReservationSpentByNudge({
 				nudgeTx: candidate.l2ReleaseNudgeTx,
 				inputRefs: candidate.l2ReservationInputRefs,
+				valueFloor: l2ReleaseValueFloor(candidate),
 				readOutput: (reference) => node.getVerifiedFinalOutput(reference, expectedSnapshotNumber),
 			}),
 	);
