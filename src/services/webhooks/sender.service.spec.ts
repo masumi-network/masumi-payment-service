@@ -289,6 +289,36 @@ describe('webhookSenderService.sendWebhook', () => {
 		});
 	});
 
+	it('shows a few transactions of a stuck snapshot round and counts the rest', async () => {
+		const txIds = Array.from({ length: 7 }, (_, i) => `tx${i}`);
+		const payload = {
+			event_type: WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK,
+			service_name: 'masumi-test-service',
+			timestamp: '2026-10-16T12:00:00.000Z',
+			webhook_id: 'webhook-5',
+			data: {
+				hydraHeadId: 'head-1',
+				roundTag: 'SeenSnapshot',
+				snapshotNumber: 314,
+				signatoryCount: 1,
+				txIds,
+				stuckSince: '2026-10-16T11:50:00.000Z',
+				checkedAt: '2026-10-16T12:00:00.000Z',
+			},
+		} as unknown as StoredWebhookPayload;
+
+		await webhookSenderService.sendWebhook(
+			'https://discord.com/api/webhooks/test/token',
+			WebhookFormat.DISCORD,
+			null,
+			payload,
+		);
+
+		const discordBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		expect(discordBody.content).toContain('🧊 Hydra snapshot round stuck');
+		expect(discordBody.content).toContain('🧾 Transactions: tx0, tx1, tx2, tx3, tx4 (+2 more)');
+	});
+
 	it('blocks private destinations before making an outbound request and logs only the redacted destination', async () => {
 		mockAssertWebhookDestinationAllowed.mockRejectedValue(new Error('blocked'));
 

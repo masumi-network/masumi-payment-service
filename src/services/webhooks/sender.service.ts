@@ -26,6 +26,7 @@ interface WebhookDeliveryResult {
 class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
+	private static readonly MAX_SUMMARY_TX_IDS = 5;
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
 	private static readonly LOVELACE_DECIMALS = 1_000_000n;
 	private static readonly MAINNET_USDCX_UNIT = '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378';
@@ -590,7 +591,7 @@ class WebhookSenderService {
 			this.appendDetailLine(lines, '🏷️', 'Round', payload.data.roundTag);
 			this.appendDetailLine(lines, '🔢', 'Snapshot', payload.data.snapshotNumber?.toString());
 			this.appendDetailLine(lines, '✍️', 'Signatures', payload.data.signatoryCount.toString());
-			this.appendDetailLine(lines, '🧾', 'Transactions', payload.data.txIds.join(', ') || null);
+			this.appendDetailLine(lines, '🧾', 'Transactions', this.summarizeTxIds(payload.data.txIds));
 			this.appendDetailLine(lines, '🕒', 'Stuck since', payload.data.stuckSince);
 			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 			return lines.join('\n');
@@ -608,6 +609,14 @@ class WebhookSenderService {
 		this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 
 		return lines.join('\n');
+	}
+
+	/** A round can name thousands of transactions; the summary line shows a few and a count. */
+	private summarizeTxIds(txIds: string[]): string | null {
+		if (txIds.length === 0) return null;
+		const shown = txIds.slice(0, WebhookSenderService.MAX_SUMMARY_TX_IDS).join(', ');
+		const hidden = txIds.length - WebhookSenderService.MAX_SUMMARY_TX_IDS;
+		return hidden > 0 ? `${shown} (+${hidden} more)` : shown;
 	}
 
 	private appendDetailLine(lines: string[], emoji: string, label: string, value: string | null | undefined): void {
