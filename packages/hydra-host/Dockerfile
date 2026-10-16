@@ -1,4 +1,3 @@
-# check=skip=InvalidBaseImagePlatform
 # Hydra Host — supervises one hydra-node process per Hydra Head and fronts them
 # with a token-gated control plane.
 #
@@ -62,7 +61,7 @@ FROM ghcr.io/cardano-scaling/hydra-node@${HYDRA_IMAGE_DIGEST} AS hydra-upstream
 # ---------------------------------------------------------------------------
 # Fetch the pinned etcd binary.
 # ---------------------------------------------------------------------------
-FROM debian:bookworm-slim@sha256:63a496b5d3b99214b39f5ed70eb71a61e590a77979c79cbee4faf991f8c0783e AS binaries
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS binaries
 ARG ETCD_VERSION
 ARG ETCD_SHA256_AMD64
 ARG ETCD_SHA256_ARM64
@@ -91,7 +90,7 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------
 # Build the control plane.
 # ---------------------------------------------------------------------------
-FROM node:24-bookworm-slim@sha256:a09aabc645e86e81e23dab78e0c0f2eaa233cab4277c7188232181a1a8bd5d39 AS control-plane
+FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS control-plane
 WORKDIR /build
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -101,7 +100,13 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 COPY packages/hydra-host/package.json packages/hydra-host/
 RUN pnpm install --filter @masumi/hydra-host --frozen-lockfile
-COPY packages/hydra-host ./packages/hydra-host
+# Only what the build and runtime need. The root .dockerignore excludes only the
+# root node_modules and dist, so copying the whole package directory would
+# carry a developer's own packages/hydra-host/node_modules (pnpm symlinks into
+# a store this image does not have) and any stale dist into the runtime image.
+COPY packages/hydra-host/src ./packages/hydra-host/src
+COPY packages/hydra-host/public ./packages/hydra-host/public
+COPY packages/hydra-host/tsconfig.build.json ./packages/hydra-host/
 COPY tsconfig.json ./
 RUN pnpm --filter @masumi/hydra-host run build
 
@@ -179,9 +184,10 @@ FROM hydra-closure-${TARGETARCH} AS hydra-closure
 # ---------------------------------------------------------------------------
 # Runtime.
 # ---------------------------------------------------------------------------
-FROM node:24-bookworm-slim@sha256:a09aabc645e86e81e23dab78e0c0f2eaa233cab4277c7188232181a1a8bd5d39 AS runtime
+FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime
 ARG HYDRA_VERSION
 ARG ETCD_VERSION
+ARG TARGETARCH
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates \
@@ -193,12 +199,37 @@ COPY --from=hydra-bin /hydra-node /usr/local/bin/hydra-node
 # etcd must be on PATH for --use-system-etcd, which keeps hydra-node from
 # re-extracting its embedded copy into the persistence volume on every boot.
 COPY --from=binaries /out/etcd /usr/local/bin/etcd
-COPY --from=control-plane /build/packages/hydra-host/dist /app/dist
+# Keep the pnpm workspace layout: the package's direct dependencies
+# (swagger-ui-dist among them) are symlinks in its own node_modules into the
+# root store, and docs-page.ts finds public/ relative to dist/. Copying dist/
+# and the root node_modules alone loses both, and /docs assets return 500.
+# `pnpm deploy` cannot flatten it here: it resolves the root manifest's
+# workspace:* dependencies, whose packages this image does not copy.
 COPY --from=control-plane /build/node_modules /app/node_modules
+COPY --from=control-plane /build/packages/hydra-host /app/packages/hydra-host
 # Ledger protocol parameters are generated at build time from the mesh version
 # pinned by packages/payment-source-v2, so the head ledger cannot drift from the
 # transactions the payment service builds.
 COPY packages/hydra-host/params /opt/hydra/params
+
+# Every base above is pinned by a multi-arch INDEX digest, the same as the
+# hydra-node pin, so each stage resolves to the platform being built. A
+# per-platform manifest digest would silently produce a mixed image (an amd64
+# node next to arm64 hydra-node and etcd) that still runs under emulation.
+# Fail the build instead: check the ELF e_machine of all three binaries
+# against the target (62 = x86-64, 183 = AArch64).
+RUN node -e " \
+	const fs = require('node:fs'); \
+	const want = { amd64: 62, arm64: 183 }[process.env.TARGETARCH]; \
+	if (!want) { console.error('no ELF machine for linux/' + process.env.TARGETARCH); process.exit(1); } \
+	for (const file of [process.execPath, '/usr/local/bin/hydra-node', '/usr/local/bin/etcd']) { \
+		const header = Buffer.alloc(20); \
+		const fd = fs.openSync(file, 'r'); \
+		fs.readSync(fd, header, 0, 20, 0); \
+		fs.closeSync(fd); \
+		const machine = header.readUInt16LE(18); \
+		if (machine !== want) { console.error(file + ' has ELF machine ' + machine + ', want ' + want); process.exit(1); } \
+	}"
 
 ENV NODE_ENV=production \
 	HYDRA_HOST_DATA_DIR=/data \
@@ -228,6 +259,6 @@ EXPOSE 8443 8444
 # Run with a generous --stop-timeout (Docker's 10s default would SIGKILL
 # mid-round).
 STOPSIGNAL SIGTERM
-WORKDIR /app
+WORKDIR /app/packages/hydra-host
 USER hydra
 ENTRYPOINT ["node", "dist/index.js"]
