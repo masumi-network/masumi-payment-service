@@ -33,6 +33,11 @@ services:
       dockerfile: packages/hydra-host/Dockerfile
     restart: unless-stopped
 
+    # Required, no default: size it for the number of heads this Host runs,
+    # for example 4g. It caps what a flood on the peer plane can take from the
+    # machine. Compose rejects an empty value, so there is no "unset" form.
+    mem_limit: ${HYDRA_HOST_MEMORY_LIMIT:?set a memory limit, for example 4g}
+
     ports:
       - '127.0.0.1:8443:8443'
       # The exchange plane. A counterparty redeems an invite by posting to this

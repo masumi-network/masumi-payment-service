@@ -71,6 +71,7 @@ HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
 BLOCKFROST_PROJECT_FILE=/srv/secrets/blockfrost.txt \
+HYDRA_HOST_MEMORY_LIMIT=4g \
 docker compose up -d --build
 ```
 
