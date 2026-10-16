@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
 import { createExchangePlane } from './api/exchange-server.js';
+import { redemptionNetwork, verifyRedemptionSignature } from './registry/redemption-signature.js';
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
 import { assertExecutablesAvailable } from './preflight.js';
@@ -195,6 +196,8 @@ async function main(): Promise<void> {
 		store: exchange,
 		logger,
 		trustProxy: config.exchangeTrustProxy,
+		verifyRedemption: async (nonce, redeemer, signature) =>
+			await verifyRedemptionSignature(nonce, redemptionNetwork(config.network), redeemer, signature),
 		onRedeemed: async () => {
 			await recoverRedemptions();
 			tickSupervisor('exchange redemption');

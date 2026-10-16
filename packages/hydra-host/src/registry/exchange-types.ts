@@ -1,16 +1,16 @@
 /**
  * What the Host knows about an exchange.
  *
- * Deliberately less than the payment service knows. The Host never verifies a
- * signature: doing so would mean pulling Mesh and its CSL bindings into an
- * image whose whole point is to be small. The Host instead accepts redemption
- * only for an issued, unspent, unexpired nonce, validates every value it later
- * passes to another parser, and stores the signature for the payment service to
- * verify when it polls.
+ * Deliberately less than the payment service knows. The Host accepts a
+ * redemption only for an issued, unspent, unexpired nonce, and only when the
+ * redeemer's signature verifies against the wallet it names (see
+ * `redemption-signature.ts`). It validates every value it later passes to
+ * another parser, and stores the signature so the payment service can verify
+ * it again when it polls.
  *
- * That split is what keeps the Exchange Plane safe to expose: everything it can
- * do without cryptography is reversible, and everything irreversible waits for
- * a service that holds keys.
+ * The Host check protects the single-use nonce from a forged body. The service
+ * check decides whether a head is recorded. Neither stops a leaked invite from
+ * being redeemed by whoever holds it.
  */
 
 import { parsePeerAdvertise } from '../peer-address.js';
@@ -20,9 +20,9 @@ import { isVerificationKeyCborHex } from '../keys.js';
  * Ceilings for the values this module cannot check the shape of.
  *
  * Everything else here is validated against a grammar, which bounds its length
- * as a side effect. These three are free-form, and a redemption is written to
- * the persistence volume BEFORE the payment service verifies its signature, so
- * without a ceiling an invitee can store a body-sized string per invite. The
+ * as a side effect. These three are free-form and reach the signature check
+ * and the persistence volume, so without a ceiling an invitee can make the
+ * Host parse or store a body-sized string per invite. The
  * limits are far above any real value: a bech32 Cardano address is about 100
  * characters, and a COSE_Sign1 signature with its key is a few hundred.
  */

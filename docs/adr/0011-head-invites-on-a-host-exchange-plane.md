@@ -104,6 +104,26 @@ nonce this Host issued, while it is unspent and unexpired. It validates every
 redeemer value before persistence. Unknown public paths return 404, request
 bodies are bounded, and connection timeouts are short.
 
+**7a. The Host verifies the redemption signature before it spends the nonce.**
+Revised from the first version of this ADR, where the Host stored the signature
+unchecked and only the payment service verified it at adoption. Spending a nonce
+is terminal, so under that design anyone who saw a nonce could burn the invite
+with a forged or malformed body. The Host now runs Mesh `checkSignature` over
+the same redemption payload hash the service checks, against the wallet the
+redemption names. A refusal returns 401 and leaves the invite open.
+
+- The Host depends on `@meshsdk/core-cst` on the V1 pin (see ADR 0005). We
+  accepted the larger image so the Host and the service share one verifier.
+  A second, hand-written CIP-8 verifier could disagree with the service.
+- The Host rebuilds the redemption payload because it builds standalone. A
+  parity spec on the service side keeps both builders on the same bytes.
+- The payment service still verifies at adoption. The Host check protects the
+  nonce. The service check decides if a head is recorded.
+- This does not stop a leaked invite. Whoever holds the full invite can redeem
+  it with a signature from their own wallet, as §3 accepts. Restricting an
+  invite to one recipient needs the expected redeemer address in the signed
+  invite and a check at redemption. That is not implemented.
+
 **8. Approval names the counterparty.** Before redeeming, the operator is shown
 the issuer's registry entries — assets at that address under the network's V2
 registry policy, resolved to their on-chain metadata names. A hex address is a
@@ -121,6 +141,8 @@ check people click past; an agent name is one they perform.
 - An operator can be in a Head with a party they have not yet reviewed, for as
   long as one poll interval. Acceptable only because reaching L1 stays a
   deliberate admin action.
+- The Host image carries Mesh core-cst and its Cardano SDK dependencies for
+  signature verification (§7a).
 - Automatic delivery is deferred. Operators must transfer each invite through
   a trusted channel until a design can authenticate the sender before writing
   to Host storage.
