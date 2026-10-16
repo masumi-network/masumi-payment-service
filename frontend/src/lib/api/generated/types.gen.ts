@@ -15096,7 +15096,7 @@ export type PostHydraHostPauseErrors = {
      */
     404: unknown;
     /**
-     * Host has no admin token, so its nodes cannot be stopped
+     * Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running. In the second case the pause stays recorded unless the other action was a Resume; read the pause state, then retry.
      */
     409: unknown;
 };
@@ -15132,7 +15132,7 @@ export type PostHydraHostResumeErrors = {
      */
     404: unknown;
     /**
-     * Host has no admin token
+     * Host has no admin token, or another pause action is running
      */
     409: unknown;
     /**
