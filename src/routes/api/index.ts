@@ -148,6 +148,8 @@ import {
 	withdrawHeadPost,
 	listWithdrawalsGet,
 	consolidateHeadPost,
+	getSnapshotRoundGet,
+	resetSnapshotRoundPost,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
@@ -561,6 +563,11 @@ export const apiRouter: Routing = {
 				},
 				// Merges the wallet's in-head UTxOs; nothing leaves the head.
 				consolidate: { post: consolidateHeadPost },
+				// A snapshot round that stopped moving, and the admin's reset of it.
+				'snapshot-round': {
+					get: getSnapshotRoundGet,
+					reset: { post: resetSnapshotRoundPost },
+				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
 				// Read-only: the head's state on L1, from an independent observer.
