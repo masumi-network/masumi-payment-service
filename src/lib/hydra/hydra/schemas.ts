@@ -327,6 +327,28 @@ export const hydraConfirmedSnapshotSchema = z.union([
 	z.looseObject({ tag: z.literal('InitialSnapshot'), headId: z.string() }),
 ]);
 
+/**
+ * `GET /snapshot/last-seen`: the node's view of the snapshot round in flight.
+ * Only the fields that identify a round are read. Any tag is accepted, because
+ * an unknown tag must still count as a round in flight, never as idle.
+ */
+export const hydraLastSeenSnapshotSchema = z.looseObject({
+	tag: z.string().max(64),
+	lastSeen: z.number().int().nonnegative().optional(),
+	requested: z.number().int().nonnegative().optional(),
+	snapshot: z
+		.looseObject({
+			headId: z.string().max(128).optional(),
+			number: z.number().int().nonnegative(),
+			confirmed: z
+				.array(z.looseObject({ txId: z.string().regex(/^[0-9a-fA-F]{64}$/) }))
+				.max(MAX_HYDRA_SNAPSHOT_OUTPUTS)
+				.optional(),
+		})
+		.optional(),
+	signatories: z.record(z.string().max(128), z.string().max(256)).optional(),
+});
+
 // Loose, like the rest of the replay path: an added sibling field must not wedge
 // a running head, and the vkey below stays required so a rename is still caught.
 const hydraPartySchema = z.looseObject({

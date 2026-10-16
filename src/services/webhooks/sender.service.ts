@@ -583,6 +583,18 @@ class WebhookSenderService {
 			return lines.join('\n');
 		}
 
+		if (payload.event_type === WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK) {
+			lines.push('');
+			this.appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
+			this.appendDetailLine(lines, '🏷️', 'Round', payload.data.roundTag);
+			this.appendDetailLine(lines, '🔢', 'Snapshot', payload.data.snapshotNumber?.toString());
+			this.appendDetailLine(lines, '✍️', 'Signatures', payload.data.signatoryCount.toString());
+			this.appendDetailLine(lines, '🧾', 'Transactions', payload.data.txIds.join(', ') || null);
+			this.appendDetailLine(lines, '🕒', 'Stuck since', payload.data.stuckSince);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+			return lines.join('\n');
+		}
+
 		lines.push('');
 		this.appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
 		this.appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);
@@ -634,6 +646,8 @@ class WebhookSenderService {
 				return { emoji: '🪫', title: 'x402 wallet balance low' };
 			case WebhookEventType.HYDRA_HEAD_LOW_BALANCE:
 				return { emoji: '🪫', title: 'Hydra in-head balance low' };
+			case WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK:
+				return { emoji: '🧊', title: 'Hydra snapshot round stuck' };
 			case WEBHOOK_TEST_EVENT_TYPE:
 				return { emoji: '🧪', title: 'Test webhook delivery' };
 			default:
