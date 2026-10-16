@@ -143,7 +143,40 @@ export const HOSTS = [HOST_A, HOST_B];
  */
 export const PUBLIC_HOST = '127.0.0.1';
 
+let isNodeBinVerified = false;
+
+/**
+ * The Host executes HYDRA_NODE_BIN, so it must pass the same `.sha256` record
+ * check hydra-native.sh applies before it runs a binary. Check only: no
+ * download and no repair, so a binary that live nodes use is not rewritten.
+ * Every Host spawn goes through hostEnv, so the check lives here.
+ */
+function assertNodeBinVerified(): void {
+	if (isNodeBinVerified) return;
+	try {
+		execFileSync('bash', [path.join(REPO_ROOT, 'hydra-l2-flow', 'hydra-native.sh'), 'verify'], {
+			env: {
+				...process.env,
+				NATIVE_BIN: HYDRA_NODE_BIN,
+				BIN_DIR: path.dirname(HYDRA_NODE_BIN),
+				// The tag selects which pin applies, so it must describe the
+				// binary checked. The default path is always the release
+				// `.bin/hydra-node`; only an explicit override can be a tag build.
+				HYDRA_BIN_TAG: process.env.HYDRA_E2E_NODE_BIN ? (process.env.HYDRA_BIN_TAG ?? '') : '',
+			},
+			stdio: 'inherit',
+		});
+	} catch {
+		throw new Error(
+			`hydra-node binary at ${HYDRA_NODE_BIN} failed its .sha256 record check ` +
+				'(see the hydra-native.sh output above for the cause and the fix)',
+		);
+	}
+	isNodeBinVerified = true;
+}
+
 export function hostEnv(spec: HostSpec): NodeJS.ProcessEnv {
+	assertNodeBinVerified();
 	return {
 		...process.env,
 		HYDRA_HOST_DATA_DIR: spec.dataDir,

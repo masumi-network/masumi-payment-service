@@ -968,7 +968,7 @@ cmd_precheck(){
   if ! { curl -s --max-time 5 "$NODE1/protocol-parameters" >/dev/null 2>&1 \
       && curl -s --max-time 5 "http://127.0.0.1:4002/protocol-parameters" >/dev/null 2>&1; }; then
     c_blu "precheck: hydra-nodes down — starting detached…"
-    nohup bash -c "NETWORK=preprod '$NATIVE_SH' up" >/dev/null 2>&1 & disown
+    NETWORK=preprod "$NATIVE_SH" bin || return 1; nohup bash -c "NETWORK=preprod '$NATIVE_SH' up" >/dev/null 2>&1 & disown
     local w=0
     until { curl -s --max-time 5 "$NODE1/protocol-parameters" >/dev/null 2>&1 \
         && curl -s --max-time 5 "http://127.0.0.1:4002/protocol-parameters" >/dev/null 2>&1; } || [ $w -ge 180 ]; do

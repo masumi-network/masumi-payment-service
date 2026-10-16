@@ -21,7 +21,7 @@
  */
 'use strict';
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 
 const TSV = process.env.EVIDENCE_TSV;
 const LOG = process.env.NATIVE_LOG;
@@ -143,6 +143,12 @@ function hydraVersion() {
 	const bin =
 		process.env.NATIVE_BIN || (tag ? `hydra-l2-flow/.bin/hydra-node-${tag}` : 'hydra-l2-flow/.bin/hydra-node');
 	if (fs.existsSync(bin)) {
+		// Run the binary only after hydra-native.sh accepts its .sha256 record.
+		const check = spawnSync('bash', ['hydra-l2-flow/hydra-native.sh', 'verify'], {
+			env: { ...process.env, NATIVE_BIN: bin, HYDRA_BIN_TAG: tag ?? '' },
+			stdio: 'ignore',
+		});
+		if (check.status !== 0) return `(binary at ${bin} failed its .sha256 record check, not probed)`;
 		const v = sh(`"${bin}" --version`);
 		if (v) return `${v} (${process.arch}-${process.platform}, ${bin})`;
 	}
