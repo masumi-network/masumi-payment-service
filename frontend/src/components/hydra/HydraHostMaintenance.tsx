@@ -66,7 +66,7 @@ export function HydraHostMaintenance({ host }: { host: HydraHost }) {
   const { apiClient } = useAppContext();
   const resync = useResync();
   const { releaseStatus } = useReleaseStatus();
-  const { pauseState } = useHydraHostPause(host.id);
+  const { pauseState } = useHydraHostPause(host.id, host.pausedAt !== null);
   const [confirming, setConfirming] = useState<'pause' | 'force' | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
