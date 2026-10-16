@@ -1816,6 +1816,14 @@ model HydraHead {
   /// on every attach, so a flapping session hid a stuck latch from it forever.
   closingSince DateTime?
 
+  /// When the head's node refused the Close admitted above.
+  ///
+  /// The only proof the stalled-close reaper accepts that the command can no
+  /// longer execute: a node can park a Close (a node behind the chain holds it
+  /// until synced), so neither elapsed time nor a status read of `Open` shows
+  /// the Close is dead. Set only while the latch is held, cleared with it.
+  closeRefusedAt DateTime?
+
   /// L1 transaction hashes for head lifecycle events
   initTxHash   String?
   closeTxHash  String?

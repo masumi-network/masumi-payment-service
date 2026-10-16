@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
-import { HydraCommandRejectedError, HydraTransportError } from '@/lib/hydra/hydra/errors';
+import { HydraCommandRejectedError, HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import { HydraHeadInitObservationError } from '@/lib/hydra/hydra/head-init-validation';
 
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -219,10 +219,9 @@ describe('beginHydraHeadClose', () => {
 				isClosing: false,
 				initTxHash: { not: null },
 			},
-			// `closingSince` starts the reaper's clock. It has to be the latch's own
-			// timestamp: `updatedAt` is rewritten by every attach, so a head that
-			// reconnects often never looked stale and its latch was never released.
-			data: { isClosing: true, closingSince: expect.any(Date) },
+			// `closingSince` is the latch's own timestamp. `closeRefusedAt` starts
+			// empty: a refusal from an earlier attempt must not release this one.
+			data: { isClosing: true, closingSince: expect.any(Date), closeRefusedAt: null },
 		});
 	});
 });
@@ -415,7 +414,46 @@ describe('Hydra head state convergence', () => {
 
 		expect(mockReleaseClose).toHaveBeenCalledWith({
 			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true },
-			data: { isClosing: false, closingSince: null },
+			data: { isClosing: false, closingSince: null, closeRefusedAt: null },
 		});
+	});
+
+	// The node's refusal is the only proof the stalled-close reaper accepts that
+	// this Close cannot still post. It is recorded, never acted on here: the head
+	// may have been closed by the other party, which only L1 can rule out.
+	it('records a node refusal of the dispatched Close and keeps the latch', async () => {
+		mockClose.mockRejectedValue(
+			new HydraTransportAmbiguousError('Hydra Close was rejected after dispatch', {
+				cause: new HydraCommandRejectedError('hydra-node refused to post the Close transaction: NoSeedInput'),
+			}),
+		);
+		const handler = (
+			closeHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+
+		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
+		expect(mockReleaseClose).toHaveBeenCalledWith({
+			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true },
+			data: { closeRefusedAt: expect.any(Date) },
+		});
+	});
+
+	// A timeout after dispatch is the parked-Close case: the node may still post
+	// it. No refusal is recorded, so the reaper never releases the latch.
+	it('records nothing when the dispatched Close only timed out', async () => {
+		mockClose.mockRejectedValue(new HydraTransportAmbiguousError('Hydra Close outcome was not observed'));
+		const handler = (
+			closeHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+
+		expect(mockReleaseClose).not.toHaveBeenCalled();
 	});
 });
