@@ -578,12 +578,17 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockReleaseFinalHeadL2Reservations.mock.invocationCallOrder[0]).toBeLessThan(
 			mockPaymentRequestFindMany.mock.invocationCallOrder[0],
 		);
-		mockVerifyHydraFanout.mockClear();
+		// The handoff already checked these references; the release step reuses
+		// that one observer pass.
+		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(1);
 		const { verifyFanoutOnChain } = mockReleaseFinalHeadL2Reservations.mock.calls[0][0];
 		await verifyFanoutOnChain([FANOUT_REFERENCE]);
+		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(1);
 		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(
 			expect.objectContaining({ headId: HEAD_IDENTIFIER, references: [FANOUT_REFERENCE], requiredConfirmations: 5 }),
 		);
+		await verifyFanoutOnChain([{ ...FANOUT_REFERENCE, outputIndex: 1 }]);
+		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(2);
 	});
 
 	// A head too large to empty in one transaction fans out over several. Each

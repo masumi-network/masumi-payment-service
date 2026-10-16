@@ -335,17 +335,26 @@ async function reconcileHead(
 			node == null
 		)
 			return;
-		const verifyFanout = (references: readonly VerifiedHydraFanoutReference[]) =>
-			verifyHydraFanoutOnChain({
-				observer: getBlockfrostInstance(
-					source.network,
-					source.PaymentSourceConfig.rpcProviderApiKey,
-				) as unknown as HydraFanoutChainObserver,
-				headId: headIdentifier,
-				participantVkeys: [localParticipantVkey, remoteParticipantVkey],
-				references,
-				requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
-			});
+		// One observer pass per reference set: the release step and the handoff
+		// both check the same fanout when a release happens.
+		const fanoutChecks = new Map<string, ReturnType<typeof verifyHydraFanoutOnChain>>();
+		const verifyFanout = (references: readonly VerifiedHydraFanoutReference[]) => {
+			const key = JSON.stringify(references);
+			const check =
+				fanoutChecks.get(key) ??
+				verifyHydraFanoutOnChain({
+					observer: getBlockfrostInstance(
+						source.network,
+						source.PaymentSourceConfig.rpcProviderApiKey,
+					) as unknown as HydraFanoutChainObserver,
+					headId: headIdentifier,
+					participantVkeys: [localParticipantVkey, remoteParticipantVkey],
+					references,
+					requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+				});
+			fanoutChecks.set(key, check);
+			return check;
+		};
 		// The handoff refuses any Pending L2 row, and a Final head never makes the
 		// snapshot the open head release path waits for.
 		await releaseFinalHeadL2Reservations({

@@ -19,11 +19,24 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 jest.unstable_mockModule('./l2-reservation-release', () => ({
 	releaseRejectedL2Reservation: mockRelease,
+	// Only what the real input-ref fallback in `./l2-reservation-recovery` reads.
+	paymentL2ActionRetry: (action: string | undefined) =>
+		action === 'SubmitResultInitiated' ? 'SubmitResultRequested' : undefined,
+	purchaseL2ActionRetry: () => undefined,
 }));
 
-jest.unstable_mockModule('./l2-reservation-recovery', () => ({
-	escrowPointerSelect: {},
-	reservationInputRefs: (candidate: { l2ReservationInputRefs: string[] }) => candidate.l2ReservationInputRefs,
+// The real `./l2-reservation-recovery` loads, so its open-head-only imports are stubbed.
+jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-transaction-evidence', () => ({
+	hydraValidityUpperBoundTimeMs: jest.fn(),
+}));
+jest.unstable_mockModule('@/utils/hydra/l2-slot-context', () => ({
+	resolveHydraL2EvidenceSlotConfig: jest.fn(),
+}));
+jest.unstable_mockModule('@/lib/hydra/hydra/node-control-queries', () => ({
+	fetchHydraConfirmedSnapshotNumber: jest.fn(),
+}));
+jest.unstable_mockModule('./l2-reservation-nudge', () => ({
+	nudgeIdleHeadForRelease: jest.fn(),
 }));
 
 const { releaseFinalHeadL2Reservations } = await import('./final-l2-reservation-release');
@@ -136,6 +149,29 @@ describe('releaseFinalHeadL2Reservations', () => {
 		await expect(run()).resolves.toBe(0);
 		expect(mockVerifyFanout).not.toHaveBeenCalled();
 		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	// Rows from before inputs were recorded fall back to the request's escrow
+	// pointer, which an unconfirmed body has not moved.
+	it('releases a row without recorded inputs on its escrow pointer', async () => {
+		const pointerTxHash = 'D'.repeat(64);
+		mockFindMany.mockResolvedValue([
+			pendingRow({
+				l2ReservationInputRefs: [],
+				l2ReservationPreviousTransactionId: 'previous-tx',
+				PaymentRequestCurrent: [
+					{
+						currentHydraUtxoTxHash: pointerTxHash,
+						currentHydraUtxoOutputIndex: 2,
+						NextAction: { requestedAction: 'SubmitResultInitiated' },
+					},
+				],
+			}),
+		]);
+
+		await expect(run()).resolves.toBe(1);
+		expect(mockGetVerifiedFinalOutput).toHaveBeenCalledWith(`${'d'.repeat(64)}#2`, 7);
+		expect(mockRelease).toHaveBeenCalledTimes(1);
 	});
 
 	it('does not count a release the guarded update refused', async () => {
