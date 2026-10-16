@@ -36092,7 +36092,7 @@
                         "description": "Hydra host not found"
                     },
                     "409": {
-                        "description": "Host has no admin token, so its nodes cannot be stopped"
+                        "description": "Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running"
                     }
                 }
             }
@@ -36184,7 +36184,7 @@
                         "description": "Hydra host not found"
                     },
                     "409": {
-                        "description": "Host has no admin token"
+                        "description": "Host has no admin token, or another pause action is running"
                     },
                     "502": {
                         "description": "A node did not start; the Host stays paused"

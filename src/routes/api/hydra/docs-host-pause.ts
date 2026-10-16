@@ -53,7 +53,10 @@ export function registerHydraHostPausePaths({ registry, apiKeyAuth }: SwaggerReg
 		request: { body: jsonBody(pauseHydraHostInput, { id: HOST_ID, force: false }) },
 		responses: {
 			200: successResponse('Pause accepted', hydraHostPauseStateSchema, PAUSED_EXAMPLE),
-			409: { description: 'Host has no admin token, so its nodes cannot be stopped' },
+			409: {
+				description:
+					'Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running',
+			},
 			...unauthorized,
 			...notFound,
 		},
@@ -75,7 +78,7 @@ export function registerHydraHostPausePaths({ registry, apiKeyAuth }: SwaggerReg
 				pausedAt: null,
 				inFlight: { l2Transactions: 0, topups: 0, withdrawals: 0, closingHeads: 0 },
 			}),
-			409: { description: 'Host has no admin token' },
+			409: { description: 'Host has no admin token, or another pause action is running' },
 			502: { description: 'A node did not start; the Host stays paused' },
 			...unauthorized,
 			...notFound,
