@@ -25,7 +25,11 @@ import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnC
 import { carveExactUtxo, HydraPreSplitError } from './pre-split';
 import { canReleaseTopupWallet, isOwnTopupOutstanding, outstandingOwnTopupWhere } from './wallet-release';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
-import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
+import {
+	assertHydraHeadHostNotPaused,
+	HYDRA_HOST_PAUSED_MESSAGE,
+	isHydraHeadOnPausedHostLocked,
+} from '@/services/hydra-host/pause';
 
 /**
  * After this, a Preparing row is treated as abandoned.
@@ -203,6 +207,11 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 						logger.warn(`[HydraAPI] Failed a stale preparing top-up ${active.id} so a new one can start`);
 					}
 
+					// Under FOR SHARE on the Host: a pause that commits first is seen here,
+					// and one that commits after counts this row as in flight.
+					if (await isHydraHeadOnPausedHostLocked(tx, head.id)) {
+						throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
+					}
 					const created = await tx.hydraTopup.create({
 						data: {
 							hydraHeadId: head.id,
