@@ -11,6 +11,8 @@ export const MAX_HYDRA_WS_FRAME_BYTES = 4 * 1024 * 1024;
 const MAX_HYDRA_TRANSACTION_CBOR_HEX_LENGTH = 128 * 1024;
 const MAX_HYDRA_TRANSACTION_DESCRIPTION_LENGTH = 1024;
 const MAX_HYDRA_CONFIRMED_TRANSACTIONS_PER_FRAME = 1024;
+/** A head has at most this many parties, so a round has at most this many signatures. */
+const MAX_HYDRA_HEAD_PARTIES = 128;
 export { MAX_HYDRA_SNAPSHOT_OUTPUTS };
 
 const boundedTagSchema = z.string().min(1).max(64);
@@ -346,7 +348,10 @@ export const hydraLastSeenSnapshotSchema = z.looseObject({
 				.optional(),
 		})
 		.optional(),
-	signatories: z.record(z.string().max(128), z.string().max(256)).optional(),
+	signatories: z
+		.record(z.string().max(128), z.string().max(256))
+		.refine((signatories) => Object.keys(signatories).length <= MAX_HYDRA_HEAD_PARTIES)
+		.optional(),
 });
 
 // Loose, like the rest of the replay path: an added sibling field must not wedge

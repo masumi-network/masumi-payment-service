@@ -4,6 +4,7 @@ import type { StoredWebhookPayload, WebhookSendPayload, WebhookTestPayload } fro
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
+import { getWebhookEventPresentation } from './event-presentation';
 import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';
 import {
 	assertWebhookDestinationAllowed,
@@ -484,7 +485,7 @@ class WebhookSenderService {
 	}
 
 	private buildCompactSummary(payload: WebhookSendPayload): string {
-		const eventPresentation = this.getEventPresentation(payload.event_type);
+		const eventPresentation = getWebhookEventPresentation(payload.event_type);
 		const lines = [`${eventPresentation.emoji} ${eventPresentation.title}`];
 		if (payload.service_name) {
 			lines.push(`🛰️ Service: ${payload.service_name}`);
@@ -615,44 +616,6 @@ class WebhookSenderService {
 		}
 
 		lines.push(`${emoji} ${label}: ${value}`);
-	}
-
-	private getEventPresentation(eventType: WebhookSendPayload['event_type']): {
-		emoji: string;
-		title: string;
-	} {
-		switch (eventType) {
-			case WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED:
-				return { emoji: '💸', title: 'Payment status updated' };
-			case WebhookEventType.PURCHASE_ON_CHAIN_STATUS_CHANGED:
-				return { emoji: '🛒', title: 'Purchase status updated' };
-			case WebhookEventType.PAYMENT_ON_ERROR:
-				return { emoji: '🚨', title: 'Payment error' };
-			case WebhookEventType.PURCHASE_ON_ERROR:
-				return { emoji: '🚨', title: 'Purchase error' };
-			case WebhookEventType.WALLET_LOW_BALANCE:
-				return { emoji: '🪫', title: 'Wallet balance low' };
-			case WebhookEventType.FUND_DISTRIBUTION_SENT:
-				return { emoji: '💸', title: 'Fund distribution sent' };
-			case WebhookEventType.FUND_DISTRIBUTION_CONFIRMED:
-				return { emoji: '✅', title: 'Fund distribution confirmed' };
-			case WebhookEventType.FUND_DISTRIBUTION_FAILED:
-				return { emoji: '🚨', title: 'Fund distribution failed' };
-			case WebhookEventType.X402_PAYMENT_SETTLED:
-				return { emoji: '✅', title: 'x402 payment settled' };
-			case WebhookEventType.X402_PAYMENT_FAILED:
-				return { emoji: '🚨', title: 'x402 payment failed' };
-			case WebhookEventType.X402_WALLET_LOW_BALANCE:
-				return { emoji: '🪫', title: 'x402 wallet balance low' };
-			case WebhookEventType.HYDRA_HEAD_LOW_BALANCE:
-				return { emoji: '🪫', title: 'Hydra in-head balance low' };
-			case WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK:
-				return { emoji: '🧊', title: 'Hydra snapshot round stuck' };
-			case WEBHOOK_TEST_EVENT_TYPE:
-				return { emoji: '🧪', title: 'Test webhook delivery' };
-			default:
-				return { emoji: '🔔', title: eventType };
-		}
 	}
 
 	private formatBalanceForDisplay(rawAmount: string, assetUnit: string): string {

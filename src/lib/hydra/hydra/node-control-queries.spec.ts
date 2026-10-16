@@ -80,4 +80,11 @@ describe('fetchHydraSnapshotRound', () => {
 	])('rejects a malformed answer %j', async (body) => {
 		await expect(fetchHydraSnapshotRound(transportReturning(body))).rejects.toBeInstanceOf(HydraProtocolError);
 	});
+
+	it('rejects more signatures than a head has parties', async () => {
+		const signatories = Object.fromEntries(Array.from({ length: 129 }, (_, i) => [`vk${i}`, 'sig']));
+		await expect(
+			fetchHydraSnapshotRound(transportReturning({ tag: 'SeenSnapshot', snapshot: { number: 1 }, signatories })),
+		).rejects.toBeInstanceOf(HydraProtocolError);
+	});
 });
