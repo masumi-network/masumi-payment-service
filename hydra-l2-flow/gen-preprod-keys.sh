@@ -7,7 +7,9 @@ umask 077
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$REPO/hydra-l2-flow/preprod"
 NATIVE_BIN="$REPO/hydra-l2-flow/.bin/hydra-node"
-CARDANO_IMAGE="ghcr.io/intersectmbo/cardano-node:10.6.2"
+# Pinned by digest (multi-arch index of tag 10.6.2), so a moved tag cannot
+# swap the image that generates signing keys. Re-pin when the tag changes.
+CARDANO_IMAGE="ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2"
 mkdir -p "$OUT"
 
 # .env must already contain BLOCKFROST_API_KEY_PREPROD. Write the project

@@ -161,4 +161,5 @@ match upstream's file.
   Blockfrost reason as the Host.
 - `HYDRA_BINARY_SHA256`, pinned in the script for 2.4.1. On its default path
   the script refuses to install a binary it cannot verify. The `HYDRA_BIN_TAG`
-  path, for testing an unreleased commit, still installs without a checksum.
+  path, for testing an unreleased commit, also refuses: it needs
+  `HYDRA_BIN_TAG_SHA256`, the sha256 of that build's extracted `hydra-node`.
