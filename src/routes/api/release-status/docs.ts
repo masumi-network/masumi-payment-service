@@ -17,7 +17,7 @@ export function registerReleaseStatusPaths({ registry, apiKeyAuth }: SwaggerRegi
 		path: '/release-status',
 		summary: 'Compare the running release with the newest published one.',
 		description:
-			'Reports the release this service and each Hydra Host were built from, and the newest release published on GitHub. The GitHub check runs at most once every six hours. A failed check reports `latest` as null with the reason in `checkError`; it never reports a build as up to date. Hosts are listed only for an admin key, as of their last Check.',
+			'Reports the release this service and each Hydra Host were built from, and the newest release published on GitHub. The GitHub check runs at most once every six hours. A failed check sets `checkError` and keeps the last good answer in `latest` and `checkedAt`. With no good answer yet, `latest` is null and `updateAvailable` is null: a build is never reported as up to date without an answer. Hosts are listed only for an admin key, as of their last Check.',
 		tags: ['health'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
