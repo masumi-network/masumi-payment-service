@@ -272,13 +272,11 @@ describe('resetSnapshotRound', () => {
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it('reports the same round in flight after the reset, with its clock restarted', async () => {
+	it('keeps the recorded round when the node did not leave it, so the admin can retry', async () => {
 		mockFetchRound.mockReset().mockResolvedValue(round() as never);
 		await expect(reset()).rejects.toMatchObject({ status: 502 });
-		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', snapshotRoundSignature: SIGNATURE },
-			data: { snapshotRoundSignature: null, snapshotRoundSince: null, snapshotRoundAlertedAt: null },
-		});
+		expect(node.post).toHaveBeenCalled();
+		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
 	it('still succeeds when the round cannot be read back', async () => {
@@ -288,6 +286,7 @@ describe('resetSnapshotRound', () => {
 			.mockResolvedValueOnce(round() as never)
 			.mockRejectedValueOnce(new Error('down') as never);
 		await expect(reset()).resolves.toMatchObject({ roundAfter: null });
+		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
 	it('runs one reset per head at a time', async () => {

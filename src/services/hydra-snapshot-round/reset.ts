@@ -237,19 +237,21 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(502, 'The Hydra node refused the reset');
 		}
 
-		// The side-load happened, so the recorded clock and alert belong to a round
-		// that was reset. Cleared before the read-back: a peer that proposes the
-		// same round again then starts a fresh clock and a fresh alert, instead of
-		// being offered for another reset at once. Conditioned on the round it
-		// reset, so a newer observation is never wiped.
-		await prisma.hydraHead.updateMany({
-			where: { id: head.id, snapshotRoundSignature: round.signature },
-			data: { snapshotRoundSignature: null, snapshotRoundSince: null, snapshotRoundAlertedAt: null },
-		});
-		// A failed read-back is reported, not thrown.
+		// The node can answer 202 when its own timeout runs out, which the client
+		// cannot tell from success. So the recorded round is cleared only once the
+		// read-back shows it moved; otherwise it stays, and the admin can retry
+		// at once. A failed read-back is reported, not thrown, and the watch
+		// clears the record when it next sees the node idle.
 		const after = await fetchHydraSnapshotRound(node).catch(() => null);
 		if (after?.inFlight && after.signature === round.signature) {
-			throw createHttpError(502, 'The reset was accepted but the same round is in flight again');
+			throw createHttpError(502, 'The node did not leave the stuck round; check the round and retry');
+		}
+		if (after) {
+			// Conditioned on the round it reset, so a newer observation is never wiped.
+			await prisma.hydraHead.updateMany({
+				where: { id: head.id, snapshotRoundSignature: round.signature },
+				data: { snapshotRoundSignature: null, snapshotRoundSince: null, snapshotRoundAlertedAt: null },
+			});
 		}
 		logger.warn('[HydraSnapshotRound] stuck snapshot round reset', {
 			hydraHeadId: head.id,
