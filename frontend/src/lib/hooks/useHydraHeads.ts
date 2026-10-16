@@ -12,3 +12,4 @@ export * from './hydra/heads';
 export * from './hydra/funds';
 export * from './hydra/invites';
 export * from './hydra/relations';
+export * from './hydra/snapshot-round';
