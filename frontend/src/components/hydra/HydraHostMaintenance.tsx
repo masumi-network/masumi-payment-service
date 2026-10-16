@@ -159,6 +159,15 @@ export function HydraHostMaintenance({ host }: { host: HydraHost }) {
       {phase === 'Draining' && pauseState && (
         <p className="text-xs text-muted-foreground">{inFlightText(pauseState)}</p>
       )}
+      {phase === 'Stopping' &&
+        pauseState?.nodes
+          .filter((node) => node.state !== 'Stopped')
+          .map((node) => (
+            <p key={node.nodeId} className="text-xs text-muted-foreground">
+              Head process <span className="font-mono">{node.nodeId}</span>:{' '}
+              {node.error ?? `not stopped yet (${node.state ?? 'state unknown'})`}
+            </p>
+          ))}
       {phase !== 'Active' && (
         <HydraNotice tone={elapsed !== null && elapsed >= PAUSE_TARGET_MINUTES ? 'warn' : 'info'}>
           <p>
