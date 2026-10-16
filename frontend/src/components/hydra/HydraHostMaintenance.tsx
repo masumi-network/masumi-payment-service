@@ -48,13 +48,16 @@ function useElapsedMinutes(since: string | null): number | null {
 }
 
 function inFlightText(state: HydraHostPauseState): string {
-  const { l2Transactions, topups, withdrawals } = state.inFlight;
+  const { l2Transactions, topups, withdrawals, closingHeads } = state.inFlight;
   const parts = [
     l2Transactions > 0
       ? `${l2Transactions} L2 transaction${l2Transactions === 1 ? '' : 's'}`
       : null,
     topups > 0 ? `${topups} top-up${topups === 1 ? '' : 's'}` : null,
     withdrawals > 0 ? `${withdrawals} withdrawal${withdrawals === 1 ? '' : 's'}` : null,
+    closingHeads > 0
+      ? `${closingHeads} closing head${closingHeads === 1 ? '' : 's'} to settle`
+      : null,
   ].filter((part) => part !== null);
   return parts.length === 0 ? 'Nothing in flight.' : `Waiting for ${parts.join(', ')}.`;
 }
