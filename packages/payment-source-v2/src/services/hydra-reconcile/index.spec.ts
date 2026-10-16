@@ -34,8 +34,8 @@ const mockGetReconciliationQueue = jest.fn<() => unknown[]>();
 const mockMarkReconciled = jest.fn<(_txId: string) => void>();
 const mockGetConfirmedTransaction = jest.fn<(_txId: string) => unknown>();
 const mockApplyDatum = jest.fn<(_args: unknown) => Promise<ApplyOutcome>>();
-const mockFindLocallyRelevantIdentifiers =
-	jest.fn<(_paymentSourceId: string, _identifiers: Iterable<string>) => Promise<Set<string>>>();
+const mockFindRequestLineages =
+	jest.fn<(_paymentSourceId: string, _identifiers: Iterable<string>) => Promise<Map<string, unknown[]>>>();
 const mockDeserializeDatum = jest.fn<(_datumCbor: string) => unknown>();
 const mockDecodeDatum = jest.fn<(_datum: unknown) => unknown>();
 const mockParseEvidence = jest.fn<(_cborHex: string) => unknown>();
@@ -157,7 +157,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-datum-sync', () => ({
 	applyDatumStateToLocalRequests: mockApplyDatum,
-	findLocallyRelevantHydraRequestIdentifiers: mockFindLocallyRelevantIdentifiers,
+	findHydraRequestLineages: mockFindRequestLineages,
 }));
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-transaction-evidence', () => ({
@@ -385,9 +385,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		}));
 		mockHandleTxConfirmed.mockResolvedValue('applied');
 		mockDisconnect.mockResolvedValue();
-		mockFindLocallyRelevantIdentifiers.mockImplementation(
-			async (_paymentSourceId, identifiers) => new Set(identifiers),
-		);
+		mockFindRequestLineages.mockResolvedValue(new Map());
 		mockFindNothingToApply.mockResolvedValue(new Set());
 		mockIsLivePassDue.mockReturnValue(true);
 	});
@@ -1067,17 +1065,37 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockDisconnect).not.toHaveBeenCalled();
 	});
 
-	it('keeps a finalized head connected while duplicate live identifiers remain ambiguous', async () => {
-		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-first'), liveUtxo('tx-second')]);
+	it('reconciles the persisted escrow output and skips a peer copy of its identifier', async () => {
+		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-escrow'), liveUtxo('tx-peer-copy')]);
 		mockDecodeDatum.mockReturnValue({
-			blockchainIdentifier: 'duplicate-identifier',
+			blockchainIdentifier: 'local-identifier',
 			state: 'result-submitted',
 		});
+		mockFindRequestLineages.mockResolvedValue(
+			new Map([
+				[
+					'local-identifier',
+					[
+						{
+							currentHydraUtxoTxHash: 'tx-escrow',
+							currentHydraUtxoOutputIndex: 0,
+							CurrentTransaction: { txHash: 'tx-escrow', intendedTxHash: null, hydraHeadId: 'head-1' },
+							TransactionHistory: [],
+						},
+					],
+				],
+			]),
+		);
 
 		await reconcileHydraHeadEscrowStates();
 
-		expect(mockApplyDatum).not.toHaveBeenCalled();
-		expect(mockDisconnect).not.toHaveBeenCalled();
+		expect(mockFindRequestLineages).toHaveBeenCalledWith('source-1', ['local-identifier']);
+		expect(mockApplyDatum).toHaveBeenCalledTimes(1);
+		expect(mockApplyDatum).toHaveBeenCalledWith(
+			expect.objectContaining({ outputReference: { txHash: 'tx-escrow', outputIndex: 0 } }),
+		);
+		// The peer copy no longer holds the finalized head open.
+		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});
 
 	it('ignores duplicate live identifiers that have no local request', async () => {
@@ -1086,11 +1104,10 @@ describe('Hydra live-snapshot reconciliation', () => {
 			blockchainIdentifier: 'external-duplicate',
 			state: 'result-submitted',
 		});
-		mockFindLocallyRelevantIdentifiers.mockResolvedValue(new Set());
 
 		await reconcileHydraHeadEscrowStates();
 
-		expect(mockFindLocallyRelevantIdentifiers).toHaveBeenCalledWith('source-1', ['external-duplicate']);
+		expect(mockFindRequestLineages).toHaveBeenCalledWith('source-1', ['external-duplicate']);
 		expect(mockApplyDatum).not.toHaveBeenCalled();
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});
