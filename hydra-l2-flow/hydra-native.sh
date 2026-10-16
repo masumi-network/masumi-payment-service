@@ -190,14 +190,16 @@ bin_is_verified(){
   printf '%s  %s\n' "$sum" "$NATIVE_BIN" | shasum -a 256 -c - >/dev/null 2>&1
 }
 
+refuse_unverified(){
+  c_red "refusing to run $NATIVE_BIN: it does not match a pinned, verified install"
+  c_red "  (no $BIN_RECORD, a changed file, or a pin that differs from this run's)"
+  c_red "  Remove it and its .sha256 record, then re-run to download and verify it again."
+  exit 1
+}
+
 ensure_bin(){
   if [ -e "$NATIVE_BIN" ]; then
-    bin_is_verified || {
-      c_red "refusing to run $NATIVE_BIN: it does not match a pinned, verified install"
-      c_red "  (no $BIN_RECORD, a changed file, or a pin that differs from this run's)"
-      c_red "  Remove it and its .sha256 record, then re-run to download and verify it again."
-      exit 1
-    }
+    bin_is_verified || refuse_unverified
     # repair_dylibs is normally a no-op after the first install. Re-record
     # only when it did change the file, which was verified one step above.
     local pin sum
@@ -217,6 +219,7 @@ ensure_bin(){
       c_red "HYDRA_BIN_TAG_SHA256 is required with HYDRA_BIN_TAG (sha256 of the extracted hydra-node)"
       exit 1
     }
+    is_sha256 "$(lower "$HYDRA_BIN_TAG_SHA256")" || { c_red "HYDRA_BIN_TAG_SHA256 must be a 64-hex sha256"; exit 1; }
     c_blu "Downloading native $HYDRA_BIN_ARTIFACT (CI artifact, ~176 MiB)…"
     gh run download "$HYDRA_BIN_RUN_ID" --repo cardano-scaling/hydra \
       --name "$HYDRA_BIN_ARTIFACT" --dir "$tmp" || { c_red "download failed"; exit 1; }
@@ -246,6 +249,7 @@ ensure_bin(){
         c_red "HYDRA_RELEASE_SHA256 is required for the ${HYDRA_VERSION} release zip"
         exit 1
       }
+      is_sha256 "$(lower "$HYDRA_RELEASE_SHA256")" || { c_red "HYDRA_RELEASE_SHA256 must be a 64-hex sha256"; exit 1; }
       printf '%s  %s\n' "$HYDRA_RELEASE_SHA256" "$tmp/hydra-aarch64-darwin-${HYDRA_VERSION}.zip" \
         | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
       (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
@@ -267,6 +271,7 @@ ensure_bin(){
         c_red "HYDRA_BINARY_SHA256 is required for the ${HYDRA_VERSION} CI artifact (no release zip to verify)"
         exit 1
       }
+      is_sha256 "$(lower "$HYDRA_BINARY_SHA256")" || { c_red "HYDRA_BINARY_SHA256 must be a 64-hex sha256"; exit 1; }
       c_blu "  CI-artifact path: downloading $artifact from run $run_id (commit ${commit_sha:0:12}, ~176 MiB)…"
       gh run download "$run_id" --repo cardano-scaling/hydra \
         --name "$artifact" --dir "$tmp" || { c_red "download failed"; exit 1; }
@@ -661,8 +666,11 @@ nodes_restart(){
   local try
   assert_persistence_rotation_disabled || return 1
   # Check the binary BEFORE nodes_down: an unverified binary would otherwise
-  # leave the head with its nodes stopped and no way back up.
-  ensure_bin
+  # leave the head with its nodes stopped and no way back up. Check only:
+  # ensure_bin's repair_dylibs could rewrite the binary the live nodes run.
+  if [ -e "$NATIVE_BIN" ]; then
+    bin_is_verified || refuse_unverified
+  fi
   wait_no_inflight
   for try in 1 2 3; do
     nodes_down
@@ -698,7 +706,7 @@ status(){
   if bin_is_verified; then
     echo "binary : $("$NATIVE_BIN" --version 2>/dev/null | head -1)"
   elif [ -e "$NATIVE_BIN" ]; then
-    echo "binary : present but not verified (run: $0 bin)"
+    echo "binary : present but not verified (remove it and $BIN_RECORD, then run: $0 bin)"
   else
     echo "binary : not installed"
   fi
