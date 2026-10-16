@@ -26,7 +26,8 @@ type PauseStateResponse = { 200: { status: string; data: HydraHostPauseState } }
 
 const PAUSE_POLL_MS = 5000;
 
-export function useHydraHostPause(hostId: string | null) {
+/** `isPaused` comes from the host list, so polling starts even when the first read fails. */
+export function useHydraHostPause(hostId: string | null, isPaused: boolean) {
   const { apiClient } = useAppContext();
 
   const query = useQuery<HydraHostPauseState>({
@@ -51,9 +52,8 @@ export function useHydraHostPause(hostId: string | null) {
     enabled: !!apiClient && hostId !== null,
     refetchInterval: (current) => {
       const phase = current.state.data?.phase;
-      return phase === undefined || phase === 'Active' || phase === 'Paused'
-        ? false
-        : PAUSE_POLL_MS;
+      if (phase === undefined) return isPaused ? PAUSE_POLL_MS : false;
+      return phase === 'Active' || phase === 'Paused' ? false : PAUSE_POLL_MS;
     },
   });
 
