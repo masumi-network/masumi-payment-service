@@ -47,9 +47,11 @@ ARG HYDRA_IMAGE_DIGEST=sha256:608ae9b336209a18d7f3c42f7ca2d73c51dcb1b90732e533dd
 # patch level is deliberately newer: etcd before 3.5.33 reads a peer lease
 # request body without a limit, so anyone who reaches the published peer port
 # can exhaust memory (https://etcd.io/blog/2026/july-23-patch-release/).
-# A 3.5.34 member was checked to join a 3.5.25 cluster. Declared here (before the first FROM) rather than next
-# to where it's consumed in the `binaries` stage below: a Dockerfile ARG's
-# default only survives into a later stage's bare `ARG NAME` redeclare if the
+# A 3.5.34 member was checked to join a 3.5.25 cluster.
+#
+# Declared here (before the first FROM) rather than next to where it's
+# consumed in the `binaries` stage below: a Dockerfile ARG's default only
+# survives into a later stage's bare `ARG NAME` redeclare if the
 # default was set before the file's first FROM — set anywhere else, the
 # redeclare silently picks up an empty string instead.
 ARG ETCD_VERSION=3.5.34
