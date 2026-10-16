@@ -25,6 +25,7 @@ import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnC
 import { carveExactUtxo, HydraPreSplitError } from './pre-split';
 import { canReleaseTopupWallet, isOwnTopupOutstanding, outstandingOwnTopupWhere } from './wallet-release';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
+import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 
 /**
  * After this, a Preparing row is treated as abandoned.
@@ -84,6 +85,8 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	}
 	const localParticipant = head.LocalParticipant;
 	if (!localParticipant) throw createHttpError(400, 'Head has no local participant');
+	// Re-checked here because minutes can pass between the route and this point.
+	await assertHydraHeadHostNotPaused(head.id);
 	// Deliberately does NOT require an initial commit. A head can open with an
 	// empty commit — being a party is decided by Init, not by committing funds —
 	// and such a head could otherwise never be funded at all: the only way in is

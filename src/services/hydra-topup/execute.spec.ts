@@ -61,6 +61,11 @@ class FakeHydraCommitFlowError extends Error {
 	override readonly name = 'HydraCommitFlowError';
 }
 
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHead: { findUnique: mockFindUniqueHead, update: mockUpdateHead },
