@@ -1,4 +1,18 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import {
+	Address,
+	BigNum,
+	PlutusData,
+	Transaction,
+	TransactionBody,
+	TransactionHash,
+	TransactionInput,
+	TransactionInputs,
+	TransactionOutput,
+	TransactionOutputs,
+	TransactionWitnessSet,
+	Value,
+} from '@emurgo/cardano-serialization-lib-nodejs';
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
@@ -19,30 +33,40 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 jest.unstable_mockModule('./l2-reservation-release', () => ({
 	releaseRejectedL2Reservation: mockRelease,
-	// Only what the real input-ref fallback in `./l2-reservation-recovery` reads.
-	paymentL2ActionRetry: (action: string | undefined) =>
-		action === 'SubmitResultInitiated' ? 'SubmitResultRequested' : undefined,
-	purchaseL2ActionRetry: () => undefined,
-}));
-
-// The real `./l2-reservation-recovery` loads, so its open-head-only imports are stubbed.
-jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-transaction-evidence', () => ({
-	hydraValidityUpperBoundTimeMs: jest.fn(),
-}));
-jest.unstable_mockModule('@/utils/hydra/l2-slot-context', () => ({
-	resolveHydraL2EvidenceSlotConfig: jest.fn(),
-}));
-jest.unstable_mockModule('@/lib/hydra/hydra/node-control-queries', () => ({
-	fetchHydraConfirmedSnapshotNumber: jest.fn(),
-}));
-jest.unstable_mockModule('./l2-reservation-nudge', () => ({
-	nudgeIdleHeadForRelease: jest.fn(),
 }));
 
 const { releaseFinalHeadL2Reservations } = await import('./final-l2-reservation-release');
+const { encodeL2ReleaseNudgeDatum, readL2ReleaseNudgeProof } = await import('./l2-release-nudge-proof');
 
 const inputA = `${'a'.repeat(64)}#0`;
 const inputB = `${'b'.repeat(64)}#1`;
+
+function nudgeTxOver(inputs: string[]): string {
+	const txInputs = TransactionInputs.new();
+	for (const reference of inputs) {
+		const [txHash, index] = reference.split('#');
+		txInputs.add(TransactionInput.new(TransactionHash.from_hex(txHash), Number(index)));
+	}
+	const output = TransactionOutput.new(
+		Address.from_bech32(
+			'addr_test1qp6ctf8vcjxzd53et7p0hlqyncn59stnfd4g8mp978v33r6dlzjvt4s2t6wn3v993pu9aea4h3z0jeyn6lsvw6hugtesfx55dd',
+		),
+		Value.new(BigNum.from_str('10000000')),
+	);
+	output.set_plutus_data(PlutusData.from_hex(encodeL2ReleaseNudgeDatum(new Uint8Array(32).fill(3))));
+	const outputs = TransactionOutputs.new();
+	outputs.add(output);
+	return Transaction.new(
+		TransactionBody.new_tx_body(txInputs, outputs, BigNum.zero()),
+		TransactionWitnessSet.new(),
+	).to_hex();
+}
+
+const nudgeTx = nudgeTxOver([inputA, inputB]);
+const proof = readL2ReleaseNudgeProof(nudgeTx, [inputA, inputB]);
+if (!proof) throw new Error('fixture nudge must pass the proof');
+/** The final snapshot holds the nudge output, and nothing at any other reference. */
+const finalOutputWithNudge = (reference: string) => (reference === proof.reference ? proof.serializedOutput : null);
 const fanoutReference = { txHash: 'f'.repeat(64), outputIndex: 0, snapshotNumber: 7, serializedOutput: 'bytes' };
 
 const node = {
@@ -56,14 +80,12 @@ function pendingRow(overrides: Record<string, unknown> = {}) {
 		id: 'tx-1',
 		intendedTxHash: 'c'.repeat(64),
 		l2ReservationInputRefs: [inputA, inputB],
-		l2ReleaseNudgeInputRef: null,
+		l2ReleaseNudgeTx: nudgeTx,
 		l2ReservationPreviousLayer: null,
 		l2ReservationPreviousSmartContractWalletId: null,
 		l2ReservationPreviousBuyerReturnAddress: null,
 		l2ReservationPreviousCollateralReturn: null,
 		l2ReservationPreviousTransactionId: null,
-		PaymentRequestCurrent: [],
-		PurchaseRequestCurrent: [],
 		...overrides,
 	};
 }
@@ -83,24 +105,23 @@ describe('releaseFinalHeadL2Reservations', () => {
 		mockFindMany.mockResolvedValue([pendingRow()]);
 		mockGetVerifiedFanoutReferences.mockReturnValue([fanoutReference]);
 		mockVerifyFanout.mockResolvedValue([]);
-		mockGetVerifiedFinalOutput.mockReturnValue('output-bytes');
+		mockGetVerifiedFinalOutput.mockImplementation(finalOutputWithNudge);
 		mockGetConfirmedTransaction.mockReturnValue(null);
 		mockRelease.mockResolvedValue(true);
 	});
 
-	it('releases a reservation whose every input the fanned-out final snapshot still holds', async () => {
+	it('releases a reservation whose nudge output the fanned-out final snapshot holds', async () => {
 		await expect(run()).resolves.toBe(1);
 
 		expect(mockFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({ where: { hydraHeadId: 'head-1', layer: 'L2', status: 'Pending' } }),
 		);
 		expect(mockVerifyFanout).toHaveBeenCalledWith([fanoutReference]);
-		expect(mockGetVerifiedFinalOutput).toHaveBeenCalledWith(inputA, 7);
-		expect(mockGetVerifiedFinalOutput).toHaveBeenCalledWith(inputB, 7);
+		expect(mockGetVerifiedFinalOutput).toHaveBeenCalledWith(proof.reference, 7);
 		expect(mockRelease).toHaveBeenCalledWith(
-			expect.objectContaining({ id: 'tx-1', l2ReleaseNudgeInputRef: null }),
+			expect.objectContaining({ id: 'tx-1', l2ReleaseNudgeTx: nudgeTx }),
 			expect.anything(),
-			'inputs-unspent-in-final-snapshot',
+			'spent-by-release-nudge',
 		);
 		expect(mockVerifyFanout.mock.invocationCallOrder[0]).toBeLessThan(mockRelease.mock.invocationCallOrder[0]);
 	});
@@ -127,8 +148,23 @@ describe('releaseFinalHeadL2Reservations', () => {
 		expect(mockRelease).not.toHaveBeenCalled();
 	});
 
-	it('holds a reservation with an input the final snapshot no longer holds', async () => {
-		mockGetVerifiedFinalOutput.mockImplementation((reference: string) => (reference === inputB ? null : 'bytes'));
+	// The reported finding on a Final head: every input reads as unspent in
+	// the final snapshot, which a forged reference mapping can arrange. The
+	// reference proof released here.
+	it('holds a reservation whose inputs only read as unspent', async () => {
+		mockGetVerifiedFinalOutput.mockImplementation((reference: string) =>
+			reference === inputA || reference === inputB ? 'twin-output-bytes' : null,
+		);
+
+		await expect(run()).resolves.toBe(0);
+		expect(mockVerifyFanout).not.toHaveBeenCalled();
+		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	// A Final head takes no new transaction, so a nudge that never applied
+	// before the close can never prove the row dead.
+	it('holds a reservation that was never nudged', async () => {
+		mockFindMany.mockResolvedValue([pendingRow({ l2ReleaseNudgeTx: null })]);
 
 		await expect(run()).resolves.toBe(0);
 		expect(mockVerifyFanout).not.toHaveBeenCalled();
@@ -149,29 +185,6 @@ describe('releaseFinalHeadL2Reservations', () => {
 		await expect(run()).resolves.toBe(0);
 		expect(mockVerifyFanout).not.toHaveBeenCalled();
 		expect(mockRelease).not.toHaveBeenCalled();
-	});
-
-	// Rows from before inputs were recorded fall back to the request's escrow
-	// pointer, which an unconfirmed body has not moved.
-	it('releases a row without recorded inputs on its escrow pointer', async () => {
-		const pointerTxHash = 'D'.repeat(64);
-		mockFindMany.mockResolvedValue([
-			pendingRow({
-				l2ReservationInputRefs: [],
-				l2ReservationPreviousTransactionId: 'previous-tx',
-				PaymentRequestCurrent: [
-					{
-						currentHydraUtxoTxHash: pointerTxHash,
-						currentHydraUtxoOutputIndex: 2,
-						NextAction: { requestedAction: 'SubmitResultInitiated' },
-					},
-				],
-			}),
-		]);
-
-		await expect(run()).resolves.toBe(1);
-		expect(mockGetVerifiedFinalOutput).toHaveBeenCalledWith(`${'d'.repeat(64)}#2`, 7);
-		expect(mockRelease).toHaveBeenCalledTimes(1);
 	});
 
 	it('does not count a release the guarded update refused', async () => {

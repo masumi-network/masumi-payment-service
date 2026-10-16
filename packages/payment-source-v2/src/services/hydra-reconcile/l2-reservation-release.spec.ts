@@ -128,18 +128,6 @@ describe('releaseRejectedL2Reservation', () => {
 		);
 	});
 
-	it('releases a Final head reservation under the final-snapshot proof and stamps the marker', async () => {
-		mockFindUnique.mockResolvedValue(pendingRejected({ l2RejectedByHeadAt: null }));
-
-		await expect(
-			releaseRejectedL2Reservation(reservation, prisma as never, 'inputs-unspent-in-final-snapshot'),
-		).resolves.toBe(true);
-		expect(mockHotWalletUpdateMany).toHaveBeenCalledTimes(1);
-		expect(mockTransactionUpdate).toHaveBeenCalledWith(
-			expect.objectContaining({ data: expect.objectContaining({ l2ReleasedByInputProofAt: expect.any(Date) }) }),
-		);
-	});
-
 	it('refuses when a nudge was recorded after the release decision read the row', async () => {
 		mockFindUnique.mockResolvedValue(
 			pendingRejected({ l2RejectedByHeadAt: null, l2ReleaseNudgeTx: 'other-nudge-cbor' }),

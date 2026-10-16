@@ -7,9 +7,12 @@
  * An operator may close a head with work still in flight, so without this step
  * such a row blocks reconciliation until a manual database repair.
  *
- * The proof is `isL2ReservationDeadInFinalSnapshot`, read against the verified
- * final snapshot only after its fanout was verified on chain. The release
- * itself is `releaseRejectedL2Reservation`, which re-reads and guards the row.
+ * The proof is the open path's own: the reservation's release nudge output in
+ * the verified final snapshot (`./l2-release-nudge-proof`), read only after its
+ * fanout was verified on chain. A Final head takes no new transaction, so a row
+ * whose nudge never applied before the close stays held for an operator. The
+ * release itself is `releaseRejectedL2Reservation`, which re-reads and guards
+ * the row.
  */
 
 import { prisma } from '@masumi/payment-core/db';
@@ -17,9 +20,8 @@ import { logger } from '@masumi/payment-core/logger';
 import { TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-verification';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
-import { isL2ReservationDeadInFinalSnapshot } from './l2-reservation-release-decision';
+import { isL2ReservationSpentByNudge } from './l2-release-nudge-proof';
 import { releaseRejectedL2Reservation } from './l2-reservation-release';
-import { escrowPointerSelect, reservationInputRefs } from './l2-reservation-recovery';
 
 /** Returns how many reservations were released. */
 export async function releaseFinalHeadL2Reservations(params: {
@@ -44,8 +46,6 @@ export async function releaseFinalHeadL2Reservations(params: {
 			l2ReservationPreviousBuyerReturnAddress: true,
 			l2ReservationPreviousCollateralReturn: true,
 			l2ReservationPreviousTransactionId: true,
-			PaymentRequestCurrent: { select: escrowPointerSelect },
-			PurchaseRequestCurrent: { select: escrowPointerSelect },
 		},
 	});
 	const references = candidates.length === 0 ? null : node.getVerifiedFanoutReferences(expectedSnapshotNumber);
@@ -54,9 +54,10 @@ export async function releaseFinalHeadL2Reservations(params: {
 		(candidate) =>
 			// A body the history confirmed is for ordered replay to apply, not to undo.
 			!(candidate.intendedTxHash != null && node.getConfirmedTransaction(candidate.intendedTxHash)) &&
-			isL2ReservationDeadInFinalSnapshot({
-				inputRefs: reservationInputRefs(candidate),
-				readFinalOutput: (reference) => node.getVerifiedFinalOutput(reference, expectedSnapshotNumber),
+			isL2ReservationSpentByNudge({
+				nudgeTx: candidate.l2ReleaseNudgeTx,
+				inputRefs: candidate.l2ReservationInputRefs,
+				readOutput: (reference) => node.getVerifiedFinalOutput(reference, expectedSnapshotNumber),
 			}),
 	);
 	// The chain check runs only when it can lead to a release, so a held row does
@@ -66,9 +67,9 @@ export async function releaseFinalHeadL2Reservations(params: {
 
 	let released = 0;
 	for (const candidate of dead) {
-		if (!(await releaseRejectedL2Reservation(candidate, database, 'inputs-unspent-in-final-snapshot'))) continue;
+		if (!(await releaseRejectedL2Reservation(candidate, database, 'spent-by-release-nudge'))) continue;
 		released += 1;
-		logger.warn('[HydraReconcile] released L2 reservation: every input unspent in the fanned-out final snapshot', {
+		logger.warn('[HydraReconcile] released L2 reservation: its release nudge is in the fanned-out final snapshot', {
 			hydraHeadId,
 			transactionId: candidate.id,
 			intendedTxHash: candidate.intendedTxHash,
