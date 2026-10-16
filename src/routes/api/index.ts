@@ -137,6 +137,9 @@ import {
 	updateHydraHostPatch,
 	deleteHydraHostDelete,
 	checkHydraHostPost,
+	hydraHostPauseStateGet,
+	pauseHydraHostPost,
+	resumeHydraHostPost,
 	listHydraWalletBasesGet,
 	listHeadErrorsGet,
 	getHeadConnectionGet,
@@ -538,6 +541,8 @@ export const apiRouter: Routing = {
 				patch: updateHydraHostPatch,
 				delete: deleteHydraHostDelete,
 				check: { post: checkHydraHostPost },
+				pause: { get: hydraHostPauseStateGet, post: pauseHydraHostPost },
+				resume: { post: resumeHydraHostPost },
 			},
 			'wallet-base': {
 				get: listHydraWalletBasesGet,
