@@ -189,6 +189,20 @@ const hydraHeadLowBalancePayloadSchema = createWebhookPayloadSchema(
 	'Emitted when a local participant’s own in-head balance transitions into low balance',
 );
 
+const hydraHeadSnapshotRoundStuckPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'),
+	z.object({
+		hydraHeadId: z.string().describe('The open head whose snapshot round stopped moving'),
+		roundTag: z.string().describe('The last-seen tag our node reports, for example SeenSnapshot'),
+		snapshotNumber: z.number().int().nullable().describe('The snapshot number under signature, if named'),
+		signatoryCount: z.number().int().describe('Parties that have signed the round so far'),
+		txIds: z.array(z.string()).describe('Transactions the round would confirm'),
+		stuckSince: z.string().datetime().describe('When the unchanged round was first observed'),
+		checkedAt: z.string().datetime().describe('Timestamp when the round was evaluated'),
+	}),
+	'Emitted once per round when a Hydra head snapshot round has not moved for the stuck threshold. The head confirms nothing until an admin resets the round.',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -203,6 +217,7 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	x402PaymentFailedPayloadSchema,
 	x402WalletLowBalancePayloadSchema,
 	hydraHeadLowBalancePayloadSchema,
+	hydraHeadSnapshotRoundStuckPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;

@@ -23,6 +23,7 @@ import { pollHydraRedemptions, reapExpiredInvites } from '@/services/hydra-invit
 import { releaseAbandonedReservations } from '@/services/hydra-invite/release-reservation';
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
+import { runHydraSnapshotRoundWatch } from '@/services/hydra-snapshot-round/watch';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { reconcileRecoveredHydraTopups } from '@/services/hydra-topup-reconciliation/recovered';
 import {
@@ -35,6 +36,9 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { releaseStalledCloseAdmissions } from '@/services/hydra-close-admission';
 import { isHydraInUse } from '@/services/hydra-usage';
 import { logger } from '@masumi/payment-core/logger';
+
+/** A stuck round alerts after ten minutes, so once a minute is plenty. */
+const HYDRA_SNAPSHOT_ROUND_WATCH_INTERVAL_MS = 60_000;
 
 export const scheduledJobs: JobDefinition[] = [
 	{
@@ -196,6 +200,14 @@ export const scheduledJobs: JobDefinition[] = [
 		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra in-head low-balance monitoring',
 		run: runHydraLowBalanceMonitoringCycle,
+	},
+	{
+		initialDelayMs: 21000,
+		intervalMs: HYDRA_SNAPSHOT_ROUND_WATCH_INTERVAL_MS,
+		startMessage: 'Starting Hydra snapshot round watch',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra snapshot round watch',
+		run: runHydraSnapshotRoundWatch,
 	},
 	{
 		initialDelayMs: 16500,

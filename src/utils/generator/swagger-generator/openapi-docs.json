@@ -26453,7 +26453,8 @@
                                                                         "X402_PAYMENT_SETTLED",
                                                                         "X402_PAYMENT_FAILED",
                                                                         "X402_WALLET_LOW_BALANCE",
-                                                                        "HYDRA_HEAD_LOW_BALANCE"
+                                                                        "HYDRA_HEAD_LOW_BALANCE",
+                                                                        "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                                     ]
                                                                 }
                                                             },
@@ -26631,7 +26632,8 @@
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE",
-                                                "HYDRA_HEAD_LOW_BALANCE"
+                                                "HYDRA_HEAD_LOW_BALANCE",
+                                                "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                             ]
                                         },
                                         "minItems": 1,
@@ -26712,7 +26714,8 @@
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE",
-                                                            "HYDRA_HEAD_LOW_BALANCE"
+                                                            "HYDRA_HEAD_LOW_BALANCE",
+                                                            "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                         ]
                                                     }
                                                 },
@@ -26845,7 +26848,8 @@
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE",
-                                                "HYDRA_HEAD_LOW_BALANCE"
+                                                "HYDRA_HEAD_LOW_BALANCE",
+                                                "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                             ]
                                         },
                                         "minItems": 1,
@@ -26924,7 +26928,8 @@
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE",
-                                                            "HYDRA_HEAD_LOW_BALANCE"
+                                                            "HYDRA_HEAD_LOW_BALANCE",
+                                                            "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                         ]
                                                     }
                                                 },

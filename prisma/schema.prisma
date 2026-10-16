@@ -1605,6 +1605,7 @@ enum WebhookEventType {
   X402_PAYMENT_FAILED
   X402_WALLET_LOW_BALANCE
   HYDRA_HEAD_LOW_BALANCE
+  HYDRA_HEAD_SNAPSHOT_ROUND_STUCK
 }
 
 // Critical is retained for historical rows only: the dispatcher creates
@@ -1803,6 +1804,18 @@ model HydraHead {
   reconciliationStalledTxId   String?
   reconciliationStalledReason String?
   reconciliationStalledSince  DateTime?
+
+  /// Operator surface for a snapshot round that stopped moving: our node
+  /// reports a round in flight (`GET /snapshot/last-seen`) that no party has
+  /// advanced. A round normally completes in about a second, so one unchanged
+  /// for minutes means a party can never sign it, and the head confirms nothing
+  /// until an operator resets the round. The signature identifies the round
+  /// (tag, number, signatory count); `since` is when it was first seen; the
+  /// alert time makes the webhook fire once per round. Cleared when the node
+  /// reports no round in flight.
+  snapshotRoundSignature String?
+  snapshotRoundSince     DateTime?
+  snapshotRoundAlertedAt DateTime?
 
   /// Durable admission gate set before Close is sent. Reservation writers lock
   /// the head row and refuse new L2 work once closing has begun.
