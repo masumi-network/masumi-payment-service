@@ -169,6 +169,7 @@ describe('listHeldL2Reservations', () => {
 		],
 		['the head has no live connection', () => mockGetNode.mockReturnValue(null)],
 		['the head is not open', () => mockHeadFindUnique.mockResolvedValue(openHead({ status: HydraHeadStatus.Closed }))],
+		['the head is closing', () => mockHeadFindUnique.mockResolvedValue(openHead({ isClosing: true }))],
 	])('is not releasable when %s', async (_case, arrange) => {
 		arrange();
 

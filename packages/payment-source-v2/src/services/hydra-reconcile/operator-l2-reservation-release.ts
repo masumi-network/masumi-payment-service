@@ -125,7 +125,16 @@ async function loadHead(headId: string) {
 }
 
 /** Why this reservation cannot be released now, or null when it can. */
-function blockedReason(row: ReservationRow, node: HydraNode | null, expiresAtMs: bigint | null, nowMs: number) {
+const HEAD_CLOSING_REASON = 'The head is closing; its final snapshot settles the reservation';
+
+function blockedReason(
+	row: ReservationRow,
+	node: HydraNode | null,
+	expiresAtMs: bigint | null,
+	nowMs: number,
+	isHeadClosing: boolean,
+) {
+	if (isHeadClosing) return HEAD_CLOSING_REASON;
 	if (row.txHash != null) return 'The body was accepted by the head (it has a txHash); it is not a dead reservation';
 	if (!node) return 'No live connection to the head, so its clock and history cannot be checked';
 	if (row.intendedTxHash != null && node.getConfirmedTransaction(row.intendedTxHash)) {
@@ -150,13 +159,19 @@ function blockedReason(row: ReservationRow, node: HydraNode | null, expiresAtMs:
 	return null;
 }
 
-function toHeld(row: ReservationRow, node: HydraNode | null, slotConfig: SlotConfig, nowMs: number): HeldL2Reservation {
+function toHeld(
+	row: ReservationRow,
+	node: HydraNode | null,
+	slotConfig: SlotConfig,
+	nowMs: number,
+	isHeadClosing: boolean,
+): HeldL2Reservation {
 	const expiresAtMs =
 		row.invalidHereafterSlot == null || !slotConfig
 			? null
 			: hydraValidityUpperBoundTimeMs({ validityUpperSlot: row.invalidHereafterSlot }, slotConfig);
 	const snapshotNumber = node?.verifiedSnapshotNumber;
-	const reason = blockedReason(row, node, expiresAtMs, nowMs);
+	const reason = blockedReason(row, node, expiresAtMs, nowMs, isHeadClosing);
 	return {
 		transactionId: row.id,
 		updatedAt: row.updatedAt,
@@ -203,7 +218,7 @@ export async function listHeldL2Reservations(
 		select: reservationSelect,
 		orderBy: { createdAt: 'asc' },
 	});
-	return { headId: head.id, reservations: rows.map((row) => toHeld(row, node, slotConfig, nowMs)) };
+	return { headId: head.id, reservations: rows.map((row) => toHeld(row, node, slotConfig, nowMs, head.isClosing)) };
 }
 
 /**
@@ -220,7 +235,7 @@ export async function releaseHeldL2Reservation(params: {
 	const { headId, transactionId, expectedUpdatedAt, actorApiKeyId, nowMs = Date.now() } = params;
 	const head = await loadHead(headId);
 	if (head.status !== HydraHeadStatus.Open) throw createHttpError(409, `Head status is ${head.status}, expected Open`);
-	if (head.isClosing) throw createHttpError(409, 'The head is closing; its final snapshot settles the reservation');
+	if (head.isClosing) throw createHttpError(409, HEAD_CLOSING_REASON);
 	const node = getHydraConnectionManager().getNode(head.id);
 	if (!node) throw createHttpError(502, 'No active connection to Hydra head');
 
@@ -233,7 +248,7 @@ export async function releaseHeldL2Reservation(params: {
 		throw createHttpError(409, 'The reservation changed since it was shown; reload and review it again');
 	}
 	const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(head.HydraRelation.network));
-	const held = toHeld(row, node, slotConfig, nowMs);
+	const held = toHeld(row, node, slotConfig, nowMs, head.isClosing);
 	if (!held.releasable) throw createHttpError(409, held.blockedReason ?? 'The reservation cannot be released now');
 
 	// The checks above awaited the database. The session must still be the one
