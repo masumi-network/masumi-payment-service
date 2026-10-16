@@ -128,6 +128,17 @@ describe('releaseRejectedL2Reservation', () => {
 		);
 	});
 
+	// An admin release has no proof, so it is marked apart from one, and the
+	// same late-confirmation halt applies.
+	it('marks an operator release apart from a proven one', async () => {
+		mockFindUnique.mockResolvedValue(pendingRejected({ l2RejectedByHeadAt: null }));
+
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'operator')).resolves.toBe(true);
+		const data = mockTransactionUpdate.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+		expect(data.l2ReleasedByOperatorAt).toEqual(expect.any(Date));
+		expect(data).not.toHaveProperty('l2ReleasedByInputProofAt');
+	});
+
 	it('refuses when a nudge was recorded after the release decision read the row', async () => {
 		mockFindUnique.mockResolvedValue(
 			pendingRejected({ l2RejectedByHeadAt: null, l2ReleaseNudgeTx: 'other-nudge-cbor' }),
