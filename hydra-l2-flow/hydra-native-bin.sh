@@ -146,7 +146,7 @@ ensure_bin(){
       # which is non-empty and would otherwise sail through `[ -n ... ]`.
       [ -n "$run_id" ] && [ "$run_id" != "null" ] || { c_red "no Binaries CI run found for commit $commit_sha"; exit 1; }
       # No upstream checksum exists for a CI artifact, so the extracted binary
-      # itself is pinned (see HYDRA_BINARY_SHA256 at the top of this file).
+      # itself is pinned (see HYDRA_BINARY_SHA256 at the top of hydra-native.sh).
       # Checked before the 176 MiB download, so a missing pin fails at once.
       [ -n "$HYDRA_BINARY_SHA256" ] || {
         c_red "HYDRA_BINARY_SHA256 is required for the ${HYDRA_VERSION} CI artifact (no release zip to verify)"

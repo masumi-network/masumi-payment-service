@@ -32,7 +32,8 @@
 #   ./hydra-native.sh drift [n] # print node n's current drift in seconds (default node 1)
 #   ./hydra-native.sh status    # show node/bridge/API state
 #   ./hydra-native.sh publish   # (re)publish HYDRA_VERSION reference scripts natively -> $DEMO/.env
-#   ./hydra-native.sh bin       # ensure native binary is present (download if missing)
+#   ./hydra-native.sh bin       # ensure a verified native binary (download if missing;
+#                               # refuses one that fails its .sha256 record)
 #
 # Testing an unreleased fix (e.g. master, ahead of the pinned HYDRA_VERSION
 # tag) without disturbing the pinned binary:
