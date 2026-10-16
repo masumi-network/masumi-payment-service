@@ -257,6 +257,10 @@ model Transaction {
   /// exact output bytes in a verified snapshot prove the body can never apply
   /// (l2-release-nudge-proof). Resent unchanged, so at most one nudge exists.
   l2ReleaseNudgeTx                           String?
+  /// Set when an admin released this reservation without a proof that the body
+  /// is dead (the nudge never applied, or the row has no value floor). Like
+  /// l2ReleasedByInputProofAt, a later confirmation of the body halts replay.
+  l2ReleasedByOperatorAt                     DateTime?
   BlocksWallet                               HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
