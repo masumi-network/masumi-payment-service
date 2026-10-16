@@ -155,7 +155,8 @@ BIN_RECORD="${NATIVE_BIN}.sha256"
 # Pins and recorded hashes are compared lowercased. Each must be exactly 64
 # hex chars: `shasum -c` picks the algorithm from the digest length and
 # ignores -a, so a 40-char value would silently be checked as SHA-1.
-is_sha256(){ [[ "$1" =~ ^[0-9a-f]{64}$ ]]; }
+# Tests the raw value: a $(...) wrapper would strip trailing newlines first.
+is_sha256(){ [[ "$1" =~ ^[0-9a-fA-F]{64}$ ]]; }
 lower(){ printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 configured_pins(){
@@ -173,7 +174,8 @@ record_bin(){
   pin="$(lower "$1")"
   sum="$(shasum -a 256 "$NATIVE_BIN" | cut -d' ' -f1)" || return 1
   is_sha256 "$pin" && is_sha256 "$sum" || return 1
-  printf '%s\n%s\n' "$pin" "$sum" > "$BIN_RECORD.tmp" && mv -f "$BIN_RECORD.tmp" "$BIN_RECORD"
+  local tmp_record; tmp_record="$(mktemp "$BIN_RECORD.XXXXXX")" || return 1
+  printf '%s\n%s\n' "$pin" "$sum" > "$tmp_record" && mv -f "$tmp_record" "$BIN_RECORD"
 }
 
 # Quiet check: returns 0 only for a binary that passes the rule above.
@@ -219,7 +221,7 @@ ensure_bin(){
       c_red "HYDRA_BIN_TAG_SHA256 is required with HYDRA_BIN_TAG (sha256 of the extracted hydra-node)"
       exit 1
     }
-    is_sha256 "$(lower "$HYDRA_BIN_TAG_SHA256")" || { c_red "HYDRA_BIN_TAG_SHA256 must be a 64-hex sha256"; exit 1; }
+    is_sha256 "$HYDRA_BIN_TAG_SHA256" || { c_red "HYDRA_BIN_TAG_SHA256 must be a 64-hex sha256"; exit 1; }
     c_blu "Downloading native $HYDRA_BIN_ARTIFACT (CI artifact, ~176 MiB)…"
     gh run download "$HYDRA_BIN_RUN_ID" --repo cardano-scaling/hydra \
       --name "$HYDRA_BIN_ARTIFACT" --dir "$tmp" || { c_red "download failed"; exit 1; }
@@ -241,8 +243,9 @@ ensure_bin(){
     # see docs/hydra-2.4.1-upgrade-runbook.md).
     # A set but malformed pin fails before any download. A missing one is
     # checked per path below, since only the probe shows which path applies.
+    local pin_var
     for pin_var in HYDRA_RELEASE_SHA256 HYDRA_BINARY_SHA256; do
-      [ -z "${!pin_var}" ] || is_sha256 "$(lower "${!pin_var}")" \
+      [ -z "${!pin_var}" ] || is_sha256 "${!pin_var}" \
         || { c_red "$pin_var must be a 64-hex sha256"; exit 1; }
     done
     c_blu "Checking for a hydra-aarch64-darwin-${HYDRA_VERSION}.zip release asset…"
@@ -255,7 +258,7 @@ ensure_bin(){
         c_red "HYDRA_RELEASE_SHA256 is required for the ${HYDRA_VERSION} release zip"
         exit 1
       }
-      is_sha256 "$(lower "$HYDRA_RELEASE_SHA256")" || { c_red "HYDRA_RELEASE_SHA256 must be a 64-hex sha256"; exit 1; }
+      is_sha256 "$HYDRA_RELEASE_SHA256" || { c_red "HYDRA_RELEASE_SHA256 must be a 64-hex sha256"; exit 1; }
       printf '%s  %s\n' "$HYDRA_RELEASE_SHA256" "$tmp/hydra-aarch64-darwin-${HYDRA_VERSION}.zip" \
         | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
       (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
@@ -277,7 +280,7 @@ ensure_bin(){
         c_red "HYDRA_BINARY_SHA256 is required for the ${HYDRA_VERSION} CI artifact (no release zip to verify)"
         exit 1
       }
-      is_sha256 "$(lower "$HYDRA_BINARY_SHA256")" || { c_red "HYDRA_BINARY_SHA256 must be a 64-hex sha256"; exit 1; }
+      is_sha256 "$HYDRA_BINARY_SHA256" || { c_red "HYDRA_BINARY_SHA256 must be a 64-hex sha256"; exit 1; }
       c_blu "  CI-artifact path: downloading $artifact from run $run_id (commit ${commit_sha:0:12}, ~176 MiB)…"
       gh run download "$run_id" --repo cardano-scaling/hydra \
         --name "$artifact" --dir "$tmp" || { c_red "download failed"; exit 1; }
