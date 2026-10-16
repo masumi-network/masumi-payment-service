@@ -159,14 +159,15 @@ function assertNodeBinVerified(): void {
 				...process.env,
 				NATIVE_BIN: HYDRA_NODE_BIN,
 				BIN_DIR: path.dirname(HYDRA_NODE_BIN),
-				HYDRA_BIN_TAG: '',
+				// NATIVE_BIN is explicit; the tag only selects which pin applies.
+				HYDRA_BIN_TAG: process.env.HYDRA_BIN_TAG ?? '',
 			},
 			stdio: 'inherit',
 		});
 	} catch {
 		throw new Error(
-			`hydra-node binary at ${HYDRA_NODE_BIN} failed its .sha256 record check; ` +
-				'run hydra-l2-flow/hydra-native.sh bin to fetch and verify it',
+			`hydra-node binary at ${HYDRA_NODE_BIN} failed its .sha256 record check ` +
+				'(see the hydra-native.sh output above for the cause and the fix)',
 		);
 	}
 	isNodeBinVerified = true;
