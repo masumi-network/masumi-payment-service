@@ -9,12 +9,14 @@
 
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { lookup } from 'node:dns/promises';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
 import { createExchangePlane } from './api/exchange-server.js';
 import { redemptionNetwork, verifyRedemptionSignature } from './registry/redemption-signature.js';
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
+import { peerTargetRejection } from './peer-target-policy.js';
 import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
@@ -140,12 +142,19 @@ async function main(): Promise<void> {
 		clearInterval(bootKeepAlive);
 	}
 
+	const checkPeerTarget = async (advertise: string): Promise<string | null> =>
+		await peerTargetRejection(advertise, {
+			allowPrivate: config.allowPrivatePeers,
+			resolve: async (hostname) => await lookup(hostname, { all: true, verbatim: true }),
+		});
+
 	const provisionDeps = {
 		store,
 		ports: allocator,
 		advertiseFor: (peerPort: number) => advertiseAddress(config, peerPort),
 		newNodeId: () => randomUUID(),
 		now: () => new Date(),
+		checkPeerTarget,
 		// Passed, or the one report that must never be silent is: a provision that
 		// fails after writing signing keys and then fails to clean them up leaves
 		// key material on the volume for a node no record mentions. Without this,
@@ -196,6 +205,7 @@ async function main(): Promise<void> {
 		store: exchange,
 		logger,
 		trustProxy: config.exchangeTrustProxy,
+		checkPeerTarget,
 		verifyRedemption: async (nonce, redeemer, signature) =>
 			await verifyRedemptionSignature(nonce, redemptionNetwork(config.network), redeemer, signature),
 		onRedeemed: async () => {

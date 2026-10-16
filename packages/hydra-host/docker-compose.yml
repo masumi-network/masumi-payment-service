@@ -100,6 +100,9 @@ services:
       # to bind the Prometheus server to loopback, so enabling it publishes head
       # status, snapshot numbers and peer liveness with no authentication.
       HYDRA_HOST_MONITORING_ENABLED: ${HYDRA_HOST_MONITORING_ENABLED:-false}
+      # Peers must resolve to public addresses unless this is true. Set it only
+      # when the counterparties' nodes really sit on a private network.
+      HYDRA_HOST_ALLOW_PRIVATE_PEERS: ${HYDRA_HOST_ALLOW_PRIVATE_PEERS:-false}
 
     volumes:
       # Real block storage, not a network filesystem: this holds a SQLite event

@@ -98,6 +98,7 @@ beforeEach(async () => {
 			store,
 			ports,
 			advertiseFor: (p) => `hydra1.example.com:${p}`,
+			checkPeerTarget: async () => null,
 			newNodeId: () => 'node-x',
 			now: () => new Date(),
 		} as ProvisionDeps,

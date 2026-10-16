@@ -25,6 +25,8 @@ describe('loadHostConfig', () => {
 		expect(config.ports.capacity).toBe(32);
 		expect(config.listenPort).toBe(8443);
 		expect(config.hydraScriptsTxIds).toEqual([]);
+		expect(config.allowPrivatePeers).toBe(false);
+		expect(loadHostConfig(env({ HYDRA_HOST_ALLOW_PRIVATE_PEERS: 'true' })).allowPrivatePeers).toBe(true);
 	});
 
 	it('parses HYDRA_HOST_SCRIPTS_TX_IDS as a trimmed, lowercased list', () => {

@@ -26,6 +26,7 @@ beforeEach(async () => {
 		store: new NodeRegistryStore(dataDir),
 		ports: new PortAllocator({ peerStart: 5001, apiStart: 4001, monitoringStart: 6001, capacity: 4 }),
 		advertiseFor: (port) => `ours.example.com:${port}`,
+		checkPeerTarget: async () => null,
 		newNodeId: () => 'node-1',
 		now: () => new Date(),
 	};

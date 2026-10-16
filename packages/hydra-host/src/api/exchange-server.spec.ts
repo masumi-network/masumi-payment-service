@@ -34,6 +34,7 @@ let onRedeemed: jest.Mock<(nonce: string, hostNodeId: string) => Promise<void>>;
 // Transport tests do not sign bodies; real signatures are covered in
 // redemption-signature.spec.ts.
 let verifyRedemption: jest.Mock<ExchangeDeps['verifyRedemption']>;
+let checkPeerTarget: jest.Mock<ExchangeDeps['checkPeerTarget']>;
 
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
@@ -79,7 +80,8 @@ beforeEach(async () => {
 	store = new ExchangeStore(dataDir);
 	onRedeemed = jest.fn(async () => undefined) as typeof onRedeemed;
 	verifyRedemption = jest.fn<ExchangeDeps['verifyRedemption']>(async () => true);
-	server = createExchangePlane({ store, logger, onRedeemed, verifyRedemption });
+	checkPeerTarget = jest.fn<ExchangeDeps['checkPeerTarget']>(async () => null);
+	server = createExchangePlane({ store, logger, onRedeemed, verifyRedemption, checkPeerTarget });
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -142,6 +144,7 @@ describe('search-engine exclusion', () => {
 			logger,
 			onRedeemed,
 			verifyRedemption,
+			checkPeerTarget,
 			limits: { requestsPerMinute: 1 },
 		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
@@ -273,6 +276,33 @@ describe('redeeming an invite', () => {
 		expect((await store.listInvites())[0].redeemedAt).toBeNull();
 	});
 
+	it('refuses a peer address the Host may not dial, before redeeming the nonce', async () => {
+		await issue('nonce-private-peer');
+		checkPeerTarget.mockResolvedValueOnce('peer host 127.0.0.1 resolves to non-public address 127.0.0.1');
+		const result = await post('/exchange/redeem', {
+			nonce: 'nonce-private-peer',
+			redeemer: { ...MATERIAL, advertise: '127.0.0.1:8443' },
+			signature: SIGNATURE,
+		});
+
+		expect(result.status).toBe(400);
+		expect(result.body).toEqual({ error: 'peer address is not allowed' });
+		expect(checkPeerTarget).toHaveBeenCalledWith('127.0.0.1:8443');
+		expect(onRedeemed).not.toHaveBeenCalled();
+		expect((await store.listInvites())[0].redeemedAt).toBeNull();
+	});
+
+	it('does not resolve the peer address for a nonce that is not open', async () => {
+		const result = await post('/exchange/redeem', {
+			nonce: 'nonce-unknown01',
+			redeemer: { ...MATERIAL, advertise: 'attacker.example.com:5001' },
+			signature: SIGNATURE,
+		});
+
+		expect(result.status).toBe(404);
+		expect(checkPeerTarget).not.toHaveBeenCalled();
+	});
+
 	// A node that fails to start must not report success to the counterparty as
 	// an error either: they cannot act on it, and the operator can.
 	it('still acknowledges when the node fails to start, and records why', async () => {
@@ -295,7 +325,14 @@ describe('redeeming an invite', () => {
 describe('public surface hardening', () => {
 	it('rate-limits the anonymous endpoint before work reaches the store', async () => {
 		await new Promise<void>((resolve) => server.close(() => resolve()));
-		server = createExchangePlane({ store, logger, onRedeemed, verifyRedemption, limits: { requestsPerMinute: 1 } });
+		server = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			limits: { requestsPerMinute: 1 },
+		});
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 		base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
@@ -421,6 +458,7 @@ describe('total request budget', () => {
 			logger,
 			onRedeemed,
 			verifyRedemption,
+			checkPeerTarget,
 			trustProxy: true,
 			limits: { requestsPerMinute: 2, totalRequestsPerMinute: 5 },
 		});
@@ -531,7 +569,14 @@ describe('incomplete redemption bodies', () => {
 	}
 
 	it('keeps redemption slots available while bodies remain incomplete', async () => {
-		const limited = createExchangePlane({ store, logger, onRedeemed, verifyRedemption, limits: { maxInFlight: 1 } });
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			limits: { maxInFlight: 1 },
+		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
 		const socket = await openIncomplete(limited);
 		try {
@@ -555,6 +600,7 @@ describe('incomplete redemption bodies', () => {
 			logger,
 			onRedeemed,
 			verifyRedemption,
+			checkPeerTarget,
 			trustProxy: true,
 			limits: { maxInFlight: 16, ...{ maxBodyReaders: 2, maxBodyReadersPerSource: 1 } },
 		});
@@ -585,6 +631,7 @@ describe('incomplete redemption bodies', () => {
 			logger,
 			onRedeemed,
 			verifyRedemption,
+			checkPeerTarget,
 			limits: { maxInFlight: 1, ...{ bodyTimeoutMs: 40, maxBodyReaders: 1 } },
 		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
