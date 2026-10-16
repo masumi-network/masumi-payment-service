@@ -14985,6 +14985,154 @@ export type PostHydraHeadSnapshotRoundResetResponses = {
 
 export type PostHydraHeadSnapshotRoundResetResponse = PostHydraHeadSnapshotRoundResetResponses[keyof PostHydraHeadSnapshotRoundResetResponses];
 
+export type GetHydraHeadL2ReservationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head to inspect
+         */
+        headId: string;
+    };
+    url: '/hydra/head/l2-reservations';
+};
+
+export type GetHydraHeadL2ReservationsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadL2ReservationsResponses = {
+    /**
+     * L2 reservations
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            reservations: Array<{
+                transactionId: string;
+                /**
+                 * Send it back to release; the release is refused if the row changed
+                 */
+                updatedAt: string;
+                /**
+                 * Hash of the reserved in-head body
+                 */
+                intendedTxHash: string | null;
+                /**
+                 * The body's validity upper bound, as head time
+                 */
+                expiresAt: string | null;
+                /**
+                 * An initial lock, or an action on an existing escrow
+                 */
+                kind: 'initial-lock' | 'action';
+                purchaseRequestIds: Array<string>;
+                paymentRequestIds: Array<string>;
+                /**
+                 * The wallet this reservation holds
+                 */
+                walletAddress: string | null;
+                /**
+                 * Inputs (txHash#index) the body spends
+                 */
+                inputRefs: Array<string>;
+                /**
+                 * Body inputs our node reports unspent. Read from the node's reference map: a hint, not evidence.
+                 */
+                inputsReportedUnspent: number | null;
+                /**
+                 * The recorded release nudge, if one was sent
+                 */
+                releaseNudgeTxHash: string | null;
+                rejectedByHeadReason: string | null;
+                /**
+                 * Whether an admin may release it now
+                 */
+                releasable: boolean;
+                /**
+                 * Why it cannot be released now
+                 */
+                blockedReason: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadL2ReservationsResponse = GetHydraHeadL2ReservationsResponses[keyof GetHydraHeadL2ReservationsResponses];
+
+export type PostHydraHeadL2ReservationsReleaseData = {
+    body?: {
+        /**
+         * The Hydra head the reservation is on
+         */
+        headId: string;
+        /**
+         * The reservation to release
+         */
+        transactionId: string;
+        /**
+         * updatedAt from GET /hydra/head/l2-reservations
+         */
+        expectedUpdatedAt: Date;
+        /**
+         * Confirms the admin checked, on the other party’s node or on L1, that the body did not apply. The service cannot prove it.
+         */
+        acknowledgeUnprovable: true;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/l2-reservations/release';
+};
+
+export type PostHydraHeadL2ReservationsReleaseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head or pending L2 reservation not found
+     */
+    404: unknown;
+    /**
+     * Head not open or closing, the row changed since it was read, the body is not provably expired or shows confirmed, or a request on it is in an action that cannot be restored
+     */
+    409: unknown;
+    /**
+     * No live connection to the head
+     */
+    502: unknown;
+};
+
+export type PostHydraHeadL2ReservationsReleaseResponses = {
+    /**
+     * Reservation released
+     */
+    200: {
+        status: 'success';
+        data: {
+            transactionId: string;
+            /**
+             * Purchases returned to where the reservation found them
+             */
+            purchaseRequestIds: Array<string>;
+            /**
+             * Payments returned to their retry action
+             */
+            paymentRequestIds: Array<string>;
+        };
+    };
+};
+
+export type PostHydraHeadL2ReservationsReleaseResponse = PostHydraHeadL2ReservationsReleaseResponses[keyof PostHydraHeadL2ReservationsReleaseResponses];
+
 export type GetHydraHeadBalanceData = {
     body?: never;
     path?: never;
