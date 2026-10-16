@@ -6413,6 +6413,9 @@
                         "type": "string",
                         "nullable": true
                     },
+                    "release": {
+                        "$ref": "#/components/schemas/DescribedRelease"
+                    },
                     "scriptCatalogueHash": {
                         "type": "string",
                         "nullable": true
@@ -6458,6 +6461,7 @@
                     "publicPeerHost",
                     "hasAdminToken",
                     "hydraVersion",
+                    "release",
                     "scriptCatalogueHash",
                     "ledgerParamsHash",
                     "status",
@@ -6466,6 +6470,41 @@
                     "participantCount",
                     "pausedAt"
                 ]
+            },
+            "DescribedRelease": {
+                "type": "object",
+                "properties": {
+                    "version": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "`git describe` form, e.g. 0.29.0-5-gabc1234, or a bare tag"
+                    },
+                    "commit": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "tag": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Release tag the build starts from"
+                    },
+                    "commitsAhead": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Commits on top of the tag; 0 for the tag itself"
+                    },
+                    "dirty": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "version",
+                    "commit",
+                    "tag",
+                    "commitsAhead",
+                    "dirty"
+                ],
+                "description": "Project release of the Host image, as of the last Check"
             },
             "HydraRelationDetail": {
                 "allOf": [
@@ -7535,6 +7574,26 @@
                     "resolvedAt",
                     "needsOperator",
                     "PaymentSource"
+                ]
+            },
+            "ReleaseWithUpdate": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/DescribedRelease"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "updateAvailable": {
+                                "type": "boolean",
+                                "nullable": true,
+                                "description": "Null when it cannot be told: no latest release known, or a build without a release tag"
+                            }
+                        },
+                        "required": [
+                            "updateAvailable"
+                        ]
+                    }
                 ]
             }
         },
@@ -46549,6 +46608,160 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/release-status": {
+            "get": {
+                "summary": "Compare the running release with the newest published one.",
+                "description": "Reports the release this service and each Hydra Host were built from, and the newest release published on GitHub. The GitHub check runs at most once every six hours. A failed check reports `latest` as null with the reason in `checkError`; it never reports a build as up to date. Hosts are listed only for an admin key, as of their last Check.",
+                "tags": [
+                    "health"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Release status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "latest": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "version": {
+                                                            "type": "string"
+                                                        },
+                                                        "url": {
+                                                            "type": "string"
+                                                        },
+                                                        "publishedAt": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "version",
+                                                        "url",
+                                                        "publishedAt"
+                                                    ],
+                                                    "description": "Newest published release, including pre-releases. Null when not checked yet."
+                                                },
+                                                "checkedAt": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "When GitHub last answered"
+                                                },
+                                                "checkError": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Why the last check failed, when it did"
+                                                },
+                                                "service": {
+                                                    "$ref": "#/components/schemas/ReleaseWithUpdate"
+                                                },
+                                                "hosts": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
+                                                            "network": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Preprod",
+                                                                    "Mainnet"
+                                                                ]
+                                                            },
+                                                            "release": {
+                                                                "$ref": "#/components/schemas/ReleaseWithUpdate"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "name",
+                                                            "network",
+                                                            "release"
+                                                        ]
+                                                    },
+                                                    "description": "Hydra Hosts, as of their last probe. Empty for a key without admin access."
+                                                }
+                                            },
+                                            "required": [
+                                                "latest",
+                                                "checkedAt",
+                                                "checkError",
+                                                "service",
+                                                "hosts"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "latest": {
+                                                "version": "0.30.0",
+                                                "url": "https://github.com/masumi-network/masumi-payment-service/releases/tag/0.30.0",
+                                                "publishedAt": "2026-10-15T12:00:00Z"
+                                            },
+                                            "checkedAt": "2026-10-17T10:00:00.000Z",
+                                            "checkError": null,
+                                            "service": {
+                                                "version": "0.29.0-5-gabc1234",
+                                                "commit": "abc1234",
+                                                "tag": "0.29.0",
+                                                "commitsAhead": 5,
+                                                "dirty": false,
+                                                "updateAvailable": true
+                                            },
+                                            "hosts": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "name": "hydra1",
+                                                    "network": "Mainnet",
+                                                    "release": {
+                                                        "version": "0.29.0-5-gabc1234",
+                                                        "commit": "abc1234",
+                                                        "tag": "0.29.0",
+                                                        "commitsAhead": 5,
+                                                        "dirty": false,
+                                                        "updateAvailable": true
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
                     }
                 }
             }

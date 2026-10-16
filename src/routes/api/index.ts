@@ -1,5 +1,6 @@
 import { Routing } from 'express-zod-api';
 import { healthEndpointGet } from '@/routes/api/health';
+import { releaseStatusGet } from '@/routes/api/release-status';
 import {
 	queryAPIKeyEndpointGet as queryCentralizedRegistrySourceGet,
 	addAPIKeyEndpointPost as addCentralizedRegistrySourceEndpointPost,
@@ -199,6 +200,7 @@ import {
 export const apiRouter: Routing = {
 	v1: {
 		health: healthEndpointGet,
+		'release-status': releaseStatusGet,
 		purchase: {
 			get: queryPurchaseRequestGet,
 			post: createPurchaseInitPost,
