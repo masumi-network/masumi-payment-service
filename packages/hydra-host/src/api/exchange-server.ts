@@ -394,7 +394,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			if (pending !== undefined && pending.redeemedAt === null) {
 				const peerRejection = await checkPeerTarget(body.redeemer.advertise);
 				if (peerRejection !== null) {
-					logger.warn(`[exchange] redemption refused (400 ${peerRejection})`);
+					logger.warn(`[exchange] redemption refused (400 ${peerRejection.reason})`);
 					send(response, 400, { error: 'peer address is not allowed' });
 					return;
 				}

@@ -278,7 +278,10 @@ describe('redeeming an invite', () => {
 
 	it('refuses a peer address the Host may not dial, before redeeming the nonce', async () => {
 		await issue('nonce-private-peer');
-		checkPeerTarget.mockResolvedValueOnce('peer host 127.0.0.1 resolves to non-public address 127.0.0.1');
+		checkPeerTarget.mockResolvedValueOnce({
+			reason: 'peer host 127.0.0.1 resolves to non-public address 127.0.0.1',
+			transient: false,
+		});
 		const result = await post('/exchange/redeem', {
 			nonce: 'nonce-private-peer',
 			redeemer: { ...MATERIAL, advertise: '127.0.0.1:8443' },

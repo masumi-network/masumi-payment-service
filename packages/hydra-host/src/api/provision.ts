@@ -294,7 +294,7 @@ export async function setPeers(
 	for (const peer of peers) {
 		const rejection = await deps.checkPeerTarget(peer.advertise);
 		if (rejection !== null) {
-			throw new ProvisionError(rejection, 400);
+			throw new ProvisionError(rejection.reason, 400);
 		}
 	}
 

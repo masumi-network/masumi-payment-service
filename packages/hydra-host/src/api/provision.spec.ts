@@ -231,7 +231,10 @@ describe('acknowledgeEscrow', () => {
 		const { record } = await provisionNode(REQUEST, deps);
 		const policyDeps = {
 			...deps,
-			checkPeerTarget: async () => 'peer host 127.0.0.1 resolves to non-public address 127.0.0.1',
+			checkPeerTarget: async () => ({
+				reason: 'peer host 127.0.0.1 resolves to non-public address 127.0.0.1',
+				transient: false,
+			}),
 		};
 
 		await expect(
