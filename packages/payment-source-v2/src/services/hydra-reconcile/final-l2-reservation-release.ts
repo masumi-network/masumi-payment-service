@@ -38,7 +38,7 @@ export async function releaseFinalHeadL2Reservations(params: {
 			id: true,
 			intendedTxHash: true,
 			l2ReservationInputRefs: true,
-			l2ReleaseNudgeInputRef: true,
+			l2ReleaseNudgeTx: true,
 			l2ReservationPreviousLayer: true,
 			l2ReservationPreviousSmartContractWalletId: true,
 			l2ReservationPreviousBuyerReturnAddress: true,

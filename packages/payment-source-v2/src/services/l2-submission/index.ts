@@ -302,7 +302,7 @@ async function reserveL2Action(
 							intendedTxHash,
 							invalidHereafterSlot,
 							// Without these, an ambiguous body can never be proven dead and
-							// its wallet stays pinned for good (decideL2ReservationRelease).
+							// its wallet stays pinned for good (l2-release-nudge-proof).
 							l2ReservationInputRefs: inputRefs,
 							status: TransactionStatus.Pending,
 							layer: TransactionLayer.L2,

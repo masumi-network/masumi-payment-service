@@ -242,17 +242,15 @@ model Transaction {
   l2RejectedByHeadAt                         DateTime?
   /// The head's own words for that refusal, kept for the operator.
   l2RejectedByHeadReason                     String?
-  /// Inputs (`txHash#index`) the reserved in-head body spends. A body that ever
-  /// applied consumed them, and a spent output never reappears. Finding all of
-  /// them in a verified snapshot newer than the node's own confirmed snapshot
-  /// read after expiry proves the body dead (decideL2ReservationRelease).
+  /// Inputs (`txHash#index`) the reserved in-head body spends. The release nudge
+  /// spends the wallet's share of them, so once it applies the body never can
+  /// (l2-release-nudge-proof).
   l2ReservationInputRefs                     String[]                        @default([])
-  /// Set when the reservation was auto-released on that input proof. A later
+  /// Set when the reservation was auto-released on an input proof. A later
   /// confirmation of such a body halts the head's replay (invariant breach).
   l2ReleasedByInputProofAt                   DateTime?
-  /// The wallet UTxO (`txHash#index`) a release nudge self-sends so an idle head
-  /// confirms a newer snapshot. Release waits until it is spent, so a nudge still
-  /// in flight can never meet a new lock on the freed wallet.
+  /// Legacy, no longer written: the wallet UTxO an earlier release nudge
+  /// self-sent. Superseded by l2ReleaseNudgeTx.
   l2ReleaseNudgeInputRef                     String?
   /// The signed release nudge (CBOR hex): an in-head self-send of this body's
   /// own wallet inputs into one output tagged with a random nonce datum. Its

@@ -1,22 +1,24 @@
 /**
- * Nudging an idle head so an expired L2 reservation can be proven dead.
+ * The release nudge: an in-head transaction that makes an expired L2
+ * reservation provably dead.
  *
- * Release needs a verified snapshot newer than the node's own post-expiry one
- * (`decideL2ReservationRelease`). A head confirms a snapshot only when a
- * transaction lands, and the wallet the reservation pins is our side's only
- * in-head funds. With a quiet counterparty nothing ever lands: the wallet stays
- * pinned forever, and every purchase routed to it times out.
+ * It spends every input of the reservation's body, all of which the pinned
+ * wallet must own, into one output back to the wallet with a random nonce
+ * datum. If it applies, the body can never apply, and its
+ * output bytes are the proof release waits for (`./l2-release-nudge-proof`). If
+ * the body applied first, its inputs are gone and the head rejects the nudge,
+ * so the reservation stays held. The nudge also gives an idle head the new
+ * snapshot that shows the result.
  *
- * The nudge is an in-head self-send of one wallet UTxO the reservation does not
- * spend. It leaves the input proof intact, and its snapshot is the newer one the
- * proof waits for. Its input is recorded on the reservation before sending, and
- * release waits until that input is spent. So the wallet is never freed while a
- * nudge is still in flight, and a new lock can never select its input.
+ * The signed nudge is recorded on the reservation before it is sent and only
+ * ever resent unchanged. So one reservation has at most one nudge, and the
+ * wallet is freed only after that nudge applied, never while it is in flight.
  *
  * Mesh pinning (ADR-0005): V2 package, so `@meshsdk/core` is the beta.103 line.
  * The root (beta.96) HydraProvider is bridged in via `asV2Provider`.
  */
-import { MeshTxBuilder, MeshWallet, type UTxO } from '@meshsdk/core';
+import { randomBytes } from 'node:crypto';
+import { MeshTxBuilder, MeshWallet, type Asset, type UTxO } from '@meshsdk/core';
 import { HydraDecommitStatus, Network, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
@@ -28,6 +30,12 @@ import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-co
 import { decrypt } from '@/utils/security/encryption';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { asV2Provider } from '../provider-cast';
+import {
+	encodeL2ReleaseNudgeDatum,
+	L2_RELEASE_NUDGE_NONCE_BYTES,
+	readL2ReleaseNudgeProof,
+	type L2ReleaseValueFloor,
+} from './l2-release-nudge-proof';
 
 /** At most one nudge per reservation in this window. A head confirms in about a second. */
 export const L2_RELEASE_NUDGE_INTERVAL_MS = 5 * 60_000;
@@ -37,19 +45,19 @@ const lastNudgeAtMs = new Map<string, number>();
 export type L2ReleaseNudgeCandidate = {
 	id: string;
 	l2ReservationInputRefs: readonly string[];
-	l2ReleaseNudgeInputRef: string | null;
+	l2ReleaseNudgeTx: string | null;
+	/** The funds the body locks, from our records (`./l2-release-nudge-proof`). */
+	valueFloor: L2ReleaseValueFloor;
 };
 
-type NudgeNode = Pick<
-	HydraNode,
-	'verifiedSnapshotNumber' | 'getVerifiedCurrentOutput' | 'pendingIncrementUtxoRefs' | 'fetchPendingDecommitRefs'
->;
+type NudgeNode = Pick<HydraNode, 'verifiedSnapshotNumber' | 'pendingIncrementUtxoRefs' | 'fetchPendingDecommitRefs'>;
 type NudgeHead = Pick<CustomHydraHead, 'newTx'>;
 type NudgeProvider = Pick<HydraProvider, 'fetchAddressUTxOs' | 'fetchProtocolParameters'>;
 
-export type SignSelfSend = (params: {
-	input: UTxO;
+export type SignSpendNudge = (params: {
+	inputs: readonly UTxO[];
 	address: string;
+	datumHex: string;
 	network: Network;
 	encryptedMnemonic: string;
 	provider: NudgeProvider;
@@ -59,36 +67,39 @@ export function toUtxoRef(utxo: UTxO): string {
 	return `${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase();
 }
 
-const isLovelaceUnit = (unit: string) => unit === '' || unit.toLowerCase() === 'lovelace';
-
 /**
- * The wallet UTxO a nudge may spend: plain ADA at the wallet's own address, in
- * the verified snapshot, and touched by nothing else we know of. Lowest
- * reference first, so the choice is stable across scans.
+ * Every input of the body, as the wallet's UTxOs, or null unless each one is
+ * at the wallet's own address, carries no reference script, and is not a
+ * pending increment. Script inputs, such as an escrow a non-locking action
+ * spends, are not the wallet's to spend, so such a body is never nudged.
+ *
+ * Nothing here filters on what the node reports present. A compromised node
+ * could hide inputs to steer the nudge onto a subset, and the proof needs all
+ * of them. An input that is really gone makes the head refuse the nudge.
  */
-export function selectReleaseNudgeInput(params: {
+export function selectReleaseNudgeInputs(params: {
 	utxos: readonly UTxO[];
 	address: string;
 	reservedRefs: readonly string[];
 	pendingIncrementRefs: ReadonlySet<string>;
-	isVerified: (reference: string) => boolean;
-}): UTxO | null {
-	const reserved = new Set(params.reservedRefs.map((reference) => reference.toLowerCase()));
-	const eligible = params.utxos.filter((utxo) => {
-		const reference = toUtxoRef(utxo);
-		return (
-			utxo.output.address === params.address &&
-			utxo.output.amount.every((asset) => isLovelaceUnit(asset.unit)) &&
-			utxo.output.plutusData == null &&
-			utxo.output.dataHash == null &&
-			utxo.output.scriptRef == null &&
-			!reserved.has(reference) &&
-			!params.pendingIncrementRefs.has(reference) &&
-			params.isVerified(reference)
-		);
-	});
-	eligible.sort((a, b) => (toUtxoRef(a) < toUtxoRef(b) ? -1 : 1));
-	return eligible[0] ?? null;
+}): UTxO[] | null {
+	const byRef = new Map(params.utxos.map((utxo) => [toUtxoRef(utxo), utxo]));
+	const reserved = [...new Set(params.reservedRefs.map((reference) => reference.toLowerCase()))].sort();
+	if (reserved.length === 0) return null;
+	const selected: UTxO[] = [];
+	for (const reference of reserved) {
+		const utxo = byRef.get(reference);
+		if (
+			!utxo ||
+			utxo.output.address !== params.address ||
+			utxo.output.scriptRef != null ||
+			params.pendingIncrementRefs.has(reference)
+		) {
+			return null;
+		}
+		selected.push(utxo);
+	}
+	return selected;
 }
 
 /**
@@ -105,16 +116,15 @@ export async function nudgeIdleHeadForRelease(params: {
 	head?: NudgeHead | null;
 	nowMs: number;
 	database?: typeof prisma;
-	signSelfSend?: SignSelfSend;
+	signSpendNudge?: SignSpendNudge;
 }): Promise<boolean> {
-	const { hydraHeadId, candidate, node, nowMs, database = prisma, signSelfSend = signInHeadSelfSend } = params;
+	const { hydraHeadId, candidate, node, nowMs, database = prisma, signSpendNudge = signInHeadSpendNudge } = params;
 	if (!mayNudgeNow(candidate.id, nowMs)) return false;
 	try {
 		const provider =
 			params.provider === undefined ? getHydraConnectionManager().getProvider(hydraHeadId) : params.provider;
 		if (!provider) return false;
-		const snapshotNumber = node.verifiedSnapshotNumber;
-		if (snapshotNumber === undefined) return false;
+		if (node.verifiedSnapshotNumber === undefined) return false;
 
 		// Only the wallet this very reservation pins. Its lock owner is the dead
 		// body, so no other L2 action can be building against it.
@@ -128,8 +138,8 @@ export async function nudgeIdleHeadForRelease(params: {
 		});
 		if (!wallet) return false;
 
-		// A withdrawal takes no wallet lock, and the head confirms no snapshot
-		// while a decommit is in flight, so a nudge then would only sit there.
+		// A withdrawal takes no wallet lock and may select the nudge's inputs, and
+		// the head confirms no snapshot while a decommit is in flight.
 		const activeWithdrawal = await database.hydraDecommit.findFirst({
 			where: { hydraHeadId, status: { in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending] } },
 			select: { id: true },
@@ -137,62 +147,31 @@ export async function nudgeIdleHeadForRelease(params: {
 		if (activeWithdrawal) return false;
 		if ((await node.fetchPendingDecommitRefs()).length > 0) return false;
 
-		const utxos = await provider.fetchAddressUTxOs(wallet.walletAddress);
-		const isVerified = (reference: string) => node.getVerifiedCurrentOutput(reference, snapshotNumber) !== null;
-		const recordedRef = candidate.l2ReleaseNudgeInputRef?.toLowerCase() ?? null;
-		let input: UTxO | null;
-		if (recordedRef !== null && isVerified(recordedRef)) {
-			// Re-send against the recorded input. Every body spending it is the same
-			// self-send, so at most one of them ever applies.
-			input = utxos.find((utxo) => toUtxoRef(utxo) === recordedRef) ?? null;
-		} else {
-			// Nothing recorded yet, or the recorded input is spent, so no body of it
-			// can apply again. The second case is a nudge that landed while the
-			// in-memory baseline was lost (restart, failover): a fresh baseline now
-			// sits on that snapshot and needs one more.
-			input = selectReleaseNudgeInput({
-				utxos,
-				address: wallet.walletAddress,
-				reservedRefs: candidate.l2ReservationInputRefs,
-				pendingIncrementRefs: node.pendingIncrementUtxoRefs,
-				isVerified,
-			});
-			if (input) {
-				// Record before sending: once it is on the row, release waits for it.
-				const recorded = await database.transaction.updateMany({
-					where: {
-						id: candidate.id,
-						status: TransactionStatus.Pending,
-						l2ReleaseNudgeInputRef: candidate.l2ReleaseNudgeInputRef,
-					},
-					data: { l2ReleaseNudgeInputRef: toUtxoRef(input) },
-				});
-				if (recorded.count !== 1) return false;
-			}
-		}
-		if (!input) {
-			logger.warn('[HydraReconcile] no wallet UTxO free to nudge the head; reservation stays held', {
+		const signedTx =
+			candidate.l2ReleaseNudgeTx ??
+			(await buildAndRecordNudge({
 				hydraHeadId,
-				transactionId: candidate.id,
-			});
-			return false;
-		}
-
-		const signedTx = await signSelfSend({
-			input,
-			address: wallet.walletAddress,
-			network: wallet.PaymentSource.network,
-			encryptedMnemonic: wallet.Secret.encryptedMnemonic,
-			provider,
-		});
+				candidate,
+				wallet,
+				inputs: selectReleaseNudgeInputs({
+					utxos: await provider.fetchAddressUTxOs(wallet.walletAddress),
+					address: wallet.walletAddress,
+					reservedRefs: candidate.l2ReservationInputRefs,
+					pendingIncrementRefs: node.pendingIncrementUtxoRefs,
+				}),
+				provider,
+				database,
+				signSpendNudge,
+			}));
+		if (signedTx === null) return false;
 		const head = params.head === undefined ? getHydraConnectionManager().getHead(hydraHeadId) : params.head;
 		if (!head) return false;
 		const txHash = await head.newTx({ type: HydraTransactionType.TxConwayEra, description: '', cborHex: signedTx });
-		logger.info('[HydraReconcile] nudged idle head so an expired L2 reservation can be released', {
+		logger.info('[HydraReconcile] sent release nudge for an expired L2 reservation', {
 			hydraHeadId,
 			transactionId: candidate.id,
 			nudgeTxHash: txHash,
-			nudgeInputRef: toUtxoRef(input),
+			resent: candidate.l2ReleaseNudgeTx !== null,
 		});
 		return true;
 	} catch (error) {
@@ -203,6 +182,47 @@ export async function nudgeIdleHeadForRelease(params: {
 		});
 		return false;
 	}
+}
+
+/** Sign and record a nudge over `inputs`. Null when there is nothing safe to send. */
+async function buildAndRecordNudge(params: {
+	hydraHeadId: string;
+	candidate: L2ReleaseNudgeCandidate;
+	wallet: { walletAddress: string; Secret: { encryptedMnemonic: string }; PaymentSource: { network: Network } };
+	inputs: UTxO[] | null;
+	provider: NudgeProvider;
+	database: typeof prisma;
+	signSpendNudge: SignSpendNudge;
+}): Promise<string | null> {
+	const { hydraHeadId, candidate, wallet, inputs, provider, database } = params;
+	if (inputs === null) {
+		logger.warn('[HydraReconcile] not every input of the expired L2 body is a wallet UTxO; reservation stays held', {
+			hydraHeadId,
+			transactionId: candidate.id,
+		});
+		return null;
+	}
+
+	const signedTx = await params.signSpendNudge({
+		inputs,
+		address: wallet.walletAddress,
+		datumHex: encodeL2ReleaseNudgeDatum(randomBytes(L2_RELEASE_NUDGE_NONCE_BYTES)),
+		network: wallet.PaymentSource.network,
+		encryptedMnemonic: wallet.Secret.encryptedMnemonic,
+		provider,
+	});
+	// Never record a nudge the release proof would not accept. This is also
+	// where input values the node under-reported fall below the floor.
+	if (readL2ReleaseNudgeProof(signedTx, candidate.l2ReservationInputRefs, candidate.valueFloor) === null) {
+		throw new Error('Signed release nudge does not meet the release proof');
+	}
+	// Record before sending, and only over no nudge: a second, different nudge
+	// could apply in place of the recorded one, and release would never see it.
+	const recorded = await database.transaction.updateMany({
+		where: { id: candidate.id, status: TransactionStatus.Pending, l2ReleaseNudgeTx: null },
+		data: { l2ReleaseNudgeTx: signedTx },
+	});
+	return recorded.count === 1 ? signedTx : null;
 }
 
 function mayNudgeNow(transactionId: string, nowMs: number): boolean {
@@ -219,11 +239,32 @@ export function resetL2ReleaseNudgeThrottle(): void {
 	lastNudgeAtMs.clear();
 }
 
+/** Every unit the inputs hold, summed, lovelace first. */
+export function sumNudgeInputValue(inputs: readonly UTxO[]): Asset[] {
+	const totals = new Map<string, bigint>();
+	for (const input of inputs) {
+		for (const asset of input.output.amount) {
+			const unit = asset.unit === '' ? 'lovelace' : asset.unit;
+			totals.set(unit, (totals.get(unit) ?? 0n) + BigInt(asset.quantity));
+		}
+	}
+	const units = [...totals.keys()].sort((a, b) => (a === 'lovelace' ? -1 : b === 'lovelace' ? 1 : a < b ? -1 : 1));
+	return units.map((unit) => ({ unit, quantity: String(totals.get(unit)) }));
+}
+
 /**
- * One input back to the same address. The head charges no fee and its own
- * parameters are used, never L1's (see splitExactAmountInHead).
+ * The inputs into one output back to the same address, carrying the full
+ * value and the nonce datum. The head charges no fee and its own parameters
+ * are used, never L1's (see splitExactAmountInHead).
  */
-const signInHeadSelfSend: SignSelfSend = async ({ input, address, network, encryptedMnemonic, provider }) => {
+export const signInHeadSpendNudge: SignSpendNudge = async ({
+	inputs,
+	address,
+	datumHex,
+	network,
+	encryptedMnemonic,
+	provider,
+}) => {
 	const v2Provider = asV2Provider(provider);
 	const wallet = new MeshWallet({
 		networkId: convertNetworkToId(network),
@@ -234,8 +275,13 @@ const signInHeadSelfSend: SignSelfSend = async ({ input, address, network, encry
 	await wallet.getUnusedAddresses();
 	const builder = new MeshTxBuilder({ fetcher: v2Provider, isHydra: true });
 	builder.protocolParams(await v2Provider.fetchProtocolParameters());
-	// scriptSize 0: without it mesh tries to resolve the in-head input on L1.
-	builder.txIn(input.input.txHash, input.input.outputIndex, input.output.amount, input.output.address, 0);
-	const unsignedTx = await builder.setFee('0').changeAddress(address).setNetwork(convertNetwork(network)).complete();
+	for (const input of inputs) {
+		// scriptSize 0: without it mesh tries to resolve the in-head input on L1.
+		builder.txIn(input.input.txHash, input.input.outputIndex, input.output.amount, input.output.address, 0);
+	}
+	builder.txOut(address, sumNudgeInputValue(inputs)).txOutInlineDatumValue(datumHex, 'CBOR');
+	// The one output already carries every input's full value, so there is no
+	// change to balance; mesh's balancer refuses a body that leaves none.
+	const unsignedTx = builder.setFee('0').setNetwork(convertNetwork(network)).completeUnbalanced();
 	return await wallet.signTx(unsignedTx);
 };
