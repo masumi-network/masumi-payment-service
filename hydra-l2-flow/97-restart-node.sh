@@ -25,6 +25,10 @@ if [ "$IDX" = 1 ]; then party=purchasing; other_vk=selling-hydra.vk; other_cvk=s
 api=$((4000 + IDX)); p2p=$((5000 + IDX)); mon=$((6000 + IDX)); other=$(( IDX == 1 ? 2 : 1 ))
 persist="$PREPROD_DIR/persistence/$party"
 
+# Verify the binary BEFORE stopping anything, so a refused binary leaves the
+# running node alone. Check only (no repair): the other node may be using it.
+HYDRA_BIN_TAG='' NATIVE_BIN="$BIN" STATE="$STATE" "$REPO/hydra-l2-flow/hydra-native.sh" verify
+
 # Stop the node if running.
 if [ -f "$STATE/node$IDX.pid" ] && kill -0 "$(cat "$STATE/node$IDX.pid")" 2>/dev/null; then
   kill "$(cat "$STATE/node$IDX.pid")"; sleep 2
