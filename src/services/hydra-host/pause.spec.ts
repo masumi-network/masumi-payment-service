@@ -127,7 +127,10 @@ describe('pauseHydraHost', () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
 		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
 
-		await expect(pause.pauseHydraHost('host-1', { force: true })).rejects.toMatchObject({ status: 409 });
+		await expect(pause.pauseHydraHost('host-1', { force: true })).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringMatching(/another pause action/),
+		});
 		expect(mockHostUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ pausedAt: expect.any(Date) }) }),
 		);
