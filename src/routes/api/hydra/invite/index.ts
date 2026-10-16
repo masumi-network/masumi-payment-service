@@ -249,7 +249,8 @@ export const createInvitePost = adminAuthenticatedEndpointFactory.build({
 			unsyncedPeriodSeconds: input.unsyncedPeriodSeconds,
 			ttlMs: input.ttlHours === undefined ? INVITE_TTL_MS : input.ttlHours * 60 * 60 * 1000,
 		});
-		logger.info(`hydra: minted invite ${minted.nonce}`);
+		// Log the row id, never the nonce: an unspent nonce is redeemable by anyone who reads it.
+		logger.info(`hydra: minted invite ${minted.inviteId}`);
 		return {
 			id: minted.inviteId,
 			nonce: minted.nonce,
