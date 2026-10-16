@@ -68,14 +68,14 @@ export function HydraHeadSnapshotRoundNotice({
         `Reset to confirmed snapshot ${result.confirmedSnapshotNumber}. Unconfirmed transactions were dropped, including the round's ${result.droppedTxIds.length}.`,
       );
       setPending(null);
-      await resync('hydra');
     } catch (error) {
       // The API layer toasts the cause; catching keeps it from escaping the handler.
       console.error('Hydra snapshot round reset failed', error);
     } finally {
       setIsResetting(false);
-      await refetch();
     }
+    // Outside the try, so a failed refresh is never reported as a failed reset.
+    await Promise.allSettled([resync('hydra'), refetch()]);
   };
 
   return (
