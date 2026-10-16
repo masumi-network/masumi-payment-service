@@ -33,7 +33,8 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 		kind: 'capabilities',
 		tier: 'admin',
 		summary: 'What this Host can run',
-		description: 'Hydra version, script catalogue and ledger-params hashes, network, and free node slots.',
+		description:
+			'Project release (version and commit), Hydra version, script catalogue and ledger-params hashes, network, and free node slots.',
 	},
 	{
 		path: '/v1/peer-allowlist',
