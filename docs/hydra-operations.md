@@ -75,7 +75,7 @@ HYDRA_HOST_MEMORY_LIMIT=4g \
 docker compose up -d --build
 ```
 
-Four settings carry over to any deployment, and three of them are the kind that
+Five settings carry over to any deployment, and four of them are the kind that
 only hurt later:
 
 - **A durable volume at `/data`.** It holds a SQLite event store and etcd's raft
@@ -91,6 +91,10 @@ only hurt later:
 - **One instance per Host identity.** The peer ports, the advertise address and
   the volume all belong to a specific Host. Do not scale it horizontally.
 - **The Blockfrost file, mounted read-only.**
+- **A memory limit** (`--memory`, `mem_limit` from `HYDRA_HOST_MEMORY_LIMIT`,
+  or `resources.limits.memory`). The peer plane is published, so a flood from
+  a peer must not be able to take the whole machine. Size it for the number of
+  heads the Host runs.
 
 Compose also shows a healthcheck worth copying: an unauthenticated request to
 an authenticated route, expecting `401`. That proves the server is up _and_
