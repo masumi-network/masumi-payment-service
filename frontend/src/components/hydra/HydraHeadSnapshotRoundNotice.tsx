@@ -110,7 +110,8 @@ export function HydraHeadSnapshotRoundNotice({
 
       <ConfirmDialog
         elevatedChildStack
-        open={pending !== null}
+        // Only for the round on screen: a round that moved is a new decision.
+        open={pending !== null && pending.signature === round.signature}
         onClose={() => {
           if (!isResetting) setPending(null);
         }}

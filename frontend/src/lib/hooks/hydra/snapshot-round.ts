@@ -36,11 +36,15 @@ const SNAPSHOT_ROUND_POLL_MS = 60_000;
 /**
  * Read quietly. The server refuses the read while this instance holds no
  * session for the head, and a toast every minute for that says nothing useful.
+ *
+ * A failure throws rather than returning null: React Query keeps the previous
+ * data for a failed refetch, so one lost poll does not hide the notice and
+ * unmount a confirmation the operator has open.
  */
 export async function fetchHydraSnapshotRound(
   apiClient: Client,
   headId: string,
-): Promise<HydraSnapshotRound | null> {
+): Promise<HydraSnapshotRound> {
   const response = await handleApiCall(
     () =>
       apiClient.get<{ 200: ApiEnvelope<HydraSnapshotRound> }>({
@@ -54,7 +58,10 @@ export async function fetchHydraSnapshotRound(
       },
     },
   );
-  return response?.data?.data ?? null;
+  if (response?.data?.data == null) {
+    throw new Error('Failed to read the Hydra snapshot round');
+  }
+  return response.data.data;
 }
 
 export function useHydraSnapshotRound(headId: string | null, isOpen: boolean) {
