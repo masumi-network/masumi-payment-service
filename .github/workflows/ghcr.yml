@@ -6,6 +6,11 @@ on:
 jobs:
   docker_publish:
     runs-on: 'ubuntu-22.04'
+    # Read by the shell inside the action, never pasted into its script, so a
+    # tag name cannot inject commands.
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      RELEASE_COMMIT: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v2
@@ -16,3 +21,29 @@ jobs:
         with:
           image_name: ${{ github.repository }} # it will be lowercased internally
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The release the admin UI compares against the latest one.
+          extra_args: >-
+            --build-arg MASUMI_RELEASE_VERSION=$RELEASE_TAG
+            --build-arg MASUMI_RELEASE_COMMIT=$RELEASE_COMMIT
+
+  # The Hydra Host ships under the same release tag as the payment service, so
+  # one version names the whole stack. amd64 only: the Host deploy guide requires
+  # an amd64 machine.
+  hydra_host_publish:
+    runs-on: 'ubuntu-22.04'
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      RELEASE_COMMIT: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build and publish the Hydra Host image
+        uses: macbre/push-to-ghcr@master
+        with:
+          image_name: ${{ github.repository }}-hydra-host # it will be lowercased internally
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          dockerfile: ./packages/hydra-host/Dockerfile
+          extra_args: >-
+            --build-arg MASUMI_RELEASE_VERSION=$RELEASE_TAG
+            --build-arg MASUMI_RELEASE_COMMIT=$RELEASE_COMMIT
