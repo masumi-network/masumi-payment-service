@@ -116,10 +116,11 @@ The Host runs `HYDRA_NODE_BIN` without checking its `.sha256` record. Check
 that same binary first. The command exits non-zero when it fails its record:
 
 ```bash
-NATIVE_BIN="$PWD/hydra-l2-flow/.bin/hydra-node" ./hydra-l2-flow/hydra-native.sh verify
+HYDRA_BIN_TAG= NATIVE_BIN="$PWD/hydra-l2-flow/.bin/hydra-node" ./hydra-l2-flow/hydra-native.sh verify
 ```
 
-Set `NATIVE_BIN` to the path you pass as `HYDRA_NODE_BIN` below.
+Set `NATIVE_BIN` to the path you pass as `HYDRA_NODE_BIN` below. For a tag build,
+set `HYDRA_BIN_TAG` and `HYDRA_BIN_TAG_SHA256` instead of clearing the tag.
 
 ```bash
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
