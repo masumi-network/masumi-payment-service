@@ -36,8 +36,7 @@ import {
 import { encodeInviteCode, type DecodedInvite } from './invite-code';
 import { signHydraHeadInvite, signHydraRedemption, verifyHydraHeadInvite } from './invite-signing';
 import {
-	MIN_UNSYNCED_PERIOD_SECONDS,
-	assertContestationPeriodAllowed,
+	assertHeadPeriodsAllowed,
 	defaultPeriodsFor,
 	periodsFromInvite,
 	reserveNodeForExchange,
@@ -160,33 +159,7 @@ export async function mintHeadInvite(input: {
 	// used to be checked for the first time: by then this side has a provisioned
 	// node with keys, a peer port and its funding, the counterparty has a mirror
 	// of all three, and neither can be reused.
-	assertContestationPeriodAllowed(wallet.network, periods.contestationPeriodSeconds);
-
-	// Half the dispute window is a ceiling, not a preference. Hydra's guarantee is
-	// that an in-sync node always has at least that long to observe an on-chain
-	// event and react to it; a node allowed to go quiet for longer can still
-	// believe it is in sync while it has already lost the time it needs to
-	// contest. Raising it trades away the only protection the dispute window
-	// provides, so it is refused rather than warned about.
-	const syncCeiling = Math.floor(periods.contestationPeriodSeconds / 2);
-	if (periods.unsyncedPeriodSeconds > syncCeiling) {
-		throw createHttpError(
-			400,
-			`the out-of-sync limit cannot exceed half the dispute window (${syncCeiling}s here). Past that a node can think it is in sync while it has already run out of time to contest a close`,
-		);
-	}
-	// The floor matters as much as the ceiling, and it is the one that bit us.
-	// The out-of-sync limit is usually derived rather than given, so a short
-	// dispute window silently produces a short limit: two minutes of dispute
-	// window gives a sixty-second limit, and preprod block gaps reach 71s. The
-	// head then declares itself out of sync several times an hour and refuses
-	// commands, which reads as a broken node rather than a chosen setting.
-	if (periods.unsyncedPeriodSeconds < MIN_UNSYNCED_PERIOD_SECONDS) {
-		throw createHttpError(
-			400,
-			`the out-of-sync limit works out at ${periods.unsyncedPeriodSeconds}s, below the ${MIN_UNSYNCED_PERIOD_SECONDS}s floor. It is half the dispute window unless set, so raise the dispute window to at least ${MIN_UNSYNCED_PERIOD_SECONDS * 2}s. Ordinary block gaps cross a shorter limit and the head stops accepting commands`,
-		);
-	}
+	assertHeadPeriodsAllowed(wallet.network, periods);
 
 	const nonce = createId();
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
@@ -364,6 +337,11 @@ export async function redeemHeadInvite(input: {
 	if (!freshness.fresh) {
 		throw createHttpError(409, freshness.reason);
 	}
+	// The issuer's periods, held to the bounds we mint with. A valid signature
+	// proves who chose them, not that they are safe: the issuer may run a
+	// service that never checked them, and an invite that cannot become a safe
+	// head must not cost this side a node and its fuel to discover that.
+	assertHeadPeriodsAllowed(wallet.network, payload);
 
 	const existing = await prisma.hydraHeadInvite.findUnique({ where: { nonce: payload.nonce } });
 	if (existing !== null) {
@@ -387,10 +365,6 @@ export async function redeemHeadInvite(input: {
 	}
 
 	const periods: HeadPeriods = periodsFromInvite(payload);
-	// The issuer's periods, judged against our own network's floor before a node
-	// is reserved for them. An invite that cannot become a head on mainnet must
-	// not cost this side a node and its fuel to discover that.
-	assertContestationPeriodAllowed(wallet.network, periods.contestationPeriodSeconds);
 	// Asked here, where the answer still costs nothing. The head is only created
 	// after the redemption is posted, and a nonce is single-use: the issuer's Host
 	// burns it on first use, so a `createHeadFromExchange` that refuses — because
