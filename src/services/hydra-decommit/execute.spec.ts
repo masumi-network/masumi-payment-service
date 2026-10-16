@@ -26,10 +26,12 @@ const mockIsTxConfirmed = jest.fn() as AnyMock;
 /** Returns the split's carved output, so the decommit can spend it. */
 const mockFetchUTxOs = jest.fn() as AnyMock;
 
+const mockIsPausedLocked = jest.fn(async () => false) as AnyMock;
+
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
 	isHydraHeadOnPausedHost: jest.fn(async () => false),
-	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),
+	isHydraHeadOnPausedHostLocked: mockIsPausedLocked,
 	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
 }));
 
@@ -254,6 +256,17 @@ describe('executeHydraDecommit request outcomes', () => {
 			expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
 		);
 		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+	});
+
+	// Checked again where the row is created, under the Host lock, so a pause
+	// that lands after the route check still stops the withdrawal.
+	it('refuses without creating a row when the host was paused in the meantime', async () => {
+		mockIsPausedLocked.mockResolvedValueOnce(true);
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({ statusCode: 409 });
+
+		expect(mockDecommitCreate).not.toHaveBeenCalled();
 		expect(mockDecommitCall).not.toHaveBeenCalled();
 	});
 });

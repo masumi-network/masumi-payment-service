@@ -166,7 +166,9 @@ describe('advanceHydraHostPause', () => {
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
 
-		expect(mockHostUpdateMany).not.toHaveBeenCalled();
+		expect(mockHostUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: { pauseStopRequestedAt: expect.any(Date) } }),
+		);
 	});
 
 	// A stopped node cannot contest a close or post the fanout.
@@ -180,25 +182,63 @@ describe('advanceHydraHostPause', () => {
 	});
 
 	// Serialized with Resume, so a stop can never land after a resume's start.
-	it('acts under the per-host pause lock', async () => {
+	it('acts only while it holds the pause lease, and releases it', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockQueryRaw.mockResolvedValue([{ acquired: 1 }]);
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
 
-		const lockCall = mockQueryRaw.mock.calls[0] as unknown[];
-		expect((lockCall[0] as string[]).join('?')).toContain('pg_advisory_xact_lock');
-		expect(lockCall[1]).toBe('hydra-host-pause:host-1');
-		expect(mockQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(mockStopHostNode.mock.invocationCallOrder[0]);
+		const claim = mockHostUpdateMany.mock.calls[0][0] as { data: { pauseLeaseUntil: Date | null } };
+		expect(claim.data.pauseLeaseUntil).toBeInstanceOf(Date);
+		expect(mockHostUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(mockStopHostNode.mock.invocationCallOrder[0]);
+		expect(mockHostUpdateMany).toHaveBeenLastCalledWith({ where: { id: 'host-1' }, data: { pauseLeaseUntil: null } });
+	});
+
+	it('does nothing while another instance holds the lease', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		expect(mockStopHostNode).not.toHaveBeenCalled();
+	});
+
+	// isClosing stays set after Final, so it must not hold a pause forever.
+	it('counts a closing head only while it is still Open, plus Closed and FanoutPossible', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		expect(mockHeadCount).toHaveBeenCalledWith({
+			where: {
+				LocalParticipant: { hydraHostId: 'host-1' },
+				OR: [{ isClosing: true, status: 'Open' }, { status: { in: ['Closed', 'FanoutPossible'] } }],
+			},
+		});
+	});
+
+	// A base URL missing a proxy prefix also answers 404; that is not a stopped node.
+	it('does not take a 404 from a wrong URL as a missing node', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockStopHostNode.mockRejectedValueOnce(
+			new FakeHostRequestError('POST /v1/nodes/node-a/stop failed (404): not found', 404),
+		);
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		expect(mockHostUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: { pauseStopRequestedAt: expect.any(Date) } }),
+		);
 	});
 
 	it('treats a node the host no longer has as stopped', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockStopHostNode.mockRejectedValueOnce(new FakeHostRequestError('not found', 404));
+		mockStopHostNode.mockRejectedValueOnce(new FakeHostRequestError('failed (404): no such node: node-a', 404));
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
 
-		expect(mockHostUpdateMany).toHaveBeenCalled();
+		expect(mockHostUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: { pauseStopRequestedAt: expect.any(Date) } }),
+		);
 	});
 });
 
@@ -236,7 +276,7 @@ describe('resumeHydraHost', () => {
 	// One node removed from the Host by hand must not keep the Host paused forever.
 	it('skips a paused node the host no longer has', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
-		mockStartHostNode.mockRejectedValueOnce(new FakeHostRequestError('not found', 404));
+		mockStartHostNode.mockRejectedValueOnce(new FakeHostRequestError('failed (404): no such node: node-a', 404));
 
 		await pause.resumeHydraHost('host-1');
 
@@ -249,7 +289,17 @@ describe('resumeHydraHost', () => {
 		mockStartHostNode.mockRejectedValueOnce(new Error('boom'));
 
 		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 502 });
-		expect(mockHostUpdateMany).not.toHaveBeenCalled();
+		expect(mockHostUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ pausedAt: null }) }),
+		);
+	});
+
+	it('refuses with 409 while an advance holds the lease', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 409 });
+		expect(mockStartHostNode).not.toHaveBeenCalled();
 	});
 });
 
