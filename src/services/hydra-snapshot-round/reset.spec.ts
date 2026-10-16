@@ -63,6 +63,8 @@ function headRow(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'head-1',
 		isEnabled: true,
+		isClosing: false,
+		ownerEpoch: 7n,
 		status: 'Open',
 		headIdentifier: HEAD_IDENTIFIER,
 		snapshotRoundSignature: SIGNATURE,
@@ -131,6 +133,49 @@ describe('resetSnapshotRound', () => {
 	it('refuses when this instance holds no session for the head', async () => {
 		mockGetNode.mockReturnValue(null as never);
 		await expectRefused(502);
+	});
+
+	it('refuses a head that is closing', async () => {
+		mockFindUnique.mockResolvedValueOnce(headRow({ isClosing: true }) as never);
+		await expectRefused(409);
+	});
+
+	it('refuses a round that names no snapshot number', async () => {
+		mockFetchRound
+			.mockReset()
+			.mockResolvedValue(round({ tag: 'SomeFutureTag', number: null, signature: 'SomeFutureTag|-|0' }) as never);
+		mockFindUnique.mockResolvedValue(headRow({ snapshotRoundSignature: 'SomeFutureTag|-|0' }) as never);
+		await expect(
+			resetSnapshotRound({ headId: 'head-1', expectedSignature: 'SomeFutureTag|-|0', actorApiKeyId: 'admin-key' }),
+		).rejects.toMatchObject({ status: 409, message: expect.stringContaining('names no snapshot') });
+		expect(node.post).not.toHaveBeenCalled();
+	});
+
+	it('refuses when the session moved to another node object during the checks', async () => {
+		mockGetNode.mockReturnValueOnce(node as never).mockReturnValue({ ...node } as never);
+		await expectRefused(409);
+	});
+
+	it('refuses when another instance attached the head during the checks', async () => {
+		mockFindUnique
+			.mockResolvedValueOnce(headRow() as never)
+			.mockResolvedValueOnce(headRow({ ownerEpoch: 8n }) as never);
+		await expectRefused(409);
+	});
+
+	it('refuses when a close started during the checks', async () => {
+		mockFindUnique
+			.mockResolvedValueOnce(headRow() as never)
+			.mockResolvedValueOnce(headRow({ isClosing: true }) as never);
+		await expectRefused(409);
+	});
+
+	it('refuses when the verified snapshot moved during the checks', async () => {
+		node.get.mockImplementation(async () => {
+			node.verifiedSnapshotNumber = 314n;
+			return confirmedSnapshot();
+		});
+		await expectRefused(409);
 	});
 
 	it('refuses a head that is not open, disabled, or has no local participant', async () => {
@@ -214,10 +259,13 @@ describe('resetSnapshotRound', () => {
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it('reports a round that is still stuck after the reset', async () => {
+	it('reports the same round in flight after the reset, with its clock restarted', async () => {
 		mockFetchRound.mockReset().mockResolvedValue(round() as never);
 		await expect(reset()).rejects.toMatchObject({ status: 502 });
-		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', snapshotRoundSignature: SIGNATURE },
+			data: { snapshotRoundSignature: null, snapshotRoundSince: null, snapshotRoundAlertedAt: null },
+		});
 	});
 
 	it('still succeeds when the round cannot be read back', async () => {

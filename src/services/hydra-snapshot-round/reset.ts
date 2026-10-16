@@ -54,9 +54,23 @@ export type ResetSnapshotRoundResult = {
 /** One reset per head at a time in this process; the session fence covers other instances. */
 const resetsInFlight = new Set<string>();
 
+const headSelect = {
+	id: true,
+	isEnabled: true,
+	isClosing: true,
+	ownerEpoch: true,
+	status: true,
+	headIdentifier: true,
+	snapshotRoundSignature: true,
+	snapshotRoundSince: true,
+	LocalParticipant: { select: { id: true } },
+} as const;
+
 type HeadRow = {
 	id: string;
 	isEnabled: boolean;
+	isClosing: boolean;
+	ownerEpoch: bigint;
 	status: HydraHeadStatus;
 	headIdentifier: string | null;
 	snapshotRoundSignature: string | null;
@@ -67,15 +81,7 @@ type HeadRow = {
 async function loadOwnedHead(headId: string): Promise<{ head: HeadRow; node: HydraNode }> {
 	const head = await prisma.hydraHead.findUnique({
 		where: { id: headId },
-		select: {
-			id: true,
-			isEnabled: true,
-			status: true,
-			headIdentifier: true,
-			snapshotRoundSignature: true,
-			snapshotRoundSince: true,
-			LocalParticipant: { select: { id: true } },
-		},
+		select: headSelect,
 	});
 	if (!head) throw createHttpError(404, 'Hydra head not found');
 	if (!head.LocalParticipant) throw createHttpError(400, 'Head has no local participant');
@@ -114,6 +120,26 @@ function toStatus(head: HeadRow, round: HydraSnapshotRound, now: Date): Snapshot
 	};
 }
 
+/**
+ * The checks above awaited the node twice. Before the side-load, confirm this
+ * instance still holds the same session, the service still verifies the same
+ * snapshot, and no other attachment or close started meanwhile.
+ */
+async function assertStillOwned(head: HeadRow, node: HydraNode, verifiedNumber: bigint): Promise<void> {
+	const current = await prisma.hydraHead.findUnique({ where: { id: head.id }, select: headSelect });
+	if (
+		getHydraConnectionManager().getNode(head.id) !== node ||
+		node.verifiedSnapshotNumber !== verifiedNumber ||
+		current == null ||
+		current.status !== HydraHeadStatus.Open ||
+		!current.isEnabled ||
+		current.isClosing ||
+		current.ownerEpoch !== head.ownerEpoch
+	) {
+		throw createHttpError(409, 'The head changed while the reset was checked; reload and review it again');
+	}
+}
+
 export async function getSnapshotRoundStatus(headId: string): Promise<SnapshotRoundStatus> {
 	const { head, node } = await loadOwnedHead(headId);
 	return toStatus(head, await readRound(node), new Date());
@@ -130,9 +156,13 @@ export async function resetSnapshotRound(params: {
 	try {
 		const { head, node } = await loadOwnedHead(headId);
 		if (!head.isEnabled) throw createHttpError(409, 'Cannot reset a round in a disabled Hydra head');
+		if (head.isClosing) throw createHttpError(409, 'Cannot reset a round in a Hydra head that is closing');
 
 		const round = await readRound(node);
 		if (!round.inFlight) throw createHttpError(409, 'No snapshot round is in flight; nothing to reset');
+		// An unknown tag counts as in flight for the watch, but without a number
+		// nothing shows the round is ahead of the confirmed snapshot.
+		if (round.number === null) throw createHttpError(409, `Cannot reset a ${round.tag} round that names no snapshot`);
 		if (round.signature !== expectedSignature) {
 			throw createHttpError(409, 'The snapshot round changed since it was shown; reload and review it again');
 		}
@@ -166,9 +196,11 @@ export async function resetSnapshotRound(params: {
 				`The node’s confirmed snapshot ${snapshot.number} differs from the verified snapshot ${verifiedNumber}; retry shortly`,
 			);
 		}
-		if (round.number !== null && round.number <= snapshot.number) {
+		if (round.number <= snapshot.number) {
 			throw createHttpError(409, 'The round in flight is not newer than the confirmed snapshot');
 		}
+
+		await assertStillOwned(head, node, verifiedNumber);
 
 		logger.warn('[HydraSnapshotRound] admin is resetting a stuck snapshot round', {
 			hydraHeadId: head.id,
@@ -193,16 +225,20 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(502, 'The Hydra node refused the reset');
 		}
 
-		// The side-load already happened, so a failed read-back is reported, not thrown.
-		const after = await fetchHydraSnapshotRound(node).catch(() => null);
-		if (after?.inFlight && after.signature === round.signature) {
-			throw createHttpError(502, 'The reset was accepted but the round is still stuck');
-		}
-		// Conditioned on the round it reset, so a newer observation is never wiped.
+		// The side-load happened, so the recorded clock and alert belong to a round
+		// that was reset. Cleared before the read-back: a peer that proposes the
+		// same round again then starts a fresh clock and a fresh alert, instead of
+		// being offered for another reset at once. Conditioned on the round it
+		// reset, so a newer observation is never wiped.
 		await prisma.hydraHead.updateMany({
 			where: { id: head.id, snapshotRoundSignature: round.signature },
 			data: { snapshotRoundSignature: null, snapshotRoundSince: null, snapshotRoundAlertedAt: null },
 		});
+		// A failed read-back is reported, not thrown.
+		const after = await fetchHydraSnapshotRound(node).catch(() => null);
+		if (after?.inFlight && after.signature === round.signature) {
+			throw createHttpError(502, 'The reset was accepted but the same round is in flight again');
+		}
 		logger.warn('[HydraSnapshotRound] stuck snapshot round reset', {
 			hydraHeadId: head.id,
 			actorApiKeyId,
