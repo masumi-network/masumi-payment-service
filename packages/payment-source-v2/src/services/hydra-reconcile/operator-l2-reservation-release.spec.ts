@@ -29,7 +29,10 @@ jest.unstable_mockModule('./l2-reservation-release', () => ({
 	releaseRejectedL2Reservation: mockRelease,
 }));
 
-const { listHeldL2Reservations, releaseHeldL2Reservation } = await import('./operator-l2-reservation-release');
+const { listHeldL2Reservations, releaseHeldL2Reservation, L2_OPERATOR_RELEASE_GRACE_MS } =
+	await import('./operator-l2-reservation-release');
+const { L2_RESERVATION_RELEASE_GRACE_MS } = await import('./l2-reservation-recovery');
+const { resolveHydraL2EvidenceSlotConfig } = await import('@/utils/hydra/l2-slot-context');
 
 const NOW_MS = Date.UTC(2026, 9, 17);
 const UPDATED_AT = new Date(NOW_MS - 60 * 60_000);
@@ -39,6 +42,13 @@ const inputB = `${'b'.repeat(64)}#1`;
 const EXPIRED_SLOT = 100_000n;
 /** A slot far after NOW_MS. */
 const LIVE_SLOT = 10_000_000_000n;
+
+/** The preprod slot whose validity bound lies `msAgo` before NOW_MS. */
+function slotExpiredAgo(msAgo: number): bigint {
+	const config = resolveHydraL2EvidenceSlotConfig('preprod');
+	if (!config) throw new Error('preprod slot config');
+	return BigInt(Math.floor((NOW_MS - msAgo - config.zeroTime) / config.slotLength) + config.zeroSlot - 1);
+}
 
 function openHead(overrides: Record<string, unknown> = {}) {
 	return {
@@ -83,7 +93,7 @@ function reservationRow(overrides: Record<string, unknown> = {}) {
 		l2ReservationPreviousBuyerReturnAddress: null,
 		l2ReservationPreviousCollateralReturn: null,
 		l2ReservationPreviousTransactionId: null,
-		PurchaseRequestCurrent: [{ id: 'purchase-1' }],
+		PurchaseRequestCurrent: [{ id: 'purchase-1', PaidFunds: [{ unit: '', amount: 10_000_000n }] }],
 		PaymentRequestCurrent: [],
 		BlocksWallet: { walletAddress: 'addr_test1wallet' },
 		...overrides,
@@ -167,6 +177,45 @@ describe('listHeldL2Reservations', () => {
 		expect(reservations[0].blockedReason).toEqual(expect.any(String));
 	});
 
+	// The review finding: a row recovery can still prove was releasable at the
+	// same grace recovery nudges at, so the admin took the risk for nothing.
+	describe('grace before an admin may release', () => {
+		const between =
+			L2_RESERVATION_RELEASE_GRACE_MS + (L2_OPERATOR_RELEASE_GRACE_MS - L2_RESERVATION_RELEASE_GRACE_MS) / 2;
+		const listOne = async (row: Record<string, unknown>) => {
+			mockTransactionFindMany.mockResolvedValue([reservationRow(row)]);
+			return (await listHeldL2Reservations('head-1', NOW_MS)).reservations[0];
+		};
+
+		it('holds a provable row while recovery still has nudge passes left', async () => {
+			const reservation = await listOne({ invalidHereafterSlot: slotExpiredAgo(between) });
+			expect(reservation.releasable).toBe(false);
+			expect(reservation.blockedReason).toMatch(/Automatic recovery may still prove/);
+		});
+
+		it('releases a provable row once those passes are over', async () => {
+			const reservation = await listOne({
+				invalidHereafterSlot: slotExpiredAgo(L2_OPERATOR_RELEASE_GRACE_MS + 60_000),
+			});
+			expect(reservation.releasable).toBe(true);
+		});
+
+		it.each([
+			[
+				'an action with no value floor',
+				{
+					l2ReservationPreviousTransactionId: 'escrow-tx',
+					PurchaseRequestCurrent: [],
+					PaymentRequestCurrent: [{ id: 'payment-1' }],
+				},
+			],
+			['a row with no recorded inputs', { l2ReservationInputRefs: [] }],
+		])('releases %s after the release grace alone', async (_case, row) => {
+			const reservation = await listOne({ ...row, invalidHereafterSlot: slotExpiredAgo(between) });
+			expect(reservation.releasable).toBe(true);
+		});
+	});
+
 	it('404s for an unknown head', async () => {
 		mockHeadFindUnique.mockResolvedValue(null);
 
@@ -246,6 +295,15 @@ describe('releaseHeldL2Reservation', () => {
 
 		await expect(release()).rejects.toMatchObject({ status: 409 });
 		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	it('409s, not 500s, when a concurrent write aborts the serializable release', async () => {
+		const { Prisma } = await import('@/generated/prisma/client');
+		mockRelease.mockRejectedValue(
+			new Prisma.PrismaClientKnownRequestError('write conflict', { code: 'P2034', clientVersion: 'test' }),
+		);
+
+		await expect(release()).rejects.toMatchObject({ status: 409 });
 	});
 
 	it('409s when the guarded release finds the row resolved or unmappable', async () => {

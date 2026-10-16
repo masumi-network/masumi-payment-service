@@ -17,9 +17,13 @@
  * clock, and our node shows no confirmation of it), requires the caller to
  * acknowledge the rest, and marks the row `l2ReleasedByOperatorAt`: a later
  * confirmation of the body halts the head's replay instead of being applied.
+ *
+ * A row automatic recovery can still prove (recorded inputs and a value floor)
+ * gets `L2_OPERATOR_RELEASE_GRACE_MS` first, so the admin only takes the risk
+ * once several nudge passes have had their chance.
  */
 import createHttpError from 'http-errors';
-import { HydraHeadStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, Prisma, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
@@ -28,8 +32,19 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
-import { canReportExpiredL2Reservation, L2_RESERVATION_RELEASE_GRACE_MS } from './l2-reservation-recovery';
+import {
+	canReportExpiredL2Reservation,
+	L2_RESERVATION_RELEASE_GRACE_MS,
+	l2ReleaseValueFloor,
+} from './l2-reservation-recovery';
+import { L2_RELEASE_NUDGE_INTERVAL_MS } from './l2-reservation-nudge';
 import { releaseRejectedL2Reservation } from './l2-reservation-release';
+
+/**
+ * How long past expiry a row automatic recovery can still prove waits before
+ * an admin may release it: the release grace plus five nudge intervals.
+ */
+export const L2_OPERATOR_RELEASE_GRACE_MS = L2_RESERVATION_RELEASE_GRACE_MS + 5 * L2_RELEASE_NUDGE_INTERVAL_MS;
 
 export type HeldL2Reservation = {
 	transactionId: string;
@@ -74,7 +89,7 @@ const reservationSelect = {
 	l2ReservationPreviousBuyerReturnAddress: true,
 	l2ReservationPreviousCollateralReturn: true,
 	l2ReservationPreviousTransactionId: true,
-	PurchaseRequestCurrent: { select: { id: true } },
+	PurchaseRequestCurrent: { select: { id: true, PaidFunds: { select: { unit: true, amount: true } } } },
 	PaymentRequestCurrent: { select: { id: true } },
 	BlocksWallet: { select: { walletAddress: true } },
 } as const;
@@ -89,7 +104,7 @@ type ReservationRow = {
 	l2ReleaseNudgeTx: string | null;
 	l2RejectedByHeadReason: string | null;
 	l2ReservationPreviousTransactionId: string | null;
-	PurchaseRequestCurrent: Array<{ id: string }>;
+	PurchaseRequestCurrent: Array<{ id: string; PaidFunds: Array<{ unit: string; amount: bigint }> }>;
 	PaymentRequestCurrent: Array<{ id: string }>;
 	BlocksWallet: { walletAddress: string } | null;
 };
@@ -116,6 +131,8 @@ function blockedReason(row: ReservationRow, node: HydraNode | null, expiresAtMs:
 	if (row.intendedTxHash != null && node.getConfirmedTransaction(row.intendedTxHash)) {
 		return 'Our node shows this body confirmed; the normal replay will settle it';
 	}
+	// A row recovery can prove gets its nudge passes first.
+	const isProvable = row.l2ReservationInputRefs.length > 0 && l2ReleaseValueFloor(row) !== null;
 	const expired = canReportExpiredL2Reservation({
 		hasVerifiedPinnedSessions: node.hasVerifiedPinnedSessions,
 		historyReady: node.confirmedTransactionHistoryReady,
@@ -123,10 +140,12 @@ function blockedReason(row: ReservationRow, node: HydraNode | null, expiresAtMs:
 		headClock: node.headClock,
 		nowMs,
 		validityUpperBoundTimeMs: expiresAtMs,
-		graceMs: L2_RESERVATION_RELEASE_GRACE_MS,
+		graceMs: isProvable ? L2_OPERATOR_RELEASE_GRACE_MS : L2_RESERVATION_RELEASE_GRACE_MS,
 	});
 	if (!expired) {
-		return 'Not provably expired yet: the body must be past its validity bound plus the release grace on a fresh head clock, with history verified and replayed';
+		return isProvable
+			? `Automatic recovery may still prove this one dead: wait until the body is ${L2_OPERATOR_RELEASE_GRACE_MS / 60_000} minutes past its validity bound on a fresh head clock, with history verified and replayed`
+			: 'Not provably expired yet: the body must be past its validity bound plus the release grace on a fresh head clock, with history verified and replayed';
 	}
 	return null;
 }
@@ -232,7 +251,17 @@ export async function releaseHeldL2Reservation(params: {
 		inputCount: row.l2ReservationInputRefs.length,
 	});
 	// Guarded on the nudge it read: one recorded since then may still apply.
-	const released = await releaseRejectedL2Reservation(row, prisma, 'operator');
+	let released: boolean;
+	try {
+		released = await releaseRejectedL2Reservation(row, prisma, 'operator');
+	} catch (error) {
+		// A concurrent nudge record or release of the same row aborts the
+		// serializable transaction; nothing committed.
+		if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === 'P2034' || error.code === 'P2028')) {
+			throw createHttpError(409, 'The reservation changed concurrently; reload and retry');
+		}
+		throw error;
+	}
 	if (!released) {
 		throw createHttpError(
 			409,
