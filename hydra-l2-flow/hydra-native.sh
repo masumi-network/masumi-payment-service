@@ -34,6 +34,7 @@
 #   ./hydra-native.sh publish   # (re)publish HYDRA_VERSION reference scripts natively -> $DEMO/.env
 #   ./hydra-native.sh bin       # ensure a verified native binary (download if missing;
 #                               # refuses one that fails its .sha256 record)
+#   ./hydra-native.sh verify    # check-only: exit 0 iff the binary passes its record
 #
 # Testing an unreleased fix (e.g. master, ahead of the pinned HYDRA_VERSION
 # tag) without disturbing the pinned binary:
@@ -563,7 +564,7 @@ status(){
 # machine without a cardano-scaling/hydra checkout beside this repo, with an
 # error naming HYDRA_DEMO_DIR, which that subcommand never reads.
 case "${1:-}" in
-  bin|drift|status) ;;
+  bin|verify|drift|status) ;;
   *)
     if [ "$NETWORK" = devnet ]; then
       [ -d "$DEMO" ] || { c_red "hydra demo dir not found (set HYDRA_DEMO_DIR): $DEMO"; exit 1; }
@@ -573,6 +574,10 @@ esac
 
 case "${1:-}" in
   bin)       ensure_bin ;;
+  # Check only: no download, and no repair_dylibs, so it is safe to run while
+  # nodes are using the binary. For callers that run $NATIVE_BIN themselves.
+  verify)    [ -e "$NATIVE_BIN" ] || { c_red "no $NATIVE_BIN (run: $0 bin)"; exit 1; }
+             bin_is_verified || refuse_unverified ;;
   publish)   publish ;;
   up)        nodes_up ;;
   down)      nodes_down; [ "$NETWORK" = devnet ] && bridge_down; c_grn "native hydra layer down" ;;
@@ -580,5 +585,5 @@ case "${1:-}" in
   wait-sync) wait_sync ;;
   drift)     node_drift "$STATE/node${2:-1}.log" ;;
   status)    status ;;
-  *) echo "usage: $0 {up|down|restart|wait-sync|drift [n]|status|publish|bin}"; exit 1 ;;
+  *) echo "usage: $0 {up|down|restart|wait-sync|drift [n]|status|publish|bin|verify}"; exit 1 ;;
 esac
