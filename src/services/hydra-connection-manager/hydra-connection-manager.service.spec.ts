@@ -1421,6 +1421,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 					closeTxHash: null,
 					contestationDeadline: null,
 					isClosing: false,
+					closeRefusedAt: null,
 				}),
 			}),
 		);
