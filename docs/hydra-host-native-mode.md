@@ -48,11 +48,11 @@ registry, port allocation, supervisor, plan/drain/drift/unwedge, node client,
 auth, routes, provisioning, and the proxy. Three environment variables differ,
 and all three are configuration rather than code paths:
 
-| Variable                     | Container                                       | Native (macOS)                             |
-| ---------------------------- | ----------------------------------------------- | ------------------------------------------ |
-| `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, Linux)      | path to the Darwin arm64 build             |
-| `HYDRA_HOST_DATA_DIR`        | `/data` volume                                  | a local directory                          |
-| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes a matching etcd 3.5.25 | `false` — let `hydra-node` extract its own |
+| Variable                     | Container                                  | Native (macOS)                             |
+| ---------------------------- | ------------------------------------------ | ------------------------------------------ |
+| `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, Linux) | path to the Darwin arm64 build             |
+| `HYDRA_HOST_DATA_DIR`        | `/data` volume                             | a local directory                          |
+| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes etcd 3.5.34       | `false` — let `hydra-node` extract its own |
 
 Native mode is a supported way to run the Host, not a workaround.
 
