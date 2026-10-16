@@ -46,3 +46,19 @@ export function assertHotWalletInScope(walletScopeIds: string[] | null, hotWalle
 		throw createHttpError(404, 'Not found');
 	}
 }
+
+/**
+ * Whether a caller may see a purchase row it did not query through a scoped
+ * list. Matches the list filter (wallet scope) and also lets the creating key
+ * see its own row, so an idempotent retry still gets the stored object back,
+ * also before a wallet is assigned. The creator clause is deliberately wider
+ * than the other purchase read paths, which use wallet scope only.
+ */
+export function isRequestVisibleToCaller(
+	ctx: { id: string; walletScopeIds: string[] | null },
+	request: { requestedById: string; smartContractWalletId: string | null },
+): boolean {
+	if (ctx.walletScopeIds === null) return true;
+	if (request.requestedById === ctx.id) return true;
+	return request.smartContractWalletId !== null && ctx.walletScopeIds.includes(request.smartContractWalletId);
+}
