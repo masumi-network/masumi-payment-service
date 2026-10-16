@@ -254,6 +254,11 @@ model Transaction {
   /// confirms a newer snapshot. Release waits until it is spent, so a nudge still
   /// in flight can never meet a new lock on the freed wallet.
   l2ReleaseNudgeInputRef                     String?
+  /// The signed release nudge (CBOR hex): an in-head self-send of this body's
+  /// own wallet inputs into one output tagged with a random nonce datum. Its
+  /// exact output bytes in a verified snapshot prove the body can never apply
+  /// (l2-release-nudge-proof). Resent unchanged, so at most one nudge exists.
+  l2ReleaseNudgeTx                           String?
   BlocksWallet                               HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
