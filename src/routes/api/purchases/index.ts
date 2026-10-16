@@ -32,6 +32,7 @@ import {
 import { buildPurchaseListWhere, getPurchasesForQuery } from './queries';
 import { serializePurchasesResponse } from './serializers';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
+import { isRequestVisibleToCaller } from '@/utils/shared/wallet-scope';
 
 export {
 	createPurchaseInitSchemaInput,
@@ -151,6 +152,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				},
 			});
 			if (existingPurchaseRequest != null) {
+				if (!isRequestVisibleToCaller(ctx, existingPurchaseRequest)) {
+					// Do not disclose a purchase outside the caller's wallet scope.
+					throw createHttpError(409, 'Purchase exists');
+				}
 				const {
 					currentHydraUtxoTxHash: _currentHydraUtxoTxHash,
 					currentHydraUtxoOutputIndex: _currentHydraUtxoOutputIndex,
