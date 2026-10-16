@@ -294,7 +294,13 @@ ensure_bin(){
   # Only the verified hydra-node is installed. hydra-tui ships unpinned in the
   # same artifact and nothing here uses it, so it is not installed.
   [ -n "$approved_pin" ] || { c_red "internal: no pin approved this install"; exit 1; }
-  install -m 0755 "$tmp/hydra-node" "$NATIVE_BIN"
+  # The record attests whatever sits at $NATIVE_BIN, so confirm the installed
+  # bytes are the verified ones (a failed or partial install must not be
+  # recorded) before repair_dylibs and record_bin run.
+  local src_sum; src_sum="$(shasum -a 256 "$tmp/hydra-node" | cut -d' ' -f1)"
+  install -m 0755 "$tmp/hydra-node" "$NATIVE_BIN" || { c_red "install failed"; exit 1; }
+  printf '%s  %s\n' "$src_sum" "$NATIVE_BIN" | shasum -a 256 -c - >/dev/null 2>&1 \
+    || { c_red "installed $NATIVE_BIN does not match the verified download"; exit 1; }
   rm -rf "$tmp"
   repair_dylibs
   record_bin "$approved_pin" || { c_red "could not record $BIN_RECORD"; exit 1; }
