@@ -130,7 +130,13 @@ Peer addresses go the other way: the Host passes them to `hydra-node --peer`, so
 the node dials them. By default the Host refuses a peer whose host resolves to a
 loopback, private, link-local or other non-public address, both on
 `PATCH /v1/nodes/{id}` (set peers) and on invite redemption. A refused redemption leaves the
-invite open. Set `HYDRA_HOST_ALLOW_PRIVATE_PEERS=true` only when the peers really
+invite open. Stored peers are checked again at every node start. A node whose
+stored peer is refused is not started: it stays `Stopped`, its desired state
+becomes `Stopped`, and its `failureReason` names the peer. Replace the peers
+with `PATCH /v1/nodes/{id}`, then start the node again. A node whose peer name does not resolve (or takes more than 5 seconds)
+is not started on that tick and is tried again on the next one, without using
+up a start attempt. A node that is already running keeps its peers until its
+next start. Set `HYDRA_HOST_ALLOW_PRIVATE_PEERS=true` only when the peers really
 run on a private network. The check resolves the name once, and `hydra-node` resolves
 it again on every reconnect, so a counterparty that controls its DNS can rebind
 it later. Block egress from the Host to private, link-local and metadata

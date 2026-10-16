@@ -15,11 +15,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { HostConfig } from '../config.js';
+import type { PeerTargetCheck } from '../peer-target-policy.js';
 import { NodeClient } from '../node-client.js';
 import { PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
-import { buildHydraNodeArgs } from './args.js';
+import { buildLaunchArgs, checkStoredPeers } from './launch.js';
 import { drainReader, waitForDrain } from './drain.js';
 import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
 import { muteFields } from './mute.js';
@@ -88,6 +89,8 @@ export class Supervisor {
 		private readonly ports: PortAllocator,
 		private readonly slotConfig: SlotConfig,
 		private readonly logger: SupervisorLogger,
+		/** Re-checks stored peers at every launch. See `launch.ts`. */
+		private readonly checkPeerTarget: PeerTargetCheck,
 	) {}
 
 	private get limits(): PlanLimits {
@@ -562,15 +565,38 @@ export class Supervisor {
 	}
 
 	private async start(record: NodeRecord): Promise<void> {
+		// Before the claim, so a check that cannot finish does not use up a start
+		// attempt, and before the shutdown gate, so a slow lookup cannot let a
+		// spawn slip past a shutdown that began during it.
+		const rejection = await checkStoredPeers(record, this.checkPeerTarget);
+		if (rejection?.transient === true) {
+			this.logger.warn(`[supervisor] not starting ${record.nodeId} yet: ${rejection.reason}`);
+			return;
+		}
+		if (rejection !== null) {
+			// A policy refusal does not change by retrying, so the node is held
+			// Stopped with the reason on its record. Not Failed: a peer change is
+			// only accepted while Stopped, and replacing the refused peer is how an
+			// operator recovers. Written only if the peers are still the ones that
+			// were checked, so a correction that landed during the lookup stands.
+			const failureReason = `refusing to dial stored peer: ${rejection.reason}`;
+			this.logger.error(`[supervisor] not starting ${record.nodeId}: ${failureReason}`);
+			const checked = record.peers.map((peer) => peer.advertise).join(',');
+			await this.store.update(record.nodeId, (current) =>
+				current.peers.map((peer) => peer.advertise).join(',') === checked
+					? { ...current, desired: 'Stopped', failureReason }
+					: current,
+			);
+			return;
+		}
 		if (this.stopped) {
 			// Last gate before the spawn: the shutdown may have begun during the
-			// awaits above (the args build touches the disk), and a node spawned
+			// peer check above, and a node spawned
 			// after the shutdown has taken its list of what to drain is a node
 			// nothing will ever stop.
 			return;
 		}
 		const nodeDir = this.store.nodeDir(record.nodeId);
-		const peersDir = path.join(nodeDir, 'peers');
 
 		// Claimed before argv is built, not after. A peer change is refused unless
 		// the node is quiescent, and it read that from a record this start had
@@ -602,29 +628,7 @@ export class Supervisor {
 		}
 		const starting = claimed;
 
-		const args = buildHydraNodeArgs({
-			nodeId: starting.nodeId,
-			nodeDir,
-			network: starting.network,
-			apiPort: starting.apiPort,
-			startChainFrom: starting.startChainFrom,
-			peerPort: starting.peerPort,
-			// Null unless explicitly enabled: the Prometheus server binds every
-			// interface and hydra-node offers no way to confine it.
-			monitoringPort: this.config.monitoringEnabled ? starting.monitoringPort : null,
-			advertise: starting.advertise,
-			peers: starting.peers.map((peer) => peer.advertise),
-			peerHydraVerificationKeyFiles: starting.peers.map((_, i) => path.join(peersDir, `${i}-hydra.vk`)),
-			peerCardanoVerificationKeyFiles: starting.peers.map((_, i) => path.join(peersDir, `${i}-cardano.vk`)),
-			ledgerProtocolParametersFile: this.config.ledgerProtocolParametersFile,
-			blockfrostProjectFile: this.config.blockfrostProjectFile,
-			hydraScriptsTxIds: this.config.hydraScriptsTxIds,
-			contestationPeriodSeconds: starting.contestationPeriodSeconds,
-			depositPeriodSeconds: starting.depositPeriodSeconds,
-			depositActivationSeconds: starting.depositActivationSeconds,
-			unsyncedPeriodSeconds: starting.unsyncedPeriodSeconds,
-			useSystemEtcd: this.config.useSystemEtcd,
-		});
+		const args = buildLaunchArgs(this.config, nodeDir, starting);
 
 		if (!this.config.useSystemEtcd) {
 			// hydra-node re-extracts its embedded etcd on every boot. Rewriting the

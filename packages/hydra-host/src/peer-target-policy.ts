@@ -16,6 +16,7 @@
  * Egress filtering on the node's network is the control for rebinding.
  */
 
+import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import { parsePeerAdvertise } from './peer-address.js';
 import type { PeerHostnameResolver } from './api/peer-allowlist.js';
@@ -68,38 +69,87 @@ export function isPublicPeerIp(address: string): boolean {
 	return family === 4 ? !nonPublicIpv4.check(address, 'ipv4') : !nonPublicIpv6.check(address, 'ipv6');
 }
 
-export type PeerTargetCheck = (advertise: string) => Promise<string | null>;
+/**
+ * Why a peer may not be dialled.
+ *
+ * `transient` is true when the name could not be resolved (an error, no
+ * records, or a timeout). Asking again later may succeed. A false value is a
+ * policy decision that does not change by retrying.
+ */
+export type PeerTargetRejection = { reason: string; transient: boolean };
+
+export type PeerTargetCheck = (advertise: string) => Promise<PeerTargetRejection | null>;
 
 /**
  * Returns why `advertise` may not be dialled, or `null` when it may.
  *
- * IP literals go through the resolver as well: getaddrinfo also accepts forms
- * such as `2130706433` or `0x7f.1`, and hydra-node resolves them the same way.
+ * A canonical IP literal is checked without a lookup. Other numeric forms,
+ * such as `2130706433` or `0x7f.1`, go through the resolver: getaddrinfo
+ * accepts them, and hydra-node resolves them the same way.
  */
 export async function peerTargetRejection(
 	advertise: string,
 	options: { allowPrivate: boolean; resolve: PeerHostnameResolver },
-): Promise<string | null> {
+): Promise<PeerTargetRejection | null> {
 	const parsed = parsePeerAdvertise(advertise);
 	if (parsed === null) {
-		return `invalid peer advertise address: ${JSON.stringify(advertise)}`;
+		return { reason: `invalid peer advertise address: ${JSON.stringify(advertise)}`, transient: false };
 	}
 	if (options.allowPrivate) {
 		return null;
 	}
 
 	let addresses: ReadonlyArray<{ address: string }>;
-	try {
-		addresses = await options.resolve(parsed.host);
-	} catch (error) {
-		return `peer host ${parsed.host} does not resolve: ${(error as Error).message}`;
+	if (isIP(parsed.host) !== 0) {
+		addresses = [{ address: parsed.host }];
+	} else {
+		try {
+			addresses = await options.resolve(parsed.host);
+		} catch (error) {
+			return { reason: `peer host ${parsed.host} does not resolve: ${(error as Error).message}`, transient: true };
+		}
 	}
 	if (addresses.length === 0) {
-		return `peer host ${parsed.host} does not resolve`;
+		return { reason: `peer host ${parsed.host} does not resolve`, transient: true };
 	}
 	const blocked = addresses.find(({ address }) => !isPublicPeerIp(address));
 	if (blocked !== undefined) {
-		return `peer host ${parsed.host} resolves to non-public address ${blocked.address}; set HYDRA_HOST_ALLOW_PRIVATE_PEERS=true to allow private peers`;
+		return {
+			reason: `peer host ${parsed.host} resolves to non-public address ${blocked.address}; set HYDRA_HOST_ALLOW_PRIVATE_PEERS=true to allow private peers`,
+			transient: false,
+		};
 	}
 	return null;
+}
+
+/**
+ * How long one peer name may take to resolve before it counts as unresolvable.
+ *
+ * getaddrinfo cannot be cancelled, so a lookup that times out still holds its
+ * libuv thread until the system resolver gives up. The bound keeps callers from
+ * waiting on it, and a timed-out name is refused, never allowed.
+ */
+export const PEER_LOOKUP_TIMEOUT_MS = 5_000;
+
+export function withLookupTimeout(resolve: PeerHostnameResolver, timeoutMs: number): PeerHostnameResolver {
+	return async (hostname) => {
+		let timer: NodeJS.Timeout | undefined;
+		const timeout = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => reject(new Error(`lookup timed out after ${timeoutMs}ms`)), timeoutMs);
+		});
+		try {
+			return await Promise.race([resolve(hostname), timeout]);
+		} finally {
+			clearTimeout(timer);
+		}
+	};
+}
+
+/** The check the Host wires into every place a peer address is accepted or launched. */
+export function createPeerTargetCheck(
+	allowPrivate: boolean,
+	resolve: PeerHostnameResolver = async (hostname) => await lookup(hostname, { all: true, verbatim: true }),
+): PeerTargetCheck {
+	const bounded = withLookupTimeout(resolve, PEER_LOOKUP_TIMEOUT_MS);
+	return async (advertise) => await peerTargetRejection(advertise, { allowPrivate, resolve: bounded });
 }

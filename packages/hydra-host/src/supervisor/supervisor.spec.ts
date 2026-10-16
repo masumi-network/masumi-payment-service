@@ -22,6 +22,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { loadHostConfig, type EnvSource } from '../config.js';
+import type { PeerTargetCheck } from '../peer-target-policy.js';
 import { PortAllocator } from '../registry/ports.js';
 import { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
@@ -111,6 +112,7 @@ beforeEach(async () => {
 		new PortAllocator(config.ports),
 		resolveSlotConfig('preprod'),
 		silentLogger,
+		async () => null,
 	);
 });
 
@@ -247,6 +249,85 @@ describe('Supervisor observation', () => {
 		expect(after?.pid).toBeUndefined();
 	});
 
+	describe('stored peer check', () => {
+		const peered = () =>
+			makeRecord({
+				state: 'Stopped',
+				peers: [
+					{
+						advertise: 'hydra2.example.com:5001',
+						hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+						cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+					},
+				],
+			});
+		const withCheck = (check: PeerTargetCheck) => {
+			const config = { ...loadHostConfig(env), dataDir, hydraNodeBin: process.execPath };
+			return new Supervisor(
+				config,
+				store,
+				new PortAllocator(config.ports),
+				resolveSlotConfig('preprod'),
+				silentLogger,
+				check,
+			);
+		};
+
+		// A refusal does not change by retrying, so the node is held Stopped with
+		// the reason on its record. Stopped, not Failed, so the operator can
+		// replace the peer.
+		it('holds a node whose stored peer the policy refuses, without spawning it', async () => {
+			await store.write(peered());
+			const supervisor = withCheck(async () => ({
+				reason: 'resolves to non-public address 10.0.0.5',
+				transient: false,
+			}));
+
+			await supervisor.tick();
+			await supervisor.tick();
+
+			const after = await store.read('node-1');
+			expect(after?.state).toBe('Stopped');
+			expect(after?.desired).toBe('Stopped');
+			expect(after?.failureReason).toBe('refusing to dial stored peer: resolves to non-public address 10.0.0.5');
+			expect(after?.startAttempts).toBe(0);
+			expect(after?.pid).toBeUndefined();
+		});
+
+		it('does not hold a node whose peers changed while the refused ones were checked', async () => {
+			await store.write(peered());
+			const supervisor = withCheck(async () => {
+				await store.update('node-1', (current) => ({
+					...current,
+					desired: 'Stopped',
+					peers: [{ ...current.peers[0], advertise: 'hydra3.example.com:5001' }],
+				}));
+				return { reason: 'resolves to non-public address 10.0.0.5', transient: false };
+			});
+
+			await supervisor.tick();
+
+			const after = await store.read('node-1');
+			expect(after?.failureReason).toBeUndefined();
+			expect(after?.peers[0].advertise).toBe('hydra3.example.com:5001');
+		});
+
+		// A resolver outage must not burn start attempts until the node is
+		// Failed for good.
+		it('leaves a node untouched while its stored peer cannot be resolved', async () => {
+			await store.write(peered());
+			const supervisor = withCheck(async () => ({ reason: 'does not resolve: EAI_AGAIN', transient: true }));
+
+			await supervisor.tick();
+			await supervisor.tick();
+
+			const after = await store.read('node-1');
+			expect(after?.state).toBe('Stopped');
+			expect(after?.startAttempts).toBe(0);
+			expect(after?.failureReason).toBeUndefined();
+		});
+	});
+
 	// A node that is up but behind and closing the gap is the catch-up loop
 	// working. Refusing the refund there left a node that had been serving for
 	// hours one crash away from Failed with no retry left.
@@ -334,6 +415,7 @@ describe('Supervisor shutdown', () => {
 			new PortAllocator(config.ports),
 			resolveSlotConfig('preprod'),
 			silentLogger,
+			async () => null,
 		);
 
 		// No peers on either, so `boot`'s own tick adopts both and plans Idle.
@@ -393,6 +475,7 @@ describe('Supervisor shutdown', () => {
 			new PortAllocator(config.ports),
 			resolveSlotConfig('preprod'),
 			silentLogger,
+			async () => null,
 		);
 
 		const damaged = makeRecord({
@@ -437,6 +520,7 @@ describe('Supervisor shutdown', () => {
 			new PortAllocator(config.ports),
 			resolveSlotConfig('preprod'),
 			silentLogger,
+			async () => null,
 		);
 
 		// Written, alive, and never booted: the supervisor holds no handle for it.
@@ -471,6 +555,7 @@ describe('Supervisor shutdown', () => {
 			new PortAllocator(config.ports),
 			resolveSlotConfig('preprod'),
 			silentLogger,
+			async () => null,
 		);
 
 		// Answers slowly, so the tick is still inside `observe` when shutdown lands.

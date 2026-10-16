@@ -9,14 +9,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { lookup } from 'node:dns/promises';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
 import { createExchangePlane } from './api/exchange-server.js';
 import { redemptionNetwork, verifyRedemptionSignature } from './registry/redemption-signature.js';
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
-import { peerTargetRejection } from './peer-target-policy.js';
+import { createPeerTargetCheck } from './peer-target-policy.js';
 import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
@@ -121,7 +120,15 @@ async function main(): Promise<void> {
 	}
 	logger.info(`[host] ${allocator.used} of ${config.ports.capacity} node slots in use`);
 
-	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
+	const checkPeerTarget = createPeerTargetCheck(config.allowPrivatePeers);
+	const supervisor = new Supervisor(
+		config,
+		store,
+		allocator,
+		resolveSlotConfig(config.network),
+		logger,
+		checkPeerTarget,
+	);
 	startup.supervisor = supervisor;
 	// A signal that landed before the supervisor existed still has to reach it.
 	if (startup.signal !== null) {
@@ -141,12 +148,6 @@ async function main(): Promise<void> {
 	} finally {
 		clearInterval(bootKeepAlive);
 	}
-
-	const checkPeerTarget = async (advertise: string): Promise<string | null> =>
-		await peerTargetRejection(advertise, {
-			allowPrivate: config.allowPrivatePeers,
-			resolve: async (hostname) => await lookup(hostname, { all: true, verbatim: true }),
-		});
 
 	const provisionDeps = {
 		store,
