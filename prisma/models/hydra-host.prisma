@@ -77,6 +77,9 @@ model HydraHost {
   /// When every node in `pausedNodeIds` was asked to stop. Null while the pause
   /// still waits for in-flight work.
   pauseStopRequestedAt DateTime?
+  /// Held while one instance stops or starts this Host's nodes, so a Resume
+  /// and an advance never act at once. Expires on its own if the holder dies.
+  pauseLeaseUntil      DateTime?
 
   Participants     HydraLocalParticipant[]
   HydraHeadInvites HydraHeadInvite[]

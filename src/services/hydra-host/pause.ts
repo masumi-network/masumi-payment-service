@@ -67,8 +67,13 @@ const IN_FLIGHT_WITHDRAWAL_STATUSES = [
 ];
 
 const HTTP_NOT_FOUND = 404;
-/** Bounds a held pause lock: one Host request per node, each with its own timeout. */
-const PAUSE_LOCK_TIMEOUT_MS = 5 * 60_000;
+/**
+ * How long a pause lease lasts if its holder dies. Covers one Host request per
+ * node, each bounded by the client's own timeout, for a full Host of nodes.
+ */
+const PAUSE_LEASE_MS = 15 * 60_000;
+/** The Host's answer for a node it does not have, as opposed to a wrong URL. */
+const NODE_GONE_DETAIL = 'no such node';
 
 type PrismaReader = Pick<Prisma.TransactionClient, 'hydraLocalParticipant'>;
 
@@ -124,7 +129,11 @@ async function countInFlight(hostId: string): Promise<HydraHostPauseInFlight> {
 		prisma.hydraHead.count({
 			where: {
 				LocalParticipant: { hydraHostId: hostId },
-				OR: [{ isClosing: true }, { status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] } }],
+				// `isClosing` stays set after Final, so it counts only while still Open.
+				OR: [
+					{ isClosing: true, status: HydraHeadStatus.Open },
+					{ status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] } },
+				],
 			},
 		}),
 	]);
@@ -137,29 +146,39 @@ function hasInFlightWork(inFlight: HydraHostPauseInFlight): boolean {
 
 /** The Host no longer has this node, for example one removed by hand after its head went Final. */
 function isNodeGone(error: unknown): boolean {
-	return error instanceof HydraHostRequestError && error.status === HTTP_NOT_FOUND;
+	// The status alone is not enough: a base URL missing a proxy prefix also
+	// answers 404, and would then report every running node as stopped.
+	return (
+		error instanceof HydraHostRequestError &&
+		error.status === HTTP_NOT_FOUND &&
+		error.message.includes(NODE_GONE_DETAIL)
+	);
 }
 
 /**
  * Advance and Resume each act on the Host over the network and then write.
- * Run them one at a time per Host, across every service instance: interleaved,
- * an advance's stops could land after a Resume's starts, and the Host would
- * read as running with every node stopped.
+ * Only one runs per Host at a time, across every service instance:
+ * interleaved, an advance's stops could land after a Resume's starts, and the
+ * Host would read as running with every node stopped.
+ *
+ * A lease row rather than a database lock, so no connection is held across
+ * the Host calls. Returns false without acting when another holder has it.
  */
-async function withHostPauseLock<T>(hostId: string, action: () => Promise<T>): Promise<T> {
-	return await prisma.$transaction(
-		async (tx) => {
-			// Returns an integer, not PostgreSQL's `void`; see settle-lock.ts.
-			await tx.$queryRaw<Array<{ acquired: number }>>`
-				WITH pause_lock AS MATERIALIZED (
-					SELECT pg_advisory_xact_lock(hashtextextended(${`hydra-host-pause:${hostId}`}, 0))
-				)
-				SELECT 1 AS acquired FROM pause_lock
-			`;
-			return await action();
-		},
-		{ maxWait: PAUSE_LOCK_TIMEOUT_MS, timeout: PAUSE_LOCK_TIMEOUT_MS },
-	);
+async function withHostPauseLease(hostId: string, action: () => Promise<void>): Promise<boolean> {
+	const now = new Date();
+	const claimed = await prisma.hydraHost.updateMany({
+		where: { id: hostId, OR: [{ pauseLeaseUntil: null }, { pauseLeaseUntil: { lt: now } }] },
+		data: { pauseLeaseUntil: new Date(now.getTime() + PAUSE_LEASE_MS) },
+	});
+	if (claimed.count === 0) return false;
+	try {
+		await action();
+	} finally {
+		await prisma.hydraHost
+			.updateMany({ where: { id: hostId }, data: { pauseLeaseUntil: null } })
+			.catch((error: unknown) => logger.warn('[HydraHostPause] could not release the pause lease', { hostId, error }));
+	}
+	return true;
 }
 
 async function loadHost(hostId: string) {
@@ -186,10 +205,10 @@ export async function getHydraHostPauseState(hostId: string): Promise<HydraHostP
 	if (host.pausedAt === null) {
 		return { ...base, phase: 'Active', nodes: [] };
 	}
-	if (host.pauseStopRequestedAt === null) {
+	if (host.pauseStopRequestedAt === null && hasInFlightWork(inFlight)) {
 		return {
 			...base,
-			phase: hasInFlightWork(inFlight) ? 'Draining' : 'Stopping',
+			phase: 'Draining',
 			nodes: host.pausedNodeIds.map((nodeId) => ({ nodeId, state: null, error: null })),
 		};
 	}
@@ -211,7 +230,9 @@ export async function getHydraHostPauseState(hostId: string): Promise<HydraHostP
 			}
 		}),
 	);
-	const allStopped = nodes.every((node) => node.state === 'Stopped');
+	// Probed before the stop is recorded too, so a stop that keeps failing shows
+	// each node's real state instead of an unexplained wait.
+	const allStopped = host.pauseStopRequestedAt !== null && nodes.every((node) => node.state === 'Stopped');
 	return { ...base, phase: allStopped ? 'Paused' : 'Stopping', nodes };
 }
 
@@ -259,7 +280,7 @@ export async function pauseHydraHost(hostId: string, options: { force: boolean }
  * forced. Safe to call any number of times, from any instance.
  */
 export async function advanceHydraHostPause(hostId: string, options: { force: boolean }): Promise<HydraHostPauseState> {
-	await withHostPauseLock(hostId, async () => {
+	await withHostPauseLease(hostId, async () => {
 		const host = await loadHost(hostId);
 		if (host.pausedAt === null || host.pauseStopRequestedAt !== null || host.encryptedAdminToken === null) return;
 		if (!options.force && hasInFlightWork(await countInFlight(hostId))) return;
@@ -294,7 +315,7 @@ export async function advanceHydraHostPause(hostId: string, options: { force: bo
  * keeps refusing new work instead of sending it to a node that is still down.
  */
 export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseState> {
-	await withHostPauseLock(hostId, async () => {
+	const acted = await withHostPauseLease(hostId, async () => {
 		const host = await loadHost(hostId);
 		if (host.pausedAt === null) return;
 		if (host.encryptedAdminToken === null) {
@@ -324,6 +345,9 @@ export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseSta
 			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null },
 		});
 	});
+	if (!acted) {
+		throw createHttpError(409, 'this hydra host is stopping its nodes right now; retry Resume in a few seconds');
+	}
 	return await getHydraHostPauseState(hostId);
 }
 
