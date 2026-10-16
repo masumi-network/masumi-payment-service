@@ -160,8 +160,8 @@ Pin an immutable digest. A floating `latest` replaces reviewed code at the next
 pull, and both sides of a head must run the same `hydra-node` version.
 
 Leave `HYDRA_HOST_LEDGER_PARAMS_FILE` and `HYDRA_HOST_USE_SYSTEM_ETCD` unset.
-The image copies the reviewed params to `/opt/hydra/params` and bakes a matching
-etcd, which are the defaults. Overriding either is how you get
+The image copies the reviewed params to `/opt/hydra/params` and bakes etcd 3.5.34
+(same 3.5 line as the copy hydra-node embeds), which are the defaults. Overriding either is how you get
 `PPViewHashesDontMatch` on the first spend inside a head.
 
 ### Why `--stop-timeout 250`
