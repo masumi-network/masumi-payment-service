@@ -40,7 +40,8 @@ for party in purchasing selling; do
   fi
 done
 # umask does not tighten files that already exist from an earlier run.
-chmod 600 "$OUT/blockfrost.txt" "$OUT"/*.sk
+# cardano-cli writes its .sk as 0600 itself; on Linux Docker it may be root-owned.
+chmod 600 "$OUT/blockfrost.txt" "$OUT"/*-hydra.sk
 
 echo
 echo "=== fund these via https://docs.cardano.org/cardano-testnets/tools/faucet (preprod) ==="
