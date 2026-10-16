@@ -35705,7 +35705,7 @@
         "/hydra/head/l2-reservations/release": {
             "post": {
                 "summary": "Release an expired L2 reservation without a proof. (admin access required)",
-                "description": "Frees the wallet and returns each request to where the reservation found it: an initial lock goes back to locking, an action back to its retry. The service cannot prove the body never applied in a snapshot its node withheld, so check the other party’s node or L1 first and send `acknowledgeUnprovable: true`. Refused unless the head is open with a live, verified session, the body is past its validity bound plus the release grace on the head’s clock, our node shows no confirmation of it, and the row is unchanged since `expectedUpdatedAt`. If the body confirms later, the head’s replay halts for review instead of applying it.",
+                "description": "Frees the wallet and returns each request to where the reservation found it: an initial lock goes back to locking, an action back to its retry. The service cannot prove the body never applied in a snapshot its node withheld, so check the other party’s node or L1 first and send `acknowledgeUnprovable: true`. Refused unless the head is open with a live, verified session, the body is past its validity bound on the head’s clock by the release grace (5 minutes), or by 30 minutes when automatic recovery could still prove it dead, our node shows no confirmation of it, and the row is unchanged since `expectedUpdatedAt`. If the body confirms later, the head’s replay halts for review instead of applying it.",
                 "tags": [
                     "hydra"
                 ],

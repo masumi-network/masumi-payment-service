@@ -40,7 +40,7 @@ function releaseDescription(reservation: HydraL2Reservation): string {
       : 'Each request goes back to retrying its action against the escrow it had before.';
   const nudge = reservation.releaseNudgeTxHash
     ? `Its release nudge ${shortenAddress(reservation.releaseNudgeTxHash, 12)} never showed up in a verified snapshot.`
-    : 'It has no release nudge, so automatic recovery can never release it.';
+    : 'It has no release nudge. Automatic recovery did not send one in the time it gets, or cannot send one for this row.';
   const inputs =
     reservation.inputsReportedUnspent === null
       ? ''
@@ -103,7 +103,8 @@ export function HydraHeadL2ReservationsNotice({
         </p>
         <p>
           The service frees an expired reservation only once its release nudge shows up in a
-          verified snapshot. These can never get that proof. Review each one before you release it.
+          verified snapshot. These have no such proof after the time recovery gets. Review each one
+          before you release it.
         </p>
         <div className="mt-2 space-y-2">
           {releasable.map((reservation) => (
@@ -136,7 +137,10 @@ export function HydraHeadL2ReservationsNotice({
         </div>
       </HydraNotice>
 
+      {/* Keyed by row version: the acknowledgement for one version of a row
+          must never carry over to a later one. */}
       <ConfirmDialog
+        key={pending ? `${pending.transactionId}:${pending.updatedAt}` : 'none'}
         elevatedChildStack
         open={pending !== null && current?.updatedAt === pending.updatedAt}
         onClose={() => {
