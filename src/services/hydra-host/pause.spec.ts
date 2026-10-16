@@ -120,6 +120,20 @@ describe('pauseHydraHost', () => {
 		expect(state.phase).toBe('Draining');
 	});
 
+	// The 409 refuses only the force: the pause itself is recorded and drains.
+	it('keeps the recorded pause when a forced first pause finds the lease busy', async () => {
+		mockQueryRaw.mockResolvedValue([{ pausedAt: null, encryptedAdminToken: 'admin' }]);
+		mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }]);
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+		await expect(pause.pauseHydraHost('host-1', { force: true })).rejects.toMatchObject({ status: 409 });
+		expect(mockHostUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ pausedAt: expect.any(Date) }) }),
+		);
+		expect(mockStopHostNode).not.toHaveBeenCalled();
+	});
+
 	it('refuses a host without an admin token, because it could never reach Paused', async () => {
 		mockQueryRaw.mockResolvedValue([{ pausedAt: null, encryptedAdminToken: null }]);
 
@@ -191,12 +205,15 @@ describe('advanceHydraHostPause', () => {
 			where: { OR: Array<{ pauseLeaseUntil: unknown }> };
 			data: { pauseLeaseUntil: Date };
 		};
-		// Claimable only when free or expired.
+		// Claimable only when free or expired: compared with now, not with the new end.
+		const before = Date.now();
 		expect(claim.where).toEqual({
 			id: 'host-1',
 			OR: [{ pauseLeaseUntil: null }, { pauseLeaseUntil: { lt: expect.any(Date) } }],
 		});
-		expect(claim.data.pauseLeaseUntil).toBeInstanceOf(Date);
+		const expiredBefore = (claim.where.OR[1].pauseLeaseUntil as { lt: Date }).lt;
+		expect(expiredBefore.getTime()).toBeLessThanOrEqual(before);
+		expect(claim.data.pauseLeaseUntil.getTime()).toBeGreaterThan(before);
 		expect(mockHostUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(mockStopHostNode.mock.invocationCallOrder[0]);
 		// Released fenced on its own value, so it never clears a later holder's lease.
 		expect(mockHostUpdateMany).toHaveBeenLastCalledWith({
@@ -338,7 +355,11 @@ describe('resumeHydraHost', () => {
 		mockStartHostNode.mockRejectedValueOnce(new Error('boom'));
 
 		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 502 });
-		expect(mockHostUpdateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { pauseLeaseUntil: null } }));
+		const claim = mockHostUpdateMany.mock.calls[0][0] as { data: { pauseLeaseUntil: Date } };
+		expect(mockHostUpdateMany).toHaveBeenLastCalledWith({
+			where: { id: 'host-1', pauseLeaseUntil: claim.data.pauseLeaseUntil },
+			data: { pauseLeaseUntil: null },
+		});
 	});
 
 	it('refuses with 409 while an advance holds the lease', async () => {
