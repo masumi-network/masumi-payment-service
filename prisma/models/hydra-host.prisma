@@ -66,6 +66,18 @@ model HydraHost {
   lastHealthAt    DateTime?
   lastHealthError String?
 
+  /// Set while an operator has paused this Host for maintenance, such as a
+  /// redeploy. While set, the service starts no new work on its heads and takes
+  /// no new placements. Work already in flight finishes first; then the nodes
+  /// are stopped, so no transaction can happen on these heads at all.
+  pausedAt             DateTime?
+  /// Host node ids this pause stops, fixed in the same write that sets
+  /// `pausedAt`. Resume starts exactly these and no other node.
+  pausedNodeIds        String[]  @default([])
+  /// When every node in `pausedNodeIds` was asked to stop. Null while the pause
+  /// still waits for in-flight work.
+  pauseStopRequestedAt DateTime?
+
   Participants     HydraLocalParticipant[]
   HydraHeadInvites HydraHeadInvite[]
 
