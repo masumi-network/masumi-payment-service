@@ -2,6 +2,8 @@
 # One-shot: generate 2-party preprod cardano+hydra keys and the Blockfrost
 # project file. Re-run is safe (skips anything that already exists).
 set -euo pipefail
+# Secrets below (Blockfrost key, Hydra signing keys) must be owner-only.
+umask 077
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$REPO/hydra-l2-flow/preprod"
 NATIVE_BIN="$REPO/hydra-l2-flow/.bin/hydra-node"
@@ -37,6 +39,8 @@ for party in purchasing selling; do
     echo "generated $party-hydra.{sk,vk}"
   fi
 done
+# umask does not tighten files that already exist from an earlier run.
+chmod 600 "$OUT/blockfrost.txt" "$OUT"/*.sk
 
 echo
 echo "=== fund these via https://docs.cardano.org/cardano-testnets/tools/faucet (preprod) ==="
