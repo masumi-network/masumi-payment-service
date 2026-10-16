@@ -26,6 +26,8 @@ const ADDRESS =
 const LOCK_INPUT_A = `${'aa'.repeat(32)}#0`;
 const LOCK_INPUT_B = `${'bb'.repeat(32)}#1`;
 const NONCE = new Uint8Array(32).fill(7);
+/** The reservation's own locked funds, from our records. */
+const FLOOR = [{ unit: '', amount: 12_000_000n }];
 
 function signedTx(params: { inputs: string[]; outputs: Array<{ lovelace: string; datumHex?: string }> }): string {
 	const inputs = TransactionInputs.new();
@@ -63,7 +65,7 @@ const nudgeTx = signedTx({
 
 describe('l2 release nudge proof', () => {
 	it('names the nudge output in the exact bytes a verified snapshot holds for it', () => {
-		const proof = readL2ReleaseNudgeProof(nudgeTx, [LOCK_INPUT_A, LOCK_INPUT_B]);
+		const proof = readL2ReleaseNudgeProof(nudgeTx, [LOCK_INPUT_A, LOCK_INPUT_B], FLOOR);
 
 		expect(proof).not.toBeNull();
 		expect(proof?.reference).toMatch(/^[0-9a-f]{64}#0$/);
@@ -80,7 +82,7 @@ describe('l2 release nudge proof', () => {
 			outputs: [{ lovelace: '15000000', datumHex: encodeL2ReleaseNudgeDatum(NONCE) }],
 		});
 
-		expect(readL2ReleaseNudgeProof(foreign, [LOCK_INPUT_A, LOCK_INPUT_B])).toBeNull();
+		expect(readL2ReleaseNudgeProof(foreign, [LOCK_INPUT_A, LOCK_INPUT_B], FLOOR)).toBeNull();
 	});
 
 	it('refuses a nudge without a nonce datum or with more than one output', () => {
@@ -92,30 +94,36 @@ describe('l2 release nudge proof', () => {
 		});
 
 		for (const tx of [untagged, otherDatum, split, 'not-cbor']) {
-			expect(readL2ReleaseNudgeProof(tx, [LOCK_INPUT_A])).toBeNull();
+			expect(readL2ReleaseNudgeProof(tx, [LOCK_INPUT_A], [{ unit: '', amount: 1n }])).toBeNull();
 		}
 	});
 
 	it('proves the reservation dead only once the nudge output bytes are in the snapshot', () => {
-		const proof = readL2ReleaseNudgeProof(nudgeTx, [LOCK_INPUT_A, LOCK_INPUT_B]);
+		const proof = readL2ReleaseNudgeProof(nudgeTx, [LOCK_INPUT_A, LOCK_INPUT_B], FLOOR);
 		if (!proof) throw new Error('expected a proof');
 		const inputRefs = [LOCK_INPUT_A, LOCK_INPUT_B];
 
-		expect(isL2ReservationSpentByNudge({ nudgeTx: null, inputRefs, readOutput: () => proof.serializedOutput })).toBe(
-			false,
-		);
+		expect(
+			isL2ReservationSpentByNudge({
+				nudgeTx: null,
+				inputRefs,
+				valueFloor: FLOOR,
+				readOutput: () => proof.serializedOutput,
+			}),
+		).toBe(false);
 		// Not applied yet, or rejected because the body spent the inputs first.
-		expect(isL2ReservationSpentByNudge({ nudgeTx, inputRefs, readOutput: () => null })).toBe(false);
+		expect(isL2ReservationSpentByNudge({ nudgeTx, inputRefs, valueFloor: FLOOR, readOutput: () => null })).toBe(false);
 		expect(
 			isL2ReservationSpentByNudge({
 				nudgeTx,
 				inputRefs,
+				valueFloor: FLOOR,
 				readOutput: (reference) => (reference === proof.reference ? proof.serializedOutput : null),
 			}),
 		).toBe(true);
 		// A node that maps the nudge reference onto other bytes proves nothing.
 		const other = serializeHydraSnapshotOutput(snapshotOutput(15_000_000));
-		expect(isL2ReservationSpentByNudge({ nudgeTx, inputRefs, readOutput: () => other })).toBe(false);
+		expect(isL2ReservationSpentByNudge({ nudgeTx, inputRefs, valueFloor: FLOOR, readOutput: () => other })).toBe(false);
 	});
 
 	// The reported finding: a local node maps the body's input references onto
@@ -136,8 +144,58 @@ describe('l2 release nudge proof', () => {
 			}),
 		).toEqual({ action: 'release' });
 		expect(
-			isL2ReservationSpentByNudge({ nudgeTx, inputRefs: [LOCK_INPUT_A, LOCK_INPUT_B], readOutput: forgedRead }),
+			isL2ReservationSpentByNudge({
+				nudgeTx,
+				inputRefs: [LOCK_INPUT_A, LOCK_INPUT_B],
+				valueFloor: FLOOR,
+				readOutput: forgedRead,
+			}),
 		).toBe(false);
+	});
+
+	// The review's attack: a compromised node hides the large input, so the
+	// nudge would spend only the small one, and a copy of its output is cheap.
+	it('refuses a nudge that spends only some of the body inputs', () => {
+		const subset = signedTx({
+			inputs: [LOCK_INPUT_B],
+			outputs: [{ lovelace: '15000000', datumHex: encodeL2ReleaseNudgeDatum(NONCE) }],
+		});
+
+		expect(readL2ReleaseNudgeProof(subset, [LOCK_INPUT_A, LOCK_INPUT_B], FLOOR)).toBeNull();
+	});
+
+	// The node reports input values, so it can make the nudge output small. The
+	// floor from our own records makes a copy cost at least the locked funds.
+	it('refuses a nudge output below the value floor', () => {
+		const small = signedTx({
+			inputs: [LOCK_INPUT_A, LOCK_INPUT_B],
+			outputs: [{ lovelace: '11999999', datumHex: encodeL2ReleaseNudgeDatum(NONCE) }],
+		});
+
+		expect(readL2ReleaseNudgeProof(small, [LOCK_INPUT_A, LOCK_INPUT_B], FLOOR)).toBeNull();
+		expect(
+			readL2ReleaseNudgeProof(small, [LOCK_INPUT_A, LOCK_INPUT_B], [{ unit: 'lovelace', amount: 11_999_999n }]),
+		).not.toBeNull();
+	});
+
+	it('sums repeated floor units and requires every unit', () => {
+		const inputs = [LOCK_INPUT_A, LOCK_INPUT_B];
+		expect(
+			readL2ReleaseNudgeProof(nudgeTx, inputs, [
+				{ unit: '', amount: 10_000_000n },
+				{ unit: 'lovelace', amount: 5_000_001n },
+			]),
+		).toBeNull();
+		expect(readL2ReleaseNudgeProof(nudgeTx, inputs, [...FLOOR, { unit: 'ab'.repeat(28), amount: 1n }])).toBeNull();
+	});
+
+	it('proves nothing with an empty or zero floor', () => {
+		const inputs = [LOCK_INPUT_A, LOCK_INPUT_B];
+		expect(readL2ReleaseNudgeProof(nudgeTx, inputs, [])).toBeNull();
+		expect(readL2ReleaseNudgeProof(nudgeTx, inputs, [{ unit: '', amount: 0n }])).toBeNull();
+		expect(isL2ReservationSpentByNudge({ nudgeTx, inputRefs: inputs, valueFloor: null, readOutput: () => 'x' })).toBe(
+			false,
+		);
 	});
 
 	it('rejects a nonce of the wrong length', () => {

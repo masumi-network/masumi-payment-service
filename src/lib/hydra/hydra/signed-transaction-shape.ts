@@ -5,7 +5,7 @@
  * transaction's own CBOR, so nothing here depends on what a node reports.
  */
 
-import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { FixedTransaction, type TransactionOutput } from '@emurgo/cardano-serialization-lib-nodejs';
 import { serializeCardanoTransactionOutput } from './snapshot-serialization';
 
 export type HydraSignedTransactionShape = {
@@ -16,6 +16,8 @@ export type HydraSignedTransactionShape = {
 		serializedOutput: string;
 		/** The output's inline datum CBOR as signed, or null. */
 		inlineDatumHex: string | null;
+		/** Quantity per unit: `lovelace`, or policy id + asset name, both hex. */
+		value: Map<string, bigint>;
 	}>;
 };
 
@@ -41,10 +43,31 @@ export function readHydraSignedTransactionShape(cborHex: string): HydraSignedTra
 				reference: `${txHash}#${index}`,
 				serializedOutput: serializeCardanoTransactionOutput(output),
 				inlineDatumHex: inlineDatum ? Buffer.from(inlineDatum.to_bytes()).toString('hex') : null,
+				value: outputValue(output),
 			});
 		}
 		return { txHash, inputRefs, outputs: shapedOutputs };
 	} catch {
 		return null;
 	}
+}
+
+function outputValue(output: TransactionOutput): Map<string, bigint> {
+	const amount = output.amount();
+	const value = new Map<string, bigint>([['lovelace', BigInt(amount.coin().to_str())]]);
+	const multiasset = amount.multiasset();
+	const policies = multiasset?.keys();
+	for (let policyIndex = 0; policies && policyIndex < policies.len(); policyIndex += 1) {
+		const policy = policies.get(policyIndex);
+		const assets = multiasset?.get(policy);
+		const names = assets?.keys();
+		for (let nameIndex = 0; names && nameIndex < names.len(); nameIndex += 1) {
+			const name = names.get(nameIndex);
+			const quantity = assets?.get(name);
+			// `name()` is the raw name; `to_hex()` would CBOR-wrap it.
+			const unit = `${policy.to_hex()}${Buffer.from(name.name()).toString('hex')}`.toLowerCase();
+			if (quantity) value.set(unit, BigInt(quantity.to_str()));
+		}
+	}
+	return value;
 }

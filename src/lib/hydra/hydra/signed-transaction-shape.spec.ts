@@ -1,7 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
 import {
 	Address,
+	AssetName,
+	Assets,
 	BigNum,
+	MultiAsset,
+	ScriptHash,
 	Transaction,
 	TransactionBody,
 	TransactionHash,
@@ -48,9 +52,33 @@ describe('readHydraSignedTransactionShape', () => {
 						inlineDatumhash: null,
 					}),
 					inlineDatumHex: null,
+					value: new Map([['lovelace', 2_000_000n]]),
 				},
 			],
 		});
+	});
+
+	it('reads each unit of an output value with the raw asset name', () => {
+		const inputs = TransactionInputs.new();
+		inputs.add(TransactionInput.new(TransactionHash.from_hex('cd'.repeat(32)), 0));
+		const multiasset = MultiAsset.new();
+		const assets = Assets.new();
+		assets.insert(AssetName.new(Buffer.from('token', 'utf8')), BigNum.from_str('7'));
+		multiasset.insert(ScriptHash.from_hex('ab'.repeat(28)), assets);
+		const value = Value.new_with_assets(BigNum.from_str('3000000'), multiasset);
+		const outputs = TransactionOutputs.new();
+		outputs.add(TransactionOutput.new(Address.from_bech32(ADDRESS), value));
+		const cborHex = Transaction.new(
+			TransactionBody.new_tx_body(inputs, outputs, BigNum.zero()),
+			TransactionWitnessSet.new(),
+		).to_hex();
+
+		expect(readHydraSignedTransactionShape(cborHex)?.outputs[0].value).toEqual(
+			new Map([
+				['lovelace', 3_000_000n],
+				[`${'ab'.repeat(28)}746f6b656e`, 7n],
+			]),
+		);
 	});
 
 	it('returns null for CBOR that is not a transaction', () => {

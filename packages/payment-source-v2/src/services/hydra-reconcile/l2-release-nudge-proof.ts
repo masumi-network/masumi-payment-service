@@ -8,17 +8,21 @@
  * trusts the local node's reference mapping, and two outputs with equal bytes
  * (5 ADA collateral twins, for one) can stand in for each other.
  *
- * The nudge avoids references. It spends the reservation's own wallet inputs
- * into one output back to the wallet, tagged with a random 32-byte nonce as an
- * inline datum. Those bytes exist nowhere else, so finding them in a verified
- * snapshot shows that our nudge applied. A body applies at most once per input,
- * so the reservation's body can then never apply. If the body applied first,
- * its inputs are gone, the head rejects the nudge, and the bytes never appear.
+ * The nudge avoids references. It spends every input of the reservation's
+ * body into one output back to the wallet, tagged with a random 32-byte nonce
+ * as an inline datum. Those bytes exist nowhere else, so finding them in a
+ * verified snapshot shows that our nudge applied. A body applies at most once
+ * per input, so the reservation's body can then never apply. If the body
+ * applied first, its inputs are gone, the head rejects the nudge, and the
+ * bytes never appear.
  *
  * Anyone with in-head funds can create an output with the same bytes once they
- * see the nonce. Doing so pays our wallet the full value of the inputs the
- * reservation's body spends, which is at least what a false release could
- * redirect. Within one head only the counterparty holds such funds.
+ * see the nonce. The node reports the inputs' values, so a compromised node
+ * could make those bytes cheap to copy. The value floor stops that: the output
+ * must carry at least the funds the reservation's body locks, taken from our
+ * own records. Copying the bytes then pays our wallet at least what a false
+ * release could redirect. Spending every input, not a subset the node picks,
+ * keeps the floor tied to the whole body.
  */
 
 import { readHydraSignedTransactionShape } from '@/lib/hydra/hydra/signed-transaction-shape';
@@ -40,22 +44,45 @@ export type L2ReleaseNudgeProof = {
 	serializedOutput: string;
 };
 
+/** Minimum quantity per unit the nudge output must carry. `''` and `lovelace` both mean ADA. */
+export type L2ReleaseValueFloor = ReadonlyArray<{ unit: string; amount: bigint }>;
+
+export function normalizeL2ReleaseUnit(unit: string): string {
+	return unit === '' || unit.toLowerCase() === 'lovelace' ? 'lovelace' : unit.toLowerCase();
+}
+
 /**
  * What to look for, from the signed nudge `nudgeTx`. Null unless it is a
- * nudge for this reservation: at least one input, every input one the body
- * spends, and exactly one output carrying a nonce datum.
+ * nudge for this reservation: it spends exactly the body's inputs, and its one
+ * output carries a nonce datum and at least `valueFloor`. An empty floor
+ * proves nothing, so it is null too.
  */
 export function readL2ReleaseNudgeProof(
 	nudgeTx: string,
 	reservationInputRefs: readonly string[],
+	valueFloor: L2ReleaseValueFloor,
 ): L2ReleaseNudgeProof | null {
 	const shape = readHydraSignedTransactionShape(nudgeTx);
-	if (!shape || shape.inputRefs.length === 0 || shape.outputs.length !== 1) return null;
+	if (!shape || shape.outputs.length !== 1) return null;
 	const reserved = new Set(reservationInputRefs.map((reference) => reference.toLowerCase()));
-	if (!shape.inputRefs.every((reference) => reserved.has(reference))) return null;
+	const spent = new Set(shape.inputRefs);
+	if (reserved.size === 0 || spent.size !== reserved.size || ![...reserved].every((ref) => spent.has(ref))) {
+		return null;
+	}
 	const [output] = shape.outputs;
 	if (output.inlineDatumHex === null || !NUDGE_DATUM_PATTERN.test(output.inlineDatumHex.toLowerCase())) return null;
+	if (!meetsValueFloor(output.value, valueFloor)) return null;
 	return { reference: output.reference, serializedOutput: output.serializedOutput };
+}
+
+function meetsValueFloor(value: ReadonlyMap<string, bigint>, valueFloor: L2ReleaseValueFloor): boolean {
+	const required = new Map<string, bigint>();
+	for (const { unit, amount } of valueFloor) {
+		const key = normalizeL2ReleaseUnit(unit);
+		required.set(key, (required.get(key) ?? 0n) + amount);
+	}
+	if (![...required.values()].some((amount) => amount > 0n)) return false;
+	return [...required].every(([unit, amount]) => (value.get(unit) ?? 0n) >= amount);
 }
 
 /**
@@ -67,9 +94,11 @@ export function readL2ReleaseNudgeProof(
 export function isL2ReservationSpentByNudge(params: {
 	nudgeTx: string | null;
 	inputRefs: readonly string[];
+	/** Null when the reservation has no floor we can trust; it then stays held. */
+	valueFloor: L2ReleaseValueFloor | null;
 	readOutput: (reference: string) => string | null;
 }): boolean {
-	if (params.nudgeTx === null) return false;
-	const proof = readL2ReleaseNudgeProof(params.nudgeTx, params.inputRefs);
+	if (params.nudgeTx === null || params.valueFloor === null) return false;
+	const proof = readL2ReleaseNudgeProof(params.nudgeTx, params.inputRefs, params.valueFloor);
 	return proof !== null && params.readOutput(proof.reference) === proof.serializedOutput;
 }
