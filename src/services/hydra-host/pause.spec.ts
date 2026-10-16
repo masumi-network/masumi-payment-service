@@ -187,10 +187,22 @@ describe('advanceHydraHostPause', () => {
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
 
-		const claim = mockHostUpdateMany.mock.calls[0][0] as { data: { pauseLeaseUntil: Date | null } };
+		const claim = mockHostUpdateMany.mock.calls[0][0] as {
+			where: { OR: Array<{ pauseLeaseUntil: unknown }> };
+			data: { pauseLeaseUntil: Date };
+		};
+		// Claimable only when free or expired.
+		expect(claim.where).toEqual({
+			id: 'host-1',
+			OR: [{ pauseLeaseUntil: null }, { pauseLeaseUntil: { lt: expect.any(Date) } }],
+		});
 		expect(claim.data.pauseLeaseUntil).toBeInstanceOf(Date);
 		expect(mockHostUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(mockStopHostNode.mock.invocationCallOrder[0]);
-		expect(mockHostUpdateMany).toHaveBeenLastCalledWith({ where: { id: 'host-1' }, data: { pauseLeaseUntil: null } });
+		// Released fenced on its own value, so it never clears a later holder's lease.
+		expect(mockHostUpdateMany).toHaveBeenLastCalledWith({
+			where: { id: 'host-1', pauseLeaseUntil: claim.data.pauseLeaseUntil },
+			data: { pauseLeaseUntil: null },
+		});
 	});
 
 	it('does nothing while another instance holds the lease', async () => {
@@ -199,6 +211,15 @@ describe('advanceHydraHostPause', () => {
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
 
+		expect(mockStopHostNode).not.toHaveBeenCalled();
+	});
+
+	// A dropped force would quietly wait for the in-flight work after all.
+	it('refuses a forced advance with 409 while another instance holds the lease', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+		await expect(pause.advanceHydraHostPause('host-1', { force: true })).rejects.toMatchObject({ status: 409 });
 		expect(mockStopHostNode).not.toHaveBeenCalled();
 	});
 
@@ -253,6 +274,24 @@ describe('getHydraHostPauseState', () => {
 		expect((await pause.getHydraHostPauseState('host-1')).phase).toBe('Paused');
 	});
 
+	// The stop is not recorded yet, so a later cycle still has to ask the Host.
+	it('reports Stopping, not Paused, while the stop is not recorded', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+
+		const state = await pause.getHydraHostPauseState('host-1');
+
+		expect(state.phase).toBe('Stopping');
+		expect(state.nodes.map((node) => node.state)).toEqual(['Stopped', 'Stopped']);
+	});
+
+	it('does not probe the nodes while draining', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		setInFlight(1);
+
+		expect((await pause.getHydraHostPauseState('host-1')).phase).toBe('Draining');
+		expect(mockFetchHostNodeHealth).not.toHaveBeenCalled();
+	});
+
 	it('reports Active without a pause', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow({ pausedAt: null, pausedNodeIds: [] }));
 
@@ -294,12 +333,33 @@ describe('resumeHydraHost', () => {
 		);
 	});
 
+	it('releases the lease when the resume fails', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockStartHostNode.mockRejectedValueOnce(new Error('boom'));
+
+		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 502 });
+		expect(mockHostUpdateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { pauseLeaseUntil: null } }));
+	});
+
 	it('refuses with 409 while an advance holds the lease', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
 		mockHostUpdateMany.mockResolvedValueOnce({ count: 0 });
 
 		await expect(pause.resumeHydraHost('host-1')).rejects.toMatchObject({ status: 409 });
 		expect(mockStartHostNode).not.toHaveBeenCalled();
+	});
+});
+
+describe('runHydraHostPauseCycle', () => {
+	// The cycle discards the state, so it must not pay for a health probe per node.
+	it('stops the nodes of a drained pause without probing them', async () => {
+		mockHostFindMany.mockResolvedValue([{ id: 'host-1' }]);
+		mockHostFindUnique.mockResolvedValue(hostRow());
+
+		await pause.runHydraHostPauseCycle();
+
+		expect(mockStopHostNode).toHaveBeenCalledTimes(2);
+		expect(mockFetchHostNodeHealth).not.toHaveBeenCalled();
 	});
 });
 
