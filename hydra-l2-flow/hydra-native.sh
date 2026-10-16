@@ -133,7 +133,10 @@ mkdir -p "$STATE" "$BIN_DIR"
 # ── native binary ────────────────────────────────────────────────────────────
 # ensure_bin, bin_is_verified, refuse_unverified, repair_dylibs and helpers.
 # shellcheck source=hydra-native-bin.sh
-source "$(dirname "${BASH_SOURCE[0]}")/hydra-native-bin.sh"
+# No set -e here, so a failed source must stop the script explicitly: without
+# it, every binary check below would be "command not found" and fail open.
+source "$(dirname "${BASH_SOURCE[0]}")/hydra-native-bin.sh" \
+  || { c_red "missing hydra-native-bin.sh beside $0"; exit 1; }
 
 # ── socket bridge (cardano-node n2c -> host unix socket) ─────────────────────
 bridge_up(){
