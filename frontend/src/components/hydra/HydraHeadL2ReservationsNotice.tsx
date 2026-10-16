@@ -36,7 +36,7 @@ function requestSummary(reservation: HydraL2Reservation): string {
 function releaseDescription(reservation: HydraL2Reservation): string {
   const restore =
     reservation.kind === 'initial-lock'
-      ? 'Each purchase goes back to locking, so it can lock again from new inputs.'
+      ? 'Each purchase goes back to locking, so it can lock again.'
       : 'Each request goes back to retrying its action against the escrow it had before.';
   const nudge = reservation.releaseNudgeTxHash
     ? `Its release nudge ${shortenAddress(reservation.releaseNudgeTxHash, 12)} never showed up in a verified snapshot.`
@@ -103,8 +103,8 @@ export function HydraHeadL2ReservationsNotice({
         </p>
         <p>
           The service frees an expired reservation only once its release nudge shows up in a
-          verified snapshot. These have no such proof after the time recovery gets. Review each one
-          before you release it.
+          verified snapshot. Recovery cannot prove these dead, and it never nudges some of them.
+          Review each one before you release it.
         </p>
         <div className="mt-2 space-y-2">
           {releasable.map((reservation) => (
