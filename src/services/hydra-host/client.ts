@@ -388,10 +388,11 @@ export type HostInviteRecord = {
 /**
  * Tell a Host to honour an invite we just minted.
  *
- * The Host is given only the nonce, the reserved node and an expiry — never the
- * signed payload. It cannot verify a signature and has no use for one; keeping
- * the material out of it means a Host compromise leaks nothing about who we are
- * negotiating with beyond what the peer plane already reveals.
+ * The Host is given only the nonce, the reserved node and an expiry, never the
+ * signed invite. It verifies the redeemer's signature against its own network
+ * config and needs nothing from the invite for that. Keeping the material out
+ * of it means a Host compromise leaks nothing about who we are negotiating
+ * with beyond what the peer plane already reveals.
  */
 export async function registerInviteOnHost(
 	baseUrl: string,

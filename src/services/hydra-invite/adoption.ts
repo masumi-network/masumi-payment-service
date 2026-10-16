@@ -235,11 +235,11 @@ async function discardUnadoptableRedemption(
 /**
  * Turn one Host-side redemption into a head, if it checks out.
  *
- * This is where the signature the Host could not verify is verified. The Host
- * accepted the material on the strength of a nonce alone and started the node;
- * if the signature does not hold, the head is never recorded and the operator
- * is left with a node to remove — which is the reversible half of the bargain
- * that made an unauthenticated Exchange Plane acceptable.
+ * The Host already verified this signature before it spent the nonce. It is
+ * verified again here because the head is recorded on this service's word, not
+ * the Host's: a compromised or outdated Host could store a body it never
+ * checked. If the signature does not hold, the head is never recorded and the
+ * operator is left with a node to remove.
  */
 async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult> {
 	if (record.redeemedAt === null || record.redeemer === null || record.redeemerSignature === null) {
