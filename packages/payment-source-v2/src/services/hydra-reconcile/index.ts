@@ -297,9 +297,11 @@ async function reconcileHead(
 			(identifierCounts.get(observation.decoded.blockchainIdentifier) ?? 0) !== 1 &&
 			!lineages?.some((lineage) => isPersistedHydraOutput(lineage, observation.utxo.input))
 		) {
-			// Ordered replay already drained, so a local escrow's persisted output is
-			// its current one. Any other output with a copied identifier was funded by
-			// someone else: skip it rather than hold the head, and log it for review.
+			// Ordered replay drained before this pass, so a local escrow's persisted
+			// output is normally its current one. Any other output with a copied
+			// identifier is skipped rather than held as a retry a peer could fund;
+			// the final handoff still refuses an escrow whose persisted output is
+			// stale. Log it for review.
 			if (lineages) {
 				logger.error('[HydraReconcile] ignoring live output that copies a local identifier', {
 					hydraHeadId,
