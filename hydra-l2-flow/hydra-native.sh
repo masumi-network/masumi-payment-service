@@ -239,6 +239,12 @@ ensure_bin(){
     # that commit's own "Binaries" workflow run (for 2.4.1, commit
     # 099f5dd775d8640047d0074edef294c1b39a600d, run 33660882209 — verified,
     # see docs/hydra-2.4.1-upgrade-runbook.md).
+    # A set but malformed pin fails before any download. A missing one is
+    # checked per path below, since only the probe shows which path applies.
+    for pin_var in HYDRA_RELEASE_SHA256 HYDRA_BINARY_SHA256; do
+      [ -z "${!pin_var}" ] || is_sha256 "$(lower "${!pin_var}")" \
+        || { c_red "$pin_var must be a 64-hex sha256"; exit 1; }
+    done
     c_blu "Checking for a hydra-aarch64-darwin-${HYDRA_VERSION}.zip release asset…"
     if gh release download "$HYDRA_VERSION" --repo cardano-scaling/hydra \
       --pattern "hydra-aarch64-darwin-${HYDRA_VERSION}.zip" --dir "$tmp" 2>/dev/null; then
