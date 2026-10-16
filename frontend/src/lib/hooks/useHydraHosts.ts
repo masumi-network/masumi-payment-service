@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import type { Client } from '@/lib/api/generated/client';
+import type { DescribedRelease } from '@/lib/release';
 
 export type HydraHostStatus = 'Active' | 'Draining' | 'Disabled' | 'Unreachable';
 
@@ -28,12 +29,16 @@ export type HydraHost = {
   /** Presence only; the token itself is never returned by the API. */
   hasAdminToken: boolean;
   hydraVersion: string | null;
+  /** Project release of the node image, as of the last Check. */
+  release: DescribedRelease;
   scriptCatalogueHash: string | null;
   ledgerParamsHash: string | null;
   status: HydraHostStatus;
   lastHealthAt: string | null;
   lastHealthError: string | null;
   participantCount: number;
+  /** Set while the node is paused for maintenance. */
+  pausedAt: string | null;
 };
 
 type ApiEnvelope<T> = { status: string; data: T };
