@@ -32,9 +32,10 @@ import { HydraHeadStatus, Network, OnChainState, PaymentSourceType } from '@/gen
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import {
 	applyDatumStateToLocalRequests,
-	findLocallyRelevantHydraRequestIdentifiers,
+	findHydraRequestLineages,
 	type HydraDatumApplyOutcome,
 } from '@/services/hydra-connection-manager/hydra-datum-sync';
+import { isPersistedHydraOutput } from '@/services/hydra-connection-manager/hydra-request-lineage';
 import { decodeV2ContractDatum, DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { smartContractStateToOnChainState } from '@/utils/logic/l2-datum-validation';
@@ -273,10 +274,7 @@ async function reconcileHead(
 		);
 	}
 	const duplicateIdentifiers = [...identifierCounts].filter(([, count]) => count > 1).map(([identifier]) => identifier);
-	const locallyRelevantDuplicateIdentifiers = await findLocallyRelevantHydraRequestIdentifiers(
-		source.id,
-		duplicateIdentifiers,
-	);
+	const duplicateLineages = await findHydraRequestLineages(source.id, duplicateIdentifiers);
 	// Most live outputs are already applied; one batched read finds them so the
 	// pass skips their per-output serializable transaction.
 	const identifiersWithNothingToApply = isFinalized
@@ -294,12 +292,23 @@ async function reconcileHead(
 	for (const observation of observations) {
 		// Yield between outputs so API requests are not starved by a long pass.
 		await yieldToEventLoop();
-		if ((identifierCounts.get(observation.decoded.blockchainIdentifier) ?? 0) !== 1) {
-			if (locallyRelevantDuplicateIdentifiers.has(observation.decoded.blockchainIdentifier)) {
-				hasRetryableLiveObservation = true;
-				logger.warn('[HydraReconcile] duplicate live outputs for local identifier; refusing ambiguous observation', {
+		const lineages = duplicateLineages.get(observation.decoded.blockchainIdentifier);
+		if (
+			(identifierCounts.get(observation.decoded.blockchainIdentifier) ?? 0) !== 1 &&
+			!lineages?.some((lineage) => isPersistedHydraOutput(lineage, observation.utxo.input))
+		) {
+			// Ordered replay drained before this pass, so a local escrow's persisted
+			// output is normally its current one. Any other output with a copied
+			// identifier is skipped rather than held as a retry a peer could fund;
+			// the final handoff still refuses an escrow whose persisted output is
+			// stale. Log it for review.
+			if (lineages) {
+				logger.error('[HydraReconcile] ignoring live output that copies a local identifier', {
 					hydraHeadId,
 					blockchainIdentifier: observation.decoded.blockchainIdentifier,
+					outputReference: observation.utxo.input,
+					state: observation.newState,
+					amount: observation.utxo.output.amount,
 				});
 			}
 			continue;
