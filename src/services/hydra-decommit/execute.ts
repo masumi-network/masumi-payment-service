@@ -49,7 +49,11 @@ import {
 	utxoRef,
 } from './select';
 import { assertDecommitOutputMinimum } from './min-output';
-import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
+import {
+	assertHydraHeadHostNotPaused,
+	HYDRA_HOST_PAUSED_MESSAGE,
+	isHydraHeadOnPausedHostLocked,
+} from '@/services/hydra-host/pause';
 
 /**
  * How long the in-head split gets to confirm before the withdrawal gives up.
@@ -258,6 +262,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 						);
 					}
 
+					if (await isHydraHeadOnPausedHostLocked(tx, head.id)) throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
 					const created = await tx.hydraDecommit.create({
 						data: {
 							hydraHeadId: head.id,

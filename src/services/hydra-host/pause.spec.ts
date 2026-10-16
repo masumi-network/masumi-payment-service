@@ -13,6 +13,7 @@ const mockQueryRaw = jest.fn() as AnyMock;
 const mockTransactionCount = jest.fn() as AnyMock;
 const mockTopupCount = jest.fn() as AnyMock;
 const mockDecommitCount = jest.fn() as AnyMock;
+const mockHeadCount = jest.fn() as AnyMock;
 const mockStartHostNode = jest.fn() as AnyMock;
 const mockStopHostNode = jest.fn() as AnyMock;
 const mockFetchHostNodeHealth = jest.fn() as AnyMock;
@@ -35,6 +36,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		transaction: { count: mockTransactionCount },
 		hydraTopup: { count: mockTopupCount },
 		hydraDecommit: { count: mockDecommitCount },
+		hydraHead: { count: mockHeadCount },
 	},
 }));
 
@@ -46,7 +48,17 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 	decrypt: (value: string) => `plain:${value}`,
 }));
 
+class FakeHostRequestError extends Error {
+	constructor(
+		message: string,
+		readonly status: number | null,
+	) {
+		super(message);
+	}
+}
+
 jest.unstable_mockModule('./client', () => ({
+	HydraHostRequestError: FakeHostRequestError,
 	startHostNode: mockStartHostNode,
 	stopHostNode: mockStopHostNode,
 	fetchHostNodeHealth: mockFetchHostNodeHealth,
@@ -74,10 +86,11 @@ function hostRow(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function setInFlight(l2: number, topups = 0, withdrawals = 0) {
+function setInFlight(l2: number, topups = 0, withdrawals = 0, closingHeads = 0) {
 	mockTransactionCount.mockResolvedValue(l2);
 	mockTopupCount.mockResolvedValue(topups);
 	mockDecommitCount.mockResolvedValue(withdrawals);
+	mockHeadCount.mockResolvedValue(closingHeads);
 }
 
 beforeEach(() => {
@@ -156,13 +169,36 @@ describe('advanceHydraHostPause', () => {
 		expect(mockHostUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it('restarts the nodes when a resume ended the pause while the stops were in flight', async () => {
-		mockHostFindUnique.mockResolvedValueOnce(hostRow()).mockResolvedValue(hostRow({ pausedAt: null }));
-		mockHostUpdateMany.mockResolvedValue({ count: 0 });
+	// A stopped node cannot contest a close or post the fanout.
+	it('waits while a head on the host is closing or in its dispute window', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		setInFlight(0, 0, 0, 1);
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
 
-		expect(mockStartHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b']);
+		expect(mockStopHostNode).not.toHaveBeenCalled();
+	});
+
+	// Serialized with Resume, so a stop can never land after a resume's start.
+	it('acts under the per-host pause lock', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockQueryRaw.mockResolvedValue([{ acquired: 1 }]);
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		const lockCall = mockQueryRaw.mock.calls[0] as unknown[];
+		expect((lockCall[0] as string[]).join('?')).toContain('pg_advisory_xact_lock');
+		expect(lockCall[1]).toBe('hydra-host-pause:host-1');
+		expect(mockQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(mockStopHostNode.mock.invocationCallOrder[0]);
+	});
+
+	it('treats a node the host no longer has as stopped', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockStopHostNode.mockRejectedValueOnce(new FakeHostRequestError('not found', 404));
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		expect(mockHostUpdateMany).toHaveBeenCalled();
 	});
 });
 
@@ -195,6 +231,16 @@ describe('resumeHydraHost', () => {
 			where: { id: 'host-1', pausedAt: PAUSED_AT },
 			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null },
 		});
+	});
+
+	// One node removed from the Host by hand must not keep the Host paused forever.
+	it('skips a paused node the host no longer has', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockStartHostNode.mockRejectedValueOnce(new FakeHostRequestError('not found', 404));
+
+		await pause.resumeHydraHost('host-1');
+
+		expect(mockHostUpdateMany).toHaveBeenCalled();
 	});
 
 	// A half-resumed Host must keep refusing work, or it routes to a stopped node.

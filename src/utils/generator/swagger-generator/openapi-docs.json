@@ -7009,12 +7009,17 @@
                             },
                             "withdrawals": {
                                 "type": "integer"
+                            },
+                            "closingHeads": {
+                                "type": "integer",
+                                "description": "Heads closing or in their dispute window. The nodes stay up until these settle."
                             }
                         },
                         "required": [
                             "l2Transactions",
                             "topups",
-                            "withdrawals"
+                            "withdrawals",
+                            "closingHeads"
                         ]
                     },
                     "nodes": {
@@ -35646,7 +35651,8 @@
                                             "inFlight": {
                                                 "l2Transactions": 1,
                                                 "topups": 0,
-                                                "withdrawals": 0
+                                                "withdrawals": 0,
+                                                "closingHeads": 0
                                             },
                                             "nodes": [
                                                 {
@@ -35671,7 +35677,7 @@
             },
             "post": {
                 "summary": "Pause a Hydra Host for maintenance. (admin access required)",
-                "description": "Refuses new work on every head of this Host at once: L2 locks, top-ups, withdrawals, consolidation, init and commit. The service stops the nodes once in-flight work has settled, or at once with `force`. The pause survives restarts of this service and of the Host. Keep it short: a stopped node cannot contest a close, and reserved L2 actions are parked for manual action after a little over three hours.",
+                "description": "Refuses new work on every head of this Host at once: L2 locks, top-ups, withdrawals, consolidation, init and commit. The service stops the nodes once in-flight work has settled and no head on the Host is closing or in its dispute window, or at once with `force`. The pause survives restarts of this service and of the Host. Keep it short: a stopped node cannot contest a close, and reserved L2 actions are parked for manual action after a little over three hours.",
                 "tags": [
                     "hydra"
                 ],
@@ -35738,7 +35744,8 @@
                                             "inFlight": {
                                                 "l2Transactions": 1,
                                                 "topups": 0,
-                                                "withdrawals": 0
+                                                "withdrawals": 0,
+                                                "closingHeads": 0
                                             },
                                             "nodes": [
                                                 {
@@ -35829,7 +35836,8 @@
                                             "inFlight": {
                                                 "l2Transactions": 0,
                                                 "topups": 0,
-                                                "withdrawals": 0
+                                                "withdrawals": 0,
+                                                "closingHeads": 0
                                             },
                                             "nodes": [
                                                 {

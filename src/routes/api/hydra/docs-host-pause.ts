@@ -17,7 +17,7 @@ const PAUSED_EXAMPLE = {
 	phase: 'Draining',
 	pausedAt: '2026-10-17T10:00:00.000Z',
 	pauseStopRequestedAt: null,
-	inFlight: { l2Transactions: 1, topups: 0, withdrawals: 0 },
+	inFlight: { l2Transactions: 1, topups: 0, withdrawals: 0, closingHeads: 0 },
 	nodes: [{ nodeId: 'node-1', state: 'Running', error: null }],
 };
 
@@ -47,7 +47,7 @@ export function registerHydraHostPausePaths({ registry, apiKeyAuth }: SwaggerReg
 		path: '/hydra/host/pause',
 		summary: 'Pause a Hydra Host for maintenance. (admin access required)',
 		description:
-			'Refuses new work on every head of this Host at once: L2 locks, top-ups, withdrawals, consolidation, init and commit. The service stops the nodes once in-flight work has settled, or at once with `force`. The pause survives restarts of this service and of the Host. Keep it short: a stopped node cannot contest a close, and reserved L2 actions are parked for manual action after a little over three hours.',
+			'Refuses new work on every head of this Host at once: L2 locks, top-ups, withdrawals, consolidation, init and commit. The service stops the nodes once in-flight work has settled and no head on the Host is closing or in its dispute window, or at once with `force`. The pause survives restarts of this service and of the Host. Keep it short: a stopped node cannot contest a close, and reserved L2 actions are parked for manual action after a little over three hours.',
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(pauseHydraHostInput, { id: HOST_ID, force: false }) },
@@ -73,7 +73,7 @@ export function registerHydraHostPausePaths({ registry, apiKeyAuth }: SwaggerReg
 				...PAUSED_EXAMPLE,
 				phase: 'Active',
 				pausedAt: null,
-				inFlight: { l2Transactions: 0, topups: 0, withdrawals: 0 },
+				inFlight: { l2Transactions: 0, topups: 0, withdrawals: 0, closingHeads: 0 },
 			}),
 			409: { description: 'Host has no admin token' },
 			502: { description: 'A node did not start; the Host stays paused' },

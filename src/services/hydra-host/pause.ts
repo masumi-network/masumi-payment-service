@@ -8,7 +8,8 @@
  *   Active   -> no pause.
  *   Draining -> `pausedAt` is set. The service starts no new work on the Host's
  *               heads, and waits for its own in-flight work (held L2 bodies,
- *               top-ups, withdrawals) to finish.
+ *               top-ups, withdrawals) to finish, and for closing heads to
+ *               settle, because a stopped node cannot contest or fan out.
  *   Stopping -> the Host was asked to stop the nodes. It drains each node's
  *               snapshot round first.
  *   Paused   -> every paused node reports Stopped. No transaction can happen on
@@ -24,6 +25,7 @@
 import createHttpError from 'http-errors';
 import {
 	HydraDecommitStatus,
+	HydraHeadStatus,
 	HydraTopupStatus,
 	Prisma,
 	TransactionLayer,
@@ -32,7 +34,7 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
-import { fetchHostNodeHealth, startHostNode, stopHostNode } from './client';
+import { fetchHostNodeHealth, HydraHostRequestError, startHostNode, stopHostNode } from './client';
 
 export const HYDRA_HOST_PAUSED_MESSAGE = 'hydra host is paused for maintenance';
 
@@ -42,6 +44,8 @@ export type HydraHostPauseInFlight = {
 	l2Transactions: number;
 	topups: number;
 	withdrawals: number;
+	/** Heads closing or in their dispute window. A stopped node cannot contest or fan out. */
+	closingHeads: number;
 };
 
 export type HydraHostPauseState = {
@@ -61,6 +65,10 @@ const IN_FLIGHT_WITHDRAWAL_STATUSES = [
 	HydraDecommitStatus.Pending,
 	HydraDecommitStatus.Approved,
 ];
+
+const HTTP_NOT_FOUND = 404;
+/** Bounds a held pause lock: one Host request per node, each with its own timeout. */
+const PAUSE_LOCK_TIMEOUT_MS = 5 * 60_000;
 
 type PrismaReader = Pick<Prisma.TransactionClient, 'hydraLocalParticipant'>;
 
@@ -107,18 +115,51 @@ export async function assertHydraHeadHostNotPaused(hydraHeadId: string): Promise
 
 async function countInFlight(hostId: string): Promise<HydraHostPauseInFlight> {
 	const onHost = { LocalParticipant: { hydraHostId: hostId } };
-	const [l2Transactions, topups, withdrawals] = await Promise.all([
+	const [l2Transactions, topups, withdrawals, closingHeads] = await Promise.all([
 		prisma.transaction.count({
 			where: { layer: TransactionLayer.L2, status: TransactionStatus.Pending, HydraHead: onHost },
 		}),
 		prisma.hydraTopup.count({ where: { status: { in: IN_FLIGHT_TOPUP_STATUSES }, HydraHead: onHost } }),
 		prisma.hydraDecommit.count({ where: { status: { in: IN_FLIGHT_WITHDRAWAL_STATUSES }, HydraHead: onHost } }),
+		prisma.hydraHead.count({
+			where: {
+				LocalParticipant: { hydraHostId: hostId },
+				OR: [{ isClosing: true }, { status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] } }],
+			},
+		}),
 	]);
-	return { l2Transactions, topups, withdrawals };
+	return { l2Transactions, topups, withdrawals, closingHeads };
 }
 
 function hasInFlightWork(inFlight: HydraHostPauseInFlight): boolean {
-	return inFlight.l2Transactions + inFlight.topups + inFlight.withdrawals > 0;
+	return inFlight.l2Transactions + inFlight.topups + inFlight.withdrawals + inFlight.closingHeads > 0;
+}
+
+/** The Host no longer has this node, for example one removed by hand after its head went Final. */
+function isNodeGone(error: unknown): boolean {
+	return error instanceof HydraHostRequestError && error.status === HTTP_NOT_FOUND;
+}
+
+/**
+ * Advance and Resume each act on the Host over the network and then write.
+ * Run them one at a time per Host, across every service instance: interleaved,
+ * an advance's stops could land after a Resume's starts, and the Host would
+ * read as running with every node stopped.
+ */
+async function withHostPauseLock<T>(hostId: string, action: () => Promise<T>): Promise<T> {
+	return await prisma.$transaction(
+		async (tx) => {
+			// Returns an integer, not PostgreSQL's `void`; see settle-lock.ts.
+			await tx.$queryRaw<Array<{ acquired: number }>>`
+				WITH pause_lock AS MATERIALIZED (
+					SELECT pg_advisory_xact_lock(hashtextextended(${`hydra-host-pause:${hostId}`}, 0))
+				)
+				SELECT 1 AS acquired FROM pause_lock
+			`;
+			return await action();
+		},
+		{ maxWait: PAUSE_LOCK_TIMEOUT_MS, timeout: PAUSE_LOCK_TIMEOUT_MS },
+	);
 }
 
 async function loadHost(hostId: string) {
@@ -164,6 +205,8 @@ export async function getHydraHostPauseState(hostId: string): Promise<HydraHostP
 				});
 				return { nodeId, state: health.state, error: null };
 			} catch (error) {
+				// A node the Host no longer has cannot be running.
+				if (isNodeGone(error)) return { nodeId, state: 'Stopped', error: 'not found on the host' };
 				return { nodeId, state: null, error: errorMessage(error) };
 			}
 		}),
@@ -216,54 +259,31 @@ export async function pauseHydraHost(hostId: string, options: { force: boolean }
  * forced. Safe to call any number of times, from any instance.
  */
 export async function advanceHydraHostPause(hostId: string, options: { force: boolean }): Promise<HydraHostPauseState> {
-	const host = await loadHost(hostId);
-	if (host.pausedAt === null || host.pauseStopRequestedAt !== null || host.encryptedAdminToken === null) {
-		return await getHydraHostPauseState(hostId);
-	}
-	if (!options.force && hasInFlightWork(await countInFlight(hostId))) {
-		return await getHydraHostPauseState(hostId);
-	}
+	await withHostPauseLock(hostId, async () => {
+		const host = await loadHost(hostId);
+		if (host.pausedAt === null || host.pauseStopRequestedAt !== null || host.encryptedAdminToken === null) return;
+		if (!options.force && hasInFlightWork(await countInFlight(hostId))) return;
 
-	const adminToken = decrypt(host.encryptedAdminToken);
-	const failures: string[] = [];
-	for (const nodeId of host.pausedNodeIds) {
-		try {
-			await stopHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
-		} catch (error) {
-			failures.push(`${nodeId}: ${errorMessage(error)}`);
-		}
-	}
-	if (failures.length > 0) {
-		// Left Stopping-without-a-request: the next scheduler cycle asks again.
-		// Stop is idempotent on the Host, so the nodes that did stop are fine.
-		logger.warn('[HydraHostPause] could not stop every paused node; retrying next cycle', { hostId, failures });
-		return await getHydraHostPauseState(hostId);
-	}
-
-	// Fenced on the pause it belongs to: a Resume that landed while the stops
-	// were in flight must not be overwritten by this stale write.
-	const fenced = await prisma.hydraHost.updateMany({
-		where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: null },
-		data: { pauseStopRequestedAt: new Date() },
-	});
-	if (fenced.count === 0) {
-		// A Resume ended this pause while the stops were in flight, so it may
-		// have started a node that a stop above then hit. Start them again.
-		const current = await loadHost(hostId);
-		if (current.pausedAt === null) {
-			for (const nodeId of host.pausedNodeIds) {
-				try {
-					await startHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
-				} catch (error) {
-					logger.error('[HydraHostPause] node stopped after resume and did not restart', {
-						hostId,
-						nodeId,
-						error: errorMessage(error),
-					});
-				}
+		const adminToken = decrypt(host.encryptedAdminToken);
+		const failures: string[] = [];
+		for (const nodeId of host.pausedNodeIds) {
+			try {
+				await stopHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
+			} catch (error) {
+				if (!isNodeGone(error)) failures.push(`${nodeId}: ${errorMessage(error)}`);
 			}
 		}
-	}
+		if (failures.length > 0) {
+			// Left Stopping-without-a-request: the next scheduler cycle asks again.
+			// Stop is idempotent on the Host, so the nodes that did stop are fine.
+			logger.warn('[HydraHostPause] could not stop every paused node; retrying next cycle', { hostId, failures });
+			return;
+		}
+		await prisma.hydraHost.updateMany({
+			where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: null },
+			data: { pauseStopRequestedAt: new Date() },
+		});
+	});
 	return await getHydraHostPauseState(hostId);
 }
 
@@ -274,30 +294,35 @@ export async function advanceHydraHostPause(hostId: string, options: { force: bo
  * keeps refusing new work instead of sending it to a node that is still down.
  */
 export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseState> {
-	const host = await loadHost(hostId);
-	if (host.pausedAt === null) {
-		return await getHydraHostPauseState(hostId);
-	}
-	if (host.encryptedAdminToken === null) {
-		throw createHttpError(409, 'this hydra host is registered without an admin token, so it cannot be resumed');
-	}
-
-	const adminToken = decrypt(host.encryptedAdminToken);
-	const failures: string[] = [];
-	for (const nodeId of host.pausedNodeIds) {
-		try {
-			await startHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
-		} catch (error) {
-			failures.push(`${nodeId}: ${errorMessage(error)}`);
+	await withHostPauseLock(hostId, async () => {
+		const host = await loadHost(hostId);
+		if (host.pausedAt === null) return;
+		if (host.encryptedAdminToken === null) {
+			throw createHttpError(409, 'this hydra host is registered without an admin token, so it cannot be resumed');
 		}
-	}
-	if (failures.length > 0) {
-		throw createHttpError(502, `could not start every paused node; the host stays paused: ${failures.join('; ')}`);
-	}
 
-	await prisma.hydraHost.updateMany({
-		where: { id: hostId, pausedAt: host.pausedAt },
-		data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null },
+		const adminToken = decrypt(host.encryptedAdminToken);
+		const failures: string[] = [];
+		for (const nodeId of host.pausedNodeIds) {
+			try {
+				await startHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
+			} catch (error) {
+				// Skipped, not failed: a node the Host no longer has would otherwise
+				// keep the Host paused forever.
+				if (isNodeGone(error)) {
+					logger.warn('[HydraHostPause] paused node no longer exists on the host; skipped', { hostId, nodeId });
+					continue;
+				}
+				failures.push(`${nodeId}: ${errorMessage(error)}`);
+			}
+		}
+		if (failures.length > 0) {
+			throw createHttpError(502, `could not start every paused node; the host stays paused: ${failures.join('; ')}`);
+		}
+		await prisma.hydraHost.updateMany({
+			where: { id: hostId, pausedAt: host.pausedAt },
+			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null },
+		});
 	});
 	return await getHydraHostPauseState(hostId);
 }

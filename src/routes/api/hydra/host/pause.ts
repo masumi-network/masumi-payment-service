@@ -27,6 +27,10 @@ export const hydraHostPauseStateSchema = z
 			l2Transactions: z.number().int(),
 			topups: z.number().int(),
 			withdrawals: z.number().int(),
+			closingHeads: z
+				.number()
+				.int()
+				.describe('Heads closing or in their dispute window. The nodes stay up until these settle.'),
 		}),
 		nodes: z.array(z.object({ nodeId: z.string(), state: z.string().nullable(), error: z.string().nullable() })),
 	})
