@@ -112,6 +112,13 @@ afterwards. See
 
 ### 2. Start the Host
 
+The Host runs `HYDRA_NODE_BIN` without checking its `.sha256` record. Check
+the binary first. The command exits non-zero when the binary fails its record:
+
+```bash
+./hydra-l2-flow/hydra-native.sh verify
+```
+
 ```bash
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
 HYDRA_HOST_PUBLIC_EXCHANGE_URL=http://127.0.0.1:8444/exchange \
