@@ -201,6 +201,20 @@ export function getLifecycleActionConfirmCopy(head: HydraHead, action: HydraLife
   };
 }
 
+/**
+ * Whether the head's stage still permits any lifecycle action.
+ *
+ * Readiness is polled only while this holds. Without it every settled head on
+ * screen re-asked a Host round trip plus a chain read every ten seconds, for
+ * good: a finished head's node is stopped, so readiness is false and the poll
+ * never turns itself off.
+ */
+export function headStagePermitsAnyAction(head: HydraHead): boolean {
+  return lifecycleActions.some(
+    (actionConfig) => getStageDisabledReason(head, actionConfig.action) === undefined,
+  );
+}
+
 export function HydraLifecycleActionMenu({
   head,
   isRunning,
@@ -211,16 +225,10 @@ export function HydraLifecycleActionMenu({
   onRequestLifecycle: (head: HydraHead, action: HydraLifecycleAction) => void;
 }) {
   // Only asked for a head with a node to ask about, only while its stage still
-  // permits some action, and only polled while the node is not ready. Without
-  // the stage condition every settled head on screen re-asked a Host round trip
-  // plus a chain read every ten seconds, for good: a finished head's node is
-  // stopped, so readiness is false and the poll never turns itself off.
-  const stagePermitsAnyAction = lifecycleActions.some(
-    (actionConfig) => getStageDisabledReason(head, actionConfig.action) === undefined,
-  );
+  // permits some action, and only polled while the node is not ready.
   const { connection } = useHydraHeadReadiness(
     head.id,
-    head.LocalParticipant != null && stagePermitsAnyAction,
+    head.LocalParticipant != null && headStagePermitsAnyAction(head),
   );
   const configs = getLifecycleButtonConfigs(head, connection);
   const sharedBlocker = findSharedBlocker(configs);

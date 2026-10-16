@@ -8,6 +8,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import type { Client } from '@/lib/api/generated/client';
 import { ensureData } from './api';
+import { useHydraHeadList } from './head-list';
 import type { ApiEnvelope, HydraHeadBalanceResponse, HydraHeadTopupResponse } from './api';
 import type {
   HydraHeadBalance,
@@ -16,6 +17,9 @@ import type {
   HydraTopupRequest,
   HydraWithdrawal,
 } from './types';
+
+/** Rows per request for deposits and withdrawals. Older pages load on demand. */
+const FUND_LIST_PAGE_SIZE = 10;
 
 export async function fetchHydraHeadBalance(
   apiClient: Client,
@@ -71,7 +75,7 @@ export function useHydraHeadBalance(headId: string | null, isOpen: boolean) {
  * built, so this is the only way to tell progress from failure.
  */
 /**
- * `isOpen` no longer gates the read.
+ * Read for every head, Open or not.
  *
  * A deposit the head never absorbed does not come back in the fanout — it comes
  * back only through Recover, and recovery opens a deposit period AFTER the
@@ -80,45 +84,25 @@ export function useHydraHeadBalance(headId: string | null, isOpen: boolean) {
  * Recover button before it ever appeared, leaving the funds at the L1 deposit
  * script with no path back and head deletion refused for naming them.
  */
-export function useHydraTopups(headId: string | null, _isOpen: boolean) {
-  const { apiClient } = useAppContext();
-
-  const query = useQuery<HydraTopup[]>({
-    queryKey: ['hydra-topups', headId],
-    queryFn: async () => {
-      const response = await handleApiCall(
-        () =>
-          apiClient.get<{ 200: ApiEnvelope<{ topups: HydraTopup[] }> }>({
-            responseType: 'json',
-            url: '/hydra/head/topup',
-            query: { headId, limit: 10 },
-          }),
-        { errorMessage: 'Failed to load the deposits' },
-      );
-      // A failed read is not an empty list: rendered as one, the Deposits
-      // section disappears entirely — no rows, no error, no retry — and the
-      // polling that would bring it back keys on pending rows that are no
-      // longer there. An operator reads that as "the deposit never happened"
-      // and sends another.
-      if (response?.data?.data?.topups == null) {
-        throw new Error('Failed to load the deposits');
-      }
-      return response.data.data.topups;
-    },
-    enabled: !!apiClient && headId !== null,
+export function useHydraTopups(headId: string | null) {
+  const list = useHydraHeadList<HydraTopup>({
+    queryKey: 'hydra-topups',
+    url: '/hydra/head/topup',
+    field: 'topups',
+    headId,
+    pageSize: FUND_LIST_PAGE_SIZE,
+    errorMessage: 'Failed to load the deposits',
     staleTime: 5000,
     // Preparing counts as in flight, exactly as it does for withdrawals below.
     // It is the state every exact-amount deposit starts in and stays in while
-    // its L1 pre-split confirms — minutes — and keying the poll on Pending
+    // its L1 pre-split confirms (minutes), and keying the poll on Pending
     // alone meant the row sat at "Preparing / amount pending" until the
     // operator reloaded the page by hand.
-    refetchInterval: (query) =>
-      (query.state.data ?? []).some((topup) => ['Preparing', 'Pending'].includes(topup.status))
-        ? 10_000
-        : false,
+    refetchInterval: (rows) =>
+      rows.some((topup) => ['Preparing', 'Pending'].includes(topup.status)) ? 10_000 : false,
   });
 
-  return { ...query, topups: query.data ?? [] };
+  return { ...list, topups: list.rows };
 }
 
 /**
@@ -139,7 +123,6 @@ const WITHDRAWAL_APPEARS_WITHIN_MS = 90_000;
 
 export function useHydraWithdrawals(
   headId: string | null,
-  isOpen: boolean,
   /**
    * When a withdrawal was last started here, if one was.
    *
@@ -150,31 +133,18 @@ export function useHydraWithdrawals(
    */
   startedAt: number | null = null,
 ) {
-  const { apiClient } = useAppContext();
-
-  const query = useQuery<HydraWithdrawal[]>({
-    queryKey: ['hydra-withdrawals', headId],
-    queryFn: async () => {
-      const response = await handleApiCall(
-        () =>
-          apiClient.get<{ 200: ApiEnvelope<{ withdrawals: HydraWithdrawal[] }> }>({
-            responseType: 'json',
-            url: '/hydra/head/withdraw',
-            query: { headId, limit: 10 },
-          }),
-        { errorMessage: 'Failed to load the withdrawals' },
-      );
-      if (response?.data?.data?.withdrawals == null) {
-        throw new Error('Failed to load the withdrawals');
-      }
-      return response.data.data.withdrawals;
-    },
-    enabled: !!apiClient && headId !== null,
+  const list = useHydraHeadList<HydraWithdrawal>({
+    queryKey: 'hydra-withdrawals',
+    url: '/hydra/head/withdraw',
+    field: 'withdrawals',
+    headId,
+    pageSize: FUND_LIST_PAGE_SIZE,
+    errorMessage: 'Failed to load the withdrawals',
     staleTime: 5000,
     // Approved counts as in flight: the funds have left the head but L1 has not
     // reported them yet, which is exactly when an operator is watching.
-    refetchInterval: (query) => {
-      const inFlight = (query.state.data ?? []).some((row) =>
+    refetchInterval: (rows) => {
+      const inFlight = rows.some((row) =>
         ['Preparing', 'Pending', 'Approved'].includes(row.status),
       );
       if (inFlight) return 5_000;
@@ -186,7 +156,7 @@ export function useHydraWithdrawals(
     },
   });
 
-  return { ...query, withdrawals: query.data ?? [] };
+  return { ...list, withdrawals: list.rows };
 }
 
 export async function withdrawFromHydraHead(

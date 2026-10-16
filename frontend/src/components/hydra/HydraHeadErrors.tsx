@@ -21,6 +21,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { clearHydraHeadErrors, useHydraHeadErrors } from '@/lib/hooks/useHydraHeads';
+import { ListPager, usePagedList } from '@/components/hydra/ListPager';
+import { LIST_PAGE_SIZE } from '@/components/hydra/paging';
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -44,7 +46,9 @@ export function HydraHeadErrors({
   count: number;
   showHeading?: boolean;
 }) {
-  const { errors, isLoading, isError, refetch } = useHydraHeadErrors(headId);
+  const { errors, isLoading, isError, refetch, hasMore, isLoadingMore, loadMore } =
+    useHydraHeadErrors(headId);
+  const paged = usePagedList(errors, LIST_PAGE_SIZE);
   const { apiClient } = useAppContext();
   const resync = useResync();
   const [isClearing, setIsClearing] = useState(false);
@@ -114,7 +118,7 @@ export function HydraHeadErrors({
         </p>
       ) : (
         <ul className="divide-y rounded-md border">
-          {errors.map((error) => (
+          {paged.items.map((error) => (
             <li key={error.id} className="space-y-1 px-3 py-2.5">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="text-red-600 dark:text-red-400">
@@ -133,6 +137,7 @@ export function HydraHeadErrors({
           ))}
         </ul>
       )}
+      {!isLoading && <ListPager page={paged} more={{ hasMore, isLoadingMore, loadMore }} />}
     </div>
   );
 }

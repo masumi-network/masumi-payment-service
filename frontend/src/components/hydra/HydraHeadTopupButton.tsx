@@ -17,7 +17,8 @@
 
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { newestRowId } from '@/lib/hooks/hydra/head-list';
 import { toast } from 'react-toastify';
 import { formatAssetAmount, getExplorerUrl } from '@/lib/utils';
 import { useResync } from '@/lib/hooks/useResync';
@@ -38,6 +39,8 @@ import { hydraAssetDecimals, parseHydraAssetAmount } from './asset-amount';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { DepositPeriodHint } from '@/components/hydra/hydra-hints';
+import { ListPager, usePagedList } from '@/components/hydra/ListPager';
+import { HISTORY_PAGE_SIZE } from '@/components/hydra/paging';
 import {
   Select,
   SelectContent,
@@ -129,7 +132,8 @@ function HydraTopupList({
 }) {
   const { apiClient } = useAppContext();
   const resync = useResync();
-  const { topups, isError, refetch } = useHydraTopups(headId, isOpen);
+  const { topups, isError, refetch, hasMore, isLoadingMore, loadMore } = useHydraTopups(headId);
+  const paged = usePagedList(topups, HISTORY_PAGE_SIZE);
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 15_000);
@@ -188,7 +192,10 @@ function HydraTopupList({
   }
 
   if (topups.length === 0) {
-    return null;
+    // Only the closed head shows this list on its own, without a form above it.
+    return isOpen ? null : (
+      <p className="py-2 text-sm text-muted-foreground">No deposits into this head.</p>
+    );
   }
 
   return (
@@ -198,7 +205,7 @@ function HydraTopupList({
         <DepositPeriodHint />
       </p>
       <ul className="divide-y rounded-md border">
-        {topups.map((topup) => {
+        {paged.items.map((topup) => {
           // The node refuses a recovery until the deposit's own deadline has
           // passed, and turns that refusal into a red toast. Before then the
           // deposit is either still waiting to be absorbed or already in the
@@ -385,6 +392,7 @@ function HydraTopupList({
           );
         })}
       </ul>
+      <ListPager page={paged} more={{ hasMore, isLoadingMore, loadMore }} />
     </div>
   );
 }
@@ -468,17 +476,22 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
       // Telling the operator it "appears below" and then not showing it is
       // worse than waiting the second it actually takes.
       //
-      // Waited on the count, not on emptiness. Asking "are there any rows" is
-      // answered instantly by an earlier deposit, which is the normal case for
-      // every head after its first: the wait ended before the new row existed,
-      // the poll then saw nothing preparing and stayed off, and the deposit
-      // stayed invisible until the dialog was reopened.
-      const rowsBefore =
-        queryClient.getQueryData<HydraTopup[]>(['hydra-topups', headId])?.length ?? 0;
+      // Waited on the newest row changing, not on emptiness or on the count.
+      // Asking "are there any rows" is answered instantly by an earlier
+      // deposit, which is the normal case for every head after its first: the
+      // wait ended before the new row existed, the poll then saw nothing
+      // preparing and stayed off, and the deposit stayed invisible until the
+      // dialog was reopened. The count fails too once the list is paged: with
+      // the first page full, a new deposit pushes an old one off it.
+      const newestBefore = newestRowId(
+        queryClient.getQueryData<InfiniteData<HydraTopup[]>>(['hydra-topups', headId]),
+      );
       for (let attempt = 0; attempt < 8; attempt += 1) {
         await queryClient.invalidateQueries({ queryKey: ['hydra-topups', headId] });
-        const rows = queryClient.getQueryData<HydraTopup[]>(['hydra-topups', headId]);
-        if ((rows?.length ?? 0) > rowsBefore) break;
+        const newest = newestRowId(
+          queryClient.getQueryData<InfiniteData<HydraTopup[]>>(['hydra-topups', headId]),
+        );
+        if (newest !== undefined && newest !== newestBefore) break;
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
     } catch (error) {
@@ -493,10 +506,7 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
 
   return (
     <div className="space-y-3 rounded-md border p-4">
-      <div>
-        <h4 className="text-sm font-medium">Add funds</h4>
-        <p className="text-xs text-muted-foreground">Arrives once the deposit confirms on chain.</p>
-      </div>
+      <p className="text-xs text-muted-foreground">Arrives once the deposit confirms on chain.</p>
 
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1.5">
@@ -551,28 +561,26 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
         </Button>
       </div>
 
-      <p className="min-h-8 text-xs text-muted-foreground">
+      {isCustom && (
+        <div className="space-y-1.5">
+          <Label htmlFor={`hydra-topup-unit-${headId}`}>Asset unit</Label>
+          <Input
+            id={`hydra-topup-unit-${headId}`}
+            value={customUnit}
+            onChange={(event) => {
+              setCustomUnit(event.target.value);
+              setAmount('');
+            }}
+            placeholder="policyId + assetName, in hex"
+            className="w-full max-w-md font-mono text-xs"
+          />
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
         {usesDecimals
-          ? `Enter the amount in ${unitLabel}, with up to 6 decimal places.`
-          : 'Enter a whole number of base units for this asset.'}
+          ? `Up to 6 decimal places of ${unitLabel}.`
+          : 'A whole number of base units for this asset.'}
       </p>
-      <div className="min-h-[80px]">
-        {isCustom && (
-          <div className="space-y-1.5">
-            <Label htmlFor={`hydra-topup-unit-${headId}`}>Asset unit</Label>
-            <Input
-              id={`hydra-topup-unit-${headId}`}
-              value={customUnit}
-              onChange={(event) => {
-                setCustomUnit(event.target.value);
-                setAmount('');
-              }}
-              placeholder="policyId + assetName, in hex"
-              className="w-full max-w-md font-mono text-xs"
-            />
-          </div>
-        )}
-      </div>
 
       <HydraTopupList
         headId={headId}

@@ -10,6 +10,7 @@ import { handleApiCall } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import type { Client } from '@/lib/api/generated/client';
 import { ensureData, fetchHydraPages } from './api';
+import { useHydraHeadList } from './head-list';
 import type { ApiEnvelope, HydraHeadCommitResponse, HydraHeadLifecycleResponse } from './api';
 import type {
   HydraHead,
@@ -28,6 +29,9 @@ import type {
  * Idle until they reloaded, which reads as "nothing happened".
  */
 const SETTLING_STATUSES: HydraHeadStatus[] = ['Initializing', 'Connecting', 'Closed'];
+
+/** Rows per request for a head's errors and transactions. Older pages load on demand. */
+const HEAD_LIST_PAGE_SIZE = 25;
 
 /**
  * The heads this service runs, on one network.
@@ -79,65 +83,37 @@ export function useHydraHeads(network?: string) {
  * counting at all.
  */
 export function useHydraHeadErrors(headId: string | null) {
-  const { apiClient } = useAppContext();
-
-  const query = useQuery<HydraHeadError[]>({
-    queryKey: ['hydra-head-errors', headId],
-    queryFn: async () => {
-      const response = await handleApiCall(
-        () =>
-          apiClient.get<{ 200: ApiEnvelope<{ errors: HydraHeadError[] }> }>({
-            responseType: 'json',
-            url: '/hydra/head/errors',
-            query: { headId, limit: 25 },
-          }),
-        { errorMessage: 'Failed to load the head errors' },
-      );
-      if (response?.data?.data?.errors == null) {
-        throw new Error('Failed to load the head errors');
-      }
-      return response.data.data.errors;
-    },
-    enabled: !!apiClient && headId !== null,
+  const list = useHydraHeadList<HydraHeadError>({
+    queryKey: 'hydra-head-errors',
+    url: '/hydra/head/errors',
+    field: 'errors',
+    headId,
+    pageSize: HEAD_LIST_PAGE_SIZE,
+    errorMessage: 'Failed to load the head errors',
     staleTime: 10000,
   });
 
-  return { ...query, errors: query.data ?? [] };
+  return { ...list, errors: list.rows };
 }
 
 /** Statuses that will not change again without something new happening. */
 const SETTLED_TX_STATUSES = ['Confirmed', 'FailedViaTimeout', 'RolledBack'];
 
 export function useHydraHeadTransactions(headId: string | null) {
-  const { apiClient } = useAppContext();
-
-  const query = useQuery<HydraHeadTransaction[]>({
-    queryKey: ['hydra-head-transactions', headId],
-    queryFn: async () => {
-      const response = await handleApiCall(
-        () =>
-          apiClient.get<{ 200: ApiEnvelope<{ transactions: HydraHeadTransaction[] }> }>({
-            responseType: 'json',
-            url: '/hydra/head/transactions',
-            query: { headId, limit: 25 },
-          }),
-        { errorMessage: 'Could not load this head\u2019s transactions' },
-      );
-      if (response?.data?.data?.transactions == null) {
-        throw new Error('Could not load this head\u2019s transactions');
-      }
-      return response.data.data.transactions;
-    },
-    enabled: !!apiClient && headId !== null,
+  const list = useHydraHeadList<HydraHeadTransaction>({
+    queryKey: 'hydra-head-transactions',
+    url: '/hydra/head/transactions',
+    field: 'transactions',
+    headId,
+    pageSize: HEAD_LIST_PAGE_SIZE,
+    errorMessage: 'Could not load this head\u2019s transactions',
     staleTime: 5000,
     // Follow anything still in flight to its end, then stop.
-    refetchInterval: (query) =>
-      (query.state.data ?? []).some((tx) => !SETTLED_TX_STATUSES.includes(tx.status))
-        ? 8000
-        : false,
+    refetchInterval: (rows) =>
+      rows.some((tx) => !SETTLED_TX_STATUSES.includes(tx.status)) ? 8000 : false,
   });
 
-  return { ...query, transactions: query.data ?? [] };
+  return { ...list, transactions: list.rows };
 }
 
 /**
@@ -149,7 +125,12 @@ export function useHydraHeadTransactions(headId: string | null) {
  * than from the control. Polled only while the node is NOT ready, so a healthy
  * head costs one request.
  */
-export function useHydraHeadReadiness(headId: string | null, enabled: boolean) {
+export function useHydraHeadReadiness(
+  headId: string | null,
+  enabled: boolean,
+  /** False for a head that can no longer become ready: it is read once, not polled. */
+  poll = true,
+) {
   const { apiClient } = useAppContext();
 
   const query = useQuery<HydraHeadConnection | null>({
@@ -160,7 +141,7 @@ export function useHydraHeadReadiness(headId: string | null, enabled: boolean) {
     },
     enabled: !!apiClient && headId !== null && enabled,
     staleTime: 5000,
-    refetchInterval: (query) => (query.state.data?.isReady === true ? false : 10_000),
+    refetchInterval: (query) => (poll && query.state.data?.isReady !== true ? 10_000 : false),
   });
 
   return { connection: query.data ?? null, ...query };
