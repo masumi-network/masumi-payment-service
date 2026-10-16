@@ -3312,12 +3312,37 @@ export type HydraHost = {
     publicPeerHost: string;
     hasAdminToken: boolean;
     hydraVersion: string | null;
+    release: DescribedRelease;
     scriptCatalogueHash: string | null;
     ledgerParamsHash: string | null;
     status: 'Active' | 'Draining' | 'Unreachable' | 'Disabled';
     lastHealthAt: string | null;
     lastHealthError: string | null;
     participantCount: number;
+    /**
+     * Set while the Host is paused for maintenance
+     */
+    pausedAt: string | null;
+};
+
+/**
+ * Project release of the Host image, as of the last Check
+ */
+export type DescribedRelease = {
+    /**
+     * `git describe` form, e.g. 0.29.0-5-gabc1234, or a bare tag
+     */
+    version: string | null;
+    commit: string | null;
+    /**
+     * Release tag the build starts from
+     */
+    tag: string | null;
+    /**
+     * Commits on top of the tag; 0 for the tag itself
+     */
+    commitsAhead: number | null;
+    dirty: boolean;
 };
 
 export type HydraRelationDetail = HydraRelation & {
@@ -3442,6 +3467,26 @@ export type HydraHead = {
         Errors: number;
         Transactions: number;
     };
+};
+
+export type HydraHostPauseState = {
+    hostId: string;
+    /**
+     * Draining: new work refused, waiting for in-flight work. Stopping: nodes asked to stop. Paused: every node reports Stopped.
+     */
+    phase: 'Active' | 'Draining' | 'Stopping' | 'Paused';
+    pausedAt: string | null;
+    pauseStopRequestedAt: string | null;
+    inFlight: {
+        l2Transactions: number;
+        topups: number;
+        withdrawals: number;
+    };
+    nodes: Array<{
+        nodeId: string;
+        state: string | null;
+        error: string | null;
+    }>;
 };
 
 export type HydraLowBalanceRule = {
@@ -3613,6 +3658,13 @@ export type TxSyncQuarantineEntry = {
         network: 'Preprod' | 'Mainnet';
         smartContractAddress: string;
     };
+};
+
+export type ReleaseWithUpdate = DescribedRelease & {
+    /**
+     * Null when it cannot be told: no latest release known, or a build without a release tag
+     */
+    updateAvailable: boolean | null;
 };
 
 export type GetHealthData = {
@@ -14985,6 +15037,118 @@ export type PostHydraHeadSnapshotRoundResetResponses = {
 
 export type PostHydraHeadSnapshotRoundResetResponse = PostHydraHeadSnapshotRoundResetResponses[keyof PostHydraHeadSnapshotRoundResetResponses];
 
+export type GetHydraHostPauseData = {
+    body?: never;
+    path?: never;
+    query: {
+        id: string;
+    };
+    url: '/hydra/host/pause';
+};
+
+export type GetHydraHostPauseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHostPauseResponses = {
+    /**
+     * Pause state
+     */
+    200: {
+        status: 'success';
+        data: HydraHostPauseState;
+    };
+};
+
+export type GetHydraHostPauseResponse = GetHydraHostPauseResponses[keyof GetHydraHostPauseResponses];
+
+export type PostHydraHostPauseData = {
+    body?: {
+        id: string;
+        /**
+         * Stop the nodes now, without waiting for in-flight work. That work then waits for Resume.
+         */
+        force?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host/pause';
+};
+
+export type PostHydraHostPauseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+    /**
+     * Host has no admin token, so its nodes cannot be stopped
+     */
+    409: unknown;
+};
+
+export type PostHydraHostPauseResponses = {
+    /**
+     * Pause accepted
+     */
+    200: {
+        status: 'success';
+        data: HydraHostPauseState;
+    };
+};
+
+export type PostHydraHostPauseResponse = PostHydraHostPauseResponses[keyof PostHydraHostPauseResponses];
+
+export type PostHydraHostResumeData = {
+    body?: {
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host/resume';
+};
+
+export type PostHydraHostResumeErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+    /**
+     * Host has no admin token
+     */
+    409: unknown;
+    /**
+     * A node did not start; the Host stays paused
+     */
+    502: unknown;
+};
+
+export type PostHydraHostResumeResponses = {
+    /**
+     * Resumed
+     */
+    200: {
+        status: 'success';
+        data: HydraHostPauseState;
+    };
+};
+
+export type PostHydraHostResumeResponse = PostHydraHostResumeResponses[keyof PostHydraHostResumeResponses];
+
 export type GetHydraHeadBalanceData = {
     body?: never;
     path?: never;
@@ -17700,3 +17864,56 @@ export type PostReportsExportZipResponses = {
 };
 
 export type PostReportsExportZipResponse = PostReportsExportZipResponses[keyof PostReportsExportZipResponses];
+
+export type GetReleaseStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/release-status';
+};
+
+export type GetReleaseStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetReleaseStatusResponses = {
+    /**
+     * Release status
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Newest published release, including pre-releases. Null when not checked yet.
+             */
+            latest: {
+                version: string;
+                url: string;
+                publishedAt: string | null;
+            } | null;
+            /**
+             * When GitHub last answered
+             */
+            checkedAt: string | null;
+            /**
+             * Why the last check failed, when it did
+             */
+            checkError: string | null;
+            service: ReleaseWithUpdate;
+            /**
+             * Hydra Hosts, as of their last probe. Empty for a key without admin access.
+             */
+            hosts: Array<{
+                id: string;
+                name: string;
+                network: 'Preprod' | 'Mainnet';
+                release: ReleaseWithUpdate;
+            }>;
+        };
+    };
+};
+
+export type GetReleaseStatusResponse = GetReleaseStatusResponses[keyof GetReleaseStatusResponses];

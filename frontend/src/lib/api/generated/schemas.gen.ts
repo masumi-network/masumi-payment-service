@@ -6433,6 +6433,9 @@ export const HydraHostSchema = {
             type: 'string',
             nullable: true
         },
+        release: {
+            $ref: '#/components/schemas/DescribedRelease'
+        },
         scriptCatalogueHash: {
             type: 'string',
             nullable: true
@@ -6460,6 +6463,11 @@ export const HydraHostSchema = {
         },
         participantCount: {
             type: 'number'
+        },
+        pausedAt: {
+            type: 'string',
+            nullable: true,
+            description: 'Set while the Host is paused for maintenance'
         }
     },
     required: [
@@ -6473,13 +6481,51 @@ export const HydraHostSchema = {
         'publicPeerHost',
         'hasAdminToken',
         'hydraVersion',
+        'release',
         'scriptCatalogueHash',
         'ledgerParamsHash',
         'status',
         'lastHealthAt',
         'lastHealthError',
-        'participantCount'
+        'participantCount',
+        'pausedAt'
     ]
+} as const;
+
+export const DescribedReleaseSchema = {
+    type: 'object',
+    properties: {
+        version: {
+            type: 'string',
+            nullable: true,
+            description: '`git describe` form, e.g. 0.29.0-5-gabc1234, or a bare tag'
+        },
+        commit: {
+            type: 'string',
+            nullable: true
+        },
+        tag: {
+            type: 'string',
+            nullable: true,
+            description: 'Release tag the build starts from'
+        },
+        commitsAhead: {
+            type: 'integer',
+            nullable: true,
+            description: 'Commits on top of the tag; 0 for the tag itself'
+        },
+        dirty: {
+            type: 'boolean'
+        }
+    },
+    required: [
+        'version',
+        'commit',
+        'tag',
+        'commitsAhead',
+        'dirty'
+    ],
+    description: 'Project release of the Host image, as of the last Check'
 } as const;
 
 export const HydraRelationDetailSchema = {
@@ -6992,6 +7038,84 @@ export const HydraHeadSchema = {
     ]
 } as const;
 
+export const HydraHostPauseStateSchema = {
+    type: 'object',
+    properties: {
+        hostId: {
+            type: 'string'
+        },
+        phase: {
+            type: 'string',
+            enum: [
+                'Active',
+                'Draining',
+                'Stopping',
+                'Paused'
+            ],
+            description: 'Draining: new work refused, waiting for in-flight work. Stopping: nodes asked to stop. Paused: every node reports Stopped.'
+        },
+        pausedAt: {
+            type: 'string',
+            nullable: true
+        },
+        pauseStopRequestedAt: {
+            type: 'string',
+            nullable: true
+        },
+        inFlight: {
+            type: 'object',
+            properties: {
+                l2Transactions: {
+                    type: 'integer'
+                },
+                topups: {
+                    type: 'integer'
+                },
+                withdrawals: {
+                    type: 'integer'
+                }
+            },
+            required: [
+                'l2Transactions',
+                'topups',
+                'withdrawals'
+            ]
+        },
+        nodes: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    nodeId: {
+                        type: 'string'
+                    },
+                    state: {
+                        type: 'string',
+                        nullable: true
+                    },
+                    error: {
+                        type: 'string',
+                        nullable: true
+                    }
+                },
+                required: [
+                    'nodeId',
+                    'state',
+                    'error'
+                ]
+            }
+        }
+    },
+    required: [
+        'hostId',
+        'phase',
+        'pausedAt',
+        'pauseStopRequestedAt',
+        'inFlight',
+        'nodes'
+    ]
+} as const;
+
 export const HydraLowBalanceRuleSchema = {
     type: 'object',
     properties: {
@@ -7475,5 +7599,26 @@ export const TxSyncQuarantineEntrySchema = {
         'resolvedAt',
         'needsOperator',
         'PaymentSource'
+    ]
+} as const;
+
+export const ReleaseWithUpdateSchema = {
+    allOf: [
+        {
+            $ref: '#/components/schemas/DescribedRelease'
+        },
+        {
+            type: 'object',
+            properties: {
+                updateAvailable: {
+                    type: 'boolean',
+                    nullable: true,
+                    description: 'Null when it cannot be told: no latest release known, or a build without a release tag'
+                }
+            },
+            required: [
+                'updateAvailable'
+            ]
+        }
     ]
 } as const;
