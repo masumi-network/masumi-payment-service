@@ -74,10 +74,11 @@ baseline while the head stays idle), and only when ALL of these hold:
      snapshot: self-send an unreserved wallet UTxO in the head to produce one.
      Our node signs at most `B + 1` while the body is still valid, so `S`
      includes every snapshot that could have applied it.
-   - **Final fanout proof.** The head is closed and fanned out, the fanout
-     matches the verified final snapshot (`resolveVerifiedHydraFanoutReferences`
-     accepts it), and every ref in `l2ReservationInputRefs` is in that final
-     snapshot's UTxO set. No snapshot can follow a fanout.
+   - **Final fanout proof.** The head is closed and its fanout is confirmed on
+     L1. The fanout matches the verified final snapshot
+     (`resolveVerifiedHydraFanoutReferences` accepts it), every ref in
+     `l2ReservationInputRefs` is in that final snapshot's UTxO set, and the
+     body is not in confirmed history. No snapshot can follow a fanout.
 
    An input that is missing from the snapshot, or present only as a pending
    commit, proves nothing. Keep the reservation.
