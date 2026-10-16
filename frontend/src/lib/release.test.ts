@@ -40,6 +40,11 @@ test('formatRelease returns null when the build reports nothing', () => {
 test('formatRelease marks a modified build', () => {
   assert.equal(
     formatRelease(release({ tag: '0.29.0', commitsAhead: 0, dirty: true })),
-    '0.29.0 (modified)',
+    '0.29.0, modified',
+  );
+  assert.equal(formatRelease(release({ commit: 'abc1234', dirty: true })), 'abc1234, modified');
+  assert.equal(
+    formatRelease(release({ tag: '0.29.0', commitsAhead: 5, commit: null, dirty: true })),
+    '0.29.0 + 5 commits, modified',
   );
 });

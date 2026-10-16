@@ -36,14 +36,16 @@ export function shortCommit(commit: string): string {
  */
 export function formatRelease(release: DescribedRelease): string | null {
   const commit = release.commit === null ? null : shortCommit(release.commit);
-  const dirty = release.dirty ? ', modified' : '';
-  if (release.tag === null) {
-    return commit === null ? null : `${commit}${dirty}`;
-  }
   const ahead = release.commitsAhead ?? 0;
-  if (ahead === 0) {
-    return release.dirty ? `${release.tag} (modified)` : release.tag;
+  let base: string | null;
+  if (release.tag === null) {
+    base = commit;
+  } else if (ahead === 0) {
+    base = release.tag;
+  } else {
+    const commits = `${ahead} ${ahead === 1 ? 'commit' : 'commits'}`;
+    base = `${release.tag} + ${commits}${commit === null ? '' : ` (${commit})`}`;
   }
-  const commits = `${ahead} ${ahead === 1 ? 'commit' : 'commits'}`;
-  return `${release.tag} + ${commits}${commit === null ? '' : ` (${commit}${dirty})`}`;
+  if (base === null) return null;
+  return release.dirty ? `${base}, modified` : base;
 }

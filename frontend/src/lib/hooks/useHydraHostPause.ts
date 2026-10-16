@@ -29,7 +29,7 @@ const PAUSE_POLL_MS = 5000;
 export function useHydraHostPause(hostId: string | null) {
   const { apiClient } = useAppContext();
 
-  const query = useQuery<HydraHostPauseState | null>({
+  const query = useQuery<HydraHostPauseState>({
     queryKey: ['hydra-host-pause', hostId],
     queryFn: async () => {
       const response = await handleApiCall(
@@ -39,9 +39,14 @@ export function useHydraHostPause(hostId: string | null) {
             url: '/hydra/host/pause',
             query: { id: hostId },
           }),
-        { errorMessage: 'Failed to read the pause state' },
+        // Polled every few seconds, so a failure must not toast each time.
+        { onError: () => undefined },
       );
-      return response?.data?.data ?? null;
+      // Thrown, not returned as null: a null success would replace the last
+      // known phase and stop the polling for good after one failed request.
+      const state = response?.data?.data;
+      if (!state) throw new Error('Failed to read the pause state');
+      return state;
     },
     enabled: !!apiClient && hostId !== null,
     refetchInterval: (current) => {
