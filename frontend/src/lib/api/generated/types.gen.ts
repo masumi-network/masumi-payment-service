@@ -14512,6 +14512,10 @@ export type GetHydraHeadTopupData = {
          * The Hydra head whose top-ups to list
          */
         headId: string;
+        /**
+         * Inclusive cursor: the id of the last row already seen. It is returned again first.
+         */
+        cursorId?: string;
         limit?: number;
     };
     url: '/hydra/head/topup';
@@ -14630,6 +14634,10 @@ export type GetHydraHeadWithdrawData = {
          * The Hydra head whose withdrawals to list
          */
         headId: string;
+        /**
+         * Inclusive cursor: the id of the last row already seen. It is returned again first.
+         */
+        cursorId?: string;
         limit?: number;
     };
     url: '/hydra/head/withdraw';
@@ -15055,6 +15063,10 @@ export type GetHydraHeadTransactionsData = {
          * The Hydra head whose transactions to list
          */
         headId: string;
+        /**
+         * Inclusive cursor: the id of the last row already seen, of any kind. It is returned again first. An id this head does not list returns an empty page.
+         */
+        cursorId?: string;
         /**
          * Number of results
          */

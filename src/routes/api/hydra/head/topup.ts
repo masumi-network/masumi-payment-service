@@ -12,6 +12,7 @@ import { DEFAULT_PERIODS } from '@/services/hydra-invite/provisioning';
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { newestFirstOrder } from '@/routes/api/hydra/head/newest-first-cursor';
 
 export const topupInput = z.object({
 	headId: z.string().describe('The Hydra head to top up'),
@@ -41,6 +42,10 @@ export const topupOutput = z.object({
 
 export const listTopupsInput = z.object({
 	headId: z.string().describe('The Hydra head whose top-ups to list'),
+	cursorId: z
+		.string()
+		.optional()
+		.describe('Inclusive cursor: the id of the last row already seen. It is returned again first.'),
 	limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 
@@ -193,8 +198,9 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 
 		const rows = await prisma.hydraTopup.findMany({
 			where: { hydraHeadId: input.headId },
-			orderBy: { createdAt: 'desc' },
+			orderBy: newestFirstOrder,
 			take: input.limit,
+			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 		});
 		return {
 			topups: rows.map((row) => ({
