@@ -9,9 +9,9 @@
  * automatic recovery never releases on it. Automatic recovery releases only
  * with `proof: 'spent-by-release-nudge'`, after the reservation's own release
  * nudge, which spends the body's wallet inputs, appeared in a verified snapshot
- * (see `./l2-reservation-recovery` and `./l2-release-nudge-proof`),
- * or with `proof: 'inputs-unspent-in-final-snapshot'`, after a Final head's
- * fanned-out snapshot still held every input (see `./final-l2-reservation-release`).
+ * or in the fanned-out final snapshot of a Final head (see
+ * `./l2-reservation-recovery`, `./final-l2-reservation-release` and
+ * `./l2-release-nudge-proof`).
  */
 
 import {
@@ -75,7 +75,7 @@ export function purchaseL2ActionRetry(action: PurchasingAction | undefined): Pur
 export async function releaseRejectedL2Reservation(
 	reservation: ReleasableL2Reservation,
 	database: typeof prisma,
-	proof: 'head-rejection' | 'spent-by-release-nudge' | 'inputs-unspent-in-final-snapshot',
+	proof: 'head-rejection' | 'spent-by-release-nudge',
 ): Promise<boolean> {
 	try {
 		return await database.$transaction(

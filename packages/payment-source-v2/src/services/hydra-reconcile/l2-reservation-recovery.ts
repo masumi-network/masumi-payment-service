@@ -1,18 +1,12 @@
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import {
-	Network,
-	PaymentAction,
-	PurchasingAction,
-	TransactionLayer,
-	TransactionStatus,
-} from '@/generated/prisma/client';
+import { Network, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 import { isL2ReservationSpentByNudge, type L2ReleaseValueFloor } from './l2-release-nudge-proof';
-import { paymentL2ActionRetry, purchaseL2ActionRetry, releaseRejectedL2Reservation } from './l2-reservation-release';
+import { releaseRejectedL2Reservation } from './l2-reservation-release';
 import { nudgeIdleHeadForRelease, type L2ReleaseNudgeCandidate } from './l2-reservation-nudge';
 
 export const L2_RESERVATION_EXPIRY_GRACE_MS = 60_000;
@@ -176,58 +170,6 @@ export async function reportExpiredL2Reservations(params: {
 		});
 	}
 	return reported;
-}
-
-export const escrowPointerSelect = {
-	currentHydraUtxoTxHash: true,
-	currentHydraUtxoOutputIndex: true,
-	NextAction: { select: { requestedAction: true } },
-} as const;
-
-type EscrowPointer = {
-	currentHydraUtxoTxHash: string | null;
-	currentHydraUtxoOutputIndex: number | null;
-};
-
-/**
- * The inputs the release proof checks. Rows from the non-locking actions made
- * before `reserveL2Action` recorded inputs have none, and would pin their
- * wallet for good. Their body spends the request's escrow UTxO, which the
- * request still names while the body is unconfirmed, and one input unspent
- * after expiry is proof enough: an applied body spends every input.
- *
- * Used only while that pointer cannot name this body's own output. Once replay
- * moves it to the body's output, an unspent pointer proves the opposite.
- *
- * The body's other inputs are unknown, so the nudge may pick one of them. That
- * is safe: the body is expired, and a nudge that conflicts with a body still in
- * the local ledger is refused, and its recorded input then keeps release waiting.
- *
- * A row this cannot derive for (no current request, a pointer already spent)
- * stays held for an operator. That fails closed.
- */
-export function reservationInputRefs(candidate: {
-	intendedTxHash: string | null;
-	l2ReservationInputRefs: string[];
-	PaymentRequestCurrent: Array<EscrowPointer & { NextAction: { requestedAction: PaymentAction } | null }>;
-	PurchaseRequestCurrent: Array<EscrowPointer & { NextAction: { requestedAction: PurchasingAction } | null }>;
-}): string[] {
-	if (candidate.l2ReservationInputRefs.length > 0) return candidate.l2ReservationInputRefs;
-	const requests: EscrowPointer[] = [
-		...candidate.PaymentRequestCurrent.filter(
-			(request) => paymentL2ActionRetry(request.NextAction?.requestedAction) !== undefined,
-		),
-		...candidate.PurchaseRequestCurrent.filter(
-			(request) => purchaseL2ActionRetry(request.NextAction?.requestedAction) !== undefined,
-		),
-	];
-	if (requests.length !== 1 || candidate.PaymentRequestCurrent.length + candidate.PurchaseRequestCurrent.length !== 1) {
-		return [];
-	}
-	const { currentHydraUtxoTxHash: txHash, currentHydraUtxoOutputIndex: outputIndex } = requests[0];
-	if (txHash == null || outputIndex == null || candidate.intendedTxHash == null) return [];
-	if (txHash.toLowerCase() === candidate.intendedTxHash.toLowerCase()) return [];
-	return [`${txHash}#${outputIndex}`.toLowerCase()];
 }
 
 function pruneExpiredL2WarningThrottle(nowMs: number): void {
