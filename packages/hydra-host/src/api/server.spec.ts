@@ -47,6 +47,7 @@ beforeEach(async () => {
 		store,
 		ports,
 		advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+		checkPeerTarget: async () => null,
 		newNodeId: () => `node-${++counter}`,
 		now: () => new Date('2026-07-28T12:00:00.000Z'),
 	};
@@ -396,6 +397,7 @@ describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 				store,
 				ports,
 				advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+				checkPeerTarget: async () => null,
 				newNodeId: () => 'node-override',
 				now: () => new Date('2026-07-28T12:00:00.000Z'),
 			},

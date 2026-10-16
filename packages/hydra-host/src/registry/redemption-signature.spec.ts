@@ -107,6 +107,7 @@ describe('redeeming over the Exchange Plane with real signatures', () => {
 			store,
 			logger,
 			onRedeemed,
+			checkPeerTarget: async () => null,
 			verifyRedemption: async (nonce, body, signature) =>
 				await verifyRedemptionSignature(nonce, NETWORK, body, signature),
 		});

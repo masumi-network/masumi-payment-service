@@ -126,6 +126,16 @@ the machine:
 The API range is additionally bound to `127.0.0.1` inside the container, so it
 stays shut even if someone switches to host networking.
 
+Peer addresses go the other way: the Host passes them to `hydra-node --peer`, so
+the node dials them. By default the Host refuses a peer whose host resolves to a
+loopback, private, link-local or other non-public address, both on
+`PATCH /v1/nodes/{id}` (set peers) and on invite redemption. A refused redemption leaves the
+invite open. Set `HYDRA_HOST_ALLOW_PRIVATE_PEERS=true` only when the peers really
+run on a private network. The check resolves the name once, and `hydra-node` resolves
+it again on every reconnect, so a counterparty that controls its DNS can rebind
+it later. Block egress from the Host to private, link-local and metadata
+addresses as well.
+
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.
 

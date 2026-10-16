@@ -29,6 +29,7 @@ import {
 	type ExchangeMaterial,
 	type ExchangeSignature,
 } from '../registry/exchange-types.js';
+import type { PeerTargetCheck } from '../peer-target-policy.js';
 import type { SupervisorLogger } from '../supervisor/supervisor.js';
 
 /** Smaller than the control plane's: an invite is a few hundred bytes. */
@@ -177,6 +178,14 @@ export type ExchangeDeps = {
 	 * so transport tests need not sign every body.
 	 */
 	verifyRedemption: (nonce: string, redeemer: ExchangeMaterial, signature: ExchangeSignature) => Promise<boolean>;
+	/**
+	 * Why the redeemer's peer address may not be dialled, or null.
+	 *
+	 * Checked before the nonce is spent, like the signature, so a refused
+	 * address leaves the invite open instead of reserving a node that can never
+	 * be configured.
+	 */
+	checkPeerTarget: PeerTargetCheck;
 	/** Read X-Forwarded-For only when a trusted HTTP proxy is the sole caller. */
 	trustProxy?: boolean;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
@@ -238,7 +247,7 @@ function readRedeemBody(body: unknown): RedeemBody | null {
 }
 
 export function createExchangePlane(deps: ExchangeDeps): Server {
-	const { store, logger, onRedeemed, verifyRedemption } = deps;
+	const { store, logger, onRedeemed, verifyRedemption, checkPeerTarget } = deps;
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
 	const totalRequestsPerMinute = deps.limits?.totalRequestsPerMinute ?? DEFAULT_TOTAL_REQUESTS_PER_MINUTE;
@@ -375,6 +384,20 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 				logger.warn('[exchange] redemption refused (401 signature does not verify)');
 				send(response, 401, { error: 'signature does not verify' });
 				return;
+			}
+			// Only for an invite that is still open. A valid signature proves only
+			// who signed, so without this any throwaway wallet could make the Host
+			// resolve names it chooses. Skipping the check for a nonce that opens in
+			// between is safe: `setPeers` checks the address again before the node
+			// can dial it.
+			const pending = (await store.listInvites()).find((invite) => invite.nonce === body.nonce);
+			if (pending !== undefined && pending.redeemedAt === null) {
+				const peerRejection = await checkPeerTarget(body.redeemer.advertise);
+				if (peerRejection !== null) {
+					logger.warn(`[exchange] redemption refused (400 ${peerRejection})`);
+					send(response, 400, { error: 'peer address is not allowed' });
+					return;
+				}
 			}
 			const result = await store.redeem(body.nonce, body.redeemer, body.signature);
 			if (!result.ok) {

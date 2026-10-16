@@ -20,6 +20,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
+import type { PeerTargetCheck } from '../peer-target-policy.js';
 import type { PortAllocator } from '../registry/ports.js';
 import type { SupervisorLogger } from '../supervisor/supervisor.js';
 import type { NodeRegistryStore } from '../registry/store.js';
@@ -69,6 +70,8 @@ export type ProvisionDeps = {
 	advertiseFor: (peerPort: number) => string;
 	newNodeId: () => string;
 	now: () => Date;
+	/** Why a peer address may not be dialled, or null. See `peer-target-policy.ts`. */
+	checkPeerTarget: PeerTargetCheck;
 	/**
 	 * Optional, and used only to report a rollback that could not finish.
 	 * Optional so existing callers and tests are unaffected; a silent failure
@@ -287,6 +290,12 @@ export async function setPeers(
 	}
 	if (new Set(peers.map((peer) => peer.advertise)).size !== peers.length) {
 		throw new ProvisionError('duplicate peer advertise addresses', 400);
+	}
+	for (const peer of peers) {
+		const rejection = await deps.checkPeerTarget(peer.advertise);
+		if (rejection !== null) {
+			throw new ProvisionError(rejection, 400);
+		}
 	}
 
 	const nodeDir = deps.store.nodeDir(nodeId);
