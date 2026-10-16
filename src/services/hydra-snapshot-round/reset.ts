@@ -244,7 +244,12 @@ export async function resetSnapshotRound(params: {
 		// clears the record when it next sees the node idle.
 		const after = await fetchHydraSnapshotRound(node).catch(() => null);
 		if (after?.inFlight && after.signature === round.signature) {
-			throw createHttpError(502, 'The node did not leave the stuck round; check the round and retry');
+			// Also what a peer that proposes the round again looks like. Retrying here
+			// then only drops our unconfirmed transactions again.
+			throw createHttpError(
+				502,
+				'Our node is in the same round after the reset. The other party may have proposed it again; reset their node before retrying.',
+			);
 		}
 		if (after) {
 			// Conditioned on the round it reset, so a newer observation is never wiped.

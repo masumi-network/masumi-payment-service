@@ -59,22 +59,23 @@ const idle = round({
 	signature: 'LastSeenSnapshot|-|0',
 });
 
-function headRow(overrides: Record<string, unknown> = {}) {
-	return {
-		id: 'head-1',
-		isEnabled: true,
-		isClosing: false,
-		ownerEpoch: 7n,
-		status: 'Open',
-		headIdentifier: HEAD_IDENTIFIER,
-		snapshotRoundSignature: SIGNATURE,
-		snapshotRoundSince: new Date(Date.now() - 30 * 60_000),
-		LocalParticipant: { id: 'participant-1' },
-		...overrides,
-	};
+const baseHeadRow = {
+	id: 'head-1',
+	isEnabled: true,
+	isClosing: false,
+	ownerEpoch: 7n,
+	status: 'Open',
+	headIdentifier: HEAD_IDENTIFIER,
+	snapshotRoundSignature: SIGNATURE as string | null,
+	snapshotRoundSince: new Date(Date.now() - 30 * 60_000) as Date | null,
+	LocalParticipant: { id: 'participant-1' } as { id: string } | null,
+};
+
+function headRow(overrides: Partial<typeof baseHeadRow> = {}) {
+	return { ...baseHeadRow, ...overrides };
 }
 
-const confirmedSnapshot = (overrides: Record<string, unknown> = {}) => ({
+const confirmedSnapshot = (overrides: { headId?: string; number?: number } = {}) => ({
 	tag: 'ConfirmedSnapshot',
 	signatures: { multiSignature: ['a', 'b'] },
 	snapshot: { headId: HEAD_IDENTIFIER, number: 313, version: 52, accumulator: '12e9', utxo: {}, ...overrides },
