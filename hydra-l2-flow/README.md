@@ -66,7 +66,7 @@ doesn't stall on a download:
 
 ```bash
 docker pull ghcr.io/cardano-scaling/hydra-node:2.3.0
-docker pull ghcr.io/intersectmbo/cardano-node:10.6.2
+docker pull ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2
 ```
 
 The throwaway test database uses the official `postgres:15` image, which Docker

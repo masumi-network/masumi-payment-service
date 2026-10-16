@@ -110,7 +110,7 @@ STATE="${STATE:-$REPO/hydra-l2-flow/.native-state}"
 BRIDGE_NAME="${BRIDGE_NAME:-hydra-n2c-bridge}"
 BRIDGE_PORT="${BRIDGE_PORT:-3333}"
 HOST_SOCKET="${HOST_SOCKET:-$STATE/node.socket}"
-CARDANO_IMAGE="${CARDANO_IMAGE:-ghcr.io/intersectmbo/cardano-node:10.6.2}"
+CARDANO_IMAGE="${CARDANO_IMAGE:-ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2}"
 
 # macOS ships libiconv only in the dyld shared cache; the nix-built binary
 # hardcodes a /nix/store libiconv path, so point dyld at /usr/lib by leaf name.
