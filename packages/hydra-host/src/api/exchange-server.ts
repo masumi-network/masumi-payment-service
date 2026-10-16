@@ -12,6 +12,7 @@
  *  - redemption requires a nonce this Host issued, unspent and unexpired;
  *  - the redeemer's signature must verify against the wallet it names before
  *    the nonce is spent, so a forged or malformed body cannot burn an invite;
+ *  - requests are limited per source and in total before any body is read;
  *  - bodies are capped and connection timeouts are short.
  *
  * The payment service verifies the same signature again when it adopts the
@@ -37,6 +38,22 @@ const DEFAULT_MAX_BODY_READERS = 32;
 const DEFAULT_MAX_BODY_READERS_PER_SOURCE = 4;
 const DEFAULT_BODY_TIMEOUT_MS = 5_000;
 const DEFAULT_REQUESTS_PER_MINUTE = 120;
+
+/**
+ * One budget for every source together, spent before any body is read.
+ *
+ * The per-source limit stops one caller from starving another, but a flood from
+ * many addresses passes it: each address stays under its own limit. This cap
+ * bounds what the whole plane admits per minute, whatever the address count.
+ *
+ * Sized from what legitimate traffic can be. A redemption is one POST with no
+ * client retry (`postRedemption` in the payment service), and every invite
+ * reserves one node slot, 32 by default (`HYDRA_HOST_PEER_PORT_COUNT`). So
+ * even every outstanding invite redeemed in the same minute is 32 requests.
+ * Twice the per-source limit leaves that peak a wide margin, and one source
+ * at its own limit still leaves half the budget for everyone else.
+ */
+const DEFAULT_TOTAL_REQUESTS_PER_MINUTE = 2 * DEFAULT_REQUESTS_PER_MINUTE;
 
 /**
  * How many distinct sources the per-source counter tracks within one window.
@@ -87,6 +104,47 @@ export function rateLimitKey(remote: string, tracked: ReadonlySet<string> | Map<
 	return tracked.has(remote) || tracked.size < cap ? remote : OVERFLOW_SOURCE;
 }
 
+/**
+ * The address a limit is counted against: an IPv6 source as its /64.
+ *
+ * One IPv6 subscriber usually holds a whole /64 and can use a fresh address per
+ * request, so keying on the full address gives them a fresh per-source budget
+ * each time. IPv4, and IPv4 mapped into IPv6, stay keyed on the full address.
+ */
+export function rateLimitSource(address: string): string {
+	const unzoned = (address.split('%')[0] ?? address).toLowerCase();
+	if (isIP(unzoned) !== 6) {
+		return address;
+	}
+	const [head = '', tail = ''] = unzoned.split('::');
+	const headGroups = toGroups(head);
+	const tailGroups = toGroups(tail);
+	const groups = [...headGroups, ...Array<number>(8 - headGroups.length - tailGroups.length).fill(0), ...tailGroups];
+	// ::ffff:a.b.c.d in any spelling, including the all-hex and uncompressed ones.
+	if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) {
+		const [high = 0, low = 0] = groups.slice(6);
+		return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+	}
+	return `${groups
+		.slice(0, 4)
+		.map((group) => group.toString(16))
+		.join(':')}::/64`;
+}
+
+/** One side of `::` as 16-bit groups; a dotted IPv4 tail fills two. */
+function toGroups(part: string): number[] {
+	if (part === '') {
+		return [];
+	}
+	return part.split(':').flatMap((group) => {
+		if (!group.includes('.')) {
+			return [parseInt(group, 16)];
+		}
+		const [a = 0, b = 0, c = 0, d = 0] = group.split('.').map(Number);
+		return [(a << 8) | b, (c << 8) | d];
+	});
+}
+
 export function exchangeRequestSource(
 	remote: string | undefined,
 	forwarded: string | string[] | undefined,
@@ -125,6 +183,7 @@ export type ExchangeDeps = {
 	limits?: {
 		maxInFlight?: number;
 		requestsPerMinute?: number;
+		totalRequestsPerMinute?: number;
 		maxTrackedSources?: number;
 		maxBodyReaders?: number;
 		maxBodyReadersPerSource?: number;
@@ -182,6 +241,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	const { store, logger, onRedeemed, verifyRedemption } = deps;
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
+	const totalRequestsPerMinute = deps.limits?.totalRequestsPerMinute ?? DEFAULT_TOTAL_REQUESTS_PER_MINUTE;
 	const maxTrackedSources = deps.limits?.maxTrackedSources ?? MAX_TRACKED_SOURCES;
 	const maxBodyReaders = deps.limits?.maxBodyReaders ?? DEFAULT_MAX_BODY_READERS;
 	const maxBodyReadersPerSource = deps.limits?.maxBodyReadersPerSource ?? DEFAULT_MAX_BODY_READERS_PER_SOURCE;
@@ -192,9 +252,10 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	// Per source rather than one shared counter: a single abusive caller must not
 	// be able to spend the whole minute's budget and 429 the one counterparty
 	// this plane exists to serve. Keyed on the socket address, which is what the
-	// peer allow-list already gates on.
+	// peer allow-list already gates on, with IPv6 grouped by /64.
 	let requestWindowStartedAt = Date.now();
 	const requestsInWindow = new Map<string, number>();
+	let admittedInWindow = 0;
 	const failuresInWindow = new Map<string, number>();
 
 	const server = createServer((request, response) => {
@@ -223,20 +284,24 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			requestWindowStartedAt = now;
 			requestsInWindow.clear();
 			failuresInWindow.clear();
+			admittedInWindow = 0;
 		}
 		const remote = exchangeRequestSource(
 			request.socket.remoteAddress,
 			request.headers['x-forwarded-for'],
 			deps.trustProxy === true,
 		);
-		const source = rateLimitKey(remote, requestsInWindow, maxTrackedSources);
+		const source = rateLimitKey(rateLimitSource(remote), requestsInWindow, maxTrackedSources);
 		const seen = (requestsInWindow.get(source) ?? 0) + 1;
 		requestsInWindow.set(source, seen);
-		if (seen > requestsPerMinute) {
+		// Per source first, so requests one source has no budget for never spend
+		// the shared budget: one caller alone cannot exhaust it.
+		if (seen > requestsPerMinute || admittedInWindow >= totalRequestsPerMinute) {
 			response.setHeader('Retry-After', '60');
 			send(response, 429, { error: 'too many requests' });
 			return;
 		}
+		admittedInWindow += 1;
 
 		void handle(request, response, source, pathname).catch((error: unknown) => {
 			// Never echo the message: this is an unauthenticated surface and the

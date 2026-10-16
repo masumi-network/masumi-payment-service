@@ -208,6 +208,72 @@ export function assertContestationPeriodAllowed(network: Network, contestationPe
 	}
 }
 
+/**
+ * The bounds the invite route puts on the deposit and contestation periods.
+ * The route explains each number. They live here so a redeemed invite is held
+ * to the same bounds as a minted one: the issuer runs its own service, which
+ * may not enforce them.
+ */
+export const DEPOSIT_PERIOD_BOUNDS_SECONDS = { min: 300, max: 86_400 } as const;
+export const CONTESTATION_PERIOD_BOUNDS_SECONDS = { min: 300, max: 1_209_600 } as const;
+
+/**
+ * Refuse a set of periods no head of ours may run with.
+ *
+ * Called at mint and at redemption, both times before a node is reserved. A
+ * reserved node holds keys, a peer port and possibly funding, and `--peer` is
+ * startup configuration, so a node reserved for periods that are later refused
+ * can only be reaped.
+ */
+export function assertHeadPeriodsAllowed(
+	network: Network,
+	periods: { contestationPeriodSeconds: number; depositPeriodSeconds: number; unsyncedPeriodSeconds: number },
+): void {
+	const bounded = [
+		['depositPeriodSeconds', periods.depositPeriodSeconds, DEPOSIT_PERIOD_BOUNDS_SECONDS],
+		['contestationPeriodSeconds', periods.contestationPeriodSeconds, CONTESTATION_PERIOD_BOUNDS_SECONDS],
+	] as const;
+	for (const [field, value, { min, max }] of bounded) {
+		if (!Number.isInteger(value) || value < min || value > max) {
+			throw createHttpError(400, `${field} must be a whole number of seconds from ${min} to ${max}; got ${value}`);
+		}
+	}
+	if (!Number.isInteger(periods.unsyncedPeriodSeconds)) {
+		throw createHttpError(
+			400,
+			`unsyncedPeriodSeconds must be a whole number of seconds; got ${periods.unsyncedPeriodSeconds}`,
+		);
+	}
+
+	assertContestationPeriodAllowed(network, periods.contestationPeriodSeconds);
+
+	// Half the dispute window is a ceiling, not a preference. Hydra's guarantee is
+	// that an in-sync node always has at least that long to observe an on-chain
+	// event and react to it; a node allowed to go quiet for longer can still
+	// believe it is in sync while it has already lost the time it needs to
+	// contest. Raising it trades away the only protection the dispute window
+	// provides, so it is refused rather than warned about.
+	const syncCeiling = Math.floor(periods.contestationPeriodSeconds / 2);
+	if (periods.unsyncedPeriodSeconds > syncCeiling) {
+		throw createHttpError(
+			400,
+			`the out-of-sync limit cannot exceed half the dispute window (${syncCeiling}s here). Past that a node can think it is in sync while it has already run out of time to contest a close`,
+		);
+	}
+	// The floor matters as much as the ceiling, and it is the one that bit us.
+	// The out-of-sync limit is usually derived rather than given, so a short
+	// dispute window silently produces a short limit: two minutes of dispute
+	// window gives a sixty-second limit, and preprod block gaps reach 71s. The
+	// head then declares itself out of sync several times an hour and refuses
+	// commands, which reads as a broken node rather than a chosen setting.
+	if (periods.unsyncedPeriodSeconds < MIN_UNSYNCED_PERIOD_SECONDS) {
+		throw createHttpError(
+			400,
+			`the out-of-sync limit works out at ${periods.unsyncedPeriodSeconds}s, below the ${MIN_UNSYNCED_PERIOD_SECONDS}s floor. It is half the dispute window unless set, so raise the dispute window to at least ${MIN_UNSYNCED_PERIOD_SECONDS * 2}s. Ordinary block gaps cross a shorter limit and the head stops accepting commands`,
+		);
+	}
+}
+
 export type ReservedNode = {
 	hostId: string;
 	hostBaseUrl: string;

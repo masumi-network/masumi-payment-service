@@ -10,6 +10,7 @@ import {
 	OVERFLOW_SOURCE,
 	rateLimitKey,
 	type ExchangeDeps,
+	rateLimitSource,
 } from './exchange-server.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 
@@ -378,6 +379,99 @@ describe('rateLimitKey', () => {
 		const tracked = new Map<string, number>([['198.51.100.1', 1]]);
 		expect(rateLimitKey('198.51.100.2', tracked, 1)).toBe(OVERFLOW_SOURCE);
 		expect(rateLimitKey('2001:db8::99', tracked, 1)).toBe(OVERFLOW_SOURCE);
+	});
+});
+
+describe('rateLimitSource', () => {
+	it('keeps IPv4 sources as they are', () => {
+		expect(rateLimitSource('198.51.100.1')).toBe('198.51.100.1');
+		expect(rateLimitSource('unknown')).toBe('unknown');
+	});
+
+	it('unwraps IPv4 mapped into IPv6', () => {
+		expect(rateLimitSource('::ffff:198.51.100.1')).toBe('198.51.100.1');
+		expect(rateLimitSource('::ffff:c633:6401')).toBe('198.51.100.1');
+		expect(rateLimitSource('0:0:0:0:0:FFFF:198.51.100.1')).toBe('198.51.100.1');
+		expect(rateLimitSource('0::ffff:198.51.100.1%eth0')).toBe('198.51.100.1');
+	});
+
+	it('groups every address in one IPv6 /64', () => {
+		const key = rateLimitSource('2001:db8:1:2::1');
+		expect(key).toBe('2001:db8:1:2::/64');
+		expect(rateLimitSource('2001:db8:1:2:ffff:ffff:ffff:ffff')).toBe(key);
+		expect(rateLimitSource('2001:0DB8:0001:0002:0:0:0:9')).toBe(key);
+		expect(rateLimitSource('2001:db8:1:2::1%eth0')).toBe(key);
+	});
+
+	it('separates different IPv6 /64s', () => {
+		expect(rateLimitSource('2001:db8:1:3::1')).not.toBe(rateLimitSource('2001:db8:1:2::1'));
+		expect(rateLimitSource('::1')).toBe('0:0:0:0::/64');
+		expect(rateLimitSource('2001:db8::')).toBe('2001:db8:0:0::/64');
+		expect(rateLimitSource('64:ff9b::198.51.100.1')).toBe('64:ff9b:0:0::/64');
+	});
+});
+
+describe('total request budget', () => {
+	let limited: Server;
+	let url: string;
+
+	beforeEach(async () => {
+		limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			trustProxy: true,
+			limits: { requestsPerMinute: 2, totalRequestsPerMinute: 5 },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		url = `http://127.0.0.1:${(limited.address() as AddressInfo).port}/exchange/redeem`;
+	});
+
+	afterEach(async () => {
+		jest.restoreAllMocks();
+		limited.closeAllConnections();
+		await new Promise<void>((resolve) => limited.close(() => resolve()));
+	});
+
+	const from = (source: string, body = '{}') =>
+		fetch(url, { method: 'POST', headers: { Connection: 'close', 'X-Forwarded-For': source }, body }).then(
+			(response) => response.status,
+		);
+	const redeem = (source: string, nonce: string) =>
+		from(source, JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }));
+
+	it('stops a flood from many distinct addresses, then still serves a redemption', async () => {
+		const statuses: number[] = [];
+		// Each address sends once, far under its own limit of 2, so only the
+		// total budget can refuse them.
+		for (let index = 1; index <= 20; index += 1) {
+			statuses.push(await from(`198.51.100.${index}`));
+		}
+		expect(statuses.slice(0, 5)).toEqual([400, 400, 400, 400, 400]);
+		expect(statuses.slice(5).every((status) => status === 429)).toBe(true);
+
+		await issue('nonce-afterflood');
+		expect(await redeem('203.0.113.9', 'nonce-afterflood')).toBe(429);
+
+		const realNow = Date.now.bind(Date);
+		jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 61_000);
+		await issue('nonce-afterflood2');
+		expect(await redeem('203.0.113.9', 'nonce-afterflood2')).toBe(200);
+	});
+
+	it('does not let one source spend the shared budget', async () => {
+		for (let index = 0; index < 10; index += 1) {
+			await from('198.51.100.1');
+		}
+		const others = [await from('198.51.100.2'), await from('198.51.100.3')];
+		expect(others).toEqual([400, 400]);
+	});
+
+	it('counts addresses in one IPv6 /64 as one source', async () => {
+		const statuses = [await from('2001:db8::1'), await from('2001:db8::2'), await from('2001:db8::3')];
+		expect(statuses).toEqual([400, 400, 429]);
+		expect(await from('2001:db8:0:1::1')).toBe(400);
 	});
 });
 
