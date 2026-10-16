@@ -24,7 +24,8 @@ if (!sendLovelace) {
 	process.exit(2);
 }
 const PORT = nodePort ?? '4001';
-const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
+const CARDANO_NODE_IMAGE =
+	'ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2';
 
 function log(m: string) {
 	console.log(`[l2-spend] ${new Date().toISOString().slice(11, 19)} ${m}`);

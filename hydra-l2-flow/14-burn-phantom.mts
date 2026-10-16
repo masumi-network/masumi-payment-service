@@ -41,7 +41,8 @@ const NETWORK = process.env.HYDRA_FLOW_NETWORK ?? 'devnet';
 const TARGET = BigInt(process.env.TARGET_L2_TOTAL ?? '0');
 const MIN_CHANGE = BigInt(process.env.MIN_CHANGE ?? '2000000');
 const FUNDS_SK = NETWORK === 'preprod' ? '/keys/purchasing-cardano.sk' : '/devnet/credentials/alice-funds.sk';
-const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
+const CARDANO_NODE_IMAGE =
+	'ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2';
 
 function log(m: string) {
 	console.log(`[burn-phantom] ${new Date().toISOString().slice(11, 19)} ${m}`);

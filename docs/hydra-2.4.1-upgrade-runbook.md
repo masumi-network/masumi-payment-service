@@ -163,3 +163,10 @@ match upstream's file.
   the script refuses to install a binary it cannot verify. The `HYDRA_BIN_TAG`
   path, for testing an unreleased commit, also refuses: it needs
   `HYDRA_BIN_TAG_SHA256`, the sha256 of that build's extracted `hydra-node`.
+- Every verified install writes `.bin/hydra-node[-<tag>].sha256`: the pin that
+  approved it, and the hash of the final file. The script runs an existing
+  binary only when the file matches that record and the recorded pin is one
+  this run is configured with. A binary with no record, such as one installed
+  before this check, is refused. Remove it and run `hydra-native.sh bin` to
+  download and verify it again. `gen-preprod-keys.sh` runs the same check
+  before it generates Hydra keys.

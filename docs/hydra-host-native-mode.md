@@ -93,13 +93,16 @@ checks the digest is present before it downloads. Upstream publishes no digest
 for a CI artifact, so the value was measured locally. Re-pin it when you move
 `HYDRA_VERSION`.
 
-The binary lands at `hydra-l2-flow/.bin/hydra-node`. An existing binary at that
-path is left alone: the script returns early rather than upgrading it, and
-prints nothing at all when it does. Silence therefore means the fetch replaced
-nothing, so check the version yourself:
+The binary lands at `hydra-l2-flow/.bin/hydra-node`, with a
+`hydra-node.sha256` record beside it. An existing binary at that path is not
+upgraded. The script checks it against that record and refuses to run it when
+the record is missing, the file changed, or the recorded pin is not one this run
+is configured with. Remove both files to fetch and verify it again. Silence
+means the fetch replaced nothing, so check the version through the script,
+which runs `--version` only on a verified binary:
 
 ```bash
-./hydra-l2-flow/.bin/hydra-node --version
+./hydra-l2-flow/hydra-native.sh status
 ```
 
 Both sides of a head must run the same version, so pin it rather than tracking
