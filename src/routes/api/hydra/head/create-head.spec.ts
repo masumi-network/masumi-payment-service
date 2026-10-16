@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import createHttpError from 'http-errors';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -164,6 +165,24 @@ describe('createBoundHydraHead', () => {
 			},
 			data: { hydraHeadId: 'head-1' },
 		});
+	});
+
+	it('links the invite inside the head transaction, after both participants are claimed', async () => {
+		const linkInvite = jest.fn(async (_tx: unknown, _hydraHeadId: string) => {});
+		await expect(createBoundHydraHead({ ...input, linkInvite })).resolves.toMatchObject({ id: 'head-1' });
+
+		expect(linkInvite).toHaveBeenCalledWith(transactionClient, 'head-1');
+		expect(linkInvite.mock.invocationCallOrder[0]).toBeGreaterThan(
+			mockClaimRemoteParticipant.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('fails the head transaction when the invite cannot be linked', async () => {
+		const linkInvite = jest.fn(async () => {
+			throw createHttpError(409, 'the invite was adopted or discarded concurrently');
+		});
+		await expect(createBoundHydraHead({ ...input, linkInvite })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockFindCreatedHead).not.toHaveBeenCalled();
 	});
 
 	it('rejects a participant belonging to another relation wallet', async () => {

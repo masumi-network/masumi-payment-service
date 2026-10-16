@@ -53,6 +53,35 @@ describe('decideL2ReservationRelease', () => {
 		).toEqual({ action: 'hold' });
 	});
 
+	// The snapshot an idle head stops on after a top-up still lists the deposit
+	// under utxoToCommit. Holding there waited for a snapshot only a nudge can
+	// produce, so the wallet stayed pinned for good.
+	it('awaits a newer snapshot when the only unreadable inputs are pending commits', () => {
+		expect(
+			decideL2ReservationRelease({
+				inputRefs: refs,
+				snapshotNumber: 10n,
+				baselineSnapshotNumber: undefined,
+				nudgeInputRef: null,
+				readVerifiedOutput: (reference) => (reference === refs[0] ? 'output-bytes' : null),
+				isPendingCommit: (reference) => reference === refs[1],
+			}),
+		).toEqual({ action: 'await-snapshot' });
+	});
+
+	it('still holds when one input is spent and another is a pending commit', () => {
+		expect(
+			decideL2ReservationRelease({
+				inputRefs: refs,
+				snapshotNumber: 10n,
+				baselineSnapshotNumber: undefined,
+				nudgeInputRef: null,
+				readVerifiedOutput: () => null,
+				isPendingCommit: (reference) => reference === refs[1],
+			}),
+		).toEqual({ action: 'hold' });
+	});
+
 	it('holds when no inputs were recorded', () => {
 		expect(
 			decideL2ReservationRelease({

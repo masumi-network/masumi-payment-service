@@ -11,7 +11,10 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { HydraTransactionRejectedError, HydraTransportError } from '@/lib/hydra/hydra/errors';
-import { requireHydraValidityUpperSlot } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
+import {
+	requireHydraInputRefs,
+	requireHydraValidityUpperSlot,
+} from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { connectPreviousAction, createNextPaymentAction, createNextPurchaseAction } from '@/services/shared';
 import { LOOKUP_DEFERRED_PREFIX } from '../lookup-defer';
 
@@ -74,12 +77,13 @@ export async function lockOpenHydraHeadForL2Reservation(
 
 type ReservedL2SubmissionCallbacks<TReservation> = {
 	signedTx: string;
-	reserve: (intendedTxHash: string, invalidHereafterSlot: bigint) => Promise<TReservation>;
+	reserve: (intendedTxHash: string, invalidHereafterSlot: bigint, inputRefs: string[]) => Promise<TReservation>;
 	submit: (signedTx: string) => Promise<string>;
 	finalize: (reservation: TReservation, txHash: string, intendedTxHash: string) => Promise<void>;
 	rollback: (reservation: TReservation, intendedTxHash: string) => Promise<void>;
 	resolveIntendedTxHash?: (signedTx: string) => string;
 	resolveValidityUpperSlot?: (signedTx: string) => bigint;
+	resolveInputRefs?: (signedTx: string) => string[];
 };
 
 /**
@@ -98,7 +102,8 @@ export async function executeReservedL2Submission<TReservation>(
 		callbacks.signedTx,
 	);
 	if (invalidHereafterSlot < 0n) throw new Error('L2 submission invalid_hereafter slot must be non-negative');
-	const reservation = await callbacks.reserve(intendedTxHash, invalidHereafterSlot);
+	const inputRefs = (callbacks.resolveInputRefs ?? requireHydraInputRefs)(callbacks.signedTx);
+	const reservation = await callbacks.reserve(intendedTxHash, invalidHereafterSlot, inputRefs);
 
 	let txHash: string;
 	try {
@@ -237,8 +242,8 @@ export async function submitReservedL2Action(
 	}
 	const outcome = await executeReservedL2Submission<L2ActionReservation>({
 		signedTx: params.signedTx,
-		reserve: async (intendedTxHash, invalidHereafterSlot) =>
-			await reserveL2Action(params, intendedTxHash, invalidHereafterSlot),
+		reserve: async (intendedTxHash, invalidHereafterSlot, inputRefs) =>
+			await reserveL2Action(params, intendedTxHash, invalidHereafterSlot, inputRefs),
 		submit: params.submitTx,
 		finalize: async (reservation, txHash, intendedTxHash) =>
 			await finalizeL2Action(params, reservation, txHash, intendedTxHash),
@@ -285,6 +290,7 @@ async function reserveL2Action(
 	params: SubmitReservedL2ActionParams,
 	intendedTxHash: string,
 	invalidHereafterSlot: bigint,
+	inputRefs: string[],
 ): Promise<L2ActionReservation> {
 	return await retryOnSerializationConflict(
 		() =>
@@ -295,6 +301,9 @@ async function reserveL2Action(
 						data: {
 							intendedTxHash,
 							invalidHereafterSlot,
+							// Without these, an ambiguous body can never be proven dead and
+							// its wallet stays pinned for good (decideL2ReservationRelease).
+							l2ReservationInputRefs: inputRefs,
 							status: TransactionStatus.Pending,
 							layer: TransactionLayer.L2,
 							l2ReservationPreviousActionId: params.nextActionId,

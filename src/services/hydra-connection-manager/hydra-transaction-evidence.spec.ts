@@ -17,6 +17,8 @@ import {
 	ScriptHash,
 	Transaction,
 	TransactionBody,
+	TransactionHash,
+	TransactionInput,
 	TransactionInputs,
 	TransactionOutput,
 	TransactionOutputs,
@@ -31,6 +33,7 @@ import {
 	hydraValidityLowerBoundTimeMs,
 	hydraValidityUpperBoundTimeMs,
 	parseHydraTransactionEvidence,
+	requireHydraInputRefs,
 } from './hydra-transaction-evidence';
 
 describe('canonical Hydra values', () => {
@@ -240,5 +243,31 @@ describe('parseHydraTransactionEvidence', () => {
 		const transaction = Transaction.new(body, witnessSet);
 
 		expect(parseHydraTransactionEvidence(Buffer.from(transaction.to_bytes()).toString('hex'))).toBeNull();
+	});
+});
+
+describe('requireHydraInputRefs', () => {
+	it('returns each signed body input as the lowercase snapshot key', () => {
+		const inputs = TransactionInputs.new();
+		inputs.add(TransactionInput.new(TransactionHash.from_hex('AB'.repeat(32)), 0));
+		inputs.add(TransactionInput.new(TransactionHash.from_hex('cd'.repeat(32)), 3));
+		const body = TransactionBody.new(inputs, TransactionOutputs.new(), BigNum.from_str('0'));
+		const transaction = Transaction.new(body, TransactionWitnessSet.new());
+
+		expect([...requireHydraInputRefs(transaction.to_hex())].sort()).toEqual([
+			`${'ab'.repeat(32)}#0`,
+			`${'cd'.repeat(32)}#3`,
+		]);
+	});
+
+	it('throws for a body without inputs', () => {
+		const body = TransactionBody.new(TransactionInputs.new(), TransactionOutputs.new(), BigNum.from_str('0'));
+		const transaction = Transaction.new(body, TransactionWitnessSet.new());
+
+		expect(() => requireHydraInputRefs(transaction.to_hex())).toThrow('parseable signed body with inputs');
+	});
+
+	it('throws for unparseable CBOR', () => {
+		expect(() => requireHydraInputRefs('not-cbor')).toThrow('parseable signed body with inputs');
 	});
 });

@@ -22,7 +22,7 @@ import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
-import { readVerifiedCurrentOutput } from './node-current-output';
+import { isVerifiedPendingCommitOutput, readVerifiedCurrentOutput } from './node-current-output';
 import {
 	HydraCommandOptions,
 	awaitHydraTxConfirmation,
@@ -411,6 +411,12 @@ export class HydraNode extends EventEmitter {
 	getVerifiedCurrentOutput(reference: string, expectedSnapshotNumber: bigint): string | null {
 		// prettier-ignore
 		return readVerifiedCurrentOutput(this.hasVerifiedPinnedSessions, this._live.status, this._replay.verifiedSnapshot, reference, expectedSnapshotNumber);
+	}
+
+	/** The verified snapshot still holds this output as an unfolded deposit; see `isVerifiedPendingCommitOutput`. */
+	isVerifiedPendingCommitOutput(reference: string, expectedSnapshotNumber: bigint): boolean {
+		// prettier-ignore
+		return isVerifiedPendingCommitOutput(this.hasVerifiedPinnedSessions, this._live.status, this._replay.verifiedSnapshot, reference, expectedSnapshotNumber);
 	}
 
 	/** Newest replay-verified snapshot number. Snapshot confirmations never advance `HydraHead.latestSnapshotNumber`. */

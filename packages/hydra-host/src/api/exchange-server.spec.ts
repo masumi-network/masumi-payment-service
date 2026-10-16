@@ -4,7 +4,14 @@ import type { Server } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createExchangePlane, exchangeRequestSource, OVERFLOW_SOURCE, rateLimitKey } from './exchange-server.js';
+import {
+	createExchangePlane,
+	exchangeRequestSource,
+	OVERFLOW_SOURCE,
+	rateLimitKey,
+	type ExchangeDeps,
+	rateLimitSource,
+} from './exchange-server.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 
 // The keys are the real shape a `.vk` envelope carries — `5820` and 32 bytes —
@@ -24,6 +31,9 @@ let store: ExchangeStore;
 let base: string;
 let dataDir: string;
 let onRedeemed: jest.Mock<(nonce: string, hostNodeId: string) => Promise<void>>;
+// Transport tests do not sign bodies; real signatures are covered in
+// redemption-signature.spec.ts.
+let verifyRedemption: jest.Mock<ExchangeDeps['verifyRedemption']>;
 
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
@@ -68,7 +78,8 @@ beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-exchange-'));
 	store = new ExchangeStore(dataDir);
 	onRedeemed = jest.fn(async () => undefined) as typeof onRedeemed;
-	server = createExchangePlane({ store, logger, onRedeemed });
+	verifyRedemption = jest.fn<ExchangeDeps['verifyRedemption']>(async () => true);
+	server = createExchangePlane({ store, logger, onRedeemed, verifyRedemption });
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -126,7 +137,13 @@ describe('search-engine exclusion', () => {
 	// robots.txt must be answered ahead of the limiter: a 429/5xx robots.txt is
 	// a temporary full crawl block that would hide the noindex header.
 	it('serves robots.txt even when the rate limiter is saturated', async () => {
-		const limited = createExchangePlane({ store, logger, onRedeemed, limits: { requestsPerMinute: 1 } });
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			limits: { requestsPerMinute: 1 },
+		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
 		const limitedBase = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
 		try {
@@ -184,6 +201,32 @@ describe('redeeming an invite', () => {
 		});
 		expect(second.status).toBe(409);
 		expect(onRedeemed).toHaveBeenCalledTimes(1);
+	});
+
+	it('refuses a redemption whose signature does not verify, leaving the nonce open', async () => {
+		await issue('nonce-ffffffff');
+		verifyRedemption.mockResolvedValueOnce(false);
+
+		const refused = await post('/exchange/redeem', {
+			nonce: 'nonce-ffffffff',
+			redeemer: MATERIAL,
+			signature: SIGNATURE,
+		});
+		expect(refused.status).toBe(401);
+		expect(refused.body).toEqual({ error: 'signature does not verify' });
+		expect(verifyRedemption).toHaveBeenCalledWith('nonce-ffffffff', MATERIAL, SIGNATURE);
+		expect(onRedeemed).not.toHaveBeenCalled();
+		const [invite] = await store.listInvites();
+		expect(invite?.redeemedAt).toBeNull();
+		expect(invite?.redeemer).toBeNull();
+
+		// The real redeemer can still use it.
+		const accepted = await post('/exchange/redeem', {
+			nonce: 'nonce-ffffffff',
+			redeemer: MATERIAL,
+			signature: SIGNATURE,
+		});
+		expect(accepted.status).toBe(200);
 	});
 
 	it('refuses a nonce it never issued', async () => {
@@ -252,7 +295,7 @@ describe('redeeming an invite', () => {
 describe('public surface hardening', () => {
 	it('rate-limits the anonymous endpoint before work reaches the store', async () => {
 		await new Promise<void>((resolve) => server.close(() => resolve()));
-		server = createExchangePlane({ store, logger, onRedeemed, limits: { requestsPerMinute: 1 } });
+		server = createExchangePlane({ store, logger, onRedeemed, verifyRedemption, limits: { requestsPerMinute: 1 } });
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 		base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
@@ -339,6 +382,99 @@ describe('rateLimitKey', () => {
 	});
 });
 
+describe('rateLimitSource', () => {
+	it('keeps IPv4 sources as they are', () => {
+		expect(rateLimitSource('198.51.100.1')).toBe('198.51.100.1');
+		expect(rateLimitSource('unknown')).toBe('unknown');
+	});
+
+	it('unwraps IPv4 mapped into IPv6', () => {
+		expect(rateLimitSource('::ffff:198.51.100.1')).toBe('198.51.100.1');
+		expect(rateLimitSource('::ffff:c633:6401')).toBe('198.51.100.1');
+		expect(rateLimitSource('0:0:0:0:0:FFFF:198.51.100.1')).toBe('198.51.100.1');
+		expect(rateLimitSource('0::ffff:198.51.100.1%eth0')).toBe('198.51.100.1');
+	});
+
+	it('groups every address in one IPv6 /64', () => {
+		const key = rateLimitSource('2001:db8:1:2::1');
+		expect(key).toBe('2001:db8:1:2::/64');
+		expect(rateLimitSource('2001:db8:1:2:ffff:ffff:ffff:ffff')).toBe(key);
+		expect(rateLimitSource('2001:0DB8:0001:0002:0:0:0:9')).toBe(key);
+		expect(rateLimitSource('2001:db8:1:2::1%eth0')).toBe(key);
+	});
+
+	it('separates different IPv6 /64s', () => {
+		expect(rateLimitSource('2001:db8:1:3::1')).not.toBe(rateLimitSource('2001:db8:1:2::1'));
+		expect(rateLimitSource('::1')).toBe('0:0:0:0::/64');
+		expect(rateLimitSource('2001:db8::')).toBe('2001:db8:0:0::/64');
+		expect(rateLimitSource('64:ff9b::198.51.100.1')).toBe('64:ff9b:0:0::/64');
+	});
+});
+
+describe('total request budget', () => {
+	let limited: Server;
+	let url: string;
+
+	beforeEach(async () => {
+		limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			trustProxy: true,
+			limits: { requestsPerMinute: 2, totalRequestsPerMinute: 5 },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		url = `http://127.0.0.1:${(limited.address() as AddressInfo).port}/exchange/redeem`;
+	});
+
+	afterEach(async () => {
+		jest.restoreAllMocks();
+		limited.closeAllConnections();
+		await new Promise<void>((resolve) => limited.close(() => resolve()));
+	});
+
+	const from = (source: string, body = '{}') =>
+		fetch(url, { method: 'POST', headers: { Connection: 'close', 'X-Forwarded-For': source }, body }).then(
+			(response) => response.status,
+		);
+	const redeem = (source: string, nonce: string) =>
+		from(source, JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }));
+
+	it('stops a flood from many distinct addresses, then still serves a redemption', async () => {
+		const statuses: number[] = [];
+		// Each address sends once, far under its own limit of 2, so only the
+		// total budget can refuse them.
+		for (let index = 1; index <= 20; index += 1) {
+			statuses.push(await from(`198.51.100.${index}`));
+		}
+		expect(statuses.slice(0, 5)).toEqual([400, 400, 400, 400, 400]);
+		expect(statuses.slice(5).every((status) => status === 429)).toBe(true);
+
+		await issue('nonce-afterflood');
+		expect(await redeem('203.0.113.9', 'nonce-afterflood')).toBe(429);
+
+		const realNow = Date.now.bind(Date);
+		jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 61_000);
+		await issue('nonce-afterflood2');
+		expect(await redeem('203.0.113.9', 'nonce-afterflood2')).toBe(200);
+	});
+
+	it('does not let one source spend the shared budget', async () => {
+		for (let index = 0; index < 10; index += 1) {
+			await from('198.51.100.1');
+		}
+		const others = [await from('198.51.100.2'), await from('198.51.100.3')];
+		expect(others).toEqual([400, 400]);
+	});
+
+	it('counts addresses in one IPv6 /64 as one source', async () => {
+		const statuses = [await from('2001:db8::1'), await from('2001:db8::2'), await from('2001:db8::3')];
+		expect(statuses).toEqual([400, 400, 429]);
+		expect(await from('2001:db8:0:1::1')).toBe(400);
+	});
+});
+
 /**
  * `no such invite`, `already redeemed` and `expired` are three answers, and the
  * difference tells a caller whether a nonce they guessed exists. A real
@@ -395,7 +531,7 @@ describe('incomplete redemption bodies', () => {
 	}
 
 	it('keeps redemption slots available while bodies remain incomplete', async () => {
-		const limited = createExchangePlane({ store, logger, onRedeemed, limits: { maxInFlight: 1 } });
+		const limited = createExchangePlane({ store, logger, onRedeemed, verifyRedemption, limits: { maxInFlight: 1 } });
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
 		const socket = await openIncomplete(limited);
 		try {
@@ -418,6 +554,7 @@ describe('incomplete redemption bodies', () => {
 			store,
 			logger,
 			onRedeemed,
+			verifyRedemption,
 			trustProxy: true,
 			limits: { maxInFlight: 16, ...{ maxBodyReaders: 2, maxBodyReadersPerSource: 1 } },
 		});
@@ -447,6 +584,7 @@ describe('incomplete redemption bodies', () => {
 			store,
 			logger,
 			onRedeemed,
+			verifyRedemption,
 			limits: { maxInFlight: 1, ...{ bodyTimeoutMs: 40, maxBodyReaders: 1 } },
 		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));

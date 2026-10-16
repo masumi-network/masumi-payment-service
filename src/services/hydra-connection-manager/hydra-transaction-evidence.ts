@@ -284,3 +284,16 @@ export function requireHydraValidityUpperSlot(cborHex: string): bigint {
 	}
 	return evidence.validityUpperSlot;
 }
+
+/**
+ * Require the signed body's input references, in the snapshot's `txHash#index`
+ * key form. A durable L2 reservation stores them: release proves an ambiguous
+ * body dead only by finding its inputs unspent after expiry.
+ */
+export function requireHydraInputRefs(cborHex: string): string[] {
+	const evidence = parseHydraTransactionEvidence(cborHex);
+	if (evidence == null || evidence.inputs.length === 0) {
+		throw new Error('L2 submission requires a parseable signed body with inputs');
+	}
+	return evidence.inputs.map((input) => `${input.txHash}#${input.outputIndex}`.toLowerCase());
+}
