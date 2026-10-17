@@ -62,6 +62,7 @@ type OrphanWhere = {
 	};
 };
 
+let hostPausedAt: Date | null = null;
 const host = { id: 'host', baseUrl: 'https://host.example', encryptedAdminToken: 'token', allowInsecureHttp: false };
 const redeemer = {
 	walletAddress: 'addr_redeemer',
@@ -130,7 +131,10 @@ function id(prefix: string): string {
 }
 
 const tables = {
-	hydraHost: { findMany: async () => [host] },
+	hydraHost: {
+		findMany: async ({ where }: { where: { pausedAt?: null } }) =>
+			where.pausedAt === null && hostPausedAt !== null ? [] : [host],
+	},
 	hydraHeadInvite: {
 		findUnique: async ({ where }: { where: { nonce: string } }) =>
 			state.invite.nonce === where.nonce
@@ -417,6 +421,20 @@ beforeEach(() => {
 	writes = 0;
 	crashAt = null;
 	crashed = false;
+	hostPausedAt = null;
+});
+
+describe('issuer adoption on a paused host', () => {
+	// A paused Host must take no new head; the redemption waits, it is not lost.
+	it('defers adoption until the host resumes', async () => {
+		hostPausedAt = new Date();
+		expect(await pollHydraRedemptions()).toMatchObject({ polled: 0, adopted: 0 });
+		expect(state.heads).toHaveLength(0);
+
+		hostPausedAt = null;
+		expect(await pollHydraRedemptions()).toMatchObject({ adopted: 1, rejected: 0 });
+		expectAdoptedOnce();
+	});
 });
 
 describe('issuer adoption interrupted at each write', () => {
