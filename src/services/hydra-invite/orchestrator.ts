@@ -24,6 +24,7 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { logger } from '@masumi/payment-core/logger';
+import { nonceLogRef } from './nonce-log-ref';
 import { createBoundHydraHead } from '@/routes/api/hydra/head/create-head';
 import { registerInviteOnHost, setHostNodePeers, startHostNode } from '@/services/hydra-host/client';
 import { deriveNodeCardanoVkey } from './node-keys';
@@ -530,7 +531,7 @@ export async function redeemHeadInvite(input: {
 		throw createHttpError(500, 'hydra: head was created without its invite row');
 	}
 
-	logger.info(`hydra: redeemed invite ${payload.nonce} from ${payload.issuerWalletAddress}`);
+	logger.info(`hydra: redeemed invite ${nonceLogRef(payload.nonce)} from ${payload.issuerWalletAddress}`);
 	return { inviteId, hydraHeadId: head.hydraHeadId, issuerWalletAddress: payload.issuerWalletAddress };
 }
 

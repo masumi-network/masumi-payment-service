@@ -13,6 +13,7 @@ import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { logger } from '@masumi/payment-core/logger';
+import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -75,7 +76,7 @@ async function request(
 	path: string,
 	token: string,
 	transport: HostTransportOptions,
-	init: { method?: string; body?: unknown; idempotencyKey?: string } = {},
+	init: { method?: string; body?: unknown; idempotencyKey?: string; logPath?: string } = {},
 ): Promise<unknown> {
 	// Built before the try: a malformed stored token throws here, and wrapping it
 	// below would report a credential problem as an unreachable host.
@@ -102,7 +103,7 @@ async function request(
 		if (!response.ok) {
 			const detail = isPlainObject(parsed) ? (getOwnString(parsed, 'error') ?? text) : text;
 			throw new HydraHostRequestError(
-				`${init.method ?? 'GET'} ${path} on the hydra host failed (${response.status}): ${detail}`,
+				`${init.method ?? 'GET'} ${init.logPath ?? path} on the hydra host failed (${response.status}): ${detail}`,
 				response.status,
 			);
 		}
@@ -428,5 +429,9 @@ export async function forgetHostInvite(
 	nonce: string,
 	transport: HostTransportOptions,
 ): Promise<void> {
-	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, transport, { method: 'DELETE' });
+	// The error message ends up in logs while the nonce may still be redeemable.
+	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, transport, {
+		method: 'DELETE',
+		logPath: `/v1/invites/${nonceLogRef(nonce)}`,
+	});
 }
