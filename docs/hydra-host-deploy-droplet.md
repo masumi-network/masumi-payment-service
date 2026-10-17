@@ -199,7 +199,8 @@ dependency; Docker cannot.
 [Unit]
 Description=Hydra Host
 Requires=docker.service
-After=docker.service network-online.target
+Wants=nftables.service hydra-peer-firewall.timer
+After=docker.service network-online.target nftables.service
 RequiresMountsFor=/mnt/hydra_data
 
 [Service]
@@ -207,6 +208,7 @@ Type=simple
 Restart=always
 RestartSec=10
 TimeoutStopSec=270
+ExecStartPre=/usr/local/sbin/hydra-peer-firewall baseline
 ExecStart=/usr/bin/docker start --attach hydra-host
 ExecStop=/usr/bin/docker stop --timeout 250 hydra-host
 
@@ -218,6 +220,18 @@ WantedBy=multi-user.target
 is not mounted, so a Host never comes up on an empty registry.
 `TimeoutStopSec` must exceed the `docker stop` timeout, or systemd kills the
 client while the drain is still running.
+
+`ExecStartPre` is the firewall gate. Before every start, including each
+`Restart=always` restart, it loads a ruleset that refuses the whole peer range.
+Then it reads the loaded ruleset back. If `nft` fails, or the loaded table does
+not refuse the range on both hooks, the script exits non-zero and systemd does
+not start the container. No accept rule from an earlier run survives a restart.
+The refresh timer in [section 4](#4-the-firewall) opens each peered port again
+after the Host answers. Install the script and the timer before you enable this
+unit.
+
+`After=nftables.service` matters at boot. A distribution `nftables.conf` that
+starts with `flush ruleset` would otherwise delete the baseline after it loads.
 
 ```bash
 systemctl daemon-reload
@@ -272,35 +286,78 @@ must already be configured to set `--peer`.
 The Host emits the rules and does not apply them. The container cannot alter the
 firewall of the machine it runs on, and should not try.
 
-Save this as `/usr/local/sbin/hydra-peer-rules`, because you will run it often:
+[`packages/hydra-host/scripts/hydra-peer-firewall`](../packages/hydra-host/scripts/hydra-peer-firewall)
+applies them. Install it with its settings and the admin token:
 
 ```bash
-#!/bin/bash
-set -euo pipefail
-umask 077
-
-DEST=/etc/nftables.d/hydra-peer.nft
-TMP="$DEST.new"
-mkdir -p /etc/nftables.d
-
-curl -fsS \
-  -H "Authorization: Bearer $HYDRA_HOST_ADMIN_TOKEN" \
-  http://127.0.0.1:8443/v1/peer-allowlist \
-  | python3 -c 'import json,sys; sys.stdout.write(json.load(sys.stdin)["nftables"])' \
-  > "$TMP"
-
-test -s "$TMP"      # refuse an empty or truncated fetch
-nft -c -f "$TMP"    # syntax check
-mv "$TMP" "$DEST"
-nft -f "$DEST"
+install -o root -g root -m 755 packages/hydra-host/scripts/hydra-peer-firewall /usr/local/sbin/hydra-peer-firewall
+install -o root -g root -m 600 /dev/null /srv/hydra/admin-token
+# Paste the admin token, then Ctrl-D.
+cat > /srv/hydra/admin-token
+cat > /etc/default/hydra-peer-firewall <<'EOF'
+HYDRA_PEER_PORT_START=5001
+HYDRA_PEER_PORT_COUNT=32
+HYDRA_ADMIN_TOKEN_FILE=/srv/hydra/admin-token
+EOF
 ```
 
-The temporary file and the `test -s` both matter, and `nft -c` alone does not
-replace them. The generated ruleset opens with `add table` and `flush
-table`, so a fetch that dies after those two lines leaves a file that is
-perfectly valid syntax and that flushes every accept rule. Written straight to
-the destination and applied, that empties the table and opens the whole peer
-range. Fetch to one side, prove the file is non-empty, then move it into place.
+The port range must match `HYDRA_HOST_PEER_PORT_START` and
+`HYDRA_HOST_PEER_PORT_COUNT`. `refresh` compares it with the `peerRange` the
+Host reports and refuses a mismatch.
+
+It has three commands:
+
+| Command    | What it does                                                                                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `baseline` | Loads a ruleset that refuses the whole peer range. The `ExecStartPre` of the Host unit runs it.                                    |
+| `refresh`  | Fetches `GET /v1/peer-allowlist`, checks the file, applies it, and persists it to `/etc/nftables.d/hydra-peer.nft`.                |
+| `verify`   | Reads the loaded ruleset and exits 0 only if both the `input` and `forward` chains refuse the range. Prints `verified` on success. |
+
+`baseline` and `refresh` both end with `verify`. A command that cannot prove the
+loaded state exits non-zero. A failed fetch leaves the loaded ruleset unchanged.
+
+`refresh` refuses a file that does not refuse the range on exactly two hooks or
+that does not end with the closing brace. `nft -c` alone does not catch this.
+The generated ruleset opens with `add table` and `flush table`, so a fetch that
+dies after those two lines leaves a file that is valid syntax and that flushes
+every rule. Applied, that file opens the whole peer range.
+
+Refresh on a timer, so membership and DNS changes reach the firewall without an
+operator. `/etc/systemd/system/hydra-peer-firewall.service`:
+
+```ini
+[Unit]
+Description=Refresh the Hydra Host peer firewall
+After=hydra-host.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hydra-peer-firewall refresh
+```
+
+`/etc/systemd/system/hydra-peer-firewall.timer`:
+
+```ini
+[Unit]
+Description=Refresh the Hydra Host peer firewall every 30 seconds
+
+[Timer]
+OnActiveSec=15s
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable --now hydra-peer-firewall.timer
+```
+
+The script takes a lock, so a manual `refresh` and a timer run never apply at
+the same time. A refresh fails while the Host is down. That is expected, and the
+loaded ruleset stays as it is.
 
 What the generated ruleset does:
 
@@ -315,15 +372,21 @@ What the generated ruleset does:
   are never interpolated into nftables syntax, so a syntactically valid hostname
   cannot change the meaning of the ruleset.
 
-**Re-apply the ruleset whenever peer membership or DNS changes.** That means
-after every provision, every invite redemption, every node removal, and whenever
-a counterparty's address moves. The `add` plus `flush` plus declarations are one
-`nft` transaction, so an update replaces every prior accept rule with no
-fail-open interval.
+**The timer re-applies the ruleset at most 30 seconds after peer membership or
+DNS changes.** To close that window, run
+`systemctl start hydra-peer-firewall.service` right after every provision, every
+invite redemption and every node removal. The `add` plus `flush` plus
+declarations are one `nft` transaction, so an update replaces every prior accept
+rule with no fail-open interval.
+
+The 30-second window is the remaining exposure. If a node is removed and a new
+node takes its port, the old counterparty's address can reach the new port until
+the next refresh.
 
 Persist it across reboots the way your distribution expects, for example by
 including `/etc/nftables.d/hydra-peer.nft` from `/etc/nftables.conf` and enabling
-`nftables.service`.
+`nftables.service`. A `systemctl reload nftables` then restores the last applied
+ruleset, and the next refresh corrects it.
 
 ## 5. TLS and the load balancer
 
