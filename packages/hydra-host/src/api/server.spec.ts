@@ -36,10 +36,12 @@ let dataDir: string;
 let server: Server;
 let baseUrl: string;
 let counter: number;
+let warnings: string[];
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-api-'));
 	counter = 0;
+	warnings = [];
 	const config = { ...loadHostConfig(env), dataDir };
 	const store = new NodeRegistryStore(dataDir);
 	const ports = new PortAllocator(config.ports);
@@ -61,7 +63,13 @@ beforeEach(async () => {
 		ports,
 		supervisor,
 		provision,
-		logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		logger: {
+			info: () => undefined,
+			warn: (message: string) => {
+				warnings.push(message);
+			},
+			error: () => undefined,
+		},
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -111,6 +119,13 @@ describe('control plane auth', () => {
 		expect(await response.json()).toMatchObject({
 			exchangeUrl: 'https://exchange.hydra1.example.com:8444/exchange',
 		});
+	});
+
+	it('logs a refused invite route with a digest, never the open nonce', async () => {
+		expect((await call('DELETE', '/v1/invites/nonce123456', { token: USER })).status).toBe(403);
+
+		expect(warnings).toEqual([expect.stringContaining('DELETE /v1/invites/sha256:575140b1803e rejected')]);
+		expect(warnings.join('\n')).not.toContain('nonce123456');
 	});
 
 	it('404s an unknown path without revealing whether a token would help', async () => {
