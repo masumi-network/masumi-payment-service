@@ -357,6 +357,17 @@ describe('advanceHydraHostPause', () => {
 		expect(await stopsSentOnNextCycle()).toBe(2);
 	});
 
+	// One timeout per cycle, not one per node, so the lease does not keep Resume out.
+	it('stops trying the other nodes when the host does not answer at all', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockStopHostNode.mockRejectedValueOnce(new FakeHostRequestError('could not reach the hydra host', null));
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		expect(mockStopHostNode).toHaveBeenCalledTimes(1);
+		expect(await stopsSentOnNextCycle()).toBe(2);
+	});
+
 	it('treats a node the host no longer has as stopped', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
 		mockStopHostNode.mockRejectedValueOnce(new FakeHostRequestError('failed (404): no such node: node-a', 404));

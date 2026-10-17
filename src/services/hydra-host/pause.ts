@@ -366,7 +366,12 @@ async function stopPausedNodes(hostId: string, options: { force: boolean }): Pro
 			try {
 				await stopHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
 			} catch (error) {
-				if (!isNodeGone(error)) failures.push(`${nodeId}: ${errorMessage(error)}`);
+				if (isNodeGone(error)) continue;
+				failures.push(`${nodeId}: ${errorMessage(error)}`);
+				// No answer at all, as while the Host redeploys: the next node would
+				// wait out the same timeout, and the lease would keep Resume out for
+				// a timeout per node.
+				if (error instanceof HydraHostRequestError && error.status === null) break;
 			}
 		}
 		if (failures.length > 0) {
