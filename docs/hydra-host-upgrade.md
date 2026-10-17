@@ -133,6 +133,13 @@ can press **Resume** again.
 Nodes that were already stopped before the pause are started too, because the
 pause recorded every node that had a head.
 
+A node reserved for an invite that nobody has redeemed yet has no head, so the
+pause does not stop it. It keeps running, and the Host still accepts a
+redemption. The redeemer can then post Init with this node in the head, while
+the service records that head only after Resume. Before an upgrade, revoke the
+invites that are still open on the Host, or wait until they are redeemed or
+expire.
+
 ## How long a pause can last
 
 Keep the pause as short as you can. Three limits apply:
