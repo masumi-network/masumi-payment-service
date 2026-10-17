@@ -11,7 +11,8 @@
  * nudge, which spends the body's wallet inputs, appeared in a verified snapshot
  * or in the fanned-out final snapshot of a Final head (see
  * `./l2-reservation-recovery`, `./final-l2-reservation-release` and
- * `./l2-release-nudge-proof`).
+ * `./l2-release-nudge-proof`). An admin can release a reservation with no proof
+ * as `proof: 'operator'` (`./operator-l2-reservation-release`).
  */
 
 import {
@@ -75,7 +76,7 @@ export function purchaseL2ActionRetry(action: PurchasingAction | undefined): Pur
 export async function releaseRejectedL2Reservation(
 	reservation: ReleasableL2Reservation,
 	database: typeof prisma,
-	proof: 'head-rejection' | 'spent-by-release-nudge',
+	proof: 'head-rejection' | 'spent-by-release-nudge' | 'operator',
 ): Promise<boolean> {
 	try {
 		return await database.$transaction(
@@ -148,7 +149,8 @@ export async function releaseRejectedL2Reservation(
 					data: {
 						status: TransactionStatus.RolledBack,
 						lastCheckedAt: new Date(),
-						...(proof === 'head-rejection' ? {} : { l2ReleasedByInputProofAt: new Date() }),
+						...(proof === 'spent-by-release-nudge' ? { l2ReleasedByInputProofAt: new Date() } : {}),
+						...(proof === 'operator' ? { l2ReleasedByOperatorAt: new Date() } : {}),
 					},
 				});
 

@@ -150,6 +150,8 @@ import {
 	consolidateHeadPost,
 	getSnapshotRoundGet,
 	resetSnapshotRoundPost,
+	listL2ReservationsGet,
+	releaseL2ReservationPost,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
@@ -567,6 +569,11 @@ export const apiRouter: Routing = {
 				'snapshot-round': {
 					get: getSnapshotRoundGet,
 					reset: { post: resetSnapshotRoundPost },
+				},
+				// Expired L2 reservations no proof can release, and the admin's release.
+				'l2-reservations': {
+					get: listL2ReservationsGet,
+					release: { post: releaseL2ReservationPost },
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
