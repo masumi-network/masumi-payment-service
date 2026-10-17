@@ -413,7 +413,9 @@ Include `/etc/nftables.d/hydra-peer.nft` from `/etc/nftables.conf`, after any
 distribution `nftables.conf` usually starts with `flush ruleset`, so without the
 include a `systemctl reload nftables` deletes the peer table and opens the range
 until the next refresh. With the include, the reload restores the last applied
-ruleset. Include that one file by name, not a glob over the directory.
+ruleset. Include that one file by name, not a glob over the directory. Run
+`hydra-peer-firewall baseline` once before you add the include: nft refuses the
+whole `nftables.conf` when an included file does not exist.
 
 With the gates and the include in place, one window stays open, for at most 30
 seconds. If a node is removed and a new node takes its port, the old

@@ -41,7 +41,8 @@ fail() {
 	exit 1
 }
 
-[[ "$START" =~ ^[0-9]+$ && "$COUNT" =~ ^[0-9]+$ ]] || fail 'peer port start and count must be integers'
+# No leading zeros: $(( )) would read 05001 as octal and refuse the wrong range.
+[[ "$START" =~ ^[1-9][0-9]*$ && "$COUNT" =~ ^[1-9][0-9]*$ ]] || fail 'peer port start and count must be positive integers'
 LAST=$((START + COUNT - 1))
 ((START >= 1 && COUNT >= 1 && LAST <= 65535)) || fail "peer port range $START+$COUNT is invalid"
 # nft rejects a zero-size interval such as 5001-5001.
@@ -78,20 +79,24 @@ check_ruleset_file() {
 	[[ "$(grep -vE '^[[:space:]]*$' "$TMP" | tail -n 1)" == '}' ]] || fail 'the new ruleset is truncated'
 }
 
-# A drop rule alone is not enough: an earlier accept without a source set
-# would make it dead. Require the drop to be the last rule, and every accept to
-# be scoped by `ip saddr`.
+# The only shapes the Host renders. nft lists a one-element set as a plain
+# address, so both forms are allowed.
+ACCEPT_RULE='^tcp dport [0-9]+ ip saddr (\{ [0-9.]+(, [0-9.]+)* \}|[0-9.]+) accept$'
+
+# A drop rule alone is not enough: an earlier broad accept would make it dead.
+# Require the drop to be the last rule and every other rule to be a
+# source-scoped accept. No `grep -q` in a pipeline here: under pipefail its
+# early exit can fail the pipeline and turn a match into a pass.
 verify_loaded() {
-	local hook chain rules
+	local hook chain rules bad
 	for hook in input forward; do
 		chain=$(nft list chain $TABLE "$hook" 2>/dev/null) || fail "table $TABLE has no $hook chain loaded"
 		grep -qE "type filter hook $hook " <<<"$chain" || fail "chain $hook is not on the $hook hook"
-		rules=$(grep -vE '^[[:space:]]*(table |chain |type |}|#|$)' <<<"$chain" || true)
-		[[ "$(tail -n 1 <<<"$rules" | sed -E 's/^[[:space:]]+//')" == "tcp dport $RANGE drop" ]] ||
+		rules=$(grep -vE '^[[:space:]]*(table |chain |type |}|#|$)' <<<"$chain" | sed -E 's/^[[:space:]]+//' || true)
+		[[ "$(tail -n 1 <<<"$rules")" == "tcp dport $RANGE drop" ]] ||
 			fail "chain $hook does not end by refusing $RANGE"
-		if grep -E 'accept$' <<<"$rules" | grep -qv 'ip saddr {'; then
-			fail "chain $hook accepts peer traffic without a source set"
-		fi
+		bad=$(sed '$d' <<<"$rules" | grep -vE "$ACCEPT_RULE" || true)
+		[[ -z "$bad" ]] || fail "chain $hook has a rule other than a source-scoped accept: ${bad%%$'\n'*}"
 	done
 }
 

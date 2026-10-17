@@ -129,7 +129,7 @@ describe('hydra-peer-firewall verify', () => {
 		loadChains(rules, rules);
 		const result = run('verify');
 		expect(result.status).toBe(1);
-		expect(result.stderr).toContain('chain input accepts peer traffic without a source set');
+		expect(result.stderr).toContain('chain input has a rule other than a source-scoped accept: tcp dport 5001 accept');
 	});
 
 	it('refuses a chain whose last rule is not the range drop', () => {
@@ -140,8 +140,22 @@ describe('hydra-peer-firewall verify', () => {
 		expect(result.stderr).toContain('chain input does not end by refusing 5001-5004');
 	});
 
+	// nft lists a one-element anonymous set as a plain address.
+	it('accepts a single-address accept the way nft lists it', () => {
+		const rules = ['tcp dport 5001 ip saddr 203.0.113.7 accept', 'tcp dport 5001-5004 drop'];
+		loadChains(rules, rules);
+		expect(run('verify')).toEqual({ status: 0, stdout: 'verified\n', stderr: '' });
+	});
+
+	it('refuses a port setting with a leading zero, which bash reads as octal', () => {
+		const result = run('baseline', { HYDRA_PEER_PORT_START: '05001' });
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('must be positive integers');
+		expect(existsSync(join(dir, 'loaded.nft'))).toBe(false);
+	});
+
 	it('accepts source-scoped accepts before the range drop', () => {
-		const rules = ['tcp dport 5001 ip saddr { 203.0.113.7 } accept', 'tcp dport 5001-5004 drop'];
+		const rules = ['tcp dport 5001 ip saddr { 203.0.113.7, 203.0.113.8 } accept', 'tcp dport 5001-5004 drop'];
 		loadChains(rules, rules);
 		expect(run('verify')).toEqual({ status: 0, stdout: 'verified\n', stderr: '' });
 	});
