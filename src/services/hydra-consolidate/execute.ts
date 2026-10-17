@@ -130,6 +130,9 @@ export async function executeHydraConsolidation(headId: string): Promise<Execute
 		// Again, right before sending: a withdrawal takes no wallet lock, so one
 		// may have started while this was being built.
 		await assertNoActiveWithdrawal(localParticipant.id);
+		// And the pause: this self-send leaves no row the pause can count as in
+		// flight, so a pause that started during the build must stop it here.
+		await assertHydraHeadHostNotPaused(head.id);
 		releaseLock = false;
 		try {
 			await hydraHead.newTx({ type: HydraTransactionType.TxConwayEra, description: '', cborHex: signedTx });

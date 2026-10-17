@@ -13,8 +13,10 @@ const mockIsTxConfirmed = jest.fn() as AnyMock;
 const mockTxIn = jest.fn() as AnyMock;
 const mockTxOut = jest.fn() as AnyMock;
 
+const mockAssertNotPaused = jest.fn(async () => undefined) as AnyMock;
+
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
-	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	assertHydraHeadHostNotPaused: mockAssertNotPaused,
 	isHydraHeadOnPausedHost: jest.fn(async () => false),
 	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),
 	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
@@ -132,6 +134,8 @@ function releaseCalls() {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	// Reset, not cleared: an unused Once answer must not leak into the next test.
+	mockAssertNotPaused.mockReset().mockResolvedValue(undefined);
 	mockHeadFindUnique.mockResolvedValue(HEAD);
 	mockWalletUpdateMany.mockResolvedValue({ count: 1 });
 	mockDecommitFindFirst.mockResolvedValue(null);
@@ -194,6 +198,17 @@ describe('executeHydraConsolidation', () => {
 		mockDecommitFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'decommit-1' });
 
 		await expect(executeHydraConsolidation('head-1')).rejects.toMatchObject({ status: 409 });
+		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(releaseCalls()).toHaveLength(1);
+	});
+
+	it('refuses and releases the lock when the host is paused mid-build', async () => {
+		mockAssertNotPaused
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(Object.assign(new Error('paused'), { status: 409 }));
+
+		await expect(executeHydraConsolidation('head-1')).rejects.toMatchObject({ status: 409 });
+		expect(mockAssertNotPaused).toHaveBeenCalledTimes(2);
 		expect(mockNewTx).not.toHaveBeenCalled();
 		expect(releaseCalls()).toHaveLength(1);
 	});
