@@ -368,6 +368,22 @@ describe('advanceHydraHostPause', () => {
 		expect(await stopsSentOnNextCycle()).toBe(2);
 	});
 
+	// A head that forms while the stops keep failing is stopped and recorded too.
+	it('adds a late-forming head on a resend, fenced on the recorded stop', async () => {
+		const requestedAt = new Date('2026-10-17T10:05:00.000Z');
+		mockHostFindMany.mockResolvedValue([{ id: 'host-1' }]);
+		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: requestedAt }));
+		mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-c' }]);
+
+		await pause.runHydraHostPauseCycle();
+
+		expect(mockHostUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseStopRequestedAt: requestedAt },
+			data: { pausedNodeIds: ['node-a', 'node-b', 'node-c'], pauseStopRequestedAt: requestedAt },
+		});
+		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b', 'node-c']);
+	});
+
 	it('treats a node the host no longer has as stopped', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
 		mockStopHostNode.mockRejectedValueOnce(new FakeHostRequestError('failed (404): no such node: node-a', 404));

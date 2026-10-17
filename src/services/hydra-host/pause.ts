@@ -334,25 +334,23 @@ async function stopPausedNodes(hostId: string, options: { force: boolean }): Pro
 		const stopRequestedAt = host.pauseStopRequestedAt;
 		if (stopRequestedAt !== null && fullyStoppedPauses.get(hostId) === stopRequestedAt.getTime()) return;
 
-		let nodeIds = host.pausedNodeIds;
-		let requestedAt = stopRequestedAt;
-		if (requestedAt === null) {
-			if (!options.force && hasInFlightWork(await countInFlight(hostId))) return;
+		if (stopRequestedAt === null && !options.force && hasInFlightWork(await countInFlight(hostId))) return;
 
-			// A head can still form after the pause started: an adoption or a
-			// redemption already past its own pause check. Its node is stopped too,
-			// and recorded first so Resume starts it again.
-			const participants = await prisma.hydraLocalParticipant.findMany({
-				where: { hydraHostId: hostId, hydraHeadId: { not: null } },
-				select: { hostNodeId: true },
-			});
-			nodeIds = [...new Set([...host.pausedNodeIds, ...participants.map((row) => row.hostNodeId)])];
-			// Recorded before the first stop, not after the last: from here on every
-			// guard treats the nodes as down, and a stop that fails, forced or not,
-			// is sent again on the next cycle.
-			requestedAt = new Date();
+		// A head can still form after the pause started, or while its stops keep
+		// failing: an adoption or a redemption already past its own pause check.
+		// Its node is stopped too, and recorded first so Resume starts it again.
+		const participants = await prisma.hydraLocalParticipant.findMany({
+			where: { hydraHostId: hostId, hydraHeadId: { not: null } },
+			select: { hostNodeId: true },
+		});
+		const nodeIds = [...new Set([...host.pausedNodeIds, ...participants.map((row) => row.hostNodeId)])];
+		// Recorded before the first stop, not after the last: from here on every
+		// guard treats the nodes as down, and a stop that fails, forced or not,
+		// is sent again on the next cycle.
+		const requestedAt = stopRequestedAt ?? new Date();
+		if (stopRequestedAt === null || nodeIds.length !== host.pausedNodeIds.length) {
 			const recorded = await prisma.hydraHost.updateMany({
-				where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: null },
+				where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: stopRequestedAt },
 				data: { pausedNodeIds: nodeIds, pauseStopRequestedAt: requestedAt },
 			});
 			// The pause ended under an overrun lease. Stopping now would stop the
