@@ -30,18 +30,7 @@ import {
 	HYDRA_HOST_PAUSED_MESSAGE,
 	isHydraHeadOnPausedHostLocked,
 } from '@/services/hydra-host/pause';
-
-/**
- * After this, a Preparing row is treated as abandoned.
- *
- * Nothing resolves such a row on its own: it has no deposit hash, so
- * reconciliation has nothing to look for, and the request that owns it is long
- * gone. Since Preparing also blocks the next top-up, leaving it would let one
- * crashed carve wedge the head's deposits for good. Comfortably longer than the
- * carve's own confirmation budget, so a slow chain is never mistaken for a
- * crash.
- */
-const PREPARING_STALE_AFTER_MS = 30 * 60 * 1000;
+import { PREPARING_STALE_AFTER_MS } from './stale';
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
