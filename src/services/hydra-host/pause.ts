@@ -320,10 +320,13 @@ async function stopPausedNodes(hostId: string, options: { force: boolean }): Pro
 		});
 		const nodeIds = [...new Set([...host.pausedNodeIds, ...participants.map((row) => row.hostNodeId)])];
 		if (nodeIds.length !== host.pausedNodeIds.length) {
-			await prisma.hydraHost.updateMany({
+			const recorded = await prisma.hydraHost.updateMany({
 				where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: null },
 				data: { pausedNodeIds: nodeIds },
 			});
+			// The pause ended under an overrun lease. Stopping now would stop the
+			// nodes of an active Host.
+			if (recorded.count === 0) return;
 		}
 
 		const adminToken = decrypt(host.encryptedAdminToken);
