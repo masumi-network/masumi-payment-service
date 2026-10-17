@@ -32,7 +32,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			updateMany: mockHostUpdateMany,
 			findMany: mockHostFindMany,
 		},
-		hydraLocalParticipant: { findUnique: mockParticipantFindUnique },
+		hydraLocalParticipant: { findUnique: mockParticipantFindUnique, findMany: mockParticipantFindMany },
 		transaction: { count: mockTransactionCount },
 		hydraTopup: { count: mockTopupCount },
 		hydraDecommit: { count: mockDecommitCount },
@@ -97,6 +97,7 @@ beforeEach(() => {
 	jest.clearAllMocks();
 	setInFlight(0);
 	mockHostUpdateMany.mockResolvedValue({ count: 1 });
+	mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }, { hostNodeId: 'node-b' }]);
 	mockStopHostNode.mockResolvedValue(undefined);
 	mockStartHostNode.mockResolvedValue(undefined);
 	mockFetchHostNodeHealth.mockResolvedValue({ state: 'Stopped' });
@@ -174,6 +175,20 @@ describe('advanceHydraHostPause', () => {
 		await pause.advanceHydraHostPause('host-1', { force: true });
 
 		expect(mockStopHostNode).toHaveBeenCalledTimes(2);
+	});
+
+	// Its node would otherwise run through the upgrade, and Resume would not know it.
+	it('also stops and records a node whose head formed after the pause started', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }, { hostNodeId: 'node-c' }]);
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		expect(mockHostUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseStopRequestedAt: null },
+			data: { pausedNodeIds: ['node-a', 'node-b', 'node-c'] },
+		});
+		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b', 'node-c']);
 	});
 
 	// A partial stop must be retried, so it cannot be recorded as requested.

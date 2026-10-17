@@ -291,9 +291,24 @@ async function stopPausedNodes(hostId: string, options: { force: boolean }): Pro
 		if (host.pausedAt === null || host.pauseStopRequestedAt !== null || host.encryptedAdminToken === null) return;
 		if (!options.force && hasInFlightWork(await countInFlight(hostId))) return;
 
+		// A head can still form after the pause started: an adoption or a
+		// redemption already past its own pause check. Its node is stopped too,
+		// and recorded first so Resume starts it again.
+		const participants = await prisma.hydraLocalParticipant.findMany({
+			where: { hydraHostId: hostId, hydraHeadId: { not: null } },
+			select: { hostNodeId: true },
+		});
+		const nodeIds = [...new Set([...host.pausedNodeIds, ...participants.map((row) => row.hostNodeId)])];
+		if (nodeIds.length !== host.pausedNodeIds.length) {
+			await prisma.hydraHost.updateMany({
+				where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: null },
+				data: { pausedNodeIds: nodeIds },
+			});
+		}
+
 		const adminToken = decrypt(host.encryptedAdminToken);
 		const failures: string[] = [];
-		for (const nodeId of host.pausedNodeIds) {
+		for (const nodeId of nodeIds) {
 			try {
 				await stopHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
 			} catch (error) {
