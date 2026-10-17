@@ -20,6 +20,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
+import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 
 export type DepositRecovery = {
 	/** Null while the top-up is still being prepared and has no deposit yet. */
@@ -83,6 +84,10 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			reason: 'this deposit has not settled yet, so there is nothing to recover',
 		};
 	}
+
+	// The node posts a new L1 transaction, which a paused Host must not do. The
+	// deposit waits at its script, so recovering after Resume loses nothing.
+	await assertHydraHeadHostNotPaused(topup.hydraHeadId);
 
 	const manager = getHydraConnectionManager();
 	const node = manager.getNode(topup.hydraHeadId);
