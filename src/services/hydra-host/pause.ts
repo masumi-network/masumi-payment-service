@@ -109,6 +109,22 @@ export async function isHydraHeadOnPausedHostLocked(
 	return rows[0]?.pausedAt != null;
 }
 
+/**
+ * For work a pause waits for: refuse only once the pause records its stop.
+ * While it drains, that work must still be able to finish, or it would drain
+ * forever. After the stop, the node is down and a request to it proves nothing.
+ */
+export async function assertHydraHeadHostNotStopping(hydraHeadId: string): Promise<void> {
+	const participant = await prisma.hydraLocalParticipant.findUnique({
+		where: { hydraHeadId },
+		select: { HydraHost: { select: { pausedAt: true, pauseStopRequestedAt: true } } },
+	});
+	const host = participant?.HydraHost;
+	if (host?.pausedAt != null && host.pauseStopRequestedAt !== null) {
+		throw createHttpError(409, `${HYDRA_HOST_PAUSED_MESSAGE} and its nodes are stopped; resume it first`);
+	}
+}
+
 /** For routes: refuse to start new work on a head whose Host is paused. */
 export async function assertHydraHeadHostNotPaused(hydraHeadId: string): Promise<void> {
 	if (await isHydraHeadOnPausedHost(hydraHeadId)) {

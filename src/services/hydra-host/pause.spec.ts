@@ -442,6 +442,25 @@ describe('runHydraHostPauseCycle', () => {
 	});
 });
 
+describe('assertHydraHeadHostNotStopping', () => {
+	it('allows drain work while the pause only drains, and on an active host', async () => {
+		mockParticipantFindUnique
+			.mockResolvedValueOnce({ HydraHost: { pausedAt: PAUSED_AT, pauseStopRequestedAt: null } })
+			.mockResolvedValueOnce({ HydraHost: { pausedAt: null, pauseStopRequestedAt: null } });
+
+		await expect(pause.assertHydraHeadHostNotStopping('head-1')).resolves.toBeUndefined();
+		await expect(pause.assertHydraHeadHostNotStopping('head-1')).resolves.toBeUndefined();
+	});
+
+	it('refuses once the pause has recorded its stop', async () => {
+		mockParticipantFindUnique.mockResolvedValue({
+			HydraHost: { pausedAt: PAUSED_AT, pauseStopRequestedAt: PAUSED_AT },
+		});
+
+		await expect(pause.assertHydraHeadHostNotStopping('head-1')).rejects.toMatchObject({ status: 409 });
+	});
+});
+
 describe('assertHydraHeadHostNotPaused', () => {
 	it('refuses new work on a head whose Host is paused', async () => {
 		mockParticipantFindUnique.mockResolvedValue({ HydraHost: { pausedAt: PAUSED_AT } });
