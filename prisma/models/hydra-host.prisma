@@ -54,6 +54,12 @@ model HydraHost {
   scriptCatalogueHash String?
   ledgerParamsHash    String?
 
+  /// Project release the Host image was built from (`git describe` form), from
+  /// the last probe. A label for the operator; never checked for placement.
+  releaseVersion String?
+  /// Commit the Host image was built from, from the last probe.
+  releaseCommit  String?
+
   /// Port this Host serves its Exchange Plane on, as the Host itself reports it.
   ///
   /// A property of the Host, not of this service: an invite's redemption URL is
