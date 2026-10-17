@@ -56,15 +56,25 @@ ARG HYDRA_IMAGE_DIGEST=sha256:608ae9b336209a18d7f3c42f7ca2d73c51dcb1b90732e533dd
 ARG ETCD_VERSION=3.5.34
 ARG ETCD_SHA256_AMD64=eb10a9f3c8d547c4a76c8c39ab6bcd56e95c8da6aec86d4136e433ef6d39977b
 ARG ETCD_SHA256_ARM64=e08e07095a6aa670b2c93774107abcc1fe113942b175cf3e40ecdf69787ced60
+# Socket Firewall Free (sfw) proxies the control plane's registry installs and
+# blocks known malicious packages before they land. The release binary is
+# pinned directly: the `sfw` npm wrapper always fetches the latest release, so
+# it pins nothing, and installing it would itself be an unproxied install.
+ARG SFW_VERSION=1.15.4
+ARG SFW_SHA256_AMD64=cf9f55b8343e1ef6e6dcccdb09b99c70c0430a22ed7d0079286eccddeaf72670
+ARG SFW_SHA256_ARM64=c8c80aa582829f24f5d633f2c3f2ccd0b070bbee80bf3b956e5e2a9880184e20
 FROM ghcr.io/cardano-scaling/hydra-node@${HYDRA_IMAGE_DIGEST} AS hydra-upstream
 
 # ---------------------------------------------------------------------------
-# Fetch the pinned etcd binary.
+# Fetch the pinned etcd and sfw binaries.
 # ---------------------------------------------------------------------------
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS binaries
 ARG ETCD_VERSION
 ARG ETCD_SHA256_AMD64
 ARG ETCD_SHA256_ARM64
+ARG SFW_VERSION
+ARG SFW_SHA256_AMD64
+ARG SFW_SHA256_ARM64
 ARG TARGETARCH
 
 RUN apt-get update \
@@ -87,6 +97,17 @@ RUN set -eux; \
 	chmod +x /out/etcd; \
 	/out/etcd --version
 
+RUN set -eux; \
+	case "${TARGETARCH}" in \
+		amd64) SFW_ARCH=x86_64; SFW_SHA256="${SFW_SHA256_AMD64}" ;; \
+		arm64) SFW_ARCH=arm64; SFW_SHA256="${SFW_SHA256_ARM64}" ;; \
+		*) echo "no pinned sfw checksum for linux/${TARGETARCH}" >&2; exit 1 ;; \
+	esac; \
+	curl --proto '=https' --tlsv1.2 -fsSL -o /out/sfw \
+		"https://github.com/SocketDev/sfw-free/releases/download/v${SFW_VERSION}/sfw-free-linux-${SFW_ARCH}"; \
+	echo "${SFW_SHA256}  /out/sfw" | sha256sum -c -; \
+	chmod +x /out/sfw
+
 # ---------------------------------------------------------------------------
 # Build the control plane.
 # ---------------------------------------------------------------------------
@@ -99,7 +120,11 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # install fails with ENOENT on the patch.
 COPY patches ./patches
 COPY packages/hydra-host/package.json packages/hydra-host/
-RUN pnpm install --filter @masumi/hydra-host --frozen-lockfile
+COPY --from=binaries /out/sfw /usr/local/bin/sfw
+# Corepack downloads pnpm itself on this first call, and it ignores sfw's proxy
+# variables unless NODE_USE_ENV_PROXY=1 is set. Verified: without the flag a
+# dead HTTPS_PROXY does not stop the pnpm download.
+RUN NODE_USE_ENV_PROXY=1 sfw pnpm install --filter @masumi/hydra-host --frozen-lockfile
 # Only what the build and runtime need. The root .dockerignore excludes only the
 # root node_modules and dist, so copying the whole package directory would
 # carry a developer's own packages/hydra-host/node_modules (pnpm symlinks into
