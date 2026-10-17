@@ -166,6 +166,9 @@ export async function nudgeIdleHeadForRelease(params: {
 		if (signedTx === null) return false;
 		const head = params.head === undefined ? getHydraConnectionManager().getHead(hydraHeadId) : params.head;
 		if (!head) return false;
+		// Not refused on a paused Host, unlike new L2 work: the reservation is a
+		// Pending L2 transaction, which a pause waits for, and this nudge is what
+		// settles it. Refusing it would leave the pause draining forever.
 		const txHash = await head.newTx({ type: HydraTransactionType.TxConwayEra, description: '', cborHex: signedTx });
 		logger.info('[HydraReconcile] sent release nudge for an expired L2 reservation', {
 			hydraHeadId,
