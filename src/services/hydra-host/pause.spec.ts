@@ -191,6 +191,17 @@ describe('advanceHydraHostPause', () => {
 		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b', 'node-c']);
 	});
 
+	// An overrun lease let Resume end the pause; stopping now would hit an active Host.
+	it('stops nothing when the pause ended before the new nodes were recorded', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-c' }]);
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		expect(mockStopHostNode).not.toHaveBeenCalled();
+	});
+
 	// A row its own claim would fail is resolved only by a new request, which the
 	// pause refuses, so waiting for it would drain forever.
 	it('does not wait for top-ups and withdrawals their own claims treat as abandoned', async () => {
