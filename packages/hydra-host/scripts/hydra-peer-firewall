@@ -1,0 +1,162 @@
+#!/bin/bash
+# Keep the Hydra Host peer plane behind a verified nftables ruleset.
+#
+# The peer plane is unauthenticated etcd raft. The Host renders its allow-list
+# at GET /v1/peer-allowlist but cannot apply it, so this script runs on the
+# machine, as root, outside the container.
+#
+#   baseline  Load a ruleset that refuses the whole peer range, then verify it.
+#             Run before the Host starts, so no accept rule from an earlier run
+#             survives a restart.
+#   refresh   Fetch the allow-list, check it, apply it, then verify it. Run on a
+#             timer and after every membership change.
+#   verify    Exit 0 only if the loaded ruleset refuses the peer range on both
+#             the input and forward hooks. Prints "verified" on success.
+#
+# Settings come from /etc/default/hydra-peer-firewall, or the environment:
+#   HYDRA_PEER_PORT_START   first peer port (default 5001)
+#   HYDRA_PEER_PORT_COUNT   number of peer ports (default 32)
+#   HYDRA_ADMIN_TOKEN_FILE  root-owned file holding the admin token (refresh)
+#   HYDRA_CONTROL_URL       Control Plane base URL (default http://127.0.0.1:8443)
+#   HYDRA_PEER_RULES_FILE   persisted ruleset (default /etc/nftables.d/hydra-peer.nft)
+#   HYDRA_PEER_LOCK_FILE    lock file (default /run/hydra-peer-firewall.lock)
+set -euo pipefail
+umask 077
+
+CONFIG_FILE=${HYDRA_PEER_FIREWALL_CONFIG:-/etc/default/hydra-peer-firewall}
+if [[ -r "$CONFIG_FILE" ]]; then
+	# shellcheck source=/dev/null
+	source "$CONFIG_FILE"
+fi
+
+START=${HYDRA_PEER_PORT_START:-5001}
+COUNT=${HYDRA_PEER_PORT_COUNT:-32}
+CONTROL_URL=${HYDRA_CONTROL_URL:-http://127.0.0.1:8443}
+DEST=${HYDRA_PEER_RULES_FILE:-/etc/nftables.d/hydra-peer.nft}
+LOCK=${HYDRA_PEER_LOCK_FILE:-/run/hydra-peer-firewall.lock}
+TABLE='inet hydra_peer'
+
+fail() {
+	echo "hydra-peer-firewall: $*" >&2
+	exit 1
+}
+
+# No leading zeros: $(( )) would read 05001 as octal and refuse the wrong range.
+[[ "$START" =~ ^[1-9][0-9]*$ && "$COUNT" =~ ^[1-9][0-9]*$ ]] || fail 'peer port start and count must be positive integers'
+LAST=$((START + COUNT - 1))
+((START >= 1 && COUNT >= 1 && LAST <= 65535)) || fail "peer port range $START+$COUNT is invalid"
+# nft rejects a zero-size interval such as 5001-5001.
+if ((START == LAST)); then
+	RANGE="$START"
+else
+	RANGE="$START-$LAST"
+fi
+TMP="$DEST.new"
+RESPONSE="$DEST.response"
+
+render_baseline() {
+	local hook
+	echo '#!/usr/sbin/nft -f'
+	echo '# Written by hydra-peer-firewall baseline. Refuses the whole peer range.'
+	echo "add table $TABLE"
+	echo "flush table $TABLE"
+	echo "table $TABLE {"
+	for hook in input forward; do
+		echo "	chain $hook {"
+		echo "		type filter hook $hook priority filter; policy accept;"
+		echo "		tcp dport $RANGE drop"
+		echo '	}'
+	done
+	echo '}'
+}
+
+# A fetch cut off after `add table` + `flush table` is valid syntax that opens
+# the range. Require the drop rule on both hooks and the closing brace.
+check_ruleset_file() {
+	[[ -s "$TMP" ]] || fail 'the new ruleset is empty'
+	[[ "$(grep -cE "^[[:space:]]*tcp dport $RANGE drop$" "$TMP")" == 2 ]] ||
+		fail "the new ruleset does not refuse $RANGE on exactly two hooks"
+	[[ "$(grep -vE '^[[:space:]]*$' "$TMP" | tail -n 1)" == '}' ]] || fail 'the new ruleset is truncated'
+}
+
+# The only shapes the Host renders. nft lists a one-element set as a plain
+# address, so both forms are allowed.
+ACCEPT_RULE='^tcp dport [0-9]+ ip saddr (\{ [0-9.]+(, [0-9.]+)* \}|[0-9.]+) accept$'
+
+# A drop rule alone is not enough: an earlier broad accept would make it dead.
+# Require the drop to be the last rule and every other rule to be a
+# source-scoped accept. No `grep -q` in a pipeline here: under pipefail its
+# early exit can fail the pipeline and turn a match into a pass.
+verify_loaded() {
+	local hook chain rules bad
+	for hook in input forward; do
+		chain=$(nft list chain $TABLE "$hook" 2>/dev/null) || fail "table $TABLE has no $hook chain loaded"
+		grep -qE "type filter hook $hook " <<<"$chain" || fail "chain $hook is not on the $hook hook"
+		rules=$(grep -vE '^[[:space:]]*(table |chain |type |}|#|$)' <<<"$chain" | sed -E 's/^[[:space:]]+//' || true)
+		[[ "$(tail -n 1 <<<"$rules")" == "tcp dport $RANGE drop" ]] ||
+			fail "chain $hook does not end by refusing $RANGE"
+		bad=$(sed '$d' <<<"$rules" | grep -vE "$ACCEPT_RULE" || true)
+		[[ -z "$bad" ]] || fail "chain $hook has a rule other than a source-scoped accept: ${bad%%$'\n'*}"
+	done
+}
+
+# Check, persist, apply, verify. The persisted copy is what nftables.service
+# loads at boot or reload.
+install_ruleset() {
+	check_ruleset_file "$TMP"
+	nft -c -f "$TMP" || fail 'nft rejected the ruleset'
+	mv "$TMP" "$DEST"
+	nft -f "$DEST" || fail 'nft failed to apply the ruleset'
+	verify_loaded
+}
+
+# The temporary files sit next to $DEST, so a wide nftables include glob could
+# load a rejected one at the next boot. Remove them on every exit.
+with_lock() {
+	exec 9>"$LOCK"
+	flock 9
+	trap 'rm -f "$TMP" "$RESPONSE"' EXIT
+	mkdir -p "$(dirname "$DEST")"
+	"$@"
+}
+
+do_baseline() {
+	render_baseline >"$TMP"
+	install_ruleset
+}
+
+do_refresh() {
+	local token_file=${HYDRA_ADMIN_TOKEN_FILE:-}
+	[[ -n "$token_file" && -s "$token_file" ]] || fail 'HYDRA_ADMIN_TOKEN_FILE must name a non-empty file'
+
+	# printf is a builtin, so the token never appears in a process argv.
+	if ! printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$token_file")" |
+		curl -fsS --max-time 20 -H @- "$CONTROL_URL/v1/peer-allowlist" >"$RESPONSE"; then
+		fail 'could not fetch the peer allow-list; the loaded ruleset is unchanged'
+	fi
+
+	# The Host must manage the same range this machine refuses, or ports the
+	# Host uses would sit outside the default-deny.
+	if ! python3 -c '
+import json, sys
+body = json.load(open(sys.argv[1]))
+peer_range = body["peerRange"]
+if peer_range["start"] != int(sys.argv[2]) or peer_range["count"] != int(sys.argv[3]):
+    sys.exit("Host peer range %s+%s does not match %s+%s" % (peer_range["start"], peer_range["count"], sys.argv[2], sys.argv[3]))
+for rule in body["rules"]:
+    for error in rule.get("resolutionErrors", []):
+        print("hydra-peer-firewall: %s: %s: %s" % (rule["nodeId"], error["host"], error["reason"]), file=sys.stderr)
+sys.stdout.write(body["nftables"])
+' "$RESPONSE" "$START" "$COUNT" >"$TMP"; then
+		fail 'the peer allow-list response is invalid; the loaded ruleset is unchanged'
+	fi
+	install_ruleset
+}
+
+case "${1:-}" in
+baseline) with_lock do_baseline ;;
+refresh) with_lock do_refresh ;;
+verify) verify_loaded ;;
+*) fail 'usage: hydra-peer-firewall baseline|refresh|verify' ;;
+esac
+echo verified
