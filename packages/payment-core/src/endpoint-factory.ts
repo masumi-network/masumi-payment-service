@@ -16,9 +16,9 @@ const getPublicErrorMessage = (error: HttpError): string =>
 		: error.message;
 
 // Request payloads reach this logger verbatim on any 5xx, and several endpoints carry
-// credentials in the body: wallet mnemonics (payment-source-extended create/patch),
-// Hydra invite codes (preview/redeem take `code`, still redeemable until used),
-
+// credentials in the body: wallet mnemonics (payment-source-extended create/patch)
+// and Hydra invite codes (preview/redeem take `code`, redeemable until used).
+// Redact sensitive-looking keys so their values are not logged with the request payload.
 const SENSITIVE_KEY_PATTERN =
 	/mnemonic|passphrase|password|secret|private[_-]?key|signing[_-]?key|seed|encryption[_-]?key|api[_-]?key|token|signature|authoriz|auth(?!or)|credential|bearer|x[_-]?payment[_-]?header|^code$|invite[_-]?code/i;
 
