@@ -191,6 +191,35 @@ describe('advanceHydraHostPause', () => {
 		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b', 'node-c']);
 	});
 
+	// A row its own claim would fail is resolved only by a new request, which the
+	// pause refuses, so waiting for it would drain forever.
+	it('does not wait for top-ups and withdrawals their own claims treat as abandoned', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		const before = Date.now();
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		const topupWhere = mockTopupCount.mock.calls[0][0].where as {
+			OR: [{ status: string; createdAt: { gte: Date } }, { status: { in: string[] } }];
+		};
+		expect(topupWhere.OR[0].status).toBe('Preparing');
+		expect(before - topupWhere.OR[0].createdAt.gte.getTime()).toBeGreaterThanOrEqual(30 * 60_000 - 1000);
+		expect(topupWhere.OR[1].status.in).toEqual(['Pending', 'Confirmed']);
+
+		const decommitWhere = mockDecommitCount.mock.calls[0][0].where as {
+			OR: [
+				{ status: string; createdAt: { gte: Date } },
+				{ status: string; updatedAt: { gte: Date } },
+				{ status: string },
+			];
+		};
+		expect(decommitWhere.OR[0].status).toBe('Preparing');
+		expect(before - decommitWhere.OR[0].createdAt.gte.getTime()).toBeGreaterThanOrEqual(10 * 60_000 - 1000);
+		expect(decommitWhere.OR[1].status).toBe('Pending');
+		expect(before - decommitWhere.OR[1].updatedAt.gte.getTime()).toBeGreaterThanOrEqual(60 * 60_000 - 1000);
+		expect(decommitWhere.OR[2]).toEqual({ status: 'Approved' });
+	});
+
 	// A partial stop must be retried, so it cannot be recorded as requested.
 	it('records nothing when a stop fails, so the next cycle asks again', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());

@@ -35,6 +35,11 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
 import { fetchHostNodeHealth, HydraHostRequestError, startHostNode, stopHostNode } from './client';
+import { PREPARING_STALE_AFTER_MS as TOPUP_PREPARING_STALE_AFTER_MS } from '@/services/hydra-topup/stale';
+import {
+	PENDING_STALE_AFTER_MS as DECOMMIT_PENDING_STALE_AFTER_MS,
+	PREPARING_STALE_AFTER_MS as DECOMMIT_PREPARING_STALE_AFTER_MS,
+} from '@/services/hydra-decommit/stale';
 
 export const HYDRA_HOST_PAUSED_MESSAGE = 'hydra host is paused for maintenance';
 
@@ -56,15 +61,6 @@ export type HydraHostPauseState = {
 	inFlight: HydraHostPauseInFlight;
 	nodes: Array<{ nodeId: string; state: string | null; error: string | null }>;
 };
-
-/** Top-ups the node still has to act on: building, posted, or confirmed but not yet absorbed. */
-const IN_FLIGHT_TOPUP_STATUSES = [HydraTopupStatus.Preparing, HydraTopupStatus.Pending, HydraTopupStatus.Confirmed];
-/** Withdrawals the node still has to act on: an approved decommit is posted to L1 by the node. */
-const IN_FLIGHT_WITHDRAWAL_STATUSES = [
-	HydraDecommitStatus.Preparing,
-	HydraDecommitStatus.Pending,
-	HydraDecommitStatus.Approved,
-];
 
 const HTTP_NOT_FOUND = 404;
 /**
@@ -122,12 +118,36 @@ export async function assertHydraHeadHostNotPaused(hydraHeadId: string): Promise
 
 async function countInFlight(hostId: string): Promise<HydraHostPauseInFlight> {
 	const onHost = { LocalParticipant: { hydraHostId: hostId } };
+	// A row its own claim would fail as abandoned is not waited for: nothing but
+	// a new request resolves it, and the pause refuses new requests.
+	const nowMs = Date.now();
+	const since = (ms: number) => new Date(nowMs - ms);
 	const [l2Transactions, topups, withdrawals, closingHeads] = await Promise.all([
 		prisma.transaction.count({
 			where: { layer: TransactionLayer.L2, status: TransactionStatus.Pending, HydraHead: onHost },
 		}),
-		prisma.hydraTopup.count({ where: { status: { in: IN_FLIGHT_TOPUP_STATUSES }, HydraHead: onHost } }),
-		prisma.hydraDecommit.count({ where: { status: { in: IN_FLIGHT_WITHDRAWAL_STATUSES }, HydraHead: onHost } }),
+		prisma.hydraTopup.count({
+			where: {
+				HydraHead: onHost,
+				OR: [
+					{ status: HydraTopupStatus.Preparing, createdAt: { gte: since(TOPUP_PREPARING_STALE_AFTER_MS) } },
+					{ status: { in: [HydraTopupStatus.Pending, HydraTopupStatus.Confirmed] } },
+				],
+			},
+		}),
+		prisma.hydraDecommit.count({
+			where: {
+				HydraHead: onHost,
+				OR: [
+					{
+						status: HydraDecommitStatus.Preparing,
+						createdAt: { gte: since(DECOMMIT_PREPARING_STALE_AFTER_MS) },
+					},
+					{ status: HydraDecommitStatus.Pending, updatedAt: { gte: since(DECOMMIT_PENDING_STALE_AFTER_MS) } },
+					{ status: HydraDecommitStatus.Approved },
+				],
+			},
+		}),
 		prisma.hydraHead.count({
 			where: {
 				LocalParticipant: { hydraHostId: hostId },
