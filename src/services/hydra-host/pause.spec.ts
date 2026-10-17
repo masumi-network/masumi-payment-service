@@ -93,8 +93,30 @@ function setInFlight(l2: number, topups = 0, withdrawals = 0, closingHeads = 0) 
 	mockHeadCount.mockResolvedValue(closingHeads);
 }
 
+/** The stop time the first advance recorded. */
+function recordedStopAt(): Date {
+	const write = mockHostUpdateMany.mock.calls.find(
+		(call) => (call[0] as { data: { pauseStopRequestedAt?: Date } }).data.pauseStopRequestedAt instanceof Date,
+	);
+	if (!write) throw new Error('no stop was recorded');
+	return (write[0] as { data: { pauseStopRequestedAt: Date } }).data.pauseStopRequestedAt;
+}
+
+/** How many stops the next scheduler cycle sends for the pause just advanced. */
+async function stopsSentOnNextCycle(): Promise<number> {
+	const requestedAt = recordedStopAt();
+	mockStopHostNode.mockClear();
+	mockHostFindMany.mockResolvedValue([{ id: 'host-1' }]);
+	mockHostFindUnique.mockResolvedValue(
+		hostRow({ pausedNodeIds: ['node-a', 'node-b'], pauseStopRequestedAt: requestedAt }),
+	);
+	await pause.runHydraHostPauseCycle();
+	return mockStopHostNode.mock.calls.length;
+}
+
 beforeEach(() => {
 	jest.clearAllMocks();
+	pause.resetHydraHostPauseMemory();
 	setInFlight(0);
 	mockHostUpdateMany.mockResolvedValue({ count: 1 });
 	mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }, { hostNodeId: 'node-b' }]);
@@ -156,16 +178,18 @@ describe('pauseHydraHost', () => {
 });
 
 describe('advanceHydraHostPause', () => {
-	it('stops every paused node once nothing is in flight, then records the request', async () => {
+	// Recorded first, so every guard treats the nodes as down before the first stop.
+	it('records the stop, then stops every paused node once nothing is in flight', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
 
-		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b']);
 		expect(mockHostUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseStopRequestedAt: null },
-			data: { pauseStopRequestedAt: expect.any(Date) },
+			data: { pausedNodeIds: ['node-a', 'node-b'], pauseStopRequestedAt: expect.any(Date) },
 		});
+		expect(mockHostUpdateMany.mock.invocationCallOrder[1]).toBeLessThan(mockStopHostNode.mock.invocationCallOrder[0]);
+		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b']);
 	});
 
 	it('stops at once when forced, even with work in flight', async () => {
@@ -186,7 +210,7 @@ describe('advanceHydraHostPause', () => {
 
 		expect(mockHostUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseStopRequestedAt: null },
-			data: { pausedNodeIds: ['node-a', 'node-b', 'node-c'] },
+			data: { pausedNodeIds: ['node-a', 'node-b', 'node-c'], pauseStopRequestedAt: expect.any(Date) },
 		});
 		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b', 'node-c']);
 	});
@@ -231,16 +255,26 @@ describe('advanceHydraHostPause', () => {
 		expect(decommitWhere.OR[2]).toEqual({ status: 'Approved' });
 	});
 
-	// A partial stop must be retried, so it cannot be recorded as requested.
-	it('records nothing when a stop fails, so the next cycle asks again', async () => {
+	// A forced stop that partly failed must not wait for the drain it skipped.
+	it('sends a failed stop again on the next cycle, even with work in flight', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
+		setInFlight(0, 1);
 		mockStopHostNode.mockRejectedValueOnce(new Error('host down'));
+		await pause.advanceHydraHostPause('host-1', { force: true });
+		const requestedAt = recordedStopAt();
 
-		await pause.advanceHydraHostPause('host-1', { force: false });
-
-		expect(mockHostUpdateMany).not.toHaveBeenCalledWith(
-			expect.objectContaining({ data: { pauseStopRequestedAt: expect.any(Date) } }),
+		mockStopHostNode.mockClear();
+		mockHostFindMany.mockResolvedValue([{ id: 'host-1' }]);
+		mockHostFindUnique.mockResolvedValue(
+			hostRow({ pausedNodeIds: ['node-a', 'node-b'], pauseStopRequestedAt: requestedAt }),
 		);
+		await pause.runHydraHostPauseCycle();
+		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b']);
+
+		// Every stop now succeeded, so the cycle after stops asking.
+		mockStopHostNode.mockClear();
+		await pause.runHydraHostPauseCycle();
+		expect(mockStopHostNode).not.toHaveBeenCalled();
 	});
 
 	// A stopped node cannot contest a close or post the fanout.
@@ -320,10 +354,7 @@ describe('advanceHydraHostPause', () => {
 		);
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
-
-		expect(mockHostUpdateMany).not.toHaveBeenCalledWith(
-			expect.objectContaining({ data: { pauseStopRequestedAt: expect.any(Date) } }),
-		);
+		expect(await stopsSentOnNextCycle()).toBe(2);
 	});
 
 	it('treats a node the host no longer has as stopped', async () => {
@@ -331,10 +362,7 @@ describe('advanceHydraHostPause', () => {
 		mockStopHostNode.mockRejectedValueOnce(new FakeHostRequestError('failed (404): no such node: node-a', 404));
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
-
-		expect(mockHostUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({ data: { pauseStopRequestedAt: expect.any(Date) } }),
-		);
+		expect(await stopsSentOnNextCycle()).toBe(0);
 	});
 });
 

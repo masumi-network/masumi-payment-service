@@ -72,6 +72,12 @@ const PAUSE_LEASE_MS = 15 * 60_000;
 /** The Host's answer for a node it does not have, as opposed to a wrong URL. */
 const NODE_GONE_DETAIL = 'no such node';
 const BUSY_MESSAGE = 'another pause action is running on this hydra host; retry shortly';
+/**
+ * Pauses whose every stop this instance saw succeed, by Host and stop request,
+ * so the scheduler stops asking. In memory: after a restart it asks once more,
+ * and stop is idempotent on the Host.
+ */
+const fullyStoppedPauses = new Map<string, number>();
 
 type PrismaReader = Pick<Prisma.TransactionClient, 'hydraLocalParticipant'>;
 
@@ -324,21 +330,30 @@ export async function pauseHydraHost(hostId: string, options: { force: boolean }
 async function stopPausedNodes(hostId: string, options: { force: boolean }): Promise<boolean> {
 	return await withHostPauseLease(hostId, async () => {
 		const host = await loadHost(hostId);
-		if (host.pausedAt === null || host.pauseStopRequestedAt !== null || host.encryptedAdminToken === null) return;
-		if (!options.force && hasInFlightWork(await countInFlight(hostId))) return;
+		if (host.pausedAt === null || host.encryptedAdminToken === null) return;
+		const stopRequestedAt = host.pauseStopRequestedAt;
+		if (stopRequestedAt !== null && fullyStoppedPauses.get(hostId) === stopRequestedAt.getTime()) return;
 
-		// A head can still form after the pause started: an adoption or a
-		// redemption already past its own pause check. Its node is stopped too,
-		// and recorded first so Resume starts it again.
-		const participants = await prisma.hydraLocalParticipant.findMany({
-			where: { hydraHostId: hostId, hydraHeadId: { not: null } },
-			select: { hostNodeId: true },
-		});
-		const nodeIds = [...new Set([...host.pausedNodeIds, ...participants.map((row) => row.hostNodeId)])];
-		if (nodeIds.length !== host.pausedNodeIds.length) {
+		let nodeIds = host.pausedNodeIds;
+		let requestedAt = stopRequestedAt;
+		if (requestedAt === null) {
+			if (!options.force && hasInFlightWork(await countInFlight(hostId))) return;
+
+			// A head can still form after the pause started: an adoption or a
+			// redemption already past its own pause check. Its node is stopped too,
+			// and recorded first so Resume starts it again.
+			const participants = await prisma.hydraLocalParticipant.findMany({
+				where: { hydraHostId: hostId, hydraHeadId: { not: null } },
+				select: { hostNodeId: true },
+			});
+			nodeIds = [...new Set([...host.pausedNodeIds, ...participants.map((row) => row.hostNodeId)])];
+			// Recorded before the first stop, not after the last: from here on every
+			// guard treats the nodes as down, and a stop that fails, forced or not,
+			// is sent again on the next cycle.
+			requestedAt = new Date();
 			const recorded = await prisma.hydraHost.updateMany({
 				where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: null },
-				data: { pausedNodeIds: nodeIds },
+				data: { pausedNodeIds: nodeIds, pauseStopRequestedAt: requestedAt },
 			});
 			// The pause ended under an overrun lease. Stopping now would stop the
 			// nodes of an active Host.
@@ -355,15 +370,14 @@ async function stopPausedNodes(hostId: string, options: { force: boolean }): Pro
 			}
 		}
 		if (failures.length > 0) {
-			// Left Stopping-without-a-request: the next scheduler cycle asks again.
 			// Stop is idempotent on the Host, so the nodes that did stop are fine.
-			logger.warn('[HydraHostPause] could not stop every paused node; retrying next cycle', { hostId, failures });
+			logger.warn('[HydraHostPause] could not stop every paused node; sending again next cycle', {
+				hostId,
+				failures,
+			});
 			return;
 		}
-		await prisma.hydraHost.updateMany({
-			where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: null },
-			data: { pauseStopRequestedAt: new Date() },
-		});
+		fullyStoppedPauses.set(hostId, requestedAt.getTime());
 	});
 }
 
@@ -420,10 +434,15 @@ export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseSta
 	return await getHydraHostPauseState(hostId);
 }
 
-/** Scheduler entry: move every Draining or Stopping pause forward. */
+/** For tests. */
+export function resetHydraHostPauseMemory(): void {
+	fullyStoppedPauses.clear();
+}
+
+/** Scheduler entry: move every Draining pause forward, and send any stop that failed again. */
 export async function runHydraHostPauseCycle(): Promise<void> {
 	const hosts = await prisma.hydraHost.findMany({
-		where: { pausedAt: { not: null }, pauseStopRequestedAt: null },
+		where: { pausedAt: { not: null } },
 		select: { id: true },
 	});
 	for (const host of hosts) {
