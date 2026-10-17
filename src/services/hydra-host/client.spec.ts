@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { logger } from '@masumi/payment-core/logger';
-import { fetchHostCapabilities, forgetHostInvite, provisionNodeOnHost } from './client';
+import { HydraHostRequestError, fetchHostCapabilities, forgetHostInvite, provisionNodeOnHost } from './client';
 
 const originalFetch = global.fetch;
 
@@ -137,5 +137,50 @@ describe('forgetting an invite on the Host', () => {
 		await expect(failure).rejects.toThrow('DELETE /v1/invites/sha256:575140b1803e on the hydra host failed (500)');
 		await expect(failure).rejects.not.toThrow(/nonce123456/);
 		expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://hydra.example.com/v1/invites/nonce123456');
+	});
+});
+
+describe('Host response size limit', () => {
+	const OVER_LIMIT_BYTES = 4 * 1024 * 1024 + 1;
+	const CHUNK_BYTES = 64 * 1024;
+
+	// Twice the cap, finite so an unbounded reader fails the assertions instead
+	// of exhausting test memory. Records how far it got and whether it was cancelled.
+	const TOTAL_BYTES = 2 * OVER_LIMIT_BYTES;
+
+	function oversizedBody(): { stream: ReadableStream<Uint8Array>; stats: { sent: number; cancelled: boolean } } {
+		const stats = { sent: 0, cancelled: false };
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (stats.sent >= TOTAL_BYTES) {
+					controller.close();
+					return;
+				}
+				stats.sent += CHUNK_BYTES;
+				controller.enqueue(new Uint8Array(CHUNK_BYTES).fill(0x20));
+			},
+			cancel() {
+				stats.cancelled = true;
+			},
+		});
+		return { stream, stats };
+	}
+
+	it.each([200, 500])('stops reading a %i body at the byte limit', async (status) => {
+		const { stream, stats } = oversizedBody();
+		global.fetch = jest
+			.fn<() => Promise<Response>>()
+			.mockResolvedValue(new Response(stream, { status })) as unknown as typeof fetch;
+
+		const error = await fetchHostCapabilities('https://hydra.example.com', 'admin-token', {
+			allowInsecureHttp: false,
+		}).catch((caught: unknown) => caught);
+
+		// Booleans, not the error itself: an unbounded reader puts the whole body
+		// in the message, and printing a multi-megabyte failure stalls Jest.
+		expect(error instanceof HydraHostRequestError).toBe(true);
+		expect(error instanceof Error && error.message.includes('exceeded its byte limit')).toBe(true);
+		expect(stats.cancelled).toBe(true);
+		expect(stats.sent).toBeLessThan(OVER_LIMIT_BYTES + 2 * CHUNK_BYTES);
 	});
 });

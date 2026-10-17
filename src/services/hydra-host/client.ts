@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
+import { readBoundedHttpResponse } from '@/lib/hydra/hydra/node-frames';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
@@ -97,7 +98,9 @@ async function request(
 			...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
 		});
 
-		const text = await response.text();
+		// Bounded while streaming, error bodies included: a registered Host is
+		// still a remote party, and an unbounded body read is a memory DoS.
+		const text = await readBoundedHttpResponse(response);
 		const parsed: unknown = text.length === 0 ? null : safeParse(text);
 
 		if (!response.ok) {
