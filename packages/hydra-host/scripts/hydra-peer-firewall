@@ -44,14 +44,14 @@ fail() {
 [[ "$START" =~ ^[0-9]+$ && "$COUNT" =~ ^[0-9]+$ ]] || fail 'peer port start and count must be integers'
 LAST=$((START + COUNT - 1))
 ((START >= 1 && COUNT >= 1 && LAST <= 65535)) || fail "peer port range $START+$COUNT is invalid"
-RANGE="$START-$LAST"
-
-# nft prints a one-port interval as a single port.
+# nft rejects a zero-size interval such as 5001-5001.
 if ((START == LAST)); then
-	LISTED_RANGE="$START"
+	RANGE="$START"
 else
-	LISTED_RANGE="$RANGE"
+	RANGE="$START-$LAST"
 fi
+TMP="$DEST.new"
+RESPONSE="$DEST.response"
 
 render_baseline() {
 	local hook
@@ -72,56 +72,61 @@ render_baseline() {
 # A fetch cut off after `add table` + `flush table` is valid syntax that opens
 # the range. Require the drop rule on both hooks and the closing brace.
 check_ruleset_file() {
-	local file=$1
-	[[ -s "$file" ]] || fail "$file is empty"
-	[[ "$(grep -cE "^[[:space:]]*tcp dport $RANGE drop$" "$file")" == 2 ]] ||
-		fail "$file does not refuse $RANGE on exactly two hooks"
-	[[ "$(grep -vE '^[[:space:]]*$' "$file" | tail -n 1)" == '}' ]] || fail "$file is truncated"
+	[[ -s "$TMP" ]] || fail 'the new ruleset is empty'
+	[[ "$(grep -cE "^[[:space:]]*tcp dport $RANGE drop$" "$TMP")" == 2 ]] ||
+		fail "the new ruleset does not refuse $RANGE on exactly two hooks"
+	[[ "$(grep -vE '^[[:space:]]*$' "$TMP" | tail -n 1)" == '}' ]] || fail 'the new ruleset is truncated'
 }
 
+# A drop rule alone is not enough: an earlier accept without a source set
+# would make it dead. Require the drop to be the last rule, and every accept to
+# be scoped by `ip saddr`.
 verify_loaded() {
-	local hook chain
+	local hook chain rules
 	for hook in input forward; do
 		chain=$(nft list chain $TABLE "$hook" 2>/dev/null) || fail "table $TABLE has no $hook chain loaded"
 		grep -qE "type filter hook $hook " <<<"$chain" || fail "chain $hook is not on the $hook hook"
-		grep -qE "^[[:space:]]*tcp dport $LISTED_RANGE drop$" <<<"$chain" ||
-			fail "chain $hook does not refuse $RANGE"
+		rules=$(grep -vE '^[[:space:]]*(table |chain |type |}|#|$)' <<<"$chain" || true)
+		[[ "$(tail -n 1 <<<"$rules" | sed -E 's/^[[:space:]]+//')" == "tcp dport $RANGE drop" ]] ||
+			fail "chain $hook does not end by refusing $RANGE"
+		if grep -E 'accept$' <<<"$rules" | grep -qv 'ip saddr {'; then
+			fail "chain $hook accepts peer traffic without a source set"
+		fi
 	done
 }
 
 # Check, persist, apply, verify. The persisted copy is what nftables.service
 # loads at boot or reload.
 install_ruleset() {
-	local tmp=$1
-	check_ruleset_file "$tmp"
-	nft -c -f "$tmp" || fail 'nft rejected the ruleset'
-	mv "$tmp" "$DEST"
+	check_ruleset_file "$TMP"
+	nft -c -f "$TMP" || fail 'nft rejected the ruleset'
+	mv "$TMP" "$DEST"
 	nft -f "$DEST" || fail 'nft failed to apply the ruleset'
 	verify_loaded
 }
 
+# The temporary files sit next to $DEST, so a wide nftables include glob could
+# load a rejected one at the next boot. Remove them on every exit.
 with_lock() {
 	exec 9>"$LOCK"
 	flock 9
+	trap 'rm -f "$TMP" "$RESPONSE"' EXIT
 	mkdir -p "$(dirname "$DEST")"
 	"$@"
 }
 
 do_baseline() {
-	local tmp="$DEST.new"
-	render_baseline >"$tmp"
-	install_ruleset "$tmp"
+	render_baseline >"$TMP"
+	install_ruleset
 }
 
 do_refresh() {
 	local token_file=${HYDRA_ADMIN_TOKEN_FILE:-}
-	local tmp="$DEST.new" response="$DEST.response"
 	[[ -n "$token_file" && -s "$token_file" ]] || fail 'HYDRA_ADMIN_TOKEN_FILE must name a non-empty file'
 
 	# printf is a builtin, so the token never appears in a process argv.
 	if ! printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$token_file")" |
-		curl -fsS --max-time 20 -H @- "$CONTROL_URL/v1/peer-allowlist" >"$response"; then
-		rm -f "$response"
+		curl -fsS --max-time 20 -H @- "$CONTROL_URL/v1/peer-allowlist" >"$RESPONSE"; then
 		fail 'could not fetch the peer allow-list; the loaded ruleset is unchanged'
 	fi
 
@@ -137,12 +142,10 @@ for rule in body["rules"]:
     for error in rule.get("resolutionErrors", []):
         print("hydra-peer-firewall: %s: %s: %s" % (rule["nodeId"], error["host"], error["reason"]), file=sys.stderr)
 sys.stdout.write(body["nftables"])
-' "$response" "$START" "$COUNT" >"$tmp"; then
-		rm -f "$response" "$tmp"
+' "$RESPONSE" "$START" "$COUNT" >"$TMP"; then
 		fail 'the peer allow-list response is invalid; the loaded ruleset is unchanged'
 	fi
-	rm -f "$response"
-	install_ruleset "$tmp"
+	install_ruleset
 }
 
 case "${1:-}" in

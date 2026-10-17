@@ -359,6 +359,35 @@ The script takes a lock, so a manual `refresh` and a timer run never apply at
 the same time. A refresh fails while the Host is down. That is expected, and the
 loaded ruleset stays as it is.
 
+Also refuse the range before Docker starts. The Host unit above already runs
+`baseline`, but anything else that Docker restarts on its own, such as a
+compose container with `restart: unless-stopped`, publishes its ports again at
+boot with no check. `/etc/systemd/system/hydra-peer-firewall-baseline.service`:
+
+```ini
+[Unit]
+Description=Refuse the Hydra Host peer range before Docker starts
+Wants=nftables.service
+After=nftables.service
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/hydra-peer-firewall baseline
+
+[Install]
+RequiredBy=docker.service
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable hydra-peer-firewall-baseline.service
+```
+
+`RequiredBy=docker.service` makes the failure mode closed: if the baseline
+cannot be loaded and verified, Docker does not start.
+
 What the generated ruleset does:
 
 - Emits an `input` chain **and** a `forward` chain. Host-network traffic
@@ -379,14 +408,17 @@ invite redemption and every node removal. The `add` plus `flush` plus
 declarations are one `nft` transaction, so an update replaces every prior accept
 rule with no fail-open interval.
 
-The 30-second window is the remaining exposure. If a node is removed and a new
-node takes its port, the old counterparty's address can reach the new port until
-the next refresh.
+Include `/etc/nftables.d/hydra-peer.nft` from `/etc/nftables.conf`, after any
+`flush ruleset` line, and enable `nftables.service`. This is required. A
+distribution `nftables.conf` usually starts with `flush ruleset`, so without the
+include a `systemctl reload nftables` deletes the peer table and opens the range
+until the next refresh. With the include, the reload restores the last applied
+ruleset. Include that one file by name, not a glob over the directory.
 
-Persist it across reboots the way your distribution expects, for example by
-including `/etc/nftables.d/hydra-peer.nft` from `/etc/nftables.conf` and enabling
-`nftables.service`. A `systemctl reload nftables` then restores the last applied
-ruleset, and the next refresh corrects it.
+With the gates and the include in place, one window stays open, for at most 30
+seconds. If a node is removed and a new node takes its port, the old
+counterparty's address can reach the new port until the next refresh. Run the
+refresh by hand after a removal to close it.
 
 ## 5. TLS and the load balancer
 

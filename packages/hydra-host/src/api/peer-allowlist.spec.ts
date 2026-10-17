@@ -102,6 +102,13 @@ describe('renderNftables', () => {
 		expect(ruleset).toContain('tcp dport 5001-5004 drop');
 	});
 
+	it('renders a one-port range as a single port, not a zero-size interval', async () => {
+		const one = { start: 5001, count: 1 };
+		const ruleset = renderNftables(await resolvePeerAllowlist(buildPeerAllowlist([], one)), one);
+		expect(ruleset).toContain('\t\ttcp dport 5001 drop');
+		expect(ruleset).not.toContain('5001-5001');
+	});
+
 	it('filters both host-network and Docker-forwarded peer traffic', async () => {
 		const ruleset = renderNftables(
 			await resolvePeerAllowlist(

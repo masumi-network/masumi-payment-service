@@ -5,13 +5,22 @@
 #
 # Start/reload sequence:
 #   1. `sudo hydra-peer-firewall baseline` refuses the whole peer range.
-#   2. Start with the acknowledgement taken from the verifier, so compose
-#      refuses to start unless the loaded ruleset was just verified:
+#   2. Start with the acknowledgement taken from the verifier, so the first
+#      `up` refuses to run unless the loaded ruleset was just verified:
 #        HYDRA_HOST_PEER_FIREWALL_ACK="$(sudo hydra-peer-firewall verify)" \
 #          docker compose -f docker-compose.yml -f docker-compose.public-peer.yml up -d
 #   3. `sudo hydra-peer-firewall refresh` opens each peered port. Run it on the
 #      hydra-peer-firewall.timer, and again after every provision, invite
 #      redemption, node removal or DNS change.
+#
+#   4. Enable hydra-peer-firewall-baseline.service. Docker bakes the
+#      acknowledgement into the container once, at `up`, and restarts the
+#      container at boot without asking again. That unit refuses the range
+#      before docker.service starts.
+#
+# The acknowledgement is a fixed string, so it records the order of operations
+# and does not prove anything a typed value could not. Steps 1 and 4 are the
+# real gate.
 #
 # This file, and the acknowledgement it requires, exist only for compose.
 # HYDRA_HOST_PEER_FIREWALL_ACK is read by nothing in the Host. A systemd unit

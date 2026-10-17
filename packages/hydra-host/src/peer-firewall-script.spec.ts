@@ -7,7 +7,8 @@ import { renderNftables, type ResolvedPeerAllowlist } from './api/peer-allowlist
 
 // The script runs on the machine as root, so the tests swap in stub `nft`,
 // `curl` and `flock` binaries. The `nft` stub keeps the "loaded" ruleset in a
-// file and lists a chain by printing its block from that file.
+// file and lists a chain the way nft does: its block, without comments or
+// blank lines.
 const SCRIPT = resolve('packages/hydra-host/scripts/hydra-peer-firewall');
 const RANGE = { start: 5001, count: 4 };
 
@@ -18,8 +19,9 @@ case "$1" in
 -f) [[ -z "\${NFT_APPLY_FAIL:-}" ]] && cp "$2" "$NFT_STATE" ;;
 list)
 	[[ -f "$NFT_STATE" ]] || exit 1
-	awk -v hook="$5" '$1 == "chain" && $2 == hook { on = 1 } on { print } on && $1 == "}" { exit }' "$NFT_STATE" | grep -q . || exit 1
-	awk -v hook="$5" '$1 == "chain" && $2 == hook { on = 1 } on { print } on && $1 == "}" { exit }' "$NFT_STATE"
+	out=$(awk -v hook="$5" '$1 == "chain" && $2 == hook { on = 1 } on && $1 !~ /^#/ && NF { print } on && $1 == "}" { exit }' "$NFT_STATE")
+	[[ -n "$out" ]] || exit 1
+	printf 'table inet hydra_peer {\n%s\n}\n' "$out"
 	;;
 esac
 `;
@@ -55,7 +57,7 @@ function run(command: string, extraEnv: Record<string, string> = {}) {
 	const result = spawnSync('bash', [SCRIPT, command], {
 		encoding: 'utf8',
 		env: {
-			PATH: `${join(dir, 'bin')}:/usr/bin:/bin`,
+			PATH: `${join(dir, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}`,
 			HYDRA_PEER_FIREWALL_CONFIG: join(dir, 'absent'),
 			HYDRA_PEER_PORT_START: String(RANGE.start),
 			HYDRA_PEER_PORT_COUNT: String(RANGE.count),
@@ -69,6 +71,19 @@ function run(command: string, extraEnv: Record<string, string> = {}) {
 		},
 	});
 	return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+function loadChains(input: string[], forward: string[]) {
+	const chain = (hook: string, rules: string[]) => [
+		`\tchain ${hook} {`,
+		`\t\ttype filter hook ${hook} priority filter; policy accept;`,
+		...rules.map((rule) => `\t\t${rule}`),
+		'\t}',
+	];
+	writeFileSync(
+		join(dir, 'loaded.nft'),
+		['table inet hydra_peer {', ...chain('input', input), ...chain('forward', forward), '}'].join('\n'),
+	);
 }
 
 function loaded(): string {
@@ -103,30 +118,39 @@ describe('hydra-peer-firewall verify', () => {
 	});
 
 	it('refuses a loaded table whose forward chain lacks the range drop', () => {
-		writeFileSync(
-			join(dir, 'loaded.nft'),
-			[
-				'table inet hydra_peer {',
-				'\tchain input {',
-				'\t\ttype filter hook input priority filter; policy accept;',
-				'\t\ttcp dport 5001-5004 drop',
-				'\t}',
-				'\tchain forward {',
-				'\t\ttype filter hook forward priority filter; policy accept;',
-				'\t}',
-				'}',
-			].join('\n'),
-		);
+		loadChains(['tcp dport 5001-5004 drop'], []);
 		const result = run('verify');
 		expect(result.status).toBe(1);
-		expect(result.stderr).toContain('chain forward does not refuse 5001-5004');
+		expect(result.stderr).toContain('chain forward does not end by refusing 5001-5004');
+	});
+
+	it('refuses an accept without a source set, which makes the drop dead', () => {
+		const rules = ['tcp dport 5001 accept', 'tcp dport 5001-5004 drop'];
+		loadChains(rules, rules);
+		const result = run('verify');
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('chain input accepts peer traffic without a source set');
+	});
+
+	it('refuses a chain whose last rule is not the range drop', () => {
+		const rules = ['tcp dport 5001-5004 drop', 'tcp dport 5001 ip saddr { 203.0.113.7 } accept'];
+		loadChains(rules, rules);
+		const result = run('verify');
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('chain input does not end by refusing 5001-5004');
+	});
+
+	it('accepts source-scoped accepts before the range drop', () => {
+		const rules = ['tcp dport 5001 ip saddr { 203.0.113.7 } accept', 'tcp dport 5001-5004 drop'];
+		loadChains(rules, rules);
+		expect(run('verify')).toEqual({ status: 0, stdout: 'verified\n', stderr: '' });
 	});
 
 	it('refuses a drop that covers only part of the range', () => {
 		run('baseline', { HYDRA_PEER_PORT_COUNT: '2' });
 		const result = run('verify');
 		expect(result.status).toBe(1);
-		expect(result.stderr).toContain('does not refuse 5001-5004');
+		expect(result.stderr).toContain('does not end by refusing 5001-5004');
 	});
 });
 
@@ -147,6 +171,13 @@ describe('hydra-peer-firewall baseline', () => {
 
 		expect(run('baseline').status).toBe(0);
 		expect(loaded()).not.toContain('203.0.113.7');
+	});
+
+	it('renders a one-port range as a single port', () => {
+		const result = run('baseline', { HYDRA_PEER_PORT_COUNT: '1' });
+		expect(result.status).toBe(0);
+		expect(loaded()).not.toContain('5001-5001');
+		expect(loaded().match(/tcp dport 5001 drop/g)).toHaveLength(2);
 	});
 
 	it('fails closed when nft cannot apply it', () => {
@@ -188,6 +219,10 @@ describe('hydra-peer-firewall refresh', () => {
 		expect(result.status).toBe(1);
 		expect(result.stderr).toContain('does not refuse 5001-5004 on exactly two hooks');
 		expect(loaded()).toBe(before);
+		// A rejected file left next to the persisted one could be loaded by a
+		// wide nftables include glob at the next boot.
+		expect(existsSync(join(dir, 'nftables.d', 'hydra-peer.nft.new'))).toBe(false);
+		expect(existsSync(join(dir, 'nftables.d', 'hydra-peer.nft.response'))).toBe(false);
 	});
 
 	it('refuses a Host whose peer range differs from the machine range', () => {

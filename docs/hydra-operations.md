@@ -162,8 +162,10 @@ How you open the range depends on how you run the Host:
 in the Host reads it. Set it from `hydra-peer-firewall verify`, which prints a
 value only when the loaded ruleset refuses the range. Under systemd the gate is
 `ExecStartPre=hydra-peer-firewall baseline`, which stops the unit from starting
-when the ruleset cannot be verified. Under a plain `docker run` or native mode
-nothing enforces the order, so run `baseline` yourself first.
+when the ruleset cannot be verified. Under compose, also enable
+`hydra-peer-firewall-baseline.service`, because Docker restarts the container at
+boot without the acknowledgement check. Under a plain `docker run` or native
+mode nothing enforces the order, so run `baseline` yourself first.
 
 `BLOCKFROST_PROJECT_FILE` is a **path to a file** containing the project id,
 not the id itself: it is handed to `hydra-node` as `--blockfrost` and the node
