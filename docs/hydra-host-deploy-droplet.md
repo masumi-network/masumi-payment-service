@@ -104,6 +104,30 @@ install -o 10001 -g 10001 -m 600 /dev/null /srv/hydra/blockfrost.txt
 cat > /srv/hydra/blockfrost.txt
 ```
 
+### The token file
+
+Keep the two Host tokens in a root-owned file with mode 600. Do not pass them
+as `-e NAME=value` arguments. Those arguments are visible in the process list
+to every local user while the command runs. With `--env-file`, the Docker client
+reads the file itself, so the tokens never appear in process arguments.
+
+```bash
+install -o root -g root -m 600 /dev/null /srv/hydra/host.env
+# Type the two lines below with the real tokens, then Ctrl-D.
+# Avoids leaving the tokens in shell history.
+cat > /srv/hydra/host.env
+```
+
+The file contains exactly these two lines:
+
+```
+HYDRA_HOST_ADMIN_TOKEN=<admin token>
+HYDRA_HOST_USER_TOKEN=<user token>
+```
+
+Docker reads each line literally. Do not put quotes around a value, because the
+quotes become part of the token.
+
 ## 2. Run the container
 
 Use `--network host`. Publishing 32 peer ports individually spawns 32 userland
@@ -123,8 +147,7 @@ docker create --name hydra-host \
   -e HYDRA_HOST_PUBLIC_EXCHANGE_URL=https://hydra-exchange.example.com:8444/exchange \
   -e HYDRA_HOST_EXCHANGE_TRUST_PROXY=false \
   -e HYDRA_HOST_NETWORK=preprod \
-  -e HYDRA_HOST_ADMIN_TOKEN="$HYDRA_HOST_ADMIN_TOKEN" \
-  -e HYDRA_HOST_USER_TOKEN="$HYDRA_HOST_USER_TOKEN" \
+  --env-file /srv/hydra/host.env \
   -e BLOCKFROST_PROJECT_FILE=/run/secrets/blockfrost.txt \
   -e HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
   -e HYDRA_HOST_PEER_PORT_START=5001 \
@@ -459,7 +482,8 @@ the admin UI and re-pin `HYDRA_EXPECTED_VERSION` and
 
 1. amd64 droplet, block-storage volume mounted at `/mnt/hydra_data`, owned by
    `10001:10001`.
-2. Blockfrost project id in a file, mode 600, owned by `10001:10001`.
+2. Blockfrost project id in a file, mode 600, owned by `10001:10001`. Host
+   tokens in `/srv/hydra/host.env`, mode 600, owned by root.
 3. Container run with `--network host`, `--stop-timeout 250`, `--restart no`.
 4. systemd unit with `RequiresMountsFor` and `TimeoutStopSec=270`, enabled.
 5. Cloud firewall: 8443 restricted, 8444 open, 5001-5032 to counterparties, 22 to
