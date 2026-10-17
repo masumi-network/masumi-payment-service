@@ -87,7 +87,12 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 
 	// The node posts a new L1 transaction, which a paused Host must not do. The
 	// deposit waits at its script, so recovering after Resume loses nothing.
-	await assertHydraHeadHostNotPaused(topup.hydraHeadId);
+	// Except a Confirmed one: a pause waits for it, and a deposit the head never
+	// absorbs leaves Confirmed only through this recovery, so refusing it would
+	// keep the pause draining forever.
+	if (topup.status !== HydraTopupStatus.Confirmed) {
+		await assertHydraHeadHostNotPaused(topup.hydraHeadId);
+	}
 
 	const manager = getHydraConnectionManager();
 	const node = manager.getNode(topup.hydraHeadId);

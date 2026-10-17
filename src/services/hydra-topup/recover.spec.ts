@@ -57,4 +57,19 @@ describe('recoverHydraDeposit', () => {
 		expect(mockNodeDelete).not.toHaveBeenCalled();
 		expect(mockTopupUpdateMany).not.toHaveBeenCalled();
 	});
+
+	// A pause waits for a Confirmed deposit, and only a recovery can end one the
+	// head never absorbs.
+	it('still recovers a Confirmed deposit on a paused host, as drain work', async () => {
+		mockTopupFindUnique.mockResolvedValue({
+			id: 'topup-1',
+			depositTxHash: 'aa'.repeat(32),
+			status: 'Confirmed',
+			hydraHeadId: 'head-1',
+		});
+		mockAssertNotPaused.mockRejectedValue(Object.assign(new Error('paused'), { status: 409 }));
+
+		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
+		expect(mockNodeDelete).toHaveBeenCalled();
+	});
 });
