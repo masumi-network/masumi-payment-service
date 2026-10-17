@@ -6413,6 +6413,9 @@
                         "type": "string",
                         "nullable": true
                     },
+                    "release": {
+                        "$ref": "#/components/schemas/DescribedRelease"
+                    },
                     "scriptCatalogueHash": {
                         "type": "string",
                         "nullable": true
@@ -6440,6 +6443,11 @@
                     },
                     "participantCount": {
                         "type": "number"
+                    },
+                    "pausedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Set while the Host is paused for maintenance"
                     }
                 },
                 "required": [
@@ -6453,13 +6461,50 @@
                     "publicPeerHost",
                     "hasAdminToken",
                     "hydraVersion",
+                    "release",
                     "scriptCatalogueHash",
                     "ledgerParamsHash",
                     "status",
                     "lastHealthAt",
                     "lastHealthError",
-                    "participantCount"
+                    "participantCount",
+                    "pausedAt"
                 ]
+            },
+            "DescribedRelease": {
+                "type": "object",
+                "properties": {
+                    "version": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "`git describe` form, e.g. 0.29.0-5-gabc1234, or a bare tag"
+                    },
+                    "commit": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "tag": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Release tag the build starts from"
+                    },
+                    "commitsAhead": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Commits on top of the tag; 0 for the tag itself"
+                    },
+                    "dirty": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "version",
+                    "commit",
+                    "tag",
+                    "commitsAhead",
+                    "dirty"
+                ],
+                "description": "Project release of the Host image, as of the last Check"
             },
             "HydraRelationDetail": {
                 "allOf": [
@@ -6968,6 +7013,88 @@
                     "fanoutTxHash"
                 ]
             },
+            "HydraHostPauseState": {
+                "type": "object",
+                "properties": {
+                    "hostId": {
+                        "type": "string"
+                    },
+                    "phase": {
+                        "type": "string",
+                        "enum": [
+                            "Active",
+                            "Draining",
+                            "Stopping",
+                            "Paused"
+                        ],
+                        "description": "Draining: new work refused, waiting for in-flight work. Stopping: nodes asked to stop. Paused: every node reports Stopped."
+                    },
+                    "pausedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "pauseStopRequestedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "inFlight": {
+                        "type": "object",
+                        "properties": {
+                            "l2Transactions": {
+                                "type": "integer"
+                            },
+                            "topups": {
+                                "type": "integer"
+                            },
+                            "withdrawals": {
+                                "type": "integer"
+                            },
+                            "closingHeads": {
+                                "type": "integer",
+                                "description": "Heads closing or in their dispute window. The nodes stay up until these settle."
+                            }
+                        },
+                        "required": [
+                            "l2Transactions",
+                            "topups",
+                            "withdrawals",
+                            "closingHeads"
+                        ]
+                    },
+                    "nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "nodeId": {
+                                    "type": "string"
+                                },
+                                "state": {
+                                    "type": "string",
+                                    "nullable": true
+                                },
+                                "error": {
+                                    "type": "string",
+                                    "nullable": true
+                                }
+                            },
+                            "required": [
+                                "nodeId",
+                                "state",
+                                "error"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "hostId",
+                    "phase",
+                    "pausedAt",
+                    "pauseStopRequestedAt",
+                    "inFlight",
+                    "nodes"
+                ]
+            },
             "HydraLowBalanceRule": {
                 "type": "object",
                 "properties": {
@@ -7447,6 +7574,26 @@
                     "resolvedAt",
                     "needsOperator",
                     "PaymentSource"
+                ]
+            },
+            "ReleaseWithUpdate": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/DescribedRelease"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "updateAvailable": {
+                                "type": "boolean",
+                                "nullable": true,
+                                "description": "Null when it cannot be told: no latest release known, or a build without a release tag"
+                            }
+                        },
+                        "required": [
+                            "updateAvailable"
+                        ]
+                    }
                 ]
             }
         },
@@ -35509,6 +35656,276 @@
                 }
             }
         },
+        "/hydra/host/pause": {
+            "get": {
+                "summary": "Read the pause state of a Hydra Host. (admin access required)",
+                "description": "Reports the pause phase, the in-flight work that still holds the nodes, and the state each node reports.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Pause state",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHostPauseState"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "hostId": "cuid_v2_auto_generated",
+                                            "phase": "Draining",
+                                            "pausedAt": "2026-10-17T10:00:00.000Z",
+                                            "pauseStopRequestedAt": null,
+                                            "inFlight": {
+                                                "l2Transactions": 1,
+                                                "topups": 0,
+                                                "withdrawals": 0,
+                                                "closingHeads": 0
+                                            },
+                                            "nodes": [
+                                                {
+                                                    "nodeId": "node-1",
+                                                    "state": "Running",
+                                                    "error": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Pause a Hydra Host for maintenance. (admin access required)",
+                "description": "Refuses new work on every head of this Host at once: L2 locks, top-ups, withdrawals, consolidation, init and commit. The service stops the nodes once in-flight work has settled and no head on the Host is closing or in its dispute window, or at once with `force`. The pause survives restarts of this service and of the Host. Keep it short: a stopped node cannot contest a close, and reserved L2 actions are parked for manual action after a little over three hours.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "force": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Stop the nodes now, without waiting for in-flight work. That work then waits for Resume."
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated",
+                                    "force": false
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Pause accepted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHostPauseState"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "hostId": "cuid_v2_auto_generated",
+                                            "phase": "Draining",
+                                            "pausedAt": "2026-10-17T10:00:00.000Z",
+                                            "pauseStopRequestedAt": null,
+                                            "inFlight": {
+                                                "l2Transactions": 1,
+                                                "topups": 0,
+                                                "withdrawals": 0,
+                                                "closingHeads": 0
+                                            },
+                                            "nodes": [
+                                                {
+                                                    "nodeId": "node-1",
+                                                    "state": "Running",
+                                                    "error": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    },
+                    "409": {
+                        "description": "Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running. In the second case the pause stays recorded unless the other action was a Resume; read the pause state, then retry."
+                    }
+                }
+            }
+        },
+        "/hydra/host/resume": {
+            "post": {
+                "summary": "Resume a paused Hydra Host. (admin access required)",
+                "description": "Starts the nodes the pause stopped, then accepts new work again. If a node does not start, the Host stays paused and the call can be repeated.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Resumed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHostPauseState"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "hostId": "cuid_v2_auto_generated",
+                                            "phase": "Active",
+                                            "pausedAt": null,
+                                            "pauseStopRequestedAt": null,
+                                            "inFlight": {
+                                                "l2Transactions": 0,
+                                                "topups": 0,
+                                                "withdrawals": 0,
+                                                "closingHeads": 0
+                                            },
+                                            "nodes": [
+                                                {
+                                                    "nodeId": "node-1",
+                                                    "state": "Running",
+                                                    "error": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    },
+                    "409": {
+                        "description": "Host has no admin token, or another pause action is running"
+                    },
+                    "502": {
+                        "description": "A node did not start; the Host stays paused"
+                    }
+                }
+            }
+        },
         "/hydra/head/balance": {
             "get": {
                 "summary": "Read this node's own in-head balance. (admin access required)",
@@ -45866,6 +46283,160 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/release-status": {
+            "get": {
+                "summary": "Compare the running release with the newest published one.",
+                "description": "Reports the release this service and each Hydra Host were built from, and the newest release published on GitHub. The GitHub check runs at most once every six hours. A failed check sets `checkError` and keeps the last good answer in `latest` and `checkedAt`. With no good answer yet, `latest` is null and `updateAvailable` is null: a build is never reported as up to date without an answer. Hosts are listed only for an admin key, as of their last Check.",
+                "tags": [
+                    "health"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Release status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "latest": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "version": {
+                                                            "type": "string"
+                                                        },
+                                                        "url": {
+                                                            "type": "string"
+                                                        },
+                                                        "publishedAt": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "version",
+                                                        "url",
+                                                        "publishedAt"
+                                                    ],
+                                                    "description": "Newest published release, including pre-releases. Null when not checked yet."
+                                                },
+                                                "checkedAt": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "When GitHub last answered"
+                                                },
+                                                "checkError": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Why the last check failed, when it did"
+                                                },
+                                                "service": {
+                                                    "$ref": "#/components/schemas/ReleaseWithUpdate"
+                                                },
+                                                "hosts": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
+                                                            "network": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Preprod",
+                                                                    "Mainnet"
+                                                                ]
+                                                            },
+                                                            "release": {
+                                                                "$ref": "#/components/schemas/ReleaseWithUpdate"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "name",
+                                                            "network",
+                                                            "release"
+                                                        ]
+                                                    },
+                                                    "description": "Hydra Hosts, as of their last probe. Empty for a key without admin access."
+                                                }
+                                            },
+                                            "required": [
+                                                "latest",
+                                                "checkedAt",
+                                                "checkError",
+                                                "service",
+                                                "hosts"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "latest": {
+                                                "version": "0.30.0",
+                                                "url": "https://github.com/masumi-network/masumi-payment-service/releases/tag/0.30.0",
+                                                "publishedAt": "2026-10-15T12:00:00Z"
+                                            },
+                                            "checkedAt": "2026-10-17T10:00:00.000Z",
+                                            "checkError": null,
+                                            "service": {
+                                                "version": "0.29.0-5-gabc1234",
+                                                "commit": "abc1234",
+                                                "tag": "0.29.0",
+                                                "commitsAhead": 5,
+                                                "dirty": false,
+                                                "updateAvailable": true
+                                            },
+                                            "hosts": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "name": "hydra1",
+                                                    "network": "Mainnet",
+                                                    "release": {
+                                                        "version": "0.29.0-5-gabc1234",
+                                                        "commit": "abc1234",
+                                                        "tag": "0.29.0",
+                                                        "commitsAhead": 5,
+                                                        "dirty": false,
+                                                        "updateAvailable": true
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
                     }
                 }
             }
