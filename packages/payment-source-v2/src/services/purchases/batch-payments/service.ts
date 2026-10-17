@@ -37,6 +37,7 @@ import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { processL2PurchaseLocks, type L2LockPassResult } from './l2-lock';
+import { claimSelectedL1Request, revertOwnedL1BatchRequests } from './l1-claim';
 
 /**
  * --- V2 batch-payments: defensive submit invariant ---
@@ -347,45 +348,49 @@ async function executeSpecificBatchPayment(
 	// defensive guard for the transitional upgrade window (e.g. an in-flight
 	// scheduler tick from before this version landed). Should not occur in
 	// steady state.
-	const sharedTxId = await retryOnSerializationConflict(
-		() =>
-			prisma.$transaction(
-				async (tx) => {
-					let resolvedSharedTxId: string;
-					if (walletPairing.placeholderTransactionId != null) {
-						// Reuse path: bump `lastCheckedAt` so wallet-timeouts'
-						// 1-min debounce resets against the new ts (the placeholder
-						// is now actively progressing through pre-submit / submit /
-						// post-submit) and reaffirm the BlocksWallet connection
-						// defensively in case a competing writer touched it.
-						await tx.transaction.update({
-							where: { id: walletPairing.placeholderTransactionId },
-							data: {
-								status: TransactionStatus.Pending,
-								lastCheckedAt: new Date(),
-								BlocksWallet: { connect: { id: walletId } },
-							},
-						});
-						resolvedSharedTxId = walletPairing.placeholderTransactionId;
-					} else {
-						const sharedTx = await tx.transaction.create({
-							data: {
-								status: TransactionStatus.Pending,
-								// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
-								// See docs/adr/0006 and docs/adr/0007 for the full rationale.
-								lastCheckedAt: new Date(),
-								BlocksWallet: { connect: { id: walletId } },
-							},
-						});
-						resolvedSharedTxId = sharedTx.id;
-					}
-					for (const request of batchedRequests) {
-						logger.info('Batching payments, updating purchase request', {
-							paymentRequestId: request.paymentRequest.id,
-						});
-						await tx.purchaseRequest.update({
-							where: { id: request.paymentRequest.id },
-							data: {
+	// Every request write is conditional on the state selected earlier: the
+	// mutex covers one process only, so another replica may have claimed a
+	// request (e.g. an L2 head lock) since selection. A lost claim rolls back
+	// the whole pre-submit transaction and the batch never broadcasts.
+	let sharedTxId: string;
+	try {
+		sharedTxId = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						let resolvedSharedTxId: string;
+						if (walletPairing.placeholderTransactionId != null) {
+							// Reuse path: bump `lastCheckedAt` so wallet-timeouts'
+							// 1-min debounce resets against the new ts (the placeholder
+							// is now actively progressing through pre-submit / submit /
+							// post-submit) and reaffirm the BlocksWallet connection
+							// defensively in case a competing writer touched it.
+							await tx.transaction.update({
+								where: { id: walletPairing.placeholderTransactionId },
+								data: {
+									status: TransactionStatus.Pending,
+									lastCheckedAt: new Date(),
+									BlocksWallet: { connect: { id: walletId } },
+								},
+							});
+							resolvedSharedTxId = walletPairing.placeholderTransactionId;
+						} else {
+							const sharedTx = await tx.transaction.create({
+								data: {
+									status: TransactionStatus.Pending,
+									// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
+									// See docs/adr/0006 and docs/adr/0007 for the full rationale.
+									lastCheckedAt: new Date(),
+									BlocksWallet: { connect: { id: walletId } },
+								},
+							});
+							resolvedSharedTxId = sharedTx.id;
+						}
+						for (const request of batchedRequests) {
+							logger.info('Batching payments, updating purchase request', {
+								paymentRequestId: request.paymentRequest.id,
+							});
+							await claimSelectedL1Request(tx, request.paymentRequest, {
 								...connectPreviousAction(request.paymentRequest.nextActionId),
 								...createNextPurchaseAction(PurchasingAction.FundsLockingInitiated),
 								collateralReturnLovelace: request.overpaidLovelace,
@@ -395,15 +400,29 @@ async function executeSpecificBatchPayment(
 								TransactionHistory: request.paymentRequest.CurrentTransaction
 									? { connect: { id: request.paymentRequest.CurrentTransaction.id } }
 									: undefined,
-							},
-						});
-					}
-					return resolvedSharedTxId;
-				},
-				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-			),
-		{ label: 'batch-payments-v2-presubmit' },
-	);
+							});
+						}
+						return resolvedSharedTxId;
+					},
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+				),
+			{ label: 'batch-payments-v2-presubmit' },
+		);
+	} catch (presubmitError) {
+		// Nothing was written and nothing was broadcast. The cleanup releases only
+		// this wallet's placeholder; request reverts are guarded by ownership.
+		logger.warn('batch-payments pre-submit claim failed; aborting batch before broadcast', {
+			walletId,
+			error: presubmitError instanceof Error ? presubmitError.message : presubmitError,
+		});
+		return {
+			status: 'pre-submit-failed',
+			walletId,
+			sharedTxId: walletPairing.placeholderTransactionId,
+			requestIds: batchedRequests.map((b) => b.paymentRequest.id),
+			error: presubmitError,
+		};
+	}
 
 	logger.info('Batching payments, purchase request initialized');
 
@@ -1445,30 +1464,12 @@ export async function batchLatestPaymentEntriesV2() {
 									},
 								);
 								const originalPairing = pairingByWalletId.get(outcome.walletId);
-								const batchedRequestsForRevert = originalPairing?.batchedRequests ?? [];
-								for (const batchedRequest of batchedRequestsForRevert) {
-									await prisma.purchaseRequest.update({
-										where: { id: batchedRequest.paymentRequest.id },
-										data: {
-											ActionHistory: {
-												connect: { id: batchedRequest.paymentRequest.nextActionId },
-											},
-											NextAction: {
-												create: isRetryableTransient
-													? {
-															requestedAction: PurchasingAction.FundsLockingRequested,
-															errorType: null,
-															errorNote: null,
-														}
-													: {
-															requestedAction: PurchasingAction.WaitingForManualAction,
-															errorType: PurchaseErrorType.Unknown,
-															errorNote: errNote,
-														},
-											},
-										},
-									});
-								}
+								await revertOwnedL1BatchRequests({
+									sharedTxId: outcome.sharedTxId,
+									requests: (originalPairing?.batchedRequests ?? []).map((b) => b.paymentRequest),
+									isRetryable: isRetryableTransient,
+									errorNote: errNote,
+								});
 								if (outcome.sharedTxId != null) {
 									try {
 										await prisma.transaction.update({
@@ -1534,6 +1535,11 @@ export async function batchLatestPaymentEntriesV2() {
 					// loop below rolls back their sharedTx, so funding-reconciliation
 					// can't resolve them (it polls by intendedTxHash); revert to
 					// FundsLockingRequested so the next tick re-batches them.
+					// Only rows on this tick's own placeholders: an L2 reservation from
+					// another replica also starts with no hashes and must stay untouched.
+					const ownPlaceholderIds = paymentContract.HotWallets.flatMap(
+						(wallet) => (wallet as HotWallet & { placeholderTransactionId?: string }).placeholderTransactionId ?? [],
+					);
 					const orphanedInitiatedRequests = await prisma.purchaseRequest.findMany({
 						where: {
 							id: { in: potentiallyFailedPurchaseRequests.map((x) => x.id) },
@@ -1542,6 +1548,7 @@ export async function batchLatestPaymentEntriesV2() {
 							},
 							CurrentTransaction: {
 								is: {
+									id: { in: ownPlaceholderIds },
 									intendedTxHash: null,
 									txHash: null,
 								},
@@ -1625,7 +1632,8 @@ export async function batchLatestPaymentEntriesV2() {
 					await Promise.allSettled(
 						failedPurchaseRequests.map(async (x) => {
 							await prisma.purchaseRequest.update({
-								where: { id: x.id },
+								// Another replica may have claimed it since the read above.
+								where: { id: x.id, nextActionId: x.nextActionId, currentTransactionId: null },
 								data: {
 									ActionHistory: {
 										connect: {
@@ -1650,7 +1658,7 @@ export async function batchLatestPaymentEntriesV2() {
 					await Promise.allSettled(
 						orphanedInitiatedRequests.map(async (r) => {
 							await prisma.purchaseRequest.update({
-								where: { id: r.id },
+								where: { id: r.id, nextActionId: r.nextActionId, currentTransactionId: r.currentTransactionId },
 								data: {
 									ActionHistory: {
 										connect: { id: r.nextActionId },
