@@ -60,6 +60,9 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 	const hosts = await prisma.hydraHost.findMany({
 		where: {
 			encryptedAdminToken: { not: null },
+			// A paused Host takes no new head. Its watermark stays put, so the
+			// redemption is adopted on the first pass after Resume.
+			pausedAt: null,
 			HydraHeadInvites: { some: { status: HydraInviteStatus.Issued, role: HydraInviteRole.Issuer } },
 		},
 	});

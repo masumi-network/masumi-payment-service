@@ -7,6 +7,7 @@ export {
 	deleteHydraHostDelete,
 	checkHydraHostPost,
 } from './host';
+export { hydraHostPauseStateGet, pauseHydraHostPost, resumeHydraHostPost } from './host/pause';
 
 export { getOrListRelationsGet, deleteRelationDelete } from './relation';
 

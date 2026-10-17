@@ -2,6 +2,7 @@ import { HydraHeadStatus, HydraTopupStatus, LowBalanceStatus } from '@/generated
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
+import { isHydraHeadOnPausedHost } from '@/services/hydra-host/pause';
 import { AUTO_TOPUP_BACKOFF_SAMPLE, evaluateAutoTopupBackoff } from '@/services/hydra-low-balance/auto-topup-backoff';
 
 /**
@@ -39,6 +40,8 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 		try {
 			const head = rule.LocalParticipant.HydraHead;
 			if (!head || head.status !== HydraHeadStatus.Open) continue;
+			// A paused host refuses new deposits; skip quietly until it resumes.
+			if (await isHydraHeadOnPausedHost(head.id)) continue;
 			if (rule.topupAmount == null || rule.topupAmount <= 0n) continue;
 
 			// Counted up to and including `Confirmed`, not just `Pending`. A deposit

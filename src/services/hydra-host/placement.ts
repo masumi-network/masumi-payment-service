@@ -18,6 +18,8 @@ export type PlaceableHost = {
 	status: string;
 	/** A Host registered without an admin token can be operated but not provisioned on. */
 	hasAdminToken: boolean;
+	/** A paused Host is under maintenance and takes no new nodes. */
+	isPaused: boolean;
 };
 
 export class HostPlacementError extends Error {
@@ -49,9 +51,9 @@ export function selectPlacementHost(hosts: PlaceableHost[], network: string): Pl
 		throw new HostPlacementError(`no hydra host is registered for network ${network}`);
 	}
 
-	const active = onNetwork.filter((host) => host.status === 'Active');
+	const active = onNetwork.filter((host) => host.status === 'Active' && !host.isPaused);
 	if (active.length === 0) {
-		const states = [...new Set(onNetwork.map((host) => host.status))].join(', ');
+		const states = [...new Set(onNetwork.map((host) => (host.isPaused ? 'Paused' : host.status)))].join(', ');
 		throw new HostPlacementError(
 			`no hydra host on ${network} is accepting placements (registered hosts are: ${states})`,
 		);

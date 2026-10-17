@@ -20,6 +20,7 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { isHydraHeadOnPausedHost } from '@/services/hydra-host/pause';
 import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
 import { resolveEffectiveForceLayer } from '@/utils/logic/force-layer';
 import { waitForFreeWallet } from '../../l2-pass';
@@ -155,6 +156,17 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 					continue;
 				}
 				if (!head) {
+					continue;
+				}
+				// Paused for maintenance: like a down peer, auto falls to L1 now and
+				// forced retries until Resume. Not "no head", which would fail a
+				// forced request outright.
+				if (await isHydraHeadOnPausedHost(head.hydraHead.id)) {
+					logger.info('L2 lock: Hydra host is paused for maintenance; not routing to this head', {
+						requestId: request.id,
+						hydraHeadId: head.hydraHead.id,
+					});
+					if (forcedHydra) headResolutionIndeterminate = true;
 					continue;
 				}
 				const provider = getHydraConnectionManager().getProvider(head.hydraHead.id);

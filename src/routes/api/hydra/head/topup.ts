@@ -7,6 +7,7 @@ import { HydraHeadStatus, HydraTopupStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import type { CommitUtxoFilter } from '@/lib/hydra';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
+import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 import { recoverHydraDeposit } from '@/services/hydra-topup/recover';
 import { DEFAULT_PERIODS } from '@/services/hydra-invite/provisioning';
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
@@ -273,6 +274,7 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, `Cannot top up: head status is ${head.status}, expected Open`);
 		}
 		if (!head.LocalParticipant) throw createHttpError(400, 'Head has no local participant');
+		await assertHydraHeadHostNotPaused(input.headId);
 		if (!head.headIdentifier) {
 			throw createHttpError(409, 'Cannot top up before the Hydra head identifier has been observed');
 		}

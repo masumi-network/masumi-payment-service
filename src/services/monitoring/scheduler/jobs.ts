@@ -35,10 +35,17 @@ import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup'
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { releaseStalledCloseAdmissions } from '@/services/hydra-close-admission';
 import { isHydraInUse } from '@/services/hydra-usage';
+import { runHydraHostPauseCycle } from '@/services/hydra-host/pause';
 import { logger } from '@masumi/payment-core/logger';
 
 /** A stuck round alerts after ten minutes, so once a minute is plenty. */
 const HYDRA_SNAPSHOT_ROUND_WATCH_INTERVAL_MS = 60_000;
+/**
+ * A paused Host's nodes stop once its in-flight work is done. While the pause
+ * waits, no new work starts on it, so checking twice a minute keeps the wait
+ * short without adding load.
+ */
+const HYDRA_HOST_PAUSE_CYCLE_INTERVAL_MS = 30_000;
 
 export const scheduledJobs: JobDefinition[] = [
 	{
@@ -208,6 +215,14 @@ export const scheduledJobs: JobDefinition[] = [
 		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra snapshot round watch',
 		run: runHydraSnapshotRoundWatch,
+	},
+	{
+		initialDelayMs: 22000,
+		intervalMs: HYDRA_HOST_PAUSE_CYCLE_INTERVAL_MS,
+		startMessage: 'Starting Hydra Host pause cycle',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra Host pause cycle',
+		run: runHydraHostPauseCycle,
 	},
 	{
 		initialDelayMs: 16500,
