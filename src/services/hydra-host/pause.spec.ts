@@ -384,6 +384,29 @@ describe('advanceHydraHostPause', () => {
 		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b', 'node-c']);
 	});
 
+	it('resends without a write when no new head formed', async () => {
+		const requestedAt = new Date('2026-10-17T10:05:00.000Z');
+		mockHostFindMany.mockResolvedValue([{ id: 'host-1' }]);
+		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: requestedAt }));
+
+		await pause.runHydraHostPauseCycle();
+
+		// Only the lease claim and its release.
+		expect(mockHostUpdateMany).toHaveBeenCalledTimes(2);
+		expect(mockStopHostNode).toHaveBeenCalledTimes(2);
+	});
+
+	it('stops nothing on a resend when the pause ended before the new head was recorded', async () => {
+		mockHostFindMany.mockResolvedValue([{ id: 'host-1' }]);
+		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: new Date('2026-10-17T10:05:00.000Z') }));
+		mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-c' }]);
+		mockHostUpdateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+		await pause.runHydraHostPauseCycle();
+
+		expect(mockStopHostNode).not.toHaveBeenCalled();
+	});
+
 	it('treats a node the host no longer has as stopped', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
 		mockStopHostNode.mockRejectedValueOnce(new FakeHostRequestError('failed (404): no such node: node-a', 404));
