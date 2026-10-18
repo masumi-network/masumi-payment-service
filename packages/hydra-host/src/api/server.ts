@@ -328,6 +328,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 		switch (kind) {
 			case 'capabilities': {
 				const capabilities = await readCapabilities({
+					release: config.release,
 					hydraNodeBin: config.hydraNodeBin,
 					ledgerProtocolParametersFile: config.ledgerProtocolParametersFile,
 					network: config.network,
