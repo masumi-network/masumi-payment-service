@@ -6,13 +6,16 @@ on:
 jobs:
   docker_publish:
     runs-on: 'ubuntu-22.04'
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2.8.0
 
       # https://github.com/marketplace/actions/push-to-ghcr
       - name: Build and publish a Docker image for ${{ github.repository }}
-        uses: macbre/push-to-ghcr@master
+        uses: macbre/push-to-ghcr@de5b1f400829a79007e48b901ef7e92a82b6486e # v18
         with:
           image_name: ${{ github.repository }} # it will be lowercased internally
           github_token: ${{ secrets.GITHUB_TOKEN }}
