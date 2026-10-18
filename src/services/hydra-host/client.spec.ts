@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { logger } from '@masumi/payment-core/logger';
-import { fetchHostCapabilities, provisionNodeOnHost } from './client';
+import { fetchHostCapabilities, forgetHostInvite, provisionNodeOnHost } from './client';
 
 const originalFetch = global.fetch;
 
@@ -120,5 +120,22 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 		);
 
 		expect(warn).not.toHaveBeenCalled();
+	});
+});
+
+describe('forgetting an invite on the Host', () => {
+	it('keeps the still-redeemable nonce out of the error message', async () => {
+		const fetchMock = jest
+			.fn<(input: string | URL | Request) => Promise<Response>>()
+			.mockResolvedValue(new Response(JSON.stringify({ error: 'boom' }), { status: 500 }));
+		global.fetch = fetchMock as unknown as typeof fetch;
+
+		const failure = forgetHostInvite('https://hydra.example.com', 'admin-token', 'nonce123456', {
+			allowInsecureHttp: false,
+		});
+
+		await expect(failure).rejects.toThrow('DELETE /v1/invites/sha256:575140b1803e on the hydra host failed (500)');
+		await expect(failure).rejects.not.toThrow(/nonce123456/);
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://hydra.example.com/v1/invites/nonce123456');
 	});
 });

@@ -22,6 +22,7 @@ import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate } from './auth.js';
+import { nonceLogRef } from './nonce-log-ref.js';
 import { isHostApiError, HostApiError } from './http-error.js';
 import { renderHostLandingPage, renderNotFoundPage, wantsHtmlDocument } from './landing.js';
 import { renderSwaggerDocsPage, resolveDocsAsset } from './docs-page.js';
@@ -217,11 +218,13 @@ export function createControlPlane(deps: ServerDeps): Server {
 				return;
 			}
 
+			// The forget route carries a nonce that may still be redeemable.
+			const logPath = route.nonce === undefined ? pathname : pathname.replace(route.nonce, nonceLogRef(route.nonce));
 			const auth = authenticate(request.headers.authorization, tokens, route.tier);
 			if (!auth.ok) {
 				// Never echo the presented credential, and never say which token
 				// would have worked.
-				logger.warn(`[api] ${method} ${pathname} rejected: ${auth.message}`);
+				logger.warn(`[api] ${method} ${logPath} rejected: ${auth.message}`);
 				send(response, auth.status, { error: auth.message });
 				return;
 			}
@@ -239,11 +242,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 				// being in use is an ordinary condition on a host that is working
 				// perfectly.
 				if (error instanceof PortExhaustedError) {
-					logger.warn(`[api] ${method} ${pathname} refused: ${error.message}`);
+					logger.warn(`[api] ${method} ${logPath} refused: ${error.message}`);
 					send(response, 507, { error: error.message });
 					return;
 				}
-				logger.error(`[api] ${method} ${pathname} failed: ${(error as Error).message}`);
+				logger.error(`[api] ${method} ${logPath} failed: ${(error as Error).message}`);
 				send(response, 500, { error: 'internal error' });
 			}
 		})().catch((error: unknown) => {
