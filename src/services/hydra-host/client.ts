@@ -104,7 +104,9 @@ async function request(
 		const parsed: unknown = text.length === 0 ? null : safeParse(text);
 
 		if (!response.ok) {
-			const detail = isPlainObject(parsed) ? (getOwnString(parsed, 'error') ?? text) : text;
+			// Truncated: callers log this message on every poll, and the body
+			// came from the Host, so its size is the Host's choice up to the read cap.
+			const detail = truncateError(isPlainObject(parsed) ? (getOwnString(parsed, 'error') ?? text) : text);
 			throw new HydraHostRequestError(
 				`${init.method ?? 'GET'} ${init.logPath ?? path} on the hydra host failed (${response.status}): ${detail}`,
 				response.status,
@@ -120,6 +122,11 @@ async function request(
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+/** Truncate for storage or a log line, marking that it was cut so it does not read as complete. */
+export function truncateError(message: string, limit = 500): string {
+	return message.length <= limit ? message : `${message.slice(0, limit - 1)}\u2026`;
 }
 
 function safeParse(text: string): unknown {
