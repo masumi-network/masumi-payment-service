@@ -17,10 +17,11 @@
 # stays shut even if someone adds `network_mode: host`. The monitoring range has
 # no such protection, which is why HYDRA_HOST_MONITORING_ENABLED defaults off.
 #
-# To expose the peer range, first apply the generated nftables ruleset, then add
-# `-f docker-compose.public-peer.yml`. That override requires an explicit
-# firewall acknowledgement. Re-apply the rules whenever membership or DNS
-# changes. Never publish this range from this base file.
+# To expose the peer range, first run `hydra-peer-firewall baseline`, then add
+# `-f docker-compose.public-peer.yml`. That override requires the acknowledgement
+# printed by `hydra-peer-firewall verify`. Run `hydra-peer-firewall refresh`
+# whenever membership or DNS changes. Never publish this range from this base
+# file.
 
 services:
   hydra-host:

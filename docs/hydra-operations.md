@@ -142,10 +142,13 @@ The base Compose file also binds the Control Plane and Exchange Plane to
 **The peer plane cannot authenticate its callers**, which is why the base
 compose file does not publish it. It still has to be reachable, because a head
 whose peer port is closed cannot reach its counterparty, so the order matters.
-Fetch the per-head allow-list from `GET /v1/peer-allowlist`, which renders an
-nftables ruleset. Check it with `nft -c -f FILE`, apply it with `nft -f FILE`,
-and only then open the range. Re-apply whenever peer membership or DNS changes.
-Skipping it leaves 32 unauthenticated etcd raft ports open to the internet.
+`GET /v1/peer-allowlist` renders a per-head nftables ruleset.
+[`packages/hydra-host/scripts/hydra-peer-firewall`](../packages/hydra-host/scripts/hydra-peer-firewall)
+applies it on the machine. Run `hydra-peer-firewall baseline` before the Host
+starts, so the whole range is refused and verified. Then run
+`hydra-peer-firewall refresh` on a timer and after every membership change, so
+each peered port opens to its counterparty only. Skipping it leaves 32
+unauthenticated etcd raft ports open to every address the cloud firewall admits.
 
 How you open the range depends on how you run the Host:
 
@@ -156,9 +159,13 @@ How you open the range depends on how you run the Host:
 | **Native mode**                          | There is no override file and no port publication. The ruleset is the whole of it. See [hydra-host-native-mode.md](hydra-host-native-mode.md).                                    |
 
 `HYDRA_HOST_PEER_FIREWALL_ACK` is a compose convention, not a code gate. Nothing
-in the Host reads it, so it guards only deployments that go through that
-override file. Under `docker run` or systemd the ruleset and the cloud firewall
-are the only protection.
+in the Host reads it. Set it from `hydra-peer-firewall verify`, which prints a
+value only when the loaded ruleset refuses the range. Under systemd the gate is
+`ExecStartPre=hydra-peer-firewall baseline`, which stops the unit from starting
+when the ruleset cannot be verified. Under compose, also enable
+`hydra-peer-firewall-baseline.service`, because Docker restarts the container at
+boot without the acknowledgement check. Under a plain `docker run` or native
+mode nothing enforces the order, so run `baseline` yourself first.
 
 `BLOCKFROST_PROJECT_FILE` is a **path to a file** containing the project id,
 not the id itself: it is handed to `hydra-node` as `--blockfrost` and the node
