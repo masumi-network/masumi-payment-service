@@ -14,7 +14,7 @@ import { decrypt, encrypt } from '@/utils/security/encryption';
 import { assertUsableHydraAuthToken } from '@/lib/hydra/hydra/auth';
 import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
-import { fetchHostCapabilities, type HostCapabilities } from './client';
+import { fetchHostCapabilities, truncateError, type HostCapabilities } from './client';
 import { expectedHostCapabilitiesForNetwork } from './compatibility';
 import { assertHostCompatible } from './placement';
 
@@ -93,11 +93,6 @@ export function nextHostStatus(current: HydraHostStatus, probeSucceeded: boolean
 		return current;
 	}
 	return probeSucceeded ? HydraHostStatus.Active : HydraHostStatus.Unreachable;
-}
-
-/** Truncate for storage, marking that it was cut so it does not read as complete. */
-function truncateError(message: string, limit = 500): string {
-	return message.length <= limit ? message : `${message.slice(0, limit - 1)}\u2026`;
 }
 
 /** A control-plane URL must be an absolute https/http origin with no credentials. */

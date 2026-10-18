@@ -184,3 +184,22 @@ describe('Host response size limit', () => {
 		expect(stats.sent).toBeLessThan(OVER_LIMIT_BYTES + 2 * CHUNK_BYTES);
 	});
 });
+
+describe('Host error detail', () => {
+	it('truncates a long error body before it reaches the message', async () => {
+		global.fetch = jest
+			.fn<() => Promise<Response>>()
+			.mockResolvedValue(
+				new Response(JSON.stringify({ error: 'x'.repeat(100_000) }), { status: 500 }),
+			) as unknown as typeof fetch;
+
+		const error = await fetchHostCapabilities('https://hydra.example.com', 'admin-token', {
+			allowInsecureHttp: false,
+		}).catch((caught: unknown) => caught);
+
+		// Booleans, not the message: an untruncated failure would print 100 kB.
+		expect(error instanceof HydraHostRequestError && error.status === 500).toBe(true);
+		expect(error instanceof Error && error.message.length < 1_000).toBe(true);
+		expect(error instanceof Error && error.message.endsWith('…')).toBe(true);
+	});
+});
