@@ -38,6 +38,7 @@ export const hydraHostSchema = z
 		lastHealthAt: z.string().nullable(),
 		lastHealthError: z.string().nullable(),
 		participantCount: z.number(),
+		pausedAt: z.string().nullable().describe('Set while the Host is paused for maintenance'),
 	})
 	.openapi('HydraHost');
 

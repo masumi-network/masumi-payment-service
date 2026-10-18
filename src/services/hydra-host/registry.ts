@@ -36,6 +36,8 @@ export type PublicHydraHost = {
 	lastHealthAt: string | null;
 	lastHealthError: string | null;
 	participantCount: number;
+	/** Set while an operator has paused the Host for maintenance. */
+	pausedAt: string | null;
 };
 
 type HostRow = {
@@ -54,6 +56,7 @@ type HostRow = {
 	status: HydraHostStatus;
 	lastHealthAt: Date | null;
 	lastHealthError: string | null;
+	pausedAt: Date | null;
 	_count: { Participants: number };
 };
 
@@ -77,6 +80,7 @@ export function toPublicHydraHost(row: HostRow): PublicHydraHost {
 		lastHealthAt: row.lastHealthAt?.toISOString() ?? null,
 		lastHealthError: row.lastHealthError,
 		participantCount: row._count.Participants,
+		pausedAt: row.pausedAt?.toISOString() ?? null,
 	};
 }
 
