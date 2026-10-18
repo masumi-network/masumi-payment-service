@@ -28,6 +28,7 @@ function capabilities(overrides: Partial<HostCapabilities> = {}): HostCapabiliti
 		network: 'preprod',
 		exchangePort: 8444,
 		exchangeUrl: 'https://exchange.hydra1.example.com:8444/exchange',
+		release: { version: null, commit: null },
 		nodeSlots: { used: 1, capacity: 32 },
 		probeError: null,
 		...overrides,

@@ -42,6 +42,25 @@ describe('Hydra Host transport security', () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
+	it('reads the Host release, and leaves it null on a Host that predates reporting it', async () => {
+		const respond = (body: object) =>
+			jest
+				.fn<() => Promise<Response>>()
+				.mockResolvedValue(
+					new Response(JSON.stringify({ hydraVersion: '0.20.0', network: 'Preprod', ...body }), { status: 200 }),
+				) as unknown as typeof fetch;
+
+		global.fetch = respond({ release: { version: '0.29.0-5-gabc1234', commit: 'abc1234' } });
+		await expect(
+			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
+		).resolves.toMatchObject({ release: { version: '0.29.0-5-gabc1234', commit: 'abc1234' } });
+
+		global.fetch = respond({});
+		await expect(
+			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
+		).resolves.toMatchObject({ release: { version: null, commit: null } });
+	});
+
 	it('rejects an insecure public Exchange Plane URL reported by the Host', async () => {
 		global.fetch = jest.fn<() => Promise<Response>>().mockResolvedValue(
 			new Response(
