@@ -117,6 +117,9 @@ export function HydraNodeStrip({
               <span className="text-xs text-muted-foreground">
                 {heads} {heads === 1 ? 'head' : 'heads'}
               </span>
+              {host.pausedAt !== null && (
+                <span className="text-xs font-medium text-amber-600">Paused</span>
+              )}
             </button>
             <Button
               type="button"
