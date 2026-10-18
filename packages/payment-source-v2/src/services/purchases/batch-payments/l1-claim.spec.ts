@@ -92,6 +92,44 @@ describe('L1 batch revert', () => {
 		});
 	});
 
+	// Regression: a requeued request that kept the rolled-back shared tx as
+	// CurrentTransaction never matched L1 selection (`CurrentTransaction: { is: null }`).
+	it('frees a requeued request from the rolled-back shared transaction', async () => {
+		mockUpdate.mockResolvedValueOnce({ id: 'req-1' });
+
+		await revertOwnedL1BatchRequests({
+			sharedTxId: 'l1-shared-tx',
+			requests: [{ id: 'req-1', nextActionId: 'a-1' }],
+			isRetryable: true,
+			errorNote: 'unused',
+		});
+
+		expect(mockUpdate.mock.calls[0][0]).toMatchObject({
+			data: {
+				CurrentTransaction: { disconnect: true },
+				TransactionHistory: { connect: { id: 'l1-shared-tx' } },
+			},
+		});
+	});
+
+	it('keeps the shared transaction current on a manual-action revert', async () => {
+		mockUpdate.mockResolvedValueOnce({ id: 'req-1' });
+
+		await revertOwnedL1BatchRequests({
+			sharedTxId: 'l1-shared-tx',
+			requests: [{ id: 'req-1', nextActionId: 'a-1' }],
+			isRetryable: false,
+			errorNote: 'failed',
+		});
+
+		const data = mockUpdate.mock.calls[0][0].data;
+		expect(data).toMatchObject({
+			NextAction: { create: { requestedAction: PurchasingAction.WaitingForManualAction } },
+			TransactionHistory: { connect: { id: 'l1-shared-tx' } },
+		});
+		expect(data).not.toHaveProperty('CurrentTransaction');
+	});
+
 	it('changes nothing when the batch has no shared transaction', async () => {
 		await revertOwnedL1BatchRequests({
 			sharedTxId: null,

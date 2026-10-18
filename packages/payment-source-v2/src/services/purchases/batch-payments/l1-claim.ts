@@ -90,6 +90,14 @@ export async function revertOwnedL1BatchRequests(params: {
 									errorNote,
 								},
 					},
+					// Record the rolled-back shared tx in TransactionHistory on both
+					// branches, so error-state recovery can still find it. A requeued
+					// request must also drop it as CurrentTransaction: L1 selection
+					// filters on `CurrentTransaction: { is: null }`, so a requeued request
+					// that kept it would never re-batch. Manual-action requests keep it
+					// (matches V1).
+					TransactionHistory: { connect: { id: sharedTxId } },
+					...(isRetryable ? { CurrentTransaction: { disconnect: true } } : {}),
 				},
 				select: { id: true },
 			});
