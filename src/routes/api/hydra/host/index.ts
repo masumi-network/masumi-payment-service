@@ -38,7 +38,10 @@ export const hydraHostSchema = z
 		ledgerParamsHash: z.string().nullable(),
 		status: z.nativeEnum(HydraHostStatus),
 		lastHealthAt: z.string().nullable(),
-		lastHealthError: z.string().nullable(),
+		lastHealthError: z
+			.string()
+			.nullable()
+			.describe('Why the last probe failed: one failed check per line. Null when it passed'),
 		participantCount: z.number(),
 		pausedAt: z.string().nullable().describe('Set while the Host is paused for maintenance'),
 	})

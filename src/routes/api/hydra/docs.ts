@@ -245,7 +245,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/host/check',
 		summary: 'Probe a Hydra Host and record its capabilities. (admin access required)',
 		description:
-			'Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it.',
+			'Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it. Every check runs, and `lastHealthError` holds one failed check per line. A Host with no free node slots still passes: only a new placement needs a free slot.',
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(checkHydraHostSchemaInput, undefined) },

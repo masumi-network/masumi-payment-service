@@ -6439,7 +6439,8 @@
                     },
                     "lastHealthError": {
                         "type": "string",
-                        "nullable": true
+                        "nullable": true,
+                        "description": "Why the last probe failed: one failed check per line. Null when it passed"
                     },
                     "participantCount": {
                         "type": "number"
@@ -33382,7 +33383,7 @@
         "/hydra/host/check": {
             "post": {
                 "summary": "Probe a Hydra Host and record its capabilities. (admin access required)",
-                "description": "Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it.",
+                "description": "Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it. Every check runs, and `lastHealthError` holds one failed check per line. A Host with no free node slots still passes: only a new placement needs a free slot.",
                 "tags": [
                     "hydra"
                 ],

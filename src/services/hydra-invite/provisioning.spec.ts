@@ -21,6 +21,7 @@ const mockFindFirst = jest.fn() as AnyMock;
 const mockCreate = jest.fn() as AnyMock;
 const mockAcknowledge = jest.fn() as AnyMock;
 const mockProvision = jest.fn() as AnyMock;
+const mockAssertFreeSlot = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -48,6 +49,7 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 
 jest.unstable_mockModule('@/services/hydra-host/placement', () => ({
 	assertHostCompatible: () => undefined,
+	assertHostHasFreeSlot: mockAssertFreeSlot,
 	selectPlacementHost: (hosts: Array<{ id: string }>) => hosts[0],
 }));
 
@@ -74,6 +76,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockAssertFreeSlot.mockReset();
 	mockFindMany.mockResolvedValue([
 		{
 			id: 'host-1',
@@ -142,5 +145,22 @@ describe('reserveNodeForExchange', () => {
 			/disclosed no keys/,
 		);
 		expect(mockAcknowledge).not.toHaveBeenCalled();
+	});
+
+	// The free-slot check left the probe, so placement is now the only place
+	// that asks it. A full Host must be refused before anything is provisioned.
+	it('refuses a full host before provisioning', async () => {
+		mockAssertFreeSlot.mockImplementation(() => {
+			throw new Error('the hydra host has no free node slots (1/1)');
+		});
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toThrow(/1\/1/);
+		expect(mockProvision).not.toHaveBeenCalled();
+	});
+
+	// First-fit is only stable if the database returns the Hosts in a fixed order.
+	it('reads the hosts oldest first', async () => {
+		await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+		expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { createdAt: 'asc' } }));
 	});
 });

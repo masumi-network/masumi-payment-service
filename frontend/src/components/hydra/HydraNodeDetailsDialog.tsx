@@ -67,6 +67,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { NodeFundsHint } from '@/components/hydra/hydra-hints';
 import { formatAssetAmount } from '@/lib/utils';
+import { hydraHostHealthProblems, summarizeHydraHostHealth } from '@/lib/hydra-host-health';
 
 type HydraNodeDetailsDialogProps = {
   host: HydraHost | null;
@@ -201,7 +202,12 @@ export function HydraNodeDetailsDialog({
     try {
       const checked = await checkHydraHost(apiClient, host.id);
       if (checked.status === 'Unreachable') {
-        toast.error(checked.lastHealthError ?? `${host.name} could not be reached`);
+        toast.error(
+          summarizeHydraHostHealth(
+            hydraHostHealthProblems(checked.lastHealthError),
+            `${host.name} could not be reached`,
+          ),
+        );
       } else {
         toast.success(`${host.name} is ${checked.status.toLowerCase()}`);
       }
@@ -305,6 +311,7 @@ export function HydraNodeDetailsDialog({
   if (!host) return null;
 
   const neverProbed = host.lastHealthAt === null;
+  const healthProblems = hydraHostHealthProblems(host.lastHealthError);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -414,9 +421,20 @@ export function HydraNodeDetailsDialog({
             </DropdownMenu>
           </div>
 
-          {host.lastHealthError && (
+          {healthProblems.length > 0 && (
             <HydraNotice tone="error">
-              <p>{host.lastHealthError}</p>
+              {healthProblems.length === 1 ? (
+                <p>{healthProblems[0]}</p>
+              ) : (
+                <>
+                  <p>{healthProblems.length} checks failed:</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-4">
+                    {healthProblems.map((problem, index) => (
+                      <li key={index}>{problem}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
               <p className="mt-1">
                 Fixed the cause? Press <span className="text-foreground">Check now</span> — this
                 reading is from the last probe, not live.
