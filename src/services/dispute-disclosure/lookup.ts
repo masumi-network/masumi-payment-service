@@ -1,7 +1,10 @@
 import { prisma } from '@masumi/payment-core/db';
 import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 
-type DisputedRequestRow = {
+export type DisputedRequestKind = 'payment' | 'purchase';
+
+export type DisputedRequestRow = {
+	kind: DisputedRequestKind;
 	blockchainIdentifier: string;
 	inputHash: string;
 	resultHash: string | null;
@@ -26,8 +29,13 @@ export async function findDisputedV2Request(params: {
 
 	const payment = await prisma.paymentRequest.findFirst({ where: disputedFilter });
 	if (payment != null) {
-		return payment;
+		return { kind: 'payment', ...payment };
 	}
 
-	return prisma.purchaseRequest.findFirst({ where: disputedFilter });
+	const purchase = await prisma.purchaseRequest.findFirst({ where: disputedFilter });
+	if (purchase != null) {
+		return { kind: 'purchase', ...purchase };
+	}
+
+	return null;
 }

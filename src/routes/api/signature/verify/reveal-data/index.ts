@@ -35,7 +35,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 
 			assertWalletInScope(ctx.walletScopeIds, context.smartContractWalletId);
 			if (!ctx.canAdmin && !ctx.networkLimit.includes(context.network)) {
-				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Payment is not on the requested network');
+				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 403, 'Payment is not on the requested network');
 				throw createHttpError(403, 'Network not allowed');
 			}
 

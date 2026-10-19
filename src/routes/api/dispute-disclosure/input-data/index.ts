@@ -6,6 +6,7 @@ import createHttpError from 'http-errors';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 import { upsertDisputeInputData } from '@/services/dispute-disclosure/storage';
 import { findDisputedV2Request } from '@/services/dispute-disclosure/lookup';
+import { assertCanUploadDisclosureInput } from '@/services/dispute-disclosure/upload-authorization';
 
 export const postDisputeInputDataSchemaInput = z.object({
 	network: z.nativeEnum(Network),
@@ -37,9 +38,7 @@ export const postDisputeInputDataEndpointPost = payAuthenticatedEndpointFactory.
 			throw createHttpError(404, 'Disputed V2 payment or purchase not found');
 		}
 		assertWalletInScope(ctx.walletScopeIds, target.smartContractWalletId);
-		if (target.requestedById !== ctx.id && !ctx.canAdmin) {
-			throw createHttpError(403, 'Not authorized to upload disclosure data for this request');
-		}
+		assertCanUploadDisclosureInput(ctx, target);
 
 		await upsertDisputeInputData({
 			blockchainIdentifier: input.blockchainIdentifier,

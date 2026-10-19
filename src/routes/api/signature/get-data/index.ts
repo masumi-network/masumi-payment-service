@@ -53,6 +53,8 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 				};
 			}
 
+			const plaintext = await readDisputeDisclosurePlaintext(input.blockchainIdentifier);
+
 			if (
 				!markRevealSignatureUsed({
 					signature: input.signature,
@@ -70,7 +72,6 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 				};
 			}
 
-			const plaintext = await readDisputeDisclosurePlaintext(input.blockchainIdentifier);
 			return {
 				isValid: true,
 				inputHash: context.inputHash,
