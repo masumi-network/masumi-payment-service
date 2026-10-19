@@ -17,7 +17,7 @@ import { readCapabilities } from '../capabilities.js';
 import { PortExhaustedError, type PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { ExchangeStore } from '../registry/exchange-store.js';
-import { isUsable, restartCountOf, type NodeRecord, type PeerRecord } from '../registry/types.js';
+import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRecord } from '../registry/types.js';
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
@@ -295,7 +295,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 				rejectUpgrade(404, 'Not Found');
 				return;
 			}
-			if (record.state !== 'Running') {
+			if (!acceptsCommands(record)) {
 				rejectUpgrade(409, 'Conflict');
 				return;
 			}
@@ -547,10 +547,10 @@ export function createControlPlane(deps: ServerDeps): Server {
 			send(response, 404, { error: 'no such node' });
 			return;
 		}
-		if (record.state !== 'Running') {
+		if (!acceptsCommands(record)) {
 			// Proxying to a node that is not up would surface as a connection
 			// refused; saying so plainly is more useful than a 502.
-			send(response, 409, { error: `node is ${record.state}, not Running` });
+			send(response, 409, { error: `node is ${describeAdmission(record)}, its API is closed` });
 			return;
 		}
 
@@ -566,6 +566,14 @@ export function createControlPlane(deps: ServerDeps): Server {
 	}
 
 	return server;
+}
+
+/** Why a node refuses commands: a pending stop or restart reads as one, even while the state is still `Running`. */
+function describeAdmission(record: NodeRecord): string {
+	if (record.state !== 'Running') {
+		return record.state;
+	}
+	return record.desired === 'Stopped' ? 'stopping' : 'restarting';
 }
 
 /**

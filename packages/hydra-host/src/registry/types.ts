@@ -249,15 +249,29 @@ export function restartCountOf(record: NodeRecord): number {
 }
 
 /**
+ * Whether the node may take commands right now, judged from the record alone.
+ *
+ * `state` changes only when the supervisor acts, and the API kicks the
+ * supervisor without waiting for it. A stop or restart request therefore leaves
+ * the record `Running` until a tick drains the node, and a command that enters
+ * in that window lands on a node the operator has already taken away. The
+ * request is the intent, so it closes admission at once.
+ */
+export function acceptsCommands(record: NodeRecord): boolean {
+	return record.state === 'Running' && record.desired === 'Running' && record.restartRequested !== true;
+}
+
+/**
  * Whether a caller may route work to this node.
  *
  * Three things all have to hold, and none implies the others. The state must be
  * `Running`; the node must still have been answering at the last probe, since
  * it can stop after being promoted; and its chain follower must be caught up,
  * because a synced-looking node that is actually catching up refuses every
- * command with `WaitOnNodeInSync`.
+ * command with `WaitOnNodeInSync`. A pending stop or restart also makes it
+ * unusable; see `acceptsCommands`.
  */
 export function isUsable(record: NodeRecord): boolean {
 	const observation = record.lastObservation;
-	return record.state === 'Running' && observation?.responsive === true && observation.chainSynced;
+	return acceptsCommands(record) && observation?.responsive === true && observation.chainSynced;
 }
