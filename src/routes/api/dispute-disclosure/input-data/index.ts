@@ -3,7 +3,7 @@ import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { Network } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
-import { assertWalletInScope } from '@/utils/shared/wallet-scope';
+import { assertDisclosureInputWalletInScope } from '@/services/dispute-disclosure/disclosure-wallet-scope';
 import { upsertDisputeInputData } from '@/services/dispute-disclosure/storage';
 import { findDisputedV2Request } from '@/services/dispute-disclosure/lookup';
 import { assertCanUploadDisclosureInput } from '@/services/dispute-disclosure/upload-authorization';
@@ -37,7 +37,7 @@ export const postDisputeInputDataEndpointPost = payAuthenticatedEndpointFactory.
 		if (target == null) {
 			throw createHttpError(404, 'Disputed V2 payment or purchase not found');
 		}
-		assertWalletInScope(ctx.walletScopeIds, target.smartContractWalletId);
+		assertDisclosureInputWalletInScope(ctx.walletScopeIds, target);
 		assertCanUploadDisclosureInput(ctx, target);
 
 		await upsertDisputeInputData({

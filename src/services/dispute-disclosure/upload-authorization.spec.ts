@@ -8,8 +8,9 @@ const baseTarget: DisputedRequestRow = {
 	blockchainIdentifier: 'id',
 	inputHash: 'abc',
 	resultHash: 'def',
-	smartContractWalletId: 'wallet-1',
+	smartContractWalletId: 'buyer-hot-wallet',
 	requestedById: 'buyer-key',
+	sellerHotWalletId: 'seller-hot-wallet',
 };
 
 describe('upload-authorization', () => {
@@ -19,7 +20,7 @@ describe('upload-authorization', () => {
 				{
 					id: 'seller-key',
 					canAdmin: false,
-					walletScopeIds: ['wallet-1'],
+					walletScopeIds: ['seller-hot-wallet'],
 					networkLimit: [],
 				} as never,
 				baseTarget,
@@ -33,7 +34,7 @@ describe('upload-authorization', () => {
 				{
 					id: 'buyer-key',
 					canAdmin: false,
-					walletScopeIds: ['wallet-1'],
+					walletScopeIds: ['seller-hot-wallet'],
 					networkLimit: [],
 				} as never,
 				baseTarget,

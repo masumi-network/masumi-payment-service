@@ -3,7 +3,7 @@ import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { Network } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
-import { assertWalletInScope } from '@/utils/shared/wallet-scope';
+import { assertDisclosureResultWalletInScope } from '@/services/dispute-disclosure/disclosure-wallet-scope';
 import { upsertDisputeResultData } from '@/services/dispute-disclosure/storage';
 import { findDisputedV2Request } from '@/services/dispute-disclosure/lookup';
 import { assertCanUploadDisclosureResult } from '@/services/dispute-disclosure/upload-authorization';
@@ -40,7 +40,7 @@ export const postDisputeResultDataEndpointPost = payAuthenticatedEndpointFactory
 		if (target.resultHash == null) {
 			throw createHttpError(400, 'Request has no on-chain result hash yet');
 		}
-		assertWalletInScope(ctx.walletScopeIds, target.smartContractWalletId);
+		assertDisclosureResultWalletInScope(ctx.walletScopeIds, target);
 		assertCanUploadDisclosureResult(ctx, target);
 
 		await upsertDisputeResultData({

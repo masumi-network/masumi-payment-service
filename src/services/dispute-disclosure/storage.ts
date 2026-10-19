@@ -64,12 +64,22 @@ export async function readDisputeDisclosurePlaintext(blockchainIdentifier: strin
 		where: { blockchainIdentifier },
 	});
 	if (row == null) {
-		return { inputData: null as string | null, resultData: null as string | null };
+		return {
+			inputData: null as string | null,
+			resultData: null as string | null,
+			decryptFailed: false,
+		};
 	}
 
+	const inputData = decryptDisclosureField(row.encryptedInputData, 'input', blockchainIdentifier);
+	const resultData = decryptDisclosureField(row.encryptedResultData, 'result', blockchainIdentifier);
+	const decryptFailed =
+		(row.encryptedInputData != null && inputData === null) || (row.encryptedResultData != null && resultData === null);
+
 	return {
-		inputData: decryptDisclosureField(row.encryptedInputData, 'input', blockchainIdentifier),
-		resultData: decryptDisclosureField(row.encryptedResultData, 'result', blockchainIdentifier),
+		inputData,
+		resultData,
+		decryptFailed,
 	};
 }
 

@@ -54,6 +54,15 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 			}
 
 			const plaintext = await readDisputeDisclosurePlaintext(input.blockchainIdentifier);
+			if (plaintext.decryptFailed) {
+				return {
+					isValid: false,
+					inputHash: '',
+					resultHash: null,
+					inputData: null,
+					resultData: null,
+				};
+			}
 
 			if (
 				!markRevealSignatureUsed({

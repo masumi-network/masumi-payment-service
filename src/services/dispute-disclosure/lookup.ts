@@ -1,5 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
-import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import { HotWalletType, Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 
 export type DisputedRequestKind = 'payment' | 'purchase';
 
@@ -10,6 +10,8 @@ export type DisputedRequestRow = {
 	resultHash: string | null;
 	smartContractWalletId: string | null;
 	requestedById: string;
+	/** Selling hot wallet for purchase disputes; null for payment disputes. */
+	sellerHotWalletId: string | null;
 };
 
 export async function findDisputedV2Request(params: {
@@ -29,12 +31,32 @@ export async function findDisputedV2Request(params: {
 
 	const payment = await prisma.paymentRequest.findFirst({ where: disputedFilter });
 	if (payment != null) {
-		return { kind: 'payment', ...payment };
+		return {
+			kind: 'payment',
+			...payment,
+			sellerHotWalletId: payment.smartContractWalletId,
+		};
 	}
 
-	const purchase = await prisma.purchaseRequest.findFirst({ where: disputedFilter });
+	const purchase = await prisma.purchaseRequest.findFirst({
+		where: disputedFilter,
+		include: { SellerWallet: true },
+	});
 	if (purchase != null) {
-		return { kind: 'purchase', ...purchase };
+		const sellingWallet = await prisma.hotWallet.findFirst({
+			where: {
+				paymentSourceId: purchase.paymentSourceId,
+				type: HotWalletType.Selling,
+				deletedAt: null,
+				walletVkey: purchase.SellerWallet.walletVkey,
+			},
+			select: { id: true },
+		});
+		return {
+			kind: 'purchase',
+			...purchase,
+			sellerHotWalletId: sellingWallet?.id ?? null,
+		};
 	}
 
 	return null;
