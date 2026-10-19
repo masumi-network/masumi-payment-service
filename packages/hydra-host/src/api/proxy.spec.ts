@@ -290,6 +290,24 @@ describe('node api websocket proxy', () => {
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 	});
 
+	// The upgrade gate only refuses new sessions. A session opened before the
+	// request would keep forwarding commands until the supervisor drains the node.
+	it.each(['stop', 'restart'])('cuts a session that was already open when %s is requested', async (action) => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		const WebSocket = (await import('ws')).default;
+		const socket = new WebSocket(`${baseUrl.replace('http', 'ws')}/v1/nodes/node-1/api`, {
+			headers: { Authorization: `Bearer ${USER}` },
+		} as never);
+		const closed = new Promise<void>((resolve) => socket.on('close', () => resolve()));
+		await new Promise<void>((resolve) => socket.on('message', () => resolve()));
+
+		expect((await call('POST', `/v1/nodes/node-1/${action}`, ADMIN)).status).toBe(202);
+
+		await closed;
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
 	it('rejects an upgrade on any path other than the api root', async () => {
 		expect((await connect('/v1/nodes/node-1/api/config', USER)).status).toBe(404);
 	});

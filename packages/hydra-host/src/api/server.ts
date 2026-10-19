@@ -12,6 +12,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import type { Duplex } from 'node:stream';
 import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
 import { PortExhaustedError, type PortAllocator } from '../registry/ports.js';
@@ -159,6 +160,29 @@ export function createControlPlane(deps: ServerDeps): Server {
 		});
 	};
 
+	// Node API sockets, by node, so a stop or restart can cut the ones already
+	// open. The upgrade gate only refuses new sessions, and an open session
+	// would keep forwarding commands until the supervisor drains the node.
+	// A socket is tracked before its record is read, so an upgrade racing the
+	// request is either refused by the gate or closed here.
+	const nodeSockets = new Map<string, Set<Duplex>>();
+	const trackNodeSocket = (nodeId: string, socket: Duplex): void => {
+		const sockets = nodeSockets.get(nodeId) ?? new Set<Duplex>();
+		nodeSockets.set(nodeId, sockets);
+		sockets.add(socket);
+		socket.once('close', () => {
+			sockets.delete(socket);
+			if (sockets.size === 0 && nodeSockets.get(nodeId) === sockets) {
+				nodeSockets.delete(nodeId);
+			}
+		});
+	};
+	const closeNodeSockets = (nodeId: string): void => {
+		for (const socket of nodeSockets.get(nodeId) ?? []) {
+			socket.destroy();
+		}
+	};
+
 	const server = createServer((request, response) => {
 		void (async () => {
 			// The host must never appear in search engines. setHeader merges into
@@ -289,6 +313,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 				rejectUpgrade(auth.status, auth.status === 403 ? 'Forbidden' : 'Unauthorized');
 				return;
 			}
+			trackNodeSocket(target.nodeId, socket);
 
 			const record = await store.read(target.nodeId).catch(() => null);
 			if (record === null) {
@@ -466,6 +491,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			case 'stopNode': {
 				const record = await requestStop(store, nodeId ?? '');
+				closeNodeSockets(record.nodeId);
 				tickSupervisor();
 				send(response, 202, publicNode(record));
 				return;
@@ -473,6 +499,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			case 'restartNode': {
 				const record = await requestRestart(store, nodeId ?? '');
+				closeNodeSockets(record.nodeId);
 				tickSupervisor();
 				send(response, 202, publicNode(record));
 				return;
@@ -481,6 +508,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 			case 'removeNode': {
 				const force = new URL(request.url ?? '/', 'http://placeholder').searchParams.get('force') === 'true';
 				const record = await requestRemoval(store, nodeId ?? '', { force });
+				closeNodeSockets(record.nodeId);
 				tickSupervisor();
 				send(response, 202, publicNode(record));
 				return;
@@ -506,6 +534,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 					driftSeconds: record.lastObservation?.driftSeconds ?? null,
 					drift: record.lastObservation?.drift ?? null,
 					lastCheckedAt: record.lastObservation?.checkedAt ?? null,
+					restartRequested: record.restartRequested === true,
 					restartCount: restartCountOf(record),
 					lastStopUndrained: record.lastStopUndrained,
 					failureReason: record.failureReason ?? null,

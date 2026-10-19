@@ -135,14 +135,26 @@ export function proxyWebSocket(
 	});
 
 	const fail = (message: string): void => {
-		onError(message);
-		if (!clientSocket.destroyed) {
-			clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
-			clientSocket.destroy();
+		// A caller that is already gone was cut on purpose (a stop or restart) or
+		// hung up; the node is not at fault, so there is nothing to report.
+		if (clientSocket.destroyed) {
+			return;
 		}
+		onError(message);
+		clientSocket.write('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
+		clientSocket.destroy();
 	};
 
+	// A stop or restart can cut the caller while the node is still answering the
+	// upgrade. Abort the request then, or a slow node holds it open.
+	clientSocket.once('close', () => upstream.destroy());
+
 	upstream.on('upgrade', (upstreamResponse, upstreamSocket, upstreamHead) => {
+		// The caller was cut in the same turn the node answered.
+		if (clientSocket.destroyed) {
+			upstreamSocket.destroy();
+			return;
+		}
 		// A quiet head can be silent for a long time, and the full-history replay
 		// can be slow; neither side may time the socket out.
 		clientSocket.setTimeout?.(0);
