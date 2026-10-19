@@ -9,6 +9,7 @@ const mockHostUpdateMany = jest.fn() as AnyMock;
 const mockHostFindMany = jest.fn() as AnyMock;
 const mockParticipantFindMany = jest.fn() as AnyMock;
 const mockParticipantFindUnique = jest.fn() as AnyMock;
+const mockInviteFindMany = jest.fn() as AnyMock;
 const mockQueryRaw = jest.fn() as AnyMock;
 const mockTransactionCount = jest.fn() as AnyMock;
 const mockTopupCount = jest.fn() as AnyMock;
@@ -22,6 +23,7 @@ const tx = {
 	$queryRaw: mockQueryRaw,
 	hydraHost: { update: mockHostUpdate },
 	hydraLocalParticipant: { findMany: mockParticipantFindMany },
+	hydraHeadInvite: { findMany: mockInviteFindMany },
 };
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
@@ -33,6 +35,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findMany: mockHostFindMany,
 		},
 		hydraLocalParticipant: { findUnique: mockParticipantFindUnique, findMany: mockParticipantFindMany },
+		hydraHeadInvite: { findMany: mockInviteFindMany },
 		transaction: { count: mockTransactionCount },
 		hydraTopup: { count: mockTopupCount },
 		hydraDecommit: { count: mockDecommitCount },
@@ -120,6 +123,7 @@ beforeEach(() => {
 	setInFlight(0);
 	mockHostUpdateMany.mockResolvedValue({ count: 1 });
 	mockParticipantFindMany.mockResolvedValue([{ hostNodeId: 'node-a' }, { hostNodeId: 'node-b' }]);
+	mockInviteFindMany.mockResolvedValue([]);
 	mockStopHostNode.mockResolvedValue(undefined);
 	mockStartHostNode.mockResolvedValue(undefined);
 	mockFetchHostNodeHealth.mockResolvedValue({ state: 'Stopped' });
@@ -141,6 +145,22 @@ describe('pauseHydraHost', () => {
 		// In-flight work holds the nodes running.
 		expect(mockStopHostNode).not.toHaveBeenCalled();
 		expect(state.phase).toBe('Draining');
+	});
+
+	// A node reserved for an open invite has no head yet. Left running, a
+	// redemption would configure and start it during maintenance.
+	it('records the node of an open invite with the nodes that have a head', async () => {
+		mockQueryRaw.mockResolvedValue([{ pausedAt: null, encryptedAdminToken: 'admin' }]);
+		mockInviteFindMany.mockResolvedValue([{ hostNodeId: 'node-r' }, { hostNodeId: 'node-a' }]);
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		setInFlight(1);
+
+		await pause.pauseHydraHost('host-1', { force: false });
+
+		expect(mockHostUpdate).toHaveBeenCalledWith({
+			where: { id: 'host-1' },
+			data: expect.objectContaining({ pausedNodeIds: ['node-a', 'node-b', 'node-r'] }),
+		});
 	});
 
 	// The 409 refuses only the force: the pause itself is recorded and drains.
@@ -213,6 +233,38 @@ describe('advanceHydraHostPause', () => {
 			data: { pausedNodeIds: ['node-a', 'node-b', 'node-c'], pauseStopRequestedAt: expect.any(Date) },
 		});
 		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b', 'node-c']);
+	});
+
+	it('also stops and records the node of an invite issued after the pause started', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		mockInviteFindMany.mockResolvedValue([{ hostNodeId: 'node-r' }]);
+
+		await pause.advanceHydraHostPause('host-1', { force: false });
+
+		expect(mockHostUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseStopRequestedAt: null },
+			data: { pausedNodeIds: ['node-a', 'node-b', 'node-r'], pauseStopRequestedAt: expect.any(Date) },
+		});
+		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toEqual(['node-a', 'node-b', 'node-r']);
+	});
+
+	it('stops an invite node provisioned after the pause had fully stopped', async () => {
+		mockHostFindUnique.mockResolvedValue(hostRow());
+		await pause.advanceHydraHostPause('host-1', { force: false });
+		const requestedAt = recordedStopAt();
+		mockStopHostNode.mockClear();
+		mockHostUpdateMany.mockClear();
+		mockHostFindMany.mockResolvedValue([{ id: 'host-1' }]);
+		mockHostFindUnique.mockResolvedValue(hostRow({ pauseStopRequestedAt: requestedAt }));
+		mockInviteFindMany.mockResolvedValue([{ hostNodeId: 'node-r' }]);
+
+		await pause.runHydraHostPauseCycle();
+
+		expect(mockHostUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'host-1', pausedAt: PAUSED_AT, pauseStopRequestedAt: requestedAt },
+			data: { pausedNodeIds: ['node-a', 'node-b', 'node-r'], pauseStopRequestedAt: requestedAt },
+		});
+		expect(mockStopHostNode.mock.calls.map((call) => call[2])).toContain('node-r');
 	});
 
 	// An overrun lease let Resume end the pause; stopping now would hit an active Host.

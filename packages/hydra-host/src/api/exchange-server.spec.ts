@@ -35,6 +35,7 @@ let onRedeemed: jest.Mock<(nonce: string, hostNodeId: string) => Promise<void>>;
 // redemption-signature.spec.ts.
 let verifyRedemption: jest.Mock<ExchangeDeps['verifyRedemption']>;
 let checkPeerTarget: jest.Mock<ExchangeDeps['checkPeerTarget']>;
+let isNodeStopped: jest.Mock<ExchangeDeps['isNodeStopped']>;
 
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
@@ -81,7 +82,8 @@ beforeEach(async () => {
 	onRedeemed = jest.fn(async () => undefined) as typeof onRedeemed;
 	verifyRedemption = jest.fn<ExchangeDeps['verifyRedemption']>(async () => true);
 	checkPeerTarget = jest.fn<ExchangeDeps['checkPeerTarget']>(async () => null);
-	server = createExchangePlane({ store, logger, onRedeemed, verifyRedemption, checkPeerTarget });
+	isNodeStopped = jest.fn<ExchangeDeps['isNodeStopped']>(async () => false);
+	server = createExchangePlane({ store, logger, onRedeemed, verifyRedemption, checkPeerTarget, isNodeStopped });
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -145,6 +147,7 @@ describe('search-engine exclusion', () => {
 			onRedeemed,
 			verifyRedemption,
 			checkPeerTarget,
+			isNodeStopped,
 			limits: { requestsPerMinute: 1 },
 		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
@@ -292,6 +295,44 @@ describe('redeeming an invite', () => {
 		expect((await store.listInvites())[0].redeemedAt).toBeNull();
 	});
 
+	// A maintenance pause stops the reserved node. Redeeming now would configure
+	// it while the operator expects the Host to stay still.
+	it('refuses a redemption while the reserved node is stopped, leaving the invite open', async () => {
+		await issue('nonce-paused-node');
+		isNodeStopped.mockResolvedValueOnce(true);
+		const response = await fetch(`${base}/exchange/redeem`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Connection: 'close' },
+			body: JSON.stringify({ nonce: 'nonce-paused-node', redeemer: MATERIAL, signature: SIGNATURE }),
+		});
+
+		expect(response.status).toBe(503);
+		expect(response.headers.get('retry-after')).toBe('60');
+		expect(isNodeStopped).toHaveBeenCalledWith('node-1');
+		expect(onRedeemed).not.toHaveBeenCalled();
+		expect((await store.listInvites())[0].redeemedAt).toBeNull();
+
+		// After Resume the same invite still redeems.
+		const retried = await post('/exchange/redeem', {
+			nonce: 'nonce-paused-node',
+			redeemer: MATERIAL,
+			signature: SIGNATURE,
+		});
+		expect(retried.status).toBe(200);
+	});
+
+	it('answers 410 for an expired invite even while its node is stopped', async () => {
+		await issue('nonce-expired-stopped', -1_000);
+		isNodeStopped.mockResolvedValue(true);
+		const result = await post('/exchange/redeem', {
+			nonce: 'nonce-expired-stopped',
+			redeemer: MATERIAL,
+			signature: SIGNATURE,
+		});
+
+		expect(result.status).toBe(410);
+	});
+
 	it('does not resolve the peer address for a nonce that is not open', async () => {
 		const result = await post('/exchange/redeem', {
 			nonce: 'nonce-unknown01',
@@ -331,6 +372,7 @@ describe('public surface hardening', () => {
 			onRedeemed,
 			verifyRedemption,
 			checkPeerTarget,
+			isNodeStopped,
 			limits: { requestsPerMinute: 1 },
 		});
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -459,6 +501,7 @@ describe('total request budget', () => {
 			onRedeemed,
 			verifyRedemption,
 			checkPeerTarget,
+			isNodeStopped,
 			trustProxy: true,
 			limits: { requestsPerMinute: 2, totalRequestsPerMinute: 5 },
 		});
@@ -575,6 +618,7 @@ describe('incomplete redemption bodies', () => {
 			onRedeemed,
 			verifyRedemption,
 			checkPeerTarget,
+			isNodeStopped,
 			limits: { maxInFlight: 1 },
 		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
@@ -601,6 +645,7 @@ describe('incomplete redemption bodies', () => {
 			onRedeemed,
 			verifyRedemption,
 			checkPeerTarget,
+			isNodeStopped,
 			trustProxy: true,
 			limits: { maxInFlight: 16, ...{ maxBodyReaders: 2, maxBodyReadersPerSource: 1 } },
 		});
@@ -632,6 +677,7 @@ describe('incomplete redemption bodies', () => {
 			onRedeemed,
 			verifyRedemption,
 			checkPeerTarget,
+			isNodeStopped,
 			limits: { maxInFlight: 1, ...{ bodyTimeoutMs: 40, maxBodyReaders: 1 } },
 		});
 		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));

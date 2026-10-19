@@ -19,14 +19,7 @@
 
 import createHttpError from 'http-errors';
 import { MeshTxBuilder, MeshWallet, resolveTxHash, type UTxO } from '@meshsdk/core';
-import {
-	HydraDecommitStatus,
-	HydraErrorType,
-	HydraHeadStatus,
-	Network,
-	Prisma,
-	TransactionLayer,
-} from '@/generated/prisma/client';
+import { HydraDecommitStatus, HydraErrorType, HydraHeadStatus, Network, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
@@ -56,6 +49,7 @@ import {
 	isHydraHeadOnPausedHostLocked,
 } from '@/services/hydra-host/pause';
 import { staleWithdrawal } from './stale';
+import { countLiveInHeadEscrows } from './live-escrows';
 
 /**
  * How long the in-head split gets to confirm before the withdrawal gives up.
@@ -225,6 +219,21 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 						}
 
 						if (await isHydraHeadOnPausedHostLocked(tx, head.id)) throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
+
+						// Taking the collateral is only safe once nothing is left to spend
+						// with it. The dialog explains the consequence, but a dialog is not a
+						// guard: an escrow still live in the head becomes unspendable the
+						// moment its wallet has no collateral, and the only way out of that
+						// is closing the head. The head row lock is the one new escrow
+						// reservations take, so the count and the drain mark are atomic with
+						// respect to them: no escrow can enter after the count.
+						if (params.drain === true) {
+							await tx.$queryRaw`SELECT 1 FROM "HydraHead" WHERE "id" = ${head.id} FOR UPDATE`;
+							const liveEscrows = await countLiveInHeadEscrows(tx, head.id);
+							if (liveEscrows > 0) return { claimed: false as const, liveEscrows };
+							await tx.hydraHead.update({ where: { id: head.id }, data: { collateralDrainedAt: new Date() } });
+						}
+
 						const created = await tx.hydraDecommit.create({
 							data: {
 								hydraHeadId: head.id,
@@ -248,10 +257,23 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// withdrawal. Asked outside the transaction, so a slow node never holds a
 		// serializable slot, and the claim is re-run so the row is re-read after.
 		let claim = await claimSlot(false);
-		if (!claim.claimed && claim.askNode && (await fetchHydraDecommitInFlight(hydraHead.mainNode)) === false) {
+		if (
+			!claim.claimed &&
+			'askNode' in claim &&
+			claim.askNode &&
+			(await fetchHydraDecommitInFlight(hydraHead.mainNode)) === false
+		) {
 			claim = await claimSlot(true);
 		}
 
+		if (!claim.claimed && 'liveEscrows' in claim) {
+			throw createHttpError(
+				409,
+				`Cannot withdraw the collateral while escrows are still live or pending in this head (${claim.liveEscrows} found). ` +
+					'Without collateral they could not be settled, and closing the head would be the only way to recover them. ' +
+					'Settle them first, or withdraw an amount instead.',
+			);
+		}
 		if (!claim.claimed) {
 			throw createHttpError(
 				409,
@@ -277,22 +299,6 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			key: { type: 'mnemonic', words: decrypt(localParticipant.Wallet.Secret.encryptedMnemonic).split(' ') },
 		});
 		await wallet.getUnusedAddresses();
-
-		// Taking the collateral is only safe once nothing is left to spend with it.
-		// The dialog explains the consequence, but a dialog is not a guard: an
-		// escrow still live in the head becomes unspendable the moment its wallet
-		// has no collateral, and the only way out of that is closing the head.
-		if (params.drain === true) {
-			const liveEscrows = await countLiveInHeadEscrows(head.id);
-			if (liveEscrows > 0) {
-				throw createHttpError(
-					409,
-					`Cannot withdraw the collateral while ${liveEscrows} escrow${liveEscrows === 1 ? ' is' : 's are'} still live in this head. ` +
-						'Without collateral they could not be settled, and closing the head would be the only way to recover them. ' +
-						'Settle them first, or withdraw an amount instead.',
-				);
-			}
-		}
 
 		// Hydra produces no new snapshot while a previous decommit's utxoToDecommit
 		// is non-empty — the node's chain follower has not yet observed that
@@ -700,24 +706,4 @@ async function splitExactAmountInHead(params: {
 	}
 	logger.info(`[HydraDecommit] split ${amount} ${isLovelace ? 'lovelace' : unit} into ${utxoRef(exact)} in head`);
 	return { txId: splitTxId, exact };
-}
-
-/**
- * Escrows this head still holds that have not settled.
- *
- * "Live" means the request still points at an in-head UTxO: an escrow that has
- * reached a terminal state has no `currentHydraUtxoTxHash` and needs nothing
- * further from this wallet. Both sides are counted, because a wallet can be
- * buyer on one escrow and seller on another in the same head.
- */
-async function countLiveInHeadEscrows(hydraHeadId: string): Promise<number> {
-	const where = {
-		currentHydraUtxoTxHash: { not: null },
-		CurrentTransaction: { is: { hydraHeadId, layer: TransactionLayer.L2 } },
-	} as const;
-	const [payments, purchases] = await Promise.all([
-		prisma.paymentRequest.count({ where }),
-		prisma.purchaseRequest.count({ where }),
-	]);
-	return payments + purchases;
 }

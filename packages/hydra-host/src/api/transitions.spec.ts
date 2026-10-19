@@ -71,11 +71,29 @@ describe('requestStart', () => {
 		await expect(requestStart(store, 'node-1')).rejects.toMatchObject({ status: 409 });
 	});
 
-	// --initial-cluster is fixed at boot, so starting before the handshake would
-	// bootstrap a cluster the counterparty cannot join.
-	it('refuses a node whose peers are not configured', async () => {
-		await store.write(record({ peers: [] }));
-		await expect(requestStart(store, 'node-1')).rejects.toThrow(/peers must be configured/);
+	// An invite reservation is peerless until redeemed. A pause stops it, and
+	// Resume must restore it, but it must still not boot before it has peers:
+	// --initial-cluster is fixed at boot.
+	it('restores a stopped peerless reservation without booting it', async () => {
+		await store.write(record({ peers: [], desired: 'Running', state: 'Stopped' }));
+		await requestStop(store, 'node-1');
+		const started = await requestStart(store, 'node-1');
+
+		expect(started.desired).toBe('Running');
+		expect(
+			planNodeAction(
+				started,
+				{
+					processRunning: false,
+					responsive: false,
+					chainSynced: false,
+					drift: null,
+					driftSeconds: null,
+					nowMs: Date.parse('2026-07-28T12:00:00.000Z'),
+				},
+				{ maxStartAttempts: 5, escrowTtlSeconds: 3600 },
+			).kind,
+		).toBe('Idle');
 	});
 
 	it('404s an unknown node', async () => {

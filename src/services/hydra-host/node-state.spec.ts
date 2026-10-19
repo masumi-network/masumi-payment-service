@@ -68,6 +68,18 @@ describe('readParticipantNodeState', () => {
 		expect(state.reason).not.toContain('behind');
 	});
 
+	// A pending stop or restart makes a Running, synced node unusable. It used to
+	// fall through to "not answering", which sent operators after a healthy node.
+	it.each([
+		[{ desired: 'Stopped' }, 'A stop was requested'],
+		[{ desired: 'Running', restartRequested: true }, 'A restart was requested'],
+	])('names a pending stop or restart instead of a dead API', async (pending, reason) => {
+		const state = await stateFor({ usable: false, state: 'Running', chainSynced: true, driftSeconds: 0, ...pending });
+
+		expect(state.isReady).toBe(false);
+		expect(state.reason).toContain(reason);
+	});
+
 	it('reports a node that is not running at all', async () => {
 		const state = await stateFor({ usable: false, state: 'Stopped', chainSynced: false, driftSeconds: null });
 
