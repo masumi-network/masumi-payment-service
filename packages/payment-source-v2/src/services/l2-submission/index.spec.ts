@@ -237,3 +237,53 @@ describe('lockOpenHydraHeadForL2Reservation', () => {
 		);
 	});
 });
+
+describe('lockOpenHydraHeadForL2Reservation collateral drain', () => {
+	const OPEN = { status: HydraHeadStatus.Open, isEnabled: true, isClosing: false, initTxHash: 'a'.repeat(64) };
+
+	function client(collateralDrainedAt: Date | null, withdrawalsInFlight: number) {
+		return {
+			$queryRaw: jest.fn(async () => [{ ...OPEN, collateralDrainedAt }]),
+			hydraDecommit: { count: jest.fn(async () => withdrawalsInFlight) },
+			hydraHead: { update: jest.fn(async (_args: unknown) => ({})) },
+		};
+	}
+
+	it('refuses a new escrow while the drain withdrawal is still in flight', async () => {
+		const tx = client(new Date(), 1);
+
+		await expect(
+			lockOpenHydraHeadForL2Reservation(tx as never, 'head-1', { walletHoldsCollateral: true }),
+		).rejects.toThrow('collateral was withdrawn');
+		expect(tx.hydraHead.update).not.toHaveBeenCalled();
+	});
+
+	it('refuses a new escrow after the drain until collateral is back', async () => {
+		const tx = client(new Date(), 0);
+
+		await expect(
+			lockOpenHydraHeadForL2Reservation(tx as never, 'head-1', { walletHoldsCollateral: false }),
+		).rejects.toThrow('collateral was withdrawn');
+		expect(tx.hydraHead.update).not.toHaveBeenCalled();
+	});
+
+	it('lifts the drain mark and admits once collateral is restored', async () => {
+		const tx = client(new Date(), 0);
+
+		await expect(
+			lockOpenHydraHeadForL2Reservation(tx as never, 'head-1', { walletHoldsCollateral: true }),
+		).resolves.toBeUndefined();
+		expect(tx.hydraHead.update).toHaveBeenCalledWith({
+			where: { id: 'head-1' },
+			data: { collateralDrainedAt: null },
+		});
+	});
+
+	// Settling an escrow that already exists is what the drained head still has
+	// to allow; only admission of a new one is gated.
+	it('does not gate actions on existing escrows', async () => {
+		const tx = client(new Date(), 1);
+
+		await expect(lockOpenHydraHeadForL2Reservation(tx as never, 'head-1')).resolves.toBeUndefined();
+	});
+});
