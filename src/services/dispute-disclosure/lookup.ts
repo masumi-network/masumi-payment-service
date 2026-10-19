@@ -29,15 +29,6 @@ export async function findDisputedV2Request(params: {
 		PaymentSource: sourceFilter,
 	} as const;
 
-	const payment = await prisma.paymentRequest.findFirst({ where: disputedFilter });
-	if (payment != null) {
-		return {
-			kind: 'payment',
-			...payment,
-			sellerHotWalletId: payment.smartContractWalletId,
-		};
-	}
-
 	const purchase = await prisma.purchaseRequest.findFirst({
 		where: disputedFilter,
 		include: { SellerWallet: true },
@@ -50,6 +41,15 @@ export async function findDisputedV2Request(params: {
 				paymentSourceId: purchase.paymentSourceId,
 				sellerWalletVkey: purchase.SellerWallet.walletVkey,
 			}),
+		};
+	}
+
+	const payment = await prisma.paymentRequest.findFirst({ where: disputedFilter });
+	if (payment != null) {
+		return {
+			kind: 'payment',
+			...payment,
+			sellerHotWalletId: payment.smartContractWalletId,
 		};
 	}
 

@@ -64,29 +64,6 @@ const canonicalRevealMessage = (
 export async function loadDisputedPaymentContext(
 	blockchainIdentifier: string,
 ): Promise<RevealDataPaymentContext | null> {
-	const payment = await prisma.paymentRequest.findFirst({
-		where: {
-			blockchainIdentifier,
-			onChainState: OnChainState.Disputed,
-			PaymentSource: disputedV2SourceFilter,
-		},
-		include: {
-			PaymentSource: { include: { AdminWallets: true } },
-		},
-	});
-	if (payment != null) {
-		return {
-			requestKind: 'payment',
-			blockchainIdentifier: payment.blockchainIdentifier,
-			inputHash: payment.inputHash,
-			resultHash: payment.resultHash,
-			smartContractWalletId: payment.smartContractWalletId,
-			sellerHotWalletId: payment.smartContractWalletId,
-			network: payment.PaymentSource.network,
-			adminWalletAddresses: payment.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
-		};
-	}
-
 	const purchase = await prisma.purchaseRequest.findFirst({
 		where: {
 			blockchainIdentifier,
@@ -98,22 +75,45 @@ export async function loadDisputedPaymentContext(
 			SellerWallet: true,
 		},
 	});
-	if (purchase == null) {
+	if (purchase != null) {
+		return {
+			requestKind: 'purchase',
+			blockchainIdentifier: purchase.blockchainIdentifier,
+			inputHash: purchase.inputHash,
+			resultHash: purchase.resultHash,
+			smartContractWalletId: purchase.smartContractWalletId,
+			sellerHotWalletId: await resolveSellerHotWalletId({
+				paymentSourceId: purchase.paymentSourceId,
+				sellerWalletVkey: purchase.SellerWallet.walletVkey,
+			}),
+			network: purchase.PaymentSource.network,
+			adminWalletAddresses: purchase.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
+		};
+	}
+
+	const payment = await prisma.paymentRequest.findFirst({
+		where: {
+			blockchainIdentifier,
+			onChainState: OnChainState.Disputed,
+			PaymentSource: disputedV2SourceFilter,
+		},
+		include: {
+			PaymentSource: { include: { AdminWallets: true } },
+		},
+	});
+	if (payment == null) {
 		return null;
 	}
 
 	return {
-		requestKind: 'purchase',
-		blockchainIdentifier: purchase.blockchainIdentifier,
-		inputHash: purchase.inputHash,
-		resultHash: purchase.resultHash,
-		smartContractWalletId: purchase.smartContractWalletId,
-		sellerHotWalletId: await resolveSellerHotWalletId({
-			paymentSourceId: purchase.paymentSourceId,
-			sellerWalletVkey: purchase.SellerWallet.walletVkey,
-		}),
-		network: purchase.PaymentSource.network,
-		adminWalletAddresses: purchase.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
+		requestKind: 'payment',
+		blockchainIdentifier: payment.blockchainIdentifier,
+		inputHash: payment.inputHash,
+		resultHash: payment.resultHash,
+		smartContractWalletId: payment.smartContractWalletId,
+		sellerHotWalletId: payment.smartContractWalletId,
+		network: payment.PaymentSource.network,
+		adminWalletAddresses: payment.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
 	};
 }
 
