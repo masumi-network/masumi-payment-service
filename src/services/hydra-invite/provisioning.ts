@@ -24,7 +24,7 @@ import {
 	hostNodeUrls,
 	provisionNodeOnHost,
 } from '@/services/hydra-host/client';
-import { assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
+import { assertHostCompatible, assertHostHasFreeSlot, selectPlacementHost } from '@/services/hydra-host/placement';
 import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
 import { deriveNodeCardanoVkey } from './node-keys';
 
@@ -299,7 +299,8 @@ export async function selectHostForNetwork(network: Network): Promise<{
 	ledgerParamsHash: string | null;
 	exchangePort: number | null;
 }> {
-	const hosts = await prisma.hydraHost.findMany({ where: { network } });
+	// Oldest first, so first-fit picks the same Host on every call.
+	const hosts = await prisma.hydraHost.findMany({ where: { network }, orderBy: { createdAt: 'asc' } });
 	const chosen = selectPlacementHost(
 		hosts.map((row) => ({
 			id: row.id,
@@ -378,6 +379,7 @@ export async function reserveNodeForExchange(
 	// builders use, which surfaces as `PPViewHashesDontMatch` at the first in-head
 	// script spend, after funds are committed.
 	assertHostCompatible(capabilities, expectedHostCapabilitiesForNetwork(network));
+	assertHostHasFreeSlot(capabilities);
 
 	const provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods, transport);
 	const urls = hostNodeUrls(host.baseUrl, provisioned.nodeId, transport);
