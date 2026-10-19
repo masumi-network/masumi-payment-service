@@ -69,6 +69,25 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 				...chain,
 			};
 		}
+		// The Host refuses commands as soon as a stop or restart is asked for, while
+		// the state still reads Running until the node drains. Without this the
+		// operator was told the node had stopped answering.
+		if (health.desired === 'Stopped') {
+			return {
+				state: health.state,
+				isReady: false,
+				reason: 'A stop was requested and the node is shutting down.',
+				...chain,
+			};
+		}
+		if (health.restartRequested) {
+			return {
+				state: health.state,
+				isReady: false,
+				reason: 'A restart was requested and the node is restarting.',
+				...chain,
+			};
+		}
 		if (!health.chainSynced) {
 			return {
 				state: health.state,

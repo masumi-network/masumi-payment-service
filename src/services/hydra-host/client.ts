@@ -309,6 +309,10 @@ export async function setHostNodePeers(
 
 export type HostNodeHealth = {
 	state: string;
+	/** The state an operator asked for. A stop request leaves `state` Running until the node drains. */
+	desired: string | null;
+	/** A restart was requested and the Host has not carried it out yet. */
+	restartRequested: boolean;
 	usable: boolean;
 	responsive: boolean;
 	chainSynced: boolean;
@@ -336,6 +340,8 @@ export async function fetchHostNodeHealth(
 	}
 	return {
 		state: getOwnString(body, 'state') ?? 'Unknown',
+		desired: getOwnString(body, 'desired') ?? null,
+		restartRequested: getOwnValue(body, 'restartRequested') === true,
 		usable: getOwnValue(body, 'usable') === true,
 		responsive: getOwnValue(body, 'responsive') === true,
 		chainSynced: getOwnValue(body, 'chainSynced') === true,
