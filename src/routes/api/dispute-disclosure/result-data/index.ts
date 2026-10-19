@@ -1,6 +1,6 @@
 import { z } from '@masumi/payment-core/zod';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { AuthContext } from '@masumi/payment-core/auth';
 import { Network } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 import { assertDisclosureResultWalletInScope } from '@/services/dispute-disclosure/disclosure-wallet-scope';
@@ -30,7 +30,9 @@ export const postDisputeResultDataEndpointPost = payAuthenticatedEndpointFactory
 	input: postDisputeResultDataSchemaInput,
 	output: postDisputeResultDataSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof postDisputeResultDataSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
+		if (!ctx.canAdmin && !ctx.networkLimit.includes(input.network)) {
+			throw createHttpError(403, 'Network not allowed');
+		}
 
 		const target = await findDisputedV2Request({
 			blockchainIdentifier: input.blockchainIdentifier,
@@ -42,13 +44,14 @@ export const postDisputeResultDataEndpointPost = payAuthenticatedEndpointFactory
 		if (target.resultHash == null) {
 			throw createHttpError(400, 'Request has no on-chain result hash yet');
 		}
-		assertDisclosureResultWalletInScope(ctx.walletScopeIds, target);
 		assertCanUploadDisclosureResult(ctx, target);
+		assertDisclosureResultWalletInScope(ctx.walletScopeIds, target);
 
 		await upsertDisputeResultData({
 			blockchainIdentifier: input.blockchainIdentifier,
 			data: input.resultData,
 			expectedResultHash: target.resultHash,
+			uploaderId: ctx.id,
 		});
 
 		return {

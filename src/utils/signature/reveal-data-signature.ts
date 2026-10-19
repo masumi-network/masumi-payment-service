@@ -52,6 +52,10 @@ const disputedV2SourceFilter = {
 	deletedAt: null,
 };
 
+const v2SourceFilterIncludingDeleted = {
+	paymentSourceType: PaymentSourceType.Web3CardanoV2,
+};
+
 const canonicalRevealMessage = (
 	input: Pick<RevealDataSignatureInput, 'action' | 'validUntil' | 'blockchainIdentifier'>,
 ) =>
@@ -61,59 +65,114 @@ const canonicalRevealMessage = (
 		blockchainIdentifier: input.blockchainIdentifier,
 	});
 
-export async function loadDisputedPaymentContext(
+async function mapPurchaseToRevealContext(purchase: {
+	blockchainIdentifier: string;
+	inputHash: string;
+	resultHash: string | null;
+	smartContractWalletId: string | null;
+	paymentSourceId: string;
+	PaymentSource: { network: Network; AdminWallets: Array<{ walletAddress: string }> };
+	SellerWallet: { walletVkey: string };
+}): Promise<RevealDataPaymentContext> {
+	return {
+		requestKind: 'purchase',
+		blockchainIdentifier: purchase.blockchainIdentifier,
+		inputHash: purchase.inputHash,
+		resultHash: purchase.resultHash,
+		smartContractWalletId: purchase.smartContractWalletId,
+		sellerHotWalletId: await resolveSellerHotWalletId({
+			paymentSourceId: purchase.paymentSourceId,
+			sellerWalletVkey: purchase.SellerWallet.walletVkey,
+		}),
+		network: purchase.PaymentSource.network,
+		adminWalletAddresses: purchase.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
+	};
+}
+
+async function loadV2PurchaseForReveal(
 	blockchainIdentifier: string,
-): Promise<RevealDataPaymentContext | null> {
-	const purchase = await prisma.purchaseRequest.findFirst({
+	disputedOnly: boolean,
+	includeDeletedSource = false,
+) {
+	return prisma.purchaseRequest.findFirst({
 		where: {
 			blockchainIdentifier,
-			onChainState: OnChainState.Disputed,
-			PaymentSource: disputedV2SourceFilter,
+			...(disputedOnly ? { onChainState: OnChainState.Disputed } : {}),
+			PaymentSource: includeDeletedSource ? v2SourceFilterIncludingDeleted : disputedV2SourceFilter,
 		},
 		include: {
 			PaymentSource: { include: { AdminWallets: true } },
 			SellerWallet: true,
 		},
 	});
-	if (purchase != null) {
-		return {
-			requestKind: 'purchase',
-			blockchainIdentifier: purchase.blockchainIdentifier,
-			inputHash: purchase.inputHash,
-			resultHash: purchase.resultHash,
-			smartContractWalletId: purchase.smartContractWalletId,
-			sellerHotWalletId: await resolveSellerHotWalletId({
-				paymentSourceId: purchase.paymentSourceId,
-				sellerWalletVkey: purchase.SellerWallet.walletVkey,
-			}),
-			network: purchase.PaymentSource.network,
-			adminWalletAddresses: purchase.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
-		};
-	}
+}
 
-	const payment = await prisma.paymentRequest.findFirst({
+async function loadV2PaymentForReveal(
+	blockchainIdentifier: string,
+	disputedOnly: boolean,
+	includeDeletedSource = false,
+) {
+	return prisma.paymentRequest.findFirst({
 		where: {
 			blockchainIdentifier,
-			onChainState: OnChainState.Disputed,
-			PaymentSource: disputedV2SourceFilter,
+			...(disputedOnly ? { onChainState: OnChainState.Disputed } : {}),
+			PaymentSource: includeDeletedSource ? v2SourceFilterIncludingDeleted : disputedV2SourceFilter,
 		},
 		include: {
 			PaymentSource: { include: { AdminWallets: true } },
 		},
 	});
-	if (payment == null) {
+}
+
+export async function loadDisputedPaymentContext(
+	blockchainIdentifier: string,
+): Promise<RevealDataPaymentContext | null> {
+	const disputedPurchase = await loadV2PurchaseForReveal(blockchainIdentifier, true);
+	if (disputedPurchase != null) {
+		return mapPurchaseToRevealContext(disputedPurchase);
+	}
+
+	const disputedPayment = await loadV2PaymentForReveal(blockchainIdentifier, true);
+	if (disputedPayment != null) {
+		return {
+			requestKind: 'payment',
+			blockchainIdentifier: disputedPayment.blockchainIdentifier,
+			inputHash: disputedPayment.inputHash,
+			resultHash: disputedPayment.resultHash,
+			smartContractWalletId: disputedPayment.smartContractWalletId,
+			sellerHotWalletId: disputedPayment.smartContractWalletId,
+			network: disputedPayment.PaymentSource.network,
+			adminWalletAddresses: disputedPayment.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
+		};
+	}
+
+	const storedDisclosure = await prisma.disputeDisclosure.findUnique({
+		where: { blockchainIdentifier },
+		select: { id: true },
+	});
+	if (storedDisclosure == null) {
+		return null;
+	}
+
+	const purchaseWithDisclosure = await loadV2PurchaseForReveal(blockchainIdentifier, false, true);
+	if (purchaseWithDisclosure != null) {
+		return mapPurchaseToRevealContext(purchaseWithDisclosure);
+	}
+
+	const paymentWithDisclosure = await loadV2PaymentForReveal(blockchainIdentifier, false, true);
+	if (paymentWithDisclosure == null) {
 		return null;
 	}
 
 	return {
 		requestKind: 'payment',
-		blockchainIdentifier: payment.blockchainIdentifier,
-		inputHash: payment.inputHash,
-		resultHash: payment.resultHash,
-		smartContractWalletId: payment.smartContractWalletId,
-		sellerHotWalletId: payment.smartContractWalletId,
-		network: payment.PaymentSource.network,
-		adminWalletAddresses: payment.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
+		blockchainIdentifier: paymentWithDisclosure.blockchainIdentifier,
+		inputHash: paymentWithDisclosure.inputHash,
+		resultHash: paymentWithDisclosure.resultHash,
+		smartContractWalletId: paymentWithDisclosure.smartContractWalletId,
+		sellerHotWalletId: paymentWithDisclosure.smartContractWalletId,
+		network: paymentWithDisclosure.PaymentSource.network,
+		adminWalletAddresses: paymentWithDisclosure.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
 	};
 }
 

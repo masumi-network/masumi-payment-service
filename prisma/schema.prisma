@@ -969,6 +969,8 @@ model RevealSignatureUsage {
   createdAt  DateTime @default(now())
   digest     String   @unique
   validUntil DateTime
+
+  @@index([validUntil])
 }
 
 model PaymentActionData {

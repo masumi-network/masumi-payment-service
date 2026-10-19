@@ -1,4 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
+import { Prisma } from '@/generated/prisma/client';
 import { encrypt, decrypt } from '@/utils/security/encryption';
 import { logger } from '@masumi/payment-core/logger';
 import { generateHash } from '@/utils/crypto';
@@ -17,6 +18,7 @@ export async function upsertDisputeInputData(params: {
 	blockchainIdentifier: string;
 	data: string;
 	expectedInputHash: string;
+	uploaderId?: string;
 }) {
 	assertDisclosureSize(params.data, 'inputData');
 	const providedHash = generateHash(params.data);
@@ -24,22 +26,44 @@ export async function upsertDisputeInputData(params: {
 		throw createHttpError(400, 'Provided input data does not match expected hash');
 	}
 
-	return prisma.disputeDisclosure.upsert({
-		where: { blockchainIdentifier: params.blockchainIdentifier },
-		create: {
-			blockchainIdentifier: params.blockchainIdentifier,
-			encryptedInputData: encrypt(params.data),
-		},
-		update: {
-			encryptedInputData: encrypt(params.data),
-		},
+	logger.info('Dispute disclosure input upsert', {
+		blockchainIdentifier: params.blockchainIdentifier,
+		uploaderId: params.uploaderId,
 	});
+
+	const encryptedInputData = encrypt(params.data);
+	try {
+		return await prisma.disputeDisclosure.create({
+			data: {
+				blockchainIdentifier: params.blockchainIdentifier,
+				encryptedInputData,
+			},
+		});
+	} catch (error) {
+		if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) {
+			throw error;
+		}
+		const updated = await prisma.disputeDisclosure.updateMany({
+			where: {
+				blockchainIdentifier: params.blockchainIdentifier,
+				encryptedInputData: null,
+			},
+			data: { encryptedInputData },
+		});
+		if (updated.count === 0) {
+			throw createHttpError(409, 'Input disclosure is already stored');
+		}
+		return prisma.disputeDisclosure.findUniqueOrThrow({
+			where: { blockchainIdentifier: params.blockchainIdentifier },
+		});
+	}
 }
 
 export async function upsertDisputeResultData(params: {
 	blockchainIdentifier: string;
 	data: string;
 	expectedResultHash: string;
+	uploaderId?: string;
 }) {
 	assertDisclosureSize(params.data, 'resultData');
 	const providedHash = generateHash(params.data);
@@ -47,16 +71,37 @@ export async function upsertDisputeResultData(params: {
 		throw createHttpError(400, 'Provided result data does not match expected hash');
 	}
 
-	return prisma.disputeDisclosure.upsert({
-		where: { blockchainIdentifier: params.blockchainIdentifier },
-		create: {
-			blockchainIdentifier: params.blockchainIdentifier,
-			encryptedResultData: encrypt(params.data),
-		},
-		update: {
-			encryptedResultData: encrypt(params.data),
-		},
+	logger.info('Dispute disclosure result upsert', {
+		blockchainIdentifier: params.blockchainIdentifier,
+		uploaderId: params.uploaderId,
 	});
+
+	const encryptedResultData = encrypt(params.data);
+	try {
+		return await prisma.disputeDisclosure.create({
+			data: {
+				blockchainIdentifier: params.blockchainIdentifier,
+				encryptedResultData,
+			},
+		});
+	} catch (error) {
+		if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) {
+			throw error;
+		}
+		const updated = await prisma.disputeDisclosure.updateMany({
+			where: {
+				blockchainIdentifier: params.blockchainIdentifier,
+				encryptedResultData: null,
+			},
+			data: { encryptedResultData },
+		});
+		if (updated.count === 0) {
+			throw createHttpError(409, 'Result disclosure is already stored');
+		}
+		return prisma.disputeDisclosure.findUniqueOrThrow({
+			where: { blockchainIdentifier: params.blockchainIdentifier },
+		});
+	}
 }
 
 export async function readDisputeDisclosurePlaintext(blockchainIdentifier: string) {

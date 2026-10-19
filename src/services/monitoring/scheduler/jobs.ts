@@ -16,6 +16,7 @@ import {
 } from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
 import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-monitor';
+import { pruneExpiredRevealSignatureUsage } from '@/utils/signature/reveal-data-replay-cache';
 import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
@@ -493,6 +494,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting webhook cleanup',
 		finishMessage: 'Finished webhook cleanup',
 		run: () => webhookQueueService.cleanupOldDeliveries(),
+	},
+	{
+		initialDelayMs: 125000,
+		intervalMs: 24 * 60 * 60 * 1000,
+		startMessage: 'Starting reveal signature usage cleanup',
+		finishMessage: 'Finished reveal signature usage cleanup',
+		run: () => pruneExpiredRevealSignatureUsage(),
 	},
 	{
 		// Daily-ish prune of PaymentActionData / PurchaseActionData rows

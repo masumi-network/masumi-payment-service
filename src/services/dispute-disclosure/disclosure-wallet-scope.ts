@@ -2,9 +2,16 @@ import createHttpError from 'http-errors';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 import { DisputedRequestRow } from './lookup';
 
-export function assertDisclosureInputWalletInScope(walletScopeIds: string[] | null, target: DisputedRequestRow): void {
+export function assertDisclosureInputWalletInScope(
+	walletScopeIds: string[] | null,
+	target: DisputedRequestRow,
+	requesterId?: string,
+): void {
 	if (target.kind === 'purchase') {
 		if (walletScopeIds === null) {
+			return;
+		}
+		if (requesterId != null && target.requestedById === requesterId) {
 			return;
 		}
 		const allowedIds = [target.smartContractWalletId, target.sellerHotWalletId];

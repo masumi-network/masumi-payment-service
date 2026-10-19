@@ -350,7 +350,10 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				resultData: 'result',
 			}),
 			403: { description: 'Forbidden (network not allowed)' },
-			404: { description: 'Payment not found or not disputed' },
+			404: {
+				description:
+					'Disputed request not found (read may still succeed when a DisputeDisclosure row exists for a resolved dispute)',
+			},
 		},
 	});
 
@@ -375,6 +378,10 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				blockchainIdentifier: 'id',
 				stored: true,
 			}),
+			400: { description: 'Hash mismatch or invalid payload' },
+			403: { description: 'Forbidden (network not allowed or not authorized)' },
+			404: { description: 'Disputed V2 request not found' },
+			409: { description: 'Disclosure already stored' },
 		},
 	});
 
@@ -399,6 +406,11 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				blockchainIdentifier: 'id',
 				stored: true,
 			}),
+			400: { description: 'Hash mismatch or invalid payload' },
+			403: { description: 'Forbidden (network not allowed or not authorized)' },
+			404: { description: 'Disputed V2 request not found' },
+			409: { description: 'Disclosure already stored' },
+			503: { description: 'Seller hot wallet not configured' },
 		},
 	});
 

@@ -1,6 +1,6 @@
 import { z } from '@masumi/payment-core/zod';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { AuthContext } from '@masumi/payment-core/auth';
 import { Network } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 import { assertDisclosureInputWalletInScope } from '@/services/dispute-disclosure/disclosure-wallet-scope';
@@ -30,7 +30,9 @@ export const postDisputeInputDataEndpointPost = payAuthenticatedEndpointFactory.
 	input: postDisputeInputDataSchemaInput,
 	output: postDisputeInputDataSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof postDisputeInputDataSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
+		if (!ctx.canAdmin && !ctx.networkLimit.includes(input.network)) {
+			throw createHttpError(403, 'Network not allowed');
+		}
 
 		const target = await findDisputedV2Request({
 			blockchainIdentifier: input.blockchainIdentifier,
@@ -39,13 +41,14 @@ export const postDisputeInputDataEndpointPost = payAuthenticatedEndpointFactory.
 		if (target == null) {
 			throw createHttpError(404, 'Disputed V2 payment or purchase not found');
 		}
-		assertDisclosureInputWalletInScope(ctx.walletScopeIds, target);
 		assertCanUploadDisclosureInput(ctx, target);
+		assertDisclosureInputWalletInScope(ctx.walletScopeIds, target, ctx.id);
 
 		await upsertDisputeInputData({
 			blockchainIdentifier: input.blockchainIdentifier,
 			data: input.inputData,
 			expectedInputHash: target.inputHash,
+			uploaderId: ctx.id,
 		});
 
 		return {

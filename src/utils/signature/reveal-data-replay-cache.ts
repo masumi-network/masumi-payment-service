@@ -6,12 +6,14 @@ function digestForRevealSignature(input: { signature: string; key: string; block
 	return createHash('sha256').update(`${input.blockchainIdentifier}\0${input.key}\0${input.signature}`).digest('hex');
 }
 
+export type MarkRevealSignatureResult = { status: 'recorded' } | { status: 'idempotent' } | { status: 'rejected' };
+
 export async function markRevealSignatureUsed(input: {
 	signature: string;
 	key: string;
 	blockchainIdentifier: string;
 	validUntil: number;
-}): Promise<boolean> {
+}): Promise<MarkRevealSignatureResult> {
 	const digest = digestForRevealSignature(input);
 	try {
 		await prisma.revealSignatureUsage.create({
@@ -20,11 +22,24 @@ export async function markRevealSignatureUsed(input: {
 				validUntil: new Date(input.validUntil),
 			},
 		});
-		return true;
+		return { status: 'recorded' };
 	} catch (error) {
 		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-			return false;
+			const existing = await prisma.revealSignatureUsage.findUnique({
+				where: { digest },
+			});
+			if (existing != null && existing.validUntil.getTime() >= Date.now()) {
+				return { status: 'idempotent' };
+			}
+			return { status: 'rejected' };
 		}
 		throw error;
 	}
+}
+
+export async function pruneExpiredRevealSignatureUsage(): Promise<number> {
+	const result = await prisma.revealSignatureUsage.deleteMany({
+		where: { validUntil: { lt: new Date() } },
+	});
+	return result.count;
 }

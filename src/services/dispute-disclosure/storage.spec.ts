@@ -1,12 +1,16 @@
 import { jest } from '@jest/globals';
 import { generateHash } from '@/utils/crypto';
 
-const mockUpsert = jest.fn(async () => ({ id: 'row-1' }));
+const mockCreate = jest.fn(async () => ({ id: 'row-1' }));
+const mockUpdateMany = jest.fn(async () => ({ count: 0 }));
+const mockFindUniqueOrThrow = jest.fn(async () => ({ id: 'row-1' }));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		disputeDisclosure: {
-			upsert: mockUpsert,
+			create: mockCreate,
+			updateMany: mockUpdateMany,
+			findUniqueOrThrow: mockFindUniqueOrThrow,
 			findUnique: jest.fn(async () => null),
 		},
 	},
@@ -21,7 +25,10 @@ const { upsertDisputeInputData, upsertDisputeResultData } = await import('./stor
 
 describe('dispute disclosure storage', () => {
 	beforeEach(() => {
-		mockUpsert.mockClear();
+		mockCreate.mockClear();
+		mockUpdateMany.mockClear();
+		mockFindUniqueOrThrow.mockClear();
+		mockCreate.mockResolvedValue({ id: 'row-1' });
 	});
 
 	it('stores input when hash matches', async () => {
@@ -31,10 +38,12 @@ describe('dispute disclosure storage', () => {
 			data,
 			expectedInputHash: generateHash(data),
 		});
-		expect(mockUpsert).toHaveBeenCalledWith(
+		expect(mockCreate).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { blockchainIdentifier: 'chain-1' },
-				create: expect.objectContaining({ encryptedInputData: 'enc:hello-input' }),
+				data: expect.objectContaining({
+					blockchainIdentifier: 'chain-1',
+					encryptedInputData: 'enc:hello-input',
+				}),
 			}),
 		);
 	});
@@ -56,9 +65,9 @@ describe('dispute disclosure storage', () => {
 			data,
 			expectedResultHash: generateHash(data),
 		});
-		expect(mockUpsert).toHaveBeenCalledWith(
+		expect(mockCreate).toHaveBeenCalledWith(
 			expect.objectContaining({
-				update: expect.objectContaining({ encryptedResultData: 'enc:hello-result' }),
+				data: expect.objectContaining({ encryptedResultData: 'enc:hello-result' }),
 			}),
 		);
 	});

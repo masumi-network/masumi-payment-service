@@ -16,6 +16,14 @@ export const getDisputeDataSchemaInput = revealDataSignatureInputSchema;
 
 export const getDisputeDataSchemaOutput = z.object({
 	isValid: z.boolean().describe('Whether the admin signature is valid'),
+	replayRejected: z
+		.boolean()
+		.optional()
+		.describe('True when this signature was already used outside its validity window'),
+	decryptFailed: z
+		.boolean()
+		.optional()
+		.describe('True when stored ciphertext could not be decrypted (signature may still be valid)'),
 	inputHash: z.string().describe('Expected SHA-256 hex hash of the input payload'),
 	resultHash: z.string().nullable().describe('Expected SHA-256 hex hash of the result payload, if any'),
 	inputData: z.string().nullable().describe('Decrypted input payload when stored and signature is valid'),
@@ -34,7 +42,7 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 				recordBusinessEndpointError('/api/v1/get-data', 'POST', 404, 'Payment not found', {
 					blockchain_identifier: input.blockchainIdentifier,
 				});
-				throw createHttpError(404, 'Payment not found');
+				throw createHttpError(404, 'Disputed request not found');
 			}
 
 			assertDisclosureReadWalletInScope(ctx.walletScopeIds, {
@@ -50,6 +58,7 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 			if (!isValid) {
 				return {
 					isValid: false,
+					decryptFailed: false,
 					inputHash: '',
 					resultHash: null,
 					inputData: null,
@@ -58,22 +67,15 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 			}
 
 			const plaintext = await readDisputeDisclosurePlaintext(input.blockchainIdentifier);
-			if (plaintext.decryptFailed) {
-				return {
-					isValid: false,
-					inputHash: '',
-					resultHash: null,
-					inputData: null,
-					resultData: null,
-				};
-			}
-
 			const hasPlaintext =
 				(plaintext.inputData != null && plaintext.inputData.length > 0) ||
 				(plaintext.resultData != null && plaintext.resultData.length > 0);
-			if (!hasPlaintext) {
+
+			if (plaintext.decryptFailed && !hasPlaintext) {
 				return {
 					isValid: true,
+					decryptFailed: true,
+					replayRejected: false,
 					inputHash: context.inputHash,
 					resultHash: context.resultHash,
 					inputData: null,
@@ -81,16 +83,29 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 				};
 			}
 
-			if (
-				!(await markRevealSignatureUsed({
-					signature: input.signature,
-					key: input.key,
-					blockchainIdentifier: input.blockchainIdentifier,
-					validUntil: input.validUntil,
-				}))
-			) {
+			if (!hasPlaintext) {
+				return {
+					isValid: true,
+					decryptFailed: false,
+					replayRejected: false,
+					inputHash: context.inputHash,
+					resultHash: context.resultHash,
+					inputData: null,
+					resultData: null,
+				};
+			}
+
+			const replayMark = await markRevealSignatureUsed({
+				signature: input.signature,
+				key: input.key,
+				blockchainIdentifier: input.blockchainIdentifier,
+				validUntil: input.validUntil,
+			});
+			if (replayMark.status === 'rejected') {
 				return {
 					isValid: false,
+					replayRejected: true,
+					decryptFailed: false,
 					inputHash: '',
 					resultHash: null,
 					inputData: null,
@@ -100,6 +115,8 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 
 			return {
 				isValid: true,
+				decryptFailed: plaintext.decryptFailed,
+				replayRejected: false,
 				inputHash: context.inputHash,
 				resultHash: context.resultHash,
 				inputData: plaintext.inputData,
@@ -113,7 +130,7 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 				500;
 			recordBusinessEndpointError('/api/v1/get-data', 'POST', statusCode, errorInstance, {
 				user_id: ctx.id,
-				wallet_id: input.walletAddress,
+				admin_signer_address: input.walletAddress,
 				blockchain_identifier: input.blockchainIdentifier,
 				valid_until: input.validUntil,
 				duration: Date.now() - startTime,

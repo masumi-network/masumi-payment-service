@@ -67,6 +67,7 @@ export async function resolveSellerHotWalletId(params: {
 			deletedAt: null,
 			walletVkey: params.sellerWalletVkey,
 		},
+		orderBy: { createdAt: 'asc' },
 		select: { id: true },
 	});
 	return sellingWallet?.id ?? null;
