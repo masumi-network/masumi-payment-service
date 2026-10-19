@@ -90,6 +90,8 @@ const MAX_TRACKED_SOURCES = 10_000;
  * of resetting it.
  */
 const MAX_DISCLOSED_REDEEM_FAILURES = 3;
+/** A maintenance pause lasts minutes, so a redeemer has no reason to retry sooner. */
+const STOPPED_NODE_RETRY_AFTER_SECONDS = 60;
 
 /** Not a possible `remoteAddress`, so it cannot collide with a real source. */
 export const OVERFLOW_SOURCE = '\u0000overflow';
@@ -186,6 +188,15 @@ export type ExchangeDeps = {
 	 * be configured.
 	 */
 	checkPeerTarget: PeerTargetCheck;
+	/**
+	 * Whether the operator stopped the node this invite reserved, as a pause
+	 * for maintenance does.
+	 *
+	 * Checked before the nonce is spent. A redemption now would configure a node
+	 * the operator expects to stay down, so it is refused as busy and the invite
+	 * stays open for a retry after the node is started again.
+	 */
+	isNodeStopped: (hostNodeId: string) => Promise<boolean>;
 	/** Read X-Forwarded-For only when a trusted HTTP proxy is the sole caller. */
 	trustProxy?: boolean;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
@@ -247,7 +258,7 @@ function readRedeemBody(body: unknown): RedeemBody | null {
 }
 
 export function createExchangePlane(deps: ExchangeDeps): Server {
-	const { store, logger, onRedeemed, verifyRedemption, checkPeerTarget } = deps;
+	const { store, logger, onRedeemed, verifyRedemption, checkPeerTarget, isNodeStopped } = deps;
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
 	const totalRequestsPerMinute = deps.limits?.totalRequestsPerMinute ?? DEFAULT_TOTAL_REQUESTS_PER_MINUTE;
@@ -392,6 +403,15 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			// can dial it.
 			const pending = (await store.listInvites()).find((invite) => invite.nonce === body.nonce);
 			if (pending !== undefined && pending.redeemedAt === null) {
+				// An expired invite is left to the store, which answers 410. A stop
+				// that lands after this check still holds: peer setup never changes
+				// the desired state, so the node stays down until started.
+				if (pending.expiresAt > Date.now() && (await isNodeStopped(pending.hostNodeId))) {
+					logger.warn('[exchange] redemption refused (503 reserved node is stopped)');
+					response.setHeader('Retry-After', String(STOPPED_NODE_RETRY_AFTER_SECONDS));
+					send(response, 503, { error: 'the reserved node is stopped; retry later' });
+					return;
+				}
 				const peerRejection = await checkPeerTarget(body.redeemer.advertise);
 				if (peerRejection !== null) {
 					logger.warn(`[exchange] redemption refused (400 ${peerRejection})`);

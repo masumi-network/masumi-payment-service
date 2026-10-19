@@ -339,10 +339,17 @@ describe('lifecycle guards over HTTP', () => {
 		expect(patched.status).toBe(409);
 	});
 
-	it('refuses to start a node before peers are configured', async () => {
+	// A pause stops an unredeemed invite reservation, and Resume must restore it.
+	// The planner keeps it idle until a redemption configures peers.
+	it('restores a stopped peerless reservation on start', async () => {
 		const nodeId = await provisionAndAck();
+		expect((await call('POST', `/v1/nodes/${nodeId}/stop`, { token: ADMIN })).status).toBe(202);
 		const started = await call('POST', `/v1/nodes/${nodeId}/start`, { token: ADMIN });
-		expect(started.status).toBe(409);
+
+		expect(started.status).toBe(202);
+		const record = await new NodeRegistryStore(dataDir).read(nodeId);
+		expect(record?.desired).toBe('Running');
+		expect(record?.peers).toEqual([]);
 	});
 
 	// The bug this replaces: restart set desired='Running', which the planner
