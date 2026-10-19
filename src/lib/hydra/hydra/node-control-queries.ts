@@ -8,7 +8,7 @@ import { Protocol, UTxO, castProtocol } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { HydraProtocolError } from './errors';
-import { extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
+import { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
 import { protocolErrorToString } from './node-frames';
 import { type HydraRawCostModels } from './node-api';
 import { reportParamsDrift } from './params-drift';
@@ -205,6 +205,18 @@ export async function fetchHydraPendingDecommitRefs(transport: HydraQueryTranspo
 			error: protocolErrorToString(error),
 		});
 		return [];
+	}
+}
+
+/** See `extractDecommitInFlight`. `undefined`, never `false`, when the node cannot be read. */
+export async function fetchHydraDecommitInFlight(transport: HydraQueryTransport): Promise<boolean | undefined> {
+	try {
+		return extractDecommitInFlight(await transport.get('/head'));
+	} catch (error) {
+		logger.warn('[HydraNode] Could not read the head state for a withdrawal in flight', {
+			error: protocolErrorToString(error),
+		});
+		return undefined;
 	}
 }
 

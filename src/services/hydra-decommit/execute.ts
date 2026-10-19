@@ -31,6 +31,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
 import { CustomHydraHead, HydraProvider, HydraTransactionType, HydraTransportAmbiguousError } from '@/lib/hydra';
+import { fetchHydraDecommitInFlight } from '@/lib/hydra/hydra/node-control-queries';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
@@ -54,7 +55,7 @@ import {
 	HYDRA_HOST_PAUSED_MESSAGE,
 	isHydraHeadOnPausedHostLocked,
 } from '@/services/hydra-host/pause';
-import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from './stale';
+import { staleWithdrawal } from './stale';
 
 /**
  * How long the in-head split gets to confirm before the withdrawal gives up.
@@ -195,67 +196,71 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// pending decommit, so a second request would be refused by the node; being
 		// refused here instead means the operator is told why, and no row is left
 		// behind claiming a withdrawal is in flight when the head never took it.
-		const claim = await withSerializableSlotRetry(() =>
-			prisma.$transaction(
-				async (tx) => {
-					const active = await tx.hydraDecommit.findFirst({
-						where: {
-							hydraLocalParticipantId: localParticipant.id,
-							status: {
-								in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending, HydraDecommitStatus.Approved],
+		const claimSlot = (nodeHoldsNoWithdrawal: boolean) =>
+			withSerializableSlotRetry(() =>
+				prisma.$transaction(
+					async (tx) => {
+						const active = await tx.hydraDecommit.findFirst({
+							where: {
+								hydraLocalParticipantId: localParticipant.id,
+								status: {
+									in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending, HydraDecommitStatus.Approved],
+								},
 							},
-						},
-						orderBy: { createdAt: 'desc' },
-					});
-
-					if (active !== null) {
-						const stale =
-							active.status === HydraDecommitStatus.Preparing &&
-							Date.now() - active.createdAt.getTime() > PREPARING_STALE_AFTER_MS
-								? { status: HydraDecommitStatus.Preparing, reason: 'the in-head split never confirmed' }
-								: active.status === HydraDecommitStatus.Pending &&
-									  Date.now() - active.updatedAt.getTime() > PENDING_STALE_AFTER_MS
-									? {
-											status: HydraDecommitStatus.Pending,
-											reason: 'the head never answered the withdrawal request',
-										}
-									: null;
-						if (stale === null) return { claimed: false as const, active };
-						await tx.hydraDecommit.updateMany({
-							where: { id: active.id, status: stale.status },
-							data: { status: HydraDecommitStatus.Failed, failureReason: stale.reason },
+							orderBy: { createdAt: 'desc' },
 						});
-						logger.warn(
-							`[HydraDecommit] failed a stale ${stale.status.toLowerCase()} withdrawal ${active.id} so a new one can start`,
-						);
-					}
 
-					if (await isHydraHeadOnPausedHostLocked(tx, head.id)) throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
-					const created = await tx.hydraDecommit.create({
-						data: {
-							hydraHeadId: head.id,
-							hydraLocalParticipantId: localParticipant.id,
-							requestedLovelace: params.lovelace ?? 0n,
-							// From the request, so a token withdrawal does not read as
-							// "0.00 tADA" for the whole time it is being prepared.
-							requestedAssets: params.asset == null ? {} : { [params.asset.unit]: params.asset.amount.toString() },
-							destinationAddress: localParticipant.Wallet.walletAddress,
-							status: HydraDecommitStatus.Preparing,
-						},
-						select: { id: true },
-					});
-					return { claimed: true as const, id: created.id };
-				},
-				{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-			),
-		);
+						if (active !== null) {
+							const stale = staleWithdrawal(active, Date.now(), nodeHoldsNoWithdrawal);
+							if (stale === null || stale === 'ask-node') {
+								return { claimed: false as const, active, askNode: stale === 'ask-node' };
+							}
+							await tx.hydraDecommit.updateMany({
+								where: { id: active.id, status: stale.status },
+								data: { status: HydraDecommitStatus.Failed, failureReason: stale.reason },
+							});
+							logger.warn(
+								`[HydraDecommit] failed a stale ${stale.status.toLowerCase()} withdrawal ${active.id} so a new one can start`,
+							);
+						}
+
+						if (await isHydraHeadOnPausedHostLocked(tx, head.id)) throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
+						const created = await tx.hydraDecommit.create({
+							data: {
+								hydraHeadId: head.id,
+								hydraLocalParticipantId: localParticipant.id,
+								requestedLovelace: params.lovelace ?? 0n,
+								// From the request, so a token withdrawal does not read as
+								// "0.00 tADA" for the whole time it is being prepared.
+								requestedAssets: params.asset == null ? {} : { [params.asset.unit]: params.asset.amount.toString() },
+								destinationAddress: localParticipant.Wallet.walletAddress,
+								status: HydraDecommitStatus.Preparing,
+							},
+							select: { id: true },
+						});
+						return { claimed: true as const, id: created.id };
+					},
+					{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+				),
+			);
+
+		// A stale Pending row is expired only on the node's word that it holds no
+		// withdrawal. Asked outside the transaction, so a slow node never holds a
+		// serializable slot, and the claim is re-run so the row is re-read after.
+		let claim = await claimSlot(false);
+		if (!claim.claimed && claim.askNode && (await fetchHydraDecommitInFlight(hydraHead.mainNode)) === false) {
+			claim = await claimSlot(true);
+		}
 
 		if (!claim.claimed) {
 			throw createHttpError(
 				409,
 				claim.active.status === HydraDecommitStatus.Approved
 					? 'A prior withdrawal has left the head and is still settling on L1'
-					: 'A withdrawal from this head is already in progress',
+					: claim.askNode
+						? `A prior withdrawal (${claim.active.decommitTxId ?? claim.active.id}) never settled, and the node did not ` +
+							'confirm it holds no withdrawal, so it cannot be given up on yet; retry once the node answers'
+						: 'A withdrawal from this head is already in progress',
 			);
 		}
 		preparingId = claim.id;
