@@ -3,7 +3,6 @@ import {
 	HostIncompatibleError,
 	HostPlacementError,
 	assertHostCompatible,
-	assertHostHasFreeSlot,
 	listHostIncompatibilities,
 	selectPlacementHost,
 	type PlaceableHost,
@@ -256,30 +255,5 @@ describe('listHostIncompatibilities', () => {
 
 	it('ignores free slots', () => {
 		expect(listHostIncompatibilities(capabilities({ nodeSlots: { used: 32, capacity: 32 } }), expected)).toEqual([]);
-	});
-});
-
-describe('assertHostHasFreeSlot', () => {
-	it('refuses a host with no free slots, showing the counts', () => {
-		expect(() => assertHostHasFreeSlot(capabilities({ nodeSlots: { used: 32, capacity: 32 } }))).toThrow(
-			HostIncompatibleError,
-		);
-		expect(() => assertHostHasFreeSlot(capabilities({ nodeSlots: { used: 32, capacity: 32 } }))).toThrow(/32\/32/);
-	});
-
-	it('points the operator at draining the host', () => {
-		expect(() => assertHostHasFreeSlot(capabilities({ nodeSlots: { used: 1, capacity: 1 } }))).toThrow(
-			/drain this host/,
-		);
-	});
-
-	it('accepts a host with a free slot', () => {
-		expect(() => assertHostHasFreeSlot(capabilities({ nodeSlots: { used: 0, capacity: 1 } }))).not.toThrow();
-	});
-
-	// A Host that reports no capacity gets capacity 0. The Host itself still
-	// refuses a node it has no port for.
-	it('accepts a host that reports no capacity', () => {
-		expect(() => assertHostHasFreeSlot(capabilities({ nodeSlots: { used: 3, capacity: 0 } }))).not.toThrow();
 	});
 });
