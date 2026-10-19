@@ -24,9 +24,12 @@ import {
 	hostNodeUrls,
 	provisionNodeOnHost,
 } from '@/services/hydra-host/client';
-import { assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
+import { HostIncompatibleError, assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
 import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
 import { deriveNodeCardanoVkey } from './node-keys';
+
+/** The Host's answer when every node slot is in use (`PortExhaustedError`). */
+const HOST_FULL_STATUS = 507;
 
 export type HeadPeriods = {
 	contestationPeriodSeconds: number;
@@ -299,7 +302,8 @@ export async function selectHostForNetwork(network: Network): Promise<{
 	ledgerParamsHash: string | null;
 	exchangePort: number | null;
 }> {
-	const hosts = await prisma.hydraHost.findMany({ where: { network } });
+	// Oldest first, so first-fit picks the same Host on every call.
+	const hosts = await prisma.hydraHost.findMany({ where: { network }, orderBy: { createdAt: 'asc' } });
 	const chosen = selectPlacementHost(
 		hosts.map((row) => ({
 			id: row.id,
@@ -379,7 +383,22 @@ export async function reserveNodeForExchange(
 	// script spend, after funds are committed.
 	assertHostCompatible(capabilities, expectedHostCapabilitiesForNetwork(network));
 
-	const provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods, transport);
+	// Free slots are left to the Host. It looks up the nonce before it takes a
+	// port, so a replay of a node it already holds still succeeds on a full Host.
+	// A check here, from the reported slot count, refused that replay: a retried
+	// redemption could then never ack the node it had reserved.
+	let provisioned;
+	try {
+		provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods, transport);
+	} catch (error) {
+		if (error instanceof HydraHostRequestError && error.status === HOST_FULL_STATUS) {
+			throw new HostIncompatibleError(
+				'the hydra host has no free node slots; drain this host so new heads go to another one, raise ' +
+					`HYDRA_HOST_PEER_PORT_COUNT on it, or free a slot by removing the node of a finalised head (${error.message})`,
+			);
+		}
+		throw error;
+	}
 	const urls = hostNodeUrls(host.baseUrl, provisioned.nodeId, transport);
 
 	// A replayed provision returns no secrets, because the Host discloses them

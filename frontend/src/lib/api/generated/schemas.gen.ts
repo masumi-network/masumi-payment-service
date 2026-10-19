@@ -6459,7 +6459,8 @@ export const HydraHostSchema = {
         },
         lastHealthError: {
             type: 'string',
-            nullable: true
+            nullable: true,
+            description: 'Why the last probe failed: one failed check per line. Null when it passed'
         },
         participantCount: {
             type: 'number'

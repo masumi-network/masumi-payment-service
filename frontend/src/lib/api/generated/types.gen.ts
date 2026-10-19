@@ -3317,6 +3317,9 @@ export type HydraHost = {
     ledgerParamsHash: string | null;
     status: 'Active' | 'Draining' | 'Unreachable' | 'Disabled';
     lastHealthAt: string | null;
+    /**
+     * Why the last probe failed: one failed check per line. Null when it passed
+     */
     lastHealthError: string | null;
     participantCount: number;
     /**

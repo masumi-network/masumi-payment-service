@@ -1871,7 +1871,7 @@ export const postHydraHost = <ThrowOnError extends boolean = false>(options?: Op
 /**
  * Probe a Hydra Host and record its capabilities. (admin access required)
  *
- * Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it.
+ * Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it. Every check runs, and `lastHealthError` holds one failed check per line. A Host with no free node slots still passes: only a new placement needs a free slot.
  */
 export const postHydraHostCheck = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHostCheckData, ThrowOnError>): RequestResult<PostHydraHostCheckResponses, PostHydraHostCheckErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHostCheckResponses, PostHydraHostCheckErrors, ThrowOnError>({
     responseType: 'json',
