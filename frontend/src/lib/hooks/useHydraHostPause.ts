@@ -51,6 +51,9 @@ export function useHydraHostPause(hostId: string | null) {
     },
     enabled: !!apiClient && hostId !== null,
     refetchInterval: PAUSE_POLL_MS,
+    // Offline, the default mode pauses the read without an error, so the
+    // panel would show an old phase with no warning.
+    networkMode: 'always',
   });
 
   return {
