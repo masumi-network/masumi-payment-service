@@ -36,6 +36,12 @@ export function assertCanUploadDisclosureResult(ctx: AuthContext, target: Disput
 		if (target.requestedById === ctx.id) {
 			throw createHttpError(403, 'Buyer API key cannot upload result disclosure for this purchase');
 		}
+		if (target.sellerHotWalletId == null) {
+			throw createHttpError(503, 'Seller hot wallet is not configured for this purchase payment source');
+		}
+		if (ctx.walletScopeIds === null) {
+			throw createHttpError(403, 'Purchase result disclosure requires a seller-scoped API key');
+		}
 		if (hasWalletInScope(ctx, target.sellerHotWalletId)) {
 			return;
 		}

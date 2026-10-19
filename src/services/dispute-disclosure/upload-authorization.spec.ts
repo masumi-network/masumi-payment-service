@@ -14,7 +14,7 @@ const baseTarget: DisputedRequestRow = {
 };
 
 describe('upload-authorization', () => {
-	it('allows purchase result upload when wallet scope is unrestricted', () => {
+	it('blocks purchase result upload when wallet scope is unrestricted', () => {
 		expect(() =>
 			assertCanUploadDisclosureResult(
 				{
@@ -25,7 +25,7 @@ describe('upload-authorization', () => {
 				} as never,
 				baseTarget,
 			),
-		).not.toThrow();
+		).toThrow(createHttpError(403, 'Purchase result disclosure requires a seller-scoped API key'));
 	});
 
 	it('allows purchase result upload for seller wallet scope', () => {
