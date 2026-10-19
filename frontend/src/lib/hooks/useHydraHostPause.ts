@@ -2,8 +2,9 @@
  * Pausing a Hydra node for maintenance, such as an upgrade.
  *
  * The server owns the pause and moves it forward on its own, so this only
- * reads the phase and sends the two commands. It polls while a pause is in
- * progress, because the phase changes without any action here.
+ * reads the phase and sends the two commands. It polls for as long as it is
+ * mounted, in every phase: the phase changes without any action here, and
+ * another admin can pause or resume the node from another page.
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -26,8 +27,7 @@ type PauseStateResponse = { 200: { status: string; data: HydraHostPauseState } }
 
 const PAUSE_POLL_MS = 5000;
 
-/** `isPaused` comes from the host list, so polling starts even when the first read fails. */
-export function useHydraHostPause(hostId: string | null, isPaused: boolean) {
+export function useHydraHostPause(hostId: string | null) {
   const { apiClient } = useAppContext();
 
   const query = useQuery<HydraHostPauseState>({
@@ -50,14 +50,17 @@ export function useHydraHostPause(hostId: string | null, isPaused: boolean) {
       return state;
     },
     enabled: !!apiClient && hostId !== null,
-    refetchInterval: (current) => {
-      const phase = current.state.data?.phase;
-      if (phase === undefined) return isPaused ? PAUSE_POLL_MS : false;
-      return phase === 'Active' || phase === 'Paused' ? false : PAUSE_POLL_MS;
-    },
+    refetchInterval: PAUSE_POLL_MS,
   });
 
-  return { pauseState: query.data ?? null, refetch: query.refetch };
+  return {
+    pauseState: query.data ?? null,
+    // 0 until the first successful read.
+    lastReadAt: query.dataUpdatedAt > 0 ? query.dataUpdatedAt : null,
+    // The latest read failed, so `pauseState` may be out of date.
+    readFailed: query.isError,
+    refetch: query.refetch,
+  };
 }
 
 async function sendPauseCommand(

@@ -55,8 +55,11 @@ these phases:
 The service moves the pause forward every 30 seconds. You can close the
 browser. The pause survives restarts of the service and of the Host.
 
-Wait for **Paused**. **Pause now** skips the wait for in-flight work. That work
-then waits for Resume. Use it only when the in-flight work is stuck.
+Wait for **Paused**. The panel reads the phase every 5 seconds and shows the
+time of the last read. If a read fails, it shows a warning: do not take the
+backup until a fresh read shows **Paused**. **Pause now** skips the wait for
+in-flight work. That work then waits for Resume. Use it only when the
+in-flight work is stuck.
 
 The API is `POST /hydra/host/pause`, `GET /hydra/host/pause` and
 `POST /hydra/host/resume`.

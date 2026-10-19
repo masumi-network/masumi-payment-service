@@ -66,7 +66,7 @@ export function HydraHostMaintenance({ host }: { host: HydraHost }) {
   const { apiClient } = useAppContext();
   const resync = useResync();
   const { releaseStatus } = useReleaseStatus();
-  const { pauseState } = useHydraHostPause(host.id, host.pausedAt !== null);
+  const { pauseState, lastReadAt, readFailed } = useHydraHostPause(host.id);
   const [confirming, setConfirming] = useState<'pause' | 'force' | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -112,6 +112,11 @@ export function HydraHostMaintenance({ host }: { host: HydraHost }) {
         <Badge variant="outline">{PHASE_TEXT[phase]}</Badge>
         {elapsed !== null && (
           <span className="text-xs text-muted-foreground">for {elapsed} min</span>
+        )}
+        {lastReadAt !== null && (
+          <span className="text-xs text-muted-foreground">
+            · read {new Date(lastReadAt).toLocaleTimeString()}
+          </span>
         )}
         <div className="ml-auto flex gap-2">
           {phase === 'Active' ? (
@@ -159,6 +164,16 @@ export function HydraHostMaintenance({ host }: { host: HydraHost }) {
         </div>
       </div>
 
+      {readFailed && (
+        <HydraNotice tone="warn">
+          <p>
+            {lastReadAt === null
+              ? 'Could not read the pause state. The phase shown comes from the node list.'
+              : `Could not read the pause state. The phase shown is from ${new Date(lastReadAt).toLocaleTimeString()} and can be out of date.`}{' '}
+            Do not rely on it before a backup.
+          </p>
+        </HydraNotice>
+      )}
       {phase === 'Draining' && pauseState && (
         <p className="text-xs text-muted-foreground">{inFlightText(pauseState)}</p>
       )}
