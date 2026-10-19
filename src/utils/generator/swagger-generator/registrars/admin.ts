@@ -36,6 +36,15 @@ import {
 	postWalletLowBalanceRuleSchemaOutput,
 } from '@/routes/api/wallet/low-balance';
 import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
+import { getDisputeDataSchemaInput, getDisputeDataSchemaOutput } from '@/routes/api/signature/get-data';
+import {
+	postDisputeInputDataSchemaInput,
+	postDisputeInputDataSchemaOutput,
+} from '@/routes/api/dispute-disclosure/input-data';
+import {
+	postDisputeResultDataSchemaInput,
+	postDisputeResultDataSchemaOutput,
+} from '@/routes/api/dispute-disclosure/result-data';
 import {
 	swapTokensSchemaInput,
 	swapTokensSchemaOutput,
@@ -319,6 +328,83 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			404: {
 				description: 'Low-balance rule not found',
 			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/signature/get-data',
+		description: 'Verifies an admin RevealData signature and returns encrypted-at-rest dispute plaintext when stored.',
+		summary: 'Fetch dispute input/result data after admin signature verification. (read access required)',
+		tags: ['signature'],
+		request: {
+			body: {
+				content: {
+					'application/json': {
+						schema: getDisputeDataSchemaInput,
+					},
+				},
+			},
+		},
+		security: [{ [apiKeyAuth.name]: [] }],
+		responses: {
+			200: successResponse('Dispute disclosure payloads', getDisputeDataSchemaOutput, {
+				isValid: true,
+				inputHash: 'abc',
+				resultHash: 'def',
+				inputData: 'input',
+				resultData: 'result',
+			}),
+			403: { description: 'Forbidden (network not allowed)' },
+			404: { description: 'Payment not found or not disputed' },
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/dispute-disclosure/input-data',
+		description: 'Store UTF-8 input data for a disputed V2 request after hash verification.',
+		summary: 'Upload dispute input plaintext. (pay access required)',
+		tags: ['dispute-disclosure'],
+		request: {
+			body: {
+				content: {
+					'application/json': {
+						schema: postDisputeInputDataSchemaInput,
+					},
+				},
+			},
+		},
+		security: [{ [apiKeyAuth.name]: [] }],
+		responses: {
+			200: successResponse('Input stored', postDisputeInputDataSchemaOutput, {
+				blockchainIdentifier: 'id',
+				stored: true,
+			}),
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/dispute-disclosure/result-data',
+		description: 'Store UTF-8 result data for a disputed V2 request after hash verification.',
+		summary: 'Upload dispute result plaintext. (pay access required)',
+		tags: ['dispute-disclosure'],
+		request: {
+			body: {
+				content: {
+					'application/json': {
+						schema: postDisputeResultDataSchemaInput,
+					},
+				},
+			},
+		},
+		security: [{ [apiKeyAuth.name]: [] }],
+		responses: {
+			200: successResponse('Result stored', postDisputeResultDataSchemaOutput, {
+				blockchainIdentifier: 'id',
+				stored: true,
+			}),
 		},
 	});
 

@@ -4194,6 +4194,140 @@ export type PostWalletLowBalanceResponses = {
 
 export type PostWalletLowBalanceResponse = PostWalletLowBalanceResponses[keyof PostWalletLowBalanceResponses];
 
+export type PostSignatureGetDataData = {
+    body?: {
+        /**
+         * Cryptographic signature from the admin wallet
+         */
+        signature: string;
+        /**
+         * Public key used to create the signature
+         */
+        key: string;
+        /**
+         * Cardano address of the admin wallet signing the request
+         */
+        walletAddress: string;
+        /**
+         * Unix timestamp (in milliseconds) until which this signature is valid
+         */
+        validUntil: number;
+        /**
+         * The blockchain identifier for which data may be disclosed
+         */
+        blockchainIdentifier: string;
+        /**
+         * CIP-8 payload action for disclosure authorization
+         */
+        action: 'RevealData' | 'reveal_data';
+    };
+    path?: never;
+    query?: never;
+    url: '/signature/get-data';
+};
+
+export type PostSignatureGetDataErrors = {
+    /**
+     * Forbidden (network not allowed)
+     */
+    403: unknown;
+    /**
+     * Payment not found or not disputed
+     */
+    404: unknown;
+};
+
+export type PostSignatureGetDataResponses = {
+    /**
+     * Dispute disclosure payloads
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Whether the admin signature is valid
+             */
+            isValid: boolean;
+            /**
+             * Expected SHA-256 hex hash of the input payload
+             */
+            inputHash: string;
+            /**
+             * Expected SHA-256 hex hash of the result payload, if any
+             */
+            resultHash: string | null;
+            /**
+             * Decrypted input payload when stored and signature is valid
+             */
+            inputData: string | null;
+            /**
+             * Decrypted result payload when stored and signature is valid
+             */
+            resultData: string | null;
+        };
+    };
+};
+
+export type PostSignatureGetDataResponse = PostSignatureGetDataResponses[keyof PostSignatureGetDataResponses];
+
+export type PostDisputeDisclosureInputDataData = {
+    body?: {
+        network: 'Preprod' | 'Mainnet';
+        blockchainIdentifier: string;
+        /**
+         * Raw UTF-8 input string; must SHA-256 hash to inputHash on chain
+         */
+        inputData: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/dispute-disclosure/input-data';
+};
+
+export type PostDisputeDisclosureInputDataResponses = {
+    /**
+     * Input stored
+     */
+    200: {
+        status: 'success';
+        data: {
+            blockchainIdentifier: string;
+            stored: true;
+        };
+    };
+};
+
+export type PostDisputeDisclosureInputDataResponse = PostDisputeDisclosureInputDataResponses[keyof PostDisputeDisclosureInputDataResponses];
+
+export type PostDisputeDisclosureResultDataData = {
+    body?: {
+        network: 'Preprod' | 'Mainnet';
+        blockchainIdentifier: string;
+        /**
+         * Raw UTF-8 result string; must SHA-256 hash to resultHash on chain
+         */
+        resultData: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/dispute-disclosure/result-data';
+};
+
+export type PostDisputeDisclosureResultDataResponses = {
+    /**
+     * Result stored
+     */
+    200: {
+        status: 'success';
+        data: {
+            blockchainIdentifier: string;
+            stored: true;
+        };
+    };
+};
+
+export type PostDisputeDisclosureResultDataResponse = PostDisputeDisclosureResultDataResponses[keyof PostDisputeDisclosureResultDataResponses];
+
 export type PostSignatureVerifyRevealDataData = {
     body?: {
         /**
@@ -4213,13 +4347,13 @@ export type PostSignatureVerifyRevealDataData = {
          */
         validUntil: number;
         /**
-         * The blockchain identifier, for which the data should be revealed
+         * The blockchain identifier for which data may be disclosed
          */
         blockchainIdentifier: string;
         /**
-         * The action to perform
+         * CIP-8 payload action for disclosure authorization
          */
-        action: 'RevealData';
+        action: 'RevealData' | 'reveal_data';
     };
     path?: never;
     query?: never;

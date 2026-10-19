@@ -60,6 +60,9 @@ import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-ident
 import { unregisterAgentPost } from './registry/deregister';
 import { updateAgentPost } from './registry/update';
 import { revealDataEndpointPost } from './signature/verify/reveal-data';
+import { getDisputeDataEndpointPost } from './signature/get-data';
+import { postDisputeInputDataEndpointPost } from './dispute-disclosure/input-data';
+import { postDisputeResultDataEndpointPost } from './dispute-disclosure/result-data';
 import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
 import { postVerifyAndPublishAgentSignatureEndpoint } from './signature/sign/verify-and-publish-agent';
 import { getMonthlyInvoiceListEndpoint, postGenerateMonthlyInvoiceEndpoint } from './invoice/monthly';
@@ -471,6 +474,9 @@ export const apiRouter: Routing = {
 					post: revealDataEndpointPost,
 				},
 			},
+			'get-data': {
+				post: getDisputeDataEndpointPost,
+			},
 			sign: {
 				'create-invoice': {
 					monthly: {
@@ -480,6 +486,14 @@ export const apiRouter: Routing = {
 				verifyAndPublishAgent: {
 					post: postVerifyAndPublishAgentSignatureEndpoint,
 				},
+			},
+		},
+		'dispute-disclosure': {
+			'input-data': {
+				post: postDisputeInputDataEndpointPost,
+			},
+			'result-data': {
+				post: postDisputeResultDataEndpointPost,
 			},
 		},
 		webhooks: {

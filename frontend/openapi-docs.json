@@ -8768,6 +8768,345 @@
                 }
             }
         },
+        "/signature/get-data": {
+            "post": {
+                "description": "Verifies an admin RevealData signature and returns encrypted-at-rest dispute plaintext when stored.",
+                "summary": "Fetch dispute input/result data after admin signature verification. (read access required)",
+                "tags": [
+                    "signature"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "signature": {
+                                        "type": "string",
+                                        "maxLength": 7500,
+                                        "description": "Cryptographic signature from the admin wallet"
+                                    },
+                                    "key": {
+                                        "type": "string",
+                                        "maxLength": 2500,
+                                        "description": "Public key used to create the signature"
+                                    },
+                                    "walletAddress": {
+                                        "type": "string",
+                                        "minLength": 58,
+                                        "maxLength": 250,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
+                                        "description": "Cardano address of the admin wallet signing the request"
+                                    },
+                                    "validUntil": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1000000000000000000,
+                                        "description": "Unix timestamp (in milliseconds) until which this signature is valid"
+                                    },
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2500,
+                                        "description": "The blockchain identifier for which data may be disclosed"
+                                    },
+                                    "action": {
+                                        "type": "string",
+                                        "enum": [
+                                            "RevealData",
+                                            "reveal_data"
+                                        ],
+                                        "description": "CIP-8 payload action for disclosure authorization"
+                                    }
+                                },
+                                "required": [
+                                    "signature",
+                                    "key",
+                                    "walletAddress",
+                                    "validUntil",
+                                    "blockchainIdentifier",
+                                    "action"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Dispute disclosure payloads",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "isValid": {
+                                                    "type": "boolean",
+                                                    "description": "Whether the admin signature is valid"
+                                                },
+                                                "inputHash": {
+                                                    "type": "string",
+                                                    "description": "Expected SHA-256 hex hash of the input payload"
+                                                },
+                                                "resultHash": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Expected SHA-256 hex hash of the result payload, if any"
+                                                },
+                                                "inputData": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Decrypted input payload when stored and signature is valid"
+                                                },
+                                                "resultData": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Decrypted result payload when stored and signature is valid"
+                                                }
+                                            },
+                                            "required": [
+                                                "isValid",
+                                                "inputHash",
+                                                "resultHash",
+                                                "inputData",
+                                                "resultData"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "isValid": true,
+                                            "inputHash": "abc",
+                                            "resultHash": "def",
+                                            "inputData": "input",
+                                            "resultData": "result"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden (network not allowed)"
+                    },
+                    "404": {
+                        "description": "Payment not found or not disputed"
+                    }
+                }
+            }
+        },
+        "/dispute-disclosure/input-data": {
+            "post": {
+                "description": "Store UTF-8 input data for a disputed V2 request after hash verification.",
+                "summary": "Upload dispute input plaintext. (pay access required)",
+                "tags": [
+                    "dispute-disclosure"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ]
+                                    },
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2500
+                                    },
+                                    "inputData": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000000,
+                                        "description": "Raw UTF-8 input string; must SHA-256 hash to inputHash on chain"
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "blockchainIdentifier",
+                                    "inputData"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Input stored",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "blockchainIdentifier": {
+                                                    "type": "string"
+                                                },
+                                                "stored": {
+                                                    "type": "boolean",
+                                                    "enum": [
+                                                        true
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "blockchainIdentifier",
+                                                "stored"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "blockchainIdentifier": "id",
+                                            "stored": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/dispute-disclosure/result-data": {
+            "post": {
+                "description": "Store UTF-8 result data for a disputed V2 request after hash verification.",
+                "summary": "Upload dispute result plaintext. (pay access required)",
+                "tags": [
+                    "dispute-disclosure"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ]
+                                    },
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2500
+                                    },
+                                    "resultData": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000000,
+                                        "description": "Raw UTF-8 result string; must SHA-256 hash to resultHash on chain"
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "blockchainIdentifier",
+                                    "resultData"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Result stored",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "blockchainIdentifier": {
+                                                    "type": "string"
+                                                },
+                                                "stored": {
+                                                    "type": "boolean",
+                                                    "enum": [
+                                                        true
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "blockchainIdentifier",
+                                                "stored"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "blockchainIdentifier": "id",
+                                            "stored": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/signature/verify/reveal-data": {
             "post": {
                 "description": "Verifies the reveal data signature is valid.",
@@ -8814,14 +9153,15 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "maxLength": 2500,
-                                        "description": "The blockchain identifier, for which the data should be revealed"
+                                        "description": "The blockchain identifier for which data may be disclosed"
                                     },
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "RevealData"
+                                            "RevealData",
+                                            "reveal_data"
                                         ],
-                                        "description": "The action to perform"
+                                        "description": "CIP-8 payload action for disclosure authorization"
                                     }
                                 },
                                 "required": [

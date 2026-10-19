@@ -1,37 +1,16 @@
 import { z } from '@masumi/payment-core/zod';
-import { prisma } from '@masumi/payment-core/db';
-import createHttpError from 'http-errors';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
-import stringify from 'canonical-json';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
-import { CONSTANTS } from '@masumi/payment-core/config';
 import { AuthContext } from '@masumi/payment-core/auth';
+import createHttpError from 'http-errors';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
-import { isCardanoAddress } from '@/utils/shared/cardano-address';
+import {
+	loadDisputedPaymentContext,
+	revealDataSignatureInputSchema,
+	verifyRevealDataSignature,
+} from '@/utils/signature/reveal-data-signature';
 
-export const postVerifyDataRevealSchemaInput = z.object({
-	signature: z.string().max(7500).describe('Cryptographic signature from the admin wallet'),
-	key: z.string().max(2500).describe('Public key used to create the signature'),
-	walletAddress: z
-		.string()
-		.min(58)
-		.max(250)
-		.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'walletAddress must be a bech32 Cardano address')
-		.refine(isCardanoAddress, 'walletAddress must be a valid Cardano address')
-		.describe('Cardano address of the admin wallet signing the request'),
-	validUntil: z
-		.number()
-		.min(0)
-		.max(1000000000000000000)
-		.describe('Unix timestamp (in milliseconds) until which this signature is valid'),
-	blockchainIdentifier: z
-		.string()
-		.min(1)
-		.max(2500)
-		.describe('The blockchain identifier, for which the data should be revealed'),
-	action: z.literal('RevealData').describe('The action to perform'),
-});
+export const postVerifyDataRevealSchemaInput = revealDataSignatureInputSchema;
 
 export const postRevealDataSchemaOutput = z.object({
 	isValid: z.boolean().describe('Whether the signature is valid and the data can be revealed'),
@@ -44,21 +23,8 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof postVerifyDataRevealSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			const payment = await prisma.paymentRequest.findFirst({
-				where: {
-					blockchainIdentifier: input.blockchainIdentifier,
-				},
-				include: {
-					PaymentSource: {
-						include: {
-							PaymentSourceConfig: true,
-							AdminWallets: true,
-						},
-					},
-				},
-			});
-
-			if (payment == null) {
+			const context = await loadDisputedPaymentContext(input.blockchainIdentifier);
+			if (context == null) {
 				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 404, 'Payment not found', {
 					wallet_address: input.walletAddress,
 					blockchain_identifier: input.blockchainIdentifier,
@@ -66,67 +32,15 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 				});
 				throw createHttpError(404, 'Payment not found');
 			}
-			assertWalletInScope(ctx.walletScopeIds, payment.smartContractWalletId);
-			if (!ctx.canAdmin && !ctx.networkLimit.includes(payment.PaymentSource.network)) {
+
+			assertWalletInScope(ctx.walletScopeIds, context.smartContractWalletId);
+			if (!ctx.canAdmin && !ctx.networkLimit.includes(context.network)) {
 				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Payment is not on the requested network');
 				throw createHttpError(403, 'Network not allowed');
 			}
-			if (payment.onChainState !== 'Disputed') {
-				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Payment is not disputed state', {
-					wallet_address: input.walletAddress,
-					blockchain_identifier: input.blockchainIdentifier,
-					valid_until: input.validUntil,
-				});
-				throw createHttpError(400, 'Payment is not disputed state');
-			}
-			if (
-				!payment.PaymentSource.AdminWallets.some(
-					(adminWallet) =>
-						resolvePaymentKeyHash(adminWallet.walletAddress) === resolvePaymentKeyHash(input.walletAddress),
-				)
-			) {
-				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Wallet is not an admin wallet', {
-					wallet_address: input.walletAddress,
-					blockchain_identifier: input.blockchainIdentifier,
-					valid_until: input.validUntil,
-				});
-				throw createHttpError(400, 'Wallet is not an admin wallet');
-			}
 
-			if (Date.now() > input.validUntil) {
-				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Signature is expired', {
-					wallet_address: input.walletAddress,
-					blockchain_identifier: input.blockchainIdentifier,
-					valid_until: input.validUntil,
-				});
-				throw createHttpError(400, 'Signature is expired');
-			}
-			if (Date.now() + CONSTANTS.REVEAL_DATA_VALIDITY_TIME < input.validUntil) {
-				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Signature is too far in the future', {
-					wallet_address: input.walletAddress,
-					operation: 'reveal_data',
-				});
-				throw createHttpError(400, 'Signature is too far in the future');
-			}
-
-			const message = stringify({
-				action: 'RevealData',
-				validUntil: input.validUntil,
-				blockchainIdentifier: input.blockchainIdentifier,
-			});
-
-			const isValid = await checkSignature(
-				message,
-				{
-					signature: input.signature,
-					key: input.key,
-				},
-				input.walletAddress,
-			);
-
-			return {
-				isValid,
-			};
+			const isValid = await verifyRevealDataSignature(input, context);
+			return { isValid };
 		} catch (error) {
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
 			const statusCode =

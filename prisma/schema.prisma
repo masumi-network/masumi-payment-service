@@ -941,6 +941,18 @@ model PaymentRequest {
   @@index([layer])
 }
 
+/// Encrypted plaintext input/result for disputed V2 escrow review.
+/// Hashes remain on PaymentRequest / PurchaseRequest; this table holds
+/// optional disclosure payloads verified at upload time.
+model DisputeDisclosure {
+  id                   String   @id @default(cuid())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  blockchainIdentifier String   @unique
+  encryptedInputData   String?
+  encryptedResultData  String?
+}
+
 model PaymentActionData {
   id                      String            @id @default(cuid())
   createdAt               DateTime          @default(now())
