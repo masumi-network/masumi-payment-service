@@ -36,10 +36,12 @@ let dataDir: string;
 let server: Server;
 let baseUrl: string;
 let counter: number;
+let warnings: string[];
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-api-'));
 	counter = 0;
+	warnings = [];
 	const config = { ...loadHostConfig(env), dataDir };
 	const store = new NodeRegistryStore(dataDir);
 	const ports = new PortAllocator(config.ports);
@@ -47,6 +49,7 @@ beforeEach(async () => {
 		store,
 		ports,
 		advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+		checkPeerTarget: async () => null,
 		newNodeId: () => `node-${++counter}`,
 		now: () => new Date('2026-07-28T12:00:00.000Z'),
 	};
@@ -60,7 +63,13 @@ beforeEach(async () => {
 		ports,
 		supervisor,
 		provision,
-		logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		logger: {
+			info: () => undefined,
+			warn: (message: string) => {
+				warnings.push(message);
+			},
+			error: () => undefined,
+		},
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -110,6 +119,13 @@ describe('control plane auth', () => {
 		expect(await response.json()).toMatchObject({
 			exchangeUrl: 'https://exchange.hydra1.example.com:8444/exchange',
 		});
+	});
+
+	it('logs a refused invite route with a digest, never the open nonce', async () => {
+		expect((await call('DELETE', '/v1/invites/nonce123456', { token: USER })).status).toBe(403);
+
+		expect(warnings).toEqual([expect.stringContaining('DELETE /v1/invites/sha256:575140b1803e rejected')]);
+		expect(warnings.join('\n')).not.toContain('nonce123456');
 	});
 
 	it('404s an unknown path without revealing whether a token would help', async () => {
@@ -323,10 +339,17 @@ describe('lifecycle guards over HTTP', () => {
 		expect(patched.status).toBe(409);
 	});
 
-	it('refuses to start a node before peers are configured', async () => {
+	// A pause stops an unredeemed invite reservation, and Resume must restore it.
+	// The planner keeps it idle until a redemption configures peers.
+	it('restores a stopped peerless reservation on start', async () => {
 		const nodeId = await provisionAndAck();
+		expect((await call('POST', `/v1/nodes/${nodeId}/stop`, { token: ADMIN })).status).toBe(202);
 		const started = await call('POST', `/v1/nodes/${nodeId}/start`, { token: ADMIN });
-		expect(started.status).toBe(409);
+
+		expect(started.status).toBe(202);
+		const record = await new NodeRegistryStore(dataDir).read(nodeId);
+		expect(record?.desired).toBe('Running');
+		expect(record?.peers).toEqual([]);
 	});
 
 	// The bug this replaces: restart set desired='Running', which the planner
@@ -396,6 +419,7 @@ describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 				store,
 				ports,
 				advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+				checkPeerTarget: async () => null,
 				newNodeId: () => 'node-override',
 				now: () => new Date('2026-07-28T12:00:00.000Z'),
 			},

@@ -16,6 +16,7 @@ import createHttpError from 'http-errors';
 import { HydraHeadStatus, HydraInviteRole, HydraInviteStatus, Network, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { nonceLogRef } from './nonce-log-ref';
 import { decrypt } from '@/utils/security/encryption';
 import {
 	fetchHostRedemptions,
@@ -60,6 +61,9 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 	const hosts = await prisma.hydraHost.findMany({
 		where: {
 			encryptedAdminToken: { not: null },
+			// A paused Host takes no new head. Its watermark stays put, so the
+			// redemption is adopted on the first pass after Resume.
+			pausedAt: null,
 			HydraHeadInvites: { some: { status: HydraInviteStatus.Issued, role: HydraInviteRole.Issuer } },
 		},
 	});
@@ -106,7 +110,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 				// Host went unpolled — so a single counterparty whose relation still
 				// held a live head silently froze invite adoption for everybody, and
 				// re-ran the same failure on every tick.
-				logger.warn(`hydra: could not adopt redemption ${record.nonce}: ${(error as Error).message}`);
+				logger.warn(`hydra: could not adopt redemption ${nonceLogRef(record.nonce)}: ${(error as Error).message}`);
 				outcome.rejected += 1;
 				continue;
 			}
@@ -118,7 +122,9 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 				await forgetHostInvite(host.baseUrl, decrypt(host.encryptedAdminToken), record.nonce, {
 					allowInsecureHttp: host.allowInsecureHttp,
 				}).catch((error: unknown) =>
-					logger.warn(`hydra: could not prune adopted invite ${record.nonce}: ${(error as Error).message}`),
+					logger.warn(
+						`hydra: could not prune adopted invite ${nonceLogRef(record.nonce)}: ${(error as Error).message}`,
+					),
 				);
 			} else if (result === 'rejected') {
 				outcome.rejected += 1;
@@ -193,7 +199,7 @@ async function discardUnadoptableRedemption(
 
 	if (invite.HydraHost.encryptedAdminToken === null) {
 		logger.error(
-			`hydra: discarded invite ${invite.nonce}, but its host has no admin token; ` +
+			`hydra: discarded invite ${nonceLogRef(invite.nonce)}, but its host has no admin token; ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
 		return;
@@ -223,7 +229,7 @@ async function discardUnadoptableRedemption(
 		// failure and hold the watermark back on a redemption that can never be
 		// adopted.
 		logger.error(
-			`hydra: discarded invite ${invite.nonce} locally, but its host refused (${(error as Error).message}); ` +
+			`hydra: discarded invite ${nonceLogRef(invite.nonce)} locally, but its host refused (${(error as Error).message}); ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
 		return;
@@ -372,7 +378,7 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 		);
 	} catch (error) {
 		logger.error(
-			`hydra: invite ${record.nonce} was redeemed with a signature that does not verify (${(error as Error).message}); ` +
+			`hydra: invite ${nonceLogRef(record.nonce)} was redeemed with a signature that does not verify (${(error as Error).message}); ` +
 				'marking it failed and removing the node it reserved; issue a new invite to retry',
 		);
 		// Force skips the Host's head-state guard, so keep the node if a head
@@ -408,7 +414,9 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 			if (orphan.status === HydraHeadStatus.Idle && orphan.LocalParticipant?.autoFund === true) {
 				fundAdoptedNode(orphan.LocalParticipant.id, orphan.id);
 			}
-			logger.warn(`hydra: invite ${record.nonce} re-linked to head ${orphan.id}, which an earlier pass left orphaned`);
+			logger.warn(
+				`hydra: invite ${nonceLogRef(record.nonce)} re-linked to head ${orphan.id}, which an earlier pass left orphaned`,
+			);
 			return 'adopted';
 		}
 
@@ -420,7 +428,7 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 			where: { hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId },
 		});
 		logger.error(
-			`hydra: invite ${record.nonce} has no unbound local participant to attach to a head; discarding it` +
+			`hydra: invite ${nonceLogRef(record.nonce)} has no unbound local participant to attach to a head; discarding it` +
 				(claimed > 0 ? `, but leaving node ${invite.hostNodeId} in place because a head still claims it` : ''),
 		);
 		// No participant at all means no head can be bound to the node, so force
@@ -459,7 +467,7 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 	}
 
 	logger.info(
-		`hydra: invite ${record.nonce} was redeemed by ${record.redeemer.walletAddress}; head ${head.hydraHeadId} recorded`,
+		`hydra: invite ${nonceLogRef(record.nonce)} was redeemed by ${record.redeemer.walletAddress}; head ${head.hydraHeadId} recorded`,
 	);
 	return 'adopted';
 }
@@ -515,7 +523,9 @@ export async function reapExpiredInvites(): Promise<number> {
 				// afterwards, when the invite is Completed or still unredeemed.
 				const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
 				if (held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
-					logger.info(`hydra: not reaping expired invite ${invite.nonce}; the Host is holding its redemption`);
+					logger.info(
+						`hydra: not reaping expired invite ${nonceLogRef(invite.nonce)}; the Host is holding its redemption`,
+					);
 					continue;
 				}
 
@@ -564,12 +574,12 @@ export async function reapExpiredInvites(): Promise<number> {
 		// key held in this service.
 		const expiredForMs = Date.now() - invite.expiresAt.getTime();
 		if (expiredForMs < HOST_UNREACHABLE_REAP_GRACE_MS) {
-			logger.warn(`hydra: could not reap expired invite ${invite.nonce}: ${hostRefusal}`);
+			logger.warn(`hydra: could not reap expired invite ${nonceLogRef(invite.nonce)}: ${hostRefusal}`);
 			continue;
 		}
 
 		logger.error(
-			`hydra: expiring invite ${invite.nonce} without its Host, which has refused for ${Math.round(
+			`hydra: expiring invite ${nonceLogRef(invite.nonce)} without its Host, which has refused for ${Math.round(
 				expiredForMs / (60 * 60 * 1000),
 			)}h: ${hostRefusal}. The node's funds are swept with the key held here; its Host-side node and peer port must be removed by hand`,
 		);
@@ -581,7 +591,7 @@ export async function reapExpiredInvites(): Promise<number> {
 			await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
 			reaped += 1;
 		} catch (error) {
-			logger.warn(`hydra: could not expire invite ${invite.nonce} locally: ${(error as Error).message}`);
+			logger.warn(`hydra: could not expire invite ${nonceLogRef(invite.nonce)} locally: ${(error as Error).message}`);
 		}
 	}
 	return reaped;

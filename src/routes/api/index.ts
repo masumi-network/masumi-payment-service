@@ -1,5 +1,6 @@
 import { Routing } from 'express-zod-api';
 import { healthEndpointGet } from '@/routes/api/health';
+import { releaseStatusGet } from '@/routes/api/release-status';
 import {
 	queryAPIKeyEndpointGet as queryCentralizedRegistrySourceGet,
 	addAPIKeyEndpointPost as addCentralizedRegistrySourceEndpointPost,
@@ -137,6 +138,9 @@ import {
 	updateHydraHostPatch,
 	deleteHydraHostDelete,
 	checkHydraHostPost,
+	hydraHostPauseStateGet,
+	pauseHydraHostPost,
+	resumeHydraHostPost,
 	listHydraWalletBasesGet,
 	listHeadErrorsGet,
 	getHeadConnectionGet,
@@ -150,6 +154,8 @@ import {
 	consolidateHeadPost,
 	getSnapshotRoundGet,
 	resetSnapshotRoundPost,
+	listL2ReservationsGet,
+	releaseL2ReservationPost,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
@@ -194,6 +200,7 @@ import {
 export const apiRouter: Routing = {
 	v1: {
 		health: healthEndpointGet,
+		'release-status': releaseStatusGet,
 		purchase: {
 			get: queryPurchaseRequestGet,
 			post: createPurchaseInitPost,
@@ -536,6 +543,8 @@ export const apiRouter: Routing = {
 				patch: updateHydraHostPatch,
 				delete: deleteHydraHostDelete,
 				check: { post: checkHydraHostPost },
+				pause: { get: hydraHostPauseStateGet, post: pauseHydraHostPost },
+				resume: { post: resumeHydraHostPost },
 			},
 			'wallet-base': {
 				get: listHydraWalletBasesGet,
@@ -567,6 +576,11 @@ export const apiRouter: Routing = {
 				'snapshot-round': {
 					get: getSnapshotRoundGet,
 					reset: { post: resetSnapshotRoundPost },
+				},
+				// Expired L2 reservations no proof can release, and the admin's release.
+				'l2-reservations': {
+					get: listL2ReservationsGet,
+					release: { post: releaseL2ReservationPost },
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },

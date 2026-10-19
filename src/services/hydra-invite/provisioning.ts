@@ -307,6 +307,7 @@ export async function selectHostForNetwork(network: Network): Promise<{
 			network: row.network,
 			status: row.status,
 			hasAdminToken: row.encryptedAdminToken !== null,
+			isPaused: row.pausedAt !== null,
 		})),
 		network,
 	);

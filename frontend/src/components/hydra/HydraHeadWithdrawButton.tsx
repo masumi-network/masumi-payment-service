@@ -42,6 +42,8 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { InfoHint } from '@/components/ui/info-hint';
+import { ListPager, usePagedList } from '@/components/hydra/ListPager';
+import { HISTORY_PAGE_SIZE } from '@/components/hydra/paging';
 
 /** Radix refuses an empty Select value, so ADA needs a name of its own. */
 const ADA_CHOICE = 'ada';
@@ -100,7 +102,11 @@ function HydraWithdrawalList({
   /** When one was last started here, so a new row is watched for. */
   startedAt: number | null;
 }) {
-  const { withdrawals, isError, refetch } = useHydraWithdrawals(headId, isOpen, startedAt);
+  const { withdrawals, isError, refetch, hasMore, isLoadingMore, loadMore } = useHydraWithdrawals(
+    headId,
+    startedAt,
+  );
+  const paged = usePagedList(withdrawals, HISTORY_PAGE_SIZE);
 
   // Told apart from having none, for the same reason the deposits list does it:
   // a withdrawal takes minutes across two systems, and a section that vanishes
@@ -123,7 +129,12 @@ function HydraWithdrawalList({
     );
   }
 
-  if (withdrawals.length === 0) return null;
+  if (withdrawals.length === 0) {
+    // Only the closed head shows this list on its own, without a form above it.
+    return isOpen ? null : (
+      <p className="py-2 text-sm text-muted-foreground">No withdrawals from this head.</p>
+    );
+  }
 
   return (
     <div className="space-y-2 border-t pt-3">
@@ -141,7 +152,7 @@ function HydraWithdrawalList({
         </InfoHint>
       </p>
       <ul className="divide-y rounded-md border">
-        {withdrawals.map((row) => {
+        {paged.items.map((row) => {
           const status = statusLabel(row);
           return (
             <li
@@ -199,6 +210,7 @@ function HydraWithdrawalList({
           );
         })}
       </ul>
+      <ListPager page={paged} more={{ hasMore, isLoadingMore, loadMore }} />
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { z } from '@masumi/payment-core/zod';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
 import { HydraInviteRole, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
 import {
@@ -249,7 +250,8 @@ export const createInvitePost = adminAuthenticatedEndpointFactory.build({
 			unsyncedPeriodSeconds: input.unsyncedPeriodSeconds,
 			ttlMs: input.ttlHours === undefined ? INVITE_TTL_MS : input.ttlHours * 60 * 60 * 1000,
 		});
-		logger.info(`hydra: minted invite ${minted.nonce}`);
+		// Log the row id, never the nonce: an unspent nonce is redeemable by anyone who reads it.
+		logger.info(`hydra: minted invite ${minted.inviteId}`);
 		return {
 			id: minted.inviteId,
 			nonce: minted.nonce,
@@ -520,11 +522,11 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		});
 		if (release.retained > 0) {
 			logger.warn(
-				`hydra: invite ${invite.nonce} was revoked but ${release.retained} node reservation(s) still hold funds; ` +
+				`hydra: invite ${nonceLogRef(invite.nonce)} was revoked but ${release.retained} node reservation(s) still hold funds; ` +
 					'they are kept until a later sweep settles them',
 			);
 		}
-		logger.info(`hydra: revoked invite ${invite.nonce}`);
+		logger.info(`hydra: revoked invite ${nonceLogRef(invite.nonce)}`);
 		return { id: updated.id, status: updated.status };
 	},
 });

@@ -33,8 +33,8 @@ beforeEach(() => {
 	mockHydraHeadFindUnique.mockResolvedValue(null);
 });
 
-describe('applyConfirmedHydraTransaction after an auto-release', () => {
-	it('holds replay and alerts when an auto-released body confirms', async () => {
+describe('applyConfirmedHydraTransaction after a release', () => {
+	it('holds replay and alerts when a released body confirms', async () => {
 		mockTransactionFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'released-1' });
 
 		await expect(applyConfirmedHydraTransaction(host, 'head-1', 'a'.repeat(64))).resolves.toBe('retry');
@@ -42,7 +42,10 @@ describe('applyConfirmedHydraTransaction after an auto-release', () => {
 			expect.objectContaining({
 				where: expect.objectContaining({
 					status: TransactionStatus.RolledBack,
-					l2ReleasedByInputProofAt: { not: null },
+					AND: expect.arrayContaining([
+						// An admin release is held the same way as a proven one.
+						{ OR: [{ l2ReleasedByInputProofAt: { not: null } }, { l2ReleasedByOperatorAt: { not: null } }] },
+					]),
 				}),
 			}),
 		);

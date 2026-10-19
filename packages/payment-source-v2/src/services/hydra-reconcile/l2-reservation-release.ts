@@ -7,11 +7,12 @@
  *
  * Rejection is diagnostic data, not independent proof of nonexecution, so
  * automatic recovery never releases on it. Automatic recovery releases only
- * with `proof: 'inputs-unspent-after-expiry'`, after
- * `decideL2ReservationRelease` found every input of the body unspent in a
- * verified snapshot confirmed after expiry (see `./l2-reservation-recovery`),
- * or with `proof: 'inputs-unspent-in-final-snapshot'`, after a Final head's
- * fanned-out snapshot still held every input (see `./final-l2-reservation-release`).
+ * with `proof: 'spent-by-release-nudge'`, after the reservation's own release
+ * nudge, which spends the body's wallet inputs, appeared in a verified snapshot
+ * or in the fanned-out final snapshot of a Final head (see
+ * `./l2-reservation-recovery`, `./final-l2-reservation-release` and
+ * `./l2-release-nudge-proof`). An admin can release a reservation with no proof
+ * as `proof: 'operator'` (`./operator-l2-reservation-release`).
  */
 
 import {
@@ -33,8 +34,8 @@ export interface ReleasableL2Reservation {
 	l2ReservationPreviousCollateralReturn: bigint | null;
 	/** The escrow transaction a non-locking action replaced as the request's current one. */
 	l2ReservationPreviousTransactionId: string | null;
-	/** The release nudge input the release decision saw, when it read one. */
-	l2ReleaseNudgeInputRef?: string | null;
+	/** The signed release nudge the proof was read from, when it read one. */
+	l2ReleaseNudgeTx?: string | null;
 }
 
 /**
@@ -75,7 +76,7 @@ export function purchaseL2ActionRetry(action: PurchasingAction | undefined): Pur
 export async function releaseRejectedL2Reservation(
 	reservation: ReleasableL2Reservation,
 	database: typeof prisma,
-	proof: 'head-rejection' | 'inputs-unspent-after-expiry' | 'inputs-unspent-in-final-snapshot',
+	proof: 'head-rejection' | 'spent-by-release-nudge' | 'operator',
 ): Promise<boolean> {
 	try {
 		return await database.$transaction(
@@ -89,7 +90,7 @@ export async function releaseRejectedL2Reservation(
 						status: true,
 						txHash: true,
 						l2RejectedByHeadAt: true,
-						l2ReleaseNudgeInputRef: true,
+						l2ReleaseNudgeTx: true,
 						PurchaseRequestCurrent: {
 							select: { id: true, nextActionId: true, NextAction: { select: { requestedAction: true } } },
 						},
@@ -109,10 +110,11 @@ export async function releaseRejectedL2Reservation(
 					// PaymentRequest, which this helper does not restore. Keep those manual.
 					current.txHash != null ||
 					(proof === 'head-rejection' && current.l2RejectedByHeadAt == null) ||
-					// A nudge recorded after the decision may still be in flight; freeing
-					// the wallet now would let a new lock select its input.
-					(reservation.l2ReleaseNudgeInputRef !== undefined &&
-						(current.l2ReleaseNudgeInputRef ?? null) !== reservation.l2ReleaseNudgeInputRef)
+					// The proof holds only for the nudge it was read from. A nudge
+					// recorded after the decision may still be in flight; freeing the
+					// wallet now would let a new lock select its inputs.
+					(reservation.l2ReleaseNudgeTx !== undefined &&
+						(current.l2ReleaseNudgeTx ?? null) !== reservation.l2ReleaseNudgeTx)
 				) {
 					return false;
 				}
@@ -147,7 +149,8 @@ export async function releaseRejectedL2Reservation(
 					data: {
 						status: TransactionStatus.RolledBack,
 						lastCheckedAt: new Date(),
-						...(proof === 'head-rejection' ? {} : { l2ReleasedByInputProofAt: new Date() }),
+						...(proof === 'spent-by-release-nudge' ? { l2ReleasedByInputProofAt: new Date() } : {}),
+						...(proof === 'operator' ? { l2ReleasedByOperatorAt: new Date() } : {}),
 					},
 				});
 

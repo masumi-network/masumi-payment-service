@@ -242,18 +242,25 @@ model Transaction {
   l2RejectedByHeadAt                         DateTime?
   /// The head's own words for that refusal, kept for the operator.
   l2RejectedByHeadReason                     String?
-  /// Inputs (`txHash#index`) the reserved in-head body spends. A body that ever
-  /// applied consumed them, and a spent output never reappears. Finding all of
-  /// them in a verified snapshot newer than the node's own confirmed snapshot
-  /// read after expiry proves the body dead (decideL2ReservationRelease).
+  /// Inputs (`txHash#index`) the reserved in-head body spends. The release nudge
+  /// spends the wallet's share of them, so once it applies the body never can
+  /// (l2-release-nudge-proof).
   l2ReservationInputRefs                     String[]                        @default([])
-  /// Set when the reservation was auto-released on that input proof. A later
+  /// Set when the reservation was auto-released on an input proof. A later
   /// confirmation of such a body halts the head's replay (invariant breach).
   l2ReleasedByInputProofAt                   DateTime?
-  /// The wallet UTxO (`txHash#index`) a release nudge self-sends so an idle head
-  /// confirms a newer snapshot. Release waits until it is spent, so a nudge still
-  /// in flight can never meet a new lock on the freed wallet.
+  /// Legacy, no longer written: the wallet UTxO an earlier release nudge
+  /// self-sent. Superseded by l2ReleaseNudgeTx.
   l2ReleaseNudgeInputRef                     String?
+  /// The signed release nudge (CBOR hex): an in-head self-send of this body's
+  /// own wallet inputs into one output tagged with a random nonce datum. Its
+  /// exact output bytes in a verified snapshot prove the body can never apply
+  /// (l2-release-nudge-proof). Resent unchanged, so at most one nudge exists.
+  l2ReleaseNudgeTx                           String?
+  /// Set when an admin released this reservation without a proof that the body
+  /// is dead (the nudge never applied, or the row has no value floor). Like
+  /// l2ReleasedByInputProofAt, a later confirmation of the body halts replay.
+  l2ReleasedByOperatorAt                     DateTime?
   BlocksWallet                               HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
@@ -1829,6 +1836,15 @@ model HydraHead {
   /// on every attach, so a flapping session hid a stuck latch from it forever.
   closingSince DateTime?
 
+  /// Set when a withdrawal starts to drain the local participant's collateral.
+  ///
+  /// Taken under the head row lock that new L2 escrow reservations also take,
+  /// so no escrow can enter between the live-escrow check and the collateral
+  /// leaving. While set, new escrows are refused: one admitted now could not be
+  /// settled until collateral returns. Cleared by the next escrow admission that
+  /// finds no withdrawal in flight and collateral back in the wallet.
+  collateralDrainedAt DateTime?
+
   /// When the head's node refused the Close admitted above.
   ///
   /// The only proof the stalled-close reaper accepts that the command can no
@@ -2175,82 +2191,6 @@ model HydraDecommit {
   @@index([status, updatedAt])
   @@index([hydraHeadId])
   @@index([decommitTxId])
-}
-
-/// Status of a Hydra Host deployment.
-enum HydraHostStatus {
-  /// Accepting new node placements.
-  Active
-  /// Reachable and serving existing heads, but no new placements.
-  Draining
-  /// Health checks are failing; existing heads keep their placement because a
-  /// head cannot be moved (its persistence directory is not relocatable).
-  Unreachable
-  /// Administratively disabled.
-  Disabled
-}
-
-/// A deployment that supervises hydra-node processes and exposes a token-gated
-/// control plane. Several Hosts may serve one payment service; a head is placed
-/// on exactly one Host at provisioning time and stays there for its whole life,
-/// because its persistence directory holds the only copy of the head state on
-/// that machine and cannot be moved.
-model HydraHost {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /// Operator-facing label.
-  name    String
-  network Network
-
-  /// Base URL of the Host control plane, e.g. https://hydra1.example.com.
-  /// Prefer TLS terminated in front of the Host. Plain HTTP requires the
-  /// explicit allowInsecureHttp opt-in below.
-  baseUrl String
-
-  /// Explicit operator opt-in for sending bearer tokens to an HTTP Host URL.
-  /// Intended for loopback or a separately secured private network only.
-  allowInsecureHttp Boolean @default(false)
-
-  /// Hostname the Host advertises for per-head peer ports. Recorded so the
-  /// counterparty handshake can be checked against what the Host actually
-  /// returns — etcd rejects a mismatch between advertised and cluster URLs.
-  publicPeerHost String
-
-  /// Encrypted admin token. Fleet operations only: provision, escrow-ack,
-  /// reconfigure, delete. Nullable so a Host may be registered for runtime use
-  /// without handing this service the ability to provision on it.
-  encryptedAdminToken String?
-
-  /// Encrypted user token. Runtime access to the proxied node API.
-  encryptedUserToken String
-
-  /// Last values reported by GET /v1/capabilities. Provisioning is refused when
-  /// these do not match what this service expects, so a version skew fails at
-  /// placement rather than at first commit.
-  hydraVersion        String?
-  scriptCatalogueHash String?
-  ledgerParamsHash    String?
-
-  /// Port this Host serves its Exchange Plane on, as the Host itself reports it.
-  ///
-  /// A property of the Host, not of this service: an invite's redemption URL is
-  /// built from it, so assuming one fleet-wide value sends counterparties to a
-  /// Host that never issued the nonce — which they see as a 404 and cannot act
-  /// on. Null until the first capabilities probe fills it in.
-  exchangePort Int?
-
-  status          HydraHostStatus @default(Active)
-  lastHealthAt    DateTime?
-  lastHealthError String?
-
-  Participants     HydraLocalParticipant[]
-  HydraHeadInvites HydraHeadInvite[]
-
-  @@unique([network, baseUrl])
-  /// Placement scans for an Active Host on a given network.
-  @@index([network, status])
 }
 
 /// Which side of a head offer this row represents.

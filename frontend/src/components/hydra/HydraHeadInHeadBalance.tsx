@@ -18,7 +18,7 @@ interface HydraHeadInHeadBalanceProps {
  */
 export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInHeadBalanceProps) {
   const { data, isLoading, isError } = useHydraHeadBalance(headId, isOpen);
-  const { topups } = useHydraTopups(headId, isOpen);
+  const { topups } = useHydraTopups(headId);
   // Confirmed on L1 says the deposit transaction landed. It says nothing about
   // the head absorbing it: that takes a snapshot both parties sign, and if it
   // has not happened by the deposit's deadline it never will. Reporting those

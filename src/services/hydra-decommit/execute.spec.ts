@@ -11,6 +11,8 @@ const mockHeadUpdate = jest.fn() as AnyMock;
 const mockDecommitCall = jest.fn() as AnyMock;
 const mockNewTx = jest.fn() as AnyMock;
 const mockFetchPendingDecommitRefs = jest.fn() as AnyMock;
+/** The node's raw `GET /head`, which decides whether a stale withdrawal may expire. */
+const mockNodeGet = jest.fn() as AnyMock;
 const mockFetchAddressUTxOs = jest.fn() as AnyMock;
 /** Tracks which inputs the in-head transaction builder was given. */
 const mockTxIn = jest.fn() as AnyMock;
@@ -25,6 +27,19 @@ const mockFetchProtocolParameters = jest.fn() as AnyMock;
 const mockIsTxConfirmed = jest.fn() as AnyMock;
 /** Returns the split's carved output, so the decommit can spend it. */
 const mockFetchUTxOs = jest.fn() as AnyMock;
+const mockTxQueryRaw = jest.fn() as AnyMock;
+const mockPaymentCount = jest.fn() as AnyMock;
+const mockPurchaseCount = jest.fn() as AnyMock;
+const mockTransactionCount = jest.fn() as AnyMock;
+
+const mockIsPausedLocked = jest.fn(async () => false) as AnyMock;
+
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+	isHydraHeadOnPausedHostLocked: mockIsPausedLocked,
+	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -37,6 +52,11 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 		$transaction: async (fn: any) =>
 			await fn({
+				$queryRaw: mockTxQueryRaw,
+				hydraHead: { update: mockHeadUpdate },
+				paymentRequest: { count: mockPaymentCount },
+				purchaseRequest: { count: mockPurchaseCount },
+				transaction: { count: mockTransactionCount },
 				hydraDecommit: {
 					findFirst: mockDecommitFindFirst,
 					create: mockDecommitCreate,
@@ -77,6 +97,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 				pendingIncrementUtxoRefs: new Set<string>(),
 				fetchPendingDecommitRefs: mockFetchPendingDecommitRefs,
 				isTxConfirmed: mockIsTxConfirmed,
+				get: mockNodeGet,
 			},
 		}),
 		getProvider: () => ({
@@ -130,6 +151,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 
 const { HydraTransportAmbiguousError } = await import('@/lib/hydra/hydra/errors');
 const { executeHydraDecommit } = await import('./execute');
+const { PENDING_EXPIRED_REASON } = await import('./stale');
 
 const HEAD = {
 	id: 'head-1',
@@ -156,6 +178,7 @@ beforeEach(() => {
 	mockDecommitUpdateMany.mockResolvedValue({ count: 1 });
 	mockHeadUpdate.mockResolvedValue({});
 	mockFetchPendingDecommitRefs.mockResolvedValue([]);
+	mockNodeGet.mockResolvedValue(headState({ decommitTx: null }));
 	mockFetchProtocolParameters.mockResolvedValue({
 		minFeeA: 0,
 		minFeeB: 0,
@@ -177,6 +200,10 @@ beforeEach(() => {
 	]);
 	mockIsTxConfirmed.mockReturnValue(true);
 	mockFetchUTxOs.mockResolvedValue([]);
+	mockTxQueryRaw.mockResolvedValue([]);
+	mockPaymentCount.mockResolvedValue(0);
+	mockPurchaseCount.mockResolvedValue(0);
+	mockTransactionCount.mockResolvedValue(0);
 });
 
 describe('executeHydraDecommit request outcomes', () => {
@@ -247,6 +274,17 @@ describe('executeHydraDecommit request outcomes', () => {
 			expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
 		);
 		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+	});
+
+	// Checked again where the row is created, under the Host lock, so a pause
+	// that lands after the route check still stops the withdrawal.
+	it('refuses without creating a row when the host was paused in the meantime', async () => {
+		mockIsPausedLocked.mockResolvedValueOnce(true);
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({ statusCode: 409 });
+
+		expect(mockDecommitCreate).not.toHaveBeenCalled();
 		expect(mockDecommitCall).not.toHaveBeenCalled();
 	});
 });
@@ -480,5 +518,124 @@ describe('withdrawing a token that sits on the collateral reserve', () => {
 			executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 20_000_000n } }),
 		).rejects.toThrow('so the collateral can stay behind');
 		expect(mockTxIn).not.toHaveBeenCalled();
+	});
+});
+
+describe('executeHydraDecommit collateral drain', () => {
+	// A lock accepted by the head but not yet confirmed has no in-head UTxO
+	// recorded, so counting only confirmed escrows let it slip past the check and
+	// become an escrow nobody could settle once the collateral had left.
+	it('refuses to drain while an L2 reservation is still pending in the head', async () => {
+		mockTransactionCount.mockResolvedValue(1);
+
+		await expect(executeHydraDecommit({ headId: 'head-1', drain: true })).rejects.toThrow(
+			'escrows are still live or pending in this head (1 found)',
+		);
+
+		expect(mockDecommitCreate).not.toHaveBeenCalled();
+		expect(mockHeadUpdate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ collateralDrainedAt: expect.anything() }) }),
+		);
+	});
+
+	// The mark must land in the same transaction as the count, under the head row
+	// lock new escrows take, or an escrow can enter between the two.
+	it('marks the head drained under its row lock before the withdrawal row exists', async () => {
+		await executeHydraDecommit({ headId: 'head-1', drain: true }).catch(() => undefined);
+
+		expect(mockHeadUpdate).toHaveBeenCalledWith({
+			where: { id: 'head-1' },
+			data: { collateralDrainedAt: expect.any(Date) },
+		});
+		const lockOrder = mockTxQueryRaw.mock.invocationCallOrder[0] ?? Infinity;
+		const markOrder = mockHeadUpdate.mock.invocationCallOrder[0] ?? Infinity;
+		const createOrder = mockDecommitCreate.mock.invocationCallOrder[0] ?? -Infinity;
+		expect(lockOrder).toBeLessThan(markOrder);
+		expect(markOrder).toBeLessThan(createOrder);
+		expect(String(mockTxQueryRaw.mock.calls[0]?.[0]?.join?.('') ?? '')).toContain('FOR UPDATE');
+	});
+});
+
+/** A node's `GET /head` reply for an open head. */
+function headState(coordinatedHeadState: Record<string, unknown>) {
+	return { tag: 'Open', contents: { coordinatedHeadState } };
+}
+
+const STALE_PENDING = {
+	id: 'decommit-old',
+	status: 'Pending',
+	decommitTxId: 'ef'.repeat(32),
+	createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+	updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+};
+
+function failedWrites() {
+	return mockDecommitUpdateMany.mock.calls.filter((call) => call[0]?.data?.status === 'Failed');
+}
+
+/**
+ * F5: a Pending withdrawal must not be failed on its age alone.
+ *
+ * The head may have approved or paid out a request the service never heard
+ * back about, so a row only expires when the node answers that it holds no
+ * withdrawal. Without the expiry at all, a request the node never saw blocked
+ * every later withdrawal until the head was closed, so that path must stay open.
+ */
+describe('executeHydraDecommit with a stale pending withdrawal', () => {
+	beforeEach(() => {
+		mockDecommitFindFirst.mockResolvedValue(STALE_PENDING);
+	});
+
+	it('expires it and starts the new one when the node holds no withdrawal', async () => {
+		await executeHydraDecommit({ headId: 'head-1' });
+
+		expect(failedWrites()[0]![0]).toEqual({
+			where: { id: STALE_PENDING.id, status: 'Pending' },
+			data: { status: 'Failed', failureReason: PENDING_EXPIRED_REASON },
+		});
+		expect(mockDecommitCreate).toHaveBeenCalled();
+	});
+
+	it('keeps it and refuses while the node still holds a withdrawal', async () => {
+		mockNodeGet.mockResolvedValue(headState({ decommitTx: { txId: STALE_PENDING.decommitTxId } }));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({ statusCode: 409 });
+
+		expect(failedWrites()).toHaveLength(0);
+		expect(mockDecommitCreate).not.toHaveBeenCalled();
+	});
+
+	// The old behaviour: an hour passed, so the row became Failed, whatever the
+	// head had done with it.
+	it('keeps it and refuses when the node cannot be read', async () => {
+		mockNodeGet.mockRejectedValue(new Error('ECONNRESET'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining(STALE_PENDING.decommitTxId),
+		});
+
+		expect(failedWrites()).toHaveLength(0);
+		expect(mockDecommitCreate).not.toHaveBeenCalled();
+	});
+
+	it('keeps it when the node reply has no head state to judge by', async () => {
+		mockNodeGet.mockResolvedValue({ tag: 'Idle' });
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({ statusCode: 409 });
+
+		expect(failedWrites()).toHaveLength(0);
+	});
+
+	it('does not ask the node about a Pending row that is still young', async () => {
+		mockDecommitFindFirst.mockResolvedValue({ ...STALE_PENDING, updatedAt: new Date() });
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('already in progress'),
+		});
+
+		expect(mockNodeGet).not.toHaveBeenCalled();
+		expect(failedWrites()).toHaveLength(0);
 	});
 });

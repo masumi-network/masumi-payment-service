@@ -25,18 +25,12 @@ import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnC
 import { carveExactUtxo, HydraPreSplitError } from './pre-split';
 import { canReleaseTopupWallet, isOwnTopupOutstanding, outstandingOwnTopupWhere } from './wallet-release';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
-
-/**
- * After this, a Preparing row is treated as abandoned.
- *
- * Nothing resolves such a row on its own: it has no deposit hash, so
- * reconciliation has nothing to look for, and the request that owns it is long
- * gone. Since Preparing also blocks the next top-up, leaving it would let one
- * crashed carve wedge the head's deposits for good. Comfortably longer than the
- * carve's own confirmation budget, so a slow chain is never mistaken for a
- * crash.
- */
-const PREPARING_STALE_AFTER_MS = 30 * 60 * 1000;
+import {
+	assertHydraHeadHostNotPaused,
+	HYDRA_HOST_PAUSED_MESSAGE,
+	isHydraHeadOnPausedHostLocked,
+} from '@/services/hydra-host/pause';
+import { PREPARING_STALE_AFTER_MS } from './stale';
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -84,6 +78,8 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	}
 	const localParticipant = head.LocalParticipant;
 	if (!localParticipant) throw createHttpError(400, 'Head has no local participant');
+	// Re-checked here because minutes can pass between the route and this point.
+	await assertHydraHeadHostNotPaused(head.id);
 	// Deliberately does NOT require an initial commit. A head can open with an
 	// empty commit — being a party is decided by Init, not by committing funds —
 	// and such a head could otherwise never be funded at all: the only way in is
@@ -200,6 +196,11 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 						logger.warn(`[HydraAPI] Failed a stale preparing top-up ${active.id} so a new one can start`);
 					}
 
+					// Under FOR SHARE on the Host: a pause that commits first is seen here,
+					// and one that commits after counts this row as in flight.
+					if (await isHydraHeadOnPausedHostLocked(tx, head.id)) {
+						throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
+					}
 					const created = await tx.hydraTopup.create({
 						data: {
 							hydraHeadId: head.id,

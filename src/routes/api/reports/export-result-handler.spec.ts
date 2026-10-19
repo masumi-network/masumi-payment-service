@@ -242,7 +242,8 @@ describe('report export result handler', () => {
 		const logger = createLogger();
 		await executeError(new Error('internal failure'), response, logger, {
 			mnemonic: 'secret words',
-			nested: { apiKey: 'secret key', safe: 'visible' },
+			code: 'invite code',
+			nested: { apiKey: 'secret key', inviteCode: 'invite code', errorCode: 'visible', safe: 'visible' },
 		});
 
 		expect(response.statusCode).toBe(500);
@@ -253,7 +254,8 @@ describe('report export result handler', () => {
 				url: '/api/v1/reports/transactions.csv',
 				payload: {
 					mnemonic: '[REDACTED]',
-					nested: { apiKey: '[REDACTED]', safe: 'visible' },
+					code: '[REDACTED]',
+					nested: { apiKey: '[REDACTED]', inviteCode: '[REDACTED]', errorCode: 'visible', safe: 'visible' },
 				},
 			}),
 		);

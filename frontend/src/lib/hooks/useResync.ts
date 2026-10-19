@@ -29,7 +29,8 @@ const SUBJECTS = {
   transactions: ['transactions', 'payments', 'purchases'],
   agents: ['agents', 'registry', 'context-agents', 'migrate-'],
   wallets: ['wallets', 'all-wallets', 'wallet-', 'payment-source-wallet', 'fundTransfers'],
-  hydra: ['hydra'],
+  // release-status carries each node's update flag, which a Check changes.
+  hydra: ['hydra', 'release-status'],
   x402: ['x402'],
   apiKeys: ['api-keys'],
   webhooks: ['webhooks'],

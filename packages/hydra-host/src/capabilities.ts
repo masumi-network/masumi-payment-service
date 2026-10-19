@@ -18,10 +18,13 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { promisify } from 'node:util';
+import type { ReleaseInfo } from './release.js';
 
 const run = promisify(execFile);
 
 export type Capabilities = {
+	/** The project release this image was built from: the version an operator upgrades. */
+	release: ReleaseInfo;
 	hydraVersion: string;
 	/** Raw `--hydra-script-catalogue` output, parsed if it is JSON. */
 	scriptCatalogue: unknown;
@@ -46,6 +49,7 @@ export type Capabilities = {
 };
 
 export type CapabilitiesDeps = {
+	release: ReleaseInfo;
 	hydraNodeBin: string;
 	ledgerProtocolParametersFile: string;
 	network: string;
@@ -97,6 +101,7 @@ export async function readCapabilities(deps: CapabilitiesDeps): Promise<Capabili
 	}
 
 	return {
+		release: deps.release,
 		hydraVersion: versionResult.stdout.trim(),
 		scriptCatalogue,
 		probeError: probeErrors.length === 0 ? null : probeErrors.join('; '),

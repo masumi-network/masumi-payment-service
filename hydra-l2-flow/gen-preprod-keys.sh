@@ -7,7 +7,9 @@ umask 077
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$REPO/hydra-l2-flow/preprod"
 NATIVE_BIN="$REPO/hydra-l2-flow/.bin/hydra-node"
-CARDANO_IMAGE="ghcr.io/intersectmbo/cardano-node:10.6.2"
+# Pinned by digest (multi-arch index of tag 10.6.2), so a moved tag cannot
+# swap the image that generates signing keys. Re-pin when the tag changes.
+CARDANO_IMAGE="ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2"
 mkdir -p "$OUT"
 
 # .env must already contain BLOCKFROST_API_KEY_PREPROD. Write the project
@@ -26,6 +28,8 @@ fs.writeFileSync(path.join(outDir, "blockfrost.txt"), key.trim());
 console.log("wrote preprod/blockfrost.txt");
 ' "$REPO" "$OUT"
 
+# Reset, so a value from the caller's environment cannot skip the check.
+bin_checked=''
 for party in purchasing selling; do
   if [ ! -f "$OUT/$party-cardano.sk" ]; then
     docker run --rm -v "$OUT:/keys" --entrypoint cardano-cli "$CARDANO_IMAGE" \
@@ -35,6 +39,12 @@ for party in purchasing selling; do
     echo "generated $party-cardano.{sk,vk}"
   fi
   if [ ! -f "$OUT/$party-hydra.sk" ]; then
+    # Verify (or download and verify) the pinned binary before it makes keys.
+    # HYDRA_BIN_TAG is cleared so the check covers this exact $NATIVE_BIN.
+    if [ -z "${bin_checked:-}" ]; then
+      HYDRA_BIN_TAG='' NATIVE_BIN="$NATIVE_BIN" "$REPO/hydra-l2-flow/hydra-native.sh" bin
+      bin_checked=1
+    fi
     DYLD_FALLBACK_LIBRARY_PATH=/usr/lib "$NATIVE_BIN" gen-hydra-key --output-file "$OUT/$party-hydra"
     echo "generated $party-hydra.{sk,vk}"
   fi

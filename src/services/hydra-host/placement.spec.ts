@@ -9,7 +9,15 @@ import {
 import type { HostCapabilities } from './client';
 
 function host(overrides: Partial<PlaceableHost> = {}): PlaceableHost {
-	return { id: 'host-1', name: 'hydra1', network: 'Preprod', status: 'Active', hasAdminToken: true, ...overrides };
+	return {
+		id: 'host-1',
+		name: 'hydra1',
+		network: 'Preprod',
+		status: 'Active',
+		hasAdminToken: true,
+		isPaused: false,
+		...overrides,
+	};
 }
 
 function capabilities(overrides: Partial<HostCapabilities> = {}): HostCapabilities {
@@ -20,6 +28,7 @@ function capabilities(overrides: Partial<HostCapabilities> = {}): HostCapabiliti
 		network: 'preprod',
 		exchangePort: 8444,
 		exchangeUrl: 'https://exchange.hydra1.example.com:8444/exchange',
+		release: { version: null, commit: null },
 		nodeSlots: { used: 1, capacity: 32 },
 		probeError: null,
 		...overrides,
@@ -48,6 +57,12 @@ describe('selectPlacementHost', () => {
 		const hosts = [host({ status: 'Draining' }), host({ id: 'h2', status: 'Unreachable' })];
 		expect(() => selectPlacementHost(hosts, 'Preprod')).toThrow(HostPlacementError);
 		expect(() => selectPlacementHost(hosts, 'Preprod')).toThrow(/Draining, Unreachable/);
+	});
+
+	it('skips a paused host and reports it as Paused', () => {
+		const hosts = [host({ id: 'paused', isPaused: true }), host({ id: 'free' })];
+		expect(selectPlacementHost(hosts, 'Preprod').id).toBe('free');
+		expect(() => selectPlacementHost([host({ isPaused: true })], 'Preprod')).toThrow(/Paused/);
 	});
 
 	// A host registered with only a user token can be operated but not

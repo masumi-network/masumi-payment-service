@@ -7,6 +7,7 @@ export {
 	deleteHydraHostDelete,
 	checkHydraHostPost,
 } from './host';
+export { hydraHostPauseStateGet, pauseHydraHostPost, resumeHydraHostPost } from './host/pause';
 
 export { getOrListRelationsGet, deleteRelationDelete } from './relation';
 
@@ -28,6 +29,7 @@ export { topupHeadPost, listTopupsGet, recoverTopupPost } from './head/topup';
 export { withdrawHeadPost, listWithdrawalsGet } from './head/withdraw';
 export { consolidateHeadPost } from './head/consolidate';
 export { getSnapshotRoundGet, resetSnapshotRoundPost } from './head/snapshot-round';
+export { listL2ReservationsGet, releaseL2ReservationPost } from './head/l2-reservations';
 export { listHeadTransactionsGet } from './head/transactions';
 export { checkHeadOnChainPost } from './head/chain-check';
 

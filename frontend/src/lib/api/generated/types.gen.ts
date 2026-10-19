@@ -3312,12 +3312,37 @@ export type HydraHost = {
     publicPeerHost: string;
     hasAdminToken: boolean;
     hydraVersion: string | null;
+    release: DescribedRelease;
     scriptCatalogueHash: string | null;
     ledgerParamsHash: string | null;
     status: 'Active' | 'Draining' | 'Unreachable' | 'Disabled';
     lastHealthAt: string | null;
     lastHealthError: string | null;
     participantCount: number;
+    /**
+     * Set while the Host is paused for maintenance
+     */
+    pausedAt: string | null;
+};
+
+/**
+ * Project release of the Host image, as of the last Check
+ */
+export type DescribedRelease = {
+    /**
+     * `git describe` form, e.g. 0.29.0-5-gabc1234, or a bare tag
+     */
+    version: string | null;
+    commit: string | null;
+    /**
+     * Release tag the build starts from
+     */
+    tag: string | null;
+    /**
+     * Commits on top of the tag; 0 for the tag itself
+     */
+    commitsAhead: number | null;
+    dirty: boolean;
 };
 
 export type HydraRelationDetail = HydraRelation & {
@@ -3442,6 +3467,30 @@ export type HydraHead = {
         Errors: number;
         Transactions: number;
     };
+};
+
+export type HydraHostPauseState = {
+    hostId: string;
+    /**
+     * Draining: new work refused, waiting for in-flight work. Stopping: nodes asked to stop. Paused: every node reports Stopped.
+     */
+    phase: 'Active' | 'Draining' | 'Stopping' | 'Paused';
+    pausedAt: string | null;
+    pauseStopRequestedAt: string | null;
+    inFlight: {
+        l2Transactions: number;
+        topups: number;
+        withdrawals: number;
+        /**
+         * Heads closing or in their dispute window. The nodes stay up until these settle.
+         */
+        closingHeads: number;
+    };
+    nodes: Array<{
+        nodeId: string;
+        state: string | null;
+        error: string | null;
+    }>;
 };
 
 export type HydraLowBalanceRule = {
@@ -3613,6 +3662,13 @@ export type TxSyncQuarantineEntry = {
         network: 'Preprod' | 'Mainnet';
         smartContractAddress: string;
     };
+};
+
+export type ReleaseWithUpdate = DescribedRelease & {
+    /**
+     * Null when it cannot be told: no latest release known, or a build without a release tag
+     */
+    updateAvailable: boolean | null;
 };
 
 export type GetHealthData = {
@@ -14512,6 +14568,10 @@ export type GetHydraHeadTopupData = {
          * The Hydra head whose top-ups to list
          */
         headId: string;
+        /**
+         * Inclusive cursor: the id of the last row already seen. It is returned again first.
+         */
+        cursorId?: string;
         limit?: number;
     };
     url: '/hydra/head/topup';
@@ -14630,6 +14690,10 @@ export type GetHydraHeadWithdrawData = {
          * The Hydra head whose withdrawals to list
          */
         headId: string;
+        /**
+         * Inclusive cursor: the id of the last row already seen. It is returned again first.
+         */
+        cursorId?: string;
         limit?: number;
     };
     url: '/hydra/head/withdraw';
@@ -14977,6 +15041,266 @@ export type PostHydraHeadSnapshotRoundResetResponses = {
 
 export type PostHydraHeadSnapshotRoundResetResponse = PostHydraHeadSnapshotRoundResetResponses[keyof PostHydraHeadSnapshotRoundResetResponses];
 
+export type GetHydraHeadL2ReservationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head to inspect
+         */
+        headId: string;
+    };
+    url: '/hydra/head/l2-reservations';
+};
+
+export type GetHydraHeadL2ReservationsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadL2ReservationsResponses = {
+    /**
+     * L2 reservations
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            reservations: Array<{
+                transactionId: string;
+                /**
+                 * Send it back to release; the release is refused if the row changed
+                 */
+                updatedAt: string;
+                /**
+                 * Hash of the reserved in-head body
+                 */
+                intendedTxHash: string | null;
+                /**
+                 * The body's validity upper bound, as head time
+                 */
+                expiresAt: string | null;
+                /**
+                 * An initial lock, or an action on an existing escrow
+                 */
+                kind: 'initial-lock' | 'action';
+                purchaseRequestIds: Array<string>;
+                paymentRequestIds: Array<string>;
+                /**
+                 * The wallet this reservation holds
+                 */
+                walletAddress: string | null;
+                /**
+                 * Inputs (txHash#index) the body spends
+                 */
+                inputRefs: Array<string>;
+                /**
+                 * Body inputs our node reports unspent. Read from the node's reference map: a hint, not evidence.
+                 */
+                inputsReportedUnspent: number | null;
+                /**
+                 * The recorded release nudge, if one was sent
+                 */
+                releaseNudgeTxHash: string | null;
+                rejectedByHeadReason: string | null;
+                /**
+                 * Whether an admin may release it now
+                 */
+                releasable: boolean;
+                /**
+                 * Why it cannot be released now
+                 */
+                blockedReason: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadL2ReservationsResponse = GetHydraHeadL2ReservationsResponses[keyof GetHydraHeadL2ReservationsResponses];
+
+export type PostHydraHeadL2ReservationsReleaseData = {
+    body?: {
+        /**
+         * The Hydra head the reservation is on
+         */
+        headId: string;
+        /**
+         * The reservation to release
+         */
+        transactionId: string;
+        /**
+         * updatedAt from GET /hydra/head/l2-reservations
+         */
+        expectedUpdatedAt: Date;
+        /**
+         * Confirms the admin checked, on the other party’s node or on L1, that the body did not apply. The service cannot prove it.
+         */
+        acknowledgeUnprovable: true;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/l2-reservations/release';
+};
+
+export type PostHydraHeadL2ReservationsReleaseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head or pending L2 reservation not found
+     */
+    404: unknown;
+    /**
+     * Head not open or closing, the row changed since it was read, the body is not provably expired or shows confirmed, or a request on it is in an action that cannot be restored
+     */
+    409: unknown;
+    /**
+     * No live connection to the head
+     */
+    502: unknown;
+};
+
+export type PostHydraHeadL2ReservationsReleaseResponses = {
+    /**
+     * Reservation released
+     */
+    200: {
+        status: 'success';
+        data: {
+            transactionId: string;
+            /**
+             * Purchases returned to where the reservation found them
+             */
+            purchaseRequestIds: Array<string>;
+            /**
+             * Payments returned to their retry action
+             */
+            paymentRequestIds: Array<string>;
+        };
+    };
+};
+
+export type PostHydraHeadL2ReservationsReleaseResponse = PostHydraHeadL2ReservationsReleaseResponses[keyof PostHydraHeadL2ReservationsReleaseResponses];
+
+export type GetHydraHostPauseData = {
+    body?: never;
+    path?: never;
+    query: {
+        id: string;
+    };
+    url: '/hydra/host/pause';
+};
+
+export type GetHydraHostPauseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHostPauseResponses = {
+    /**
+     * Pause state
+     */
+    200: {
+        status: 'success';
+        data: HydraHostPauseState;
+    };
+};
+
+export type GetHydraHostPauseResponse = GetHydraHostPauseResponses[keyof GetHydraHostPauseResponses];
+
+export type PostHydraHostPauseData = {
+    body?: {
+        id: string;
+        /**
+         * Stop the nodes now, without waiting for in-flight work. That work then waits for Resume.
+         */
+        force?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host/pause';
+};
+
+export type PostHydraHostPauseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+    /**
+     * Host has no admin token, so its nodes cannot be stopped; or a forced pause found another pause action running. In the second case the pause stays recorded unless the other action was a Resume; read the pause state, then retry.
+     */
+    409: unknown;
+};
+
+export type PostHydraHostPauseResponses = {
+    /**
+     * Pause accepted
+     */
+    200: {
+        status: 'success';
+        data: HydraHostPauseState;
+    };
+};
+
+export type PostHydraHostPauseResponse = PostHydraHostPauseResponses[keyof PostHydraHostPauseResponses];
+
+export type PostHydraHostResumeData = {
+    body?: {
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host/resume';
+};
+
+export type PostHydraHostResumeErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+    /**
+     * Host has no admin token, or another pause action is running
+     */
+    409: unknown;
+    /**
+     * A node did not start; the Host stays paused
+     */
+    502: unknown;
+};
+
+export type PostHydraHostResumeResponses = {
+    /**
+     * Resumed
+     */
+    200: {
+        status: 'success';
+        data: HydraHostPauseState;
+    };
+};
+
+export type PostHydraHostResumeResponse = PostHydraHostResumeResponses[keyof PostHydraHostResumeResponses];
+
 export type GetHydraHeadBalanceData = {
     body?: never;
     path?: never;
@@ -15055,6 +15379,10 @@ export type GetHydraHeadTransactionsData = {
          * The Hydra head whose transactions to list
          */
         headId: string;
+        /**
+         * Inclusive cursor: the id of the last row already seen, of any kind. It is returned again first. An id this head does not list returns an empty page.
+         */
+        cursorId?: string;
         /**
          * Number of results
          */
@@ -17688,3 +18016,56 @@ export type PostReportsExportZipResponses = {
 };
 
 export type PostReportsExportZipResponse = PostReportsExportZipResponses[keyof PostReportsExportZipResponses];
+
+export type GetReleaseStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/release-status';
+};
+
+export type GetReleaseStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetReleaseStatusResponses = {
+    /**
+     * Release status
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Newest published release, including pre-releases. Null when not checked yet.
+             */
+            latest: {
+                version: string;
+                url: string;
+                publishedAt: string | null;
+            } | null;
+            /**
+             * When GitHub last answered
+             */
+            checkedAt: string | null;
+            /**
+             * Why the last check failed, when it did
+             */
+            checkError: string | null;
+            service: ReleaseWithUpdate;
+            /**
+             * Hydra Hosts, as of their last probe. Empty for a key without admin access.
+             */
+            hosts: Array<{
+                id: string;
+                name: string;
+                network: 'Preprod' | 'Mainnet';
+                release: ReleaseWithUpdate;
+            }>;
+        };
+    };
+};
+
+export type GetReleaseStatusResponse = GetReleaseStatusResponses[keyof GetReleaseStatusResponses];

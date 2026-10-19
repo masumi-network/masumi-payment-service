@@ -1,6 +1,7 @@
 import type { ExchangeStore } from '../registry/exchange-store.js';
 import type { SupervisorLogger } from '../supervisor/supervisor.js';
 import { setPeers, type ProvisionDeps } from './provision.js';
+import { nonceLogRef } from './nonce-log-ref.js';
 
 /** Replay durable redemptions until the reserved node has its peer files. */
 export function createRedemptionRecovery(
@@ -45,7 +46,9 @@ export function createRedemptionRecovery(
 				// Escrow acknowledgment already set desired Running. Configuring
 				// peers makes the reservation startable without changing that intent.
 				await exchange.recordStartError(invite.nonce, null);
-				logger.info(`[exchange] invite ${invite.nonce} peer setup completed for node ${invite.hostNodeId}`);
+				logger.info(
+					`[exchange] invite ${nonceLogRef(invite.nonce)} peer setup completed for node ${invite.hostNodeId}`,
+				);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				logger.error(`[exchange] node ${invite.hostNodeId} peer setup failed: ${message}`);

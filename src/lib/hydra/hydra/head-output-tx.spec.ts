@@ -6,7 +6,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
 }));
 
-const { extractHeadOutputTxId, extractPendingDecommitRefs } = await import('./head-output-tx');
+const { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } = await import('./head-output-tx');
 
 const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
 const CLOSE_TX = 'f96e9b1375c44ac6865c19682df5043911f15682db436ba27948421d75ccc2f5';
@@ -295,5 +295,35 @@ describe('extractPendingDecommitRefs', () => {
 
 		expect(extractPendingDecommitRefs(state)).toEqual([]);
 		expect(mockWarn).toHaveBeenCalledTimes(1);
+	});
+});
+
+/**
+ * Feeds the decision to expire an old withdrawal, so it must never read
+ * "nothing in flight" off a state it could not read.
+ */
+describe('extractDecommitInFlight', () => {
+	it('reports a held decommit before any snapshot names its outputs', () => {
+		expect(extractDecommitInFlight(decommitHeadState(null, { decommitTx: { txId: OTHER_TX } }))).toBe(true);
+	});
+
+	it('reports a decommit the confirmed snapshot still waits on', () => {
+		const state = decommitHeadState({ [`${OTHER_TX}#0`]: {} }, { decommitTx: null, version: 1, snapshotVersion: 1 });
+		expect(extractDecommitInFlight(state)).toBe(true);
+	});
+
+	it('reports nothing in flight once the node holds none and the snapshot is settled', () => {
+		expect(extractDecommitInFlight(decommitHeadState({}, { decommitTx: null }))).toBe(false);
+	});
+
+	// A node that left the field out has not said it holds nothing.
+	it('cannot tell when the node does not report decommitTx at all', () => {
+		const state = { tag: 'Open', contents: { coordinatedHeadState: { version: 2 } } };
+		expect(extractDecommitInFlight(state)).toBeUndefined();
+	});
+
+	it('cannot tell from a state without a coordinated head state', () => {
+		expect(extractDecommitInFlight({ tag: 'Idle' })).toBeUndefined();
+		expect(extractDecommitInFlight('not json')).toBeUndefined();
 	});
 });

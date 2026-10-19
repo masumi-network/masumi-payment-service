@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { logger } from '@masumi/payment-core/logger';
-import { fetchHostCapabilities, provisionNodeOnHost } from './client';
+import { HydraHostRequestError, fetchHostCapabilities, forgetHostInvite, provisionNodeOnHost } from './client';
 
 const originalFetch = global.fetch;
 
@@ -40,6 +40,25 @@ describe('Hydra Host transport security', () => {
 			exchangeUrl: 'https://exchange.example.com:8444/exchange',
 		});
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('reads the Host release, and leaves it null on a Host that predates reporting it', async () => {
+		const respond = (body: object) =>
+			jest
+				.fn<() => Promise<Response>>()
+				.mockResolvedValue(
+					new Response(JSON.stringify({ hydraVersion: '0.20.0', network: 'Preprod', ...body }), { status: 200 }),
+				) as unknown as typeof fetch;
+
+		global.fetch = respond({ release: { version: '0.29.0-5-gabc1234', commit: 'abc1234' } });
+		await expect(
+			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
+		).resolves.toMatchObject({ release: { version: '0.29.0-5-gabc1234', commit: 'abc1234' } });
+
+		global.fetch = respond({});
+		await expect(
+			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
+		).resolves.toMatchObject({ release: { version: null, commit: null } });
 	});
 
 	it('rejects an insecure public Exchange Plane URL reported by the Host', async () => {
@@ -120,5 +139,86 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 		);
 
 		expect(warn).not.toHaveBeenCalled();
+	});
+});
+
+describe('forgetting an invite on the Host', () => {
+	it('keeps the still-redeemable nonce out of the error message', async () => {
+		const fetchMock = jest
+			.fn<(input: string | URL | Request) => Promise<Response>>()
+			.mockResolvedValue(new Response(JSON.stringify({ error: 'boom' }), { status: 500 }));
+		global.fetch = fetchMock as unknown as typeof fetch;
+
+		const failure = forgetHostInvite('https://hydra.example.com', 'admin-token', 'nonce123456', {
+			allowInsecureHttp: false,
+		});
+
+		await expect(failure).rejects.toThrow('DELETE /v1/invites/sha256:575140b1803e on the hydra host failed (500)');
+		await expect(failure).rejects.not.toThrow(/nonce123456/);
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://hydra.example.com/v1/invites/nonce123456');
+	});
+});
+
+describe('Host response size limit', () => {
+	const OVER_LIMIT_BYTES = 4 * 1024 * 1024 + 1;
+	const CHUNK_BYTES = 64 * 1024;
+
+	// Twice the cap, finite so an unbounded reader fails the assertions instead
+	// of exhausting test memory. Records how far it got and whether it was cancelled.
+	const TOTAL_BYTES = 2 * OVER_LIMIT_BYTES;
+
+	function oversizedBody(): { stream: ReadableStream<Uint8Array>; stats: { sent: number; cancelled: boolean } } {
+		const stats = { sent: 0, cancelled: false };
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (stats.sent >= TOTAL_BYTES) {
+					controller.close();
+					return;
+				}
+				stats.sent += CHUNK_BYTES;
+				controller.enqueue(new Uint8Array(CHUNK_BYTES).fill(0x20));
+			},
+			cancel() {
+				stats.cancelled = true;
+			},
+		});
+		return { stream, stats };
+	}
+
+	it.each([200, 500])('stops reading a %i body at the byte limit', async (status) => {
+		const { stream, stats } = oversizedBody();
+		global.fetch = jest
+			.fn<() => Promise<Response>>()
+			.mockResolvedValue(new Response(stream, { status })) as unknown as typeof fetch;
+
+		const error = await fetchHostCapabilities('https://hydra.example.com', 'admin-token', {
+			allowInsecureHttp: false,
+		}).catch((caught: unknown) => caught);
+
+		// Booleans, not the error itself: an unbounded reader puts the whole body
+		// in the message, and printing a multi-megabyte failure stalls Jest.
+		expect(error instanceof HydraHostRequestError).toBe(true);
+		expect(error instanceof Error && error.message.includes('exceeded its byte limit')).toBe(true);
+		expect(stats.cancelled).toBe(true);
+		expect(stats.sent).toBeLessThan(OVER_LIMIT_BYTES + 2 * CHUNK_BYTES);
+	});
+});
+
+describe('Host error detail', () => {
+	it('truncates a long error body before it reaches the message', async () => {
+		global.fetch = jest
+			.fn<() => Promise<Response>>()
+			.mockResolvedValue(
+				new Response(JSON.stringify({ error: 'x'.repeat(100_000) }), { status: 500 }),
+			) as unknown as typeof fetch;
+
+		const error = await fetchHostCapabilities('https://hydra.example.com', 'admin-token', {
+			allowInsecureHttp: false,
+		}).catch((caught: unknown) => caught);
+
+		// Booleans, not the message: an untruncated failure would print 100 kB.
+		expect(error instanceof HydraHostRequestError && error.status === 500).toBe(true);
+		expect(error instanceof Error && error.message.length < 1_000).toBe(true);
+		expect(error instanceof Error && error.message.endsWith('…')).toBe(true);
 	});
 });

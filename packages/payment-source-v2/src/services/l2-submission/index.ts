@@ -4,6 +4,7 @@ import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	PaymentAction,
+	HydraDecommitStatus,
 	HydraHeadStatus,
 	Prisma,
 	PurchasingAction,
@@ -15,8 +16,10 @@ import {
 	requireHydraInputRefs,
 	requireHydraValidityUpperSlot,
 } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
+import { isHydraHeadOnPausedHostLocked } from '@/services/hydra-host/pause';
 import { connectPreviousAction, createNextPaymentAction, createNextPurchaseAction } from '@/services/shared';
 import { LOOKUP_DEFERRED_PREFIX } from '../lookup-defer';
+import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from '@/services/hydra-decommit/stale';
 
 export type ReservedL2SubmissionOutcome =
 	| { status: 'accepted'; intendedTxHash: string; txHash: string }
@@ -44,16 +47,29 @@ export type ReservedL2SubmissionOutcome =
  * The row lock closes the race where a scheduler built against an Open head,
  * the head reached Final, and the scheduler then persisted a new reservation
  * immediately before the reconciler disconnected its evidence sockets.
+ *
+ * A new escrow (`newEscrow`) is also refused while the head's collateral is
+ * drained. A collateral withdrawal marks the head under this same lock, so an
+ * escrow admitted afterwards could not be settled until collateral returns.
+ * The mark is lifted here, once no withdrawal is in flight and the wallet holds
+ * collateral again; until then the request waits rather than locking funds.
  */
 export async function lockOpenHydraHeadForL2Reservation(
 	tx: Prisma.TransactionClient,
 	hydraHeadId: string,
+	newEscrow?: { walletHoldsCollateral: boolean },
 ): Promise<void> {
 	const heads = await tx.$queryRaw<
-		Array<{ status: HydraHeadStatus; isEnabled: boolean; isClosing: boolean; initTxHash: string | null }>
+		Array<{
+			status: HydraHeadStatus;
+			isEnabled: boolean;
+			isClosing: boolean;
+			initTxHash: string | null;
+			collateralDrainedAt: Date | null;
+		}>
 	>(
 		Prisma.sql`
-			SELECT "status", "isEnabled", "isClosing", "initTxHash"
+			SELECT "status", "isEnabled", "isClosing", "initTxHash", "collateralDrainedAt"
 			FROM "HydraHead"
 			WHERE "id" = ${hydraHeadId}
 			FOR UPDATE
@@ -73,6 +89,41 @@ export async function lockOpenHydraHeadForL2Reservation(
 		// down anyway.
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Hydra head ${hydraHeadId} is no longer accepting L2 reservations`);
 	}
+	// Deferred for the same reason: an operator pause ends with Resume. Checked
+	// here, before any reservation row exists, because a body submitted to a
+	// node that the pause then stops is held for reconciliation, not retried.
+	if (await isHydraHeadOnPausedHostLocked(tx, hydraHeadId)) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Hydra head ${hydraHeadId} is on a paused hydra host`);
+	}
+	if (newEscrow == null || head.collateralDrainedAt == null) return;
+
+	// A withdrawal the head has not yet taken out of its snapshot leaves the
+	// drained inputs visible there, so the wallet's collateral only counts as
+	// restored once none is in flight. Approved is past that point: the head
+	// already removed the value. Rows past the withdrawal claim's own age limits
+	// are abandoned, and must not hold new escrows off forever.
+	const now = Date.now();
+	const withdrawalInFlight = await tx.hydraDecommit.count({
+		where: {
+			hydraHeadId,
+			OR: [
+				{
+					status: HydraDecommitStatus.Preparing,
+					createdAt: { gt: new Date(now - PREPARING_STALE_AFTER_MS) },
+				},
+				{
+					status: HydraDecommitStatus.Pending,
+					updatedAt: { gt: new Date(now - PENDING_STALE_AFTER_MS) },
+				},
+			],
+		},
+	});
+	if (withdrawalInFlight > 0 || !newEscrow.walletHoldsCollateral) {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} Hydra head ${hydraHeadId} collateral was withdrawn; new escrows wait until it is restored`,
+		);
+	}
+	await tx.hydraHead.update({ where: { id: hydraHeadId }, data: { collateralDrainedAt: null } });
 }
 
 type ReservedL2SubmissionCallbacks<TReservation> = {
@@ -302,7 +353,7 @@ async function reserveL2Action(
 							intendedTxHash,
 							invalidHereafterSlot,
 							// Without these, an ambiguous body can never be proven dead and
-							// its wallet stays pinned for good (decideL2ReservationRelease).
+							// its wallet stays pinned for good (l2-release-nudge-proof).
 							l2ReservationInputRefs: inputRefs,
 							status: TransactionStatus.Pending,
 							layer: TransactionLayer.L2,

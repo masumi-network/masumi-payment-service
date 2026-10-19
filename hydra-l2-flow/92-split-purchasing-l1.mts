@@ -20,7 +20,8 @@ const PREPROD_DIR = join(process.cwd(), 'hydra-l2-flow', 'preprod');
 const COMMIT_ADA = BigInt(process.argv[2] ?? '500') * 1_000_000n;
 const FUEL_ADA = BigInt(process.argv[3] ?? '250') * 1_000_000n;
 const TOKEN_HOLDER_LOVELACE = 2_000_000n;
-const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
+const CARDANO_NODE_IMAGE =
+	'ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2';
 
 function log(m: string) {
 	console.log(`[split-l1] ${new Date().toISOString().slice(11, 19)} ${m}`);

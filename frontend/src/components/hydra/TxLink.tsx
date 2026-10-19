@@ -18,7 +18,8 @@ export function TxLink({
   network,
   fallback,
 }: {
-  label: string;
+  /** Left out where the surrounding row already says what the hash is. */
+  label?: string;
   hash: string | null;
   network: string | undefined;
   /** Shown when there is no transaction yet, e.g. a split still being built. */
@@ -31,7 +32,7 @@ export function TxLink({
   }
   return (
     <span className="flex items-center gap-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
+      {label !== undefined && <span className="text-xs text-muted-foreground">{label}</span>}
       <a
         href={getExplorerUrl(hash, network ?? 'Preprod', 'transaction')}
         target="_blank"

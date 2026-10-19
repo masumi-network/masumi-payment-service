@@ -11,8 +11,11 @@ import { createHash } from 'node:crypto';
 import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
+import { readBoundedHttpResponse } from '@/lib/hydra/hydra/node-frames';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { logger } from '@masumi/payment-core/logger';
+import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
+import { normalizeReleaseInfo, type ReleaseInfo } from '@/services/release/release-info';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -37,6 +40,8 @@ export type HostCapabilities = {
 	exchangeUrl: string | null;
 	nodeSlots: { used: number; capacity: number };
 	probeError: string | null;
+	/** Project release of the Host image. Both null on a Host that predates reporting it. */
+	release: ReleaseInfo;
 };
 
 export type ProvisionedNode = {
@@ -75,7 +80,7 @@ async function request(
 	path: string,
 	token: string,
 	transport: HostTransportOptions,
-	init: { method?: string; body?: unknown; idempotencyKey?: string } = {},
+	init: { method?: string; body?: unknown; idempotencyKey?: string; logPath?: string } = {},
 ): Promise<unknown> {
 	// Built before the try: a malformed stored token throws here, and wrapping it
 	// below would report a credential problem as an unreachable host.
@@ -96,13 +101,17 @@ async function request(
 			...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
 		});
 
-		const text = await response.text();
+		// Bounded while streaming, error bodies included: a registered Host is
+		// still a remote party, and an unbounded body read is a memory DoS.
+		const text = await readBoundedHttpResponse(response);
 		const parsed: unknown = text.length === 0 ? null : safeParse(text);
 
 		if (!response.ok) {
-			const detail = isPlainObject(parsed) ? (getOwnString(parsed, 'error') ?? text) : text;
+			// Truncated: callers log this message on every poll, and the body
+			// came from the Host, so its size is the Host's choice up to the read cap.
+			const detail = truncateError(isPlainObject(parsed) ? (getOwnString(parsed, 'error') ?? text) : text);
 			throw new HydraHostRequestError(
-				`${init.method ?? 'GET'} ${path} on the hydra host failed (${response.status}): ${detail}`,
+				`${init.method ?? 'GET'} ${init.logPath ?? path} on the hydra host failed (${response.status}): ${detail}`,
 				response.status,
 			);
 		}
@@ -116,6 +125,11 @@ async function request(
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+/** Truncate for storage or a log line, marking that it was cut so it does not read as complete. */
+export function truncateError(message: string, limit = 500): string {
+	return message.length <= limit ? message : `${message.slice(0, limit - 1)}\u2026`;
 }
 
 function safeParse(text: string): unknown {
@@ -174,6 +188,7 @@ export async function fetchHostCapabilities(
 	const slots = getOwnValue(body, 'nodeSlots');
 	const used = isPlainObject(slots) ? getOwnValue(slots, 'used') : undefined;
 	const capacity = isPlainObject(slots) ? getOwnValue(slots, 'capacity') : undefined;
+	const release = getOwnValue(body, 'release');
 
 	return {
 		hydraVersion: getOwnString(body, 'hydraVersion') ?? '',
@@ -188,6 +203,10 @@ export async function fetchHostCapabilities(
 			capacity: typeof capacity === 'number' ? capacity : 0,
 		},
 		probeError: getOwnString(body, 'probeError') ?? null,
+		release: normalizeReleaseInfo(
+			isPlainObject(release) ? getOwnString(release, 'version') : null,
+			isPlainObject(release) ? getOwnString(release, 'commit') : null,
+		),
 	};
 }
 
@@ -290,6 +309,10 @@ export async function setHostNodePeers(
 
 export type HostNodeHealth = {
 	state: string;
+	/** The state an operator asked for. A stop request leaves `state` Running until the node drains. */
+	desired: string | null;
+	/** A restart was requested and the Host has not carried it out yet. */
+	restartRequested: boolean;
 	usable: boolean;
 	responsive: boolean;
 	chainSynced: boolean;
@@ -317,6 +340,8 @@ export async function fetchHostNodeHealth(
 	}
 	return {
 		state: getOwnString(body, 'state') ?? 'Unknown',
+		desired: getOwnString(body, 'desired') ?? null,
+		restartRequested: getOwnValue(body, 'restartRequested') === true,
 		usable: getOwnValue(body, 'usable') === true,
 		responsive: getOwnValue(body, 'responsive') === true,
 		chainSynced: getOwnValue(body, 'chainSynced') === true,
@@ -333,6 +358,20 @@ export async function startHostNode(
 	transport: HostTransportOptions,
 ): Promise<void> {
 	await request(baseUrl, `/v1/nodes/${nodeId}/start`, adminToken, transport, { method: 'POST' });
+}
+
+/**
+ * Ask the Host's supervisor to stop this node. Idempotent. The Host drains the
+ * node's snapshot round before it stops it, and keeps it stopped across a Host
+ * restart until it is started again.
+ */
+export async function stopHostNode(
+	baseUrl: string,
+	adminToken: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): Promise<void> {
+	await request(baseUrl, `/v1/nodes/${nodeId}/stop`, adminToken, transport, { method: 'POST' });
 }
 
 export async function removeHostNode(
@@ -428,5 +467,9 @@ export async function forgetHostInvite(
 	nonce: string,
 	transport: HostTransportOptions,
 ): Promise<void> {
-	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, transport, { method: 'DELETE' });
+	// The error message ends up in logs while the nonce may still be redeemable.
+	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, transport, {
+		method: 'DELETE',
+		logPath: `/v1/invites/${nonceLogRef(nonce)}`,
+	});
 }

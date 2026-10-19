@@ -14,9 +14,10 @@ import { decrypt, encrypt } from '@/utils/security/encryption';
 import { assertUsableHydraAuthToken } from '@/lib/hydra/hydra/auth';
 import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
-import { fetchHostCapabilities, type HostCapabilities } from './client';
+import { fetchHostCapabilities, truncateError, type HostCapabilities } from './client';
 import { expectedHostCapabilitiesForNetwork } from './compatibility';
 import { assertHostCompatible } from './placement';
+import { describeRelease, type DescribedRelease } from '@/services/release/release-info';
 
 /** Shape returned to operators. Deliberately excludes both tokens. */
 export type PublicHydraHost = {
@@ -30,12 +31,16 @@ export type PublicHydraHost = {
 	publicPeerHost: string;
 	hasAdminToken: boolean;
 	hydraVersion: string | null;
+	/** Project release of the Host image, as of the last probe. */
+	release: DescribedRelease;
 	scriptCatalogueHash: string | null;
 	ledgerParamsHash: string | null;
 	status: HydraHostStatus;
 	lastHealthAt: string | null;
 	lastHealthError: string | null;
 	participantCount: number;
+	/** Set while an operator has paused the Host for maintenance. */
+	pausedAt: string | null;
 };
 
 type HostRow = {
@@ -49,11 +54,14 @@ type HostRow = {
 	publicPeerHost: string;
 	encryptedAdminToken: string | null;
 	hydraVersion: string | null;
+	releaseVersion: string | null;
+	releaseCommit: string | null;
 	scriptCatalogueHash: string | null;
 	ledgerParamsHash: string | null;
 	status: HydraHostStatus;
 	lastHealthAt: Date | null;
 	lastHealthError: string | null;
+	pausedAt: Date | null;
 	_count: { Participants: number };
 };
 
@@ -71,12 +79,14 @@ export function toPublicHydraHost(row: HostRow): PublicHydraHost {
 		// can be provisioned on, not what the credential is.
 		hasAdminToken: row.encryptedAdminToken !== null,
 		hydraVersion: row.hydraVersion,
+		release: describeRelease({ version: row.releaseVersion, commit: row.releaseCommit }),
 		scriptCatalogueHash: row.scriptCatalogueHash,
 		ledgerParamsHash: row.ledgerParamsHash,
 		status: row.status,
 		lastHealthAt: row.lastHealthAt?.toISOString() ?? null,
 		lastHealthError: row.lastHealthError,
 		participantCount: row._count.Participants,
+		pausedAt: row.pausedAt?.toISOString() ?? null,
 	};
 }
 
@@ -93,11 +103,6 @@ export function nextHostStatus(current: HydraHostStatus, probeSucceeded: boolean
 		return current;
 	}
 	return probeSucceeded ? HydraHostStatus.Active : HydraHostStatus.Unreachable;
-}
-
-/** Truncate for storage, marking that it was cut so it does not read as complete. */
-function truncateError(message: string, limit = 500): string {
-	return message.length <= limit ? message : `${message.slice(0, limit - 1)}\u2026`;
 }
 
 /** A control-plane URL must be an absolute https/http origin with no credentials. */
@@ -414,6 +419,10 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 
 	const updated = await recordHostProbe(id, compatibilityError === null, {
 		hydraVersion: capabilities.hydraVersion || null,
+		// Written even when null: a Host rolled back to an image that predates
+		// reporting its release must not keep showing the newer one.
+		releaseVersion: capabilities.release.version,
+		releaseCommit: capabilities.release.commit,
 		// Kept only when the Host reports one, so a probe against an older
 		// Host does not erase a value a newer one already supplied.
 		...(capabilities.exchangePort === null ? {} : { exchangePort: capabilities.exchangePort }),

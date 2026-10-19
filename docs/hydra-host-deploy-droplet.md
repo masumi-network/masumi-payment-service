@@ -104,6 +104,30 @@ install -o 10001 -g 10001 -m 600 /dev/null /srv/hydra/blockfrost.txt
 cat > /srv/hydra/blockfrost.txt
 ```
 
+### The token file
+
+Keep the two Host tokens in a root-owned file with mode 600. Do not pass them
+as `-e NAME=value` arguments. Those arguments are visible in the process list
+to every local user while the command runs. With `--env-file`, the Docker client
+reads the file itself, so the tokens never appear in process arguments.
+
+```bash
+install -o root -g root -m 600 /dev/null /srv/hydra/host.env
+# Type the two lines below with the real tokens, then Ctrl-D.
+# Avoids leaving the tokens in shell history.
+cat > /srv/hydra/host.env
+```
+
+The file contains exactly these two lines:
+
+```
+HYDRA_HOST_ADMIN_TOKEN=<admin token>
+HYDRA_HOST_USER_TOKEN=<user token>
+```
+
+Docker reads each line literally. Do not put quotes around a value, because the
+quotes become part of the token.
+
 ## 2. Run the container
 
 Use `--network host`. Publishing 32 peer ports individually spawns 32 userland
@@ -123,8 +147,7 @@ docker create --name hydra-host \
   -e HYDRA_HOST_PUBLIC_EXCHANGE_URL=https://hydra-exchange.example.com:8444/exchange \
   -e HYDRA_HOST_EXCHANGE_TRUST_PROXY=false \
   -e HYDRA_HOST_NETWORK=preprod \
-  -e HYDRA_HOST_ADMIN_TOKEN="$HYDRA_HOST_ADMIN_TOKEN" \
-  -e HYDRA_HOST_USER_TOKEN="$HYDRA_HOST_USER_TOKEN" \
+  --env-file /srv/hydra/host.env \
   -e BLOCKFROST_PROJECT_FILE=/run/secrets/blockfrost.txt \
   -e HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
   -e HYDRA_HOST_PEER_PORT_START=5001 \
@@ -199,7 +222,8 @@ dependency; Docker cannot.
 [Unit]
 Description=Hydra Host
 Requires=docker.service
-After=docker.service network-online.target
+Wants=nftables.service hydra-peer-firewall.timer
+After=docker.service network-online.target nftables.service
 RequiresMountsFor=/mnt/hydra_data
 
 [Service]
@@ -207,6 +231,7 @@ Type=simple
 Restart=always
 RestartSec=10
 TimeoutStopSec=270
+ExecStartPre=/usr/local/sbin/hydra-peer-firewall baseline
 ExecStart=/usr/bin/docker start --attach hydra-host
 ExecStop=/usr/bin/docker stop --timeout 250 hydra-host
 
@@ -218,6 +243,18 @@ WantedBy=multi-user.target
 is not mounted, so a Host never comes up on an empty registry.
 `TimeoutStopSec` must exceed the `docker stop` timeout, or systemd kills the
 client while the drain is still running.
+
+`ExecStartPre` is the firewall gate. Before every start, including each
+`Restart=always` restart, it loads a ruleset that refuses the whole peer range.
+Then it reads the loaded ruleset back. If `nft` fails, or the loaded table does
+not refuse the range on both hooks, the script exits non-zero and systemd does
+not start the container. No accept rule from an earlier run survives a restart.
+The refresh timer in [section 4](#4-the-firewall) opens each peered port again
+after the Host answers. Install the script and the timer before you enable this
+unit.
+
+`After=nftables.service` matters at boot. A distribution `nftables.conf` that
+starts with `flush ruleset` would otherwise delete the baseline after it loads.
 
 ```bash
 systemctl daemon-reload
@@ -272,35 +309,107 @@ must already be configured to set `--peer`.
 The Host emits the rules and does not apply them. The container cannot alter the
 firewall of the machine it runs on, and should not try.
 
-Save this as `/usr/local/sbin/hydra-peer-rules`, because you will run it often:
+[`packages/hydra-host/scripts/hydra-peer-firewall`](../packages/hydra-host/scripts/hydra-peer-firewall)
+applies them. Install it with its settings and the admin token:
 
 ```bash
-#!/bin/bash
-set -euo pipefail
-umask 077
-
-DEST=/etc/nftables.d/hydra-peer.nft
-TMP="$DEST.new"
-mkdir -p /etc/nftables.d
-
-curl -fsS \
-  -H "Authorization: Bearer $HYDRA_HOST_ADMIN_TOKEN" \
-  http://127.0.0.1:8443/v1/peer-allowlist \
-  | python3 -c 'import json,sys; sys.stdout.write(json.load(sys.stdin)["nftables"])' \
-  > "$TMP"
-
-test -s "$TMP"      # refuse an empty or truncated fetch
-nft -c -f "$TMP"    # syntax check
-mv "$TMP" "$DEST"
-nft -f "$DEST"
+install -o root -g root -m 755 packages/hydra-host/scripts/hydra-peer-firewall /usr/local/sbin/hydra-peer-firewall
+install -o root -g root -m 600 /dev/null /srv/hydra/admin-token
+# Paste the admin token, then Ctrl-D.
+cat > /srv/hydra/admin-token
+cat > /etc/default/hydra-peer-firewall <<'EOF'
+HYDRA_PEER_PORT_START=5001
+HYDRA_PEER_PORT_COUNT=32
+HYDRA_ADMIN_TOKEN_FILE=/srv/hydra/admin-token
+EOF
 ```
 
-The temporary file and the `test -s` both matter, and `nft -c` alone does not
-replace them. The generated ruleset opens with `add table` and `flush
-table`, so a fetch that dies after those two lines leaves a file that is
-perfectly valid syntax and that flushes every accept rule. Written straight to
-the destination and applied, that empties the table and opens the whole peer
-range. Fetch to one side, prove the file is non-empty, then move it into place.
+The port range must match `HYDRA_HOST_PEER_PORT_START` and
+`HYDRA_HOST_PEER_PORT_COUNT`. `refresh` compares it with the `peerRange` the
+Host reports and refuses a mismatch.
+
+It has three commands:
+
+| Command    | What it does                                                                                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `baseline` | Loads a ruleset that refuses the whole peer range. The `ExecStartPre` of the Host unit runs it.                                    |
+| `refresh`  | Fetches `GET /v1/peer-allowlist`, checks the file, applies it, and persists it to `/etc/nftables.d/hydra-peer.nft`.                |
+| `verify`   | Reads the loaded ruleset and exits 0 only if both the `input` and `forward` chains refuse the range. Prints `verified` on success. |
+
+`baseline` and `refresh` both end with `verify`. A command that cannot prove the
+loaded state exits non-zero. A failed fetch leaves the loaded ruleset unchanged.
+
+`refresh` refuses a file that does not refuse the range on exactly two hooks or
+that does not end with the closing brace. `nft -c` alone does not catch this.
+The generated ruleset opens with `add table` and `flush table`, so a fetch that
+dies after those two lines leaves a file that is valid syntax and that flushes
+every rule. Applied, that file opens the whole peer range.
+
+Refresh on a timer, so membership and DNS changes reach the firewall without an
+operator. `/etc/systemd/system/hydra-peer-firewall.service`:
+
+```ini
+[Unit]
+Description=Refresh the Hydra Host peer firewall
+After=hydra-host.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hydra-peer-firewall refresh
+```
+
+`/etc/systemd/system/hydra-peer-firewall.timer`:
+
+```ini
+[Unit]
+Description=Refresh the Hydra Host peer firewall every 30 seconds
+
+[Timer]
+OnActiveSec=15s
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable --now hydra-peer-firewall.timer
+```
+
+The script takes a lock, so a manual `refresh` and a timer run never apply at
+the same time. A refresh fails while the Host is down. That is expected, and the
+loaded ruleset stays as it is.
+
+Also refuse the range before Docker starts. The Host unit above already runs
+`baseline`, but anything else that Docker restarts on its own, such as a
+compose container with `restart: unless-stopped`, publishes its ports again at
+boot with no check. `/etc/systemd/system/hydra-peer-firewall-baseline.service`:
+
+```ini
+[Unit]
+Description=Refuse the Hydra Host peer range before Docker starts
+Wants=nftables.service
+After=nftables.service
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/hydra-peer-firewall baseline
+
+[Install]
+RequiredBy=docker.service
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable hydra-peer-firewall-baseline.service
+```
+
+`RequiredBy=docker.service` makes the failure mode closed: if the baseline
+cannot be loaded and verified, Docker does not start.
 
 What the generated ruleset does:
 
@@ -315,15 +424,26 @@ What the generated ruleset does:
   are never interpolated into nftables syntax, so a syntactically valid hostname
   cannot change the meaning of the ruleset.
 
-**Re-apply the ruleset whenever peer membership or DNS changes.** That means
-after every provision, every invite redemption, every node removal, and whenever
-a counterparty's address moves. The `add` plus `flush` plus declarations are one
-`nft` transaction, so an update replaces every prior accept rule with no
-fail-open interval.
+**The timer re-applies the ruleset at most 30 seconds after peer membership or
+DNS changes.** To close that window, run
+`systemctl start hydra-peer-firewall.service` right after every provision, every
+invite redemption and every node removal. The `add` plus `flush` plus
+declarations are one `nft` transaction, so an update replaces every prior accept
+rule with no fail-open interval.
 
-Persist it across reboots the way your distribution expects, for example by
-including `/etc/nftables.d/hydra-peer.nft` from `/etc/nftables.conf` and enabling
-`nftables.service`.
+Include `/etc/nftables.d/hydra-peer.nft` from `/etc/nftables.conf`, after any
+`flush ruleset` line, and enable `nftables.service`. This is required. A
+distribution `nftables.conf` usually starts with `flush ruleset`, so without the
+include a `systemctl reload nftables` deletes the peer table and opens the range
+until the next refresh. With the include, the reload restores the last applied
+ruleset. Include that one file by name, not a glob over the directory. Run
+`hydra-peer-firewall baseline` once before you add the include: nft refuses the
+whole `nftables.conf` when an included file does not exist.
+
+With the gates and the include in place, one window stays open, for at most 30
+seconds. If a node is removed and a new node takes its port, the old
+counterparty's address can reach the new port until the next refresh. Run the
+refresh by hand after a removal to close it.
 
 ## 5. TLS and the load balancer
 
@@ -459,7 +579,8 @@ the admin UI and re-pin `HYDRA_EXPECTED_VERSION` and
 
 1. amd64 droplet, block-storage volume mounted at `/mnt/hydra_data`, owned by
    `10001:10001`.
-2. Blockfrost project id in a file, mode 600, owned by `10001:10001`.
+2. Blockfrost project id in a file, mode 600, owned by `10001:10001`. Host
+   tokens in `/srv/hydra/host.env`, mode 600, owned by root.
 3. Container run with `--network host`, `--stop-timeout 250`, `--restart no`.
 4. systemd unit with `RequiresMountsFor` and `TimeoutStopSec=270`, enabled.
 5. Cloud firewall: 8443 restricted, 8444 open, 5001-5032 to counterparties, 22 to
