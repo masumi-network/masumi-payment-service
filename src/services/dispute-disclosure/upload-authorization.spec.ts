@@ -1,9 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import createHttpError from 'http-errors';
-import {
-	assertCanUploadDisclosureInput,
-	assertCanUploadDisclosureResult,
-} from './upload-authorization';
+import { assertCanUploadDisclosureInput, assertCanUploadDisclosureResult } from './upload-authorization';
 import type { DisputedRequestRow } from './lookup';
 
 const baseTarget: DisputedRequestRow = {
