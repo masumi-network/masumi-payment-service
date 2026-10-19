@@ -1836,6 +1836,15 @@ model HydraHead {
   /// on every attach, so a flapping session hid a stuck latch from it forever.
   closingSince DateTime?
 
+  /// Set when a withdrawal starts to drain the local participant's collateral.
+  ///
+  /// Taken under the head row lock that new L2 escrow reservations also take,
+  /// so no escrow can enter between the live-escrow check and the collateral
+  /// leaving. While set, new escrows are refused: one admitted now could not be
+  /// settled until collateral returns. Cleared by the next escrow admission that
+  /// finds no withdrawal in flight and collateral back in the wallet.
+  collateralDrainedAt DateTime?
+
   /// When the head's node refused the Close admitted above.
   ///
   /// The only proof the stalled-close reaper accepts that the command can no

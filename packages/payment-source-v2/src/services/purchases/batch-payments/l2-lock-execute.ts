@@ -40,6 +40,8 @@ import { resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { requireHydraValidityUpperSlot } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { lockOpenHydraHeadForL2Reservation } from '../../l2-submission';
+import { COLLATERAL_RESERVE_LOVELACE } from '../../wallet-collateral/ensure-collateral-ready';
+import { pickCollateralUtxo } from '@/utils/utxo';
 import { HydraTransactionRejectedError } from '@/lib/hydra/hydra/errors';
 
 type PaymentSourceWithL2Relations = Prisma.PaymentSourceGetPayload<{
@@ -302,6 +304,7 @@ export async function executeL2Lock(
 		buyerReturnAddress,
 		collateralReturnLovelace: valuePlan.collateralReturnLovelace,
 		trustedHeadTimeMs: reservationHeadTimeMs,
+		walletHoldsCollateral: pickCollateralUtxo(walletUtxos, COLLATERAL_RESERVE_LOVELACE) != null,
 	});
 
 	const reserveMs = Date.now() - tReserve;
@@ -413,6 +416,7 @@ async function reserveL2LockBeforeSubmit(params: {
 	buyerReturnAddress: string | null;
 	collateralReturnLovelace: bigint;
 	trustedHeadTimeMs: number;
+	walletHoldsCollateral: boolean;
 }): Promise<L2LockReservation> {
 	const {
 		request,
@@ -424,10 +428,11 @@ async function reserveL2LockBeforeSubmit(params: {
 		buyerReturnAddress,
 		collateralReturnLovelace,
 		trustedHeadTimeMs,
+		walletHoldsCollateral,
 	} = params;
 	return await prisma.$transaction(
 		async (tx) => {
-			await lockOpenHydraHeadForL2Reservation(tx, hydraHeadId);
+			await lockOpenHydraHeadForL2Reservation(tx, hydraHeadId, { walletHoldsCollateral });
 			const l2Transaction = await tx.transaction.create({
 				data: {
 					intendedTxHash,
