@@ -21,7 +21,16 @@ const mockFindFirst = jest.fn() as AnyMock;
 const mockCreate = jest.fn() as AnyMock;
 const mockAcknowledge = jest.fn() as AnyMock;
 const mockProvision = jest.fn() as AnyMock;
-const mockAssertFreeSlot = jest.fn() as AnyMock;
+const mockFetchCapabilities = jest.fn() as AnyMock;
+
+class HydraHostRequestError extends Error {
+	constructor(
+		message: string,
+		readonly status: number | null,
+	) {
+		super(message);
+	}
+}
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -36,20 +45,16 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
-	HydraHostRequestError: class extends Error {},
+	HydraHostRequestError,
 	acknowledgeEscrowOnHost: mockAcknowledge,
-	fetchHostCapabilities: jest.fn(async () => ({
-		exchangePort: 4600,
-		exchangeUrl: 'https://exchange.example.com:4600/exchange',
-		ledgerParamsHash: 'params-hash',
-	})),
+	fetchHostCapabilities: mockFetchCapabilities,
 	hostNodeUrls: () => ({ nodeUrl: 'https://host/node', nodeHttpUrl: 'https://host/node/http' }),
 	provisionNodeOnHost: mockProvision,
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/placement', () => ({
+	HostIncompatibleError: class extends Error {},
 	assertHostCompatible: () => undefined,
-	assertHostHasFreeSlot: mockAssertFreeSlot,
 	selectPlacementHost: (hosts: Array<{ id: string }>) => hosts[0],
 }));
 
@@ -76,7 +81,12 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	jest.clearAllMocks();
-	mockAssertFreeSlot.mockReset();
+	mockFetchCapabilities.mockResolvedValue({
+		exchangePort: 4600,
+		exchangeUrl: 'https://exchange.example.com:4600/exchange',
+		ledgerParamsHash: 'params-hash',
+		nodeSlots: { used: 0, capacity: 32 },
+	});
 	mockFindMany.mockResolvedValue([
 		{
 			id: 'host-1',
@@ -147,15 +157,49 @@ describe('reserveNodeForExchange', () => {
 		expect(mockAcknowledge).not.toHaveBeenCalled();
 	});
 
-	// The free-slot check left the probe, so placement is now the only place
-	// that asks it. A full Host must be refused before anything is provisioned.
-	it('refuses a full host before provisioning', async () => {
-		mockAssertFreeSlot.mockImplementation(() => {
-			throw new Error('the hydra host has no free node slots (1/1)');
+	// A retried redemption replays the invite's nonce. Its node already holds a
+	// slot, so the Host reports itself full, but the Host answers the replay
+	// before it takes a port. The service must not refuse it from the count.
+	it('acknowledges a replay on a full host', async () => {
+		mockFetchCapabilities.mockResolvedValue({
+			exchangePort: 4600,
+			exchangeUrl: 'https://exchange.example.com:4600/exchange',
+			ledgerParamsHash: 'params-hash',
+			nodeSlots: { used: 1, capacity: 1 },
+		});
+		mockFindFirst.mockResolvedValue({ id: 'participant-1' });
+		mockProvision.mockResolvedValue({
+			nodeId: 'node-1',
+			advertise: 'host:5599',
+			hydraVerificationKey: 'hydra-vkey',
+			cardanoVerificationKey: 'cardano-vkey-raw',
+			secrets: null,
 		});
 
-		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toThrow(/1\/1/);
-		expect(mockProvision).not.toHaveBeenCalled();
+		const reserved = await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS);
+
+		expect(mockProvision).toHaveBeenCalledWith('https://host', 'admin-token', 'nonce-1', PERIODS, expect.anything());
+		expect(reserved.localParticipantId).toBe('participant-1');
+		expect(mockAcknowledge).toHaveBeenCalledWith('https://host', 'admin-token', 'node-1', expect.anything());
+	});
+
+	it('explains a full host when the Host refuses a new node', async () => {
+		mockProvision.mockRejectedValue(
+			new HydraHostRequestError('POST /v1/nodes on the hydra host failed (507): all 1 node slots are in use', 507),
+		);
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toThrow(
+			/no free node slots; drain this host.*all 1 node slots are in use/,
+		);
+		expect(mockCreate).not.toHaveBeenCalled();
+		expect(mockAcknowledge).not.toHaveBeenCalled();
+	});
+
+	it('passes any other Host error through', async () => {
+		const failure = new HydraHostRequestError('POST /v1/nodes on the hydra host failed (500): internal error', 500);
+		mockProvision.mockRejectedValue(failure);
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toBe(failure);
 	});
 
 	// First-fit is only stable if the database returns the Hosts in a fixed order.

@@ -170,21 +170,3 @@ export function assertHostCompatible(capabilities: HostCapabilities, expected: E
 		throw new HostIncompatibleError(problems.join('\n'));
 	}
 }
-
-/**
- * Refuse a Host with no room for another node.
- *
- * Kept out of the compatibility checks: a full Host is healthy and keeps
- * serving the heads it has, so only a new placement asks this. A capacity of 0
- * means the Host did not report one.
- */
-export function assertHostHasFreeSlot(capabilities: HostCapabilities): void {
-	const { used, capacity } = capabilities.nodeSlots;
-	if (capacity > 0 && used >= capacity) {
-		throw new HostIncompatibleError(
-			`the hydra host has no free node slots (${used}/${capacity}); ` +
-				'drain this host so new heads go to another one, raise HYDRA_HOST_PEER_PORT_COUNT on it, or free a ' +
-				'slot by removing the node of a finalised head',
-		);
-	}
-}
