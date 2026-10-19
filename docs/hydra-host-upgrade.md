@@ -136,12 +136,17 @@ can press **Resume** again.
 Nodes that were already stopped before the pause are started too, because the
 pause recorded every node that had a head.
 
-A node reserved for an invite that nobody has redeemed yet has no head, so the
-pause does not stop it. It keeps running, and the Host still accepts a
-redemption. The redeemer can then post Init with this node in the head, while
-the service records that head only after Resume. Before an upgrade, revoke the
-invites that are still open on the Host, or wait until they are redeemed or
-expire.
+The pause also stops each node that is reserved for an open invite. While that
+node is stopped, the Host refuses a redemption of the invite with `503` and
+`Retry-After: 60`. The invite stays open, and the redeemer can retry after
+Resume. Resume gives a reserved node that is still unredeemed its reservation
+back. The node does not boot until a redemption gives it peers.
+
+A Host image from before this change cannot start a reserved node that has no
+peers. On such a Host, Resume fails with `peers must be configured before
+starting`, and the Host stays paused. Redeploy the new Host image, then press
+**Resume** again. If you must pause an older Host without an upgrade, revoke
+its open invites first.
 
 ## How long a pause can last
 

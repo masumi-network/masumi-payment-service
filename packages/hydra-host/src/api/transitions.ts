@@ -40,12 +40,12 @@ function requireAcknowledged(record: NodeRecord): void {
 export async function requestStart(store: NodeRegistryStore, nodeId: string): Promise<NodeRecord> {
 	const record = await load(store, nodeId);
 	requireAcknowledged(record);
-	if (record.peers.length === 0) {
-		throw new HostApiError(
-			'peers must be configured before starting: --initial-cluster is fixed at boot, so a node started now would bootstrap a cluster the counterparty cannot join',
-			409,
-		);
-	}
+	// A peerless node is accepted. It is an invite reservation, which runs once
+	// a redemption gives it peers, and a maintenance pause stops it like any
+	// other node, so Resume must be able to undo that stop. Booting early is not
+	// a risk: `planNodeAction` keeps a peerless node idle, because
+	// --initial-cluster is fixed at boot.
+	//
 	// A Failed record needs the flag as well as the desired state. `planNodeAction`
 	// reaches its Failed branch before the desired-state checks, and that branch
 	// acts on `restartRequested` alone — so /start on a failed node answered 202

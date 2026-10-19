@@ -208,6 +208,7 @@ async function main(): Promise<void> {
 		checkPeerTarget,
 		verifyRedemption: async (nonce, redeemer, signature) =>
 			await verifyRedemptionSignature(nonce, redemptionNetwork(config.network), redeemer, signature),
+		isNodeStopped: async (hostNodeId) => (await store.read(hostNodeId))?.desired === 'Stopped',
 		onRedeemed: async () => {
 			await recoverRedemptions();
 			tickSupervisor('exchange redemption');

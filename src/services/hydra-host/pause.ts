@@ -26,6 +26,8 @@ import createHttpError from 'http-errors';
 import {
 	HydraDecommitStatus,
 	HydraHeadStatus,
+	HydraInviteRole,
+	HydraInviteStatus,
 	HydraTopupStatus,
 	Prisma,
 	TransactionLayer,
@@ -284,6 +286,26 @@ export async function getHydraHostPauseState(hostId: string): Promise<HydraHostP
 }
 
 /**
+ * The nodes a pause stops: every node with a head, and every node an open
+ * invite reserved. A reserved node has no head yet, but a redemption would
+ * configure and start it. Stopped, the Host refuses the redemption and the
+ * invite stays open until Resume.
+ */
+async function loadPauseNodeIds(db: Prisma.TransactionClient, hostId: string): Promise<string[]> {
+	const [participants, invites] = await Promise.all([
+		db.hydraLocalParticipant.findMany({
+			where: { hydraHostId: hostId, hydraHeadId: { not: null } },
+			select: { hostNodeId: true },
+		}),
+		db.hydraHeadInvite.findMany({
+			where: { hydraHostId: hostId, role: HydraInviteRole.Issuer, status: HydraInviteStatus.Issued },
+			select: { hostNodeId: true },
+		}),
+	]);
+	return [...new Set([...participants, ...invites].map((row) => row.hostNodeId))];
+}
+
+/**
  * Start a pause. Idempotent: pausing a paused Host only advances it.
  *
  * The nodes to stop are fixed in the same locked write that sets `pausedAt`,
@@ -306,15 +328,11 @@ export async function pauseHydraHost(hostId: string, options: { force: boolean }
 		}
 		if (row.pausedAt !== null) return;
 
-		const participants = await tx.hydraLocalParticipant.findMany({
-			where: { hydraHostId: hostId, hydraHeadId: { not: null } },
-			select: { hostNodeId: true },
-		});
 		await tx.hydraHost.update({
 			where: { id: hostId },
 			data: {
 				pausedAt: new Date(),
-				pausedNodeIds: participants.map((participant) => participant.hostNodeId),
+				pausedNodeIds: await loadPauseNodeIds(tx, hostId),
 				pauseStopRequestedAt: null,
 			},
 		});
@@ -332,23 +350,25 @@ async function stopPausedNodes(hostId: string, options: { force: boolean }): Pro
 		const host = await loadHost(hostId);
 		if (host.pausedAt === null || host.encryptedAdminToken === null) return;
 		const stopRequestedAt = host.pauseStopRequestedAt;
-		if (stopRequestedAt !== null && fullyStoppedPauses.get(hostId) === stopRequestedAt.getTime()) return;
 
 		if (stopRequestedAt === null && !options.force && hasInFlightWork(await countInFlight(hostId))) return;
 
-		// A head can still form after the pause started, or while its stops keep
-		// failing: an adoption or a redemption already past its own pause check.
-		// Its node is stopped too, and recorded first so Resume starts it again.
-		const participants = await prisma.hydraLocalParticipant.findMany({
-			where: { hydraHostId: hostId, hydraHeadId: { not: null } },
-			select: { hostNodeId: true },
-		});
-		const nodeIds = [...new Set([...host.pausedNodeIds, ...participants.map((row) => row.hostNodeId)])];
+		// A head or an invite can still appear after the pause started, or while
+		// its stops keep failing: an adoption, a redemption or a provisioning
+		// already past its own pause check. Its node is stopped too, and recorded
+		// first so Resume starts it again.
+		const nodeIds = [...new Set([...host.pausedNodeIds, ...(await loadPauseNodeIds(prisma, hostId))])];
+		// Checked after the query, not before: an invite provisioned after the
+		// last full stop must still be stopped.
+		const hasNewNode = nodeIds.length !== host.pausedNodeIds.length;
+		if (stopRequestedAt !== null && !hasNewNode && fullyStoppedPauses.get(hostId) === stopRequestedAt.getTime()) {
+			return;
+		}
 		// Recorded before the first stop, not after the last: from here on every
 		// guard treats the nodes as down, and a stop that fails, forced or not,
 		// is sent again on the next cycle.
 		const requestedAt = stopRequestedAt ?? new Date();
-		if (stopRequestedAt === null || nodeIds.length !== host.pausedNodeIds.length) {
+		if (stopRequestedAt === null || hasNewNode) {
 			const recorded = await prisma.hydraHost.updateMany({
 				where: { id: hostId, pausedAt: host.pausedAt, pauseStopRequestedAt: stopRequestedAt },
 				data: { pausedNodeIds: nodeIds, pauseStopRequestedAt: requestedAt },
