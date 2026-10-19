@@ -8946,7 +8946,6 @@
                                     "inputData": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "maxLength": 2000000,
                                         "description": "Raw UTF-8 input string; must SHA-256 hash to inputHash on chain"
                                     }
                                 },
@@ -9043,7 +9042,6 @@
                                     "resultData": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "maxLength": 2000000,
                                         "description": "Raw UTF-8 result string; must SHA-256 hash to resultHash on chain"
                                     }
                                 },
