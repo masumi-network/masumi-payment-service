@@ -953,6 +953,13 @@ model DisputeDisclosure {
   encryptedResultData  String?
 }
 
+model RevealSignatureUsage {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  digest     String   @unique
+  validUntil DateTime
+}
+
 model PaymentActionData {
   id                      String            @id @default(cuid())
   createdAt               DateTime          @default(now())

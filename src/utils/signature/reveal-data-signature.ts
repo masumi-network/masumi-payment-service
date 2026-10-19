@@ -5,6 +5,8 @@ import stringify from 'canonical-json';
 import { isCardanoAddress } from '@/utils/shared/cardano-address';
 import { z } from '@masumi/payment-core/zod';
 import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import { resolveSellerHotWalletId } from '@/services/dispute-disclosure/lookup';
+import type { DisputedRequestKind } from '@/services/dispute-disclosure/lookup';
 export const revealDataActionSchema = z
 	.enum(['RevealData', 'reveal_data'])
 	.describe('CIP-8 payload action for disclosure authorization');
@@ -35,10 +37,12 @@ export const revealDataSignatureInputSchema = z.object({
 export type RevealDataSignatureInput = z.infer<typeof revealDataSignatureInputSchema>;
 
 export type RevealDataPaymentContext = {
+	requestKind: DisputedRequestKind;
 	blockchainIdentifier: string;
 	inputHash: string;
 	resultHash: string | null;
 	smartContractWalletId: string | null;
+	sellerHotWalletId: string | null;
 	network: Network;
 	adminWalletAddresses: string[];
 };
@@ -72,10 +76,12 @@ export async function loadDisputedPaymentContext(
 	});
 	if (payment != null) {
 		return {
+			requestKind: 'payment',
 			blockchainIdentifier: payment.blockchainIdentifier,
 			inputHash: payment.inputHash,
 			resultHash: payment.resultHash,
 			smartContractWalletId: payment.smartContractWalletId,
+			sellerHotWalletId: payment.smartContractWalletId,
 			network: payment.PaymentSource.network,
 			adminWalletAddresses: payment.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
 		};
@@ -89,6 +95,7 @@ export async function loadDisputedPaymentContext(
 		},
 		include: {
 			PaymentSource: { include: { AdminWallets: true } },
+			SellerWallet: true,
 		},
 	});
 	if (purchase == null) {
@@ -96,10 +103,15 @@ export async function loadDisputedPaymentContext(
 	}
 
 	return {
+		requestKind: 'purchase',
 		blockchainIdentifier: purchase.blockchainIdentifier,
 		inputHash: purchase.inputHash,
 		resultHash: purchase.resultHash,
 		smartContractWalletId: purchase.smartContractWalletId,
+		sellerHotWalletId: await resolveSellerHotWalletId({
+			paymentSourceId: purchase.paymentSourceId,
+			sellerWalletVkey: purchase.SellerWallet.walletVkey,
+		}),
 		network: purchase.PaymentSource.network,
 		adminWalletAddresses: purchase.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
 	};

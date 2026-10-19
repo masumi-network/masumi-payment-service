@@ -43,21 +43,31 @@ export async function findDisputedV2Request(params: {
 		include: { SellerWallet: true },
 	});
 	if (purchase != null) {
-		const sellingWallet = await prisma.hotWallet.findFirst({
-			where: {
-				paymentSourceId: purchase.paymentSourceId,
-				type: HotWalletType.Selling,
-				deletedAt: null,
-				walletVkey: purchase.SellerWallet.walletVkey,
-			},
-			select: { id: true },
-		});
 		return {
 			kind: 'purchase',
 			...purchase,
-			sellerHotWalletId: sellingWallet?.id ?? null,
+			sellerHotWalletId: await resolveSellerHotWalletId({
+				paymentSourceId: purchase.paymentSourceId,
+				sellerWalletVkey: purchase.SellerWallet.walletVkey,
+			}),
 		};
 	}
 
 	return null;
+}
+
+export async function resolveSellerHotWalletId(params: {
+	paymentSourceId: string;
+	sellerWalletVkey: string;
+}): Promise<string | null> {
+	const sellingWallet = await prisma.hotWallet.findFirst({
+		where: {
+			paymentSourceId: params.paymentSourceId,
+			type: HotWalletType.Selling,
+			deletedAt: null,
+			walletVkey: params.sellerWalletVkey,
+		},
+		select: { id: true },
+	});
+	return sellingWallet?.id ?? null;
 }

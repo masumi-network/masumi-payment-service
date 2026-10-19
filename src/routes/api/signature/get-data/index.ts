@@ -3,7 +3,7 @@ import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext } from '@masumi/payment-core/auth';
 import createHttpError from 'http-errors';
-import { assertWalletInScope } from '@/utils/shared/wallet-scope';
+import { assertDisclosureReadWalletInScope } from '@/services/dispute-disclosure/disclosure-read-wallet-scope';
 import {
 	loadDisputedPaymentContext,
 	revealDataSignatureInputSchema,
@@ -37,7 +37,11 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 				throw createHttpError(404, 'Payment not found');
 			}
 
-			assertWalletInScope(ctx.walletScopeIds, context.smartContractWalletId);
+			assertDisclosureReadWalletInScope(ctx.walletScopeIds, {
+				kind: context.requestKind,
+				smartContractWalletId: context.smartContractWalletId,
+				sellerHotWalletId: context.sellerHotWalletId,
+			});
 			if (!ctx.canAdmin && !ctx.networkLimit.includes(context.network)) {
 				throw createHttpError(403, 'Network not allowed');
 			}
@@ -78,12 +82,12 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 			}
 
 			if (
-				!markRevealSignatureUsed({
+				!(await markRevealSignatureUsed({
 					signature: input.signature,
 					key: input.key,
 					blockchainIdentifier: input.blockchainIdentifier,
 					validUntil: input.validUntil,
-				})
+				}))
 			) {
 				return {
 					isValid: false,

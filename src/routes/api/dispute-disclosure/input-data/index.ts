@@ -14,7 +14,9 @@ export const postDisputeInputDataSchemaInput = z.object({
 	inputData: z
 		.string()
 		.min(1)
-		.max(2_000_000)
+		.refine((value) => Buffer.byteLength(value, 'utf8') <= 2_000_000, {
+			message: 'inputData exceeds maximum allowed size',
+		})
 		.describe('Raw UTF-8 input string; must SHA-256 hash to inputHash on chain'),
 });
 

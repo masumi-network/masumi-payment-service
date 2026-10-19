@@ -14,7 +14,9 @@ export const postDisputeResultDataSchemaInput = z.object({
 	resultData: z
 		.string()
 		.min(1)
-		.max(2_000_000)
+		.refine((value) => Buffer.byteLength(value, 'utf8') <= 2_000_000, {
+			message: 'resultData exceeds maximum allowed size',
+		})
 		.describe('Raw UTF-8 result string; must SHA-256 hash to resultHash on chain'),
 });
 

@@ -17,9 +17,6 @@ export function assertCanUploadDisclosureInput(ctx: AuthContext, target: Dispute
 		if (target.requestedById === ctx.id) {
 			return;
 		}
-		if (hasWalletInScope(ctx, target.sellerHotWalletId)) {
-			return;
-		}
 		throw createHttpError(403, 'Not authorized to upload input disclosure for this request');
 	}
 	if (target.requestedById === ctx.id) {

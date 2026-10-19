@@ -1,7 +1,18 @@
+import createHttpError from 'http-errors';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 import { DisputedRequestRow } from './lookup';
 
 export function assertDisclosureInputWalletInScope(walletScopeIds: string[] | null, target: DisputedRequestRow): void {
+	if (target.kind === 'purchase') {
+		if (walletScopeIds === null) {
+			return;
+		}
+		const allowedIds = [target.smartContractWalletId, target.sellerHotWalletId];
+		if (!allowedIds.some((id) => id != null && walletScopeIds.includes(id))) {
+			throw createHttpError(404, 'Not found');
+		}
+		return;
+	}
 	assertWalletInScope(walletScopeIds, target.smartContractWalletId);
 }
 
