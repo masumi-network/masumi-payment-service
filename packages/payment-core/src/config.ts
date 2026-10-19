@@ -435,6 +435,9 @@ export const SERVICE_CONSTANTS = {
 
 export const DEFAULTS = {
 	DEFAULT_ADMIN_KEY: 'DefaultUnsecureAdminKey',
+	// Published in .env.example. Allowed for one-off setups, but warned about.
+	EXAMPLE_ADMIN_KEY: 'abcdef_this_should_be_very_secure',
+	EXAMPLE_ENCRYPTION_KEY: '12345678901234567890123456789012',
 	TX_TIMEOUT_INTERVAL: 1000 * 60 * 7, // 7 minutes in seconds
 	DEFAULT_METADATA_VERSION: 1,
 	DEFAULT_REGISTRY_METADATA_VERSION: 2,
