@@ -1,9 +1,9 @@
 import { jest } from '@jest/globals';
 import { Prisma } from '@/generated/prisma/client';
 
-const mockCreate = jest.fn();
-const mockFindUnique = jest.fn();
-const mockDeleteMany = jest.fn();
+const mockCreate = jest.fn(async () => ({ digest: 'abc' }));
+const mockFindUnique = jest.fn(async () => null as { digest: string; validUntil: Date } | null);
+const mockDeleteMany = jest.fn(async () => ({ count: 3 }));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -22,10 +22,11 @@ describe('reveal-data-replay-cache', () => {
 		mockCreate.mockReset();
 		mockFindUnique.mockReset();
 		mockDeleteMany.mockReset();
+		mockCreate.mockImplementation(async () => ({ digest: 'abc' }));
+		mockDeleteMany.mockImplementation(async () => ({ count: 3 }));
 	});
 
 	it('returns recorded when digest is first inserted', async () => {
-		mockCreate.mockResolvedValue({ digest: 'abc' });
 		await expect(
 			markRevealSignatureUsed({
 				signature: 'sig',
@@ -77,7 +78,6 @@ describe('reveal-data-replay-cache', () => {
 	});
 
 	it('prunes rows past validUntil', async () => {
-		mockDeleteMany.mockResolvedValue({ count: 3 });
 		await expect(pruneExpiredRevealSignatureUsage()).resolves.toBe(3);
 	});
 });

@@ -9005,6 +9005,14 @@
                                                     "type": "boolean",
                                                     "description": "Whether the admin signature is valid"
                                                 },
+                                                "replayRejected": {
+                                                    "type": "boolean",
+                                                    "description": "True when this signature was already used outside its validity window"
+                                                },
+                                                "decryptFailed": {
+                                                    "type": "boolean",
+                                                    "description": "True when stored ciphertext could not be decrypted (signature may still be valid)"
+                                                },
                                                 "inputHash": {
                                                     "type": "string",
                                                     "description": "Expected SHA-256 hex hash of the input payload"
@@ -9056,7 +9064,7 @@
                         "description": "Forbidden (network not allowed)"
                     },
                     "404": {
-                        "description": "Payment not found or not disputed"
+                        "description": "Disputed request not found (read may still succeed when a DisputeDisclosure row exists for a resolved dispute)"
                     }
                 }
             }
@@ -9153,6 +9161,18 @@
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Hash mismatch or invalid payload"
+                    },
+                    "403": {
+                        "description": "Forbidden (network not allowed or not authorized)"
+                    },
+                    "404": {
+                        "description": "Disputed V2 request not found"
+                    },
+                    "409": {
+                        "description": "Disclosure already stored"
                     }
                 }
             }
@@ -9249,6 +9269,21 @@
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Hash mismatch or invalid payload"
+                    },
+                    "403": {
+                        "description": "Forbidden (network not allowed or not authorized)"
+                    },
+                    "404": {
+                        "description": "Disputed V2 request not found"
+                    },
+                    "409": {
+                        "description": "Disclosure already stored"
+                    },
+                    "503": {
+                        "description": "Seller hot wallet not configured"
                     }
                 }
             }
@@ -26939,7 +26974,8 @@
                                                                         "X402_PAYMENT_SETTLED",
                                                                         "X402_PAYMENT_FAILED",
                                                                         "X402_WALLET_LOW_BALANCE",
-                                                                        "HYDRA_HEAD_LOW_BALANCE"
+                                                                        "HYDRA_HEAD_LOW_BALANCE",
+                                                                        "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                                     ]
                                                                 }
                                                             },
@@ -27117,7 +27153,8 @@
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE",
-                                                "HYDRA_HEAD_LOW_BALANCE"
+                                                "HYDRA_HEAD_LOW_BALANCE",
+                                                "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                             ]
                                         },
                                         "minItems": 1,
@@ -27198,7 +27235,8 @@
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE",
-                                                            "HYDRA_HEAD_LOW_BALANCE"
+                                                            "HYDRA_HEAD_LOW_BALANCE",
+                                                            "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                         ]
                                                     }
                                                 },
@@ -27331,7 +27369,8 @@
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE",
-                                                "HYDRA_HEAD_LOW_BALANCE"
+                                                "HYDRA_HEAD_LOW_BALANCE",
+                                                "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                             ]
                                         },
                                         "minItems": 1,
@@ -27410,7 +27449,8 @@
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE",
-                                                            "HYDRA_HEAD_LOW_BALANCE"
+                                                            "HYDRA_HEAD_LOW_BALANCE",
+                                                            "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK"
                                                         ]
                                                     }
                                                 },
@@ -32708,7 +32748,8 @@
                                 "Started",
                                 "Completed",
                                 "Expired",
-                                "Revoked"
+                                "Revoked",
+                                "Failed"
                             ]
                         },
                         "required": false,
@@ -32780,7 +32821,8 @@
                                                                     "Started",
                                                                     "Completed",
                                                                     "Expired",
-                                                                    "Revoked"
+                                                                    "Revoked",
+                                                                    "Failed"
                                                                 ]
                                                             },
                                                             "createdAt": {
@@ -33034,7 +33076,8 @@
                                                         "Started",
                                                         "Completed",
                                                         "Expired",
-                                                        "Revoked"
+                                                        "Revoked",
+                                                        "Failed"
                                                     ]
                                                 }
                                             },

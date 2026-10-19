@@ -500,7 +500,9 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: 24 * 60 * 60 * 1000,
 		startMessage: 'Starting reveal signature usage cleanup',
 		finishMessage: 'Finished reveal signature usage cleanup',
-		run: () => pruneExpiredRevealSignatureUsage(),
+		run: async () => {
+			await pruneExpiredRevealSignatureUsage();
+		},
 	},
 	{
 		// Daily-ish prune of PaymentActionData / PurchaseActionData rows

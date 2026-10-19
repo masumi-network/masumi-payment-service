@@ -1,9 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import createHttpError from 'http-errors';
-import {
-	assertDisclosureInputWalletInScope,
-	assertDisclosureResultWalletInScope,
-} from './disclosure-wallet-scope';
+import { assertDisclosureInputWalletInScope, assertDisclosureResultWalletInScope } from './disclosure-wallet-scope';
 import type { DisputedRequestRow } from './lookup';
 
 const purchaseTarget: DisputedRequestRow = {
@@ -18,9 +15,7 @@ const purchaseTarget: DisputedRequestRow = {
 
 describe('disclosure-wallet-scope', () => {
 	it('skips purchase input wallet scope for the buyer requester', () => {
-		expect(() =>
-			assertDisclosureInputWalletInScope(['other-wallet'], purchaseTarget, 'buyer-key-id'),
-		).not.toThrow();
+		expect(() => assertDisclosureInputWalletInScope(['other-wallet'], purchaseTarget, 'buyer-key-id')).not.toThrow();
 	});
 
 	it('requires seller wallet scope for purchase result upload', () => {

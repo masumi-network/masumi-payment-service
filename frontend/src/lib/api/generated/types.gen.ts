@@ -4291,7 +4291,7 @@ export type PostSignatureGetDataErrors = {
      */
     403: unknown;
     /**
-     * Payment not found or not disputed
+     * Disputed request not found (read may still succeed when a DisputeDisclosure row exists for a resolved dispute)
      */
     404: unknown;
 };
@@ -4307,6 +4307,14 @@ export type PostSignatureGetDataResponses = {
              * Whether the admin signature is valid
              */
             isValid: boolean;
+            /**
+             * True when this signature was already used outside its validity window
+             */
+            replayRejected?: boolean;
+            /**
+             * True when stored ciphertext could not be decrypted (signature may still be valid)
+             */
+            decryptFailed?: boolean;
             /**
              * Expected SHA-256 hex hash of the input payload
              */
@@ -4343,6 +4351,25 @@ export type PostDisputeDisclosureInputDataData = {
     url: '/dispute-disclosure/input-data';
 };
 
+export type PostDisputeDisclosureInputDataErrors = {
+    /**
+     * Hash mismatch or invalid payload
+     */
+    400: unknown;
+    /**
+     * Forbidden (network not allowed or not authorized)
+     */
+    403: unknown;
+    /**
+     * Disputed V2 request not found
+     */
+    404: unknown;
+    /**
+     * Disclosure already stored
+     */
+    409: unknown;
+};
+
 export type PostDisputeDisclosureInputDataResponses = {
     /**
      * Input stored
@@ -4370,6 +4397,29 @@ export type PostDisputeDisclosureResultDataData = {
     path?: never;
     query?: never;
     url: '/dispute-disclosure/result-data';
+};
+
+export type PostDisputeDisclosureResultDataErrors = {
+    /**
+     * Hash mismatch or invalid payload
+     */
+    400: unknown;
+    /**
+     * Forbidden (network not allowed or not authorized)
+     */
+    403: unknown;
+    /**
+     * Disputed V2 request not found
+     */
+    404: unknown;
+    /**
+     * Disclosure already stored
+     */
+    409: unknown;
+    /**
+     * Seller hot wallet not configured
+     */
+    503: unknown;
 };
 
 export type PostDisputeDisclosureResultDataResponses = {
@@ -11726,7 +11776,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -11770,7 +11820,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11818,7 +11868,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -11850,7 +11900,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11898,7 +11948,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -13757,7 +13807,7 @@ export type DeleteHydraInviteResponses = {
         status: 'success';
         data: {
             id: string;
-            status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+            status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
         };
     };
 };
@@ -13769,7 +13819,7 @@ export type GetHydraInviteData = {
     path?: never;
     query?: {
         limit?: number;
-        status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+        status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
         /**
          * Filter by Cardano network
          */
@@ -13797,7 +13847,7 @@ export type GetHydraInviteResponses = {
                 nonce: string;
                 network: 'Preprod' | 'Mainnet';
                 role: 'Issuer' | 'Redeemer';
-                status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+                status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
                 createdAt: string;
                 expiresAt: string;
                 hydraHostId: string;
