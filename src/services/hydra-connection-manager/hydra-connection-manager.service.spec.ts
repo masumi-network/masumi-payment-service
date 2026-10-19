@@ -22,8 +22,8 @@ const mockPaymentRequestUpdateMany = jest.fn<(_args: unknown) => Promise<{ count
 const mockPurchaseRequestUpdateMany = jest.fn<(_args: unknown) => Promise<{ count: number }>>();
 const mockApplyDatum = jest.fn<(_args: unknown) => Promise<'applied' | 'irrelevant' | 'retry'>>();
 const mockApplyTerminal = jest.fn<(_args: unknown) => Promise<'applied' | 'irrelevant' | 'retry'>>();
-const mockFindLocallyRelevantIdentifiers =
-	jest.fn<(_paymentSourceId: string, _identifiers: Iterable<string>) => Promise<Set<string>>>();
+const mockFindRequestLineages =
+	jest.fn<(_paymentSourceId: string, _identifiers: Iterable<string>) => Promise<Map<string, unknown[]>>>();
 const mockParseEvidence = jest.fn<(cborHex: string) => unknown>();
 const mockFetchUtxos = jest.fn<(_txId?: string) => Promise<unknown[]>>();
 const mockDecodeV2ContractDatum = jest.fn<(...args: unknown[]) => unknown>();
@@ -53,7 +53,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 jest.unstable_mockModule('./hydra-datum-sync', () => ({
 	applyDatumStateToLocalRequests: mockApplyDatum,
-	findLocallyRelevantHydraRequestIdentifiers: mockFindLocallyRelevantIdentifiers,
+	findHydraRequestLineages: mockFindRequestLineages,
 }));
 
 // Mocked separately since the terminal spend moved to its own module: leaving it
@@ -178,9 +178,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		mockFetchUtxos.mockResolvedValue([]);
 		mockApplyDatum.mockResolvedValue('applied');
 		mockApplyTerminal.mockResolvedValue('irrelevant');
-		mockFindLocallyRelevantIdentifiers.mockImplementation(
-			async (_paymentSourceId, identifiers) => new Set(identifiers),
-		);
+		mockFindRequestLineages.mockResolvedValue(new Map());
 		mockDecodeV2ContractDatum.mockReturnValue({
 			blockchainIdentifier: 'blockchain-1',
 			state: SmartContractState.ResultSubmitted,
@@ -814,7 +812,9 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		head.emit('StatusChange', { status: HydraHeadStatus.Initializing, headId: 'a'.repeat(56) });
 		await manager.flushHeadStatus('head-1');
 
-		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(4);
+		// Three status CAS misses, then the fail-closed write: first only from
+		// enabled (it misses here, as every write does), then unconditionally.
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(5);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
 			where: { id: 'head-1' },
 			data: {
@@ -1125,7 +1125,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 		expect(mockTransactionFindFirst).not.toHaveBeenCalled();
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1' },
+			where: { id: 'head-1', isEnabled: true },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -1419,6 +1419,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 					closeTxHash: null,
 					contestationDeadline: null,
 					isClosing: false,
+					closeRefusedAt: null,
 				}),
 			}),
 		);
@@ -1556,11 +1557,10 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		expect(mockFetchUtxos).not.toHaveBeenCalled();
 	});
 
-	it('keeps duplicate identifiers retryable so ambiguous lineage evidence is never discarded', async () => {
-		const manager = new HydraConnectionManager();
-		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
-		mockParseEvidence.mockReturnValue({
-			inputs: [],
+	function duplicateOutputEvidence(txHash: string, inputs: Array<{ txHash: string; outputIndex: number }> = []) {
+		return {
+			txHash,
+			inputs,
 			spends: [],
 			signerVkeys: [],
 			outputs: [0, 1].map((outputIndex) => ({
@@ -1569,45 +1569,83 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 				amount: [{ unit: 'lovelace', quantity: '10000000' }],
 				plutusData: 'd87980',
 			})),
-		});
+		};
+	}
+
+	function localLineage(overrides: Record<string, unknown> = {}) {
+		return {
+			currentHydraUtxoTxHash: 'escrow-tx',
+			currentHydraUtxoOutputIndex: 0,
+			CurrentTransaction: { txHash: 'escrow-tx', intendedTxHash: null, hydraHeadId: 'head-1' },
+			TransactionHistory: [],
+			...overrides,
+		};
+	}
+
+	it('keeps duplicate outputs retryable when the tx consumes the local escrow output', async () => {
+		const manager = new HydraConnectionManager();
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
+		mockFindRequestLineages.mockResolvedValue(new Map([['blockchain-1', [localLineage()]]]));
+		mockParseEvidence.mockReturnValue(duplicateOutputEvidence('duplicate', [{ txHash: 'escrow-tx', outputIndex: 0 }]));
 
 		await expect(manager.handleTxConfirmed('head-1', 'duplicate', confirmedTransaction('duplicate'))).resolves.toBe(
 			'retry',
 		);
 		expect(mockApplyDatum).not.toHaveBeenCalled();
+	});
 
+	it('keeps duplicate outputs retryable when the tx is the local pending transaction', async () => {
+		const manager = new HydraConnectionManager();
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
+		mockFindRequestLineages.mockResolvedValue(
+			new Map([
+				[
+					'blockchain-1',
+					[
+						localLineage({
+							CurrentTransaction: { txHash: null, intendedTxHash: 'duplicate-pending', hydraHeadId: 'head-1' },
+						}),
+					],
+				],
+			]),
+		);
+		mockParseEvidence.mockReturnValue(duplicateOutputEvidence('duplicate-pending'));
 		mockTransactionFindFirst.mockResolvedValue({ id: 'pending-1' });
 		mockTransactionFindUnique.mockResolvedValue({ status: TransactionStatus.Pending });
+
 		await expect(
 			manager.handleTxConfirmed('head-1', 'duplicate-pending', confirmedTransaction('duplicate-pending')),
 		).resolves.toBe('retry');
+		expect(mockApplyDatum).not.toHaveBeenCalled();
+	});
+
+	it('skips a peer tx that copies a local identifier without touching its escrow', async () => {
+		const manager = new HydraConnectionManager();
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
+		mockFindRequestLineages.mockResolvedValue(new Map([['blockchain-1', [localLineage()]]]));
+		// The peer spends only its own funds; the local escrow output stays unspent.
+		mockParseEvidence.mockReturnValue(duplicateOutputEvidence('peer-copy', [{ txHash: 'peer-funds', outputIndex: 3 }]));
+
+		await expect(manager.handleTxConfirmed('head-1', 'peer-copy', confirmedTransaction('peer-copy'))).resolves.toBe(
+			'irrelevant',
+		);
+		expect(mockFindRequestLineages).toHaveBeenCalledWith('source-1', ['blockchain-1']);
+		expect(mockApplyDatum).not.toHaveBeenCalled();
 	});
 
 	it('ignores duplicate contract outputs whose identifier has no local request', async () => {
 		const manager = new HydraConnectionManager();
 		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
-		mockFindLocallyRelevantIdentifiers.mockResolvedValue(new Set());
 		mockDecodeV2ContractDatum.mockReturnValue({
 			blockchainIdentifier: 'external-duplicate',
 			state: SmartContractState.ResultSubmitted,
 		});
-		mockParseEvidence.mockReturnValue({
-			txHash: 'external-dust',
-			inputs: [],
-			spends: [],
-			signerVkeys: [],
-			outputs: [0, 1].map((outputIndex) => ({
-				outputIndex,
-				address: 'addr_test1_contract',
-				amount: [{ unit: 'lovelace', quantity: '10000000' }],
-				plutusData: 'd87980',
-			})),
-		});
+		mockParseEvidence.mockReturnValue(duplicateOutputEvidence('external-dust'));
 
 		await expect(
 			manager.handleTxConfirmed('head-1', 'external-dust', confirmedTransaction('external-dust')),
 		).resolves.toBe('irrelevant');
-		expect(mockFindLocallyRelevantIdentifiers).toHaveBeenCalledWith('source-1', ['external-duplicate']);
+		expect(mockFindRequestLineages).toHaveBeenCalledWith('source-1', ['external-duplicate']);
 		expect(mockApplyDatum).not.toHaveBeenCalled();
 	});
 

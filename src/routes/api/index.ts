@@ -1,5 +1,6 @@
 import { Routing } from 'express-zod-api';
 import { healthEndpointGet } from '@/routes/api/health';
+import { releaseStatusGet } from '@/routes/api/release-status';
 import {
 	queryAPIKeyEndpointGet as queryCentralizedRegistrySourceGet,
 	addAPIKeyEndpointPost as addCentralizedRegistrySourceEndpointPost,
@@ -32,6 +33,7 @@ import {
 	queryWalletEndpointGet,
 	postWalletFundEndpointPost,
 	getWalletFundEndpointGet,
+	postWalletConsolidateEndpointPost,
 	queryWalletListEndpointGet,
 } from './wallet';
 import {
@@ -139,6 +141,9 @@ import {
 	updateHydraHostPatch,
 	deleteHydraHostDelete,
 	checkHydraHostPost,
+	hydraHostPauseStateGet,
+	pauseHydraHostPost,
+	resumeHydraHostPost,
 	listHydraWalletBasesGet,
 	listHeadErrorsGet,
 	getHeadConnectionGet,
@@ -149,10 +154,16 @@ import {
 	listTopupsGet,
 	withdrawHeadPost,
 	listWithdrawalsGet,
+	consolidateHeadPost,
+	getSnapshotRoundGet,
+	resetSnapshotRoundPost,
+	listL2ReservationsGet,
+	releaseL2ReservationPost,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
 	updateHeadPatch,
+	checkHeadOnChainPost,
 } from './hydra';
 import {
 	createX402PaymentPost,
@@ -192,6 +203,7 @@ import {
 export const apiRouter: Routing = {
 	v1: {
 		health: healthEndpointGet,
+		'release-status': releaseStatusGet,
 		purchase: {
 			get: queryPurchaseRequestGet,
 			post: createPurchaseInitPost,
@@ -349,6 +361,8 @@ export const apiRouter: Routing = {
 				get: getWalletFundEndpointGet,
 				post: postWalletFundEndpointPost,
 			},
+			// A transfer back to itself that merges the wallet's UTxOs.
+			consolidate: { post: postWalletConsolidateEndpointPost },
 		},
 		'payment-source-extended': {
 			get: paymentSourceExtendedEndpointGet,
@@ -543,6 +557,8 @@ export const apiRouter: Routing = {
 				patch: updateHydraHostPatch,
 				delete: deleteHydraHostDelete,
 				check: { post: checkHydraHostPost },
+				pause: { get: hydraHostPauseStateGet, post: pauseHydraHostPost },
+				resume: { post: resumeHydraHostPost },
 			},
 			'wallet-base': {
 				get: listHydraWalletBasesGet,
@@ -568,8 +584,22 @@ export const apiRouter: Routing = {
 					post: withdrawHeadPost,
 					get: listWithdrawalsGet,
 				},
+				// Merges the wallet's in-head UTxOs; nothing leaves the head.
+				consolidate: { post: consolidateHeadPost },
+				// A snapshot round that stopped moving, and the admin's reset of it.
+				'snapshot-round': {
+					get: getSnapshotRoundGet,
+					reset: { post: resetSnapshotRoundPost },
+				},
+				// Expired L2 reservations no proof can release, and the admin's release.
+				'l2-reservations': {
+					get: listL2ReservationsGet,
+					release: { post: releaseL2ReservationPost },
+				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
+				// Read-only: the head's state on L1, from an independent observer.
+				'chain-check': { post: checkHeadOnChainPost },
 				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet, delete: clearHeadErrorsDelete },
 				// What the head has done, in order — the three lifecycle hashes on the

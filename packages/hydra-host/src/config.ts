@@ -9,6 +9,7 @@
 
 import { type DriftThresholds } from './supervisor/drift.js';
 import { validatePortLayout, type PortLayout } from './registry/ports.js';
+import { readReleaseInfo, type ReleaseInfo } from './release.js';
 
 export type HostConfig = {
 	dataDir: string;
@@ -64,7 +65,7 @@ export type HostConfig = {
 	/**
 	 * Use an etcd from PATH instead of the copy hydra-node extracts.
 	 *
-	 * True in the image, which bakes a matching etcd. False when running the
+	 * True in the image, which bakes a 3.5.x etcd (3.5.33 or later). False when running the
 	 * Host natively on a machine with no system etcd — notably macOS, where the
 	 * native hydra-node is the only build that executes at all.
 	 */
@@ -77,6 +78,16 @@ export type HostConfig = {
 	 * is. Turn it on only where the monitoring range is firewalled.
 	 */
 	monitoringEnabled: boolean;
+	/**
+	 * Let peers resolve to private, loopback or link-local addresses.
+	 *
+	 * Off by default: a redeemer names its own peer address, and without this
+	 * guard it could point the node at the Host's internal network. Turn it on
+	 * only for deployments whose peers really live on a private network.
+	 */
+	allowPrivatePeers: boolean;
+	/** The project release this image was built from. See release.ts. */
+	release: ReleaseInfo;
 };
 
 export class ConfigError extends Error {
@@ -288,6 +299,8 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		drainTimeoutMs: positiveInteger(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),
 		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',
 		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
+		allowPrivatePeers: optional(env, 'HYDRA_HOST_ALLOW_PRIVATE_PEERS', 'false') === 'true',
+		release: readReleaseInfo(env),
 	};
 }
 

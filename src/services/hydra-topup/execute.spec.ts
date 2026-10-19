@@ -42,6 +42,8 @@ const mockSelectCommitUtxos = jest.fn() as AnyMock;
 const mockClaimHotWalletForL1 = jest.fn() as AnyMock;
 const mockReleaseHotWalletAfterL1 = jest.fn() as AnyMock;
 const mockReserveAndSubmitHydraTopup = jest.fn() as AnyMock;
+const mockReconcilePendingHydraTopup = jest.fn() as AnyMock;
+const mockInterpretCardanoTxSubmitResult = jest.fn() as AnyMock;
 const mockLoggerError = jest.fn() as AnyMock;
 
 /** A stand-in for `HydraHttpResponseError`, without pulling in the real HTTP stack. */
@@ -58,6 +60,13 @@ class FakeHydraHttpResponseError extends Error {
 class FakeHydraCommitFlowError extends Error {
 	override readonly name = 'HydraCommitFlowError';
 }
+
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),
+	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -85,7 +94,7 @@ jest.unstable_mockModule('@/lib/hydra', () => ({
 	buildValidatedHydraCommit: mockBuildValidatedHydraCommit,
 	HydraCommitFlowError: FakeHydraCommitFlowError,
 	HydraTransactionType: { TxConwayEra: 'TxConwayEra', UnwitnessedTxConwayEra: 'UnwitnessedTxConwayEra' },
-	interpretCardanoTxSubmitResult: jest.fn(),
+	interpretCardanoTxSubmitResult: mockInterpretCardanoTxSubmitResult,
 	selectCommitUtxos: mockSelectCommitUtxos,
 }));
 
@@ -107,7 +116,7 @@ jest.unstable_mockModule('@/utils/hydra/l2-slot-context', () => ({
 
 jest.unstable_mockModule('@/services/hydra-topup-reconciliation', () => ({
 	HydraTopupReservationConflictError: class extends Error {},
-	reconcilePendingHydraTopup: jest.fn(),
+	reconcilePendingHydraTopup: mockReconcilePendingHydraTopup,
 	reserveAndSubmitHydraTopup: mockReserveAndSubmitHydraTopup,
 }));
 
@@ -218,5 +227,95 @@ describe('executeHydraTopup — DepositTooLarge draft refusal', () => {
 		// Nothing else was left outstanding (the row is Failed) and no carve ran
 		// (whole-UTxO top-up), so the wallet is handed back rather than wedged.
 		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID);
+	});
+});
+
+describe('executeHydraTopup wallet release ownership', () => {
+	beforeEach(() => {
+		mockBuildValidatedHydraCommit.mockResolvedValue({
+			txId: 'b'.repeat(64),
+			invalidHereafterSlot: 1_000n,
+			signedCommitTx: 'signed-deposit',
+			committedValue: new Map([['lovelace', 5_000_000n]]),
+		});
+		mockReserveAndSubmitHydraTopup.mockImplementation(
+			async (reservation: { topupId: string }, submit: () => Promise<unknown>) => ({
+				topupId: reservation.topupId,
+				submitResult: await submit(),
+			}),
+		);
+		mockInterpretCardanoTxSubmitResult.mockReturnValue({ ok: true });
+	});
+
+	it('does not release a newer claim after the scheduler wins reconciliation', async () => {
+		let walletOwner = TOPUP_ID;
+		mockReleaseHotWalletAfterL1.mockImplementation(async () => {
+			walletOwner = '';
+		});
+		mockReconcilePendingHydraTopup.mockImplementation(async () => {
+			// The scheduler wins the Pending CAS and releases this operation's lock.
+			await mockReleaseHotWalletAfterL1(WALLET_ID);
+			walletOwner = 'next-topup';
+			return 'raced';
+		});
+
+		await executeHydraTopup({ headId: HEAD_ID, filter: 'all' });
+
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledTimes(1);
+		expect(walletOwner).toBe('next-topup');
+	});
+
+	it('does not release after ambiguous submission when the scheduler already settled the row', async () => {
+		mockGetHead.mockReturnValue({
+			cardanoTransaction: jest.fn(async () => {
+				await mockReleaseHotWalletAfterL1(WALLET_ID);
+				throw new Error('connection reset');
+			}),
+		});
+
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all' })).rejects.toThrow('connection reset');
+
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases when inline reconciliation wins confirmation', async () => {
+		mockReconcilePendingHydraTopup.mockResolvedValue('confirmed');
+
+		await executeHydraTopup({ headId: HEAD_ID, filter: 'all' });
+
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases when inline reconciliation wins failure without a carve', async () => {
+		mockReconcilePendingHydraTopup.mockResolvedValue('failed');
+
+		await executeHydraTopup({ headId: HEAD_ID, filter: 'all' });
+
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases when reservation promotion fails before ownership transfers', async () => {
+		mockReserveAndSubmitHydraTopup.mockRejectedValue(new Error('promotion failed'));
+
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all' })).rejects.toThrow('promotion failed');
+
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps release ownership with reconciliation after a reconciliation error', async () => {
+		mockReconcilePendingHydraTopup.mockRejectedValue(new Error('lookup failed'));
+
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all' })).rejects.toThrow('lookup failed');
+
+		expect(mockReleaseHotWalletAfterL1).not.toHaveBeenCalled();
+	});
+
+	it('keeps the submitted deposit lock while reconciliation remains pending', async () => {
+		mockReconcilePendingHydraTopup.mockResolvedValue('pending');
+		mockFindFirstTopup.mockResolvedValue({ id: TOPUP_ID });
+
+		await executeHydraTopup({ headId: HEAD_ID, filter: 'all' });
+
+		expect(mockReleaseHotWalletAfterL1).not.toHaveBeenCalled();
 	});
 });

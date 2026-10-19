@@ -1,4 +1,3 @@
-# check=skip=InvalidBaseImagePlatform
 # Hydra Host — supervises one hydra-node process per Hydra Head and fronts them
 # with a token-gated control plane.
 #
@@ -39,24 +38,30 @@ ARG HYDRA_VERSION=2.4.1
 # index digest for whichever --platform it is building, but a per-arch
 # digest would pin one architecture regardless of --platform.
 ARG HYDRA_IMAGE_DIGEST=sha256:608ae9b336209a18d7f3c42f7ca2d73c51dcb1b90732e533dd3b8017485fa98a
-# Must match the etcd that hydra-node ships internally, confirmed by scanning
-# the binary for its embedded go.etcd.io module versions: `v3.5.25`
-# (unchanged from 2.3.0 — see docs/hydra-2.4.1-upgrade-runbook.md). Using
-# --use-system-etcd with a mismatched build risks subtle raft
-# incompatibilities. Declared here (before the first FROM) rather than next
-# to where it's consumed in the `binaries` stage below: a Dockerfile ARG's
-# default only survives into a later stage's bare `ARG NAME` redeclare if the
+# Must stay on the 3.5 minor line of the etcd that hydra-node ships
+# internally, confirmed by scanning the binary for its embedded go.etcd.io
+# module versions: `v3.5.25` (unchanged from 2.3.0 — see
+# docs/hydra-2.4.1-upgrade-runbook.md). A different minor risks raft
+# incompatibilities with a counterparty that runs the embedded copy. The
+# patch level is deliberately newer: etcd before 3.5.33 reads a peer lease
+# request body without a limit, so anyone who reaches the published peer port
+# can exhaust memory (https://etcd.io/blog/2026/july-23-patch-release/).
+# A 3.5.34 member was checked to join a 3.5.25 cluster.
+#
+# Declared here (before the first FROM) rather than next to where it's
+# consumed in the `binaries` stage below: a Dockerfile ARG's default only
+# survives into a later stage's bare `ARG NAME` redeclare if the
 # default was set before the file's first FROM — set anywhere else, the
 # redeclare silently picks up an empty string instead.
-ARG ETCD_VERSION=3.5.25
-ARG ETCD_SHA256_AMD64=168af82b59772e1811a9af7b358d42f5c6df44e0d9767afb006ecf12c4bbd607
-ARG ETCD_SHA256_ARM64=419dce0b679df31cc45201ef2449b7a6a48e9d241af01741957c9ac86a35badc
+ARG ETCD_VERSION=3.5.34
+ARG ETCD_SHA256_AMD64=eb10a9f3c8d547c4a76c8c39ab6bcd56e95c8da6aec86d4136e433ef6d39977b
+ARG ETCD_SHA256_ARM64=e08e07095a6aa670b2c93774107abcc1fe113942b175cf3e40ecdf69787ced60
 FROM ghcr.io/cardano-scaling/hydra-node@${HYDRA_IMAGE_DIGEST} AS hydra-upstream
 
 # ---------------------------------------------------------------------------
 # Fetch the pinned etcd binary.
 # ---------------------------------------------------------------------------
-FROM debian:bookworm-slim@sha256:63a496b5d3b99214b39f5ed70eb71a61e590a77979c79cbee4faf991f8c0783e AS binaries
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS binaries
 ARG ETCD_VERSION
 ARG ETCD_SHA256_AMD64
 ARG ETCD_SHA256_ARM64
@@ -85,7 +90,7 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------
 # Build the control plane.
 # ---------------------------------------------------------------------------
-FROM node:24-bookworm-slim@sha256:a09aabc645e86e81e23dab78e0c0f2eaa233cab4277c7188232181a1a8bd5d39 AS control-plane
+FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS control-plane
 WORKDIR /build
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -95,7 +100,13 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 COPY packages/hydra-host/package.json packages/hydra-host/
 RUN pnpm install --filter @masumi/hydra-host --frozen-lockfile
-COPY packages/hydra-host ./packages/hydra-host
+# Only what the build and runtime need. The root .dockerignore excludes only the
+# root node_modules and dist, so copying the whole package directory would
+# carry a developer's own packages/hydra-host/node_modules (pnpm symlinks into
+# a store this image does not have) and any stale dist into the runtime image.
+COPY packages/hydra-host/src ./packages/hydra-host/src
+COPY packages/hydra-host/public ./packages/hydra-host/public
+COPY packages/hydra-host/tsconfig.build.json ./packages/hydra-host/
 COPY tsconfig.json ./
 RUN pnpm --filter @masumi/hydra-host run build
 
@@ -173,9 +184,10 @@ FROM hydra-closure-${TARGETARCH} AS hydra-closure
 # ---------------------------------------------------------------------------
 # Runtime.
 # ---------------------------------------------------------------------------
-FROM node:24-bookworm-slim@sha256:a09aabc645e86e81e23dab78e0c0f2eaa233cab4277c7188232181a1a8bd5d39 AS runtime
+FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime
 ARG HYDRA_VERSION
 ARG ETCD_VERSION
+ARG TARGETARCH
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates \
@@ -187,19 +199,55 @@ COPY --from=hydra-bin /hydra-node /usr/local/bin/hydra-node
 # etcd must be on PATH for --use-system-etcd, which keeps hydra-node from
 # re-extracting its embedded copy into the persistence volume on every boot.
 COPY --from=binaries /out/etcd /usr/local/bin/etcd
-COPY --from=control-plane /build/packages/hydra-host/dist /app/dist
+# Keep the pnpm workspace layout: the package's direct dependencies
+# (swagger-ui-dist among them) are symlinks in its own node_modules into the
+# root store, and docs-page.ts finds public/ relative to dist/. Copying dist/
+# and the root node_modules alone loses both, and /docs assets return 500.
+# `pnpm deploy` cannot flatten it here: it resolves the root manifest's
+# workspace:* dependencies, whose packages this image does not copy.
 COPY --from=control-plane /build/node_modules /app/node_modules
+COPY --from=control-plane /build/packages/hydra-host /app/packages/hydra-host
 # Ledger protocol parameters are generated at build time from the mesh version
 # pinned by packages/payment-source-v2, so the head ledger cannot drift from the
 # transactions the payment service builds.
 COPY packages/hydra-host/params /opt/hydra/params
+
+# Every base above is pinned by a multi-arch INDEX digest, the same as the
+# hydra-node pin, so each stage resolves to the platform being built. A
+# per-platform manifest digest would silently produce a mixed image (an amd64
+# node next to arm64 hydra-node and etcd) that still runs under emulation.
+# Fail the build instead: check the ELF e_machine of all three binaries
+# against the target (62 = x86-64, 183 = AArch64).
+RUN node -e " \
+	const fs = require('node:fs'); \
+	const want = { amd64: 62, arm64: 183 }[process.env.TARGETARCH]; \
+	if (!want) { console.error('no ELF machine for linux/' + process.env.TARGETARCH); process.exit(1); } \
+	for (const file of [process.execPath, '/usr/local/bin/hydra-node', '/usr/local/bin/etcd']) { \
+		const header = Buffer.alloc(20); \
+		const fd = fs.openSync(file, 'r'); \
+		fs.readSync(fd, header, 0, 20, 0); \
+		fs.closeSync(fd); \
+		const machine = header.readUInt16LE(18); \
+		if (machine !== want) { console.error(file + ' has ELF machine ' + machine + ', want ' + want); process.exit(1); } \
+	}"
+
+# The project release this image is built from, reported in /v1/capabilities so
+# the payment service can tell an operator a newer release exists. `.git` is not
+# in the build context, so the build passes them in:
+#   --build-arg MASUMI_RELEASE_VERSION="$(git describe --tags --long --match '[0-9]*.[0-9]*.[0-9]*')"
+#   --build-arg MASUMI_RELEASE_COMMIT="$(git rev-parse HEAD)"
+# Declared here, after the slow layers, so a new release does not rebuild them.
+ARG MASUMI_RELEASE_VERSION=
+ARG MASUMI_RELEASE_COMMIT=
 
 ENV NODE_ENV=production \
 	HYDRA_HOST_DATA_DIR=/data \
 	HYDRA_HOST_PORT=8443 \
 	HYDRA_NODE_BIN=/usr/local/bin/hydra-node \
 	HYDRA_VERSION=${HYDRA_VERSION} \
-	ETCD_VERSION=${ETCD_VERSION}
+	ETCD_VERSION=${ETCD_VERSION} \
+	MASUMI_RELEASE_VERSION=${MASUMI_RELEASE_VERSION} \
+	MASUMI_RELEASE_COMMIT=${MASUMI_RELEASE_COMMIT}
 
 # Run unprivileged: the supervisor and every hydra-node it spawns write keys and
 # persistence into /data, and there is no reason for any of that to be uid 0.
@@ -222,6 +270,6 @@ EXPOSE 8443 8444
 # Run with a generous --stop-timeout (Docker's 10s default would SIGKILL
 # mid-round).
 STOPSIGNAL SIGTERM
-WORKDIR /app
+WORKDIR /app/packages/hydra-host
 USER hydra
 ENTRYPOINT ["node", "dist/index.js"]

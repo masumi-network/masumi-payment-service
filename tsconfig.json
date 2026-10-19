@@ -32,6 +32,7 @@
 		"src/**/*.ts",
 		"packages/**/*.ts",
 		"packages/**/*.mts",
+		"prisma/seed.validation*.ts",
 		"smart-contracts/**/plutus.json",
 		"tests/**/*.ts",
 		"jest.e2e*.config.ts",

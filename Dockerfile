@@ -73,6 +73,16 @@ COPY --from=backend-builder /usr/src/app/eslint.config.mjs ./eslint.config.mjs
 # Copy frontend files
 COPY --from=frontend-builder /usr/src/app/frontend/dist ./frontend/dist
 
+# The project release this image is built from, shown in the admin UI next to
+# the latest release. `.git` is not in the build context, so the build passes
+# them in:
+#   --build-arg MASUMI_RELEASE_VERSION="$(git describe --tags --long --match '[0-9]*.[0-9]*.[0-9]*')"
+#   --build-arg MASUMI_RELEASE_COMMIT="$(git rev-parse HEAD)"
+ARG MASUMI_RELEASE_VERSION=
+ARG MASUMI_RELEASE_COMMIT=
+
 EXPOSE 3001
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+	MASUMI_RELEASE_VERSION=${MASUMI_RELEASE_VERSION} \
+	MASUMI_RELEASE_COMMIT=${MASUMI_RELEASE_COMMIT}
 CMD [ "pnpm", "run", "start" ]

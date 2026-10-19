@@ -51,3 +51,61 @@ describe('Hydra current output evidence accessor', () => {
 		expect(readOutput(true, HydraHeadStatus.Open, undefined, 3n, partition)).toBeNull();
 	});
 });
+
+describe('Hydra pending-commit output accessor', () => {
+	function isPendingCommit(
+		verified: boolean,
+		status: HydraHeadStatus,
+		partition: 'committedOutputs' | null,
+		expectedSnapshotNumber = 3n,
+	) {
+		const context = {
+			hasVerifiedPinnedSessions: verified,
+			_live: { status },
+			_replay: {
+				verifiedSnapshot: {
+					outputs: new Map([[reference, 'authenticated-bytes']]),
+					number: 3,
+					committedOutputs: new Map(partition ? [[reference, 'authenticated-bytes']] : []),
+					decommitOutputs: new Map(),
+				},
+			},
+		};
+		return HydraNode.prototype.isVerifiedPendingCommitOutput.call(
+			context as unknown as HydraNode,
+			reference,
+			expectedSnapshotNumber,
+		);
+	}
+
+	// A deposit the head folds in sits in `utxoToCommit` until the next signed
+	// snapshot. Release has to tell that apart from a spent input.
+	it('reports an output the verified snapshot still holds as a pending commit', () => {
+		expect(isPendingCommit(true, HydraHeadStatus.Open, 'committedOutputs')).toBe(true);
+	});
+	it('does not report a spendable output', () => {
+		expect(isPendingCommit(true, HydraHeadStatus.Open, null)).toBe(false);
+	});
+	it('reports nothing from an unverified session', () => {
+		expect(isPendingCommit(false, HydraHeadStatus.Open, 'committedOutputs')).toBe(false);
+	});
+	it('reports nothing for a different snapshot number', () => {
+		expect(isPendingCommit(true, HydraHeadStatus.Open, 'committedOutputs', 4n)).toBe(false);
+	});
+});
+
+describe('Hydra verified snapshot number accessor', () => {
+	const getter = Object.getOwnPropertyDescriptor(HydraNode.prototype, 'verifiedSnapshotNumber')!.get!;
+	const read = (verified: boolean, verifiedSnapshot: { number: number } | undefined) =>
+		getter.call({ hasVerifiedPinnedSessions: verified, _replay: { verifiedSnapshot } }) as bigint | undefined;
+
+	it('returns the replay-verified snapshot number', () => {
+		expect(read(true, { number: 3 })).toBe(3n);
+	});
+	it('is undefined for an unverified session', () => {
+		expect(read(false, { number: 3 })).toBeUndefined();
+	});
+	it('is undefined before any snapshot is verified', () => {
+		expect(read(true, undefined)).toBeUndefined();
+	});
+});

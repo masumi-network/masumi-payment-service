@@ -83,7 +83,7 @@ export interface ReconcileMatchFields {
  *   - a null request `payByTime` (legacy pre-backfill rows) is accepted rather
  *     than forced to equal a datum `payByTime` of 0 that never occurs.
  * This mirrors the L1 tx-sync field check
- * (`src/services/transactions/tx-sync/tx/index.ts`), which guards each vkey
+ * (`src/services/transactions/tx-sync/tx/datum-verification.ts`), which guards each vkey
  * comparison with a `Wallet != null` precondition and treats null `payByTime` as
  * "accept".
  */

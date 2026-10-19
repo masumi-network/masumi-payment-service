@@ -15,6 +15,8 @@ const _getApiKeySalt = (): Buffer => {
 // Async PBKDF2-SHA512 with 100k iterations — computationally resistant to brute force.
 // Async to avoid blocking the Node.js event loop (~50-100ms per call at 100k iterations).
 // Deterministic per deployment: same token + same ENCRYPTION_KEY → same hash.
+// Auth runs this before the DB lookup, so invalid tokens also cost a hash. Intended:
+// the service must sit behind a network allowlist. See docs/security.md "Accepted Risks".
 const generateApiKeySecureHash = (token: string): Promise<string> => {
 	const salt = _getApiKeySalt();
 	return new Promise((resolve, reject) => {

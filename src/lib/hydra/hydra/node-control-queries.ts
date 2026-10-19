@@ -8,7 +8,7 @@ import { Protocol, UTxO, castProtocol } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { HydraProtocolError } from './errors';
-import { extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
+import { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
 import { protocolErrorToString } from './node-frames';
 import { type HydraRawCostModels } from './node-api';
 import { reportParamsDrift } from './params-drift';
@@ -16,6 +16,7 @@ import {
 	hydraCostModelSchema,
 	hydraConfirmedSnapshotSchema,
 	hydraCostModelsEnvelopeSchema,
+	hydraLastSeenSnapshotSchema,
 	hydraProtocolParametersSchema,
 	hydraSnapshotUtxoSchema,
 } from './schemas';
@@ -110,6 +111,46 @@ export async function fetchHydraConfirmedSnapshotNumber(
 		: { headId: data.headId, number: 0n };
 }
 
+/** `last-seen` tags that mean no snapshot round is in flight. Kept in sync with hydra-host's drain gate. */
+const IDLE_SNAPSHOT_ROUND_TAGS = new Set(['LastSeenSnapshot', 'NoSeenSnapshot']);
+
+/** The snapshot round a node reports in flight, reduced to what identifies it. */
+export type HydraSnapshotRound = {
+	/** False only for a tag known to mean idle. An unknown tag counts as in flight. */
+	inFlight: boolean;
+	tag: string;
+	/** The snapshot number under signature, when the node names one. */
+	number: number | null;
+	/** Parties that have signed it so far. A new signature means the round is moving. */
+	signatoryCount: number;
+	/** Transactions the round would confirm. */
+	txIds: string[];
+	/** Changes whenever the round moves, so an unchanged value over time means it is stuck. */
+	signature: string;
+};
+
+/** The node's snapshot round in flight, from `GET /snapshot/last-seen`. Throws on a malformed answer. */
+export async function fetchHydraSnapshotRound(transport: HydraQueryTransport): Promise<HydraSnapshotRound> {
+	const response = hydraLastSeenSnapshotSchema.safeParse(await transport.get('/snapshot/last-seen'));
+	if (!response.success) {
+		throw new HydraProtocolError('Hydra last-seen snapshot response failed schema validation', {
+			cause: response.error,
+		});
+	}
+	const data = response.data;
+	const inFlight = !IDLE_SNAPSHOT_ROUND_TAGS.has(data.tag);
+	const number = data.snapshot?.number ?? (inFlight ? (data.requested ?? null) : null);
+	const signatoryCount = Object.keys(data.signatories ?? {}).length;
+	return {
+		inFlight,
+		tag: data.tag,
+		number,
+		signatoryCount,
+		txIds: (data.snapshot?.confirmed ?? []).map((tx) => tx.txId.toLowerCase()),
+		signature: `${data.tag}|${number ?? '-'}|${signatoryCount}`,
+	};
+}
+
 export async function fetchHydraSnapshotUTxO(transport: HydraQueryTransport): Promise<UTxO[]> {
 	const response = hydraSnapshotUtxoSchema.safeParse(await transport.get('/snapshot/utxo'));
 	if (!response.success) {
@@ -164,6 +205,18 @@ export async function fetchHydraPendingDecommitRefs(transport: HydraQueryTranspo
 			error: protocolErrorToString(error),
 		});
 		return [];
+	}
+}
+
+/** See `extractDecommitInFlight`. `undefined`, never `false`, when the node cannot be read. */
+export async function fetchHydraDecommitInFlight(transport: HydraQueryTransport): Promise<boolean | undefined> {
+	try {
+		return extractDecommitInFlight(await transport.get('/head'));
+	} catch (error) {
+		logger.warn('[HydraNode] Could not read the head state for a withdrawal in flight', {
+			error: protocolErrorToString(error),
+		});
+		return undefined;
 	}
 }
 

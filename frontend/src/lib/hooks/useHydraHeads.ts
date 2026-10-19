@@ -12,3 +12,5 @@ export * from './hydra/heads';
 export * from './hydra/funds';
 export * from './hydra/invites';
 export * from './hydra/relations';
+export * from './hydra/snapshot-round';
+export * from './hydra/l2-reservations';

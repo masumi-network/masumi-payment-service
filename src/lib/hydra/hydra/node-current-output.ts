@@ -16,3 +16,22 @@ export function readVerifiedCurrentOutput(
 	if (snapshot.committedOutputs.has(reference) || snapshot.decommitOutputs.has(reference)) return null;
 	return snapshot.outputs.get(reference) ?? null;
 }
+
+/**
+ * Whether the verified snapshot holds `reference` as a deposit still being
+ * folded in (`utxoToCommit`). Such an output is not spent: it becomes ordinary
+ * state in the next signed snapshot, and on an idle head only a new
+ * transaction produces that snapshot.
+ */
+export function isVerifiedPendingCommitOutput(
+	verified: boolean,
+	status: HydraHeadStatus,
+	snapshot: VerifiedHydraSnapshot | undefined,
+	reference: string,
+	expectedSnapshotNumber: bigint,
+): boolean {
+	if (!verified || status !== HydraHeadStatus.Open || !snapshot || BigInt(snapshot.number) !== expectedSnapshotNumber) {
+		return false;
+	}
+	return snapshot.committedOutputs.has(reference);
+}

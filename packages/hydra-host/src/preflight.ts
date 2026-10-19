@@ -80,7 +80,7 @@ export function assertExecutablesAvailable(
 	// extracts the etcd it embeds, and nothing needs to be on PATH.
 	if (config.useSystemEtcd && resolveExecutable('etcd', probe) === null) {
 		throw new HostPreflightError(
-			'HYDRA_HOST_USE_SYSTEM_ETCD is on but no etcd executable is on PATH. Install a matching etcd, ' +
+			'HYDRA_HOST_USE_SYSTEM_ETCD is on but no etcd executable is on PATH. Install etcd 3.5.33 or later on the 3.5 line, ' +
 				'or set HYDRA_HOST_USE_SYSTEM_ETCD=false to let hydra-node extract the copy it embeds ' +
 				'(which is what native mode outside the container wants; see docs/hydra-host-native-mode.md).',
 		);

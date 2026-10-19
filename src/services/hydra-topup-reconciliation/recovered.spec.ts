@@ -5,6 +5,11 @@ type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockTxsUtxos = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
+const mockLookupConfirmedChainTx = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
+	lookupConfirmedChainTx: mockLookupConfirmedChainTx,
+}));
 const mockFindMany = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
@@ -67,6 +72,7 @@ function stageRows(rows: ReturnType<typeof topupRow>[]) {
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockUpdateMany.mockResolvedValue({ count: 1 });
+	mockLookupConfirmedChainTx.mockResolvedValue('confirmed-valid');
 });
 
 describe('reconcileRecoveredHydraTopups', () => {
@@ -93,11 +99,52 @@ describe('reconcileRecoveredHydraTopups', () => {
 
 		await reconcileRecoveredHydraTopups();
 
-		const filters = mockFindMany.mock.calls.map((call) => call[0]?.where?.status);
+		const wheres = mockFindMany.mock.calls.map((call) => call[0]?.where);
 		// One query for Pending on its own, one for Confirmed and Failed together,
 		// each with its own take rather than a shared budget the larger pool wins.
-		expect(filters).toContainEqual(HydraTopupStatus.Pending);
-		expect(filters).toContainEqual({ in: [HydraTopupStatus.Confirmed, HydraTopupStatus.Failed] });
+		expect(wheres.map((where) => where?.status)).toContainEqual(HydraTopupStatus.Pending);
+		const settled = wheres.find((where) => where?.OR !== undefined);
+		expect(settled.OR).toContainEqual({ status: HydraTopupStatus.Confirmed });
+		expect(settled.OR.map((filter: { status: string }) => filter.status)).toContain(HydraTopupStatus.Failed);
+	});
+
+	// A Failed deposit never landed (or landed invalid), so it can never come
+	// back recovered or absorbed. Read forever, it logs a lookup failure on every
+	// tick. It is checked only for a short window past its TTL.
+	it('checks a Failed row only until shortly past its TTL, per network', async () => {
+		mockFindMany.mockResolvedValue([]);
+		const nowMs = Date.UTC(2026, 9, 12, 5, 30);
+		const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+
+		try {
+			await reconcileRecoveredHydraTopups();
+		} finally {
+			nowSpy.mockRestore();
+		}
+
+		const settled = mockFindMany.mock.calls.map((call) => call[0]?.where).find((where) => where?.OR !== undefined);
+		const failed = settled.OR.filter((filter: { status: string }) => filter.status === HydraTopupStatus.Failed);
+		// Shelley-era slot = zeroSlot + (unix seconds - zeroTime seconds), one-second slots.
+		const windowStartSeconds = Math.floor((nowMs - 15 * 60 * 1000) / 1000);
+		const cutoff = (network: 'mainnet' | 'preprod') =>
+			network === 'mainnet'
+				? BigInt(4_492_800 + windowStartSeconds - 1_596_059_091)
+				: BigInt(86_400 + windowStartSeconds - 1_655_769_600);
+		expect(failed).toEqual(
+			expect.arrayContaining([
+				{
+					status: HydraTopupStatus.Failed,
+					invalidHereafterSlot: { gte: cutoff('mainnet') },
+					LocalParticipant: { Wallet: { PaymentSource: { network: 'Mainnet' } } },
+				},
+				{
+					status: HydraTopupStatus.Failed,
+					invalidHereafterSlot: { gte: cutoff('preprod') },
+					LocalParticipant: { Wallet: { PaymentSource: { network: 'Preprod' } } },
+				},
+			]),
+		);
+		expect(failed).toHaveLength(2);
 	});
 
 	it('checks a Confirmed row even when the Pending pool is full', async () => {
@@ -156,6 +203,38 @@ describe('reconcileRecoveredHydraTopups', () => {
 		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
 		expect(mockUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
+			data: { updatedAt: expect.any(Date) },
+		});
+	});
+
+	// Failed was decided while the observer lagged; the deposit landed after all.
+	// Left Failed, it would drop out of the recheck window before its spend.
+	it('restores a Failed row to Confirmed when its deposit is on chain and unspent', async () => {
+		stageRows([topupRow(HydraTopupStatus.Failed)]);
+		chain(null, []);
+
+		await reconcileRecoveredHydraTopups();
+
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Failed },
+			data: { status: HydraTopupStatus.Confirmed },
+		});
+	});
+
+	// A shallow block can still roll back, and past its TTL the deposit could
+	// not land again: the row would then sit in Confirmed with nothing to find.
+	it('keeps a Failed row Failed until its deposit is confirmed deep enough', async () => {
+		stageRows([topupRow(HydraTopupStatus.Failed)]);
+		chain(null, []);
+		mockLookupConfirmedChainTx.mockResolvedValue('pending');
+
+		await reconcileRecoveredHydraTopups();
+
+		// Only rotated to the back of the queue, so it cannot hold others back.
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Failed },
 			data: { updatedAt: expect.any(Date) },
 		});
 	});

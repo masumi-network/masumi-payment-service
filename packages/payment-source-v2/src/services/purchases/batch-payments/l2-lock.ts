@@ -20,10 +20,11 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { isHydraHeadOnPausedHost } from '@/services/hydra-host/pause';
 import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
 import { resolveEffectiveForceLayer } from '@/utils/logic/force-layer';
 import { waitForFreeWallet } from '../../l2-pass';
-import { isHotWalletEligibleForL2Lock } from './l2-lock-helpers';
+import { isHotWalletEligibleForL2Lock, isWalletHeldByExpiredL2Body } from './l2-lock-helpers';
 import { executeL2Lock, type L2PurchaseRequest } from './l2-lock-execute';
 
 /**
@@ -96,6 +97,7 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				},
 				include: {
 					Secret: true,
+					PendingTransaction: { select: { layer: true, status: true, invalidHereafterSlot: true } },
 				},
 			},
 		},
@@ -156,12 +158,58 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				if (!head) {
 					continue;
 				}
+				// Paused for maintenance: like a down peer, auto falls to L1 now and
+				// forced retries until Resume. Not "no head", which would fail a
+				// forced request outright.
+				if (await isHydraHeadOnPausedHost(head.hydraHead.id)) {
+					logger.info('L2 lock: Hydra host is paused for maintenance; not routing to this head', {
+						requestId: request.id,
+						hydraHeadId: head.hydraHead.id,
+					});
+					if (forcedHydra) headResolutionIndeterminate = true;
+					continue;
+				}
 				const provider = getHydraConnectionManager().getProvider(head.hydraHead.id);
 				if (!provider) {
 					// The persisted head exists, but this process temporarily has no live
 					// provider. Treat that as indeterminate so a forced request retries
 					// instead of being permanently failed during reconnect/startup.
 					headResolutionIndeterminate = true;
+					continue;
+				}
+				// The persisted head says nothing about the counterparty's side: its
+				// node can be down or unreachable, and a lock would then never be
+				// co-signed. Require our node to report the peer as connected. (A
+				// counterparty that disabled the head but keeps its node live still
+				// passes; that lock times out and is refunded on L2.)
+				// Down: auto falls to L1 now; forced retries until payByTime fails it.
+				// Not reported yet (null): indeterminate, like a missing provider.
+				const peerConnected = getHydraConnectionManager().getNode(head.hydraHead.id)?.networkConnected ?? null;
+				if (peerConnected !== true) {
+					logger.info('L2 lock: Hydra counterparty is not connected; not routing to this head', {
+						requestId: request.id,
+						hydraHeadId: head.hydraHead.id,
+						peerConnected,
+					});
+					if (peerConnected === null || forcedHydra) headResolutionIndeterminate = true;
+					continue;
+				}
+				// A wallet held by an expired L2 body cannot lock until reconciliation
+				// proves that body dead. Not ready, like a down peer: auto falls to L1
+				// now; forced retries until payByTime fails it.
+				if (
+					isWalletHeldByExpiredL2Body({
+						pendingTransaction: hotWallet.PendingTransaction,
+						headClock: provider.getHeadClock(),
+						network: paymentContract.network,
+					})
+				) {
+					logger.info('L2 lock: head wallet is held by an expired L2 reservation; not routing to this head', {
+						requestId: request.id,
+						hydraHeadId: head.hydraHead.id,
+						walletId: hotWallet.id,
+					});
+					if (forcedHydra) headResolutionIndeterminate = true;
 					continue;
 				}
 				// A head exists for this pair — record it BEFORE the wallet-busy check so

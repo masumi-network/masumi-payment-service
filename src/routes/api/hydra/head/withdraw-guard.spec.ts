@@ -16,16 +16,24 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindHead = jest.fn() as AnyMock;
+const mockFindWithdrawals = jest.fn() as AnyMock;
 const mockGetHead = jest.fn() as AnyMock;
 const mockAssertReady = jest.fn() as AnyMock;
 const mockExecute = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),
+	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/auth', () => ({
 	adminAuthenticatedEndpointFactory: { build: (definition: unknown) => definition },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hydraHead: { findUnique: mockFindHead }, hydraDecommit: { findMany: jest.fn() } },
+	prisma: { hydraHead: { findUnique: mockFindHead }, hydraDecommit: { findMany: mockFindWithdrawals } },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -42,10 +50,11 @@ jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
 
 jest.unstable_mockModule('@/services/hydra-decommit/execute', () => ({ executeHydraDecommit: mockExecute }));
 
+let listWithdrawalsGet: { handler: (args: { input: unknown }) => Promise<unknown> };
 let withdrawHeadPost: { handler: (args: { input: unknown }) => Promise<unknown> };
 
 beforeAll(async () => {
-	({ withdrawHeadPost } = (await import('./withdraw')) as never);
+	({ withdrawHeadPost, listWithdrawalsGet } = (await import('./withdraw')) as never);
 });
 
 beforeEach(() => {
@@ -90,5 +99,19 @@ describe('withdrawHeadPost pre-flight', () => {
 		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({ statusCode: 400 });
 		expect(mockAssertReady).not.toHaveBeenCalled();
 		expect(mockExecute).not.toHaveBeenCalled();
+	});
+});
+
+describe('withdrawal list paging', () => {
+	it('resumes from an inclusive cursor in a fixed newest-first order', async () => {
+		mockFindHead.mockResolvedValue({ id: 'head-1' });
+		mockFindWithdrawals.mockResolvedValue([]);
+		await listWithdrawalsGet.handler({ input: { headId: 'head-1', limit: 10, cursorId: 'decommit-9' } });
+		expect(mockFindWithdrawals).toHaveBeenCalledWith({
+			where: { hydraHeadId: 'head-1' },
+			orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+			take: 10,
+			cursor: { id: 'decommit-9' },
+		});
 	});
 });

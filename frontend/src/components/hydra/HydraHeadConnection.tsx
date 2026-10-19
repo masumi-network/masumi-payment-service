@@ -7,104 +7,134 @@
  * was an action failing minutes later with a gateway timeout, which says
  * nothing about which of the two was missing.
  *
- * Checked on demand rather than polled. It costs a round trip to the Host, and
- * an operator asks it at one specific moment: when something looks stuck.
+ * Checked as soon as the head is opened, then again every few seconds only
+ * while it is not ready and its stage still permits an action. Asking by hand
+ * meant the dialog said "Not checked yet" at exactly the moment an operator
+ * opened it to find out.
  */
 
-import { useState } from 'react';
-import { getApiErrorToastMessage } from '@/lib/api-error';
 import { formatHydraNodeState } from '@/lib/display-labels';
-import { CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
-import { toast } from 'react-toastify';
-import { Badge } from '@/components/ui/badge';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
-import { useAppContext } from '@/lib/contexts/AppContext';
-import { readHydraHeadConnection, type HydraHeadConnection } from '@/lib/hooks/useHydraHeads';
+import { useHydraHeadReadiness } from '@/lib/hooks/useHydraHeads';
 import { NodeConnectionHint } from '@/components/hydra/hydra-hints';
+import { cn } from '@/lib/utils';
 
-export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
-  const { apiClient } = useAppContext();
-  const [state, setState] = useState<HydraHeadConnection | null>(null);
-  const [isChecking, setIsChecking] = useState(false);
+type Tone = 'ok' | 'warn' | 'unknown';
 
-  async function handleCheck() {
-    setIsChecking(true);
-    try {
-      setState(await readHydraHeadConnection(apiClient, { headId }));
-    } catch (error) {
-      toast.error(getApiErrorToastMessage(error, 'Failed to check the connection'));
-    } finally {
-      setIsChecking(false);
-    }
-  }
+const DOT_TONE: Record<Tone, string> = {
+  ok: 'bg-green-500',
+  warn: 'bg-amber-500',
+  unknown: 'bg-muted-foreground/40',
+};
+
+function StatusItem({ label, value, tone }: { label: string; value: string; tone: Tone }) {
+  return (
+    <div className="min-w-0 space-y-0.5">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="flex items-center gap-1.5 text-sm font-medium">
+        <span className={cn('h-2 w-2 shrink-0 rounded-full', DOT_TONE[tone])} aria-hidden />
+        <span className="truncate">{value}</span>
+      </p>
+    </div>
+  );
+}
+
+export function HydraHeadConnectionPanel({
+  headId,
+  poll,
+}: {
+  headId: string;
+  /** False once the head's stage permits no action: its node stays down. */
+  poll: boolean;
+}) {
+  const {
+    connection: state,
+    isFetching,
+    isError,
+    refetch,
+  } = useHydraHeadReadiness(headId, true, poll);
 
   const isHealthy = state !== null && state.connected && state.isReady;
 
   return (
-    <div className="space-y-3 rounded-md border p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h3 className="flex items-center gap-1.5 font-medium">
-            Connection
-            <NodeConnectionHint />
-          </h3>
-          {state !== null &&
-            (isHealthy ? (
-              <Badge variant="outline" className="text-green-600 dark:text-green-400">
-                <CheckCircle2 className="mr-1 h-3 w-3" />
-                Ready
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-amber-600 dark:text-amber-400">
-                <XCircle className="mr-1 h-3 w-3" />
-                Not ready
-              </Badge>
-            ))}
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => void handleCheck()}
-          disabled={isChecking}
-        >
-          {isChecking ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
+    <div className="space-y-3 rounded-lg border p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-sm font-medium">
+          Connection
+          <NodeConnectionHint />
+          {state !== null && (
+            <span
+              className={cn(
+                'ml-1 text-xs font-normal',
+                isHealthy
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-amber-600 dark:text-amber-400',
+              )}
+            >
+              {isHealthy ? 'Ready' : 'Not ready'}
+            </span>
           )}
-          Check
-        </Button>
+        </h3>
+        <div className="flex items-center gap-1">
+          {state !== null && (
+            <span className="text-xs text-muted-foreground">
+              {new Date(state.checkedAt).toLocaleTimeString()}
+            </span>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            aria-label="Check the connection again"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
+          </Button>
+        </div>
       </div>
 
       {state === null ? (
-        <p className="text-sm text-muted-foreground">Not checked yet.</p>
+        <p className="text-sm text-muted-foreground">
+          {isError ? 'Could not check the connection.' : 'Checking…'}
+        </p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {/* Reported separately because they fail independently and are fixed
               differently: a node that is down needs starting, a session that is
-              absent usually re-establishes on its own. */}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Node</span>
-            <span>{formatHydraNodeState(state.nodeState)}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Live session</span>
-            <span>{state.connected ? 'Connected' : 'Not connected'}</span>
-          </div>
-          {/* The only evidence available about the other side. Worth showing, and
-              worth not overstating: it says their node is up and in the cluster,
-              not that it has finished syncing the chain. */}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Counterparty node</span>
-            <span>
-              {state.peerConnected === true
-                ? 'Reachable'
-                : state.peerConnected === false
-                  ? 'Not reachable'
-                  : 'Not reported yet'}
-            </span>
+              absent usually re-establishes on its own. The counterparty reading
+              says their node is up and in the cluster, not that it is synced. */}
+          <div className="grid grid-cols-3 gap-3">
+            <StatusItem
+              label="Node"
+              value={formatHydraNodeState(state.nodeState)}
+              tone={state.nodeState === 'Unknown' ? 'unknown' : state.isReady ? 'ok' : 'warn'}
+            />
+            <StatusItem
+              label="Session"
+              value={state.connected ? 'Connected' : 'Not connected'}
+              tone={state.connected ? 'ok' : 'warn'}
+            />
+            <StatusItem
+              label="Counterparty"
+              value={
+                state.peerConnected === true
+                  ? 'Reachable'
+                  : state.peerConnected === false
+                    ? 'Not reachable'
+                    : 'Unknown'
+              }
+              tone={
+                state.peerConnected === true
+                  ? 'ok'
+                  : state.peerConnected === false
+                    ? 'warn'
+                    : 'unknown'
+              }
+            />
           </div>
           {state.reason !== null && (
             <HydraNotice tone="warn">
@@ -151,11 +181,6 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
               forever, so without this the operator sees work that stays pending
               against a head that reports itself healthy. */}
           {state.l2Blocked && <HydraNotice tone="warn">{state.l2Blocked}</HydraNotice>}
-          {/* When this was read, not something that was read. Set apart so it
-              stops scanning as another row of the list above it. */}
-          <p className="border-t pt-2 text-xs text-muted-foreground">
-            Checked {new Date(state.checkedAt).toLocaleTimeString()}.
-          </p>
         </div>
       )}
     </div>

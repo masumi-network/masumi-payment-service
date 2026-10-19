@@ -17,6 +17,7 @@ import { z } from '@masumi/payment-core/zod';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
 import { HydraInviteRole, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
 import {
@@ -25,10 +26,14 @@ import {
 	HydraHostRequestError,
 	removeHostNode,
 } from '@/services/hydra-host/client';
-import { MIN_UNSYNCED_PERIOD_SECONDS } from '@/services/hydra-invite/provisioning';
+import {
+	CONTESTATION_PERIOD_BOUNDS_SECONDS,
+	DEPOSIT_PERIOD_BOUNDS_SECONDS,
+	MIN_UNSYNCED_PERIOD_SECONDS,
+} from '@/services/hydra-invite/provisioning';
 import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
-import { releaseReservedParticipants } from '@/services/hydra-invite/release-reservation';
+import { canRemoveReservedHostNode, releaseReservedParticipants } from '@/services/hydra-invite/release-reservation';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
 import { inspectExchangeNetwork } from '@/services/hydra-invite/exchange-client';
 import {
@@ -182,8 +187,8 @@ export const createInviteSchemaInput = z.object({
 		// time was often already past the deadline: every deposit expired without
 		// the node ever considering it. Five minutes keeps the window wider than
 		// the lag that closes it.
-		.min(300)
-		.max(86_400)
+		.min(DEPOSIT_PERIOD_BOUNDS_SECONDS.min)
+		.max(DEPOSIT_PERIOD_BOUNDS_SECONDS.max)
 		.optional()
 		.describe(
 			"How long a deposit must settle before this head will take it — and, since this service always keeps hydra-node 2.4's deposit-activation equal to this same value, also how long before the deposit matures. Both nodes run the value signed here. A top-up is unusable until it matures, absorbable for one period after that, and cannot be recovered until two periods after it matures. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.",
@@ -202,11 +207,11 @@ export const createInviteSchemaInput = z.object({
 		// exactly the 120s limit and no room; the extra minute buys margin on the
 		// side where being wrong means a head that flaps out of sync and refuses
 		// commands for what looks like a fault.
-		.min(300)
+		.min(CONTESTATION_PERIOD_BOUNDS_SECONDS.min)
 		// Two weeks. Long windows are the safe direction — a head can settle over
 		// several transactions, and the window has to cover a node being down for
 		// a real outage rather than a slow block.
-		.max(1_209_600)
+		.max(CONTESTATION_PERIOD_BOUNDS_SECONDS.max)
 		.optional()
 		.describe(
 			'How long after closing the head anyone may dispute the final state. Nobody can settle on chain until it elapses, so it is also the wait between closing a head and getting the funds back. Longer is the safe direction: it is the only protection against a counterparty closing on a stale state while your node is down, and settling can take several transactions. Defaults to 5 days on mainnet and 12 hours on preprod.',
@@ -245,7 +250,8 @@ export const createInvitePost = adminAuthenticatedEndpointFactory.build({
 			unsyncedPeriodSeconds: input.unsyncedPeriodSeconds,
 			ttlMs: input.ttlHours === undefined ? INVITE_TTL_MS : input.ttlHours * 60 * 60 * 1000,
 		});
-		logger.info(`hydra: minted invite ${minted.nonce}`);
+		// Log the row id, never the nonce: an unspent nonce is redeemable by anyone who reads it.
+		logger.info(`hydra: minted invite ${minted.inviteId}`);
 		return {
 			id: minted.inviteId,
 			nonce: minted.nonce,
@@ -471,10 +477,11 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		// could start the node we are about to delete.
 		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
 		try {
-			await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
-				force: false,
-				...transport,
-			});
+			if (await canRemoveReservedHostNode(invite.hydraHostId, invite.hostNodeId))
+				await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
+					force: false,
+					...transport,
+				});
 		} catch (error) {
 			// A node the Host no longer has is the outcome this asks for — the same
 			// tolerance the reaper and the adoption discard already have. Without it
@@ -515,11 +522,11 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		});
 		if (release.retained > 0) {
 			logger.warn(
-				`hydra: invite ${invite.nonce} was revoked but ${release.retained} node reservation(s) still hold funds; ` +
+				`hydra: invite ${nonceLogRef(invite.nonce)} was revoked but ${release.retained} node reservation(s) still hold funds; ` +
 					'they are kept until a later sweep settles them',
 			);
 		}
-		logger.info(`hydra: revoked invite ${invite.nonce}`);
+		logger.info(`hydra: revoked invite ${nonceLogRef(invite.nonce)}`);
 		return { id: updated.id, status: updated.status };
 	},
 });

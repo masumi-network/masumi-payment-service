@@ -228,7 +228,7 @@ describe('deleteHydraLocalParticipant', () => {
 		expect(mockDeleteSecret).not.toHaveBeenCalled();
 	});
 
-	it('deletes a participant whose node has no key to sweep', async () => {
+	it('retains a participant whose Cardano key is only on the Host', async () => {
 		mockFindLocal.mockResolvedValue({
 			hydraHeadId: null,
 			hydraSecretKeyId: 'local-key',
@@ -242,8 +242,8 @@ describe('deleteHydraLocalParticipant', () => {
 			code: 'no-key',
 		});
 
-		await expect(deleteHydraLocalParticipant('local-1')).resolves.toBeUndefined();
-		expect(mockDeleteSecret).toHaveBeenCalledWith({ where: { id: 'local-key' } });
+		await expect(deleteHydraLocalParticipant('local-1')).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockDeleteSecret).not.toHaveBeenCalled();
 	});
 
 	it('rejects a Final participant head until reconciliation is durably complete', async () => {

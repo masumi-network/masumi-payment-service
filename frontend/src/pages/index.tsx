@@ -55,6 +55,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 import { FinancialReportSection } from '@/components/dashboard/FinancialReportSection';
+import { ServiceReleaseLine } from '@/components/release/ServiceReleaseLine';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { useViewportRemainingHeight } from '@/lib/hooks/useViewportRemainingHeight';
@@ -236,6 +237,7 @@ export default function Overview() {
                   </>
                 )}
               </p>
+              <ServiceReleaseLine />
             </div>
 
             {capabilities.canAdmin && (

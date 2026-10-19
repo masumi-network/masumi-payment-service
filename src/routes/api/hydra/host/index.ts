@@ -10,6 +10,7 @@ import { adminAuthenticatedEndpointFactory, type AuthContext } from '@masumi/pay
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth-middleware';
 import { z } from '@masumi/payment-core/zod';
 import { HydraHostStatus, Network } from '@/generated/prisma/client';
+import { describedReleaseSchema } from '@/routes/api/release-status';
 import {
 	deleteHydraHost,
 	listHydraHosts,
@@ -32,12 +33,17 @@ export const hydraHostSchema = z
 		/** Presence only — the token itself is never returned. */
 		hasAdminToken: z.boolean(),
 		hydraVersion: z.string().nullable(),
+		release: describedReleaseSchema.describe('Project release of the Host image, as of the last Check'),
 		scriptCatalogueHash: z.string().nullable(),
 		ledgerParamsHash: z.string().nullable(),
 		status: z.nativeEnum(HydraHostStatus),
 		lastHealthAt: z.string().nullable(),
-		lastHealthError: z.string().nullable(),
+		lastHealthError: z
+			.string()
+			.nullable()
+			.describe('Why the last probe failed: one failed check per line. Null when it passed'),
 		participantCount: z.number(),
+		pausedAt: z.string().nullable().describe('Set while the Host is paused for maintenance'),
 	})
 	.openapi('HydraHost');
 

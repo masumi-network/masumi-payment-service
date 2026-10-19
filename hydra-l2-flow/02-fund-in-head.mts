@@ -20,7 +20,8 @@ const MASUMI_ADDR = process.argv[2];
 const AMOUNT = process.argv[3] ?? '60000000';
 const NETWORK = process.env.HYDRA_FLOW_NETWORK ?? 'devnet';
 const ALICE_FUNDS_SK = NETWORK === 'preprod' ? '/keys/purchasing-cardano.sk' : '/devnet/credentials/alice-funds.sk';
-const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
+const CARDANO_NODE_IMAGE =
+	'ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2';
 
 function derivePurchasingAddr(): string {
 	const preprodDir = join(process.cwd(), 'hydra-l2-flow', 'preprod');

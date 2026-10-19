@@ -79,6 +79,8 @@ let store: NodeRegistryStore;
 let host: Server;
 let baseUrl: string;
 let node: FakeNode;
+let tickCalls: number;
+let releaseTick: () => void;
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-proxy-'));
@@ -86,6 +88,10 @@ beforeEach(async () => {
 	store = new NodeRegistryStore(dataDir);
 	await store.write(record({ apiPort: node.port }));
 
+	tickCalls = 0;
+	const held = new Promise<void>((resolve) => {
+		releaseTick = resolve;
+	});
 	const config = { ...loadHostConfig(env), dataDir };
 	const ports = new PortAllocator(config.ports);
 	host = createControlPlane({
@@ -93,11 +99,19 @@ beforeEach(async () => {
 		store,
 		exchange: new ExchangeStore(dataDir),
 		ports,
-		supervisor: { tick: async () => undefined } as unknown as Supervisor,
+		// Held open until afterEach, so the record keeps the state the API left it
+		// in: the window between a request and the supervisor acting on it.
+		supervisor: {
+			tick: () => {
+				tickCalls += 1;
+				return held;
+			},
+		} as unknown as Supervisor,
 		provision: {
 			store,
 			ports,
 			advertiseFor: (p) => `hydra1.example.com:${p}`,
+			checkPeerTarget: async () => null,
 			newNodeId: () => 'node-x',
 			now: () => new Date(),
 		} as ProvisionDeps,
@@ -108,6 +122,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	releaseTick();
 	await new Promise<void>((resolve) => host.close(() => resolve()));
 	await new Promise<void>((resolve) => node.server.close(() => resolve()));
 	await fs.rm(dataDir, { recursive: true, force: true });
@@ -275,7 +290,84 @@ describe('node api websocket proxy', () => {
 		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
 	});
 
+	// The upgrade gate only refuses new sessions. A session opened before the
+	// request would keep forwarding commands until the supervisor drains the node.
+	it.each(['stop', 'restart'])('cuts a session that was already open when %s is requested', async (action) => {
+		const upstream = await upgradeableNode();
+		await store.update('node-1', (current) => ({ ...current, apiPort: upstream.port }));
+		const WebSocket = (await import('ws')).default;
+		const socket = new WebSocket(`${baseUrl.replace('http', 'ws')}/v1/nodes/node-1/api`, {
+			headers: { Authorization: `Bearer ${USER}` },
+		} as never);
+		const closed = new Promise<void>((resolve) => socket.on('close', () => resolve()));
+		await new Promise<void>((resolve) => socket.on('message', () => resolve()));
+
+		expect((await call('POST', `/v1/nodes/node-1/${action}`, ADMIN)).status).toBe(202);
+
+		await closed;
+		await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+	});
+
 	it('rejects an upgrade on any path other than the api root', async () => {
 		expect((await connect('/v1/nodes/node-1/api/config', USER)).status).toBe(404);
+	});
+});
+
+// The API kicks the supervisor without waiting, so after a stop or restart the
+// record stays `Running` until a tick drains the node. A command admitted in
+// that window lands on a node the operator has already taken away.
+describe('admission while a stop or restart is pending', () => {
+	const connect = async (url: string, token: string): Promise<number | null> => {
+		const WebSocket = (await import('ws')).default;
+		return new Promise((resolve) => {
+			const socket = new WebSocket(`${baseUrl.replace('http', 'ws')}${url}`, {
+				headers: { Authorization: `Bearer ${token}` },
+			} as never);
+			socket.on('open', () => {
+				socket.close();
+				resolve(null);
+			});
+			socket.on('unexpected-response', (_req: unknown, res: { statusCode?: number }) =>
+				resolve(res.statusCode ?? null),
+			);
+			socket.on('error', () => resolve(null));
+		});
+	};
+
+	beforeEach(async () => {
+		await store.update('node-1', (current) => ({
+			...current,
+			lastObservation: {
+				checkedAt: '2026-07-28T11:05:00.000Z',
+				responsive: true,
+				chainSynced: true,
+				drift: 'Healthy',
+				driftSeconds: 0,
+			},
+		}));
+	});
+
+	it.each([
+		['stop', 'stopping'],
+		['restart', 'restarting'],
+	])('refuses new requests on every gate as soon as %s is requested', async (action, reason) => {
+		expect(((await (await call('GET', '/v1/nodes/node-1/health', USER)).json()) as { usable: boolean }).usable).toBe(
+			true,
+		);
+
+		expect((await call('POST', `/v1/nodes/node-1/${action}`, ADMIN)).status).toBe(202);
+		expect(tickCalls).toBeGreaterThan(0);
+		expect((await store.read('node-1'))?.state).toBe('Running');
+
+		const health = (await (await call('GET', '/v1/nodes/node-1/health', USER)).json()) as { usable: boolean };
+		expect(health.usable).toBe(false);
+
+		const proxied = await call('GET', '/v1/nodes/node-1/api/head', USER);
+		expect(proxied.status).toBe(409);
+		expect((await proxied.json()) as { error: string }).toMatchObject({
+			error: expect.stringContaining(reason) as unknown as string,
+		});
+		expect(await connect('/v1/nodes/node-1/api', USER)).toBe(409);
+		expect(node.received).toHaveLength(0);
 	});
 });

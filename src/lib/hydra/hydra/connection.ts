@@ -208,6 +208,9 @@ export class Connection extends EventEmitter {
 		websocket.removeAllListeners('message');
 		if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
 			try {
+				// A socket paused for backpressure never reads the peer's close frame,
+				// and lingers until ws's close timeout destroys it.
+				websocket.resume();
 				websocket.close(1011);
 			} catch {
 				// The failed socket is already unusable; generation invalidation is enough.
@@ -281,6 +284,19 @@ export class Connection extends EventEmitter {
 
 	isOpen(): boolean {
 		return this._status === HydraHeadStatus.Connected;
+	}
+
+	/**
+	 * Stop reading frames from the current socket until `resumeReceiving`.
+	 * Backpressure for a consumer that cannot keep up; a replacement socket
+	 * starts reading regardless.
+	 */
+	pauseReceiving(): void {
+		this._websocket?.pause();
+	}
+
+	resumeReceiving(): void {
+		this._websocket?.resume();
 	}
 
 	invalidate(error: Error): void {
@@ -373,6 +389,8 @@ export class Connection extends EventEmitter {
 
 async function closeWebSocketGracefully(websocket: WebSocket): Promise<void> {
 	if (websocket.readyState === WebSocket.CLOSED) return;
+	// Paused for backpressure, it would not read the close handshake it waits for.
+	websocket.resume();
 
 	await new Promise<void>((resolve) => {
 		let settled = false;

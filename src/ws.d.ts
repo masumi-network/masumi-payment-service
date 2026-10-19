@@ -26,5 +26,8 @@ declare module 'ws' {
 		send(data: string): void;
 		close(code?: number, data?: string | Buffer): void;
 		terminate(): void;
+		/** Stop reading from the socket; a no-op while connecting or closed. */
+		pause(): void;
+		resume(): void;
 	}
 }

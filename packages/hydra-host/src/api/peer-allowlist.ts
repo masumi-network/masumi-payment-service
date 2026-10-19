@@ -158,6 +158,8 @@ export function renderNftables(allowlist: ResolvedPeerAllowlist, peerRange: { st
 		throw new Error('peer port range is invalid');
 	}
 	const last = peerRange.start + peerRange.count - 1;
+	// nft rejects a zero-size interval such as 5001-5001.
+	const range = last === peerRange.start ? `${last}` : `${peerRange.start}-${last}`;
 	const renderChain = (name: 'input' | 'forward'): string[] => {
 		const chain = [`\tchain ${name} {`, `\t\ttype filter hook ${name} priority filter; policy accept;`, ''];
 		for (const rule of allowlist.rules) {
@@ -179,7 +181,7 @@ export function renderNftables(allowlist: ResolvedPeerAllowlist, peerRange: { st
 			'',
 			'\t\t# Everything else in the peer range, including ports whose node was',
 			'\t\t# removed, is refused.',
-			`\t\ttcp dport ${peerRange.start}-${last} drop`,
+			`\t\ttcp dport ${range} drop`,
 			'\t}',
 		);
 		return chain;

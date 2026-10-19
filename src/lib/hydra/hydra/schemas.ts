@@ -2,6 +2,7 @@ import { z } from '@masumi/payment-core/zod';
 
 import { HydraScriptLanguage, HydraTransactionType } from './types';
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './snapshot-limits';
 
 export const MAX_HYDRA_WS_FRAME_BYTES = 4 * 1024 * 1024;
 // Mainnet's maxTxSize is normally 16 KiB. Allow protocol-parameter headroom,
@@ -10,7 +11,9 @@ export const MAX_HYDRA_WS_FRAME_BYTES = 4 * 1024 * 1024;
 const MAX_HYDRA_TRANSACTION_CBOR_HEX_LENGTH = 128 * 1024;
 const MAX_HYDRA_TRANSACTION_DESCRIPTION_LENGTH = 1024;
 const MAX_HYDRA_CONFIRMED_TRANSACTIONS_PER_FRAME = 1024;
-export const MAX_HYDRA_SNAPSHOT_OUTPUTS = 4095;
+/** A head has at most this many parties, so a round has at most this many signatures. */
+const MAX_HYDRA_HEAD_PARTIES = 128;
+export { MAX_HYDRA_SNAPSHOT_OUTPUTS };
 
 const boundedTagSchema = z.string().min(1).max(64);
 const boundedHeadIdSchema = z.string().min(1).max(128);
@@ -325,6 +328,31 @@ export const hydraConfirmedSnapshotSchema = z.union([
 	}),
 	z.looseObject({ tag: z.literal('InitialSnapshot'), headId: z.string() }),
 ]);
+
+/**
+ * `GET /snapshot/last-seen`: the node's view of the snapshot round in flight.
+ * Only the fields that identify a round are read. Any tag is accepted, because
+ * an unknown tag must still count as a round in flight, never as idle.
+ */
+export const hydraLastSeenSnapshotSchema = z.looseObject({
+	tag: z.string().max(64),
+	lastSeen: z.number().int().nonnegative().optional(),
+	requested: z.number().int().nonnegative().optional(),
+	snapshot: z
+		.looseObject({
+			headId: z.string().max(128).optional(),
+			number: z.number().int().nonnegative(),
+			confirmed: z
+				.array(z.looseObject({ txId: z.string().regex(/^[0-9a-fA-F]{64}$/) }))
+				.max(MAX_HYDRA_SNAPSHOT_OUTPUTS)
+				.optional(),
+		})
+		.optional(),
+	signatories: z
+		.record(z.string().max(128), z.string().max(256))
+		.refine((signatories) => Object.keys(signatories).length <= MAX_HYDRA_HEAD_PARTIES)
+		.optional(),
+});
 
 // Loose, like the rest of the replay path: an added sibling field must not wedge
 // a running head, and the vkey below stays required so a rename is still caught.

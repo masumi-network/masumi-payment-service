@@ -17,10 +17,11 @@
 # stays shut even if someone adds `network_mode: host`. The monitoring range has
 # no such protection, which is why HYDRA_HOST_MONITORING_ENABLED defaults off.
 #
-# To expose the peer range, first apply the generated nftables ruleset, then add
-# `-f docker-compose.public-peer.yml`. That override requires an explicit
-# firewall acknowledgement. Re-apply the rules whenever membership or DNS
-# changes. Never publish this range from this base file.
+# To expose the peer range, first run `hydra-peer-firewall baseline`, then add
+# `-f docker-compose.public-peer.yml`. That override requires the acknowledgement
+# printed by `hydra-peer-firewall verify`. Run `hydra-peer-firewall refresh`
+# whenever membership or DNS changes. Never publish this range from this base
+# file.
 
 services:
   hydra-host:
@@ -32,6 +33,11 @@ services:
       context: ../..
       dockerfile: packages/hydra-host/Dockerfile
     restart: unless-stopped
+
+    # Required, no default: size it for the number of heads this Host runs,
+    # for example 4g. It caps what a flood on the peer plane can take from the
+    # machine. Compose rejects an empty value, so there is no "unset" form.
+    mem_limit: ${HYDRA_HOST_MEMORY_LIMIT:?set a memory limit, for example 4g}
 
     ports:
       - '127.0.0.1:8443:8443'
@@ -95,6 +101,9 @@ services:
       # to bind the Prometheus server to loopback, so enabling it publishes head
       # status, snapshot numbers and peer liveness with no authentication.
       HYDRA_HOST_MONITORING_ENABLED: ${HYDRA_HOST_MONITORING_ENABLED:-false}
+      # Peers must resolve to public addresses unless this is true. Set it only
+      # when the counterparties' nodes really sit on a private network.
+      HYDRA_HOST_ALLOW_PRIVATE_PEERS: ${HYDRA_HOST_ALLOW_PRIVATE_PEERS:-false}
 
     volumes:
       # Real block storage, not a network filesystem: this holds a SQLite event

@@ -15,7 +15,8 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 
 const NETWORK = process.env.HYDRA_FLOW_NETWORK ?? 'devnet';
 const PREPROD_DIR = join(process.cwd(), 'hydra-l2-flow', 'preprod');
-const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
+const CARDANO_NODE_IMAGE =
+	'ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2';
 
 function log(m: string) {
 	console.log(`[open] ${new Date().toISOString().slice(11, 19)} ${m}`);

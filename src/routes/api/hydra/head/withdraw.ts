@@ -5,9 +5,11 @@ import { logger } from '@masumi/payment-core/logger';
 import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { executeHydraDecommit } from '@/services/hydra-decommit/execute';
+import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
+import { newestFirstOrder } from '@/routes/api/hydra/head/newest-first-cursor';
 
 export const withdrawInput = z.object({
 	headId: z.string().describe('The Hydra head to withdraw from'),
@@ -46,6 +48,10 @@ export const withdrawOutput = z.object({
 
 export const listWithdrawalsInput = z.object({
 	headId: z.string().describe('The Hydra head whose withdrawals to list'),
+	cursorId: z
+		.string()
+		.optional()
+		.describe('Inclusive cursor: the id of the last row already seen. It is returned again first.'),
 	limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 
@@ -116,8 +122,9 @@ export const listWithdrawalsGet = adminAuthenticatedEndpointFactory.build({
 
 		const rows = await prisma.hydraDecommit.findMany({
 			where: { hydraHeadId: input.headId },
-			orderBy: { createdAt: 'desc' },
+			orderBy: newestFirstOrder,
 			take: input.limit,
+			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 		});
 		return {
 			withdrawals: rows.map((row) => ({
@@ -203,6 +210,7 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, `Cannot withdraw: head status is ${head.status}, expected Open`);
 		}
 		if (!head.LocalParticipant) throw createHttpError(400, 'Head has no local participant');
+		await assertHydraHeadHostNotPaused(input.headId);
 		if (!head.headIdentifier) {
 			throw createHttpError(409, 'Cannot withdraw before the Hydra head identifier has been observed');
 		}

@@ -1,25 +1,39 @@
-# Explicit peer-plane exposure for the compose rig. Use only after applying the
-# complete ruleset returned by authenticated GET /v1/peer-allowlist on the
-# Docker host.
+# Explicit peer-plane exposure for the compose rig. Use only behind a verified
+# peer ruleset on the Docker host, applied by
+# packages/hydra-host/scripts/hydra-peer-firewall (see
+# docs/hydra-host-deploy-droplet.md for install and settings).
 #
 # Start/reload sequence:
-#   1. Save the `nftables` response field to a root-owned file.
-#   2. Run `nft -c -f FILE`, then `nft -f FILE`.
-#   3. Set HYDRA_HOST_PEER_FIREWALL_ACK and start with this override.
-#   4. Repeat steps 1-2 whenever peer membership or DNS changes.
+#   1. `sudo hydra-peer-firewall baseline` refuses the whole peer range.
+#   2. Start with the acknowledgement taken from the verifier, so the first
+#      `up` refuses to run unless the loaded ruleset was just verified:
+#        HYDRA_HOST_PEER_FIREWALL_ACK="$(sudo hydra-peer-firewall verify)" \
+#          docker compose -f docker-compose.yml -f docker-compose.public-peer.yml up -d
+#   3. `sudo hydra-peer-firewall refresh` opens each peered port. Run it on the
+#      hydra-peer-firewall.timer, and again after every provision, invite
+#      redemption, node removal or DNS change.
+#
+#   4. Enable hydra-peer-firewall-baseline.service. Docker bakes the
+#      acknowledgement into the container once, at `up`, and restarts the
+#      container at boot without asking again. That unit refuses the range
+#      before docker.service starts.
+#
+# The acknowledgement is a fixed string, so it records the order of operations
+# and does not prove anything a typed value could not. Steps 1 and 4 are the
+# real gate.
 #
 # This file, and the acknowledgement it requires, exist only for compose.
-# HYDRA_HOST_PEER_FIREWALL_ACK is read by nothing in the Host, so a plain
-# `docker run`, a systemd unit or native mode gets no such gate: steps 1-2 and
-# the machine's own firewall are the whole of the protection there. See
-# docs/hydra-host-deploy-droplet.md for that path.
+# HYDRA_HOST_PEER_FIREWALL_ACK is read by nothing in the Host. A systemd unit
+# gets the same gate from `ExecStartPre=hydra-peer-firewall baseline`; native
+# mode and a plain `docker run` get it only if the operator runs the script.
 
 services:
   hydra-host:
     environment:
-      # Required acknowledgement. The value is not a secret; its purpose is to
-      # make unauthenticated exposure an explicit deployment choice.
-      HYDRA_HOST_PEER_FIREWALL_ACK: ${HYDRA_HOST_PEER_FIREWALL_ACK:?apply the peer nftables rules first}
+      # Required acknowledgement. `hydra-peer-firewall verify` prints a value
+      # only when the loaded ruleset refuses the peer range on both hooks, so an
+      # empty value means the firewall is not verified.
+      HYDRA_HOST_PEER_FIREWALL_ACK: ${HYDRA_HOST_PEER_FIREWALL_ACK:?set it from hydra-peer-firewall verify}
     ports:
       # Must match HYDRA_HOST_PEER_PORT_START and _COUNT in the base file.
       - '${HYDRA_HOST_PEER_BIND_IP:-0.0.0.0}:5001-5032:5001-5032'

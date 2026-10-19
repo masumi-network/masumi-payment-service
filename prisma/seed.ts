@@ -1,11 +1,4 @@
-import {
-	ApiKeyStatus,
-	HotWalletType,
-	Network,
-	PaymentSourceType,
-	PrismaClient,
-	RPCProvider,
-} from '../src/generated/prisma/client';
+import { HotWalletType, Network, PaymentSourceType, PrismaClient, RPCProvider } from '../src/generated/prisma/client';
 import dotenv from 'dotenv';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { encrypt } from './../src/utils/security/encryption';
@@ -17,7 +10,6 @@ import {
 	getRegistryScriptV2,
 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { MeshWallet } from '@meshsdk/core';
 
 import { Pool } from 'pg';
@@ -31,6 +23,8 @@ import {
 	validatePreprodSeedPrerequisites,
 	type ResolvedMnemonic,
 } from './seed.validation';
+import { resolveAdminKey, seedAdminKey } from './seed.admin-key';
+import { confirmPublicSecrets, listPublicSecrets } from './seed.public-secrets';
 
 dotenv.config();
 const connectionString = process.env.DATABASE_URL;
@@ -132,77 +126,11 @@ export const seed = async (prisma: PrismaClient) => {
 	const blockfrostApiKeyPreprod = process.env.BLOCKFROST_API_KEY_PREPROD!.trim();
 	const encryptionKey = process.env.ENCRYPTION_KEY!.trim();
 
-	let adminKey = process.env.ADMIN_KEY;
-	let usedDefaultAdminKey = false;
-
-	if (!adminKey) {
-		adminKey = DEFAULTS.DEFAULT_ADMIN_KEY;
-		usedDefaultAdminKey = true;
-
-		console.warn('****************************************************');
-		console.warn('**  WARNING: Using DEFAULT ADMIN_KEY for seeding!  **');
-		console.warn('**  This is INSECURE. Set ADMIN_KEY in your .env!  **');
-		console.warn('****************************************************');
+	const adminKey = resolveAdminKey(process.env.ADMIN_KEY);
+	if (!(await confirmPublicSecrets(listPublicSecrets(adminKey, encryptionKey)))) {
+		throw new Error('Seed aborted: the public ADMIN_KEY / ENCRYPTION_KEY was not confirmed');
 	}
-	if (!adminKey || adminKey.length < 15) {
-		console.error('ADMIN_KEY is insecure, ensure it is at least 15 characters long');
-		throw Error('API-KEY is insecure');
-	}
-
-	const adminKeyHash = await generateApiKeySecureHash(adminKey);
-	// SECURITY: Refuse to seed the public DEFAULT_ADMIN_KEY when an admin
-	// already exists. Without this guard, an operator who provisioned a real
-	// ADMIN_KEY, then later ran the seed script without that env var set,
-	// would silently add a SECOND admin key (the public default) alongside
-	// their real one — creating a public backdoor. The default is intended
-	// as a bootstrap convenience for first-time empty deployments only.
-	let skipAdminKeyUpsert = false;
-	if (usedDefaultAdminKey) {
-		const existingAdminCount = await prisma.apiKey.count({
-			where: { canAdmin: true, status: ApiKeyStatus.Active },
-		});
-		if (existingAdminCount > 0) {
-			console.warn('****************************************************');
-			console.warn('**  REFUSING to seed DEFAULT_ADMIN_KEY — an admin **');
-			console.warn('**  key already exists. Set ADMIN_KEY in .env to  **');
-			console.warn('**  manage admin credentials explicitly.          **');
-			console.warn('****************************************************');
-			skipAdminKeyUpsert = true;
-		}
-	}
-	if (!skipAdminKeyUpsert) {
-		await prisma.apiKey.upsert({
-			create: {
-				encryptedToken: encrypt(adminKey),
-				tokenHash: adminKeyHash,
-				token: '*****' + adminKey.slice(-4),
-				// Flag-based permissions (new system)
-				canRead: true,
-				canPay: true,
-				canAdmin: true,
-				status: ApiKeyStatus.Active,
-				// networkLimit is now a NOT NULL CAIP-2 String[] with no DB default (the
-				// x402 migration dropped it). Admin keys store an empty list — auth grants
-				// all networks regardless — mirroring addAPIKeyEndpointPost (`isAdmin ? []`).
-				// Backwards compatible: the legacy Network[] column also defaulted to empty.
-				networkLimit: [],
-			},
-			update: {
-				encryptedToken: encrypt(adminKey),
-				token: '*****' + adminKey.slice(-4),
-				canRead: true,
-				canPay: true,
-				canAdmin: true,
-				status: ApiKeyStatus.Active,
-			},
-			where: { tokenHash: adminKeyHash },
-		});
-		if (usedDefaultAdminKey) {
-			console.log('Seeded with DEFAULT_ADMIN_KEY');
-		} else {
-			console.log('ADMIN_KEY seeded successfully');
-		}
-	}
+	await seedAdminKey(prisma, adminKey);
 
 	let collectionWalletPreprodAddress: string | null | undefined = process.env.COLLECTION_WALLET_PREPROD_ADDRESS;
 	const purchaseWalletPreprodResolved = resolveMnemonic(

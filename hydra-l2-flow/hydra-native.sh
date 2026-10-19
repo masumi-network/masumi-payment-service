@@ -32,15 +32,17 @@
 #   ./hydra-native.sh drift [n] # print node n's current drift in seconds (default node 1)
 #   ./hydra-native.sh status    # show node/bridge/API state
 #   ./hydra-native.sh publish   # (re)publish HYDRA_VERSION reference scripts natively -> $DEMO/.env
-#   ./hydra-native.sh bin       # ensure native binary is present (download if missing)
+#   ./hydra-native.sh bin       # ensure a verified native binary (download if missing;
+#                               # refuses one that fails its .sha256 record)
 #
 # Testing an unreleased fix (e.g. master, ahead of the pinned HYDRA_VERSION
 # tag) without disturbing the pinned binary:
 #   HYDRA_BIN_TAG=master-6e2754c \
 #   HYDRA_BIN_RUN_ID=28878987397 \
 #   HYDRA_BIN_ARTIFACT=hydra-aarch64-darwin-2.4.1-46-g6e2754c5a \
+#   HYDRA_BIN_TAG_SHA256=<sha256 of the extracted hydra-node> \
 #     ./hydra-native.sh bin
-#   # then pass the same three env vars to `up`/`restart`/etc. to run against it.
+#   # then pass the same env vars to `up`/`restart`/etc. to run against it.
 #
 set -uo pipefail
 
@@ -86,6 +88,10 @@ HYDRA_BIN_ARTIFACT="${HYDRA_BIN_ARTIFACT:-hydra-aarch64-darwin-${HYDRA_VERSION}}
 # artifact; the binary lands at .bin/hydra-node-<tag> and is left in place for
 # reuse/rollback.
 HYDRA_BIN_TAG="${HYDRA_BIN_TAG:-}"
+# Required with HYDRA_BIN_TAG: sha256 of the extracted hydra-node binary. No
+# default, because each tag is a different build. Measure it once from a
+# trusted download (`shasum -a 256 hydra-node`) and pass it explicitly.
+HYDRA_BIN_TAG_SHA256="${HYDRA_BIN_TAG_SHA256:-}"
 
 NETWORK="${NETWORK:-devnet}"   # devnet | preprod
 PREPROD_DIR="${PREPROD_DIR:-$REPO/hydra-l2-flow/preprod}"
@@ -105,7 +111,7 @@ STATE="${STATE:-$REPO/hydra-l2-flow/.native-state}"
 BRIDGE_NAME="${BRIDGE_NAME:-hydra-n2c-bridge}"
 BRIDGE_PORT="${BRIDGE_PORT:-3333}"
 HOST_SOCKET="${HOST_SOCKET:-$STATE/node.socket}"
-CARDANO_IMAGE="${CARDANO_IMAGE:-ghcr.io/intersectmbo/cardano-node:10.6.2}"
+CARDANO_IMAGE="${CARDANO_IMAGE:-ghcr.io/intersectmbo/cardano-node:10.6.2@sha256:c3cbc5aa0b758ba211567791539a67001e661fbe7a09275e37449e8b1252c4b2}"
 
 # macOS ships libiconv only in the dyld shared cache; the nix-built binary
 # hardcodes a /nix/store libiconv path, so point dyld at /usr/lib by leaf name.
@@ -126,96 +132,12 @@ assert_persistence_rotation_disabled(){
 mkdir -p "$STATE" "$BIN_DIR"
 
 # ── native binary ────────────────────────────────────────────────────────────
-
-# Resolve the commit a release tag points at, for the CI-artifact fallback
-# below. Hydra's release tags are annotated, so the ref's object is a tag
-# object one hop away from the actual commit; fall back to the ref's own sha
-# if that second hop fails (a lightweight tag, or an API shape change).
-resolve_tag_commit(){
-  local tag="$1" ref_sha commit_sha
-  ref_sha="$(gh api "repos/cardano-scaling/hydra/git/refs/tags/${tag}" --jq '.object.sha' 2>/dev/null)" || return 1
-  commit_sha="$(gh api "repos/cardano-scaling/hydra/git/tags/${ref_sha}" --jq '.object.sha' 2>/dev/null)"
-  echo "${commit_sha:-$ref_sha}"
-}
-
-ensure_bin(){
-  if [ -x "$NATIVE_BIN" ]; then
-    repair_dylibs
-    return 0
-  fi
-  command -v gh >/dev/null 2>&1 || { c_red "missing: gh (needed to download the native binary)"; exit 1; }
-  local tmp; tmp="$(mktemp -d)"
-  if [ -n "$HYDRA_BIN_TAG" ]; then
-    c_blu "Downloading native $HYDRA_BIN_ARTIFACT (CI artifact, ~176 MiB)…"
-    gh run download "$HYDRA_BIN_RUN_ID" --repo cardano-scaling/hydra \
-      --name "$HYDRA_BIN_ARTIFACT" --dir "$tmp" || { c_red "download failed"; exit 1; }
-  else
-    # Tagged releases published a release-zip asset through 2.3.0. 2.4.0 and
-    # 2.4.1 publish none at all (`gh release view <tag> --repo
-    # cardano-scaling/hydra --json assets` returns `[]` for both, verified
-    # for 2.4.1 — see docs/hydra-2.4.1-upgrade-runbook.md). Try the release
-    # asset first regardless, since upstream could resume attaching one to a
-    # future tag, and only fall back to a CI artifact — the same mechanism
-    # HYDRA_BIN_TAG uses above — when there genuinely is none: resolve the
-    # commit the tag points at, and pull the aarch64-darwin artifact from
-    # that commit's own "Binaries" workflow run (for 2.4.1, commit
-    # 099f5dd775d8640047d0074edef294c1b39a600d, run 33660882209 — verified,
-    # see docs/hydra-2.4.1-upgrade-runbook.md).
-    c_blu "Checking for a hydra-aarch64-darwin-${HYDRA_VERSION}.zip release asset…"
-    if gh release download "$HYDRA_VERSION" --repo cardano-scaling/hydra \
-      --pattern "hydra-aarch64-darwin-${HYDRA_VERSION}.zip" --dir "$tmp" 2>/dev/null; then
-      c_grn "  release asset path: found one — downloading (~176 MiB)…"
-      # Dev's supply-chain check, kept as a hard requirement: a zip with no
-      # pinned digest is not installed.
-      [ -n "$HYDRA_RELEASE_SHA256" ] || {
-        c_red "HYDRA_RELEASE_SHA256 is required for the ${HYDRA_VERSION} release zip"
-        exit 1
-      }
-      printf '%s  %s\n' "$HYDRA_RELEASE_SHA256" "$tmp/hydra-aarch64-darwin-${HYDRA_VERSION}.zip" \
-        | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
-      (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
-    else
-      c_blu "  release asset path: none published for ${HYDRA_VERSION} — falling back to the tag's CI artifact"
-      local commit_sha run_id artifact="hydra-aarch64-darwin-${HYDRA_VERSION}"
-      commit_sha="$(resolve_tag_commit "$HYDRA_VERSION")"
-      [ -n "$commit_sha" ] || { c_red "could not resolve the commit tag $HYDRA_VERSION points at"; exit 1; }
-      run_id="$(gh run list --repo cardano-scaling/hydra --commit "$commit_sha" \
-        --workflow Binaries --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
-      # jq prints the literal string "null" for `.[0]` on an empty array,
-      # which is non-empty and would otherwise sail through `[ -n ... ]`.
-      [ -n "$run_id" ] && [ "$run_id" != "null" ] || { c_red "no Binaries CI run found for commit $commit_sha"; exit 1; }
-      # No upstream checksum exists for a CI artifact, so the extracted binary
-      # itself is pinned (see HYDRA_BINARY_SHA256 at the top of this file).
-      # Checked before the 176 MiB download, so a missing pin fails at once.
-      [ -n "$HYDRA_BINARY_SHA256" ] || {
-        c_red "HYDRA_BINARY_SHA256 is required for the ${HYDRA_VERSION} CI artifact (no release zip to verify)"
-        exit 1
-      }
-      c_blu "  CI-artifact path: downloading $artifact from run $run_id (commit ${commit_sha:0:12}, ~176 MiB)…"
-      gh run download "$run_id" --repo cardano-scaling/hydra \
-        --name "$artifact" --dir "$tmp" || { c_red "download failed"; exit 1; }
-      [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
-      printf '%s  %s\n' "$HYDRA_BINARY_SHA256" "$tmp/hydra-node" \
-        | shasum -a 256 -c - || { c_red "checksum verification failed"; exit 1; }
-    fi
-  fi
-  [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
-  install -m 0755 "$tmp/hydra-node" "$NATIVE_BIN"
-  [ -f "$tmp/hydra-tui" ] && install -m 0755 "$tmp/hydra-tui" "$BIN_DIR/hydra-tui"
-  rm -rf "$tmp"
-  repair_dylibs
-  c_grn "  installed -> $NATIVE_BIN ($("$NATIVE_BIN" --version 2>/dev/null | head -1))"
-}
-
-repair_dylibs(){
-  command -v otool >/dev/null 2>&1 || return 0
-  command -v install_name_tool >/dev/null 2>&1 || return 0
-  local nix_iconv
-  nix_iconv="$(otool -L "$NATIVE_BIN" 2>/dev/null | awk '/\/nix\/store\/.*libiconv.*libiconv\.2\.dylib/ {print $1; exit}')"
-  [ -n "$nix_iconv" ] || return 0
-  install_name_tool -change "$nix_iconv" /usr/lib/libiconv.2.dylib "$NATIVE_BIN" || return 1
-  command -v codesign >/dev/null 2>&1 && codesign --force --sign - "$NATIVE_BIN" >/dev/null 2>&1
-}
+# ensure_bin, bin_is_verified, refuse_unverified, repair_dylibs and helpers.
+# shellcheck source=hydra-native-bin.sh
+# No set -e here, so a failed source must stop the script explicitly: without
+# it, every binary check below would be "command not found" and fail open.
+source "$(dirname "${BASH_SOURCE[0]}")/hydra-native-bin.sh" \
+  || { c_red "missing hydra-native-bin.sh beside $0"; exit 1; }
 
 # ── socket bridge (cardano-node n2c -> host unix socket) ─────────────────────
 bridge_up(){
@@ -580,6 +502,12 @@ wait_no_inflight(){
 nodes_restart(){
   local try
   assert_persistence_rotation_disabled || return 1
+  # Check the binary BEFORE nodes_down: an unverified binary would otherwise
+  # leave the head with its nodes stopped and no way back up. Check only:
+  # ensure_bin's repair_dylibs could rewrite the binary the live nodes run.
+  if [ -e "$NATIVE_BIN" ]; then
+    bin_is_verified || refuse_unverified
+  fi
   wait_no_inflight
   for try in 1 2 3; do
     nodes_down
@@ -611,7 +539,14 @@ nodes_restart(){
 }
 
 status(){
-  echo "binary : $([ -x "$NATIVE_BIN" ] && "$NATIVE_BIN" --version 2>/dev/null | head -1 || echo 'not installed')"
+  # Only a verified binary is executed, even just for --version.
+  if bin_is_verified; then
+    echo "binary : $("$NATIVE_BIN" --version 2>/dev/null | head -1)"
+  elif [ -e "$NATIVE_BIN" ]; then
+    echo "binary : present but not verified (remove it and $BIN_RECORD, then run: $0 bin)"
+  else
+    echo "binary : not installed"
+  fi
   echo "bridge : $(docker ps --filter "name=^${BRIDGE_NAME}$" --format '{{.Status}}' 2>/dev/null || echo down)"
   echo "socket : $([ -S "$HOST_SOCKET" ] && echo "$HOST_SOCKET" || echo missing)"
   for i in 1 2 3; do

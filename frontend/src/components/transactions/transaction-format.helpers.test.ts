@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getLatestTxHash, type Transaction } from './transaction-format.helpers';
+import {
+  formatTransactionState,
+  getLatestTxHash,
+  isPaymentNeverReceived,
+  type Transaction,
+} from './transaction-format.helpers';
 
 const asTransaction = (partial: {
   currentTxHash?: string | null;
@@ -54,4 +59,37 @@ test('getLatestTxHash returns null when no hash exists anywhere', () => {
     history: [{ createdAt: '2024-01-01T00:00:00Z', txHash: null }],
   });
   assert.equal(getLatestTxHash(tx), null);
+});
+
+const asStateRow = (partial: {
+  type: 'payment' | 'purchase';
+  onChainState: string | null;
+  currentTxHash?: string | null;
+  history?: Array<{ createdAt: string; txHash: string | null }>;
+}): Transaction =>
+  ({
+    ...asTransaction(partial),
+    type: partial.type,
+    onChainState: partial.onChainState,
+  }) as unknown as Transaction;
+
+test('formatTransactionState labels a never-locked timed-out payment as No Payment Received', () => {
+  const tx = asStateRow({ type: 'payment', onChainState: 'FundsOrDatumInvalid' });
+  assert.equal(isPaymentNeverReceived(tx), true);
+  assert.equal(formatTransactionState(tx), 'No Payment Received');
+});
+
+test('formatTransactionState keeps Funds or Datum Invalid when a lock tx was observed', () => {
+  const tx = asStateRow({
+    type: 'payment',
+    onChainState: 'FundsOrDatumInvalid',
+    history: [{ createdAt: '2024-01-01T00:00:00Z', txHash: 'lock-hash' }],
+  });
+  assert.equal(isPaymentNeverReceived(tx), false);
+  assert.equal(formatTransactionState(tx), 'Funds or Datum Invalid');
+});
+
+test('formatTransactionState does not relabel purchases', () => {
+  const tx = asStateRow({ type: 'purchase', onChainState: 'FundsOrDatumInvalid' });
+  assert.equal(formatTransactionState(tx), 'Funds or Datum Invalid');
 });

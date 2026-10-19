@@ -25,7 +25,7 @@ import { HYDRA_KZG_G1_4 } from './kzg/hydra-kzg-g1-4';
 import { HYDRA_KZG_G1_5 } from './kzg/hydra-kzg-g1-5';
 import { HYDRA_KZG_G1_6 } from './kzg/hydra-kzg-g1-6';
 import { HYDRA_KZG_G1_7 } from './kzg/hydra-kzg-g1-7';
-import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './schemas';
+import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './snapshot-limits';
 
 const BLS_SCALAR_ORDER = bls12_381.fields.Fr.ORDER;
 const BLS_SCALAR_GENERATOR = 7n;

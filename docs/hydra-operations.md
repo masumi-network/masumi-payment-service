@@ -71,10 +71,11 @@ HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
 BLOCKFROST_PROJECT_FILE=/srv/secrets/blockfrost.txt \
+HYDRA_HOST_MEMORY_LIMIT=4g \
 docker compose up -d --build
 ```
 
-Four settings carry over to any deployment, and three of them are the kind that
+Five settings carry over to any deployment, and four of them are the kind that
 only hurt later:
 
 - **A durable volume at `/data`.** It holds a SQLite event store and etcd's raft
@@ -90,6 +91,10 @@ only hurt later:
 - **One instance per Host identity.** The peer ports, the advertise address and
   the volume all belong to a specific Host. Do not scale it horizontally.
 - **The Blockfrost file, mounted read-only.**
+- **A memory limit** (`--memory`, `mem_limit` from `HYDRA_HOST_MEMORY_LIMIT`,
+  or `resources.limits.memory`). The peer plane is published, so a flood from
+  a peer must not be able to take the whole machine. Size it for the number of
+  heads the Host runs.
 
 Compose also shows a healthcheck worth copying: an unauthenticated request to
 an authenticated route, expecting `401`. That proves the server is up _and_
@@ -121,16 +126,29 @@ the machine:
 The API range is additionally bound to `127.0.0.1` inside the container, so it
 stays shut even if someone switches to host networking.
 
+Peer addresses go the other way: the Host passes them to `hydra-node --peer`, so
+the node dials them. By default the Host refuses a peer whose host resolves to a
+loopback, private, link-local or other non-public address, both on
+`PATCH /v1/nodes/{id}` (set peers) and on invite redemption. A refused redemption leaves the
+invite open. Set `HYDRA_HOST_ALLOW_PRIVATE_PEERS=true` only when the peers really
+run on a private network. The check resolves the name once, and `hydra-node` resolves
+it again on every reconnect, so a counterparty that controls its DNS can rebind
+it later. Block egress from the Host to private, link-local and metadata
+addresses as well.
+
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.
 
 **The peer plane cannot authenticate its callers**, which is why the base
 compose file does not publish it. It still has to be reachable, because a head
 whose peer port is closed cannot reach its counterparty, so the order matters.
-Fetch the per-head allow-list from `GET /v1/peer-allowlist`, which renders an
-nftables ruleset. Check it with `nft -c -f FILE`, apply it with `nft -f FILE`,
-and only then open the range. Re-apply whenever peer membership or DNS changes.
-Skipping it leaves 32 unauthenticated etcd raft ports open to the internet.
+`GET /v1/peer-allowlist` renders a per-head nftables ruleset.
+[`packages/hydra-host/scripts/hydra-peer-firewall`](../packages/hydra-host/scripts/hydra-peer-firewall)
+applies it on the machine. Run `hydra-peer-firewall baseline` before the Host
+starts, so the whole range is refused and verified. Then run
+`hydra-peer-firewall refresh` on a timer and after every membership change, so
+each peered port opens to its counterparty only. Skipping it leaves 32
+unauthenticated etcd raft ports open to every address the cloud firewall admits.
 
 How you open the range depends on how you run the Host:
 
@@ -141,9 +159,13 @@ How you open the range depends on how you run the Host:
 | **Native mode**                          | There is no override file and no port publication. The ruleset is the whole of it. See [hydra-host-native-mode.md](hydra-host-native-mode.md).                                    |
 
 `HYDRA_HOST_PEER_FIREWALL_ACK` is a compose convention, not a code gate. Nothing
-in the Host reads it, so it guards only deployments that go through that
-override file. Under `docker run` or systemd the ruleset and the cloud firewall
-are the only protection.
+in the Host reads it. Set it from `hydra-peer-firewall verify`, which prints a
+value only when the loaded ruleset refuses the range. Under systemd the gate is
+`ExecStartPre=hydra-peer-firewall baseline`, which stops the unit from starting
+when the ruleset cannot be verified. Under compose, also enable
+`hydra-peer-firewall-baseline.service`, because Docker restarts the container at
+boot without the acknowledgement check. Under a plain `docker run` or native
+mode nothing enforces the order, so run `baseline` yourself first.
 
 `BLOCKFROST_PROJECT_FILE` is a **path to a file** containing the project id,
 not the id itself: it is handed to `hydra-node` as `--blockfrost` and the node

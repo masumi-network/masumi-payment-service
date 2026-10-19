@@ -11,6 +11,13 @@ const mockFlush = jest.fn() as AnyMock;
 const mockReadNodeState = jest.fn() as AnyMock;
 const mockRecordHeadError = jest.fn() as AnyMock;
 
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),
+	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/auth', () => ({
 	adminAuthenticatedEndpointFactory: { build: (definition: unknown) => definition },
 }));

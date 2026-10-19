@@ -42,11 +42,15 @@ import {
 } from './schemas';
 import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
 import {
+	completeHydraSnapshotVerification,
 	doesHydraTransactionTransitionReachSnapshot,
 	serializeHydraSnapshotOutput,
-	verifyHydraSnapshot,
+	verifyHydraSnapshotSignatures,
 	type VerifiedHydraSnapshot,
 } from './snapshot-verification';
+import { computeHydraAccumulatorHash } from './snapshot-accumulator';
+import { HistoryFrameQueue, type QueuedHistoryFrame } from './node-history-frame-queue';
+import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { DecommitSettledData, DepositRecordedData, HydraConfirmedTransaction, HydraTransaction } from './types';
 
 const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
@@ -66,6 +70,13 @@ const MAX_TRACKED_DECOMMIT_TRANSACTIONS = 64;
 
 const MAX_UNPINNED_HISTORY_BUFFER_BYTES = 8 * 1024 * 1024;
 
+/**
+ * One frame's work at least this long is reported. The queue yields between
+ * frames, so this is the longest a single frame held the event loop — and
+ * nothing else in the process ran meanwhile.
+ */
+const SLOW_REPLAY_WORK_MS = 1_000;
+
 /** What the replay needs from the session it serves. */
 export interface HistoryReplayHost {
 	readonly expectedHeadId: string | undefined;
@@ -73,6 +84,8 @@ export interface HistoryReplayHost {
 	/** The latched, instance-fatal rotation error, if one was ever observed. */
 	readonly persistenceRotationError: HydraProtocolError | undefined;
 	readonly orderedSnapshotVerificationKeys: string[] | undefined;
+	/** Computes snapshot accumulators; defaults to the event loop. */
+	readonly computeSnapshotAccumulator?: HydraAccumulatorComputer;
 	/** Throws (and latches) when the frame announces event-log rotation. */
 	assertPersistenceReplayIsSupported(message: unknown): void;
 	bindSnapshotPartyOrder(message: unknown): void;
@@ -112,15 +125,21 @@ export class HydraHistoryReplay {
 	 */
 	private _lastVerifiedFrame: { version: number; accumulator: string; signatures: string } | undefined;
 	/**
-	 * Bumped by every rejection, and never reset.
+	 * Frames waiting to be processed, oldest first, each tagged with the pass it
+	 * arrived in. A frame's pass ends when `resetPass` starts a new one, and a
+	 * frame from an ended pass is dropped unread: it belongs to a socket that is
+	 * already gone.
 	 *
-	 * `_failed` cannot be used to tell whether a rejection happened during a
-	 * stretch of code: rejecting invalidates the socket, the socket's close
-	 * handler starts a fresh pass, and a fresh pass clears `_failed` — all
-	 * synchronously, before `fail()` returns. A monotonic counter is the one
-	 * thing that survives that.
+	 * `_failed` cannot stand in for the tag: rejecting invalidates the socket,
+	 * the socket's close handler starts a fresh pass, and a fresh pass clears
+	 * `_failed` — all synchronously, before `fail()` returns.
 	 */
-	private _failureGeneration = 0;
+	private readonly _queue = new HistoryFrameQueue(
+		(frame) => this.processQueuedFrame(frame),
+		(frame) => frame.pass === this._pass && !this._failed && !this.host.persistenceRotationError,
+		{ pause: () => this.connection.pauseReceiving(), resume: () => this.connection.resumeReceiving() },
+	);
+	private _pass = 0;
 
 	/**
 	 * Decommit transactions seen so far, by transaction id. Bounded: a head
@@ -168,7 +187,6 @@ export class HydraHistoryReplay {
 				? error
 				: new HydraProtocolError('Hydra history replay failed protocol validation', { cause: error });
 		const isFirstFailure = !this._failed;
-		this._failureGeneration += 1;
 		this._failed = true;
 		this._complete = false;
 		this._error = normalizedError;
@@ -197,6 +215,8 @@ export class HydraHistoryReplay {
 	 * but discard every unauthenticated/pass-local assertion.
 	 */
 	resetPass(): void {
+		this._pass += 1;
+		this._queue.clear();
 		this._complete = false;
 		this._failed = false;
 		this._sessionHeadId = undefined;
@@ -235,7 +255,21 @@ export class HydraHistoryReplay {
 			this.bufferUnpinnedFrame(rawMessage);
 			return;
 		}
-		this.processPinnedMessage(rawMessage);
+		this._queue.push({ rawMessage, pass: this._pass });
+	}
+
+	private processQueuedFrame({ rawMessage, pass }: QueuedHistoryFrame): Promise<void> | undefined {
+		const startedAtMs = Date.now();
+		const pending = this.processPinnedMessage(rawMessage, pass);
+		const elapsedMs = Date.now() - startedAtMs;
+		if (elapsedMs >= SLOW_REPLAY_WORK_MS) {
+			logger.warn('[HydraNode] One history frame held the event loop', {
+				headId: this.host.expectedHeadId,
+				frameBytes: Buffer.byteLength(rawMessage, 'utf8'),
+				elapsedMs,
+			});
+		}
+		return pending;
 	}
 
 	private bufferUnpinnedFrame(rawMessage: string): void {
@@ -268,19 +302,11 @@ export class HydraHistoryReplay {
 			);
 			return;
 		}
-		// Stopped on the failure counter, not on `_failed`. Rejecting a frame
-		// invalidates the socket, whose close handler starts a fresh pass, and a
-		// fresh pass clears `_failed` — synchronously, inside this loop. Reading
-		// the flag therefore saw `false` immediately after a rejection and carried
-		// on feeding the rest of the page into what was now a *new* pass: its
-		// closing `Greetings` then installed an unsigned anchor and marked the
-		// replay complete, reporting a verified history for a head whose signed
-		// history had just been rejected.
-		const failureGenerationAtStart = this._failureGeneration;
-		for (const frame of bufferedFrames) {
-			if (this._failureGeneration !== failureGenerationAtStart) break;
-			this.processPinnedMessage(frame);
-		}
+		// Ahead of anything already queued: these frames arrived first. Tagged
+		// with the current pass, so a rejection among them — which invalidates the
+		// socket and starts a fresh pass — drops the rest instead of reading them
+		// as that fresh pass.
+		this._queue.pushFront(bufferedFrames.map((rawMessage) => ({ rawMessage, pass: this._pass })));
 	}
 
 	/**
@@ -315,7 +341,8 @@ export class HydraHistoryReplay {
 		return false;
 	}
 
-	private processPinnedMessage(rawMessage: string): void {
+	/** Returns a promise only while the frame waits for its accumulator. */
+	private processPinnedMessage(rawMessage: string, pass: number): Promise<void> | undefined {
 		try {
 			const message = parseBoundedJsonFrame(rawMessage);
 			this.host.assertPersistenceReplayIsSupported(message);
@@ -394,8 +421,7 @@ export class HydraHistoryReplay {
 				assertExpectedFrameHeadId(parsedMessage, this.host.expectedHeadId);
 				// Signed states and transaction transitions are verified progressively.
 				// This avoids retaining the unbounded raw prefix emitted before Greetings.
-				this.recordHistorySnapshot(parsedMessage);
-				return;
+				return this.recordHistorySnapshot(parsedMessage, pass);
 			}
 
 			if (parsedEnvelope.tag === 'Greetings') {
@@ -443,6 +469,7 @@ export class HydraHistoryReplay {
 		} catch (error) {
 			this.fail(error);
 		}
+		return undefined;
 	}
 
 	/**
@@ -546,7 +573,10 @@ export class HydraHistoryReplay {
 		};
 	}
 
-	private recordHistorySnapshot(parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>): void {
+	private recordHistorySnapshot(
+		parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>,
+		pass: number,
+	): Promise<void> | undefined {
 		if (this._lastSequence != null && parsedMessage.seq <= this._lastSequence) {
 			throw new HydraProtocolError('Hydra history sequence was duplicate or non-monotonic');
 		}
@@ -557,7 +587,37 @@ export class HydraHistoryReplay {
 		if (this._sessionHeadId && parsedMessage.headId !== this._sessionHeadId) {
 			throw new HydraProtocolError('SnapshotConfirmed did not belong to the verified Hydra history session');
 		}
-		const verifiedSnapshot = verifyHydraSnapshot(parsedMessage, orderedKeys);
+		const signed = verifyHydraSnapshotSignatures(parsedMessage, orderedKeys);
+		const computeAccumulator = this.host.computeSnapshotAccumulator ?? computeHydraAccumulatorHash;
+		const accumulator = computeAccumulator([...signed.outputs.values()]);
+		const adopt = (computedAccumulator: string) =>
+			this.adoptHistorySnapshot(parsedMessage, completeHydraSnapshotVerification(signed, computedAccumulator));
+		if (typeof accumulator === 'string') {
+			adopt(accumulator);
+			return undefined;
+		}
+		// Judged only if its pass is still the one it arrived in: a reset while
+		// the accumulator was computed means this frame's socket is gone, and its
+		// verdict — acceptance or rejection — belongs to nobody.
+		return accumulator.then(
+			(computedAccumulator) => {
+				if (pass !== this._pass || this._failed) return;
+				try {
+					adopt(computedAccumulator);
+				} catch (error) {
+					this.fail(error);
+				}
+			},
+			(error: unknown) => {
+				if (pass === this._pass && !this._failed) this.fail(error);
+			},
+		);
+	}
+
+	private adoptHistorySnapshot(
+		parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>,
+		verifiedSnapshot: VerifiedHydraSnapshot,
+	): void {
 		const previousSnapshot = this._verifiedSnapshot;
 		if (previousSnapshot && verifiedSnapshot.number <= previousSnapshot.number) {
 			// A node side-load (the documented recovery for a stranded snapshot

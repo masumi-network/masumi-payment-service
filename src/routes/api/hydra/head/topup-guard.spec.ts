@@ -17,16 +17,24 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindHead = jest.fn() as AnyMock;
+const mockFindTopups = jest.fn() as AnyMock;
 const mockGetHead = jest.fn() as AnyMock;
 const mockAssertReady = jest.fn() as AnyMock;
 const mockExecute = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
+	assertHydraHeadHostNotPaused: jest.fn(async () => undefined),
+	isHydraHeadOnPausedHost: jest.fn(async () => false),
+	isHydraHeadOnPausedHostLocked: jest.fn(async () => false),
+	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/auth', () => ({
 	adminAuthenticatedEndpointFactory: { build: (definition: unknown) => definition },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hydraHead: { findUnique: mockFindHead }, hydraTopup: { findFirst: jest.fn() } },
+	prisma: { hydraHead: { findUnique: mockFindHead }, hydraTopup: { findFirst: jest.fn(), findMany: mockFindTopups } },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -44,10 +52,11 @@ jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
 jest.unstable_mockModule('@/services/hydra-topup/execute', () => ({ executeHydraTopup: mockExecute }));
 jest.unstable_mockModule('@/services/hydra-topup/recover', () => ({ recoverHydraDeposit: jest.fn() }));
 
+let listTopupsGet: { handler: (args: { input: unknown }) => Promise<unknown> };
 let topupHeadPost: { handler: (args: { input: unknown }) => Promise<unknown> };
 
 beforeAll(async () => {
-	({ topupHeadPost } = (await import('./topup')) as never);
+	({ topupHeadPost, listTopupsGet } = (await import('./topup')) as never);
 });
 
 beforeEach(() => {
@@ -114,5 +123,19 @@ describe('topupHeadPost pre-flight', () => {
 				input: { headId: 'head-1', assetUnit: 'ab'.repeat(28) + '0014df10', exactAmount: '25' },
 			}),
 		).resolves.toMatchObject({ accepted: true });
+	});
+});
+
+describe('topup list paging', () => {
+	it('resumes from an inclusive cursor in a fixed newest-first order', async () => {
+		mockFindHead.mockResolvedValue({ HydraRelation: { network: 'Preprod' }, Invite: null });
+		mockFindTopups.mockResolvedValue([]);
+		await listTopupsGet.handler({ input: { headId: 'head-1', limit: 10, cursorId: 'topup-9' } });
+		expect(mockFindTopups).toHaveBeenCalledWith({
+			where: { hydraHeadId: 'head-1' },
+			orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+			take: 10,
+			cursor: { id: 'topup-9' },
+		});
 	});
 });

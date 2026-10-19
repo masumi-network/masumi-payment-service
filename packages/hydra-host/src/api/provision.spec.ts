@@ -27,6 +27,7 @@ beforeEach(async () => {
 		store: new NodeRegistryStore(dataDir),
 		ports: new PortAllocator(LAYOUT),
 		advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+		checkPeerTarget: async () => null,
 		newNodeId: () => `node-${++counter}`,
 		now: () => new Date('2026-07-28T12:00:00.000Z'),
 	};
@@ -115,6 +116,7 @@ describe('provisionNode', () => {
 	it('does not leak a port when provisioning fails', async () => {
 		const failing: ProvisionDeps = {
 			...deps,
+			checkPeerTarget: async () => null,
 			newNodeId: () => {
 				throw new Error('boom');
 			},
@@ -223,6 +225,26 @@ describe('acknowledgeEscrow', () => {
 				deps,
 			),
 		).rejects.toMatchObject({ status: 409 });
+	});
+
+	it('refuses a peer address the target policy rejects before persisting it', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		const policyDeps = {
+			...deps,
+			checkPeerTarget: async () => 'peer host 127.0.0.1 resolves to non-public address 127.0.0.1',
+		};
+
+		await expect(
+			setPeers(
+				record.nodeId,
+				[{ advertise: '127.0.0.1:8443', hydraVerificationKey: '5820aa', cardanoVerificationKey: '5820bb' }],
+				policyDeps,
+			),
+		).rejects.toMatchObject({
+			status: 400,
+			message: expect.stringMatching(/non-public address/),
+		});
+		expect((await deps.store.read(record.nodeId))?.peers).toEqual([]);
 	});
 
 	it('404s for an unknown node', async () => {

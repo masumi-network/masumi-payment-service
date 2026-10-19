@@ -18,10 +18,11 @@ import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import { smartContractStateToOnChainState } from '@/utils/logic/l2-datum-validation';
 import {
 	applyDatumStateToLocalRequests,
-	findLocallyRelevantHydraRequestIdentifiers,
+	findHydraRequestLineages,
 	type HydraDatumApplyOutcome,
 } from './hydra-datum-sync';
 import { applyTerminalHydraSpends } from './hydra-datum-terminal';
+import { isTransactionBoundToHydraLineage } from './hydra-request-lineage';
 import { parseHydraTransactionEvidence } from './hydra-transaction-evidence';
 
 /** What this pipeline needs from the head's live session, if one exists. */
@@ -54,21 +55,23 @@ export async function applyConfirmedHydraTransaction(
 	});
 
 	if (!tx) {
-		// A body auto-released on the input proof must never confirm. If one
-		// does, its purchase may already be locked again: stop this head's replay
-		// here, loudly, rather than let datum sync guess against the new state.
+		// A body released on the input proof, or by an admin, must never confirm.
+		// If one does, its purchase may already be locked again: stop this head's
+		// replay here, loudly, rather than let datum sync guess against the new state.
 		const released = await prisma.transaction.findFirst({
 			where: {
-				OR: [{ txHash: txId }, { intendedTxHash: txId }],
+				AND: [
+					{ OR: [{ txHash: txId }, { intendedTxHash: txId }] },
+					{ OR: [{ l2ReleasedByInputProofAt: { not: null } }, { l2ReleasedByOperatorAt: { not: null } }] },
+				],
 				layer: 'L2',
 				hydraHeadId,
 				status: TransactionStatus.RolledBack,
-				l2ReleasedByInputProofAt: { not: null },
 			},
 			select: { id: true },
 		});
 		if (released) {
-			logger.error('[HydraConnectionManager] auto-released L2 reservation confirmed in a snapshot; holding replay', {
+			logger.error('[HydraConnectionManager] released L2 reservation confirmed in a snapshot; holding replay', {
 				hydraHeadId,
 				txId,
 				transactionId: released.id,
@@ -221,18 +224,36 @@ async function syncHydraDatumStateFromConfirmedTx(
 		const duplicateIdentifiers = [...identifierCounts]
 			.filter(([, count]) => count > 1)
 			.map(([identifier]) => identifier);
-		const locallyRelevantDuplicateIdentifiers = await findLocallyRelevantHydraRequestIdentifiers(
-			paymentSource.id,
-			duplicateIdentifiers,
-		);
+		const duplicateLineages = await findHydraRequestLineages(paymentSource.id, duplicateIdentifiers);
+		const consumedInputs = transactionEvidence?.inputs ?? null;
 		for (const decodedOutput of decodedOutputs) {
-			if ((identifierCounts.get(decodedOutput.decoded.blockchainIdentifier) ?? 0) !== 1) {
-				if (locallyRelevantDuplicateIdentifiers.has(decodedOutput.decoded.blockchainIdentifier)) {
+			const blockchainIdentifier = decodedOutput.decoded.blockchainIdentifier;
+			if ((identifierCounts.get(blockchainIdentifier) ?? 0) !== 1) {
+				const lineages = duplicateLineages.get(blockchainIdentifier) ?? [];
+				if (
+					lineages.some((lineage) => isTransactionBoundToHydraLineage(lineage, { hydraHeadId, txId, consumedInputs }))
+				) {
+					// The transaction is part of a local escrow's own lineage, so which
+					// output continues it is genuinely ambiguous. Keep the replay queued.
 					hasRetry = true;
 					logger.warn('[HydraConnectionManager] duplicate outputs for local identifier; refusing ambiguous tx', {
 						hydraHeadId,
 						txId,
-						blockchainIdentifier: decodedOutput.decoded.blockchainIdentifier,
+						blockchainIdentifier,
+					});
+				} else if (lineages.length > 0) {
+					// A transaction the escrow never recorded and whose body leaves its
+					// accepted output unspent cannot continue it: anyone can fund the
+					// script address with a copied identifier. An unrecorded initial lock
+					// split across copies is the locker's own ambiguity. Skip it so a
+					// peer cannot stall the head, and log the outputs for review.
+					logger.error('[HydraConnectionManager] ignoring duplicate outputs that copy a local identifier', {
+						hydraHeadId,
+						txId,
+						blockchainIdentifier,
+						outputIndex: decodedOutput.output.input.outputIndex,
+						state: decodedOutput.state,
+						amount: decodedOutput.output.output.amount,
 					});
 				}
 				continue;

@@ -200,3 +200,27 @@ export function extractPendingDecommitRefs(headState: unknown): string[] {
 
 	return Object.keys(utxoToDecommit).map((key) => key.toLowerCase());
 }
+
+/**
+ * Whether the node is holding a withdrawal right now, or `undefined` when its
+ * state cannot say.
+ *
+ * Stricter than `extractPendingDecommitRefs`, which fails open so a head with an
+ * unreadable state can still withdraw. This one answers the opposite question,
+ * "is it safe to call an old withdrawal dead?", so an unreadable state is
+ * `undefined` and never "nothing in flight". A held `decommitTx` counts on its
+ * own: the node holds it from the request until the chain observes the post,
+ * which includes the window before any snapshot names its outputs.
+ */
+export function extractDecommitInFlight(headState: unknown): boolean | undefined {
+	if (!isPlainObject(headState)) return undefined;
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	const coordinatedHeadState = getOwnPlainObject(state, 'coordinatedHeadState');
+	if (coordinatedHeadState === undefined) return undefined;
+	const decommitTx = getOwnValue(coordinatedHeadState, 'decommitTx');
+	if (isPlainObject(decommitTx)) return true;
+	// Only an explicit null says the node holds nothing. A missing field is a
+	// shape this code does not know, and reads as "cannot tell".
+	if (decommitTx !== null) return undefined;
+	return extractPendingDecommitRefs(headState).length > 0;
+}

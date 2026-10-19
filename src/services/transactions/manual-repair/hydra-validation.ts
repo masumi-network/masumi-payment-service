@@ -85,9 +85,11 @@ export async function validateHydraRepair(params: { kind: RepairTargetKind; requ
 		return fail('Verified Hydra history is unavailable');
 	const outputIndex = request.currentHydraUtxoOutputIndex;
 	const reference = `${params.txHash}#${outputIndex}`;
-	const currentOutput = node.getVerifiedCurrentOutput(reference, head.latestSnapshotNumber);
+	// Snapshot confirmations never advance `HydraHead.latestSnapshotNumber`, so pin the node's verified snapshot.
+	const snapshotNumber = node.verifiedSnapshotNumber;
+	const currentOutput = snapshotNumber == null ? null : node.getVerifiedCurrentOutput(reference, snapshotNumber);
 	const confirmed = node.getConfirmedTransaction(params.txHash);
-	if (!currentOutput || !confirmed)
+	if (snapshotNumber == null || !currentOutput || !confirmed)
 		return fail('Current unspent Hydra output or its confirmed transaction evidence is unavailable');
 	const evidence = parseHydraTransactionEvidence(confirmed.cborHex);
 	const output = evidence?.outputs.find((entry) => entry.outputIndex === outputIndex);
@@ -162,7 +164,8 @@ export async function validateHydraRepair(params: { kind: RepairTargetKind; requ
 		if (
 			manager.getNode(headId) !== node ||
 			!node.confirmedTransactionHistoryReady ||
-			node.getVerifiedCurrentOutput(reference, head.latestSnapshotNumber) !== currentOutput
+			node.verifiedSnapshotNumber !== snapshotNumber ||
+			node.getVerifiedCurrentOutput(reference, snapshotNumber) !== currentOutput
 		)
 			fail('Hydra repair evidence changed; preview again');
 	};
@@ -177,7 +180,6 @@ export async function validateHydraRepair(params: { kind: RepairTargetKind; requ
 		currentTransactionId: current.id,
 		requestUpdatedAt: request.updatedAt,
 		ownerEpoch: head.ownerEpoch,
-		snapshotNumber: head.latestSnapshotNumber,
 		outputAmounts: output.amount,
 		buyerWallet: { walletVkey: decoded.buyerVkey, walletAddress: decoded.buyerAddress },
 		assertFresh,

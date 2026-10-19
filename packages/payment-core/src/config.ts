@@ -142,6 +142,16 @@ const walletLockTimeoutInterval = parseNumberEnv(
 
 const checkHydraTxInterval = parseNumberEnv('CHECK_HYDRA_TX_INTERVAL', process.env.CHECK_HYDRA_TX_INTERVAL, '10', 5);
 
+// Minimum seconds between live-snapshot passes of the L2 escrow-state reconcile
+// per head. That pass is a safety net behind the live TxConfirmed handler; the
+// ordered replay drain in the same job still runs every CHECK_HYDRA_TX_INTERVAL.
+const hydraEscrowReconcileInterval = parseNumberEnv(
+	'HYDRA_ESCROW_RECONCILE_INTERVAL',
+	process.env.HYDRA_ESCROW_RECONCILE_INTERVAL,
+	'60',
+	5,
+);
+
 export type LowBalanceDefaultRule = {
 	assetUnit: string;
 	thresholdAmount: string;
@@ -269,6 +279,7 @@ export const CONFIG = {
 	AUTO_DECISION_INTERVAL: autoDecisionInterval,
 	WEBHOOK_DELIVERY_INTERVAL: webhookDeliveryInterval,
 	CHECK_HYDRA_TX_INTERVAL: checkHydraTxInterval,
+	HYDRA_ESCROW_RECONCILE_INTERVAL: hydraEscrowReconcileInterval,
 	WEBHOOK_CLEANUP_INTERVAL: webhookCleanupInterval,
 	// OpenTelemetry configuration
 	OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? 'masumi-payment-service',
@@ -424,6 +435,9 @@ export const SERVICE_CONSTANTS = {
 
 export const DEFAULTS = {
 	DEFAULT_ADMIN_KEY: 'DefaultUnsecureAdminKey',
+	// Published in .env.example. Allowed for one-off setups, but warned about.
+	EXAMPLE_ADMIN_KEY: 'abcdef_this_should_be_very_secure',
+	EXAMPLE_ENCRYPTION_KEY: '12345678901234567890123456789012',
 	TX_TIMEOUT_INTERVAL: 1000 * 60 * 7, // 7 minutes in seconds
 	DEFAULT_METADATA_VERSION: 1,
 	DEFAULT_REGISTRY_METADATA_VERSION: 2,

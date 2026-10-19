@@ -23,6 +23,7 @@
  * Mesh pinning (ADR 0005): lives in payment-source-v2 so `deserializeDatum` /
  * `decodeV2ContractDatum` resolve the V2 mesh line that wrote the datum.
  */
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import { CONFIG } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
@@ -31,9 +32,10 @@ import { HydraHeadStatus, Network, OnChainState, PaymentSourceType } from '@/gen
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import {
 	applyDatumStateToLocalRequests,
-	findLocallyRelevantHydraRequestIdentifiers,
+	findHydraRequestLineages,
 	type HydraDatumApplyOutcome,
 } from '@/services/hydra-connection-manager/hydra-datum-sync';
+import { isPersistedHydraOutput } from '@/services/hydra-connection-manager/hydra-request-lineage';
 import { decodeV2ContractDatum, DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { smartContractStateToOnChainState } from '@/utils/logic/l2-datum-validation';
@@ -42,17 +44,29 @@ import {
 	parseHydraTransactionEvidence,
 } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { verifyHydraFanoutOnChain, type HydraFanoutChainObserver } from '@/lib/hydra/hydra/fanout-validation';
+import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-verification';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
+import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
+import {
+	findIdentifiersWithNothingToApply,
+	isLivePassDue,
+	memoizedLiveEscrowDecode,
+	memoizedTransactionEvidence,
+	pruneLiveEscrowMemo,
+	recordLivePass,
+	retainLiveEscrowMemoHeads,
+} from './live-escrow-memo';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 
 const MAX_REPLAY_TRANSACTIONS_PER_HEAD_PER_RUN = 250;
 
 /**
  * Reconcile every enabled active/final head's in-head escrow UTxOs against this node's
- * own payment/purchase requests. Safe to run on the same cadence as the pending
- * L2 tx handler; idempotent.
+ * own payment/purchase requests. Runs on the pending L2 tx handler cadence so the
+ * ordered replay drains promptly; the live-snapshot pass is throttled per head by
+ * HYDRA_ESCROW_RECONCILE_INTERVAL. Idempotent.
  */
 export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	const heads = await prisma.hydraHead.findMany({
@@ -68,6 +82,8 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 			},
 		},
 	});
+	// A completed head never runs a live pass again, so its memo is dropped too.
+	retainLiveEscrowMemoHeads(heads.filter((head) => head.reconciliationCompletedAt == null).map((head) => head.id));
 	if (heads.length === 0) {
 		return;
 	}
@@ -204,6 +220,12 @@ async function reconcileHead(
 	if (!(node?.hasVerifiedPinnedSessions && node.confirmedTransactionHistoryReady)) return;
 	await reportExpiredL2Reservations({ hydraHeadId, network: source.network, node });
 
+	// The live snapshot is a safety net behind the TxConfirmed handler, so it is
+	// throttled per head. A finalized head is never throttled or skipped: there a
+	// 'retry' outcome gates the fan-out handoff and disconnect.
+	const isFinalized = finalizedAt != null;
+	if (!isFinalized && !isLivePassDue(hydraHeadId, CONFIG.HYDRA_ESCROW_RECONCILE_INTERVAL * 1000)) return;
+
 	const utxos = await provider.fetchAddressUTxOs(source.smartContractAddress);
 	const observations: Array<{
 		utxo: UTxO;
@@ -215,26 +237,35 @@ async function reconcileHead(
 		if (!datumCbor) {
 			continue;
 		}
-		let decoded: DecodedV1ContractDatum | null;
-		try {
-			decoded = decodeV2ContractDatum(
-				deserializeDatum(datumCbor),
-				convertNetwork(source.network),
-				source.smartContractAddress,
-			);
-		} catch {
-			continue;
-		}
-		if (!decoded) {
-			continue;
-		}
-		const newState = smartContractStateToOnChainState(decoded.state);
-		if (!newState) {
+		// An output reference is immutable, so its decode is reused per head while
+		// the datum bytes stay the same.
+		const observation = memoizedLiveEscrowDecode(hydraHeadId, utxo.input, datumCbor, () => {
+			let decoded: DecodedV1ContractDatum | null;
+			try {
+				decoded = decodeV2ContractDatum(
+					deserializeDatum(datumCbor),
+					convertNetwork(source.network),
+					source.smartContractAddress,
+				);
+			} catch {
+				return null;
+			}
+			if (!decoded) {
+				return null;
+			}
+			const newState = smartContractStateToOnChainState(decoded.state);
+			return newState ? { decoded, newState } : null;
+		});
+		if (!observation) {
 			continue;
 		}
 
-		observations.push({ utxo, decoded, newState });
+		observations.push({ utxo, decoded: observation.decoded, newState: observation.newState });
 	}
+	pruneLiveEscrowMemo(
+		hydraHeadId,
+		utxos.map((utxo) => utxo.input),
+	);
 
 	const identifierCounts = new Map<string, number>();
 	let hasRetryableLiveObservation = false;
@@ -245,17 +276,41 @@ async function reconcileHead(
 		);
 	}
 	const duplicateIdentifiers = [...identifierCounts].filter(([, count]) => count > 1).map(([identifier]) => identifier);
-	const locallyRelevantDuplicateIdentifiers = await findLocallyRelevantHydraRequestIdentifiers(
-		source.id,
-		duplicateIdentifiers,
-	);
+	const duplicateLineages = await findHydraRequestLineages(source.id, duplicateIdentifiers);
+	// Most live outputs are already applied; one batched read finds them so the
+	// pass skips their per-output serializable transaction.
+	const identifiersWithNothingToApply = isFinalized
+		? new Set<string>()
+		: await findIdentifiersWithNothingToApply(
+				source.id,
+				observations
+					.filter((observation) => identifierCounts.get(observation.decoded.blockchainIdentifier) === 1)
+					.map((observation) => ({
+						blockchainIdentifier: observation.decoded.blockchainIdentifier,
+						newState: observation.newState,
+						outputReference: observation.utxo.input,
+					})),
+			);
 	for (const observation of observations) {
-		if ((identifierCounts.get(observation.decoded.blockchainIdentifier) ?? 0) !== 1) {
-			if (locallyRelevantDuplicateIdentifiers.has(observation.decoded.blockchainIdentifier)) {
-				hasRetryableLiveObservation = true;
-				logger.warn('[HydraReconcile] duplicate live outputs for local identifier; refusing ambiguous observation', {
+		// Yield between outputs so API requests are not starved by a long pass.
+		await yieldToEventLoop();
+		const lineages = duplicateLineages.get(observation.decoded.blockchainIdentifier);
+		if (
+			(identifierCounts.get(observation.decoded.blockchainIdentifier) ?? 0) !== 1 &&
+			!lineages?.some((lineage) => isPersistedHydraOutput(lineage, observation.utxo.input))
+		) {
+			// Ordered replay drained before this pass, so a local escrow's persisted
+			// output is normally its current one. Any other output with a copied
+			// identifier is skipped rather than held as a retry a peer could fund;
+			// the final handoff still refuses an escrow whose persisted output is
+			// stale. Log it for review.
+			if (lineages) {
+				logger.error('[HydraReconcile] ignoring live output that copies a local identifier', {
 					hydraHeadId,
 					blockchainIdentifier: observation.decoded.blockchainIdentifier,
+					outputReference: observation.utxo.input,
+					state: observation.newState,
+					amount: observation.utxo.output.amount,
 				});
 			}
 			continue;
@@ -266,9 +321,12 @@ async function reconcileHead(
 			observation.utxo,
 			observation.decoded,
 			observation.newState,
+			identifiersWithNothingToApply.has(observation.decoded.blockchainIdentifier),
 		);
 		hasRetryableLiveObservation ||= outcome === 'retry';
 	}
+	// A pass with retryable outputs stays due, so it reruns on the next tick.
+	recordLivePass(hydraHeadId, !hasRetryableLiveObservation);
 
 	// A finalized head can be disconnected only after the history socket's
 	// Greetings marker proves replay completion and every queued tx was resolved.
@@ -286,18 +344,37 @@ async function reconcileHead(
 			node == null
 		)
 			return;
+		// One observer pass per reference set: the release step and the handoff
+		// both check the same fanout when a release happens.
+		const fanoutChecks = new Map<string, ReturnType<typeof verifyHydraFanoutOnChain>>();
+		const verifyFanout = (references: readonly VerifiedHydraFanoutReference[]) => {
+			const key = JSON.stringify(references);
+			const check =
+				fanoutChecks.get(key) ??
+				verifyHydraFanoutOnChain({
+					observer: getBlockfrostInstance(
+						source.network,
+						source.PaymentSourceConfig.rpcProviderApiKey,
+					) as unknown as HydraFanoutChainObserver,
+					headId: headIdentifier,
+					participantVkeys: [localParticipantVkey, remoteParticipantVkey],
+					references,
+					requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+				});
+			fanoutChecks.set(key, check);
+			return check;
+		};
+		// The handoff refuses any Pending L2 row, and a Final head never makes the
+		// snapshot the open head release path waits for.
+		await releaseFinalHeadL2Reservations({
+			hydraHeadId,
+			expectedSnapshotNumber,
+			node,
+			verifyFanoutOnChain: verifyFanout,
+		});
 		const preparedHandoff = await prepareFinalHandoff(hydraHeadId, expectedSnapshotNumber, node);
 		if (!preparedHandoff) return;
-		const verifiedFanoutChain = await verifyHydraFanoutOnChain({
-			observer: getBlockfrostInstance(
-				source.network,
-				source.PaymentSourceConfig.rpcProviderApiKey,
-			) as unknown as HydraFanoutChainObserver,
-			headId: headIdentifier,
-			participantVkeys: [localParticipantVkey, remoteParticipantVkey],
-			references: preparedHandoff.allFanoutReferences,
-			requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
-		});
+		const verifiedFanoutChain = await verifyFanout(preparedHandoff.allFanoutReferences);
 		if (
 			!(await markFinalHeadReconciliationComplete({
 				hydraHeadId,
@@ -443,6 +520,7 @@ async function reconcileEscrowUtxo(
 	utxo: UTxO,
 	decoded: DecodedV1ContractDatum,
 	newState: OnChainState,
+	hasNothingToApply: boolean,
 ): Promise<HydraDatumApplyOutcome> {
 	const outputAmounts = utxo.output.amount.map((a) => ({ unit: a.unit, quantity: a.quantity }));
 	const node = getHydraConnectionManager().getNode(hydraHeadId);
@@ -455,7 +533,7 @@ async function reconcileEscrowUtxo(
 		});
 		return 'retry';
 	}
-	const transactionEvidence = parseHydraTransactionEvidence(confirmedTransaction.cborHex);
+	const transactionEvidence = memoizedTransactionEvidence(hydraHeadId, utxo.input.txHash, confirmedTransaction.cborHex);
 	if (
 		!transactionEvidence ||
 		transactionEvidence.txHash !== utxo.input.txHash ||
@@ -468,11 +546,18 @@ async function reconcileEscrowUtxo(
 		});
 		return 'retry';
 	}
+	// Evidence is still checked above so a missing or mismatched confirmation keeps
+	// signalling 'retry'; only the no-op write transaction is skipped.
+	if (hasNothingToApply) {
+		return 'irrelevant';
+	}
 	// Hydra's top-level SnapshotConfirmed timestamp applies to every transaction
 	// in that snapshot. Legacy replay frames without it stay null, so first-seen
 	// locks fail closed instead of using a stale head-clock tick as deadline proof.
 	const confirmationTimeMs = confirmedTransaction?.confirmedAtMs ?? null;
-	logger.info('[HydraReconcile] advancing in-head escrow state', {
+	// Debug, not info: every pass re-applies every live escrow output, almost
+	// always as a no-op, so at info this repeated each row every cycle.
+	logger.debug('[HydraReconcile] advancing in-head escrow state', {
 		hydraHeadId,
 		blockchainIdentifier: decoded.blockchainIdentifier,
 		newState,

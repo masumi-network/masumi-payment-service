@@ -23,6 +23,7 @@ import { pollHydraRedemptions, reapExpiredInvites } from '@/services/hydra-invit
 import { releaseAbandonedReservations } from '@/services/hydra-invite/release-reservation';
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
+import { runHydraSnapshotRoundWatch } from '@/services/hydra-snapshot-round/watch';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { reconcileRecoveredHydraTopups } from '@/services/hydra-topup-reconciliation/recovered';
 import {
@@ -34,7 +35,17 @@ import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup'
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { releaseStalledCloseAdmissions } from '@/services/hydra-close-admission';
 import { isHydraInUse } from '@/services/hydra-usage';
+import { runHydraHostPauseCycle } from '@/services/hydra-host/pause';
 import { logger } from '@masumi/payment-core/logger';
+
+/** A stuck round alerts after ten minutes, so once a minute is plenty. */
+const HYDRA_SNAPSHOT_ROUND_WATCH_INTERVAL_MS = 60_000;
+/**
+ * A paused Host's nodes stop once its in-flight work is done. While the pause
+ * waits, no new work starts on it, so checking twice a minute keeps the wait
+ * short without adding load.
+ */
+const HYDRA_HOST_PAUSE_CYCLE_INTERVAL_MS = 30_000;
 
 export const scheduledJobs: JobDefinition[] = [
 	{
@@ -196,6 +207,22 @@ export const scheduledJobs: JobDefinition[] = [
 		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra in-head low-balance monitoring',
 		run: runHydraLowBalanceMonitoringCycle,
+	},
+	{
+		initialDelayMs: 21000,
+		intervalMs: HYDRA_SNAPSHOT_ROUND_WATCH_INTERVAL_MS,
+		startMessage: 'Starting Hydra snapshot round watch',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra snapshot round watch',
+		run: runHydraSnapshotRoundWatch,
+	},
+	{
+		initialDelayMs: 22000,
+		intervalMs: HYDRA_HOST_PAUSE_CYCLE_INTERVAL_MS,
+		startMessage: 'Starting Hydra Host pause cycle',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra Host pause cycle',
+		run: runHydraHostPauseCycle,
 	},
 	{
 		initialDelayMs: 16500,
@@ -505,7 +532,9 @@ export const scheduledJobs: JobDefinition[] = [
 		// L2 mirror of L1 tx-sync: reads each enabled head's in-head escrow UTxOs and
 		// advances this node's own payment/purchase rows to the observed state, so a
 		// counterparty-driven in-head transition is not missed (payment/purchase
-		// onChainState divergence). Idempotent; runs on the hydra cadence.
+		// onChainState divergence). Idempotent; runs on the hydra cadence because it
+		// is the only drain of the ordered replay queue. The live-snapshot part is
+		// throttled per head by HYDRA_ESCROW_RECONCILE_INTERVAL.
 		initialDelayMs: 20500,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting L2 hydra escrow-state reconcile',

@@ -1,5 +1,10 @@
-// OpenAPI docs for Hydra routes. Node funding docs live in docs-node-funding.ts.
+// OpenAPI docs for Hydra routes. Node funding docs live in docs-node-funding.ts,
+// withdrawal and consolidation docs in docs-withdraw.ts.
 import { registerHydraNodeFundingPaths } from './docs-node-funding';
+import { registerHydraWithdrawPaths } from './docs-withdraw';
+import { registerHydraSnapshotRoundPaths } from './docs-snapshot-round';
+import { registerHydraL2ReservationPaths } from './docs-l2-reservations';
+import { registerHydraHostPausePaths } from './docs-host-pause';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 import {
 	getHeadSchemaInput,
@@ -24,12 +29,6 @@ import {
 	recoverTopupOutput,
 } from '@/routes/api/hydra/head/topup';
 import { headConnectionSchemaInput, headConnectionSchemaOutput } from '@/routes/api/hydra/head/observability';
-import {
-	withdrawInput,
-	withdrawOutput,
-	listWithdrawalsInput,
-	listWithdrawalsOutput,
-} from '@/routes/api/hydra/head/withdraw';
 import { listHeadTransactionsInput, listHeadTransactionsOutput } from '@/routes/api/hydra/head/transactions';
 import {
 	listHydraLowBalanceRulesSchemaInput,
@@ -246,7 +245,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/host/check',
 		summary: 'Probe a Hydra Host and record its capabilities. (admin access required)',
 		description:
-			'Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it.',
+			'Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it. Every check runs, and `lastHealthError` holds one failed check per line. A Host with no free node slots still passes: only a new placement needs a free slot.',
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(checkHydraHostSchemaInput, undefined) },
@@ -421,68 +420,10 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			502: { description: 'No live connection to the head' },
 		},
 	});
-	registry.registerPath({
-		method: 'post',
-		path: '/hydra/head/withdraw',
-		summary: 'Withdraw funds from an open head back to L1. (admin access required)',
-		description:
-			"Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head — the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
-		tags: TAG,
-		security: secured,
-		request: { body: jsonBody(withdrawInput, { headId: HEAD_ID, lovelace: '10000000', drain: false }) },
-		responses: {
-			200: successResponse('Withdrawal accepted', withdrawOutput, { headId: HEAD_ID, accepted: true }),
-			...unauthorized,
-			...notFound,
-			// What the withdrawal itself gets wrong — nothing eligible, less eligible
-			// than was asked for, a node that refuses the request — is reported
-			// against the withdrawal row, because it is decided after this answers.
-			// These are the refusals a caller can actually receive.
-			400: {
-				description:
-					'Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant',
-			},
-			409: {
-				description: 'Head not open, disabled, not yet identified on chain, or its node is still catching up',
-			},
-			502: { description: 'No live connection to the head' },
-		},
-	});
-	registry.registerPath({
-		method: 'get',
-		path: '/hydra/head/withdraw',
-		summary: 'List withdrawals from a head. (admin access required)',
-		description:
-			'Withdrawals out of this head, newest first. `approvedAt` is the point of no return: the head has signed the removal and the funds have left it, whether or not L1 has them yet. `finalizedAt` is when they became spendable on L1.',
-		tags: TAG,
-		security: secured,
-		request: { query: listWithdrawalsInput },
-		responses: {
-			200: successResponse('Withdrawals', listWithdrawalsOutput, {
-				withdrawals: [
-					{
-						id: 'cuid_v2_auto_generated',
-						createdAt: '1970-01-01T00:00:00.000Z',
-						updatedAt: '1970-01-01T00:00:00.000Z',
-						status: 'Approved',
-						splitTxId: 'b'.repeat(64),
-						decommitTxId: 'a'.repeat(64),
-						l1TxId: null,
-						requestedLovelace: '10000000',
-						requestedAssets: {},
-						settledLovelace: null,
-						settledAssets: null,
-						destinationAddress: 'addr_test1...',
-						failureReason: null,
-						approvedAt: '1970-01-01T00:00:00.000Z',
-						finalizedAt: null,
-					},
-				],
-			}),
-			...unauthorized,
-			...notFound,
-		},
-	});
+	registerHydraWithdrawPaths({ registry, apiKeyAuth });
+	registerHydraSnapshotRoundPaths({ registry, apiKeyAuth });
+	registerHydraL2ReservationPaths({ registry, apiKeyAuth });
+	registerHydraHostPausePaths({ registry, apiKeyAuth });
 	registry.registerPath({
 		method: 'get',
 		path: '/hydra/head/balance',

@@ -19,18 +19,12 @@
 
 import createHttpError from 'http-errors';
 import { MeshTxBuilder, MeshWallet, resolveTxHash, type UTxO } from '@meshsdk/core';
-import {
-	HydraDecommitStatus,
-	HydraErrorType,
-	HydraHeadStatus,
-	Network,
-	Prisma,
-	TransactionLayer,
-} from '@/generated/prisma/client';
+import { HydraDecommitStatus, HydraErrorType, HydraHeadStatus, Network, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
 import { CustomHydraHead, HydraProvider, HydraTransactionType, HydraTransportAmbiguousError } from '@/lib/hydra';
+import { fetchHydraDecommitInFlight } from '@/lib/hydra/hydra/node-control-queries';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
@@ -39,7 +33,7 @@ import {
 	amountOf,
 	countNativeAssets,
 	coverAssetForCarve,
-	coverLovelace,
+	planLovelaceWithdrawal,
 	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
 	isAlreadyCarved,
 	requiredChangeLovelace,
@@ -49,6 +43,13 @@ import {
 	utxoRef,
 } from './select';
 import { assertDecommitOutputMinimum } from './min-output';
+import {
+	assertHydraHeadHostNotPaused,
+	HYDRA_HOST_PAUSED_MESSAGE,
+	isHydraHeadOnPausedHostLocked,
+} from '@/services/hydra-host/pause';
+import { staleWithdrawal } from './stale';
+import { countLiveInHeadEscrows } from './live-escrows';
 
 /**
  * How long the in-head split gets to confirm before the withdrawal gives up.
@@ -60,39 +61,6 @@ import { assertDecommitOutputMinimum } from './min-output';
  */
 const SPLIT_CONFIRM_TIMEOUT_MS = 60_000;
 const SPLIT_POLL_MS = 500;
-
-/**
- * After this, a Preparing row is treated as abandoned.
- *
- * Same reasoning as the top-up's equivalent: a Preparing row blocks the next
- * withdrawal and nothing else can resolve one, because it has no decommit id for
- * the head's events to match. Much shorter here — the split it is waiting on is
- * an in-head transaction, not an L1 confirmation.
- */
-const PREPARING_STALE_AFTER_MS = 10 * 60 * 1000;
-
-/**
- * After this, a Pending row is treated as one the head never received.
- *
- * A withdrawal request whose transport answer was ambiguous stays Pending on
- * purpose — only the head can say whether it took it. But nothing else could
- * ever move that row: `Pending` and `Approved` are written only by the head's
- * own events, so a request the node provably never saw (a Host-proxy 502 while
- * the node restarts is enough) left the row Pending for good, and the claim
- * above refuses every later withdrawal from that head. The only way out was to
- * close the head.
- *
- * An hour is far past any decommit round. The head answers a request it took
- * within seconds, with DecommitApproved or DecommitInvalid, and a reconnect
- * replays the whole history so a missed frame is re-delivered. It is also safe
- * if that reasoning is somehow wrong: hydra-node refuses a second decommit
- * while one is in flight, so a fresh request cannot become a second withdrawal
- * of the same funds — it is refused by the node instead.
- *
- * `Approved` is deliberately NOT aged out. The head approved it, so the funds
- * are on their way to L1, and only the settlement can close that row.
- */
-const PENDING_STALE_AFTER_MS = 60 * 60 * 1000;
 
 /**
  * The least a split may leave behind.
@@ -192,6 +160,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 	if (!head.headIdentifier) {
 		throw createHttpError(409, 'Cannot withdraw before the Hydra head identifier has been observed');
 	}
+	await assertHydraHeadHostNotPaused(head.id);
 
 	const cm = getHydraConnectionManager();
 	const hydraHead = cm.getHead(head.id);
@@ -221,66 +190,99 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// pending decommit, so a second request would be refused by the node; being
 		// refused here instead means the operator is told why, and no row is left
 		// behind claiming a withdrawal is in flight when the head never took it.
-		const claim = await withSerializableSlotRetry(() =>
-			prisma.$transaction(
-				async (tx) => {
-					const active = await tx.hydraDecommit.findFirst({
-						where: {
-							hydraLocalParticipantId: localParticipant.id,
-							status: {
-								in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending, HydraDecommitStatus.Approved],
+		const claimSlot = (nodeHoldsNoWithdrawal: boolean) =>
+			withSerializableSlotRetry(() =>
+				prisma.$transaction(
+					async (tx) => {
+						const active = await tx.hydraDecommit.findFirst({
+							where: {
+								hydraLocalParticipantId: localParticipant.id,
+								status: {
+									in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending, HydraDecommitStatus.Approved],
+								},
 							},
-						},
-						orderBy: { createdAt: 'desc' },
-					});
-
-					if (active !== null) {
-						const stale =
-							active.status === HydraDecommitStatus.Preparing &&
-							Date.now() - active.createdAt.getTime() > PREPARING_STALE_AFTER_MS
-								? { status: HydraDecommitStatus.Preparing, reason: 'the in-head split never confirmed' }
-								: active.status === HydraDecommitStatus.Pending &&
-									  Date.now() - active.updatedAt.getTime() > PENDING_STALE_AFTER_MS
-									? {
-											status: HydraDecommitStatus.Pending,
-											reason: 'the head never answered the withdrawal request',
-										}
-									: null;
-						if (stale === null) return { claimed: false as const, active };
-						await tx.hydraDecommit.updateMany({
-							where: { id: active.id, status: stale.status },
-							data: { status: HydraDecommitStatus.Failed, failureReason: stale.reason },
+							orderBy: { createdAt: 'desc' },
 						});
-						logger.warn(
-							`[HydraDecommit] failed a stale ${stale.status.toLowerCase()} withdrawal ${active.id} so a new one can start`,
-						);
-					}
 
-					const created = await tx.hydraDecommit.create({
-						data: {
-							hydraHeadId: head.id,
-							hydraLocalParticipantId: localParticipant.id,
-							requestedLovelace: params.lovelace ?? 0n,
-							// From the request, so a token withdrawal does not read as
-							// "0.00 tADA" for the whole time it is being prepared.
-							requestedAssets: params.asset == null ? {} : { [params.asset.unit]: params.asset.amount.toString() },
-							destinationAddress: localParticipant.Wallet.walletAddress,
-							status: HydraDecommitStatus.Preparing,
-						},
-						select: { id: true },
-					});
-					return { claimed: true as const, id: created.id };
-				},
-				{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-			),
-		);
+						if (active !== null) {
+							const stale = staleWithdrawal(active, Date.now(), nodeHoldsNoWithdrawal);
+							if (stale === null || stale === 'ask-node') {
+								return { claimed: false as const, active, askNode: stale === 'ask-node' };
+							}
+							await tx.hydraDecommit.updateMany({
+								where: { id: active.id, status: stale.status },
+								data: { status: HydraDecommitStatus.Failed, failureReason: stale.reason },
+							});
+							logger.warn(
+								`[HydraDecommit] failed a stale ${stale.status.toLowerCase()} withdrawal ${active.id} so a new one can start`,
+							);
+						}
 
+						if (await isHydraHeadOnPausedHostLocked(tx, head.id)) throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
+
+						// Taking the collateral is only safe once nothing is left to spend
+						// with it. The dialog explains the consequence, but a dialog is not a
+						// guard: an escrow still live in the head becomes unspendable the
+						// moment its wallet has no collateral, and the only way out of that
+						// is closing the head. The head row lock is the one new escrow
+						// reservations take, so the count and the drain mark are atomic with
+						// respect to them: no escrow can enter after the count.
+						if (params.drain === true) {
+							await tx.$queryRaw`SELECT 1 FROM "HydraHead" WHERE "id" = ${head.id} FOR UPDATE`;
+							const liveEscrows = await countLiveInHeadEscrows(tx, head.id);
+							if (liveEscrows > 0) return { claimed: false as const, liveEscrows };
+							await tx.hydraHead.update({ where: { id: head.id }, data: { collateralDrainedAt: new Date() } });
+						}
+
+						const created = await tx.hydraDecommit.create({
+							data: {
+								hydraHeadId: head.id,
+								hydraLocalParticipantId: localParticipant.id,
+								requestedLovelace: params.lovelace ?? 0n,
+								// From the request, so a token withdrawal does not read as
+								// "0.00 tADA" for the whole time it is being prepared.
+								requestedAssets: params.asset == null ? {} : { [params.asset.unit]: params.asset.amount.toString() },
+								destinationAddress: localParticipant.Wallet.walletAddress,
+								status: HydraDecommitStatus.Preparing,
+							},
+							select: { id: true },
+						});
+						return { claimed: true as const, id: created.id };
+					},
+					{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+				),
+			);
+
+		// A stale Pending row is expired only on the node's word that it holds no
+		// withdrawal. Asked outside the transaction, so a slow node never holds a
+		// serializable slot, and the claim is re-run so the row is re-read after.
+		let claim = await claimSlot(false);
+		if (
+			!claim.claimed &&
+			'askNode' in claim &&
+			claim.askNode &&
+			(await fetchHydraDecommitInFlight(hydraHead.mainNode)) === false
+		) {
+			claim = await claimSlot(true);
+		}
+
+		if (!claim.claimed && 'liveEscrows' in claim) {
+			throw createHttpError(
+				409,
+				`Cannot withdraw the collateral while escrows are still live or pending in this head (${claim.liveEscrows} found). ` +
+					'Without collateral they could not be settled, and closing the head would be the only way to recover them. ' +
+					'Settle them first, or withdraw an amount instead.',
+			);
+		}
 		if (!claim.claimed) {
 			throw createHttpError(
 				409,
 				claim.active.status === HydraDecommitStatus.Approved
 					? 'A prior withdrawal has left the head and is still settling on L1'
-					: 'A withdrawal from this head is already in progress',
+					: claim.askNode
+						? `A prior withdrawal (${claim.active.decommitTxId ?? claim.active.id}) never settled, and the node did not ` +
+							'confirm it holds no withdrawal, so it cannot be given up on yet; retry once the node answers'
+						: 'A withdrawal from this head is already in progress',
 			);
 		}
 		preparingId = claim.id;
@@ -297,22 +299,6 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			key: { type: 'mnemonic', words: decrypt(localParticipant.Wallet.Secret.encryptedMnemonic).split(' ') },
 		});
 		await wallet.getUnusedAddresses();
-
-		// Taking the collateral is only safe once nothing is left to spend with it.
-		// The dialog explains the consequence, but a dialog is not a guard: an
-		// escrow still live in the head becomes unspendable the moment its wallet
-		// has no collateral, and the only way out of that is closing the head.
-		if (params.drain === true) {
-			const liveEscrows = await countLiveInHeadEscrows(head.id);
-			if (liveEscrows > 0) {
-				throw createHttpError(
-					409,
-					`Cannot withdraw the collateral while ${liveEscrows} escrow${liveEscrows === 1 ? ' is' : 's are'} still live in this head. ` +
-						'Without collateral they could not be settled, and closing the head would be the only way to recover them. ' +
-						'Settle them first, or withdraw an amount instead.',
-				);
-			}
-		}
 
 		// Hydra produces no new snapshot while a previous decommit's utxoToDecommit
 		// is non-empty — the node's chain follower has not yet observed that
@@ -424,49 +410,40 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			}
 		} else if (params.lovelace != null) {
 			const requestedLovelace = params.lovelace;
-			// An eligible UTxO already holding exactly the requested amount is
-			// decommitted whole. `coverLovelace` picks largest-first, so without this
-			// check it would carve a bigger UTxO down to this amount even with an
-			// exact match sitting right there — leaving a stray exact-amount UTxO
-			// behind on every refused or retried withdrawal instead of reusing it.
-			//
-			// Pure ADA only: `selection.eligible` excludes reference scripts but not
-			// native assets, and a decommit removes the WHOLE output it spends. A UTxO
-			// that happens to hold the exact lovelace plus some unrelated token (an
-			// agent's registry NFT, say) is not what an amount-only withdrawal asked
-			// for, and taking it whole would carry that asset out of the head
-			// silently. Such a UTxO falls back to the ordinary split path instead,
-			// which carves the amount off a pure UTxO and leaves the asset behind.
-			const exactMatch = selection.eligible.find(
-				(utxo) => lovelaceOf(utxo) === requestedLovelace && countNativeAssets(utxo) === 0,
-			);
-			const covering = exactMatch != null ? [exactMatch] : coverLovelace(selection.eligible, requestedLovelace);
-			if (covering === null) {
+			const plan = planLovelaceWithdrawal({
+				eligible: selection.eligible,
+				amount: requestedLovelace,
+				baseChangeLovelace: MIN_SPLIT_REMAINDER_LOVELACE,
+				perAssetChangeLovelace: PER_ASSET_CHANGE_LOVELACE,
+			});
+			if (plan.kind === 'insufficient') {
 				throw createHttpError(
 					400,
 					`Only ${selection.eligibleLovelace} lovelace is eligible to withdraw, which is less than the ${requestedLovelace} requested`,
 				);
 			}
-			const covered = covering.reduce((total, utxo) => total + lovelaceOf(utxo), 0n);
-			if (covered === requestedLovelace) {
-				// The chosen UTxOs already come to exactly the amount, so the split
-				// would be a transaction that changes nothing.
-				decommitInputs = covering;
+			if (plan.kind === 'remainder-too-small') {
+				throw createHttpError(
+					400,
+					// A whole-UTxO withdrawal would take those assets out too, so
+					// it is not suggested here.
+					plan.coverHoldsAssets
+						? `The ${requestedLovelace} lovelace that covers this withdrawal sits on UTxOs that also hold native assets, ` +
+								'and no spare ADA is eligible to keep those assets in the head. Add funds to the head, or withdraw a little less.'
+						: `Withdrawing ${requestedLovelace} lovelace would leave ${plan.remainder} behind, which is below the minimum a UTxO may hold. ` +
+								'Withdraw a little less, or leave the amount out to take whole UTxOs.',
+				);
+			}
+			if (plan.kind === 'whole') {
+				decommitInputs = plan.inputs;
 			} else {
-				if (covered - requestedLovelace < MIN_SPLIT_REMAINDER_LOVELACE) {
-					throw createHttpError(
-						400,
-						`Withdrawing ${requestedLovelace} lovelace would leave ${covered - requestedLovelace} behind, which is below the minimum a UTxO may hold. ` +
-							'Withdraw a little less, or leave the amount out to take whole UTxOs.',
-					);
-				}
 				const split = await splitExactAmountInHead({
 					wallet,
 					provider,
 					hydraHead,
 					address,
 					network,
-					inputs: covering,
+					inputs: plan.inputs,
 					unit: '',
 					amount: requestedLovelace,
 					decommitId: claim.id,
@@ -717,7 +694,9 @@ async function splitExactAmountInHead(params: {
 		(utxo) =>
 			utxo.output.address === address &&
 			amountOf(utxo, isLovelace ? '' : unit) === amount &&
-			(isLovelace || lovelaceOf(utxo) === TOKEN_OUTPUT_LOVELACE),
+			// A lovelace carve's change can hold the same lovelace plus the
+			// tokens it kept. Only the pure output may leave the head.
+			(isLovelace ? countNativeAssets(utxo) === 0 : lovelaceOf(utxo) === TOKEN_OUTPUT_LOVELACE),
 	);
 	if (!exact) {
 		throw createHttpError(
@@ -727,24 +706,4 @@ async function splitExactAmountInHead(params: {
 	}
 	logger.info(`[HydraDecommit] split ${amount} ${isLovelace ? 'lovelace' : unit} into ${utxoRef(exact)} in head`);
 	return { txId: splitTxId, exact };
-}
-
-/**
- * Escrows this head still holds that have not settled.
- *
- * "Live" means the request still points at an in-head UTxO: an escrow that has
- * reached a terminal state has no `currentHydraUtxoTxHash` and needs nothing
- * further from this wallet. Both sides are counted, because a wallet can be
- * buyer on one escrow and seller on another in the same head.
- */
-async function countLiveInHeadEscrows(hydraHeadId: string): Promise<number> {
-	const where = {
-		currentHydraUtxoTxHash: { not: null },
-		CurrentTransaction: { is: { hydraHeadId, layer: TransactionLayer.L2 } },
-	} as const;
-	const [payments, purchases] = await Promise.all([
-		prisma.paymentRequest.count({ where }),
-		prisma.purchaseRequest.count({ where }),
-	]);
-	return payments + purchases;
 }

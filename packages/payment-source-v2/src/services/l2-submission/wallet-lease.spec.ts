@@ -37,7 +37,7 @@ const transactionClient = {
 		{ status: HydraHeadStatus.Open, isEnabled: true, isClosing: false, initTxHash: 'b'.repeat(64) },
 	]),
 	transaction: {
-		create: jest.fn(async () => ({ id: `transaction-${++nextTransactionNumber}` })),
+		create: jest.fn(async (_args: unknown) => ({ id: `transaction-${++nextTransactionNumber}` })),
 	},
 	hotWallet: { updateMany: mockWalletUpdateMany },
 	paymentRequest: {
@@ -69,6 +69,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 }));
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-transaction-evidence', () => ({
 	requireHydraValidityUpperSlot: () => 123n,
+	requireHydraInputRefs: () => [`${'e'.repeat(64)}#0`],
 }));
 
 const { submitReservedL2Action } = await import('.');
@@ -108,6 +109,11 @@ describe('submitReservedL2Action wallet lease', () => {
 		});
 		expect(freshSubmit).toHaveBeenCalledWith(signedTx);
 		expect(walletState.pendingTransactionId).toBe('transaction-2');
+		expect(transactionClient.transaction.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ l2ReservationInputRefs: [`${'e'.repeat(64)}#0`] }),
+			}),
+		);
 		expect(mockWalletUpdateMany).toHaveBeenNthCalledWith(
 			1,
 			expect.objectContaining({

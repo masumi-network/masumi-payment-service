@@ -162,7 +162,7 @@ export function hostEnv(spec: HostSpec): NodeJS.ProcessEnv {
 		BLOCKFROST_PROJECT_FILE: BLOCKFROST_PROJECT_FILE,
 		HYDRA_HOST_LEDGER_PARAMS_FILE: LEDGER_PARAMS_FILE,
 		// No system etcd on macOS; let hydra-node extract and run its own copy.
-		// The image bakes a matching 3.5.25 instead and sets this to true.
+		// The image bakes a 3.5.34 instead and sets this to true.
 		HYDRA_HOST_USE_SYSTEM_ETCD: 'false',
 		// A drain that waits two minutes makes an interactive run unusable, and
 		// the drain logic under test is the same at any timeout.

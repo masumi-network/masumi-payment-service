@@ -16,6 +16,7 @@ import {
 	HYDRA_HEAD_V2_ASSET_NAME_HEX,
 	HydraHeadInitObservationError,
 	LEGACY_HYDRA_HEAD_SCRIPT_HASHES,
+	observeHydraHeadIsOpenOnChain,
 	resolveHydraInitChainAnchor,
 	verifyHydraHeadInitOnChain,
 	type HydraHeadChainObserver,
@@ -406,5 +407,48 @@ describe('resolveHydraInitChainAnchor', () => {
 			blocks: jest.fn(async (_hashOrNumber: string) => ({ hash: PARENT_BLOCK, slot: 499, previous_block: null })),
 		};
 		await expect(resolveHydraInitChainAnchor(observer, INIT_TX_HASH, 50)).resolves.toBeNull();
+	});
+});
+
+/**
+ * A stopped node cannot contest. The watchdog that wakes it reads this, so a
+ * head that is closed on chain must never read as open.
+ */
+describe('observeHydraHeadIsOpenOnChain', () => {
+	it('reads the newest state-token transaction and reports an Open head', async () => {
+		const chain = observer();
+
+		await expect(observeHydraHeadIsOpenOnChain({ observer: chain, headId: HEAD_ID })).resolves.toEqual({
+			state: 'open',
+			latestTxHash: INIT_TX_HASH,
+		});
+		expect(chain.assetsTransactions).toHaveBeenCalledWith(STATE_TOKEN, { page: 1, order: 'desc', count: 1 });
+	});
+
+	it('reports a head whose state output carries a Closed datum as not open', async () => {
+		// `Closed ClosedDatum`: any state constructor other than Open.
+		const closed = constructor(1, [constructor(0, [PlutusData.new_bytes(Buffer.from(HEAD_ID, 'hex'))])]).to_hex();
+
+		await expect(observeHydraHeadIsOpenOnChain({ observer: observer(closed), headId: HEAD_ID })).resolves.toEqual({
+			state: 'closed',
+			latestTxHash: INIT_TX_HASH,
+		});
+	});
+
+	it('reports a head whose state token left the head script as gone', async () => {
+		const chain = observer(openDatum(), headAddressForScriptHash('77'.repeat(28)));
+
+		await expect(observeHydraHeadIsOpenOnChain({ observer: chain, headId: HEAD_ID })).resolves.toMatchObject({
+			state: 'gone',
+		});
+	});
+
+	it('classifies an unindexed state token as retryable observation evidence', async () => {
+		const chain = observer();
+		jest.mocked(chain.assetsTransactions).mockResolvedValue([]);
+
+		await expect(observeHydraHeadIsOpenOnChain({ observer: chain, headId: HEAD_ID })).rejects.toBeInstanceOf(
+			HydraHeadInitObservationError,
+		);
 	});
 });

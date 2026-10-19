@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
-import { HydraCommandRejectedError, HydraTransportError } from '@/lib/hydra/hydra/errors';
+import { HydraCommandRejectedError, HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import { HydraHeadInitObservationError } from '@/lib/hydra/hydra/head-init-validation';
 
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -219,10 +219,9 @@ describe('beginHydraHeadClose', () => {
 				isClosing: false,
 				initTxHash: { not: null },
 			},
-			// `closingSince` starts the reaper's clock. It has to be the latch's own
-			// timestamp: `updatedAt` is rewritten by every attach, so a head that
-			// reconnects often never looked stale and its latch was never released.
-			data: { isClosing: true, closingSince: expect.any(Date) },
+			// `closingSince` is the latch's own timestamp. `closeRefusedAt` starts
+			// empty: a refusal from an earlier attempt must not release this one.
+			data: { isClosing: true, closingSince: expect.any(Date), closeRefusedAt: null },
 		});
 	});
 });
@@ -262,9 +261,24 @@ describe('Hydra head state convergence', () => {
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
 	});
 
+	// Re-proving an enabled head meant disabling it first, which dropped the
+	// live session and the counterparty with it.
+	it('leaves an already enabled head enabled and only reconciles it', async () => {
+		const liveHead = { ...openHead, headIdentifier: 'a'.repeat(56), initTxHash: 'b'.repeat(64) };
+		mockFindHead.mockResolvedValue(liveHead);
+
+		await expect(updateHydraHeadEnabledState('head-1', true, jest.fn() as AnyMock)).resolves.toBe(liveHead);
+
+		expect(mockUpdateHead).not.toHaveBeenCalled();
+		expect(mockReleaseClose).not.toHaveBeenCalled();
+		// Reconnects a head that lost its session, without disabling it first.
+		expect(mockReconcileEnabledState).toHaveBeenCalledWith('head-1');
+	});
+
 	it('freshly verifies an established head before re-enabling and reconnecting it', async () => {
 		const staleHead = {
 			...openHead,
+			isEnabled: false,
 			headIdentifier: 'a'.repeat(56),
 			initTxHash: 'b'.repeat(64),
 			updatedAt: new Date('2026-07-23T01:00:00Z'),
@@ -308,9 +322,49 @@ describe('Hydra head state convergence', () => {
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(2);
 	});
 
+	// Connecting starts the head's history replay. Awaited, a long history kept
+	// the request open through it, and the response query then failed behind
+	// the replay: the UI said "still disabled" for a head that was enabled.
+	it('answers a re-enable once the flag is durable, without waiting for the head to connect', async () => {
+		const staleHead = {
+			...openHead,
+			isEnabled: false,
+			headIdentifier: 'a'.repeat(56),
+			initTxHash: 'b'.repeat(64),
+			updatedAt: new Date('2026-07-23T01:00:00Z'),
+			contestationPeriod: 86_400n,
+			HydraRelation: {},
+		};
+		const quarantinedHead = { ...staleHead, initTxHash: null, updatedAt: new Date('2026-07-23T01:01:00Z') };
+		const enabledHead = { ...quarantinedHead, isEnabled: true, initTxHash: 'c'.repeat(64) };
+		mockFindHead.mockResolvedValueOnce(staleHead).mockResolvedValueOnce(enabledHead);
+		mockUpdateHead.mockResolvedValue(quarantinedHead);
+		mockReleaseClose.mockResolvedValue({ count: 1 });
+		// The quarantine reconcile settles; the connect after enable never does.
+		mockReconcileEnabledState.mockResolvedValueOnce(false).mockReturnValueOnce(new Promise(() => undefined));
+		const verify = jest.fn<(headId: string) => Promise<{ headIdentifier: string; initTxHash: string }>>(async () => ({
+			headIdentifier: staleHead.headIdentifier,
+			initTxHash: 'c'.repeat(64),
+		}));
+
+		await expect(updateHydraHeadEnabledState('head-1', true, verify)).resolves.toBe(enabledHead);
+		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(2);
+	});
+
+	it('answers a re-enable even when connecting the head fails', async () => {
+		const liveHead = { ...openHead, headIdentifier: 'a'.repeat(56), initTxHash: 'b'.repeat(64) };
+		mockFindHead.mockResolvedValue(liveHead);
+		mockReconcileEnabledState.mockRejectedValueOnce(new Error('pool timeout'));
+
+		await expect(updateHydraHeadEnabledState('head-1', true, jest.fn() as AnyMock)).resolves.toBe(liveHead);
+		// The rejection is handled, not left unhandled for the process to crash on.
+		await new Promise((resolve) => setImmediate(resolve));
+	});
+
 	it('leaves an established head disabled when fresh L1 evidence is still unavailable', async () => {
 		const staleHead = {
 			...openHead,
+			isEnabled: false,
 			headIdentifier: 'a'.repeat(56),
 			initTxHash: 'b'.repeat(64),
 			updatedAt: new Date('2026-07-23T01:00:00Z'),
@@ -360,7 +414,46 @@ describe('Hydra head state convergence', () => {
 
 		expect(mockReleaseClose).toHaveBeenCalledWith({
 			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true },
-			data: { isClosing: false, closingSince: null },
+			data: { isClosing: false, closingSince: null, closeRefusedAt: null },
 		});
+	});
+
+	// The node's refusal is the only proof the stalled-close reaper accepts that
+	// this Close cannot still post. It is recorded, never acted on here: the head
+	// may have been closed by the other party, which only L1 can rule out.
+	it('records a node refusal of the dispatched Close and keeps the latch', async () => {
+		mockClose.mockRejectedValue(
+			new HydraTransportAmbiguousError('Hydra Close was rejected after dispatch', {
+				cause: new HydraCommandRejectedError('hydra-node refused to post the Close transaction: NoSeedInput'),
+			}),
+		);
+		const handler = (
+			closeHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+
+		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
+		expect(mockReleaseClose).toHaveBeenCalledWith({
+			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true },
+			data: { closeRefusedAt: expect.any(Date) },
+		});
+	});
+
+	// A timeout after dispatch is the parked-Close case: the node may still post
+	// it. No refusal is recorded, so the reaper never releases the latch.
+	it('records nothing when the dispatched Close only timed out', async () => {
+		mockClose.mockRejectedValue(new HydraTransportAmbiguousError('Hydra Close outcome was not observed'));
+		const handler = (
+			closeHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+
+		expect(mockReleaseClose).not.toHaveBeenCalled();
 	});
 });

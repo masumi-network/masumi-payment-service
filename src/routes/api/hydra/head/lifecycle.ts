@@ -44,9 +44,11 @@ import { classifyInitObservation, type InitObservationVerdict } from '@/utils/hy
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
+import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
+import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 
 // --- Lifecycle: POST init ---
 
@@ -75,6 +77,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		if (!head.isEnabled) {
 			throw createHttpError(409, 'Cannot init a disabled Hydra head');
 		}
+		await assertHydraHeadHostNotPaused(head.id);
 
 		// Exactly one side may open a head, and nothing in the protocol arbitrates
 		// it: two Inits race for the same seed inputs, one loses on chain, and the
@@ -198,6 +201,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				// An initialized-but-unverified head must not remain eligible for sync or
 				// lifecycle actions. Re-enabling is an explicit operator decision after
 				// fixing the L1 observer or node configuration.
+				forgetHeadFailedClosed(head.id);
 				await prisma.hydraHead.updateMany({ where: { id: head.id }, data: { isEnabled: false } });
 				await cm.disconnect(head.id);
 				throw createHttpError(
@@ -257,6 +261,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		if (!head.isEnabled) {
 			throw createHttpError(409, 'Cannot commit to a disabled Hydra head');
 		}
+		await assertHydraHeadHostNotPaused(head.id);
 
 		// Open only. hydra-node accepts a commit while a head is Initializing too,
 		// but that draft spends the vInitial output with a Plutus redeemer, so it

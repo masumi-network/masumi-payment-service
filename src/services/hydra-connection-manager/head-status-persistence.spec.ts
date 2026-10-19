@@ -4,11 +4,12 @@ import type { CustomHydraHead } from '@/lib/hydra';
 import type { HeadStatusPersistenceHost } from './head-status-persistence';
 
 const mockFindUnique = jest.fn<(_args: unknown) => Promise<unknown>>();
+const mockFindMany = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockUpdateMany = jest.fn<(_args: unknown) => Promise<{ count: number }>>();
 const mockPersistRegressive = jest.fn<(...args: unknown[]) => Promise<string>>();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hydraHead: { findUnique: mockFindUnique, updateMany: mockUpdateMany } },
+	prisma: { hydraHead: { findUnique: mockFindUnique, findMany: mockFindMany, updateMany: mockUpdateMany } },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/db-retry', () => ({
@@ -23,8 +24,16 @@ jest.unstable_mockModule('./head-session-ops', () => ({
 	persistRegressiveHeadStatus: mockPersistRegressive,
 }));
 
+const mockMarkHeadFailedClosed = jest.fn();
+const mockForgetHeadFailedClosed = jest.fn();
+jest.unstable_mockModule('./head-auto-disable-recovery', () => ({
+	markHeadFailedClosed: mockMarkHeadFailedClosed,
+	forgetHeadFailedClosed: mockForgetHeadFailedClosed,
+}));
+
 const { persistHeadStatus, failClosedAfterStatusPersistenceFailure, recordCloseTransaction } =
 	await import('./head-status-persistence');
+const { logger } = await import('@masumi/payment-core/logger');
 
 function host(): { [K in keyof HeadStatusPersistenceHost]: jest.Mock } {
 	return {
@@ -92,6 +101,38 @@ describe('persistHeadStatus under the ownership fence', () => {
 		expect(persistenceHost.scheduleRecovery).not.toHaveBeenCalled();
 	});
 
+	// The relation is held for explicit operator recovery; an earlier
+	// fail-closed mark must not re-enable any of its heads automatically.
+	it('drops the auto-recovery mark of every head a rollback quarantined', async () => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Final }));
+		mockPersistRegressive.mockResolvedValue('quarantined-relation-conflict');
+		mockFindMany.mockResolvedValue([{ id: 'head-1' }, { id: 'head-2' }]);
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Open });
+
+		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-1');
+		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-2');
+	});
+
+	it('drops the auto-recovery mark when a rollback below Open disabled the head', async () => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Open }));
+		mockPersistRegressive.mockResolvedValue('persisted');
+		mockFindMany.mockResolvedValue([{ id: 'head-1' }]);
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Initializing });
+
+		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-1');
+	});
+
+	it('keeps the mark for a rollback that leaves the head open', async () => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Closed }));
+		mockPersistRegressive.mockResolvedValue('persisted');
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Open });
+
+		expect(mockForgetHeadFailedClosed).not.toHaveBeenCalled();
+	});
+
 	it('treats a stale-owner rollback verdict as self-demotion, not failure', async () => {
 		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Final }));
 		mockPersistRegressive.mockResolvedValue('stale-owner');
@@ -120,6 +161,25 @@ describe('persistHeadStatus under the ownership fence', () => {
 		expect(persistenceHost.quarantine).toHaveBeenCalledTimes(1);
 		expect(persistenceHost.scheduleRecovery).toHaveBeenCalledTimes(1);
 	});
+
+	// This miss disables the head. Without the row it was compared against, the
+	// log cannot say what moved, and the cause of the disable is lost.
+	it('logs the durable row next to the frame when the compare-and-set keeps missing', async () => {
+		mockUpdateMany.mockResolvedValue({ count: 0 });
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Closed });
+
+		expect(logger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('Head status changed concurrently'),
+			expect.objectContaining({
+				status: HydraHeadStatus.Closed,
+				sessionOwnerEpoch: '1',
+				durableIsEnabled: true,
+				durableStatus: HydraHeadStatus.Open,
+				durableOwnerEpoch: '1',
+			}),
+		);
+	});
 });
 
 describe('failClosedAfterStatusPersistenceFailure under the ownership fence', () => {
@@ -128,7 +188,7 @@ describe('failClosedAfterStatusPersistenceFailure under the ownership fence', ()
 		await failClosedAfterStatusPersistenceFailure(persistenceHost, 'head-1', fakeHead(), 3n);
 
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', ownerEpoch: 3n },
+			where: { id: 'head-1', ownerEpoch: 3n, isEnabled: true },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -137,6 +197,28 @@ describe('failClosedAfterStatusPersistenceFailure under the ownership fence', ()
 				reconciliationCompletedAt: null,
 			},
 		});
+	});
+
+	it('marks the head for automatic recovery only when this write disabled it', async () => {
+		mockUpdateMany.mockResolvedValue({ count: 1 });
+		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
+		expect(mockMarkHeadFailedClosed).toHaveBeenCalledWith('head-1');
+
+		mockMarkHeadFailedClosed.mockClear();
+		mockUpdateMany.mockClear();
+		// Already disabled (an operator or a rollback quarantine did it): not ours
+		// to undo. Init evidence is still cleared.
+		mockUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
+		expect(mockMarkHeadFailedClosed).not.toHaveBeenCalled();
+		expect(mockUpdateMany).toHaveBeenLastCalledWith(
+			expect.objectContaining({ where: { id: 'head-1', ownerEpoch: 1n } }),
+		);
+
+		// Fenced out by a newer owner: not ours either.
+		mockUpdateMany.mockResolvedValue({ count: 0 });
+		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
+		expect(mockMarkHeadFailedClosed).not.toHaveBeenCalled();
 	});
 
 	it('still schedules recovery when the disable was fenced out', async () => {

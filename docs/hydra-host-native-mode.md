@@ -48,11 +48,11 @@ registry, port allocation, supervisor, plan/drain/drift/unwedge, node client,
 auth, routes, provisioning, and the proxy. Three environment variables differ,
 and all three are configuration rather than code paths:
 
-| Variable                     | Container                                       | Native (macOS)                             |
-| ---------------------------- | ----------------------------------------------- | ------------------------------------------ |
-| `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, Linux)      | path to the Darwin arm64 build             |
-| `HYDRA_HOST_DATA_DIR`        | `/data` volume                                  | a local directory                          |
-| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes a matching etcd 3.5.25 | `false` — let `hydra-node` extract its own |
+| Variable                     | Container                                  | Native (macOS)                             |
+| ---------------------------- | ------------------------------------------ | ------------------------------------------ |
+| `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, Linux) | path to the Darwin arm64 build             |
+| `HYDRA_HOST_DATA_DIR`        | `/data` volume                             | a local directory                          |
+| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes etcd 3.5.34       | `false` — let `hydra-node` extract its own |
 
 Native mode is a supported way to run the Host, not a workaround.
 
@@ -93,13 +93,16 @@ checks the digest is present before it downloads. Upstream publishes no digest
 for a CI artifact, so the value was measured locally. Re-pin it when you move
 `HYDRA_VERSION`.
 
-The binary lands at `hydra-l2-flow/.bin/hydra-node`. An existing binary at that
-path is left alone: the script returns early rather than upgrading it, and
-prints nothing at all when it does. Silence therefore means the fetch replaced
-nothing, so check the version yourself:
+The binary lands at `hydra-l2-flow/.bin/hydra-node`, with a
+`hydra-node.sha256` record beside it. An existing binary at that path is not
+upgraded. The script checks it against that record and refuses to run it when
+the record is missing, the file changed, or the recorded pin is not one this run
+is configured with. Remove both files to fetch and verify it again. Silence
+means the fetch replaced nothing, so check the version through the script,
+which runs `--version` only on a verified binary:
 
 ```bash
-./hydra-l2-flow/.bin/hydra-node --version
+./hydra-l2-flow/hydra-native.sh status
 ```
 
 Both sides of a head must run the same version, so pin it rather than tracking
@@ -143,12 +146,12 @@ must use its public HTTPS Exchange Plane URL.
 
 Four of those differ from the container and are worth understanding:
 
-|                                    | Why                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HYDRA_NODE_BIN`                   | Nothing is baked in, so the path is yours to supply.                                                                                                                                                                                                                                                                                                            |
-| `HYDRA_HOST_DATA_DIR`              | Defaults to `/data`, which is the container's volume. Point it somewhere real and back it up: it holds the event store and the raft WAL.                                                                                                                                                                                                                        |
-| `HYDRA_HOST_LEDGER_PARAMS_FILE`    | Defaults to `/opt/hydra/params/<network>.json`, which only exists in the image. Use the reviewed file that ships in `packages/hydra-host/params/` — any other params file, however plausible, makes every payment service refuse the Host.                                                                                                                      |
-| `HYDRA_HOST_USE_SYSTEM_ETCD=false` | Required, and it defaults to `true`. There is no system etcd outside the image, so leaving the default means every node dies seconds after starting; let `hydra-node` extract the copy it embeds instead. Setting `true` against a different etcd version risks subtle raft incompatibilities. The Host refuses to boot if this is on and no `etcd` is on PATH. |
+|                                    | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `HYDRA_NODE_BIN`                   | Nothing is baked in, so the path is yours to supply.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `HYDRA_HOST_DATA_DIR`              | Defaults to `/data`, which is the container's volume. Point it somewhere real and back it up: it holds the event store and the raft WAL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `HYDRA_HOST_LEDGER_PARAMS_FILE`    | Defaults to `/opt/hydra/params/<network>.json`, which only exists in the image. Use the reviewed file that ships in `packages/hydra-host/params/` — any other params file, however plausible, makes every payment service refuse the Host.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `HYDRA_HOST_USE_SYSTEM_ETCD=false` | Required, and it defaults to `true`. There is no system etcd outside the image, so leaving the default means every node dies seconds after starting; let `hydra-node` extract the copy it embeds instead. Setting `true` needs an etcd on the 3.5 line at 3.5.33 or later: another minor risks raft incompatibilities, and earlier patches have the peer lease memory flaw. With `false` the node runs the 3.5.25 that `hydra-node` embeds, which has that flaw, so the peer allowlist ruleset is the only protection for an open peer range. The Host refuses to boot if `HYDRA_HOST_USE_SYSTEM_ETCD` is `true` and no `etcd` is on PATH. |
 
 `BLOCKFROST_PROJECT_FILE` is a path to a file containing the project id, not
 the id itself, in native mode as in the container.
@@ -162,9 +165,12 @@ There is no container here, so there is no port publication and no
 `docker-compose.public-peer.yml` to gate the peer range behind. The peer ports
 are simply open on the machine as soon as a node starts. The nftables ruleset
 from `GET /v1/peer-allowlist`, plus whatever firewall sits in front of the
-machine, is the entire protection for an unauthenticated etcd raft plane. Apply
-it before provisioning the first node, and re-apply whenever peer membership or
-DNS changes. The generated ruleset covers this case: it emits an `input` chain
+machine, is the entire protection for an unauthenticated etcd raft plane. Run
+`hydra-peer-firewall baseline` before the Host starts, and run
+`hydra-peer-firewall refresh` on a timer and after every membership change. See
+[hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md) for the script and
+timer. On a Linux service manager, make `baseline` a start precondition, as the
+droplet unit does with `ExecStartPre`. The generated ruleset covers this case: it emits an `input` chain
 alongside the `forward` chain that Docker bridge traffic needs.
 
 ### 3. Keep it running
@@ -184,8 +190,8 @@ Running natively verifies the logic; it does not verify the image. The
 container additionally covers the build itself, the baked binaries being on
 `PATH`, the non-root user, volume permissions, and `--network host`. The path
 native mode cannot exercise at all is a node reaching `Running` _inside_ the
-container using the baked etcd: the baked version matches the one `hydra-node`
-embeds, but a version match is not proof it runs. Since 2.4.0 that test needs
+container using the baked etcd: the baked 3.5.34 is on the same 3.5 line as the
+3.5.25 that `hydra-node` embeds, but that is not proof it runs. Since 2.4.0 that test needs
 no amd64 machine. The image builds and runs on `linux/arm64` too, and
 `packages/hydra-host/Dockerfile` bakes an arm64 etcd beside the amd64 one.
 
