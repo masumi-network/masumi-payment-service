@@ -3,7 +3,10 @@ import createHttpError from 'http-errors';
 import { DisputedRequestRow } from './lookup';
 
 function hasWalletInScope(ctx: AuthContext, walletId: string | null): boolean {
-	if (walletId == null || ctx.walletScopeIds == null) {
+	if (ctx.walletScopeIds === null) {
+		return true;
+	}
+	if (walletId == null) {
 		return false;
 	}
 	return ctx.walletScopeIds.includes(walletId);

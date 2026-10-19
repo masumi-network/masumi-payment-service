@@ -14,6 +14,20 @@ const baseTarget: DisputedRequestRow = {
 };
 
 describe('upload-authorization', () => {
+	it('allows purchase result upload when wallet scope is unrestricted', () => {
+		expect(() =>
+			assertCanUploadDisclosureResult(
+				{
+					id: 'seller-key',
+					canAdmin: false,
+					walletScopeIds: null,
+					networkLimit: [],
+				} as never,
+				baseTarget,
+			),
+		).not.toThrow();
+	});
+
 	it('allows purchase result upload for seller wallet scope', () => {
 		expect(() =>
 			assertCanUploadDisclosureResult(
