@@ -37,18 +37,25 @@ async function initialize() {
 	await backfillTransactionAgentNames();
 	await warnOutOfSyncV2PaymentSources();
 
-	const defaultAdminHash = await generateApiKeySecureHash(DEFAULTS.DEFAULT_ADMIN_KEY);
-	const defaultKeyRow = await prisma.apiKey.findFirst({
-		where: { tokenHash: defaultAdminHash },
+	const publicAdminHashes = await Promise.all(
+		[DEFAULTS.DEFAULT_ADMIN_KEY, DEFAULTS.EXAMPLE_ADMIN_KEY].map((key) => generateApiKeySecureHash(key)),
+	);
+	const publicKeyRow = await prisma.apiKey.findFirst({
+		where: { tokenHash: { in: publicAdminHashes } },
 		select: { id: true },
 	});
-	if (defaultKeyRow !== null) {
+	if (publicKeyRow !== null) {
 		logger.warn('*****************************************************************');
-		logger.warn(
-			'*  WARNING: The default insecure ADMIN_KEY "' + DEFAULTS.DEFAULT_ADMIN_KEY + '" is in use.           *',
-		);
+		logger.warn('*  WARNING: A public ADMIN_KEY (default or .env.example) is in use. *');
 		logger.warn('*  This is a security risk. For production environments, please *');
 		logger.warn('*  set a secure ADMIN_KEY in .env before seeding or change it in the admin tool now   *');
+		logger.warn('*****************************************************************');
+	}
+	if (CONFIG.ENCRYPTION_KEY?.trim() === DEFAULTS.EXAMPLE_ENCRYPTION_KEY) {
+		logger.warn('*****************************************************************');
+		logger.warn('*  WARNING: ENCRYPTION_KEY is the public .env.example value.     *');
+		logger.warn('*  A database copy exposes every encrypted secret. Use it only   *');
+		logger.warn('*  for a one-off or local setup.                                *');
 		logger.warn('*****************************************************************');
 	}
 	await initJobs();
