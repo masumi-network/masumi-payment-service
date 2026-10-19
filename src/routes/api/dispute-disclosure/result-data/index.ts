@@ -50,6 +50,9 @@ export const postDisputeResultDataEndpointPost = payAuthenticatedEndpointFactory
 			expectedResultHash: target.resultHash,
 		});
 
-		return { blockchainIdentifier: input.blockchainIdentifier, stored: true };
+		return {
+			blockchainIdentifier: input.blockchainIdentifier,
+			stored: true as const,
+		};
 	},
 });
