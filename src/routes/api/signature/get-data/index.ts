@@ -64,6 +64,19 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 				};
 			}
 
+			const hasPlaintext =
+				(plaintext.inputData != null && plaintext.inputData.length > 0) ||
+				(plaintext.resultData != null && plaintext.resultData.length > 0);
+			if (!hasPlaintext) {
+				return {
+					isValid: true,
+					inputHash: context.inputHash,
+					resultHash: context.resultHash,
+					inputData: null,
+					resultData: null,
+				};
+			}
+
 			if (
 				!markRevealSignatureUsed({
 					signature: input.signature,
