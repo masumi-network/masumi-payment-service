@@ -41,7 +41,9 @@ describe('loadDisputedPaymentContext', () => {
 				network: Network.Preprod,
 				paymentSourceType: PaymentSourceType.Web3CardanoV2,
 				deletedAt: new Date(),
-				AdminWallets: [{ walletAddress: 'addr_test1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq' }],
+				AdminWallets: [
+					{ walletAddress: 'addr_test1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq' },
+				],
 			},
 			SellerWallet: { walletVkey: 'vkey' },
 		};
