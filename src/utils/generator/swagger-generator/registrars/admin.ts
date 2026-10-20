@@ -351,8 +351,7 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			}),
 			403: { description: 'Forbidden (network not allowed)' },
 			404: {
-				description:
-					'Disputed request not found (read may still succeed when a DisputeDisclosure row exists for a resolved dispute)',
+				description: 'Disputed request not found, or no V2 payment/purchase row exists for stored disclosure',
 			},
 		},
 	});
@@ -381,7 +380,7 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			400: { description: 'Hash mismatch or invalid payload' },
 			403: { description: 'Forbidden (network not allowed or not authorized)' },
 			404: { description: 'Disputed V2 request not found' },
-			409: { description: 'Disclosure already stored' },
+			409: { description: 'Disclosure already stored or dispute no longer Disputed' },
 		},
 	});
 
@@ -409,7 +408,7 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			400: { description: 'Hash mismatch or invalid payload' },
 			403: { description: 'Forbidden (network not allowed or not authorized)' },
 			404: { description: 'Disputed V2 request not found' },
-			409: { description: 'Disclosure already stored' },
+			409: { description: 'Disclosure already stored or dispute no longer Disputed' },
 			503: { description: 'Seller hot wallet not configured' },
 		},
 	});

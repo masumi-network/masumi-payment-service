@@ -15,7 +15,11 @@ const purchaseTarget: DisputedRequestRow = {
 
 describe('disclosure-wallet-scope', () => {
 	it('skips purchase input wallet scope for the buyer requester', () => {
-		expect(() => assertDisclosureInputWalletInScope(['other-wallet'], purchaseTarget, 'buyer-key-id')).not.toThrow();
+		expect(() =>
+			assertDisclosureInputWalletInScope(['other-wallet'], purchaseTarget, {
+				requesterId: 'buyer-key-id',
+			}),
+		).not.toThrow();
 	});
 
 	it('requires seller wallet scope for purchase result upload', () => {

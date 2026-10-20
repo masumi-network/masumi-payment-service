@@ -20,6 +20,10 @@ export const getDisputeDataSchemaOutput = z.object({
 		.boolean()
 		.optional()
 		.describe('True when this signature was already used outside its validity window'),
+	signatureValid: z
+		.boolean()
+		.optional()
+		.describe('True when the admin signature verified but disclosure was not returned'),
 	decryptFailed: z
 		.boolean()
 		.optional()
@@ -37,7 +41,10 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 	handler: async ({ input, ctx }: { input: z.infer<typeof getDisputeDataSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			const context = await loadDisputedPaymentContext(input.blockchainIdentifier);
+			const context = await loadDisputedPaymentContext(input.blockchainIdentifier, {
+				walletScopeIds: ctx.walletScopeIds,
+				canAdmin: ctx.canAdmin,
+			});
 			if (context == null) {
 				recordBusinessEndpointError('/api/v1/get-data', 'POST', 404, 'Payment not found', {
 					blockchain_identifier: input.blockchainIdentifier,
@@ -45,51 +52,25 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 				throw createHttpError(404, 'Disputed request not found');
 			}
 
+			if (!ctx.canAdmin && !ctx.networkLimit.includes(context.network)) {
+				throw createHttpError(403, 'Network not allowed');
+			}
+
 			assertDisclosureReadWalletInScope(ctx.walletScopeIds, {
 				kind: context.requestKind,
 				smartContractWalletId: context.smartContractWalletId,
 				sellerHotWalletId: context.sellerHotWalletId,
+				canAdmin: ctx.canAdmin,
 			});
-			if (!ctx.canAdmin && !ctx.networkLimit.includes(context.network)) {
-				throw createHttpError(403, 'Network not allowed');
-			}
 
 			const isValid = await verifyRevealDataSignature(input, context);
 			if (!isValid) {
 				return {
 					isValid: false,
+					signatureValid: false,
 					decryptFailed: false,
 					inputHash: '',
 					resultHash: null,
-					inputData: null,
-					resultData: null,
-				};
-			}
-
-			const plaintext = await readDisputeDisclosurePlaintext(input.blockchainIdentifier);
-			const hasPlaintext =
-				(plaintext.inputData != null && plaintext.inputData.length > 0) ||
-				(plaintext.resultData != null && plaintext.resultData.length > 0);
-
-			if (plaintext.decryptFailed && !hasPlaintext) {
-				return {
-					isValid: true,
-					decryptFailed: true,
-					replayRejected: false,
-					inputHash: context.inputHash,
-					resultHash: context.resultHash,
-					inputData: null,
-					resultData: null,
-				};
-			}
-
-			if (!hasPlaintext) {
-				return {
-					isValid: true,
-					decryptFailed: false,
-					replayRejected: false,
-					inputHash: context.inputHash,
-					resultHash: context.resultHash,
 					inputData: null,
 					resultData: null,
 				};
@@ -104,10 +85,42 @@ export const getDisputeDataEndpointPost = readAuthenticatedEndpointFactory.build
 			if (replayMark.status === 'rejected') {
 				return {
 					isValid: false,
+					signatureValid: true,
 					replayRejected: true,
 					decryptFailed: false,
-					inputHash: '',
-					resultHash: null,
+					inputHash: context.inputHash,
+					resultHash: context.resultHash,
+					inputData: null,
+					resultData: null,
+				};
+			}
+
+			const plaintext = await readDisputeDisclosurePlaintext(input.blockchainIdentifier);
+			const hasPlaintext =
+				(plaintext.inputData != null && plaintext.inputData.length > 0) ||
+				(plaintext.resultData != null && plaintext.resultData.length > 0);
+
+			if (plaintext.decryptFailed && !hasPlaintext) {
+				return {
+					isValid: true,
+					signatureValid: true,
+					decryptFailed: true,
+					replayRejected: false,
+					inputHash: context.inputHash,
+					resultHash: context.resultHash,
+					inputData: null,
+					resultData: null,
+				};
+			}
+
+			if (!hasPlaintext) {
+				return {
+					isValid: true,
+					signatureValid: true,
+					decryptFailed: false,
+					replayRejected: false,
+					inputHash: context.inputHash,
+					resultHash: context.resultHash,
 					inputData: null,
 					resultData: null,
 				};

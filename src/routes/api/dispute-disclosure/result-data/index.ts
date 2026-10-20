@@ -5,8 +5,7 @@ import { Network } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 import { assertDisclosureResultWalletInScope } from '@/services/dispute-disclosure/disclosure-wallet-scope';
 import { upsertDisputeResultData } from '@/services/dispute-disclosure/storage';
-import { findDisputedV2Request } from '@/services/dispute-disclosure/lookup';
-import { assertCanUploadDisclosureResult } from '@/services/dispute-disclosure/upload-authorization';
+import { findDisputedV2RequestForUpload } from '@/services/dispute-disclosure/lookup';
 
 export const postDisputeResultDataSchemaInput = z.object({
 	network: z.nativeEnum(Network),
@@ -34,18 +33,20 @@ export const postDisputeResultDataEndpointPost = payAuthenticatedEndpointFactory
 			throw createHttpError(403, 'Network not allowed');
 		}
 
-		const target = await findDisputedV2Request({
-			blockchainIdentifier: input.blockchainIdentifier,
-			network: input.network,
-		});
-		if (target == null) {
-			throw createHttpError(404, 'Disputed V2 payment or purchase not found');
-		}
+		const target = await findDisputedV2RequestForUpload(
+			{
+				blockchainIdentifier: input.blockchainIdentifier,
+				network: input.network,
+			},
+			ctx,
+			'result',
+		);
 		if (target.resultHash == null) {
 			throw createHttpError(400, 'Request has no on-chain result hash yet');
 		}
-		assertCanUploadDisclosureResult(ctx, target);
-		assertDisclosureResultWalletInScope(ctx.walletScopeIds, target);
+		assertDisclosureResultWalletInScope(ctx.walletScopeIds, target, {
+			canAdmin: ctx.canAdmin,
+		});
 
 		await upsertDisputeResultData({
 			blockchainIdentifier: input.blockchainIdentifier,

@@ -5,15 +5,24 @@ const mockCreate = jest.fn(async () => ({ id: 'row-1' }));
 const mockUpdateMany = jest.fn(async () => ({ count: 0 }));
 const mockFindUniqueOrThrow = jest.fn(async () => ({ id: 'row-1' }));
 
-jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: {
-		disputeDisclosure: {
-			create: mockCreate,
-			updateMany: mockUpdateMany,
-			findUniqueOrThrow: mockFindUniqueOrThrow,
-			findUnique: jest.fn(async () => null),
-		},
+const prismaMock = {
+	disputeDisclosure: {
+		create: mockCreate,
+		updateMany: mockUpdateMany,
+		findUniqueOrThrow: mockFindUniqueOrThrow,
+		findUnique: jest.fn(async () => null),
 	},
+	paymentRequest: {
+		count: jest.fn(async () => 1),
+	},
+	purchaseRequest: {
+		count: jest.fn(async () => 0),
+	},
+	$transaction: jest.fn(async (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock)),
+};
+
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
+	prisma: prismaMock,
 }));
 
 jest.unstable_mockModule('@/utils/security/encryption', () => ({
@@ -46,6 +55,20 @@ describe('dispute disclosure storage', () => {
 				}),
 			}),
 		);
+	});
+
+	it('rejects input when dispute is no longer Disputed', async () => {
+		prismaMock.paymentRequest.count.mockResolvedValueOnce(0);
+		prismaMock.purchaseRequest.count.mockResolvedValueOnce(0);
+		const data = 'hello-input';
+		await expect(
+			upsertDisputeInputData({
+				blockchainIdentifier: 'chain-1',
+				data,
+				expectedInputHash: generateHash(data),
+			}),
+		).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockCreate).not.toHaveBeenCalled();
 	});
 
 	it('rejects input when hash mismatches', async () => {

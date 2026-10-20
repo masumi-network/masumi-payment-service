@@ -23,7 +23,10 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof postVerifyDataRevealSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			const context = await loadDisputedPaymentContext(input.blockchainIdentifier);
+			const context = await loadDisputedPaymentContext(input.blockchainIdentifier, {
+				walletScopeIds: ctx.walletScopeIds,
+				canAdmin: ctx.canAdmin,
+			});
 			if (context == null) {
 				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 404, 'Payment not found', {
 					wallet_address: input.walletAddress,
@@ -33,15 +36,17 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 				throw createHttpError(404, 'Payment not found');
 			}
 
-			assertDisclosureReadWalletInScope(ctx.walletScopeIds, {
-				kind: context.requestKind,
-				smartContractWalletId: context.smartContractWalletId,
-				sellerHotWalletId: context.sellerHotWalletId,
-			});
 			if (!ctx.canAdmin && !ctx.networkLimit.includes(context.network)) {
 				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 403, 'Payment is not on the requested network');
 				throw createHttpError(403, 'Network not allowed');
 			}
+
+			assertDisclosureReadWalletInScope(ctx.walletScopeIds, {
+				kind: context.requestKind,
+				smartContractWalletId: context.smartContractWalletId,
+				sellerHotWalletId: context.sellerHotWalletId,
+				canAdmin: ctx.canAdmin,
+			});
 
 			const isValid = await verifyRevealDataSignature(input, context);
 			return { isValid };

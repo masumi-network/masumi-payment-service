@@ -5,13 +5,13 @@ import { DisputedRequestRow } from './lookup';
 export function assertDisclosureInputWalletInScope(
 	walletScopeIds: string[] | null,
 	target: DisputedRequestRow,
-	requesterId?: string,
+	options?: { requesterId?: string; canAdmin?: boolean },
 ): void {
+	if (options?.canAdmin === true || walletScopeIds === null) {
+		return;
+	}
 	if (target.kind === 'purchase') {
-		if (walletScopeIds === null) {
-			return;
-		}
-		if (requesterId != null && target.requestedById === requesterId) {
+		if (options?.requesterId != null && target.requestedById === options.requesterId) {
 			return;
 		}
 		const allowedIds = [target.smartContractWalletId, target.sellerHotWalletId];
@@ -23,7 +23,14 @@ export function assertDisclosureInputWalletInScope(
 	assertWalletInScope(walletScopeIds, target.smartContractWalletId);
 }
 
-export function assertDisclosureResultWalletInScope(walletScopeIds: string[] | null, target: DisputedRequestRow): void {
+export function assertDisclosureResultWalletInScope(
+	walletScopeIds: string[] | null,
+	target: DisputedRequestRow,
+	options?: { canAdmin?: boolean },
+): void {
+	if (options?.canAdmin === true || walletScopeIds === null) {
+		return;
+	}
 	if (target.kind === 'purchase') {
 		assertWalletInScope(walletScopeIds, target.sellerHotWalletId);
 		return;

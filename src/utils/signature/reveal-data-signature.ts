@@ -5,8 +5,14 @@ import stringify from 'canonical-json';
 import { isCardanoAddress } from '@/utils/shared/cardano-address';
 import { z } from '@masumi/payment-core/zod';
 import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import { isDisclosureReadWalletInScope } from '@/services/dispute-disclosure/disclosure-read-wallet-scope';
 import { resolveSellerHotWalletId } from '@/services/dispute-disclosure/lookup';
 import type { DisputedRequestKind } from '@/services/dispute-disclosure/lookup';
+
+export type RevealDataReadScope = {
+	walletScopeIds: string[] | null;
+	canAdmin?: boolean;
+};
 export const revealDataActionSchema = z
 	.enum(['RevealData', 'reveal_data'])
 	.describe('CIP-8 payload action for disclosure authorization');
@@ -124,26 +130,135 @@ async function loadV2PaymentForReveal(
 	});
 }
 
+async function loadV2PaymentAnyLifecycle(blockchainIdentifier: string) {
+	return prisma.paymentRequest.findFirst({
+		where: {
+			blockchainIdentifier,
+			PaymentSource: { paymentSourceType: PaymentSourceType.Web3CardanoV2 },
+		},
+		include: {
+			PaymentSource: { include: { AdminWallets: true } },
+		},
+		orderBy: { updatedAt: 'desc' },
+	});
+}
+
+async function loadV2PurchaseAnyLifecycle(blockchainIdentifier: string) {
+	return prisma.purchaseRequest.findFirst({
+		where: {
+			blockchainIdentifier,
+			PaymentSource: { paymentSourceType: PaymentSourceType.Web3CardanoV2 },
+		},
+		include: {
+			PaymentSource: { include: { AdminWallets: true } },
+			SellerWallet: true,
+		},
+		orderBy: { updatedAt: 'desc' },
+	});
+}
+
+export function pickReadRevealContext(
+	contexts: RevealDataPaymentContext[],
+	readScope?: RevealDataReadScope,
+): RevealDataPaymentContext | null {
+	if (contexts.length === 0) {
+		return null;
+	}
+	if (readScope == null || readScope.canAdmin === true || readScope.walletScopeIds === null) {
+		return contexts.find((context) => context.requestKind === 'payment') ?? contexts[0];
+	}
+	const ordered = [
+		...contexts.filter((context) => context.requestKind === 'purchase'),
+		...contexts.filter((context) => context.requestKind === 'payment'),
+	];
+	for (const context of ordered) {
+		if (
+			isDisclosureReadWalletInScope(readScope.walletScopeIds, {
+				kind: context.requestKind,
+				smartContractWalletId: context.smartContractWalletId,
+				sellerHotWalletId: context.sellerHotWalletId,
+			})
+		) {
+			return context;
+		}
+	}
+	return null;
+}
+
+function mapPaymentRevealContext(payment: {
+	blockchainIdentifier: string;
+	inputHash: string;
+	resultHash: string | null;
+	smartContractWalletId: string | null;
+	PaymentSource: { network: Network; AdminWallets: Array<{ walletAddress: string }> };
+}): RevealDataPaymentContext {
+	return {
+		requestKind: 'payment',
+		blockchainIdentifier: payment.blockchainIdentifier,
+		inputHash: payment.inputHash,
+		resultHash: payment.resultHash,
+		smartContractWalletId: payment.smartContractWalletId,
+		sellerHotWalletId: payment.smartContractWalletId,
+		network: payment.PaymentSource.network,
+		adminWalletAddresses: payment.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
+	};
+}
+
+async function loadActiveDisputedRevealContexts(blockchainIdentifier: string): Promise<RevealDataPaymentContext[]> {
+	const [disputedPayment, disputedPurchase] = await Promise.all([
+		loadV2PaymentForReveal(blockchainIdentifier, true),
+		loadV2PurchaseForReveal(blockchainIdentifier, true),
+	]);
+	const contexts: RevealDataPaymentContext[] = [];
+	if (disputedPayment != null) {
+		contexts.push(mapPaymentRevealContext(disputedPayment));
+	}
+	if (disputedPurchase != null) {
+		contexts.push(await mapPurchaseToRevealContext(disputedPurchase));
+	}
+	return contexts;
+}
+
+async function loadStoredDisclosureRevealContexts(blockchainIdentifier: string): Promise<RevealDataPaymentContext[]> {
+	const contexts: RevealDataPaymentContext[] = [];
+	const paymentWithDisclosure = await loadV2PaymentForReveal(blockchainIdentifier, false, true);
+	if (paymentWithDisclosure != null) {
+		contexts.push(mapPaymentRevealContext(paymentWithDisclosure));
+	}
+	const purchaseWithDisclosure = await loadV2PurchaseForReveal(blockchainIdentifier, false, true);
+	if (purchaseWithDisclosure != null) {
+		contexts.push(await mapPurchaseToRevealContext(purchaseWithDisclosure));
+	}
+	if (contexts.length > 0) {
+		return contexts;
+	}
+	const paymentAny = await loadV2PaymentAnyLifecycle(blockchainIdentifier);
+	if (paymentAny != null) {
+		contexts.push(mapPaymentRevealContext(paymentAny));
+	}
+	const purchaseAny = await loadV2PurchaseAnyLifecycle(blockchainIdentifier);
+	if (purchaseAny != null) {
+		contexts.push(await mapPurchaseToRevealContext(purchaseAny));
+	}
+	return contexts;
+}
+
 export async function loadDisputedPaymentContext(
 	blockchainIdentifier: string,
+	readScope?: RevealDataReadScope,
 ): Promise<RevealDataPaymentContext | null> {
-	const disputedPurchase = await loadV2PurchaseForReveal(blockchainIdentifier, true);
-	if (disputedPurchase != null) {
-		return mapPurchaseToRevealContext(disputedPurchase);
+	const activeContexts = await loadActiveDisputedRevealContexts(blockchainIdentifier);
+	const activePick = pickReadRevealContext(activeContexts, readScope);
+	if (activePick != null) {
+		return activePick;
 	}
-
-	const disputedPayment = await loadV2PaymentForReveal(blockchainIdentifier, true);
-	if (disputedPayment != null) {
-		return {
-			requestKind: 'payment',
-			blockchainIdentifier: disputedPayment.blockchainIdentifier,
-			inputHash: disputedPayment.inputHash,
-			resultHash: disputedPayment.resultHash,
-			smartContractWalletId: disputedPayment.smartContractWalletId,
-			sellerHotWalletId: disputedPayment.smartContractWalletId,
-			network: disputedPayment.PaymentSource.network,
-			adminWalletAddresses: disputedPayment.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
-		};
+	if (
+		activeContexts.length > 0 &&
+		readScope != null &&
+		readScope.canAdmin !== true &&
+		readScope.walletScopeIds != null
+	) {
+		return null;
 	}
 
 	const storedDisclosure = await prisma.disputeDisclosure.findUnique({
@@ -154,26 +269,7 @@ export async function loadDisputedPaymentContext(
 		return null;
 	}
 
-	const purchaseWithDisclosure = await loadV2PurchaseForReveal(blockchainIdentifier, false, true);
-	if (purchaseWithDisclosure != null) {
-		return mapPurchaseToRevealContext(purchaseWithDisclosure);
-	}
-
-	const paymentWithDisclosure = await loadV2PaymentForReveal(blockchainIdentifier, false, true);
-	if (paymentWithDisclosure == null) {
-		return null;
-	}
-
-	return {
-		requestKind: 'payment',
-		blockchainIdentifier: paymentWithDisclosure.blockchainIdentifier,
-		inputHash: paymentWithDisclosure.inputHash,
-		resultHash: paymentWithDisclosure.resultHash,
-		smartContractWalletId: paymentWithDisclosure.smartContractWalletId,
-		sellerHotWalletId: paymentWithDisclosure.smartContractWalletId,
-		network: paymentWithDisclosure.PaymentSource.network,
-		adminWalletAddresses: paymentWithDisclosure.PaymentSource.AdminWallets.map((wallet) => wallet.walletAddress),
-	};
+	return pickReadRevealContext(await loadStoredDisclosureRevealContexts(blockchainIdentifier), readScope);
 }
 
 export async function verifyRevealDataSignature(
