@@ -115,6 +115,25 @@ export async function loadDisputedV2RequestCandidates(params: {
 	return [paymentRow, purchaseRow].filter((row): row is DisputedRequestRow => row != null);
 }
 
+function pickAuthorizedDisputedRow(
+	authorized: DisputedRequestRow[],
+	side: DisclosureUploadSide,
+): DisputedRequestRow {
+	if (authorized.length === 1) {
+		return authorized[0];
+	}
+	if (side === 'result') {
+		const withResultHash = authorized.filter((row) => row.resultHash != null);
+		if (withResultHash.length === 1) {
+			return withResultHash[0];
+		}
+		if (withResultHash.length > 1) {
+			return withResultHash.find((row) => row.kind === 'payment') ?? withResultHash[0];
+		}
+	}
+	return authorized.find((row) => row.kind === 'payment') ?? authorized[0];
+}
+
 function httpStatus(error: unknown): number | null {
 	if (typeof error !== 'object' || error == null || !('statusCode' in error)) {
 		return null;
@@ -149,11 +168,8 @@ export function selectAuthorizedDisputedRow(
 		}
 	});
 
-	if (authorized.length === 1) {
-		return authorized[0];
-	}
-	if (authorized.length > 1) {
-		return authorized.find((row) => row.kind === 'payment') ?? authorized[0];
+	if (authorized.length >= 1) {
+		return pickAuthorizedDisputedRow(authorized, side);
 	}
 
 	for (const row of candidates) {

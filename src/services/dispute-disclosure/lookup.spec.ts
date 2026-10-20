@@ -51,6 +51,21 @@ describe('selectAuthorizedDisputedRow', () => {
 		expect(selected.kind).toBe('purchase');
 	});
 
+	it('prefers purchase row for result upload when payment leg has no resultHash', () => {
+		const desyncedPayment: DisputedRequestRow = { ...paymentRow, resultHash: null };
+		const selected = selectAuthorizedDisputedRow(
+			[purchaseRow, desyncedPayment],
+			{
+				id: 'seller-api-key',
+				canAdmin: false,
+				walletScopeIds: ['seller-wallet'],
+				networkLimit: [],
+			} as never,
+			'result',
+		);
+		expect(selected.kind).toBe('purchase');
+	});
+
 	it('throws 403 when caller cannot upload to either leg', () => {
 		expect(() =>
 			selectAuthorizedDisputedRow(
