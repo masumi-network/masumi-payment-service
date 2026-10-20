@@ -7476,6 +7476,52 @@
                     "Rails"
                 ]
             },
+            "AgentValidationCheck": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Stable check id, e.g. \"agent.availability.type\""
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pass",
+                            "warn",
+                            "fail",
+                            "skipped"
+                        ],
+                        "description": "fail = breaks registry listing or payment; warn = spec drift or risk; skipped = not applicable yet"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "What was checked"
+                    },
+                    "detail": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "What was observed"
+                    },
+                    "fix": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "What to change to resolve it"
+                    },
+                    "docsUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Documentation for the fix"
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "label",
+                    "detail",
+                    "fix",
+                    "docsUrl"
+                ]
+            },
             "TxSyncQuarantineEntry": {
                 "type": "object",
                 "properties": {
@@ -22263,6 +22309,7 @@
                                         "properties": {
                                             "name": {
                                                 "type": "string",
+                                                "minLength": 1,
                                                 "maxLength": 250,
                                                 "description": "Name of the agent author"
                                             },
@@ -23761,6 +23808,7 @@
                                         "properties": {
                                             "name": {
                                                 "type": "string",
+                                                "minLength": 1,
                                                 "maxLength": 250,
                                                 "description": "Name of the agent author"
                                             },
@@ -38559,6 +38607,457 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/agent-validation/probe": {
+            "post": {
+                "description": "Calls one MIP-003 endpoint of an agent (availability, input_schema, demo, start_job, status, provide_input) from the server and returns findings: what the registry or a buyer will see, what is wrong, and how to fix it. For availability the result predicts the registry status (Online, Offline or Invalid) using the same rules as the registry service. The path suffix is fixed per endpoint (the base path comes from apiBaseUrl) and the URL goes through the webhook SSRF policy: local and private addresses are reported as findings and never fetched, redirects are never followed, and responses are capped at 1 MB and 32 seconds. At most two probes run at once.",
+                "summary": "Probe an agent endpoint and validate its response. (admin access required)",
+                "tags": [
+                    "agent-validation"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Which agent endpoint to probe",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "apiBaseUrl": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Base URL of the agent, as it is (or will be) registered. The endpoint path is appended to it."
+                                    },
+                                    "endpoint": {
+                                        "type": "string",
+                                        "enum": [
+                                            "availability",
+                                            "input_schema",
+                                            "demo",
+                                            "start_job",
+                                            "status",
+                                            "provide_input"
+                                        ],
+                                        "description": "Which MIP-003 endpoint to call. The path suffix appended to apiBaseUrl is fixed per endpoint; only the base path comes from apiBaseUrl."
+                                    },
+                                    "jobId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Job id. Required for status and provide_input."
+                                    },
+                                    "identifierFromPurchaser": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "The nonce sent in start_job. Required for start_job and provide_input; used to recompute the MIP-004 hash."
+                                    },
+                                    "inputData": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "string",
+                                                    "maxLength": 10000
+                                                },
+                                                {
+                                                    "type": "number"
+                                                },
+                                                {
+                                                    "type": "boolean"
+                                                },
+                                                {
+                                                    "nullable": true
+                                                },
+                                                {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string",
+                                                        "maxLength": 1000
+                                                    },
+                                                    "maxItems": 100
+                                                }
+                                            ]
+                                        },
+                                        "description": "The input_data sent to start_job or provide_input. Defaults to an empty object."
+                                    },
+                                    "inputSchemaHash": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{64}$",
+                                        "description": "provide_input only: lowercase hex SHA-256 of the canonical input_schema returned by /status."
+                                    },
+                                    "expectedAgentIdentifier": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "The on-chain agent identifier, once the agent is registered. Enables the identifier comparisons."
+                                    },
+                                    "isFreeAgent": {
+                                        "type": "boolean",
+                                        "description": "Free agents only return an id from start_job."
+                                    }
+                                },
+                                "required": [
+                                    "apiBaseUrl",
+                                    "endpoint"
+                                ],
+                                "example": {
+                                    "apiBaseUrl": "https://my-agent.example.com",
+                                    "endpoint": "availability"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Probe result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "httpStatus": {
+                                                    "type": "integer",
+                                                    "nullable": true,
+                                                    "description": "HTTP status of the agent response. Null when no request was sent or it failed."
+                                                },
+                                                "durationMs": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "description": "Time the request took in milliseconds"
+                                                },
+                                                "redirectedTo": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Where the agent redirected to. Redirects are never followed."
+                                                },
+                                                "bodyText": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "First 20 000 characters of the response body"
+                                                },
+                                                "Checks": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/AgentValidationCheck"
+                                                    },
+                                                    "description": "Findings, each with the reason and the fix"
+                                                }
+                                            },
+                                            "required": [
+                                                "httpStatus",
+                                                "durationMs",
+                                                "redirectedTo",
+                                                "bodyText",
+                                                "Checks"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "httpStatus": 200,
+                                            "durationMs": 143,
+                                            "redirectedTo": null,
+                                            "bodyText": "{\"status\":\"available\",\"type\":\"masumi-agent\"}",
+                                            "Checks": [
+                                                {
+                                                    "id": "agent.availability.type",
+                                                    "status": "pass",
+                                                    "label": "Reports type \"masumi-agent\"",
+                                                    "detail": null,
+                                                    "fix": null,
+                                                    "docsUrl": null
+                                                },
+                                                {
+                                                    "id": "agent.availability.registry_status",
+                                                    "status": "pass",
+                                                    "label": "Registry will list this agent as Online",
+                                                    "detail": "Online: it reports type \"masumi-agent\".",
+                                                    "fix": null,
+                                                    "docsUrl": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "503": {
+                        "description": "Two probes are already running. Retry later."
+                    }
+                }
+            }
+        },
+        "/agent-validation/validate": {
+            "post": {
+                "description": "Checks pasted JSON with the same rules the probe applies to live agent responses. kind input_schema validates a MIP-003 input schema against Attachment 01 and the marketplace parser; kind coworker_metadata validates Sokosumi coworker metadata. No outbound request is made.",
+                "summary": "Validate an input schema or coworker metadata. (admin access required)",
+                "tags": [
+                    "agent-validation"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The JSON text to check",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                            "input_schema",
+                                            "coworker_metadata"
+                                        ],
+                                        "description": "input_schema checks a MIP-003 input schema; coworker_metadata checks Sokosumi coworker metadata."
+                                    },
+                                    "json": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200000,
+                                        "description": "The JSON text to check"
+                                    }
+                                },
+                                "required": [
+                                    "kind",
+                                    "json"
+                                ],
+                                "example": {
+                                    "kind": "input_schema",
+                                    "json": "{\"input_data\":[{\"id\":\"topic\",\"type\":\"text\",\"name\":\"Topic\"}]}"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Validation result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Checks": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/AgentValidationCheck"
+                                                    },
+                                                    "description": "Findings, each with the reason and the fix"
+                                                }
+                                            },
+                                            "required": [
+                                                "Checks"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Checks": [
+                                                {
+                                                    "id": "agent.input_schema.shape",
+                                                    "status": "pass",
+                                                    "label": "Schema has input_data or input_groups",
+                                                    "detail": null,
+                                                    "fix": null,
+                                                    "docsUrl": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/agent-validation/hash": {
+            "post": {
+                "description": "Computes the MIP-004 input hash (sha256 of identifierFromPurchaser + \";\" + RFC 8785 canonical input), the result hash (sha256 of identifierFromPurchaser + \";\" + the JSON-escaped result) or the MIP-003 input schema hash (sha256 of the canonical schema), exactly as the Sokosumi marketplace verifies them. The response includes the exact string that was hashed, so a mismatch with an agent can be compared character by character.",
+                "summary": "Compute a MIP-004 / MIP-003 hash. (admin access required)",
+                "tags": [
+                    "agent-validation"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "What to hash",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                            "input",
+                                            "result",
+                                            "input_schema"
+                                        ],
+                                        "description": "Which MIP-004 / MIP-003 hash to compute: the input hash, the result hash or the input schema hash."
+                                    },
+                                    "identifierFromPurchaser": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "The purchaser nonce. Required for input and result."
+                                    },
+                                    "inputData": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "string",
+                                                    "maxLength": 10000
+                                                },
+                                                {
+                                                    "type": "number"
+                                                },
+                                                {
+                                                    "type": "boolean"
+                                                },
+                                                {
+                                                    "nullable": true
+                                                },
+                                                {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string",
+                                                        "maxLength": 1000
+                                                    },
+                                                    "maxItems": 100
+                                                }
+                                            ]
+                                        },
+                                        "description": "The input_data to hash (kind input). Defaults to an empty object."
+                                    },
+                                    "result": {
+                                        "type": "string",
+                                        "maxLength": 200000,
+                                        "description": "The result text to hash (kind result)."
+                                    },
+                                    "json": {
+                                        "type": "string",
+                                        "maxLength": 200000,
+                                        "description": "The input_schema JSON text to hash (kind input_schema)."
+                                    }
+                                },
+                                "required": [
+                                    "kind"
+                                ],
+                                "example": {
+                                    "kind": "input",
+                                    "identifierFromPurchaser": "abcdef0123456789",
+                                    "inputData": {
+                                        "topic": "cats"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Hash",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "hash": {
+                                                    "type": "string",
+                                                    "description": "Lowercase hex SHA-256"
+                                                },
+                                                "preimage": {
+                                                    "type": "string",
+                                                    "description": "The exact string that was hashed, for comparing with what an agent computes character by character"
+                                                }
+                                            },
+                                            "required": [
+                                                "hash",
+                                                "preimage"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "hash": "a9f1c87e3420a99c970cdb577243de6cc2500d1ca587325e2a3e305deb0e3d7c",
+                                            "preimage": "abcdef0123456789;{\"topic\":\"cats\"}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "A field required for this kind is missing, or json is not valid JSON"
                     },
                     "401": {
                         "description": "Unauthorized"

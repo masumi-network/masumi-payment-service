@@ -16,6 +16,7 @@ import { registerFundDistributionPaths } from '@/routes/api/fund-distribution/do
 import { registerHydraPaths } from '@/routes/api/hydra/docs';
 import { registerHydraHeadChainCheckPath } from '@/routes/api/hydra/docs-head-chain-check';
 import { registerRailReadinessPaths } from '@/routes/api/rail-readiness/docs';
+import { registerAgentValidationPaths } from '@/routes/api/agent-validation/docs';
 import { registerTxSyncQuarantinePaths } from '@/routes/api/tx-sync-quarantine/docs';
 import { registerRequestRepairPaths } from '@/routes/api/request-repair/docs';
 import { registerReportPaths } from '@/routes/api/reports/docs';
@@ -46,6 +47,7 @@ export function generateOpenAPI() {
 	registerHydraPaths({ registry, apiKeyAuth });
 	registerHydraHeadChainCheckPath({ registry, apiKeyAuth });
 	registerRailReadinessPaths({ registry, apiKeyAuth });
+	registerAgentValidationPaths({ registry, apiKeyAuth });
 	registerTxSyncQuarantinePaths({ registry, apiKeyAuth });
 	registerRequestRepairPaths({ registry, apiKeyAuth });
 	registerReportPaths({ registry, apiKeyAuth });

@@ -3623,6 +3623,33 @@ export type RailReadiness = {
     }>;
 };
 
+export type AgentValidationCheck = {
+    /**
+     * Stable check id, e.g. "agent.availability.type"
+     */
+    id: string;
+    /**
+     * fail = breaks registry listing or payment; warn = spec drift or risk; skipped = not applicable yet
+     */
+    status: 'pass' | 'warn' | 'fail' | 'skipped';
+    /**
+     * What was checked
+     */
+    label: string;
+    /**
+     * What was observed
+     */
+    detail: string | null;
+    /**
+     * What to change to resolve it
+     */
+    fix: string | null;
+    /**
+     * Documentation for the fix
+     */
+    docsUrl: string | null;
+};
+
 export type TxSyncQuarantineEntry = {
     id: string;
     createdAt: Date;
@@ -16266,6 +16293,203 @@ export type GetRailReadinessResponses = {
 };
 
 export type GetRailReadinessResponse = GetRailReadinessResponses[keyof GetRailReadinessResponses];
+
+export type PostAgentValidationProbeData = {
+    /**
+     * Which agent endpoint to probe
+     */
+    body?: {
+        /**
+         * Base URL of the agent, as it is (or will be) registered. The endpoint path is appended to it.
+         */
+        apiBaseUrl: string;
+        /**
+         * Which MIP-003 endpoint to call. The path suffix appended to apiBaseUrl is fixed per endpoint; only the base path comes from apiBaseUrl.
+         */
+        endpoint: 'availability' | 'input_schema' | 'demo' | 'start_job' | 'status' | 'provide_input';
+        /**
+         * Job id. Required for status and provide_input.
+         */
+        jobId?: string;
+        /**
+         * The nonce sent in start_job. Required for start_job and provide_input; used to recompute the MIP-004 hash.
+         */
+        identifierFromPurchaser?: string;
+        /**
+         * The input_data sent to start_job or provide_input. Defaults to an empty object.
+         */
+        inputData?: {
+            [key: string]: string | number | boolean | unknown | Array<string>;
+        };
+        /**
+         * provide_input only: lowercase hex SHA-256 of the canonical input_schema returned by /status.
+         */
+        inputSchemaHash?: string;
+        /**
+         * The on-chain agent identifier, once the agent is registered. Enables the identifier comparisons.
+         */
+        expectedAgentIdentifier?: string;
+        /**
+         * Free agents only return an id from start_job.
+         */
+        isFreeAgent?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/agent-validation/probe';
+};
+
+export type PostAgentValidationProbeErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Two probes are already running. Retry later.
+     */
+    503: unknown;
+};
+
+export type PostAgentValidationProbeResponses = {
+    /**
+     * Probe result
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * HTTP status of the agent response. Null when no request was sent or it failed.
+             */
+            httpStatus: number | null;
+            /**
+             * Time the request took in milliseconds
+             */
+            durationMs: number;
+            /**
+             * Where the agent redirected to. Redirects are never followed.
+             */
+            redirectedTo: string | null;
+            /**
+             * First 20 000 characters of the response body
+             */
+            bodyText: string | null;
+            /**
+             * Findings, each with the reason and the fix
+             */
+            Checks: Array<AgentValidationCheck>;
+        };
+    };
+};
+
+export type PostAgentValidationProbeResponse = PostAgentValidationProbeResponses[keyof PostAgentValidationProbeResponses];
+
+export type PostAgentValidationValidateData = {
+    /**
+     * The JSON text to check
+     */
+    body?: {
+        /**
+         * input_schema checks a MIP-003 input schema; coworker_metadata checks Sokosumi coworker metadata.
+         */
+        kind: 'input_schema' | 'coworker_metadata';
+        /**
+         * The JSON text to check
+         */
+        json: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/agent-validation/validate';
+};
+
+export type PostAgentValidationValidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostAgentValidationValidateResponses = {
+    /**
+     * Validation result
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Findings, each with the reason and the fix
+             */
+            Checks: Array<AgentValidationCheck>;
+        };
+    };
+};
+
+export type PostAgentValidationValidateResponse = PostAgentValidationValidateResponses[keyof PostAgentValidationValidateResponses];
+
+export type PostAgentValidationHashData = {
+    /**
+     * What to hash
+     */
+    body?: {
+        /**
+         * Which MIP-004 / MIP-003 hash to compute: the input hash, the result hash or the input schema hash.
+         */
+        kind: 'input' | 'result' | 'input_schema';
+        /**
+         * The purchaser nonce. Required for input and result.
+         */
+        identifierFromPurchaser?: string;
+        /**
+         * The input_data to hash (kind input). Defaults to an empty object.
+         */
+        inputData?: {
+            [key: string]: string | number | boolean | unknown | Array<string>;
+        };
+        /**
+         * The result text to hash (kind result).
+         */
+        result?: string;
+        /**
+         * The input_schema JSON text to hash (kind input_schema).
+         */
+        json?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/agent-validation/hash';
+};
+
+export type PostAgentValidationHashErrors = {
+    /**
+     * A field required for this kind is missing, or json is not valid JSON
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostAgentValidationHashResponses = {
+    /**
+     * Hash
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Lowercase hex SHA-256
+             */
+            hash: string;
+            /**
+             * The exact string that was hashed, for comparing with what an agent computes character by character
+             */
+            preimage: string;
+        };
+    };
+};
+
+export type PostAgentValidationHashResponse = PostAgentValidationHashResponses[keyof PostAgentValidationHashResponses];
 
 export type DeleteTxSyncQuarantineData = {
     /**

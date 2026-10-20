@@ -112,9 +112,9 @@ export const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
       // Additional Fields
       authorName: z
         .string()
-        .max(REGISTRY_LIMITS.authorName, 'Author name must be less than 250 characters')
-        .optional()
-        .or(z.literal('')),
+        .trim()
+        .min(1, 'Author name is required: the registry cannot read an agent without one')
+        .max(REGISTRY_LIMITS.authorName, 'Author name must be less than 250 characters'),
       authorEmail: z
         .string()
         .email('Author email must be a valid email')

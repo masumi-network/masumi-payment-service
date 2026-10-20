@@ -7506,6 +7506,53 @@ export const RailReadinessSchema = {
     ]
 } as const;
 
+export const AgentValidationCheckSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Stable check id, e.g. "agent.availability.type"'
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'pass',
+                'warn',
+                'fail',
+                'skipped'
+            ],
+            description: 'fail = breaks registry listing or payment; warn = spec drift or risk; skipped = not applicable yet'
+        },
+        label: {
+            type: 'string',
+            description: 'What was checked'
+        },
+        detail: {
+            type: 'string',
+            nullable: true,
+            description: 'What was observed'
+        },
+        fix: {
+            type: 'string',
+            nullable: true,
+            description: 'What to change to resolve it'
+        },
+        docsUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Documentation for the fix'
+        }
+    },
+    required: [
+        'id',
+        'status',
+        'label',
+        'detail',
+        'fix',
+        'docsUrl'
+    ]
+} as const;
+
 export const TxSyncQuarantineEntrySchema = {
     type: 'object',
     properties: {

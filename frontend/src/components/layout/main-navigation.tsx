@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   Receipt,
+  ShieldCheck,
   Wallet,
   Wand2,
 } from 'lucide-react';
@@ -41,7 +42,22 @@ type MainNavigationOptions = {
   walletAlertLabel?: string;
 };
 
-function accountItems(canAdmin: boolean): NavItem[] {
+/** Release checklist for an agent. Admin only: it registers agents and spends test funds. */
+function agentValidationItems(canAdmin: boolean): NavItem[] {
+  return canAdmin
+    ? [
+        {
+          href: '/agent-validation',
+          name: 'Agent validation',
+          icon: ShieldCheck,
+          badge: null,
+          group: 1,
+        },
+      ]
+    : [];
+}
+
+function accountItems(canAdmin: boolean, includeAgentValidation = false): NavItem[] {
   return [
     ...(canAdmin
       ? [
@@ -54,6 +70,7 @@ function accountItems(canAdmin: boolean): NavItem[] {
           } satisfies NavItem,
         ]
       : []),
+    ...(includeAgentValidation ? agentValidationItems(canAdmin) : []),
     {
       href: '/developers',
       name: 'Developers',
@@ -93,6 +110,7 @@ function setupItems(options: MainNavigationOptions): NavItem[] {
       group: 1,
     });
   }
+  items.push(...agentValidationItems(options.canAdmin));
   items.push({
     href: '/developers',
     name: 'Developers',
@@ -230,7 +248,7 @@ function cardanoItems(options: MainNavigationOptions): NavItem[] {
           } satisfies NavItem,
         ]
       : []),
-    ...accountItems(options.canAdmin),
+    ...accountItems(options.canAdmin, true),
   ];
 }
 

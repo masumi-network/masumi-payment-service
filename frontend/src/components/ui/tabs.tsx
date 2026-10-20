@@ -43,7 +43,7 @@ export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
           }}
           onClick={() => onTabChange(tab.name)}
           className={cn(
-            'pb-4 relative text-sm transition-colors duration-200',
+            'pb-4 relative shrink-0 whitespace-nowrap text-sm transition-colors duration-200',
             activeTab === tab.name ? 'text-primary font-medium' : 'text-muted-foreground',
           )}
         >

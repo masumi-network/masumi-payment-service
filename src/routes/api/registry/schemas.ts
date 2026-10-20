@@ -421,7 +421,11 @@ export const registerAgentSchemaInput = z.object({
 		.describe('Legal information about the agent'),
 	Author: z
 		.object({
-			name: z.string().max(250).describe('Name of the agent author'),
+			name: z
+				.string()
+				.min(1, 'Author name is required: the registry cannot read an agent without one')
+				.max(250)
+				.describe('Name of the agent author'),
 			contactEmail: z.string().max(250).optional().describe('Contact email of the author'),
 			contactOther: z.string().max(250).optional().describe('Other contact information for the author'),
 			organization: z.string().max(250).optional().describe('Organization of the author'),

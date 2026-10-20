@@ -576,7 +576,7 @@ export function RegisterAIAgentDialog({
             : 'AI agent registered successfully',
         );
         await resync('agents');
-        onSuccess();
+        onSuccess(response.data.data.id);
         onClose();
         reset();
       } catch (error: unknown) {
@@ -631,12 +631,19 @@ export function RegisterAIAgentDialog({
     return pricingType;
   }, [isV2Target, masumiOptions.length, x402Options.length, pricingType]);
 
-  const goToReview = handleSubmit((data) => {
-    setReviewValues(data);
-    // Defer the step swap so the Review click cannot fall through onto the
-    // Confirm button that replaces it in the same screen position.
-    queueMicrotask(() => setStep('review'));
-  });
+  const goToReview = handleSubmit(
+    (data) => {
+      setReviewValues(data);
+      // Defer the step swap so the Review click cannot fall through onto the
+      // Confirm button that replaces it in the same screen position.
+      queueMicrotask(() => setStep('review'));
+    },
+    (invalid) => {
+      // The author name lives in the collapsed "Additional Fields" section, so
+      // open it or its error would be invisible.
+      if (invalid.authorName) setShowAdditional(true);
+    },
+  );
 
   return (
     <RegisterAgentDialogView
