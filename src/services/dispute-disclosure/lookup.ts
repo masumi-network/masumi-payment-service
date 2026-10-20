@@ -115,10 +115,7 @@ export async function loadDisputedV2RequestCandidates(params: {
 	return [paymentRow, purchaseRow].filter((row): row is DisputedRequestRow => row != null);
 }
 
-function pickAuthorizedDisputedRow(
-	authorized: DisputedRequestRow[],
-	side: DisclosureUploadSide,
-): DisputedRequestRow {
+function pickAuthorizedDisputedRow(authorized: DisputedRequestRow[], side: DisclosureUploadSide): DisputedRequestRow {
 	if (authorized.length === 1) {
 		return authorized[0];
 	}
