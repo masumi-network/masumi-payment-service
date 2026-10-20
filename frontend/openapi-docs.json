@@ -9009,6 +9009,10 @@
                                                     "type": "boolean",
                                                     "description": "True when this signature was already used outside its validity window"
                                                 },
+                                                "signatureValid": {
+                                                    "type": "boolean",
+                                                    "description": "True when the admin signature verified but disclosure was not returned"
+                                                },
                                                 "decryptFailed": {
                                                     "type": "boolean",
                                                     "description": "True when stored ciphertext could not be decrypted (signature may still be valid)"
@@ -9064,7 +9068,7 @@
                         "description": "Forbidden (network not allowed)"
                     },
                     "404": {
-                        "description": "Disputed request not found (read may still succeed when a DisputeDisclosure row exists for a resolved dispute)"
+                        "description": "Disputed request not found, or no V2 payment/purchase row exists for stored disclosure"
                     }
                 }
             }
@@ -9172,7 +9176,7 @@
                         "description": "Disputed V2 request not found"
                     },
                     "409": {
-                        "description": "Disclosure already stored"
+                        "description": "Disclosure already stored or dispute no longer Disputed"
                     }
                 }
             }
@@ -9280,7 +9284,7 @@
                         "description": "Disputed V2 request not found"
                     },
                     "409": {
-                        "description": "Disclosure already stored"
+                        "description": "Disclosure already stored or dispute no longer Disputed"
                     },
                     "503": {
                         "description": "Seller hot wallet not configured"

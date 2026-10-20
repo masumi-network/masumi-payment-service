@@ -1,9 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import createHttpError from 'http-errors';
-import {
-	assertDisclosureReadWalletInScope,
-	isDisclosureReadWalletInScope,
-} from './disclosure-read-wallet-scope';
+import { assertDisclosureReadWalletInScope, isDisclosureReadWalletInScope } from './disclosure-read-wallet-scope';
 
 describe('disclosure-read-wallet-scope', () => {
 	it('allows purchase buyer smart contract wallet for read', () => {

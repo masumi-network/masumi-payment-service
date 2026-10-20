@@ -18,9 +18,7 @@ const mockContext = {
 const mockLoadContext = jest.fn(async () => mockContext);
 const mockVerify = jest.fn(async () => true);
 const mockMarkReplay = jest.fn<
-	() => Promise<
-		{ status: 'recorded' } | { status: 'idempotent' } | { status: 'rejected' }
-	>
+	() => Promise<{ status: 'recorded' } | { status: 'idempotent' } | { status: 'rejected' }>
 >(async () => ({ status: 'recorded' }));
 const mockReadPlaintext = jest.fn(async () => ({
 	inputData: null as string | null,

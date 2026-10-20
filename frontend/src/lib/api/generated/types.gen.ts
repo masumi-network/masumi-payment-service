@@ -4291,7 +4291,7 @@ export type PostSignatureGetDataErrors = {
      */
     403: unknown;
     /**
-     * Disputed request not found (read may still succeed when a DisputeDisclosure row exists for a resolved dispute)
+     * Disputed request not found, or no V2 payment/purchase row exists for stored disclosure
      */
     404: unknown;
 };
@@ -4311,6 +4311,10 @@ export type PostSignatureGetDataResponses = {
              * True when this signature was already used outside its validity window
              */
             replayRejected?: boolean;
+            /**
+             * True when the admin signature verified but disclosure was not returned
+             */
+            signatureValid?: boolean;
             /**
              * True when stored ciphertext could not be decrypted (signature may still be valid)
              */
@@ -4365,7 +4369,7 @@ export type PostDisputeDisclosureInputDataErrors = {
      */
     404: unknown;
     /**
-     * Disclosure already stored
+     * Disclosure already stored or dispute no longer Disputed
      */
     409: unknown;
 };
@@ -4413,7 +4417,7 @@ export type PostDisputeDisclosureResultDataErrors = {
      */
     404: unknown;
     /**
-     * Disclosure already stored
+     * Disclosure already stored or dispute no longer Disputed
      */
     409: unknown;
     /**
