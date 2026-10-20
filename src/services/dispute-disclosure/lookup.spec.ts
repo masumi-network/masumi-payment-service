@@ -58,7 +58,7 @@ describe('selectAuthorizedDisputedRow', () => {
 			{
 				id: 'seller-api-key',
 				canAdmin: false,
-				walletScopeIds: ['seller-wallet'],
+				walletScopeIds: ['seller-wallet', 'seller-hot'],
 				networkLimit: [],
 			} as never,
 			'result',
