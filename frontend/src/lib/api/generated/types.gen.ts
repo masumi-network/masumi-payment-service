@@ -15373,9 +15373,30 @@ export type GetHydraHeadBalanceResponses = {
              */
             hasUnbackedUtxos: boolean;
             /**
+             * In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
+             */
+            l2MintedUtxoCount: number;
+            /**
+             * Lovelace held by those UTxOs. It is counted in balance but cannot be spent.
+             */
+            l2MintedLovelace: string;
+            /**
              * This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty.
              */
             balance: Array<{
+                /**
+                 * Empty string for ADA/lovelace; otherwise policyId+assetName hex
+                 */
+                unit: string;
+                /**
+                 * Aggregate quantity across the local address in-head UTxOs
+                 */
+                quantity: string;
+            }>;
+            /**
+             * balance without the L2-minted UTxOs: what this node can still spend. Low-balance rules compare against this.
+             */
+            spendableBalance: Array<{
                 /**
                  * Empty string for ADA/lovelace; otherwise policyId+assetName hex
                  */

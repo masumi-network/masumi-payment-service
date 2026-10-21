@@ -36348,6 +36348,14 @@
                                                     "type": "boolean",
                                                     "description": "True when any reported UTxO is unbacked, so the balance is optimistic"
                                                 },
+                                                "l2MintedUtxoCount": {
+                                                    "type": "number",
+                                                    "description": "In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero. The service never spends them. A token minted inside the head and still unburned blocks its final fanout."
+                                                },
+                                                "l2MintedLovelace": {
+                                                    "type": "string",
+                                                    "description": "Lovelace held by those UTxOs. It is counted in balance but cannot be spent."
+                                                },
                                                 "balance": {
                                                     "type": "array",
                                                     "items": {
@@ -36368,6 +36376,27 @@
                                                         ]
                                                     },
                                                     "description": "This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty."
+                                                },
+                                                "spendableBalance": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "unit": {
+                                                                "type": "string",
+                                                                "description": "Empty string for ADA/lovelace; otherwise policyId+assetName hex"
+                                                            },
+                                                            "quantity": {
+                                                                "type": "string",
+                                                                "description": "Aggregate quantity across the local address in-head UTxOs"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "unit",
+                                                            "quantity"
+                                                        ]
+                                                    },
+                                                    "description": "balance without the L2-minted UTxOs: what this node can still spend. Low-balance rules compare against this."
                                                 }
                                             },
                                             "required": [
@@ -36377,7 +36406,10 @@
                                                 "utxoCount",
                                                 "unbackedLovelace",
                                                 "hasUnbackedUtxos",
-                                                "balance"
+                                                "l2MintedUtxoCount",
+                                                "l2MintedLovelace",
+                                                "balance",
+                                                "spendableBalance"
                                             ]
                                         }
                                     },
@@ -36394,7 +36426,15 @@
                                             "utxoCount": 1,
                                             "unbackedLovelace": "0",
                                             "hasUnbackedUtxos": false,
+                                            "l2MintedUtxoCount": 0,
+                                            "l2MintedLovelace": "0",
                                             "balance": [
+                                                {
+                                                    "unit": "",
+                                                    "quantity": "10000000"
+                                                }
+                                            ],
+                                            "spendableBalance": [
                                                 {
                                                     "unit": "",
                                                     "quantity": "10000000"
