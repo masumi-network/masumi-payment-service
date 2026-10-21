@@ -139,8 +139,6 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, 'The head output moved on L1 while the head was being retired');
 		}
 
-		// The operator's decision now: automatic recovery must not re-enable it.
-		forgetHeadFailedClosed(head.id);
 		const retiredAt = new Date();
 		// Guarded on the status read above, so a head that moved on meanwhile
 		// (for example a fanout that landed) is not retired. The init anchors the
@@ -158,6 +156,9 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 			},
 		});
 		if (retired.count !== 1) throw createHttpError(409, 'Hydra head changed while it was being retired');
+		// The operator's decision now: automatic recovery must not re-enable it.
+		// Only after the write: a refused retire keeps the head's auto-recovery.
+		forgetHeadFailedClosed(head.id);
 		await getHydraConnectionManager().reconcileEnabledState(head.id);
 
 		logger.warn(`[HydraAPI] Head ${head.id} retired without reaching Final`, {

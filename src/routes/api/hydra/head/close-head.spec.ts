@@ -279,6 +279,13 @@ describe('Hydra head state convergence', () => {
 
 	// A retire that commits between the read and the disable write must keep
 	// the anchors: the guarded write matches nothing and the request fails.
+	it('reports a head deleted during a disable as not found', async () => {
+		mockReleaseClose.mockResolvedValue({ count: 0 });
+		mockFindHead.mockResolvedValueOnce(openHead).mockResolvedValueOnce(null);
+
+		await expect(updateHydraHeadEnabledState('head-1', false)).rejects.toMatchObject({ statusCode: 404 });
+	});
+
 	it('refuses a disable that races a retire', async () => {
 		mockReleaseClose.mockResolvedValue({ count: 0 });
 

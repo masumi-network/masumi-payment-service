@@ -61,6 +61,18 @@ describe('persistRegressiveHeadStatus beside a retired head', () => {
 		expect(mockHeadUpdateMany.mock.calls[0]![0]).toMatchObject({ where: { id: 'head-1' } });
 	});
 
+	// A session can take the epoch just after retire commits. Its rollback
+	// frame must not move the retired head back or clear its init anchors.
+	it('leaves a retired head alone even for the current owner', async () => {
+		const retiredHead = { ...finalHead, status: HydraHeadStatus.FanoutPossible, retiredAt: new Date() };
+		mockQueryRaw.mockResolvedValueOnce([{ id: 'relation-1' }]).mockResolvedValueOnce([retiredHead]);
+
+		await expect(
+			persistRegressiveHeadStatus('head-1', 'relation-1', HydraHeadStatus.Idle, HEAD_ID, undefined, 1n),
+		).resolves.toBe('ignored');
+		expect(mockHeadUpdateMany).not.toHaveBeenCalled();
+	});
+
 	it('still quarantines the relation for a live replacement head', async () => {
 		const liveSibling = { ...retiredSibling, retiredAt: null };
 		mockQueryRaw.mockResolvedValueOnce([{ id: 'relation-1' }]).mockResolvedValueOnce([liveSibling, finalHead]);

@@ -151,7 +151,12 @@ Document all four limits. Build against none of them.
    status than the database, and it reads L1 a second time and requires the
    same head output tx. A fanout that is posted but not yet on L1 stays
    invisible to both checks, so an operator must not retire a head while a
-   fanout is in flight. The one-live-head index
+   fanout is in flight. The contestation guard reads the stored
+   `contestationDeadline`, which is written once at close and does not move
+   when a contest extends the deadline. The L1 observer reads Close and
+   Contest both as `closed`. So retire can pass while a contest is still
+   running. The hydra-node process contests on its own and retire does not
+   stop it, so we accept this. The one-live-head index
    (`HydraHead_one_live_per_relation_key`) leaves retired heads out. A retired
    head still blocks deletion of its relation, participants and host, and the
    requests bound to it stay unsettled: their funds are on L1 behind the head

@@ -63,6 +63,9 @@ export async function persistRegressiveHeadStatus(
 				// Fenced under the row lock: a rollback (and the relation quarantines
 				// it can trigger) must never be driven by a superseded session.
 				if (current.ownerEpoch !== ownerEpoch) return 'stale-owner';
+				// A session that took the epoch after retire must not move a retired
+				// head back or clear the init anchors its recovery starts from.
+				if (current.retiredAt != null) return 'ignored';
 				if (headId && current.headIdentifier != null && current.headIdentifier !== headId) return 'ignored';
 				if (HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[current.status]) {
 					return 'not-regressive';

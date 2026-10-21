@@ -612,9 +612,9 @@ export async function updateHydraHeadEnabledState(
 		// recovery. The init backfill re-resolves it after re-enable.
 		data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 	});
-	if (disabled.count !== 1) throw createHttpError(409, 'A retired Hydra head cannot be enabled or disabled');
 	const quarantined = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
 	if (!quarantined) throw createHttpError(404, 'Hydra head not found');
+	if (disabled.count !== 1) throw createHttpError(409, 'A retired Hydra head cannot be enabled or disabled');
 	await manager.reconcileEnabledState(id);
 	if (!isEnabled) return quarantined;
 

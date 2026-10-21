@@ -113,6 +113,22 @@ describe('retireHeadPost', () => {
 		expect(mockReadChain).not.toHaveBeenCalled();
 	});
 
+	it('refuses a Closed head whose contestation deadline is unknown', async () => {
+		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed, contestationDeadline: null });
+
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockReadChain).not.toHaveBeenCalled();
+	});
+
+	// The node reports ReadyToFanout before this service stores it.
+	it('refuses a Closed head the node already reports FanoutPossible', async () => {
+		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.FanoutPossible, snapshotUTxO: async () => REMAINING });
+
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
 	it('retires a Closed head past its contestation deadline', async () => {
 		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
 
@@ -182,5 +198,7 @@ describe('retireHeadPost', () => {
 
 		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
 		expect(mockReconcileEnabledState).not.toHaveBeenCalled();
+		// The head was not retired, so it keeps its automatic recovery.
+		expect(mockForgetFailedClosed).not.toHaveBeenCalled();
 	});
 });
