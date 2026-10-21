@@ -57,6 +57,7 @@ const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
 	HydraHeadStatus.Open,
 	HydraHeadStatus.Closed,
 	HydraHeadStatus.FanoutPossible,
+	HydraHeadStatus.FanningOut,
 	HydraHeadStatus.Final,
 ]);
 

@@ -1,6 +1,7 @@
 import type { UTxO } from '@meshsdk/core';
 import { HydraHead } from './head';
 import { HydraNode } from './node';
+import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
 import {
 	HydraTransaction,
 	HydraTransactionType,
@@ -92,6 +93,11 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 	async fanout(): Promise<void> {
 		this.assertMutationAllowed();
 		await this.mainNode.fanout();
+	}
+
+	async partialFanout(selection: HydraFanoutRemainingUtxo): Promise<void> {
+		this.assertMutationAllowed();
+		await this.mainNode.partialFanout(selection);
 	}
 
 	async cardanoTransaction(transaction: HydraTransaction, participant?: string | null): Promise<unknown> {

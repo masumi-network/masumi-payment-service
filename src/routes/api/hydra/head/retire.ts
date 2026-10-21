@@ -16,6 +16,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
 
+import type { HydraFanoutHeadState } from '@/lib/hydra/hydra/fanout-head-state';
 import { HydraHeadInitObservationError } from '@/lib/hydra/hydra/head-init-validation';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
@@ -23,11 +24,13 @@ import { HYDRA_HEAD_STATUS_RANK } from '@/services/hydra-connection-manager/head
 
 import { readHeadChainState } from './chain-check';
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
+import { assertNodeAwaitsFanoutSelection, readFanoutHeadState } from './partial-fanout';
 
 /** Statuses past close where fanout can stall. Open and earlier heads close instead. */
 export const RETIRABLE_HEAD_STATUSES: ReadonlySet<HydraHeadStatus> = new Set([
 	HydraHeadStatus.Closed,
 	HydraHeadStatus.FanoutPossible,
+	HydraHeadStatus.FanningOut,
 ]);
 
 const MAX_RETIRE_REASON_LENGTH = 1000;
@@ -46,6 +49,11 @@ export const retireHeadInput = lifecycleInput.extend({
 	acknowledgeStrandedFunds: z.literal(true),
 	/** Retire even though the node cannot report the remaining UTxO set. */
 	acknowledgeRemainingUtxoUnknown: z.boolean().optional(),
+	/**
+	 * Retire although the node is still in a fanout mode that posts steps on its
+	 * own. For a step that can never post, which leaves the node in that mode.
+	 */
+	acknowledgeFanoutStalled: z.boolean().optional(),
 });
 
 export const retireHeadOutput = lifecycleOutput.extend({
@@ -82,22 +90,43 @@ function assertNodeNotPastStatus(headId: string, status: HydraHeadStatus): void 
 	}
 }
 
-async function readRemainingUtxo(headId: string, acknowledgeUnknown: boolean): Promise<Prisma.InputJsonArray | null> {
+/**
+ * The node's report of what the head still holds, keyed by in-head reference.
+ * A node still fanning out on its own is refused unless the stall is
+ * acknowledged. Acknowledging an unknown set does not cover it: the set is
+ * known, and the head may be settling.
+ */
+async function readRemainingUtxo(
+	headId: string,
+	acknowledge: { remainingUnknown: boolean; fanoutStalled: boolean },
+): Promise<Prisma.InputJsonObject | null> {
 	const node = getHydraConnectionManager().getNode(headId);
+	let state: HydraFanoutHeadState;
 	try {
 		if (!node) throw new Error('no active connection to the Hydra node');
-		// JSON round trip: the mesh UTxO objects are plain data, and Prisma needs
-		// a JSON value, not class instances.
-		return JSON.parse(JSON.stringify(await node.snapshotUTxO())) as Prisma.InputJsonArray;
+		state = await readFanoutHeadState(node);
 	} catch (error) {
-		if (acknowledgeUnknown) return null;
 		const message = error instanceof Error ? error.message : String(error);
+		if (acknowledge.remainingUnknown) {
+			logger.warn(`[HydraAPI] Retiring head ${headId} without its remaining UTxO set: ${message}`);
+			return null;
+		}
+		// The node answered, but with a state that cannot be retired from (not
+		// closed, or unreadable): keep that status rather than calling it down.
+		if (createHttpError.isHttpError(error)) {
+			throw createHttpError(error.status, `${message}; pass acknowledgeRemainingUtxoUnknown to retire without it`);
+		}
 		throw createHttpError(
 			503,
 			`Could not read the remaining UTxO set from the node (${message}); ` +
 				'retry, or pass acknowledgeRemainingUtxoUnknown to retire without it',
 		);
 	}
+	assertNodeAwaitsFanoutSelection(state, { allowed: acknowledge.fanoutStalled, flag: 'acknowledgeFanoutStalled' });
+	// Prisma JSON cannot hold BigInt quantities; strings keep them exact.
+	return JSON.parse(
+		JSON.stringify(state.selectable, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value)),
+	) as Prisma.InputJsonObject;
 }
 
 export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
@@ -130,7 +159,11 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 		// is not stuck, and retiring it would strand a settleable head.
 		assertNodeNotPastStatus(head.id, head.status);
 		const retiredHeadOutputTxHash = await readHeadOutputOnChain(head.id);
-		const remainingUtxo = await readRemainingUtxo(head.id, input.acknowledgeRemainingUtxoUnknown === true);
+		const remainingUtxo = await readRemainingUtxo(head.id, {
+			remainingUnknown: input.acknowledgeRemainingUtxoUnknown === true,
+			fanoutStalled: input.acknowledgeFanoutStalled === true,
+		});
+		const remainingUtxoCount = remainingUtxo ? Object.keys(remainingUtxo).length : null;
 		// The node read above can take a while. Read L1 again just before the
 		// write: a fanout that landed meanwhile moves the head output. A fanout
 		// posted but not yet on chain stays invisible here (see ADR 0013).
@@ -164,14 +197,14 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 		logger.warn(`[HydraAPI] Head ${head.id} retired without reaching Final`, {
 			status: head.status,
 			retiredHeadOutputTxHash,
-			remainingUtxoCount: remainingUtxo?.length ?? null,
+			remainingUtxoCount,
 		});
 		return {
 			headId: head.id,
 			status: head.status,
 			retiredAt: retiredAt.toISOString(),
 			retiredHeadOutputTxHash,
-			remainingUtxoCount: remainingUtxo?.length ?? null,
+			remainingUtxoCount,
 		};
 	},
 });

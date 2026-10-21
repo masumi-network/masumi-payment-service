@@ -771,6 +771,27 @@ describe('HydraNode', () => {
 				expect(node.getFinalizedFanoutBindingInput(2)?.inHeadReferences.has(`${chain.first.txId}#0`)).toBe(true);
 			});
 
+			it('reports a head between partial fanout steps as FanningOut', async () => {
+				const started = await startSignedNode();
+				const chain = signedTwoOutputHistory();
+				for (const frame of chain.frames) started.historyConnection.emit('message', JSON.stringify(frame));
+				finishHistoryReplay(started.historyConnection);
+				const remainingReference = `${chain.second.txId}#0`;
+				started.liveConnection.emit(
+					'message',
+					JSON.stringify({
+						tag: 'HeadPartiallyFannedOut',
+						headId: HEAD_ID_A,
+						seq: 40,
+						distributedUTxO: { [`${chain.first.txId}#0`]: chain.firstFinalOutput },
+						remainingUTxO: { [remainingReference]: chain.secondFinalOutput },
+						fanoutMode: 'AwaitingFanoutSelection',
+					}),
+				);
+
+				expect(started.node.status).toBe(HydraHeadStatus.FanningOut);
+			});
+
 			it('resolves the L1 output the partial step created once a binding is adopted, across a replay', async () => {
 				const { node, chain, finalized, historyConnection } = await finalizedOverTwoSteps();
 				const input = node.getFinalizedFanoutBindingInput(2)!;

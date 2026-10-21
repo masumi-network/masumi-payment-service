@@ -163,6 +163,30 @@ Document all four limits. Build against none of them.
    requests bound to it stay unsettled: their funds are on L1 behind the head
    script, and nothing here can prove where they go next.
 
+   Before retiring, an operator can move every output that fits out of the
+   head with `POST /hydra/head/partial-fanout` (`head/partial-fanout.ts`). It
+   sends hydra-node 2.4.1 a `PartialFanout` with the chosen in-head
+   references. After the first step the head is `FanningOut` (a status ranked
+   between `FanoutPossible` and `Final`) and hydra-node refuses a plain
+   `Fanout`. Every selection is built from the node's own head state
+   (`GET /head`, parsed in `fanout-head-state.ts`), the set the node checks
+   a selection against. `GET /snapshot/utxo` is not that set: it adds a
+   pending commit the node may not fan out, leaves out a pending decommit the
+   node does fan out, and keeps the confirmed snapshot after the first step.
+   The endpoint and retire refuse while the node fans out on its own
+   (`AutoDrain` or `DistributingSelection`): a new selection would replace the
+   one in progress. A step that can never post leaves the node in that mode
+   for good, so both take an explicit override: `replaceInProgressSelection`
+   on the endpoint and `acknowledgeFanoutStalled` on retire. A
+   `PartialFanout` command completes only on a step that distributed part of
+   its own selection, matched by reference or by output content, because the
+   node removes outputs by content. Two limits remain. A step in flight that
+   moves an output identical to one selected can settle the command early, and
+   after a replacement a post failure of the replaced step can be reported as
+   a refusal of the new selection. The node checks every selection again, so
+   neither can move funds the operator did not select. Retire accepts a `FanningOut` head too and stores the
+   remaining set.
+
    _Original decision, superseded:_ do not build an operator retire path yet. A head that cannot reach
    `Final` blocks its relation permanently: `head/create-head.ts` rejects any new
    head while a non-`Final` one exists, `deletion-guard.ts` requires a

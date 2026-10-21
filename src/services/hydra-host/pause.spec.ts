@@ -385,7 +385,7 @@ describe('advanceHydraHostPause', () => {
 	});
 
 	// isClosing stays set after Final, so it must not hold a pause forever.
-	it('counts a closing head only while it is still Open, plus Closed and FanoutPossible', async () => {
+	it('counts a closing head only while it is still Open, plus Closed, FanoutPossible and FanningOut', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
@@ -395,7 +395,7 @@ describe('advanceHydraHostPause', () => {
 				LocalParticipant: { hydraHostId: 'host-1' },
 				OR: [
 					{ isClosing: true, status: 'Open' },
-					{ status: { in: ['Closed', 'FanoutPossible'] }, retiredAt: null },
+					{ status: { in: ['Closed', 'FanoutPossible', 'FanningOut'] }, retiredAt: null },
 				],
 			},
 		});

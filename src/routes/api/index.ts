@@ -121,6 +121,8 @@ import {
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
 	fanoutHeadPost,
+	partialFanoutHeadPost,
+	fanoutRemainingGet,
 	retireHeadPost,
 	getLocalParticipantGet,
 	getOrListHeadsGet,
@@ -585,6 +587,8 @@ export const apiRouter: Routing = {
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
+				// What is left to fan out, and fanning out part of it.
+				'partial-fanout': { get: fanoutRemainingGet, post: partialFanoutHeadPost },
 				retire: { post: retireHeadPost },
 				// Read-only: the head's state on L1, from an independent observer.
 				'chain-check': { post: checkHeadOnChainPost },

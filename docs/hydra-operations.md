@@ -472,7 +472,7 @@ rest of the head keeps working. If the arriving deposit is the _only_ money in
 the head, there is nothing to work with and payments wait for the fold to
 finish. That is expected; it resolves itself.
 
-### A head that stays in FanoutPossible
+### A head that stays in FanoutPossible or FanningOut
 
 A head can close and then never reach `Final`. The usual cause is one output
 that no fanout transaction can carry (ADR 0013, limit 3). Its relation then
@@ -480,7 +480,33 @@ refuses a new head.
 
 1. Read the head on L1 with `POST /hydra/head/chain-check`. If it shows
    `gone`, the fanout landed: reconciliation adopts it, so wait.
-2. If it shows `closed` and fanout keeps failing, retire the head:
+2. If it shows `closed` and fanout keeps failing, move out what fits. List
+   what the head holds with `GET /hydra/head/partial-fanout?headId=<head id>`,
+   then send every output except the stuck one:
+
+   ```json
+   POST /hydra/head/partial-fanout
+   {
+     "headId": "<head id>",
+     "outputRefs": ["<txHash#index>", "<txHash#index>"]
+   }
+   ```
+
+   The head is then `FanningOut`. From here only `partial-fanout` continues
+   it; a plain fanout is refused. Repeat until only the stuck output is left.
+   The `GET` reply carries `fanoutMode`. Send the next selection only when it
+   is `null` or `AwaitingSelection`: in the other modes the node posts the
+   next step itself, and the endpoint refuses. If the mode stays `AutoDrain`
+   or `DistributingSelection` and `chain-check` shows the same head output
+   tx for several minutes, the step is stuck. Then add
+   `"replaceInProgressSelection": true` to the selection, or add
+   `"acknowledgeFanoutStalled": true` to the retire call. A replacement
+   selection helps only while other outputs are left to move: when only the
+   stuck output remains, any selection is that output again and fails again,
+   so retire instead. A replacement can also report a refusal that belongs to
+   the replaced step. Read `fanoutMode` again before you retry.
+
+3. Retire the head:
 
    ```json
    POST /hydra/head/retire
@@ -491,7 +517,7 @@ refuses a new head.
    }
    ```
 
-3. Open a new head on the same relation.
+4. Open a new head on the same relation.
 
 Retiring moves no money. What is left in the head stays on L1 behind the head
 script, and the requests that were in the head stay unsettled. The head record

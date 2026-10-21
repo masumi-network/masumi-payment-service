@@ -24,6 +24,7 @@ export {
 // importing them here keeps that module free of a cycle back to them.
 export { initHeadPost, commitHeadPost } from './head/lifecycle';
 export { closeHeadPost, fanoutHeadPost } from './head/settlement';
+export { fanoutRemainingGet, partialFanoutHeadPost } from './head/partial-fanout';
 export { retireHeadPost } from './head/retire';
 
 export { topupHeadPost, listTopupsGet, recoverTopupPost } from './head/topup';

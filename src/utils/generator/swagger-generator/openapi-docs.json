@@ -6534,6 +6534,7 @@
                                                 "Open",
                                                 "Closed",
                                                 "FanoutPossible",
+                                                "FanningOut",
                                                 "Final"
                                             ]
                                         },
@@ -6731,6 +6732,7 @@
                             "Open",
                             "Closed",
                             "FanoutPossible",
+                            "FanningOut",
                             "Final"
                         ]
                     },
@@ -7250,6 +7252,7 @@
                                     "Open",
                                     "Closed",
                                     "FanoutPossible",
+                                    "FanningOut",
                                     "Final"
                                 ]
                             }
@@ -34082,6 +34085,7 @@
                                 "Open",
                                 "Closed",
                                 "FanoutPossible",
+                                "FanningOut",
                                 "Final"
                             ],
                             "description": "Filter by head status"
@@ -34324,6 +34328,7 @@
                                                         "Open",
                                                         "Closed",
                                                         "FanoutPossible",
+                                                        "FanningOut",
                                                         "Final"
                                                     ]
                                                 }
@@ -34426,6 +34431,7 @@
                                                         "Open",
                                                         "Closed",
                                                         "FanoutPossible",
+                                                        "FanningOut",
                                                         "Final"
                                                     ]
                                                 }
@@ -34531,6 +34537,7 @@
                                                         "Open",
                                                         "Closed",
                                                         "FanoutPossible",
+                                                        "FanningOut",
                                                         "Final"
                                                     ]
                                                 }
@@ -36925,6 +36932,7 @@
                                                                     "Open",
                                                                     "Closed",
                                                                     "FanoutPossible",
+                                                                    "FanningOut",
                                                                     "Final"
                                                                 ]
                                                             },
@@ -38397,7 +38405,7 @@
         "/hydra/head/retire": {
             "post": {
                 "summary": "Retire a Hydra head that cannot reach Final. (admin access required)",
-                "description": "Marks a closed head that fanout cannot finish as retired and frees its relation for a new head. Moves no funds: whatever is left stays on L1 behind the head script. Allowed for FanoutPossible heads, and for Closed heads after the contestation deadline, when L1 shows the head closed. Stores the reason, the L1 tx that holds the head output and the remaining UTxO set for a later recovery. Cannot be undone through the API.",
+                "description": "Marks a closed head that fanout cannot finish as retired and frees its relation for a new head. Moves no funds: whatever is left stays on L1 behind the head script. Allowed for FanoutPossible and FanningOut heads, and for Closed heads after the contestation deadline, when L1 shows the head closed. Stores the reason, the L1 tx that holds the head output and the remaining UTxO set for a later recovery. Cannot be undone through the API.",
                 "tags": [
                     "hydra"
                 ],
@@ -38430,6 +38438,9 @@
                                         ]
                                     },
                                     "acknowledgeRemainingUtxoUnknown": {
+                                        "type": "boolean"
+                                    },
+                                    "acknowledgeFanoutStalled": {
                                         "type": "boolean"
                                     }
                                 },
@@ -38478,6 +38489,7 @@
                                                         "Open",
                                                         "Closed",
                                                         "FanoutPossible",
+                                                        "FanningOut",
                                                         "Final"
                                                     ]
                                                 },
@@ -38529,13 +38541,283 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, or the head changed meanwhile"
+                        "description": "Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head (pass acknowledgeFanoutStalled for a stuck drain) or does not hold it as closed, or the head changed meanwhile"
                     },
                     "502": {
-                        "description": "The head state could not be read on chain"
+                        "description": "The head state could not be read on chain, or the node returned an unreadable head state"
                     },
                     "503": {
                         "description": "Independent L1 evidence or the remaining UTxO set is not available yet"
+                    }
+                }
+            }
+        },
+        "/hydra/head/partial-fanout": {
+            "get": {
+                "summary": "List what a closed Hydra head can still fan out. (admin access required)",
+                "description": "Lists the in-head outputs a partial fanout can select now, read from the node head state: the set the node checks a selection against. fanoutMode says whether the node waits for a selection. Read-only.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "ID of the HydraHead"
+                        },
+                        "required": true,
+                        "description": "ID of the HydraHead",
+                        "name": "headId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Outputs left to fan out",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Disconnected",
+                                                        "Connected",
+                                                        "Connecting",
+                                                        "Idle",
+                                                        "Initializing",
+                                                        "Open",
+                                                        "Closed",
+                                                        "FanoutPossible",
+                                                        "FanningOut",
+                                                        "Final"
+                                                    ]
+                                                },
+                                                "fanoutMode": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "AutoDrain",
+                                                        "DistributingSelection",
+                                                        "AwaitingSelection",
+                                                        null
+                                                    ],
+                                                    "description": "Null before the first step. A selection is accepted only before it or in AwaitingSelection."
+                                                },
+                                                "outputs": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "reference": {
+                                                                "type": "string"
+                                                            },
+                                                            "address": {
+                                                                "type": "string"
+                                                            },
+                                                            "lovelace": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "reference",
+                                                            "address",
+                                                            "lovelace"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "status",
+                                                "fanoutMode",
+                                                "outputs"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "status": "FanningOut",
+                                            "fanoutMode": "AwaitingSelection",
+                                            "outputs": [
+                                                {
+                                                    "reference": "abababababababababababababababababababababababababababababababab#0",
+                                                    "address": "addr_test1vz...",
+                                                    "lovelace": "2000000"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Status not FanoutPossible or FanningOut, or the node does not hold the head as closed"
+                    },
+                    "502": {
+                        "description": "No connection to the head, or the node returned an unreadable head state"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Fan out part of a closed Hydra head. (admin access required)",
+                "description": "Asks the node to fan out the selected in-head outputs in one or more L1 steps. Allowed for FanoutPossible and FanningOut heads. Selecting everything that remains ends in the final step and Final. Once a step lands the head is FanningOut, and only this endpoint can continue the fanout. Use it to move every output that fits out of a head that one oversized output keeps from reaching Final, then retire the head.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "headId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "ID of the HydraHead"
+                                    },
+                                    "outputRefs": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "pattern": "^[0-9a-fA-F]{64}#\\d{1,10}$"
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 4095,
+                                        "description": "In-head references (txHash#index) of the outputs to fan out in this step"
+                                    },
+                                    "replaceInProgressSelection": {
+                                        "type": "boolean",
+                                        "description": "Send the selection even while the node fans out on its own; it replaces the selection in progress."
+                                    }
+                                },
+                                "required": [
+                                    "headId",
+                                    "outputRefs"
+                                ],
+                                "example": {
+                                    "headId": "cuid_v2_auto_generated",
+                                    "outputRefs": [
+                                        "abababababababababababababababababababababababababababababababab#0"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Partial fanout step result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Disconnected",
+                                                        "Connected",
+                                                        "Connecting",
+                                                        "Idle",
+                                                        "Initializing",
+                                                        "Open",
+                                                        "Closed",
+                                                        "FanoutPossible",
+                                                        "FanningOut",
+                                                        "Final"
+                                                    ]
+                                                },
+                                                "selectedCount": {
+                                                    "type": "number"
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "status",
+                                                "selectedCount"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "status": "FanningOut",
+                                            "selectedCount": 1
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set"
+                    },
+                    "502": {
+                        "description": "No connection to the head, or the node returned an unreadable head state"
                     }
                 }
             }

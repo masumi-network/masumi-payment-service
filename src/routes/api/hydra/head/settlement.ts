@@ -199,6 +199,13 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, 'Cannot fanout a disabled Hydra head');
 		}
 
+		// Once a partial step has landed, hydra-node accepts only PartialFanout.
+		if (head.status === HydraHeadStatus.FanningOut) {
+			throw createHttpError(
+				409,
+				'Cannot fanout: the head is fanning out in steps; select what is left with POST /hydra/head/partial-fanout',
+			);
+		}
 		if (head.status !== HydraHeadStatus.FanoutPossible) {
 			throw createHttpError(409, `Cannot fanout: head status is ${head.status}, expected FanoutPossible`);
 		}

@@ -25,6 +25,7 @@ import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
 import { isVerifiedPendingCommitOutput, readVerifiedCurrentOutput } from './node-current-output';
 import {
 	HydraCommandOptions,
+	assertTxConfirmationPolling,
 	awaitHydraTxConfirmation,
 	prepareNewTxCommand,
 	sendHydraCommandAndWait,
@@ -62,6 +63,8 @@ import {
 import { withHistorySetting } from './node-url';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { FinalizedFanoutState, type FinalizedFanoutBindingInput } from './node-finalized-fanout';
+import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
+import * as settlementCommands from './node-settlement-commands';
 import { canonicalHydraHeadIdSchema } from './schemas';
 import type { VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction } from './types';
@@ -673,12 +676,7 @@ export class HydraNode extends EventEmitter {
 	}
 
 	async awaitTx(txHash: string, checkInterval: number = 1000, timeoutMs: number = this._commandTimeoutMs) {
-		if (!Number.isSafeInteger(checkInterval) || checkInterval <= 0) {
-			throw new HydraProtocolError('Hydra confirmation polling interval must be a positive safe integer');
-		}
-		if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
-			throw new HydraProtocolError('Hydra confirmation timeout must be a positive safe integer');
-		}
+		assertTxConfirmationPolling(checkInterval, timeoutMs);
 		if (this._ledger.hasConfirmed(txHash)) return true;
 		return await awaitHydraTxConfirmation({
 			connections: [this._connection, this._historyConnection],
@@ -690,23 +688,16 @@ export class HydraNode extends EventEmitter {
 	}
 
 	async close() {
-		return await this.sendCommandAndWait({
-			command: 'Close',
-			payload: { tag: 'Close' },
-			timeoutMs: HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS,
-			timeoutMessage: 'Hydra Close outcome was not observed before the lifecycle deadline',
-			isComplete: (message) => message.tag === 'HeadIsClosed',
-		});
+		return await this.sendCommandAndWait(settlementCommands.closeCommand(HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS));
 	}
 
 	async fanout() {
-		return await this.sendCommandAndWait({
-			command: 'Fanout',
-			payload: { tag: 'Fanout' },
-			timeoutMs: HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS,
-			timeoutMessage: 'Hydra Fanout outcome was not observed before the lifecycle deadline',
-			isComplete: (message) => message.tag === 'HeadIsFinalized',
-		});
+		return await this.sendCommandAndWait(settlementCommands.fanoutCommand(HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS));
+	}
+
+	async partialFanout(selection: HydraFanoutRemainingUtxo) {
+		const timeoutMs = HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS;
+		return await this.sendCommandAndWait(settlementCommands.partialFanoutCommand(selection, timeoutMs));
 	}
 
 	async get<T = unknown>(url: string): Promise<T> {

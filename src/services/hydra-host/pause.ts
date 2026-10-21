@@ -178,7 +178,10 @@ async function countInFlight(hostId: string): Promise<HydraHostPauseInFlight> {
 				// `isClosing` stays set after Final, so it counts only while still Open.
 				OR: [
 					{ isClosing: true, status: HydraHeadStatus.Open },
-					{ status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] }, retiredAt: null },
+					{
+						status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible, HydraHeadStatus.FanningOut] },
+						retiredAt: null,
+					},
 				],
 			},
 		}),

@@ -3351,7 +3351,7 @@ export type DescribedRelease = {
 export type HydraRelationDetail = HydraRelation & {
     Heads?: Array<{
         id: string;
-        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         headIdentifier: string | null;
         isEnabled: boolean;
         createdAt: Date;
@@ -3397,7 +3397,7 @@ export type HydraHead = {
     updatedAt: string;
     hydraRelationId: string;
     headIdentifier: string | null;
-    status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+    status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
     contestationPeriod: string;
     isEnabled: boolean;
     openedAt: string | null;
@@ -3538,7 +3538,7 @@ export type HydraLocalParticipant = {
         walletAddress: string;
     };
     HydraHead?: {
-        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
     } | null;
     keysDisclosedAt: Date | null;
 };
@@ -14317,7 +14317,7 @@ export type GetHydraHeadData = {
         /**
          * Filter by head status
          */
-        status?: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        status?: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         /**
          * Filter by isEnabled
          */
@@ -14437,7 +14437,7 @@ export type PostHydraHeadInitResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         };
     };
 };
@@ -14479,7 +14479,7 @@ export type PostHydraHeadFanoutResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         };
     };
 };
@@ -14522,7 +14522,7 @@ export type PostHydraHeadCloseResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         };
     };
 };
@@ -15641,7 +15641,7 @@ export type GetHydraHeadErrorsResponses = {
                 createdAt: Date;
                 errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput';
                 errorMessage: string;
-                headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+                headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
                 clientInput: string | null;
                 txHash: string | null;
                 errorAt: Date;
@@ -16268,6 +16268,7 @@ export type PostHydraHeadRetireData = {
         reason: string;
         acknowledgeStrandedFunds: true;
         acknowledgeRemainingUtxoUnknown?: boolean;
+        acknowledgeFanoutStalled?: boolean;
     };
     path?: never;
     query?: never;
@@ -16288,11 +16289,11 @@ export type PostHydraHeadRetireErrors = {
      */
     404: unknown;
     /**
-     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, or the head changed meanwhile
+     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head (pass acknowledgeFanoutStalled for a stuck drain) or does not hold it as closed, or the head changed meanwhile
      */
     409: unknown;
     /**
-     * The head state could not be read on chain
+     * The head state could not be read on chain, or the node returned an unreadable head state
      */
     502: unknown;
     /**
@@ -16309,7 +16310,7 @@ export type PostHydraHeadRetireResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
             retiredAt: string;
             retiredHeadOutputTxHash: string;
             remainingUtxoCount: number | null;
@@ -16318,6 +16319,120 @@ export type PostHydraHeadRetireResponses = {
 };
 
 export type PostHydraHeadRetireResponse = PostHydraHeadRetireResponses[keyof PostHydraHeadRetireResponses];
+
+export type GetHydraHeadPartialFanoutData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+    };
+    url: '/hydra/head/partial-fanout';
+};
+
+export type GetHydraHeadPartialFanoutErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Status not FanoutPossible or FanningOut, or the node does not hold the head as closed
+     */
+    409: unknown;
+    /**
+     * No connection to the head, or the node returned an unreadable head state
+     */
+    502: unknown;
+};
+
+export type GetHydraHeadPartialFanoutResponses = {
+    /**
+     * Outputs left to fan out
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            /**
+             * Null before the first step. A selection is accepted only before it or in AwaitingSelection.
+             */
+            fanoutMode: 'AutoDrain' | 'DistributingSelection' | 'AwaitingSelection' | null;
+            outputs: Array<{
+                reference: string;
+                address: string;
+                lovelace: string;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadPartialFanoutResponse = GetHydraHeadPartialFanoutResponses[keyof GetHydraHeadPartialFanoutResponses];
+
+export type PostHydraHeadPartialFanoutData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+        /**
+         * In-head references (txHash#index) of the outputs to fan out in this step
+         */
+        outputRefs: Array<string>;
+        /**
+         * Send the selection even while the node fans out on its own; it replaces the selection in progress.
+         */
+        replaceInProgressSelection?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/partial-fanout';
+};
+
+export type PostHydraHeadPartialFanoutErrors = {
+    /**
+     * Invalid input
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set
+     */
+    409: unknown;
+    /**
+     * No connection to the head, or the node returned an unreadable head state
+     */
+    502: unknown;
+};
+
+export type PostHydraHeadPartialFanoutResponses = {
+    /**
+     * Partial fanout step result
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            selectedCount: number;
+        };
+    };
+};
+
+export type PostHydraHeadPartialFanoutResponse = PostHydraHeadPartialFanoutResponses[keyof PostHydraHeadPartialFanoutResponses];
 
 export type GetRailReadinessData = {
     body?: never;

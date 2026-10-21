@@ -15,6 +15,7 @@ export type HydraHeadStatus =
   | 'Open'
   | 'Closed'
   | 'FanoutPossible'
+  | 'FanningOut'
   | 'Final';
 
 export type HydraParticipant = {

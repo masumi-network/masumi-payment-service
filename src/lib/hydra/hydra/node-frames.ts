@@ -68,6 +68,7 @@ const HEAD_SCOPED_SERVER_OUTPUT_TAGS = new Set([
 	'HeadIsClosed',
 	'HeadIsContested',
 	'ReadyToFanout',
+	'HeadPartiallyFannedOut',
 	'HeadIsAborted',
 	'HeadIsFinalized',
 	'TxValid',
@@ -341,6 +342,19 @@ export function resolveCommandTransactionHash(transaction: { txId?: string; cbor
 	return computedTxId;
 }
 
+/**
+ * The L1 transactions a command can make the node post. In hydra-node 2.4.1 a
+ * fanout can be one transaction or several partial steps, and a selection can
+ * end in the final step (`Hydra/Chain.hs`: `FanoutTx`, `PartialFanoutTx`,
+ * `FinalPartialFanoutTx`). A failure of any of them is the command's failure.
+ */
+const FANOUT_POST_CHAIN_TX_TAGS: ReadonlySet<string> = new Set(['FanoutTx', 'PartialFanoutTx', 'FinalPartialFanoutTx']);
+
+function postChainTxTagsFor(command: string): ReadonlySet<string> {
+	if (command === 'Fanout' || command === 'PartialFanout') return FANOUT_POST_CHAIN_TX_TAGS;
+	return new Set([`${command}Tx`]);
+}
+
 export function handleWsResponse(
 	rawMessage: string,
 	command: string,
@@ -399,7 +413,7 @@ export function handleWsResponse(
 		if (envelope.tag === 'PostTxOnChainFailed') {
 			const message = postTxOnChainFailedMessageSchema.parse(raw);
 			assertExpectedFrameHeadId(message, expectedHeadId);
-			if (message.postChainTx?.tag === `${command}Tx`) {
+			if (postChainTxTagsFor(command).has(message.postChainTx?.tag ?? '')) {
 				// Name the node's own reason. Without it every L1 refusal reads the
 				// same, and the operator has no way to tell "the node's key holds
 				// nothing" (NoSeedInput) from a genuine protocol rejection — the two
@@ -446,6 +460,9 @@ export function extractStatusChangeData(rawMessage: string, expectedHeadId?: str
 				break;
 			case 'ReadyToFanout':
 				newStatus = HydraHeadStatus.FanoutPossible;
+				break;
+			case 'HeadPartiallyFannedOut':
+				newStatus = HydraHeadStatus.FanningOut;
 				break;
 			case 'HeadIsFinalized':
 				newStatus = HydraHeadStatus.Final;

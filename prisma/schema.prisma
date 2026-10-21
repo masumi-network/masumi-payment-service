@@ -1657,6 +1657,7 @@ enum HydraHeadStatus {
   Open
   Closed
   FanoutPossible
+  FanningOut
   Final
 }
 

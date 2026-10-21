@@ -12,7 +12,7 @@ export function registerHydraHeadRetirePath({ registry, apiKeyAuth }: SwaggerReg
 		path: '/hydra/head/retire',
 		summary: 'Retire a Hydra head that cannot reach Final. (admin access required)',
 		description:
-			'Marks a closed head that fanout cannot finish as retired and frees its relation for a new head. Moves no funds: whatever is left stays on L1 behind the head script. Allowed for FanoutPossible heads, and for Closed heads after the contestation deadline, when L1 shows the head closed. Stores the reason, the L1 tx that holds the head output and the remaining UTxO set for a later recovery. Cannot be undone through the API.',
+			'Marks a closed head that fanout cannot finish as retired and frees its relation for a new head. Moves no funds: whatever is left stays on L1 behind the head script. Allowed for FanoutPossible and FanningOut heads, and for Closed heads after the contestation deadline, when L1 shows the head closed. Stores the reason, the L1 tx that holds the head output and the remaining UTxO set for a later recovery. Cannot be undone through the API.',
 		tags: TAG,
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -35,9 +35,9 @@ export function registerHydraHeadRetirePath({ registry, apiKeyAuth }: SwaggerReg
 			404: { description: 'Hydra head not found' },
 			409: {
 				description:
-					'Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, or the head changed meanwhile',
+					'Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head (pass acknowledgeFanoutStalled for a stuck drain) or does not hold it as closed, or the head changed meanwhile',
 			},
-			502: { description: 'The head state could not be read on chain' },
+			502: { description: 'The head state could not be read on chain, or the node returned an unreadable head state' },
 			503: { description: 'Independent L1 evidence or the remaining UTxO set is not available yet' },
 		},
 	});

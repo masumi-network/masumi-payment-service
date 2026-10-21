@@ -41,6 +41,7 @@ export function getStatusBadgeVariant(status: HydraHeadStatus): BadgeProps['vari
       return 'processing';
     case 'Closed':
     case 'FanoutPossible':
+    case 'FanningOut':
       return 'warning';
     case 'Disconnected':
       return 'destructive';
@@ -53,9 +54,14 @@ export function getStatusBadgeVariant(status: HydraHeadStatus): BadgeProps['vari
   }
 }
 
+/** Closed on L1 and not Final yet: the head is settling. */
+export function isSettlingStatus(status: HydraHeadStatus) {
+  return status === 'Closed' || status === 'FanoutPossible' || status === 'FanningOut';
+}
+
 export function getLifecycleDate(head: HydraHead) {
   if (head.status === 'Final') return head.finalizedAt;
-  if (head.status === 'Closed' || head.status === 'FanoutPossible') return head.closedAt;
+  if (isSettlingStatus(head.status)) return head.closedAt;
   if (head.status === 'Open') return head.openedAt;
   return head.latestActivityAt ?? head.updatedAt;
 }
@@ -73,7 +79,7 @@ const IDLE_STATUSES: HydraHeadStatus[] = ['Idle', 'Disconnected', 'Connected', '
 
 export function matchesStatusTab(head: HydraHead, activeTab: StatusTab) {
   if (activeTab === 'All') return true;
-  if (activeTab === 'Closed') return head.status === 'Closed' || head.status === 'FanoutPossible';
+  if (activeTab === 'Closed') return isSettlingStatus(head.status);
   if (activeTab === 'Idle') return IDLE_STATUSES.includes(head.status);
   return head.status === activeTab;
 }
