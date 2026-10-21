@@ -217,7 +217,8 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(409, 'The round in flight is not newer than the confirmed snapshot');
 		}
 		// The side-load throws away the round in flight. If the counterparty already
-		// confirmed it, this node is the one behind. Hydra refuses a side-load below a
+		// confirmed it, this node is the one behind, and the reset leaves it there
+		// without its copy of the round. Hydra refuses a side-load below a
 		// node's confirmed number, so the counterparty cannot step back; only this
 		// node adopting the counterparty's snapshot brings the two together again.
 		// Its API is not reachable from here, so its operator reports the number.
@@ -225,7 +226,8 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(
 				409,
 				`The counterparty has confirmed snapshot ${peerConfirmedSnapshotNumber}, ahead of this node's ${snapshot.number}. ` +
-					'Resetting would discard that snapshot. Check the number with its operator. Do not reset: if the number is right, this node is behind and has to adopt the counterparty’s confirmed snapshot, which this endpoint does not do. ' +
+					'Check the number with its operator. Do not reset: resetting does not help, because this node stays behind and drops its copy of that round. ' +
+					'If the number is right, this node has to adopt the counterparty’s confirmed snapshot, which this endpoint does not do. ' +
 					'If Hydra refuses that side-load, close the head: the counterparty’s node contests with its later snapshot',
 			);
 		}

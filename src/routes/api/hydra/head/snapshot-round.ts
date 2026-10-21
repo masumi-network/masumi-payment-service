@@ -45,7 +45,7 @@ export const resetSnapshotRoundInput = z.object({
 		.int()
 		.nonnegative()
 		.describe(
-			'The confirmed snapshot number shown by the counterparty node (GET /snapshot on it, 0 if it shows InitialSnapshot), as its operator reports it. The reset is refused if it is ahead of this node (resetting would discard a snapshot only the counterparty holds) or more than one behind it (within the protocol no counterparty can be).',
+			'The confirmed snapshot number shown by the counterparty node (GET /snapshot on it, 0 if it shows InitialSnapshot), as its operator reports it. The reset is refused if it is ahead of this node (this node is then behind and resetting does not help) or more than one behind it (within the protocol no counterparty can be).',
 		),
 });
 
