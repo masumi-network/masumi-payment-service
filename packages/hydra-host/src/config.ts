@@ -91,9 +91,9 @@ export type HostConfig = {
 	 * side-loading the node's last confirmed snapshot.
 	 *
 	 * Off by default. The side-load discards the round in flight, and if the
-	 * counterparty already confirmed the next snapshot it holds signatures this
-	 * node would lose for good, which can split the head. The counterparty's node
-	 * binds loopback, so the Host cannot look. With this off the node is left
+	 * counterparty already confirmed that round, this node ends up a snapshot
+	 * behind it and must adopt the counterparty's snapshot or close the head. The
+	 * counterparty's node binds loopback, so the Host cannot look. With this off the node is left
 	 * running (it can still contest a close) and logged for an operator, who resets
 	 * it from the payment service after reading the counterparty's snapshot number.
 	 */

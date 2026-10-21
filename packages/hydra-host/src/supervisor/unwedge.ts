@@ -47,8 +47,9 @@ export type UnwedgeOptions = {
 	sideLoadSnapshot: (snapshot: unknown) => Promise<void>;
 	/**
 	 * Whether to side-load without asking. The Host cannot see whether the
-	 * counterparty already confirmed the next snapshot, and side-loading then
-	 * loses it, so this is an explicit opt-in (`HYDRA_HOST_AUTO_SIDELOAD`).
+	 * counterparty already confirmed the round, and side-loading then leaves this
+	 * node a snapshot behind it, so this is an explicit opt-in
+	 * (`HYDRA_HOST_AUTO_SIDELOAD`).
 	 */
 	allowAutoSideLoad: boolean;
 	/** How long to let a round settle before calling it stranded. */
