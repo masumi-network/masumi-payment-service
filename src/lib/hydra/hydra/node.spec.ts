@@ -711,6 +711,8 @@ describe('HydraNode', () => {
 			await Promise.resolve();
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
 			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The caller's record is now the only one, so it keeps what the node said.
+			await expect(closePromise).rejects.toThrow(/unnamed failed L1 transaction/);
 			// The Close caller records it, so the manager must not record it again.
 			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'unknown', answersCommand: true })]);
 		});

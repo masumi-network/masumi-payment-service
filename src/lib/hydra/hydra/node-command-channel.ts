@@ -96,10 +96,7 @@ export function sendHydraCommandAndWait(
 			if (outcome.kind === 'protocol-error') {
 				settleReject(
 					wasQueued
-						? ambiguousError(
-								`Hydra ${command} outcome is ambiguous after a malformed response: ${outcome.error.message}`,
-								outcome.error,
-							)
+						? ambiguousError(`Hydra ${command} outcome is ambiguous: ${outcome.error.message}`, outcome.error)
 						: outcome.error,
 				);
 				return;
