@@ -126,13 +126,20 @@ do_baseline() {
 	install_ruleset
 }
 
+# Call the Control Plane as admin. Arguments: token file, then curl arguments.
+# printf is a builtin, so the token never appears in a process argv.
+control_curl() {
+	local token_file=$1
+	shift
+	printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$token_file")" |
+		curl -fsS --max-time 20 -H @- "$@"
+}
+
 do_refresh() {
 	local token_file=${HYDRA_ADMIN_TOKEN_FILE:-}
 	[[ -n "$token_file" && -s "$token_file" ]] || fail 'HYDRA_ADMIN_TOKEN_FILE must name a non-empty file'
 
-	# printf is a builtin, so the token never appears in a process argv.
-	if ! printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$token_file")" |
-		curl -fsS --max-time 20 -H @- "$CONTROL_URL/v1/peer-allowlist" >"$RESPONSE"; then
+	if ! control_curl "$token_file" "$CONTROL_URL/v1/peer-allowlist" >"$RESPONSE"; then
 		fail 'could not fetch the peer allow-list; the loaded ruleset is unchanged'
 	fi
 
@@ -168,9 +175,8 @@ acknowledge() {
 	fi
 	[[ "$generation" =~ ^[0-9a-f-]+\.[0-9]+$ ]] ||
 		fail 'the peer allow-list generation is malformed; the ruleset is applied, but released peer ports stay blocked'
-	if ! printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' <"$1")" |
-		curl -fsS --max-time 20 -H @- -H 'Content-Type: application/json' \
-			--data-binary "{\"generation\":\"$generation\"}" "$CONTROL_URL/v1/peer-allowlist/applied" >/dev/null; then
+	if ! control_curl "$1" -H 'Content-Type: application/json' \
+		--data-binary "{\"generation\":\"$generation\"}" "$CONTROL_URL/v1/peer-allowlist/applied" >/dev/null; then
 		fail 'the ruleset is applied and verified, but the Host did not record it; released peer ports stay blocked'
 	fi
 }
