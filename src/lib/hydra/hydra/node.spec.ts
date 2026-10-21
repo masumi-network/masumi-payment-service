@@ -738,6 +738,92 @@ describe('HydraNode', () => {
 			);
 		});
 
+		// hydra-node 2.4.1 keys the outputs of earlier partial fanout steps by their
+		// in-head reference. Resolving one of those as an L1 reference sent the
+		// handoff to an output that does not exist on L1.
+		describe('a fanout over several L1 steps', () => {
+			const partialStepHash = '59'.repeat(32);
+			const terminalHash = '5a'.repeat(32);
+
+			async function finalizedOverTwoSteps() {
+				const started = await startSignedNode();
+				const chain = signedTwoOutputHistory();
+				for (const frame of chain.frames) started.historyConnection.emit('message', JSON.stringify(frame));
+				finishHistoryReplay(started.historyConnection);
+				const finalized = JSON.stringify({
+					tag: 'HeadIsFinalized',
+					headId: HEAD_ID_A,
+					finalizedUTxO: {
+						// Distributed by the partial step: still under its in-head key.
+						[`${chain.first.txId}#0`]: chain.firstFinalOutput,
+						[`${terminalHash}#0`]: chain.secondFinalOutput,
+					},
+				});
+				started.liveConnection.emit('message', finalized);
+				return { ...started, chain, finalized };
+			}
+
+			it('resolves nothing until the in-head keys are bound to L1', async () => {
+				const { node, chain } = await finalizedOverTwoSteps();
+
+				expect(node.getVerifiedFanoutReferences(2)).toBeNull();
+				expect(node.getVerifiedFanoutReference(`${chain.second.txId}#0`, 2)).toBeNull();
+				expect(node.getFinalizedFanoutBindingInput(2)?.inHeadReferences.has(`${chain.first.txId}#0`)).toBe(true);
+			});
+
+			it('resolves the L1 output the partial step created once a binding is adopted, across a replay', async () => {
+				const { node, chain, finalized, historyConnection } = await finalizedOverTwoSteps();
+				const input = node.getFinalizedFanoutBindingInput(2)!;
+				const bound = new Map([
+					[`${partialStepHash}#1`, input.finalizedOutputs.get(`${chain.first.txId}#0`)!],
+					[`${terminalHash}#0`, input.finalizedOutputs.get(`${terminalHash}#0`)!],
+				]);
+
+				expect(node.adoptFinalizedFanoutL1Binding(2, bound)).toBe(true);
+				// Replay re-reports the same map on every reconnect pass.
+				historyConnection.emit('message', finalized);
+
+				expect(node.getFinalizedFanoutBindingInput(2)).toBeNull();
+				expect(node.getVerifiedFanoutReference(`${chain.first.txId}#0`, 2)).toEqual(
+					expect.objectContaining({ txHash: partialStepHash, outputIndex: 1 }),
+				);
+				expect(node.getVerifiedFanoutReference(`${chain.second.txId}#0`, 2)).toEqual(
+					expect.objectContaining({ txHash: terminalHash, outputIndex: 0 }),
+				);
+			});
+
+			it('refuses a binding that changes anything but the in-head keys', async () => {
+				const { node, chain } = await finalizedOverTwoSteps();
+				const input = node.getFinalizedFanoutBindingInput(2)!;
+				const first = input.finalizedOutputs.get(`${chain.first.txId}#0`)!;
+				const second = input.finalizedOutputs.get(`${terminalHash}#0`)!;
+
+				// The terminal step's L1 entry moved.
+				expect(
+					node.adoptFinalizedFanoutL1Binding(
+						2,
+						new Map([
+							[`${partialStepHash}#1`, first],
+							[`${terminalHash}#1`, second],
+						]),
+					),
+				).toBe(false);
+				// A partial-step output bound to a different value.
+				expect(
+					node.adoptFinalizedFanoutL1Binding(
+						2,
+						new Map([
+							[`${partialStepHash}#1`, second],
+							[`${terminalHash}#0`, second],
+						]),
+					),
+				).toBe(false);
+				// An in-head key left in place.
+				expect(node.adoptFinalizedFanoutL1Binding(2, new Map(input.finalizedOutputs))).toBe(false);
+				expect(node.getVerifiedFanoutReferences(2)).toBeNull();
+			});
+		});
+
 		it('refuses candidate ownership when two final outputs have identical serialized values', async () => {
 			const { node, historyConnection, liveConnection } = await startSignedNode();
 			const chain = signedTwoOutputHistory({ duplicateFinalValues: true });

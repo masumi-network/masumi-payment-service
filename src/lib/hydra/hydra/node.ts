@@ -43,7 +43,6 @@ import {
 	createUnsupportedPersistenceRotationError,
 	isEventLogRotatedFrame,
 	protocolErrorToString,
-	stringMapsEqual,
 } from './node-frames';
 import { HydraHistoryReplay, type HistoryReplayHost } from './node-history-replay';
 import { HydraHttpClient } from './node-http';
@@ -62,8 +61,9 @@ import {
 } from './node-api';
 import { withHistorySetting } from './node-url';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
-import { canonicalHydraHeadIdSchema, finalizedUtxoOf, headIsFinalizedMessageSchema } from './schemas';
-import { serializeHydraSnapshotOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
+import { FinalizedFanoutState, type FinalizedFanoutBindingInput } from './node-finalized-fanout';
+import { canonicalHydraHeadIdSchema } from './schemas';
+import type { VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction } from './types';
 
 export type { HydraHeadClock, HydraNodeClientConfig, HydraRawCostModels, IHydraNode } from './node-api';
@@ -132,8 +132,7 @@ export class HydraNode extends EventEmitter {
 	private _connectPromise: Promise<void> | undefined;
 	private _expectedHeadId: string | undefined;
 	private readonly _trustLocalNodeSnapshotMetadata: boolean;
-	/** Shared between live and replay sightings; they must never disagree. */
-	private _finalizedFanoutOutputs: Map<string, string> | undefined;
+	private readonly _finalizedFanout = new FinalizedFanoutState();
 	private readonly _connectTimeoutMs: number;
 	private readonly _commandTimeoutMs: number;
 
@@ -216,9 +215,7 @@ export class HydraNode extends EventEmitter {
 			bindSnapshotPartyOrder: (message) => this.bindSnapshotPartyOrder(message),
 			verifyGreetingsPartyIdentity: (message) => this._partyIdentity.verifyGreetingsPartyIdentity(message),
 			recordFinalizedFanout: (message) => this.recordFinalizedFanout(message),
-			clearFinalizedFanout: () => {
-				this._finalizedFanoutOutputs = undefined;
-			},
+			clearFinalizedFanout: () => this._finalizedFanout.clear(),
 			setNetworkConnected: (connected) => {
 				this._liveNetworkConnected = connected;
 			},
@@ -365,25 +362,12 @@ export class HydraNode extends EventEmitter {
 		assertExpectedFrameHeadId(message, this._expectedHeadId);
 	}
 
-	private bindSnapshotPartyOrder(message: unknown): void {
-		this._partyIdentity.bindSnapshotPartyOrder(message, (parsed) => this.assertExpectedHeadId(parsed));
+	private recordFinalizedFanout(message: unknown): void {
+		this._finalizedFanout.record(message, (parsed) => this.assertExpectedHeadId(parsed));
 	}
 
-	/**
-	 * Record the finalized L1 fanout output map, from live frame or replay
-	 * alike. Both sockets can report it; they must never disagree.
-	 */
-	private recordFinalizedFanout(message: unknown): void {
-		const parsedMessage = headIsFinalizedMessageSchema.parse(message);
-		this.assertExpectedHeadId(parsedMessage);
-		const fanoutOutputs = new Map<string, string>();
-		for (const [reference, output] of Object.entries(finalizedUtxoOf(parsedMessage))) {
-			fanoutOutputs.set(reference.toLowerCase(), serializeHydraSnapshotOutput(output));
-		}
-		if (this._finalizedFanoutOutputs && !stringMapsEqual(this._finalizedFanoutOutputs, fanoutOutputs)) {
-			throw new HydraProtocolError('Hydra history equivocated on the finalized L1 fanout output map');
-		}
-		this._finalizedFanoutOutputs = fanoutOutputs;
+	private bindSnapshotPartyOrder(message: unknown): void {
+		this._partyIdentity.bindSnapshotPartyOrder(message, (parsed) => this.assertExpectedHeadId(parsed));
 	}
 
 	get hasPendingIncrement(): boolean {
@@ -467,21 +451,37 @@ export class HydraNode extends EventEmitter {
 		return context ? fanoutReferences.readFinalSnapshotOutput(context, reference) : null;
 	}
 
-	private fanoutResolutionContext(expectedSnapshotNumber: number) {
+	getFinalizedFanoutBindingInput(expectedSnapshotNumber: number): FinalizedFanoutBindingInput | null {
+		const verifiedSnapshot = this.finalSnapshot(expectedSnapshotNumber);
+		return verifiedSnapshot ? this._finalizedFanout.bindingInput(verifiedSnapshot) : null;
+	}
+
+	adoptFinalizedFanoutL1Binding(expectedSnapshotNumber: number, bound: ReadonlyMap<string, string>): boolean {
+		const verifiedSnapshot = this.finalSnapshot(expectedSnapshotNumber);
+		return verifiedSnapshot ? this._finalizedFanout.adoptL1Binding(verifiedSnapshot, bound) : false;
+	}
+
+	private finalSnapshot(expectedSnapshotNumber: number) {
 		const verifiedSnapshot = this._replay.verifiedSnapshot;
 		if (
 			!this.hasVerifiedPinnedSessions ||
 			this._live.status !== HydraHeadStatus.Final ||
 			!Number.isSafeInteger(expectedSnapshotNumber) ||
 			expectedSnapshotNumber < 0 ||
-			verifiedSnapshot?.number !== expectedSnapshotNumber ||
-			this._finalizedFanoutOutputs == null
+			verifiedSnapshot?.number !== expectedSnapshotNumber
 		) {
 			return null;
 		}
+		return verifiedSnapshot;
+	}
+
+	private fanoutResolutionContext(expectedSnapshotNumber: number) {
+		const verifiedSnapshot = this.finalSnapshot(expectedSnapshotNumber);
+		const finalizedFanoutOutputs = verifiedSnapshot && this._finalizedFanout.l1Outputs(verifiedSnapshot);
+		if (!verifiedSnapshot || !finalizedFanoutOutputs) return null;
 		return {
 			verifiedSnapshot,
-			finalizedFanoutOutputs: this._finalizedFanoutOutputs,
+			finalizedFanoutOutputs,
 			getConfirmedTransaction: (txHash: string) => this.getConfirmedTransaction(txHash),
 		};
 	}
@@ -667,7 +667,7 @@ export class HydraNode extends EventEmitter {
 		this._live.resetOnDisconnect();
 		this._replay.resetPass();
 		this._ledger.clear();
-		this._finalizedFanoutOutputs = undefined;
+		this._finalizedFanout.clear();
 		this._replay.setErrorToRotationLatch();
 		this._connectionsStarted = false;
 	}
