@@ -112,8 +112,10 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 
 	// A closed head confirms no more snapshots, and its fanout pays out only
 	// what the head holds (hydra-node 2.4.1 `effectiveCommitDecommit` and the
-	// head validator's fanout check), so a recovery cannot harm it. The status is
-	// the one the node's own lifecycle frames wrote, rollbacks included.
+	// head validator's fanout check), so a recovery cannot harm it. The status
+	// comes from the node's own lifecycle frames, and a closed head never opens
+	// again: a chain rollback changes only the node's chain state. A status that
+	// lags the node only refuses a recovery that would have been safe.
 	const isHeadClosed = HYDRA_HEAD_STATUS_RANK[topup.HydraHead.status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed];
 	const refusal = isHeadClosed ? null : await refuseAcknowledgedDeposit(node, topup.depositTxHash, topup.nodeDeadline);
 	if (refusal !== null) return refusal;
@@ -148,11 +150,11 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 
 /** How an operator frees a deposit that a signed snapshot still holds. */
 const RELEASE_ACKNOWLEDGED_DEPOSIT =
-	'Recovering it while that snapshot holds it can stop the head from confirming any later snapshot. Submit any transaction in the head: once the deposit has expired, the snapshot that confirms the transaction releases it, and recovery then works. A head that holds no funds cannot do that, so close and fan out the head first, then recover the deposit';
+	'Recovering it while that snapshot holds it can stop the head from confirming any later snapshot. To free it, submit any transaction in the head: once the deposit has expired, the snapshot that confirms the transaction drops it, and the recovery can go ahead. If a stuck snapshot round holds the deposit, reset that round first. A head that holds no funds cannot do this: close the head instead, and recover the deposit after its deadline once the head shows as Closed here';
 
 /**
- * Refuse to recover a deposit that an open head has acknowledged in a
- * snapshot it signed. Null when the recovery may go ahead.
+ * Refuse to recover a deposit that a head not yet closed has acknowledged in
+ * a snapshot it signed. Null when the recovery may go ahead.
  *
  * Such a snapshot keeps the deposit in `utxoToCommit` until a later snapshot
  * replaces it. Recovering the deposit clears the node's record of the deposit

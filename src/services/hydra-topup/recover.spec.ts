@@ -71,6 +71,18 @@ function confirmedSnapshot(fields: { utxoToCommit: Record<string, unknown> | nul
 	};
 }
 
+/** The top-up row, with the head status the service last recorded. */
+function recordedAs(headStatus: string) {
+	mockTopupFindUnique.mockResolvedValue({
+		id: 'topup-1',
+		depositTxHash: DEPOSIT_TX,
+		status: 'Failed',
+		hydraHeadId: 'head-1',
+		nodeDeadline: null,
+		HydraHead: { status: headStatus },
+	});
+}
+
 /** What the node answers for GET /snapshot and GET /snapshot/last-seen. Defaults: no deposit, no round in flight. */
 function nodeAnswers(answers: { snapshot?: unknown; lastSeen?: unknown }) {
 	mockNodeGet.mockImplementation(async (path: string) =>
@@ -129,8 +141,9 @@ describe('recoverHydraDeposit', () => {
 		expect(mockTopupUpdateMany).not.toHaveBeenCalled();
 	});
 
-	// A deposit the head has acknowledged in a signed snapshot is claimed by an
-	// increment that is already on its way; deleting it then wedges the head.
+	// A signed snapshot keeps an acknowledged deposit until a later snapshot
+	// replaces it. Recovering it before then can stop an open head from
+	// confirming any later snapshot.
 	describe('a deposit the head has acknowledged', () => {
 		const acknowledged = (depositTxId: string | null) =>
 			confirmedSnapshot({ utxoToCommit: { [`${DEPOSIT_TX}#0`]: OUTPUT }, depositTxId });
@@ -204,22 +217,25 @@ describe('recoverHydraDeposit', () => {
 
 		// A closed head confirms no more snapshots and fans out only what it holds,
 		// so holding the recovery back until fanout would only delay the funds.
-		it.each(['Closed', 'FanoutPossible', 'FanningOut'])('is recovered once the head is %s', async (status) => {
-			mockTopupFindUnique.mockResolvedValue({
-				id: 'topup-1',
-				depositTxHash: DEPOSIT_TX,
-				status: 'Failed',
-				hydraHeadId: 'head-1',
-				nodeDeadline: null,
-				HydraHead: { status },
-			});
+		it.each(['Closed', 'FanoutPossible', 'FanningOut', 'Final'])('is recovered once the head is %s', async (status) => {
+			recordedAs(status);
 			nodeAnswers({ snapshot: acknowledged(DEPOSIT_TX) });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
 			expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${DEPOSIT_TX}`);
 		});
 
-		it('is recoverable on a head that closed on its initial snapshot', async () => {
+		// The recorded status can lag the node, so a head recorded below Closed
+		// may still be open.
+		it.each(['Idle', 'Initializing'])('is not recovered while the head is recorded as %s', async (status) => {
+			recordedAs(status);
+			nodeAnswers({ snapshot: acknowledged(DEPOSIT_TX) });
+
+			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: false });
+			expect(mockNodeDelete).not.toHaveBeenCalled();
+		});
+
+		it('is recoverable while the confirmed snapshot is the initial one', async () => {
 			nodeAnswers({ snapshot: { tag: 'InitialSnapshot', headId: HEAD_ID } });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
@@ -227,9 +243,12 @@ describe('recoverHydraDeposit', () => {
 		});
 	});
 
-	// After fanout the node is Idle and answers GET /snapshot with 404, and
-	// recovery is the only way back for a deposit the head never absorbed.
+	// After fanout the node is Idle and answers GET /snapshot with 404. The
+	// service records such a head as Final, but one recorded as Idle still
+	// reaches the check, and recovery is the only way back for a deposit the
+	// head never absorbed.
 	it('recovers a deposit of a head that has fanned out', async () => {
+		recordedAs('Idle');
 		mockNodeGet.mockImplementation(async (path: string) => {
 			if (path === '/snapshot/last-seen') return { tag: 'NoSeenSnapshot' };
 			throw new HydraHttpResponseError('Hydra HTTP request failed with 404 Not Found', 404);

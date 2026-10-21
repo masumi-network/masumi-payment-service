@@ -163,8 +163,8 @@ async function fetchConfirmedSnapshotDeposits(
  * holds, and the one in a round this node has already signed.
  *
  * Once a signed snapshot carries `utxoToCommit`, recovering that deposit can
- * leave an empty head that cannot be closed or fanned out
- * (docs/hydra-persistence-recovery-verification.md, finding 12). A round this
+ * stop an open head from confirming any later snapshot
+ * (docs/hydra-persistence-recovery-verification.md, findings 12 and 17). A round this
  * node has not signed cannot confirm a deposit the node would recover:
  * hydra-node 2.4.1 expires a deposit one deposit period before the deadline a
  * recovery waits for, and rejects a snapshot request for an expired one.
