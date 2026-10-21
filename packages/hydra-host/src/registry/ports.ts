@@ -247,6 +247,11 @@ export class PortAllocator {
 		}
 	}
 
+	/** Free a port at once. Only for a node that never had peers, so no ruleset ever opened its port. */
+	releaseUnpeered(peerPort: number): void {
+		this.takenPeerPorts.delete(peerPort);
+	}
+
 	/**
 	 * Opaque marker for the firewall script. Take it synchronously before the
 	 * registry is read for a ruleset: `release` runs only after the node's record
