@@ -398,9 +398,11 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	// from a wrong URL or token.
 	describe('when the node probe fails', () => {
 		const probeTimeoutMs = (HydraConnectionManager as unknown as { PROBE_TIMEOUT_MS: number }).PROBE_TIMEOUT_MS;
-		// Runs after a test timeout too, so a hung probe cannot leave later tests on fake timers.
+		const realFetch = globalThis.fetch;
+		// Runs after a test timeout too, so a hung probe cannot leave later tests on fake timers or a mocked fetch.
 		afterEach(() => {
 			jest.useRealTimers();
+			globalThis.fetch = realFetch;
 		});
 
 		it('keeps the fetch error, where the socket error sits, as the cause', async () => {
@@ -409,23 +411,21 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			const refused = Object.assign(new TypeError('fetch failed'), {
 				cause: Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' }),
 			});
-			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(refused);
+			jest.spyOn(globalThis, 'fetch').mockRejectedValue(refused);
 
-			try {
-				const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
-				expect(error).toBeInstanceOf(HydraTransportError);
-				expect((error as HydraTransportError).cause).toBe(refused);
-				expect(manager.isConnected('head-1')).toBe(false);
-			} finally {
-				fetchSpy.mockRestore();
-			}
+			const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+			expect(error).toBeInstanceOf(HydraTransportError);
+			// A node that is down must not read as one too slow to answer.
+			expect((error as Error).message).toContain('unreachable for head head-1');
+			expect((error as HydraTransportError).cause).toBe(refused);
+			expect(manager.isConnected('head-1')).toBe(false);
 		});
 
 		// A node too slow to answer and a node that is down need different fixes.
 		it('says the probe timed out', async () => {
 			const manager = new HydraConnectionManager();
 			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(
+			jest.spyOn(globalThis, 'fetch').mockImplementation(
 				(_url, init) =>
 					new Promise((_resolve, reject) => {
 						init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
@@ -433,29 +433,21 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			);
 			jest.useFakeTimers();
 
-			try {
-				const pendingConnect = manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
-				await jest.advanceTimersByTimeAsync(probeTimeoutMs);
-				const error = await pendingConnect;
-				expect(error).toBeInstanceOf(HydraTransportError);
-				expect((error as Error).message).toContain(`did not answer within ${probeTimeoutMs}ms`);
-			} finally {
-				fetchSpy.mockRestore();
-			}
+			const pendingConnect = manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+			await jest.advanceTimersByTimeAsync(probeTimeoutMs);
+			const error = await pendingConnect;
+			expect(error).toBeInstanceOf(HydraTransportError);
+			expect((error as Error).message).toContain(`did not answer within ${probeTimeoutMs}ms`);
 		});
 
 		it('names the status a node answered with', async () => {
 			const manager = new HydraConnectionManager();
 			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }));
+			jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }));
 
-			try {
-				const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
-				expect(error).toBeInstanceOf(HydraTransportError);
-				expect((error as Error).message).toContain('answered the probe with HTTP 401');
-			} finally {
-				fetchSpy.mockRestore();
-			}
+			const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+			expect(error).toBeInstanceOf(HydraTransportError);
+			expect((error as Error).message).toContain('answered the probe with HTTP 401');
 		});
 
 		// A retry cannot fix a blank token, so it must not read as unreachable.
@@ -466,12 +458,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			mockHydraHeadFindUnique.mockResolvedValue(head);
 			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('the probe must not run'));
 
-			try {
-				await expect(manager.connect({ id: 'head-1' })).rejects.toBeInstanceOf(HydraProtocolError);
-				expect(fetchSpy).not.toHaveBeenCalled();
-			} finally {
-				fetchSpy.mockRestore();
-			}
+			await expect(manager.connect({ id: 'head-1' })).rejects.toBeInstanceOf(HydraProtocolError);
+			expect(fetchSpy).not.toHaveBeenCalled();
 		});
 	});
 
