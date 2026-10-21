@@ -22,6 +22,7 @@ import {
 	type DepositRecordedData,
 	type PostTxFailedData,
 	buildHydraHttpEndpoint,
+	HydraTransportError,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { recordHeadError } from '@/services/hydra-head-error/record';
@@ -31,7 +32,6 @@ import type { L2MintIncident } from '@/lib/hydra/hydra/l2-mint-tally';
 import { HydraErrorType, HydraHeadStatus, Network } from '@/generated/prisma/client';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
-import { HydraTransportError } from '@/lib/hydra/hydra/errors';
 import { applyDecommitOutcome } from '@/services/hydra-decommit/settle';
 import { type HydraDatumApplyOutcome } from './hydra-datum-sync';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';

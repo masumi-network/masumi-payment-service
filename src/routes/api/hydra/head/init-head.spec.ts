@@ -1,8 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
-import { HydraCommandRejectedError, HydraPostTxRejectedError } from '@/lib/hydra';
-import { HydraTransportError } from '@/lib/hydra/hydra/errors';
+import { HydraCommandRejectedError, HydraPostTxRejectedError, HydraTransportError } from '@/lib/hydra';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -159,21 +158,22 @@ describe('initHeadPost, on a node with unsafe L2 params', () => {
 	});
 });
 
-// The node probe fails before anything is sent, so this is not a failed Init.
+// A transport failure in connect happens before anything is sent, so it is not a failed Init.
 describe('initHeadPost, when the node cannot be reached', () => {
-	it('answers an exposed 502 without a head error', async () => {
-		mockConnect.mockRejectedValue(new HydraTransportError('Local Hydra node unreachable for head head-1'));
+	it('answers an exposed 502 that names the cause, without a head error', async () => {
+		mockConnect.mockRejectedValue(new HydraTransportError('Connection closed unexpectedly (code 1006)'));
 
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 			statusCode: 502,
 			expose: true,
-			message: expect.stringContaining('Try again later'),
+			// A node still starting and a wrong URL fail alike; only the cause tells them apart.
+			message: expect.stringContaining('Connection closed unexpectedly (code 1006)'),
 		});
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
 		expect(mockInit).not.toHaveBeenCalled();
 	});
 
-	// Only the unreached node is mapped: any other connect failure is still a head error.
+	// Only a transport failure is mapped: a failure after the node answered is still a head error.
 	it('still records any other connect failure', async () => {
 		mockConnect.mockRejectedValue(new Error('Hydra head head-1 transport was revoked while connecting'));
 

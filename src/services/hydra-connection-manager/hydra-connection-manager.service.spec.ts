@@ -6,11 +6,11 @@ import {
 	deriveHydraVerificationKeyCborHex,
 	HydraNode,
 	HydraTransactionType,
+	HydraTransportError,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { EventEmitter } from 'node:events';
 import { encrypt } from '@/utils/security/encryption';
-import { HydraTransportError } from '@/lib/hydra/hydra/errors';
 
 const mockTransactionFindFirst = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockTransactionFindUnique = jest.fn<(_args: unknown) => Promise<unknown>>();

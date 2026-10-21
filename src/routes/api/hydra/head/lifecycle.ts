@@ -28,6 +28,7 @@ import {
 	HydraCommitFlowError,
 	HydraHeadInitObservationError,
 	HydraTransactionType,
+	HydraTransportError,
 	interpretCardanoTxSubmitResult,
 } from '@/lib/hydra';
 import {
@@ -36,7 +37,6 @@ import {
 	reserveAndSubmitHydraCommit,
 	type HydraCommitReconciliationResult,
 } from '@/services/hydra-commit-reconciliation';
-import { HydraTransportError } from '@/lib/hydra/hydra/errors';
 import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
@@ -117,6 +117,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			}
 			const hydraHead = cm.getHead(head.id);
 			if (!hydraHead) {
+				logger.warn('[HydraAPI] no live session after connect before Init', { hydraHeadId: head.id });
 				throw createHttpError(502, 'Failed to connect to Hydra node', { expose: true });
 			}
 			// The last point before a head exists. A node on L2 ledger params above
@@ -274,13 +275,20 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 });
 
 /**
- * An exposed 502 for a node that failed before Init was sent. A node that is
- * down is not a failed Init, so the handler records no head error for it.
- * Exposed errors skip the server-error log, so the warn is the only record.
+ * An exposed 502 for a node that failed before Init was sent. Nothing reached
+ * the node, so this is not a failed Init and the handler records no head error.
+ * The cause goes into the text: a node still starting and a wrong URL or token
+ * fail the same way, and only the cause tells them apart. Exposed errors skip
+ * the server-error log, so the warn is the only record.
  */
 function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unknown): HttpError {
-	logger.warn(`[HydraAPI] ${message} before Init`, { hydraHeadId, error: getErrorMessage(error) });
-	return createHttpError(502, `${message}. Try again later`, { cause: error, expose: true });
+	const cause = getErrorMessage(error);
+	logger.warn(`[HydraAPI] ${message} before Init`, { hydraHeadId, error: cause });
+	return createHttpError(
+		502,
+		`${message}: ${cause}. Retry once the node is up, or check its URLs and token if this persists`,
+		{ cause: error, expose: true },
+	);
 }
 
 // --- Lifecycle: POST commit (local participant only) ---
