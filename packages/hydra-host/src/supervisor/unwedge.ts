@@ -192,7 +192,7 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 	// the next deposit, and every node rejects it (hydra-node 2.4.1
 	// `ReqSnCommitNotSettled`). While the deposit is still active the tick
 	// usually picks it again: it takes the oldest active deposit, which is the
-	// held one unless an older one is also pending. Nothing here can see a
+	// held one unless an older one is also active. Nothing here can see a
 	// deposit's status, so every case is held.
 	let headState: unknown;
 	try {
