@@ -608,7 +608,10 @@ describe('HydraNode', () => {
 			return events;
 		}
 
-		function postTxFailedFrame(postChainTx: Record<string, unknown>, postTxError: Record<string, unknown>) {
+		function postTxFailedFrame(
+			postChainTx: { tag: string; headId?: string },
+			postTxError: { tag: string; failureReason?: string },
+		) {
 			return JSON.stringify({ tag: 'PostTxOnChainFailed', postChainTx, postTxError });
 		}
 
@@ -654,7 +657,14 @@ describe('HydraNode', () => {
 			node.connect();
 			const events = failureEvents(node);
 
-			mockConnectionInstance.emit('message', postTxFailedFrame({ tag: 42 }, { tag: 'FailedToPostTx' }));
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'PostTxOnChainFailed',
+					postChainTx: { tag: 42 },
+					postTxError: { tag: 'FailedToPostTx' },
+				}),
+			);
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
 
 			expect(events).toEqual([
@@ -711,7 +721,7 @@ describe('HydraNode', () => {
 			await Promise.resolve();
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
 			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
-			// The caller's record is now the only one, so it keeps what the node said.
+			// The caller's row quotes the node's reason too.
 			await expect(closePromise).rejects.toThrow(/unnamed failed L1 transaction/);
 			// Not marked as the command's: the Init route can settle an ambiguous Init
 			// without a record, so the manager keeps the only sure one.
