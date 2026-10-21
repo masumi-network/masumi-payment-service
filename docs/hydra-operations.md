@@ -149,14 +149,19 @@ refuses a side-load below a node's confirmed number, so the counterparty cannot
 go back. This node has to adopt the counterparty's confirmed snapshot instead.
 Hydra accepts that side-load because every party signed the snapshot, as long as
 its version, pending commit, deposit and decommit match this node's confirmed
-snapshot. Neither the Host nor the payment service does this step.
+snapshot. Neither the Host nor the payment service does this step. If Hydra
+refuses it, close the head: the counterparty's node contests the close with its
+later snapshot.
 
-Two confirmed numbers are never more than one apart: a node signs snapshot n
-only after it confirmed n - 1, and n confirms only with every party's signature.
+Within the protocol, two confirmed numbers are never more than one apart: a node
+signs snapshot n only after it confirmed n - 1, and n confirms only with every
+party's signature. A counterparty further behind has lost or restored its node
+state, and resetting this node does not help it.
 
 Neither the Host nor the payment service can see the counterparty's node (its API
 binds loopback), so neither repairs on its own. The counterparty's operator runs
-`GET /snapshot` on their node and sends you `snapshot.number`:
+`GET /snapshot` on their node and sends you `snapshot.number` (0 if it shows
+`InitialSnapshot`):
 
 - **Host:** `HYDRA_HOST_AUTO_SIDELOAD` is off by default. A stranded node is left
   running, so it can still contest a close, and the Host logs

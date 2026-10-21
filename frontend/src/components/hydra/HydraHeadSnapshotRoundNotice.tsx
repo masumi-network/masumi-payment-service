@@ -11,7 +11,7 @@
  * confirmed snapshot number off it and the admin types it in. The server
  * refuses a reset when that number is ahead of ours, because the reset would
  * discard a snapshot only the other party holds, or more than one behind ours,
- * which no party can be.
+ * which within the protocol no party can be.
  */
 
 import { useState } from 'react';
@@ -154,9 +154,10 @@ export function HydraHeadSnapshotRoundNotice({
             }
           />
           <p className="text-xs">
-            Required. The other party&apos;s operator reads it from GET /snapshot on their node.
-            Resetting is refused if it is ahead of our node, because the reset would discard a
-            snapshot only the other party holds.
+            Required. The other party&apos;s operator reads it from GET /snapshot on their node (0
+            if it shows InitialSnapshot). Resetting is refused if it is ahead of our node, because
+            the reset would discard a snapshot only the other party holds, or more than one behind
+            it.
           </p>
         </div>
       </HydraNotice>

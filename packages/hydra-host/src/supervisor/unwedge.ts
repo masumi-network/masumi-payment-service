@@ -12,9 +12,8 @@
  * `hydra-l2-flow/run-hydra-e2e.sh`. It is only safe if the counterparty has not
  * confirmed the stranded round, which the Host cannot see, so it runs only when
  * `allowAutoSideLoad` is set. The payment service refuses to treat
- * `SnapshotSideLoaded` as a replay
- * authentication anchor, so recovering a node cannot be used to inject
- * unverified state into the service.
+ * `SnapshotSideLoaded` as a replay authentication anchor, so recovering a node
+ * cannot be used to inject unverified state into the service.
  */
 
 import { getOwnValue, isPlainObject } from '../registry/json.js';
