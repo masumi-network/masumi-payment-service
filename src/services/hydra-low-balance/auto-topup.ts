@@ -53,8 +53,19 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// send another until the wallet ran out of it. Debug, not warn: this
 			// repeats every cycle, and the head error row and the Low webhook
 			// already tell the operator.
+			// Until the history replay is current, nothing says which units a peer
+			// minted, and the monitor does not mark a rule Healthy, so its Low status
+			// cannot be trusted either. Checked first, so a head in that state costs
+			// no reads of the head or of L1.
 			const l2MintCheck = getHydraConnectionManager().getNode(head.id)?.l2MintCheck;
-			if (l2MintCheck?.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
+			if (!l2MintCheck) {
+				logger.debug('hydra-auto-topup: waiting for the history replay before a top-up', {
+					ruleId: rule.id,
+					headId: head.id,
+				});
+				continue;
+			}
+			if (l2MintCheck.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
 				logger.debug('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
 					ruleId: rule.id,
 					headId: head.id,
@@ -146,10 +157,11 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// reading the history replay has not checked, so a rule topped up during
 			// a reconnect would still look Low once its deposit was absorbed. A
 			// deposit absorbed since the monitor's last cycle can also already cover
-			// the threshold.
+			// the threshold. The head can also have disconnected since the check
+			// above.
 			const balance = await getOwnInHeadBalance(head.id);
 			if (!balance?.connected || !balance.l2MintChecked) {
-				logger.debug('hydra-auto-topup: waiting for the history replay before a top-up', {
+				logger.debug('hydra-auto-topup: head not connected or its replay not current; no top-up', {
 					ruleId: rule.id,
 					headId: head.id,
 				});

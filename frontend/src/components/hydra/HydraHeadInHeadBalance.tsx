@@ -126,6 +126,12 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
               Closing may fail until it is cleared.
             </div>
           )}
+          {data.l2MintChecked === false && (
+            <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+              Not yet checked for tokens minted inside the head: this node&apos;s history replay is
+              not current, so the spendable figures can read high until it is.
+            </div>
+          )}
           {(data.l2MintedUtxoCount ?? 0) > 0 && (
             <div className="border-t px-4 py-2 text-xs text-amber-600 dark:text-amber-400">
               {formatAssetAmount(data.l2MintedLovelace ?? '0', 'lovelace', network)} of this sits in{' '}

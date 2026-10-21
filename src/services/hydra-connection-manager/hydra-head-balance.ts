@@ -15,6 +15,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getHydraConnectionManager } from './hydra-connection-manager.service';
 import { l2TokenRisk } from '@/lib/hydra/hydra/l2-mint-tally';
+import { inHeadUnit } from '@/utils/hydra/in-head-unit';
 import type { UTxO } from '@meshsdk/core';
 
 export interface HydraHeadBalanceAsset {
@@ -57,9 +58,9 @@ export interface HydraHeadOwnBalance {
 	l2MintedLovelace: string;
 	/**
 	 * Whether the history replay is current, so the two fields above count every
-	 * L2-minted UTxO it has verified. False right after a connect and until the
-	 * replay completes: then no UTxO counts as L2-minted, and `spendableBalance`
-	 * can read high.
+	 * L2-minted UTxO it has verified. False when not connected, right after a
+	 * connect until the replay completes, and while the replay has failed: then
+	 * no UTxO counts as L2-minted, and `spendableBalance` can read high.
 	 */
 	l2MintChecked: boolean;
 	/**
@@ -79,9 +80,6 @@ export interface HydraHeadOwnBalance {
 	balance: HydraHeadBalanceAsset[];
 }
 
-const LOVELACE_UNITS = new Set(['', 'lovelace']);
-const normalizeUnit = (unit: string): string => (LOVELACE_UNITS.has(unit.toLowerCase()) ? '' : unit);
-
 /**
  * Aggregate a set of in-head UTxO amounts into a deterministic per-asset balance:
  * ADA (unit '') first, then tokens by unit; zero/negative totals dropped;
@@ -93,7 +91,7 @@ export function aggregateInHeadAmounts(
 	const totals = new Map<string, bigint>();
 	for (const amounts of utxoAmounts) {
 		for (const amount of amounts) {
-			const unit = normalizeUnit(amount.unit);
+			const unit = inHeadUnit(amount.unit);
 			let quantity: bigint;
 			try {
 				quantity = BigInt(amount.quantity);

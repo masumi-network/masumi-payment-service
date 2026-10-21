@@ -141,15 +141,29 @@ describe('runHydraAutoTopupCycle', () => {
 		expect(mockExecuteHydraTopup).toHaveBeenCalledTimes(1);
 	});
 
-	// The monitor does not mark a rule Healthy until the replay is current, so
-	// the rule's Low status cannot be trusted before then.
-	it('sends no deposit while the history replay is not current', async () => {
+	// The replay can turn current while the cycle reads the head. The unit check
+	// must not have been skipped in that case: it would deposit a minted unit.
+	it('sends no deposit and reads nothing while the history replay is not current', async () => {
+		const unit = 'cc'.repeat(28) + '0014df10';
 		isReplayCurrent = false;
-		mockGetOwnInHeadBalance.mockResolvedValue({ connected: true, l2MintChecked: false, spendableBalance: [] });
-		mockFindMany.mockResolvedValue([rule()]);
+		mockUnburnedUnits.add(unit);
+		mockFindMany.mockResolvedValue([rule({ assetUnit: unit, topupAmount: 500n })]);
 
 		await runHydraAutoTopupCycle();
 
+		expect(mockGetOwnInHeadBalance).not.toHaveBeenCalled();
+		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+	});
+
+	// A reconnect between the replay check and the balance read.
+	it('sends no deposit when the reading right before it is not checked or not connected', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockGetOwnInHeadBalance.mockResolvedValueOnce({ connected: true, l2MintChecked: false, spendableBalance: [] });
+		await runHydraAutoTopupCycle();
+		mockGetOwnInHeadBalance.mockResolvedValueOnce({ connected: false, l2MintChecked: false, spendableBalance: [] });
+		await runHydraAutoTopupCycle();
+
+		expect(mockGetOwnInHeadBalance).toHaveBeenCalledTimes(2);
 		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
 		expect(mockLoggerError).not.toHaveBeenCalled();
 	});
@@ -160,13 +174,14 @@ describe('runHydraAutoTopupCycle', () => {
 		mockGetOwnInHeadBalance.mockResolvedValue({
 			connected: true,
 			l2MintChecked: true,
-			spendableBalance: [{ unit: '', quantity: '60000000' }],
+			spendableBalance: [{ unit: '', quantity: '50000000' }],
 		});
 		mockFindMany.mockResolvedValue([rule()]);
 
 		await runHydraAutoTopupCycle();
 
 		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+		expect(mockLoggerError).not.toHaveBeenCalled();
 	});
 
 	it('skips when a top-up is already pending for the participant', async () => {
