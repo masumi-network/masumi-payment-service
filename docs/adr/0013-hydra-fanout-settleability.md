@@ -175,7 +175,11 @@ Document all four limits. Build against none of them.
    node does fan out, and keeps the confirmed snapshot after the first step.
    The endpoint and retire refuse while the node fans out on its own
    (`AutoDrain` or `DistributingSelection`): a new selection would replace the
-   one in progress. Retire accepts a `FanningOut` head too and stores the
+   one in progress. A step that can never post leaves the node in that mode
+   for good, so both take an explicit override: `replaceInProgressSelection`
+   on the endpoint and `acknowledgeFanoutStalled` on retire. A
+   `PartialFanout` command completes only on a step that distributed part of
+   its own selection, never on a step already in flight. Retire accepts a `FanningOut` head too and stores the
    remaining set.
 
    _Original decision, superseded:_ do not build an operator retire path yet. A head that cannot reach

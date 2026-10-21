@@ -55,7 +55,7 @@ export function registerHydraHeadPartialFanoutPath({ registry, apiKeyAuth }: Swa
 			404: { description: 'Hydra head not found' },
 			409: {
 				description:
-					'Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own',
+					'Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set',
 			},
 			502: { description: 'No connection to the head, or the node returned an unreadable head state' },
 		},

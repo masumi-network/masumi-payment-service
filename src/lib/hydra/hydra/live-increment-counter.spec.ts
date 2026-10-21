@@ -27,8 +27,6 @@ function makeProcessor(): { processor: LiveFrameProcessor; increments: number[] 
 		verifyGreetingsPartyIdentity: () => {},
 		recordFinalizedFanout: () => {},
 		clearFinalizedFanout: () => {},
-		recordPartialFanout: () => {},
-		clearPartialFanout: () => {},
 		setNetworkConnected: () => {},
 		onRotationError: () => {},
 		invalidateLiveConnection: () => {},

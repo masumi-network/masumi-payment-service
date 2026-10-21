@@ -130,6 +130,17 @@ describe('partialFanoutHeadPost', () => {
 		expect(mockPartialFanout).not.toHaveBeenCalled();
 	});
 
+	// A final step that can never post (an oversized output) leaves the node in
+	// AutoDrain for good. Refusing then would leave no way out of the head.
+	it('replaces a stalled drain when the caller says so', async () => {
+		mockFindHead.mockReset();
+		mockFindHead.mockResolvedValue({ ...closedHead, status: HydraHeadStatus.FanningOut });
+		mockNodeGet.mockResolvedValue(fanningOutNodeState({ [B]: OUTPUT, [C]: OUTPUT }, 'AutoDrain'));
+
+		await handler({ input: { headId: 'head-1', outputRefs: [C], replaceInProgressSelection: true } });
+		expect(Object.keys(mockPartialFanout.mock.calls[0]![0] as object)).toEqual([C]);
+	});
+
 	// A reverted first step leaves the stored status at FanningOut while the
 	// node is back to Closed. The selection then comes from the closed state.
 	it('selects from the closed state when the stored status is ahead of the node', async () => {

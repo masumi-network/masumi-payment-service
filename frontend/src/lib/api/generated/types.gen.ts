@@ -16268,6 +16268,7 @@ export type PostHydraHeadRetireData = {
         reason: string;
         acknowledgeStrandedFunds: true;
         acknowledgeRemainingUtxoUnknown?: boolean;
+        acknowledgeFanoutStalled?: boolean;
     };
     path?: never;
     query?: never;
@@ -16288,7 +16289,7 @@ export type PostHydraHeadRetireErrors = {
      */
     404: unknown;
     /**
-     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head, or the head changed meanwhile
+     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head (pass acknowledgeFanoutStalled for a stuck drain), or the head changed meanwhile
      */
     409: unknown;
     /**
@@ -16384,6 +16385,10 @@ export type PostHydraHeadPartialFanoutData = {
          * In-head references (txHash#index) of the outputs to fan out in this step
          */
         outputRefs: Array<string>;
+        /**
+         * Send the selection even while the node fans out on its own; it replaces the selection in progress.
+         */
+        replaceInProgressSelection?: boolean;
     };
     path?: never;
     query?: never;
@@ -16404,7 +16409,7 @@ export type PostHydraHeadPartialFanoutErrors = {
      */
     404: unknown;
     /**
-     * Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own
+     * Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set
      */
     409: unknown;
     /**

@@ -38,13 +38,26 @@ export function fanoutCommand(timeoutMs: number): HydraCommandOptions {
  * Fan out a selection of the remaining UTxO. The node matches it by content
  * against what remains; a selection of everything that remains ends in the
  * final step and `HeadIsFinalized`.
+ *
+ * A step is ours only when it distributed part of this selection. A step the
+ * node or a peer posted before ours, still in flight when this was sent, must
+ * not settle the command.
  */
 export function partialFanoutCommand(utxoToFanout: HydraFanoutRemainingUtxo, timeoutMs: number): HydraCommandOptions {
+	const selected = new Set(Object.keys(utxoToFanout).map((reference) => reference.toLowerCase()));
 	return {
 		command: 'PartialFanout',
 		payload: { tag: 'PartialFanout', utxoToFanout },
 		timeoutMs,
 		timeoutMessage: 'Hydra PartialFanout outcome was not observed before the lifecycle deadline',
-		isComplete: (message) => message.tag === 'HeadPartiallyFannedOut' || message.tag === 'HeadIsFinalized',
+		isComplete: (message) =>
+			message.tag === 'HeadIsFinalized' ||
+			(message.tag === 'HeadPartiallyFannedOut' && distributesAnyOf(message, selected)),
 	};
+}
+
+function distributesAnyOf(message: object, selected: ReadonlySet<string>): boolean {
+	const distributed = (message as { distributedUTxO?: unknown }).distributedUTxO;
+	if (typeof distributed !== 'object' || distributed == null) return false;
+	return Object.keys(distributed).some((reference) => selected.has(reference.toLowerCase()));
 }

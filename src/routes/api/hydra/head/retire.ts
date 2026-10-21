@@ -49,6 +49,11 @@ export const retireHeadInput = lifecycleInput.extend({
 	acknowledgeStrandedFunds: z.literal(true),
 	/** Retire even though the node cannot report the remaining UTxO set. */
 	acknowledgeRemainingUtxoUnknown: z.boolean().optional(),
+	/**
+	 * Retire although the node is still in a fanout mode that posts steps on its
+	 * own. For a step that can never post, which leaves the node in that mode.
+	 */
+	acknowledgeFanoutStalled: z.boolean().optional(),
 });
 
 export const retireHeadOutput = lifecycleOutput.extend({
@@ -87,17 +92,21 @@ function assertNodeNotPastStatus(headId: string, status: HydraHeadStatus): void 
 
 /**
  * The node's report of what the head still holds, keyed by in-head reference.
- * A node still fanning out on its own is refused even when the set is
- * acknowledged unknown: that head is settling, not stuck.
+ * A node still fanning out on its own is refused unless the stall is
+ * acknowledged. Acknowledging an unknown set does not cover it: the set is
+ * known, and the head may be settling.
  */
-async function readRemainingUtxo(headId: string, acknowledgeUnknown: boolean): Promise<Prisma.InputJsonObject | null> {
+async function readRemainingUtxo(
+	headId: string,
+	acknowledge: { remainingUnknown: boolean; fanoutStalled: boolean },
+): Promise<Prisma.InputJsonObject | null> {
 	const node = getHydraConnectionManager().getNode(headId);
 	let state: HydraFanoutHeadState;
 	try {
 		if (!node) throw new Error('no active connection to the Hydra node');
 		state = await readFanoutHeadState(node);
 	} catch (error) {
-		if (acknowledgeUnknown) return null;
+		if (acknowledge.remainingUnknown) return null;
 		const message = error instanceof Error ? error.message : String(error);
 		throw createHttpError(
 			503,
@@ -105,7 +114,7 @@ async function readRemainingUtxo(headId: string, acknowledgeUnknown: boolean): P
 				'retry, or pass acknowledgeRemainingUtxoUnknown to retire without it',
 		);
 	}
-	assertNodeAwaitsFanoutSelection(state);
+	assertNodeAwaitsFanoutSelection(state, { allowed: acknowledge.fanoutStalled, flag: 'acknowledgeFanoutStalled' });
 	// Prisma JSON cannot hold BigInt quantities; strings keep them exact.
 	return JSON.parse(
 		JSON.stringify(state.selectable, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value)),
@@ -142,7 +151,10 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 		// is not stuck, and retiring it would strand a settleable head.
 		assertNodeNotPastStatus(head.id, head.status);
 		const retiredHeadOutputTxHash = await readHeadOutputOnChain(head.id);
-		const remainingUtxo = await readRemainingUtxo(head.id, input.acknowledgeRemainingUtxoUnknown === true);
+		const remainingUtxo = await readRemainingUtxo(head.id, {
+			remainingUnknown: input.acknowledgeRemainingUtxoUnknown === true,
+			fanoutStalled: input.acknowledgeFanoutStalled === true,
+		});
 		const remainingUtxoCount = remainingUtxo ? Object.keys(remainingUtxo).length : null;
 		// The node read above can take a while. Read L1 again just before the
 		// write: a fanout that landed meanwhile moves the head output. A fanout

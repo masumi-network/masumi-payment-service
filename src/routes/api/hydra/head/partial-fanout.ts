@@ -39,6 +39,10 @@ export const partialFanoutHeadInput = lifecycleInput.extend({
 		.min(1)
 		.max(MAX_HYDRA_SNAPSHOT_OUTPUTS)
 		.describe('In-head references (txHash#index) of the outputs to fan out in this step'),
+	replaceInProgressSelection: z
+		.boolean()
+		.optional()
+		.describe('Send the selection even while the node fans out on its own; it replaces the selection in progress.'),
 });
 
 export const partialFanoutHeadOutput = lifecycleOutput.extend({
@@ -65,12 +69,21 @@ export async function readFanoutHeadState(node: FanoutHeadStateSource): Promise<
 
 /**
  * In `AutoDrain` and `DistributingSelection` the node posts the next step on
- * its own. A new selection then would replace the one in progress, and a
- * retire would stop tracking a head that is still settling.
+ * its own. A new selection replaces the one in progress, and a retire stops
+ * tracking a head that may still be settling. Both stay possible, because a
+ * step that cannot post (an oversized output) leaves the node in that mode
+ * for good: the caller says so explicitly with `override`.
  */
-export function assertNodeAwaitsFanoutSelection(state: HydraFanoutHeadState): void {
-	if (state.mode != null && state.mode !== 'AwaitingSelection') {
-		throw createHttpError(409, `The Hydra node is still fanning out the head on its own (${state.mode}); wait for it`);
+export function assertNodeAwaitsFanoutSelection(
+	state: HydraFanoutHeadState,
+	override: { allowed: boolean; flag: string },
+): void {
+	if (state.mode != null && state.mode !== 'AwaitingSelection' && !override.allowed) {
+		throw createHttpError(
+			409,
+			`The Hydra node is still fanning out the head on its own (${state.mode}). Wait for it, or pass ${override.flag} ` +
+				'once POST /hydra/head/chain-check shows the head output no longer moves',
+		);
 	}
 }
 
@@ -163,7 +176,10 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		if (!hydraHead || !node) throw createHttpError(502, 'No active connection to Hydra head');
 
 		const fanoutState = await readFanoutHeadState(node);
-		assertNodeAwaitsFanoutSelection(fanoutState);
+		assertNodeAwaitsFanoutSelection(fanoutState, {
+			allowed: input.replaceInProgressSelection === true,
+			flag: 'replaceInProgressSelection',
+		});
 		const remaining = fanoutState.selectable;
 		const selection = selectFanoutOutputs(remaining, input.outputRefs);
 		const selectedCount = Object.keys(selection).length;

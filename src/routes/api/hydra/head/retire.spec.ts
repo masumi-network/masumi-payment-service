@@ -148,6 +148,18 @@ describe('retireHeadPost', () => {
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
+	// The ADR 0013 case: the final step holds the oversized output, cannot
+	// post, and the node stays in AutoDrain with that output left.
+	it('retires a head stuck in a drain once the stall is acknowledged', async () => {
+		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.FanningOut });
+		mockGetNode.mockReturnValue({ get: async () => fanningOutNodeState(AFTER_STEP, 'AutoDrain') });
+
+		await handler({ input: { ...input, acknowledgeFanoutStalled: true } });
+
+		const update = mockUpdateMany.mock.calls[0]![0] as { data: Record<string, unknown> };
+		expect(update.data.retiredRemainingUtxo).toEqual(stored(AFTER_STEP));
+	});
+
 	it('refuses a head that is already retired', async () => {
 		mockFindHead.mockResolvedValue({ ...fanoutPossible, retiredAt: new Date() });
 

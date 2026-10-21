@@ -496,7 +496,11 @@ refuses a new head.
    it; a plain fanout is refused. Repeat until only the stuck output is left.
    The `GET` reply carries `fanoutMode`. Send the next selection only when it
    is `null` or `AwaitingSelection`: in the other modes the node posts the
-   next step itself, and the endpoint refuses.
+   next step itself, and the endpoint refuses. If the mode stays `AutoDrain`
+   or `DistributingSelection` and `chain-check` shows the same head output
+   tx for several minutes, the step is stuck. Then add
+   `"replaceInProgressSelection": true` to the selection, or add
+   `"acknowledgeFanoutStalled": true` to the retire call.
 
 3. Retire the head:
 
