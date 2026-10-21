@@ -187,12 +187,13 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 	}
 
 	// A side-load clears the node's record of the deposit in flight. Whether
-	// the head then stalls depends on deposit state. For example, if the
-	// confirmed snapshot holds a deposit that the chain has not settled and that
-	// deposit has expired, this node, once it leads, requests a snapshot with
-	// another deposit, and every node rejects it (hydra-node 2.4.1
-	// `ReqSnCommitNotSettled`). Nothing here can see a deposit's status, so
-	// every case is held.
+	// the head then stalls depends on deposit state and on which node leads.
+	// For example, if the confirmed snapshot holds a deposit that the chain has
+	// not settled, that deposit has expired, and another non-empty deposit is or
+	// becomes active before a transaction snapshot drops the commit, this node,
+	// once it leads, requests a snapshot with that deposit, and every node
+	// rejects it (hydra-node 2.4.1 `ReqSnCommitNotSettled`). Nothing here can
+	// see a deposit's status, so every case is held.
 	let headState: unknown;
 	try {
 		headState = await fetchHead();
