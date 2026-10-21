@@ -34372,7 +34372,10 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head is not in a state that permits init"
+                        "description": "Head is not in a state that permits init, is opened by the counterparty, or its node runs an L2 maxTxSize above 15000"
+                    },
+                    "502": {
+                        "description": "The Hydra node could not be reached"
                     }
                 }
             }
