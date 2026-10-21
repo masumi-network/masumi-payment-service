@@ -715,6 +715,8 @@ describe('HydraNode', () => {
 				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
 			);
 			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The caller's CommandFailed row is now the only record, so it keeps the reason.
+			await expect(closePromise).rejects.toThrow(/NotEnoughFuel/);
 			mockConnectionInstance.emit(
 				'message',
 				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),

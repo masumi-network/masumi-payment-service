@@ -57,7 +57,8 @@ export function sendHydraCommandAndWait(
 		awaitedCommands.set(connection, awaited);
 		awaited.push(command);
 		const cleanup = () => {
-			awaited.splice(awaited.indexOf(command), 1);
+			const awaitedIndex = awaited.indexOf(command);
+			if (awaitedIndex !== -1) awaited.splice(awaitedIndex, 1);
 			clearTimeout(timeout);
 			if (retryInterval) clearInterval(retryInterval);
 			// A command deadline can precede Connection.send's open deadline. Stop
@@ -97,7 +98,10 @@ export function sendHydraCommandAndWait(
 			if (outcome.kind === 'reject') {
 				settleReject(
 					command === 'Close' && wasQueued
-						? ambiguousError('Hydra Close was rejected after dispatch; the head may already have closed', outcome.error)
+						? ambiguousError(
+								`Hydra Close was rejected after dispatch; the head may already have closed: ${outcome.error.message}`,
+								outcome.error,
+							)
 						: outcome.error,
 				);
 				return;

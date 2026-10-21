@@ -23,6 +23,7 @@ import createHttpError from 'http-errors';
 import {
 	buildValidatedHydraCommit,
 	type ValidatedHydraCommit,
+	HydraCommandRejectedError,
 	HydraCommitFlowError,
 	HydraHeadInitObservationError,
 	HydraTransactionType,
@@ -117,6 +118,15 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				await hydraHead.init();
 			} catch (initError) {
+				// A refusal is not a timeout: the node answered (CommandFailed, or a
+				// PostTxOnChainFailed for the InitTx), so no Init is parked or racing
+				// and there is nothing to diagnose. This row is the refusal's only
+				// record; the connection manager leaves a failure that a waiting
+				// command reports to that command.
+				if (initError instanceof HydraCommandRejectedError) {
+					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
+					throw createHttpError(504, initError.message);
+				}
 				// A bounded init that never observed HeadIsInitializing has two very
 				// different causes, and the timeout alone cannot tell them apart: the
 				// chain backend silently dropped the InitTx and the node is wedged, or

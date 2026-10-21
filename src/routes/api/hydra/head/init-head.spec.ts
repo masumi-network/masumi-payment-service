@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
+import { HydraCommandRejectedError } from '@/lib/hydra';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -184,6 +185,30 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 		});
 
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
+
+	// The node refused the InitTx outright. Nothing is parked, so a node that is
+	// behind must not turn this into "wait, do not re-post": that verdict wrote no
+	// row, and the waiting Init is the only place this refusal is recorded.
+	it('records an outright refusal without diagnosing it as a wait', async () => {
+		mockInit.mockRejectedValue(
+			new HydraCommandRejectedError('hydra-node refused to post the Init transaction: NoSeedInput'),
+		);
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: false,
+			reason: 'catching up',
+			chainSynced: false,
+			driftSeconds: 14_571,
+		});
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 504,
+			message: expect.stringContaining('NoSeedInput'),
+		});
+
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+		expect(mockReadNodeState).not.toHaveBeenCalled();
 	});
 
 	it('falls back to a failure when the diagnosis itself cannot run', async () => {
