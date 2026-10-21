@@ -16,6 +16,7 @@ import {
   describePhase,
   isTerminalStatus,
   phaseOf,
+  hitlHashChecks,
   readJobStatus,
 } from '@/lib/agent-validation/job-flow';
 import { sampleInputFor } from '@/lib/agent-validation/sample-input';
@@ -122,6 +123,8 @@ export function JobLifecyclePanel({
       return;
     }
     setIsSending(true);
+    // The parsed schema is hashed on purpose: the backend takes its RFC 8785 canonical JSON, which is what MIP-004
+    // buyers (masumi-saas, Sokosumi) hash. Hashing the raw response text would disagree with them.
     const schemaHash = await api.hash({
       kind: 'input_schema',
       json: JSON.stringify(info.inputSchema),
@@ -143,15 +146,14 @@ export function JobLifecyclePanel({
       inputData: parsed.data,
       inputSchemaHash: schemaHash.data.hash,
     });
-    setHitlChecks(
-      outcome.ok
-        ? outcome.data.Checks
-        : [
-            check('fail', 'lifecycle.hitl_probe', 'The answer could be sent', {
-              detail: outcome.message,
-            }),
-          ],
-    );
+    const answerChecks = outcome.ok
+      ? outcome.data.Checks
+      : [
+          check('fail', 'lifecycle.hitl_probe', 'The answer could be sent', {
+            detail: outcome.message,
+          }),
+        ];
+    setHitlChecks([...answerChecks, ...hitlHashChecks(answerChecks, schemaHash.data)]);
     setAnswerDraft(null);
     setIsSending(false);
     await statusQuery.refetch();

@@ -57,7 +57,11 @@ export function EndpointChecker({ initialUrl = '' }: { initialUrl?: string }) {
   }
 
   async function runOne() {
-    const missing = missingInputs(endpoint, { jobId, identifierFromPurchaser: identifier });
+    const missing = missingInputs(endpoint, {
+      jobId,
+      identifierFromPurchaser: identifier,
+      inputSchemaHash: schemaHash,
+    });
     const input = parseInputJson(inputText);
     if (missing.length > 0 || !input.ok) {
       setResult({
@@ -223,6 +227,7 @@ export function EndpointChecker({ initialUrl = '' }: { initialUrl?: string }) {
           <FormField
             label="input_schema_hash"
             htmlFor="checker-schema-hash"
+            required
             hint="SHA-256 of the input_schema your /status returned. The Hashes tool computes it."
           >
             <Input

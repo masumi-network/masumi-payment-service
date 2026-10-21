@@ -6,7 +6,7 @@ export type ProbeEndpointName =
   | 'status'
   | 'provide_input';
 
-export type EndpointInput = 'jobId' | 'identifierFromPurchaser';
+export type EndpointInput = 'jobId' | 'identifierFromPurchaser' | 'inputSchemaHash';
 
 export type EndpointOption = {
   value: ProbeEndpointName;
@@ -67,7 +67,7 @@ export const ENDPOINT_OPTIONS: EndpointOption[] = [
     path: '/provide_input',
     label: 'Provide input (human in the loop)',
     description: 'Answers a job that is waiting for more input.',
-    needs: ['jobId', 'identifierFromPurchaser'],
+    needs: ['jobId', 'identifierFromPurchaser', 'inputSchemaHash'],
   },
 ];
 

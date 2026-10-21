@@ -3,6 +3,7 @@ import { Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
+import { registryReadsVia } from '@/lib/agent-validation/agent-type';
 import { check, type ValidationCheck } from '@/lib/agent-validation/checks';
 import { findAgentsSharingBaseUrl, sharedBaseUrlCheck } from '@/lib/agent-validation/registration';
 import { runEndpointSuite } from '@/lib/agent-validation/suite';
@@ -20,17 +21,18 @@ export function EndpointsStep({ wizard }: { wizard: WizardApi }) {
   const { answers, results } = wizard.state;
   const result = results.endpoints;
   const isRegistered = answers.goal === 'registered';
-  const usesSpecUrl = answers.agentType === 'OpenApi' || answers.agentType === 'X402';
+  const readsVia = registryReadsVia(answers.agentType);
+  const skipsSuite = readsVia != null;
   const url = answers.apiBaseUrl.trim();
 
   async function run() {
     setIsRunning(true);
     let checks: ValidationCheck[];
-    if (usesSpecUrl) {
+    if (skipsSuite) {
       checks = [
-        check('skipped', 'endpoints.spec_url', 'The registry reads your specification URL', {
-          detail: `${answers.agentType} agents are checked by the registry through their specification URL, not through MIP-003 endpoints.`,
-          fix: 'Make sure the specification URL you register is public, returns the document and is valid.',
+        check('skipped', 'endpoints.spec_url', `The registry reads your ${readsVia}`, {
+          detail: `${answers.agentType} agents are checked by the registry through their ${readsVia}, not through MIP-003 endpoints.`,
+          fix: `Make sure the ${readsVia} you register is public, returns the document and is valid.`,
         }),
       ];
     } else {
@@ -52,10 +54,10 @@ export function EndpointsStep({ wizard }: { wizard: WizardApi }) {
       title="Check your agent's endpoints"
       description="The node calls your agent the way the registry and buyers do. Problems here are why an agent shows as Offline or Invalid, or fails for a buyer."
     >
-      {usesSpecUrl ? (
+      {skipsSuite ? (
         <p className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">
           {answers.agentType} agents are not checked through /availability. Continue to
-          registration, and make sure the specification URL you register is public and valid.
+          registration, and make sure the {readsVia} you register is public and valid.
         </p>
       ) : (
         <FormField
@@ -79,11 +81,7 @@ export function EndpointsStep({ wizard }: { wizard: WizardApi }) {
           />
         </FormField>
       )}
-      <Button
-        type="button"
-        onClick={run}
-        disabled={isRunning || (!usesSpecUrl && url.length === 0)}
-      >
+      <Button type="button" onClick={run} disabled={isRunning || (!skipsSuite && url.length === 0)}>
         {isRunning ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
         {result ? 'Run the checks again' : 'Check the endpoints'}
       </Button>

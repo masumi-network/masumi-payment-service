@@ -16322,7 +16322,7 @@ export type PostAgentValidationProbeData = {
             [key: string]: string | number | boolean | unknown | Array<string>;
         };
         /**
-         * provide_input only: lowercase hex SHA-256 of the canonical input_schema returned by /status.
+         * Required for provide_input: lowercase hex SHA-256 of the canonical input_schema returned by /status. Ignored by other endpoints.
          */
         inputSchemaHash?: string;
         /**

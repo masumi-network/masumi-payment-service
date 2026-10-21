@@ -1,5 +1,6 @@
 import type { RegistryEntry } from '@/lib/api/generated';
 import { getAgentStatusHelperText } from '../agent-status';
+import { registryReadsVia } from './agent-type';
 import type { ApiOutcome } from './api-outcome';
 import { check, type ValidationCheck } from './checks';
 import {
@@ -64,7 +65,8 @@ export async function checkRegistryStatus(
   }
 
   checks.push(...(await endpointChecks(agent, deps)));
-  if (agent.apiBaseUrl != null) {
+  // The registry only probes the base URL of Standard agents, so only they can shadow each other there.
+  if (agent.apiBaseUrl != null && agent.type === 'Standard') {
     checks.push(
       sharedBaseUrlCheck(findAgentsSharingBaseUrl(agents, agent.apiBaseUrl, agent.agentIdentifier)),
     );
@@ -76,11 +78,12 @@ async function endpointChecks(
   agent: RegistryEntry,
   deps: RegistryStatusDeps,
 ): Promise<ValidationCheck[]> {
-  if (agent.type !== 'Standard') {
+  const readsVia = registryReadsVia(agent.type);
+  if (readsVia != null) {
     return [
       check('skipped', 'registry.endpoint', 'The live endpoint answers like the registry expects', {
-        detail: `${agent.type} agents are checked by the registry through their specification URL, not through /availability.`,
-        fix: 'Check that the specification URL is public and valid.',
+        detail: `${agent.type} agents are checked by the registry through their ${readsVia}, not through /availability.`,
+        fix: `Check that the ${readsVia} is public and valid.`,
         docsUrl: REGISTRY_DOCS_URL,
       }),
     ];

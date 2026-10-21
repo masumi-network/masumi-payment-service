@@ -28,6 +28,33 @@ export function newIdentifierFromPurchaser(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+type PaymentSourceIndexChoice = { ok: true; index: number | null } | { ok: false; problem: string };
+
+/**
+ * Which `supportedPaymentSourceIndex` the purchase must carry. V1 payments have none. On V2 it is the index the
+ * agent returned from /start_job, else the index of the agent's only paid option. With several paid options, or
+ * none we can match, any pick would be a guess and could lock funds against the wrong price, so we stop instead.
+ */
+export function choosePaymentSourceIndex(input: {
+  isV2: boolean;
+  startedIndex: number | null;
+  /** The `supportedPaymentSourceIndex` of every paid option of the paying agent (undefined: the option has none). */
+  candidateIndexes: Array<number | undefined>;
+}): PaymentSourceIndexChoice {
+  if (!input.isV2) return { ok: true, index: null };
+  if (input.startedIndex != null) return { ok: true, index: input.startedIndex };
+  const [only] = input.candidateIndexes;
+  if (input.candidateIndexes.length === 1 && only != null) return { ok: true, index: only };
+  const found =
+    input.candidateIndexes.length === 0
+      ? 'The agent was not found among your paid agents on this payment source.'
+      : `The agent has ${input.candidateIndexes.length} paid options.`;
+  return {
+    ok: false,
+    problem: `${found} /start_job did not say which payment source it priced.`,
+  };
+}
+
 export function buildPurchaseBody(payment: Payment, context: PurchaseContext): BuildPurchaseResult {
   const sellerVkey = payment.SmartContractWallet?.walletVkey;
   const problems = [

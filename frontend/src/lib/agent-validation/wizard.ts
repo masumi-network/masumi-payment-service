@@ -1,3 +1,4 @@
+import { runsMip003Jobs } from './agent-type';
 import type { NetworkType } from '@/lib/contexts/AppContext';
 import { hasFailures, type CheckStatus, type ValidationCheck } from './checks';
 import { isPlainObject } from '../object-properties';
@@ -93,7 +94,9 @@ export function stepsFor(answers: WizardAnswers, network: NetworkType): StepId[]
   if (answers.subject === 'coworker') return ['intent', 'build', 'report'];
   if (answers.goal === 'endpoints') return ['intent', 'endpoints', 'report'];
   // A paid job moves real funds on Mainnet, so the mock purchase only exists on Preprod. A free agent costs nothing.
-  const hasJob = network === 'Preprod' || answers.isFreeAgent;
+  // Jobs are MIP-003: other agent types (spec, x402, A2A) are not started through /start_job.
+  const hasJob =
+    runsMip003Jobs(answers.agentType) && (network === 'Preprod' || answers.isFreeAgent);
   const journey: StepId[] =
     answers.goal === 'new'
       ? ['intent', 'node', 'build', 'endpoints', 'register']

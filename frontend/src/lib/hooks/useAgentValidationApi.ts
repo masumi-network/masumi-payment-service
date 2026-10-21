@@ -8,7 +8,6 @@ import {
   type PostAgentValidationProbeData,
   type PostAgentValidationProbeResponse,
   type PostAgentValidationValidateData,
-  type PostAgentValidationValidateResponse,
 } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { settle } from '@/lib/agent-validation/api-outcome';

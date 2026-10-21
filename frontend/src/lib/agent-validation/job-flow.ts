@@ -143,3 +143,37 @@ export function compareResultHash(computed: string, onChain: string | null): Val
     docsUrl: MIP_004_URL,
   });
 }
+
+const PREIMAGE_SHOWN_CHARS = 200;
+
+/**
+ * What to tell the developer about the input_schema_hash sent with a human-in-the-loop answer. The wizard hashes
+ * the parsed schema in RFC 8785 canonical form, as MIP-004 buyers do, never the raw text of the response. An
+ * agent that hashes another way is rejected, and this says what to compare.
+ */
+export function hitlHashChecks(
+  answerChecks: readonly ValidationCheck[],
+  sent: { hash: string; preimage: string },
+): ValidationCheck[] {
+  const shown =
+    sent.preimage.length > PREIMAGE_SHOWN_CHARS
+      ? `${sent.preimage.slice(0, PREIMAGE_SHOWN_CHARS)}…`
+      : sent.preimage;
+  const checks = [
+    check('pass', 'lifecycle.hitl_hash_sent', 'The input schema hash was sent', {
+      detail: `${sent.hash} is the SHA-256 of ${shown}`,
+    }),
+  ];
+  const isHashRejection = answerChecks.some(
+    (item) => item.status === 'fail' && /hash/i.test(item.detail ?? ''),
+  );
+  if (isHashRejection) {
+    checks.push(
+      check('warn', 'lifecycle.hitl_hash_mismatch', 'The agent accepted the input schema hash', {
+        detail: `The agent rejected input_schema_hash ${sent.hash}.`,
+        fix: 'The wizard sends the SHA-256 of the canonical (RFC 8785) JSON of the input_schema from /status. Compute the same hash from your schema with the Hashes tool and compare it with what your agent expects.',
+      }),
+    );
+  }
+  return checks;
+}

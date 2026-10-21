@@ -86,6 +86,8 @@ function buildPlan(input: ProbeInput): Plan {
 			if (!jobId) return missingInput('provide_input', 'job_id', 'jobId');
 			if (!identifierFromPurchaser)
 				return missingInput('provide_input', 'identifier_from_purchaser', 'identifierFromPurchaser');
+			// MIP-003 buyers always send it, and agents such as masumi-saas answer 400 without it.
+			if (!input.inputSchemaHash) return missingInput('provide_input', 'input_schema_hash', 'inputSchemaHash');
 			return {
 				path: '/provide_input',
 				method: 'POST',

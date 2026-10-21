@@ -71,7 +71,9 @@ export const agentValidationProbeSchemaInput = z.object({
 		.string()
 		.regex(/^[0-9a-f]{64}$/)
 		.optional()
-		.describe('provide_input only: lowercase hex SHA-256 of the canonical input_schema returned by /status.'),
+		.describe(
+			'Required for provide_input: lowercase hex SHA-256 of the canonical input_schema returned by /status. Ignored by other endpoints.',
+		),
 	expectedAgentIdentifier: z
 		.string()
 		.max(250)

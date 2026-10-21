@@ -15,6 +15,7 @@ import { formatInputJson, parseInputJson } from '@/lib/agent-validation/input-js
 import { readStartJob } from '@/lib/agent-validation/job-flow';
 import {
   buildPurchaseBody,
+  choosePaymentSourceIndex,
   describeFunds,
   describeUnixMs,
   newIdentifierFromPurchaser,
@@ -186,19 +187,28 @@ export function JobStartPanel({
 
   async function lockFunds() {
     if (job == null || payment == null) return;
-    const optionIndex = buildPaidAgentOptions(
-      agents,
-      selectedPaymentSource?.paymentSourceType,
-    ).find(
-      (option) => option.agentIdentifier === payment.agentIdentifier,
-    )?.supportedPaymentSourceIndex;
+    const choice = choosePaymentSourceIndex({
+      isV2: selectedPaymentSource?.paymentSourceType === 'Web3CardanoV2',
+      startedIndex,
+      candidateIndexes: buildPaidAgentOptions(agents, selectedPaymentSource?.paymentSourceType)
+        .filter((option) => option.agentIdentifier === payment.agentIdentifier)
+        .map((option) => option.supportedPaymentSourceIndex),
+    });
+    if (!choice.ok) {
+      commit({
+        purchase: [
+          check('fail', 'purchase.source_index', 'The purchase knows which payment source to use', {
+            detail: choice.problem,
+            fix: 'Return supportedPaymentSourceIndex from /start_job, or register the agent with a single paid option. A purchase against the wrong source would lock funds at the wrong price.',
+          }),
+        ],
+      });
+      return;
+    }
     const built = buildPurchaseBody(payment, {
       network,
       identifierFromPurchaser: job.identifierFromPurchaser,
-      supportedPaymentSourceIndex:
-        startedIndex ??
-        optionIndex ??
-        (selectedPaymentSource?.paymentSourceType === 'Web3CardanoV2' ? 0 : null),
+      supportedPaymentSourceIndex: choice.index,
     });
     if (!built.ok) {
       commit({

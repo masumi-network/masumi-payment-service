@@ -11,7 +11,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useAllAgents } from '@/lib/queries/useAgents';
-import type { AgentType, Goal, Subject } from '@/lib/agent-validation/wizard';
+import type { AgentType } from '@/lib/agent-validation/wizard';
 import { cn } from '@/lib/utils';
 import { StepFrame } from './StepFrame';
 import type { WizardApi } from './useWizard';

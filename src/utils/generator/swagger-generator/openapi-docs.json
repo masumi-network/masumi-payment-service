@@ -38694,7 +38694,7 @@
                                     "inputSchemaHash": {
                                         "type": "string",
                                         "pattern": "^[0-9a-f]{64}$",
-                                        "description": "provide_input only: lowercase hex SHA-256 of the canonical input_schema returned by /status."
+                                        "description": "Required for provide_input: lowercase hex SHA-256 of the canonical input_schema returned by /status. Ignored by other endpoints."
                                     },
                                     "expectedAgentIdentifier": {
                                         "type": "string",
