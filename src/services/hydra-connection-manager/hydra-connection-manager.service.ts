@@ -222,11 +222,7 @@ export class HydraConnectionManager {
 			reconciledHistoryCursor,
 		} = await loadValidatedHeadConfiguration(head.id);
 		const relation = configuredHead.HydraRelation;
-		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
-		if (!isReachable) {
-			// No command was sent to the node, so a caller may retry and need not treat it as a failed command.
-			throw new HydraTransportError(`Local Hydra node unreachable for head ${head.id}`);
-		}
+		await this.probeNode(head.id, nodeUrls.httpUrl, nodeAuthToken);
 		if (session.transportGeneration !== transportGeneration) {
 			throw new Error(`Hydra head ${head.id} transport was revoked while connecting`);
 		}
@@ -458,23 +454,41 @@ export class HydraConnectionManager {
 		}
 	}
 
-	private async probeNode(httpUrl: string, authToken?: string, timeoutMs = 5000): Promise<boolean> {
+	/**
+	 * Throws a HydraTransportError that says why the node did not answer. No
+	 * command was sent to the node, so a caller may retry and need not treat it
+	 * as a failed command. The status or the fetch error is the only thing that
+	 * tells a node still starting from a wrong URL or token.
+	 */
+	private async probeNode(hydraHeadId: string, httpUrl: string, authToken?: string, timeoutMs = 5000): Promise<void> {
+		// A Host rejects an unauthenticated probe, which would otherwise look
+		// exactly like an unreachable node and disable a healthy head. A token
+		// that cannot be a header is a config fault, so it throws before the try.
+		const headers = { 'Content-Type': 'application/json', ...hydraAuthHeaders(authToken) };
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), timeoutMs);
+		let response: Response;
 		try {
-			const response = await fetch(buildHydraHttpEndpoint(httpUrl, 'protocol-parameters'), {
+			response = await fetch(buildHydraHttpEndpoint(httpUrl, 'protocol-parameters'), {
 				signal: controller.signal,
-				// A Host rejects an unauthenticated probe, which would otherwise look
-				// exactly like an unreachable node and disable a healthy head.
-				headers: { 'Content-Type': 'application/json', ...hydraAuthHeaders(authToken) },
+				headers,
 				redirect: 'error',
 			});
-			await response.body?.cancel().catch(() => undefined);
-			return response.ok;
-		} catch {
-			return false;
+		} catch (error) {
+			throw new HydraTransportError(
+				controller.signal.aborted
+					? `Local Hydra node for head ${hydraHeadId} did not answer within ${timeoutMs}ms`
+					: `Local Hydra node unreachable for head ${hydraHeadId}`,
+				{ cause: error },
+			);
 		} finally {
 			clearTimeout(timeout);
+		}
+		await response.body?.cancel().catch(() => undefined);
+		if (!response.ok) {
+			throw new HydraTransportError(
+				`Local Hydra node for head ${hydraHeadId} answered the probe with HTTP ${response.status}`,
+			);
 		}
 	}
 

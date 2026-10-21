@@ -5,6 +5,7 @@ import {
 	CustomHydraHead,
 	deriveHydraVerificationKeyCborHex,
 	HydraNode,
+	HydraProtocolError,
 	HydraTransactionType,
 	HydraTransportError,
 	type HydraConfirmedTransaction,
@@ -326,19 +327,16 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	it('shares one in-flight transport startup across concurrent connect callers', async () => {
 		const manager = new HydraConnectionManager();
 		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-		let releaseProbe!: (isReachable: boolean) => void;
+		let releaseProbe!: () => void;
 		let markProbeStarted!: () => void;
 		const probeStarted = new Promise<void>((resolve) => {
 			markProbeStarted = resolve;
 		});
-		const probeResult = new Promise<boolean>((resolve) => {
+		const probeResult = new Promise<void>((resolve) => {
 			releaseProbe = resolve;
 		});
 		const probeSpy = jest
-			.spyOn(
-				manager as unknown as { probeNode: (httpUrl: string, timeoutMs?: number) => Promise<boolean> },
-				'probeNode',
-			)
+			.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
 			.mockImplementation(async () => {
 				markProbeStarted();
 				return await probeResult;
@@ -351,7 +349,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			const secondConnect = manager.connect({ id: 'head-1' });
 
 			expect(mockHydraHeadFindUnique).toHaveBeenCalledTimes(1);
-			releaseProbe(true);
+			releaseProbe();
 			await Promise.all([firstConnect, secondConnect]);
 			expect(connectSpy).toHaveBeenCalledTimes(1);
 			expect(manager.isConnected('head-1')).toBe(true);
@@ -364,19 +362,16 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	it('does not publish a transport revoked while its reachability probe is pending', async () => {
 		const manager = new HydraConnectionManager();
 		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-		let releaseProbe!: (isReachable: boolean) => void;
+		let releaseProbe!: () => void;
 		let markProbeStarted!: () => void;
 		const probeStarted = new Promise<void>((resolve) => {
 			markProbeStarted = resolve;
 		});
-		const probeResult = new Promise<boolean>((resolve) => {
+		const probeResult = new Promise<void>((resolve) => {
 			releaseProbe = resolve;
 		});
 		const probeSpy = jest
-			.spyOn(
-				manager as unknown as { probeNode: (httpUrl: string, timeoutMs?: number) => Promise<boolean> },
-				'probeNode',
-			)
+			.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
 			.mockImplementation(async () => {
 				markProbeStarted();
 				return await probeResult;
@@ -387,7 +382,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			const pendingConnect = manager.connect({ id: 'head-1' });
 			await probeStarted;
 			await manager.disconnect('head-1');
-			releaseProbe(true);
+			releaseProbe();
 
 			await expect(pendingConnect).rejects.toThrow('transport was revoked while connecting');
 			expect(connectSpy).not.toHaveBeenCalled();
@@ -398,21 +393,57 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		}
 	});
 
-	// Init answers this with a retryable 502 and records no head error, so the
-	// class is the contract, not the message.
-	it('throws a transport error when the node probe fails', async () => {
-		const manager = new HydraConnectionManager();
-		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-		const probeSpy = jest
-			.spyOn(manager as unknown as { probeNode: () => Promise<boolean> }, 'probeNode')
-			.mockResolvedValue(false);
+	// Init answers a transport error with a retryable 502 that names its reason,
+	// and records no head error. The reason is what tells a node still starting
+	// from a wrong URL or token.
+	describe('when the node probe fails', () => {
+		it('keeps the fetch error, where the socket error sits, as the cause', async () => {
+			const manager = new HydraConnectionManager();
+			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+			const refused = Object.assign(new TypeError('fetch failed'), {
+				cause: Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' }),
+			});
+			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(refused);
 
-		try {
-			await expect(manager.connect({ id: 'head-1' })).rejects.toBeInstanceOf(HydraTransportError);
-			expect(manager.isConnected('head-1')).toBe(false);
-		} finally {
-			probeSpy.mockRestore();
-		}
+			try {
+				const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+				expect(error).toBeInstanceOf(HydraTransportError);
+				expect((error as HydraTransportError).cause).toBe(refused);
+				expect(manager.isConnected('head-1')).toBe(false);
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
+		it('names the status a node answered with', async () => {
+			const manager = new HydraConnectionManager();
+			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }));
+
+			try {
+				const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+				expect(error).toBeInstanceOf(HydraTransportError);
+				expect((error as Error).message).toContain('answered the probe with HTTP 401');
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
+
+		// A retry cannot fix a token that cannot be a header, so it must not read as unreachable.
+		it('raises an unusable token as a protocol error before probing', async () => {
+			const manager = new HydraConnectionManager();
+			const head = connectableConfiguredHead();
+			head.LocalParticipant.HydraHost.encryptedUserToken = encrypt('   ');
+			mockHydraHeadFindUnique.mockResolvedValue(head);
+			const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+			try {
+				await expect(manager.connect({ id: 'head-1' })).rejects.toBeInstanceOf(HydraProtocolError);
+				expect(fetchSpy).not.toHaveBeenCalled();
+			} finally {
+				fetchSpy.mockRestore();
+			}
+		});
 	});
 
 	it('does not publish a transport revoked while its owner epoch is being acquired', async () => {
