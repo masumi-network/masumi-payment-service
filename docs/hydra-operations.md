@@ -158,10 +158,17 @@ signs snapshot n only after it confirmed n - 1, and n confirms only with every
 party's signature. A counterparty one behind is still waiting for this node's
 signature on the snapshot this node confirmed: after this node is reset, its
 operator side-loads this node's confirmed snapshot (resetting it to its own does
-not help). A counterparty further behind has lost or restored its node state. It
-has to adopt this node's confirmed snapshot too, and if Hydra refuses that, close
-the head. Once it reports this node's confirmed number, reset this node: its
-round is still stuck, because nothing sends that round's request again.
+not help). If Hydra refuses that, close the head: this node contests the close
+with its later snapshot. A counterparty further behind has lost or restored its
+node state. It has to adopt this node's confirmed snapshot too, and if Hydra
+refuses that, close the head. Once it reports this node's confirmed number, reset
+this node: its round is still stuck, because nothing sends that round's request
+again.
+
+To adopt a snapshot, the operator of the node that is ahead sends the full JSON
+from `GET /snapshot` on their node (the snapshot and its signatures, not only the
+number). The other operator posts that JSON to `POST /snapshot` on their own
+node.
 
 Neither the Host nor the payment service can see the counterparty's node (its API
 binds loopback), so neither repairs on its own. The counterparty's operator runs

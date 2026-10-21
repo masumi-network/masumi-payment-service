@@ -225,7 +225,7 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(
 				409,
 				`The counterparty has confirmed snapshot ${peerConfirmedSnapshotNumber}, ahead of this node's ${snapshot.number}. ` +
-					'Resetting would discard that snapshot. Do not reset: this node is behind and has to adopt the counterparty’s confirmed snapshot, which this endpoint does not do. ' +
+					'Resetting would discard that snapshot. Check the number with its operator. Do not reset: if the number is right, this node is behind and has to adopt the counterparty’s confirmed snapshot, which this endpoint does not do. ' +
 					'If Hydra refuses that side-load, close the head: the counterparty’s node contests with its later snapshot',
 			);
 		}
