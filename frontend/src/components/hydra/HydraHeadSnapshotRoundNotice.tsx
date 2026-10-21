@@ -171,6 +171,9 @@ export function HydraHeadSnapshotRoundNotice({
       </HydraNotice>
 
       <ConfirmDialog
+        // Closed from here when the round recurs, which skips the dialog's own
+        // reset; a new round must not inherit the acknowledgement tick.
+        key={roundInstance(round)}
         elevatedChildStack
         open={pending !== null && roundInstance(pending.round) === roundInstance(round)}
         onClose={() => {
