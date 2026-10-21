@@ -164,7 +164,11 @@ describe('retireHeadPost', () => {
 	it('reports a node that does not hold the head as closed as a conflict', async () => {
 		mockGetNode.mockReturnValue({ get: async () => ({ tag: 'Open', contents: {} }) });
 
-		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+		// A node restarted without persistence lands here: name the way out.
+		await expect(handler({ input })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('acknowledgeRemainingUtxoUnknown'),
+		});
 		await expect(handler({ input: { ...input, acknowledgeRemainingUtxoUnknown: true } })).resolves.toMatchObject({
 			remainingUtxoCount: null,
 		});
