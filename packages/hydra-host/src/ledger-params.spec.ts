@@ -60,6 +60,7 @@ describe('shipped L2 ledger params', () => {
 	// src/lib/hydra/hydra/params-drift.ts (EXPECTED_MAX_TX_SIZE). Change both.
 	it('keeps maxTxSize small enough that any single L2 output can be fanned out', () => {
 		expect(MAX_L2_TX_SIZE + FANOUT_ENVELOPE_BYTES).toBeLessThan(L1_MAX_TX_SIZE);
+		expect(shippedNetworks.length).toBeGreaterThan(0);
 		for (const network of shippedNetworks) {
 			expect({ network, maxTxSize: load(network).maxTxSize }).toEqual({ network, maxTxSize: MAX_L2_TX_SIZE });
 			expect(describeUnsettleableLedgerParams(path.join(paramsDir, `${network}.json`))).toBeNull();

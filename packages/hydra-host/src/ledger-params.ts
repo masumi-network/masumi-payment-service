@@ -9,9 +9,11 @@
  *
  * Checked at boot for every network, because the params file is an operator
  * setting (`HYDRA_HOST_LEDGER_PARAMS_FILE`) and mainnet ships no reviewed file.
- * A failing file refuses new nodes, never the boot: a Host that would not start
- * would also stop the nodes of heads already open on that file, and an open
- * head whose node is down cannot contest a close.
+ * A file that exists but fails this check refuses nodes that have no head yet
+ * (provision, and the ack that starts one), not the boot: a Host that would not
+ * start would also stop the nodes of heads already open on that file, and an
+ * open head whose node is down cannot contest a close. A missing file is a
+ * different fault and still stops the boot (src/index.ts).
  */
 
 import { readFileSync } from 'node:fs';

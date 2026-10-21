@@ -10,7 +10,7 @@ import { NodeRegistryStore } from '../registry/store.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
-import type { ProvisionDeps } from './provision.js';
+import { provisionNode, type ProvisionDeps } from './provision.js';
 
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
@@ -400,26 +400,30 @@ describe('control plane on ledger params above the L2 maxTxSize cap', () => {
 	let refusingDir: string;
 	let refusingServer: Server;
 	let refusingBaseUrl: string;
+	let refusingStore: NodeRegistryStore;
+	let refusingProvision: ProvisionDeps;
 
 	beforeEach(async () => {
 		refusingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-params-'));
 		const config = { ...loadHostConfig(env), dataDir: refusingDir };
 		const store = new NodeRegistryStore(refusingDir);
 		const ports = new PortAllocator(config.ports);
+		refusingStore = store;
+		refusingProvision = {
+			store,
+			ports,
+			advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+			checkPeerTarget: async () => null,
+			newNodeId: () => 'node-refused',
+			now: () => new Date('2026-07-28T12:00:00.000Z'),
+		};
 		refusingServer = createControlPlane({
 			config,
 			store,
 			exchange: new ExchangeStore(refusingDir),
 			ports,
 			supervisor: { tick: async () => undefined } as unknown as Supervisor,
-			provision: {
-				store,
-				ports,
-				advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
-				checkPeerTarget: async () => null,
-				newNodeId: () => 'node-refused',
-				now: () => new Date('2026-07-28T12:00:00.000Z'),
-			},
+			provision: refusingProvision,
 			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
 			ledgerParamsRefusal: 'maxTxSize 16384, above 15000',
 		});
@@ -433,7 +437,7 @@ describe('control plane on ledger params above the L2 maxTxSize cap', () => {
 	});
 
 	// The Host still boots, so nodes of heads already open keep running; only
-	// a new node, which would start a new head on these params, is refused.
+	// a node that has no head yet, and would start one on these params, is refused.
 	it('refuses to provision a node and keeps serving the rest', async () => {
 		const headers = { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' };
 		const provisioned = await fetch(`${refusingBaseUrl}/v1/nodes`, {
@@ -447,6 +451,30 @@ describe('control plane on ledger params above the L2 maxTxSize cap', () => {
 		const listed = await fetch(`${refusingBaseUrl}/v1/nodes`, { headers });
 		expect(listed.status).toBe(200);
 		expect(await listed.json()).toMatchObject({ nodes: [] });
+	});
+
+	// Provisioned before the Host restarted onto these params: the ack would
+	// start it, and it would Init a head on them.
+	it('refuses to ack a node that has no head yet', async () => {
+		const { record } = await provisionNode(
+			{
+				idempotencyKey: 'idem-before-restart',
+				network: 'preprod',
+				contestationPeriodSeconds: 60,
+				depositPeriodSeconds: 120,
+				unsyncedPeriodSeconds: 60,
+				depositActivationSeconds: 120,
+			},
+			refusingProvision,
+		);
+
+		const acked = await fetch(`${refusingBaseUrl}/v1/nodes/${record.nodeId}/escrow-ack`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${ADMIN}` },
+		});
+
+		expect(acked.status).toBe(409);
+		expect((await refusingStore.read(record.nodeId))?.escrowAckedAt).toBeNull();
 	});
 });
 
