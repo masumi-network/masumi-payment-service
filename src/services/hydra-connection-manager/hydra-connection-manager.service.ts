@@ -31,6 +31,7 @@ import type { L2MintIncident } from '@/lib/hydra/hydra/l2-mint-tally';
 import { HydraErrorType, HydraHeadStatus, Network } from '@/generated/prisma/client';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
+import { HydraTransportError } from '@/lib/hydra/hydra/errors';
 import { applyDecommitOutcome } from '@/services/hydra-decommit/settle';
 import { type HydraDatumApplyOutcome } from './hydra-datum-sync';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
@@ -223,7 +224,8 @@ export class HydraConnectionManager {
 		const relation = configuredHead.HydraRelation;
 		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
 		if (!isReachable) {
-			throw new Error(`Local Hydra node unreachable for head ${head.id}`);
+			// Nothing was sent to the node, so a caller may retry and need not treat it as a failed command.
+			throw new HydraTransportError(`Local Hydra node unreachable for head ${head.id}`);
 		}
 		if (session.transportGeneration !== transportGeneration) {
 			throw new Error(`Hydra head ${head.id} transport was revoked while connecting`);

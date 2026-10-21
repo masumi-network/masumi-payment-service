@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
 import { HydraCommandRejectedError, HydraPostTxRejectedError } from '@/lib/hydra';
+import { HydraTransportError } from '@/lib/hydra/hydra/errors';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -155,6 +156,29 @@ describe('initHeadPost, on a node with unsafe L2 params', () => {
 		});
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
 		expect(mockInit).not.toHaveBeenCalled();
+	});
+});
+
+// The node probe fails before anything is sent, so this is not a failed Init.
+describe('initHeadPost, when the node cannot be reached', () => {
+	it('answers an exposed 502 without a head error', async () => {
+		mockConnect.mockRejectedValue(new HydraTransportError('Local Hydra node unreachable for head head-1'));
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 502,
+			expose: true,
+			message: expect.stringContaining('Try again later'),
+		});
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	// Only the unreached node is mapped: any other connect failure is still a head error.
+	it('still records any other connect failure', async () => {
+		mockConnect.mockRejectedValue(new Error('Hydra head head-1 transport was revoked while connecting'));
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toThrow('revoked');
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
 	});
 });
 

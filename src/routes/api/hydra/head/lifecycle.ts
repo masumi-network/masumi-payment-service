@@ -18,7 +18,7 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { z } from '@masumi/payment-core/zod';
-import createHttpError from 'http-errors';
+import createHttpError, { type HttpError } from 'http-errors';
 
 import {
 	buildValidatedHydraCommit,
@@ -36,6 +36,7 @@ import {
 	reserveAndSubmitHydraCommit,
 	type HydraCommitReconciliationResult,
 } from '@/services/hydra-commit-reconciliation';
+import { HydraTransportError } from '@/lib/hydra/hydra/errors';
 import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
@@ -108,10 +109,15 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		const cm = getHydraConnectionManager();
 
 		try {
-			await cm.connect(head);
+			try {
+				await cm.connect(head);
+			} catch (error) {
+				if (!(error instanceof HydraTransportError)) throw error;
+				throw nodeFailedBeforeInit(head.id, "Could not reach this head's Hydra node", error);
+			}
 			const hydraHead = cm.getHead(head.id);
 			if (!hydraHead) {
-				throw createHttpError(502, 'Failed to connect to Hydra node');
+				throw createHttpError(502, 'Failed to connect to Hydra node', { expose: true });
 			}
 			// The last point before a head exists. A node on L2 ledger params above
 			// the shipped maxTxSize, from a Host on unsafe params or an older Host
@@ -121,15 +127,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
 			} catch (error) {
-				// Exposed errors skip the server-error log, so this line is the only record of this failure.
-				logger.warn('[HydraAPI] could not read L2 protocol parameters before Init', {
-					hydraHeadId: head.id,
-					error: getErrorMessage(error),
-				});
-				throw createHttpError(502, "Could not read the L2 maxTxSize from this head's node. Try again later", {
-					cause: error,
-					expose: true,
-				});
+				throw nodeFailedBeforeInit(head.id, "Could not read the L2 maxTxSize from this head's node", error);
 			}
 			if (typeof maxTxSize !== 'number') {
 				throw createHttpError(409, "This head's node reports no numeric L2 maxTxSize, so it cannot be checked");
@@ -274,6 +272,16 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 	},
 });
+
+/**
+ * An exposed 502 for a node that failed before Init was sent. A node that is
+ * down is not a failed Init, so the handler records no head error for it.
+ * Exposed errors skip the server-error log, so the warn is the only record.
+ */
+function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unknown): HttpError {
+	logger.warn(`[HydraAPI] ${message} before Init`, { hydraHeadId, error: getErrorMessage(error) });
+	return createHttpError(502, `${message}. Try again later`, { cause: error, expose: true });
+}
 
 // --- Lifecycle: POST commit (local participant only) ---
 
