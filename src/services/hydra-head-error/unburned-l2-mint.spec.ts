@@ -1,11 +1,11 @@
 /**
  * One HydraHeadError row per head for unburned-mint incidents.
  *
- * The node reports an open incident on every verified snapshot and replay
- * pass, and a peer that mints and burns in turn opens a new incident every
+ * The node reports an open incident on every verified snapshot while its
+ * replay is current and at the end of each complete pass, and a peer that mints and burns in turn opens a new incident every
  * other snapshot. A plain write per report or per incident would grow the
- * table without limit, so each head keeps one row and checks the database at
- * most once per interval.
+ * table without limit, so each head keeps one row and, within one connection,
+ * checks the database at most once per interval.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -129,14 +129,14 @@ describe('recordUnburnedL2Mint', () => {
 		expect(rows[0].errorMessage).toContain(latest);
 	});
 
-	// A lease handover can leave two rows. Both must follow the incident.
+	// A lease handover can leave two rows, and the other owner may already have
+	// moved one of them. Both must follow the incident.
 	it('moves every row of the head to a new incident', async () => {
-		const old = '66'.repeat(32);
-		rows.push(
-			{ id: 'owner-a', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: old },
-			{ id: 'owner-b', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: old },
-		);
 		const next = incident('77'.repeat(32));
+		rows.push(
+			{ id: 'owner-a', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: '66'.repeat(32) },
+			{ id: 'owner-b', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: next.txHash },
+		);
 
 		await recordUnburnedL2Mint('head-handover', HydraHeadStatus.Open, next);
 
@@ -151,6 +151,7 @@ describe('recordUnburnedL2Mint', () => {
 		await recordUnburnedL2Mint('head-restart', HydraHeadStatus.Open, known);
 
 		expect(rows).toHaveLength(1);
+		expect(queries).toBe(1);
 	});
 
 	// An operator can clear the head's errors while the head is still blocked.
@@ -242,5 +243,64 @@ describe('recordUnburnedL2Mint', () => {
 		await recordUnburnedL2Mint('head-cleared-mid', HydraHeadStatus.Open, next);
 
 		expect(rows.map((row) => row.txHash)).toEqual([next.txHash]);
+	});
+	// A check started by the timer must leave the head able to arm the next one.
+	it('keeps checking after a check the timer started', async () => {
+		await recordUnburnedL2Mint('head-timer', HydraHeadStatus.Open, incident('a1'.repeat(32)));
+		await recordUnburnedL2Mint('head-timer', HydraHeadStatus.Open, incident('a2'.repeat(32)));
+		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS);
+		const latest = incident('a3'.repeat(32));
+		await recordUnburnedL2Mint('head-timer', HydraHeadStatus.Open, latest);
+		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS);
+
+		expect(rows.map((row) => row.txHash)).toEqual([latest.txHash]);
+	});
+
+	// A head that sends nothing after a check costs no more queries.
+	it('does not check the same report again', async () => {
+		await recordUnburnedL2Mint('head-quiet', HydraHeadStatus.Open, incident('b1'.repeat(32)));
+		const afterFirstCheck = queries;
+
+		await jest.advanceTimersByTimeAsync(5 * TEN_MINUTES_MS);
+
+		expect(queries).toBe(afterFirstCheck);
+	});
+
+	// A report kept while a check is running belongs to the stopped connection.
+	it('drops a report kept during a check that is still running', async () => {
+		let release!: () => void;
+		stallNextQuery = new Promise((resolve) => {
+			release = resolve;
+		});
+		const first = incident('c1'.repeat(32));
+		const running = recordUnburnedL2Mint('head-drop-running', HydraHeadStatus.Open, first);
+		await recordUnburnedL2Mint('head-drop-running', HydraHeadStatus.Open, incident('c2'.repeat(32)));
+
+		dropUnburnedL2MintReports('head-drop-running');
+		release();
+		await running;
+		await jest.advanceTimersByTimeAsync(3 * TEN_MINUTES_MS);
+
+		expect(rows.map((row) => row.txHash)).toEqual([first.txHash]);
+	});
+
+	// A reconnect while the old connection's check is stalled must not start a
+	// second check beside it: the older one would finish last.
+	it('makes a reconnect wait for the check of the stopped connection', async () => {
+		let release!: () => void;
+		stallNextQuery = new Promise((resolve) => {
+			release = resolve;
+		});
+		const older = incident('d1'.repeat(32));
+		const newer = incident('d2'.repeat(32));
+		const running = recordUnburnedL2Mint('head-reconnect', HydraHeadStatus.Open, older);
+		dropUnburnedL2MintReports('head-reconnect');
+		await recordUnburnedL2Mint('head-reconnect', HydraHeadStatus.Open, newer);
+
+		release();
+		await running;
+		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS);
+
+		expect(rows.map((row) => row.txHash)).toEqual([newer.txHash]);
 	});
 });

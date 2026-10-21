@@ -3,8 +3,8 @@
  *
  * A peer can mint through its own node, and the head cannot reach its final
  * fanout while such a token stays unburned (see `l2-mint-tally`). The node
- * reports an open incident on every verified snapshot and on every replay
- * pass. A peer also decides how often incidents start: minting and burning in
+ * reports an open incident on every verified snapshot while its replay is
+ * current, and at the end of every complete replay pass. A peer also decides how often incidents start: minting and burning in
  * turn opens a new one every other snapshot. So each head keeps one row,
  * updated in place to the latest incident, and runs one database check at a
  * time, at most once per interval. A report that arrives in between is kept
@@ -14,7 +14,8 @@
  * Best effort across processes: there is no unique constraint, so two owners
  * during a lease handover can both write a row. Each check moves every row of
  * the head to its incident. A process drops its kept report when it stops the
- * head, so it does not write after the handover.
+ * head, so after the handover only a check that is already running can still
+ * write.
  */
 
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
@@ -52,7 +53,7 @@ interface HeadReports {
 	pending?: Report;
 	/** Starts the check of `pending` at `nextCheckAt`. */
 	timer?: ReturnType<typeof setTimeout>;
-	/** One check at a time, so an older check that stalls cannot finish after a newer one. */
+	/** One check at a time in this process, so an older check that stalls cannot finish after a newer one. */
 	isChecking: boolean;
 }
 
@@ -86,7 +87,12 @@ function armCheck(hydraHeadId: string, head: HeadReports): void {
 	head.timer = setTimeout(
 		() => {
 			head.timer = undefined;
-			void checkPending(hydraHeadId, head);
+			checkPending(hydraHeadId, head).catch((error: unknown) => {
+				logger.error('[HydraHeadError] unburned L2 mint check failed', {
+					hydraHeadId,
+					error: error instanceof Error ? error.message : error,
+				});
+			});
 		},
 		Math.max(0, head.nextCheckAt - performance.now()),
 	).unref();
@@ -97,22 +103,22 @@ async function checkPending(hydraHeadId: string, head: HeadReports): Promise<voi
 	if (!report) return;
 	head.pending = undefined;
 	head.isChecking = true;
-	let wait = RECHECK_INTERVAL_MS;
+	let wait = RETRY_INTERVAL_MS;
 	try {
 		await writeIncident(hydraHeadId, report);
+		wait = RECHECK_INTERVAL_MS;
 	} catch (error) {
-		wait = RETRY_INTERVAL_MS;
 		logger.error('[HydraHeadError] could not record an unburned L2 mint', {
 			hydraHeadId,
 			txHash: report.incident.txHash,
 			error: error instanceof Error ? error.message : error,
 		});
+	} finally {
+		head.isChecking = false;
+		head.nextCheckAt = performance.now() + wait;
+		// A report that arrived during this check waits for the next one.
+		if (head.pending) armCheck(hydraHeadId, head);
 	}
-	head.isChecking = false;
-	head.nextCheckAt = performance.now() + wait;
-	// A report that arrived during this check waits for the next one, unless
-	// the head was dropped meanwhile.
-	if (head.pending && reportsByHead.get(hydraHeadId) === head) armCheck(hydraHeadId, head);
 }
 
 export async function recordUnburnedL2Mint(
@@ -134,8 +140,17 @@ export async function recordUnburnedL2Mint(
 	await checkPending(hydraHeadId, head);
 }
 
-/** Forgets the head's kept report, so this process writes nothing for it after it stops the head. */
+/**
+ * Forgets the head's kept report when this process stops the head. A check
+ * that is already running still finishes, and keeps the head's entry until it
+ * does: a reconnect's reports then wait for it rather than start a second
+ * check beside it.
+ */
 export function dropUnburnedL2MintReports(hydraHeadId: string): void {
-	clearTimeout(reportsByHead.get(hydraHeadId)?.timer);
-	reportsByHead.delete(hydraHeadId);
+	const head = reportsByHead.get(hydraHeadId);
+	if (!head) return;
+	clearTimeout(head.timer);
+	head.timer = undefined;
+	head.pending = undefined;
+	if (!head.isChecking) reportsByHead.delete(hydraHeadId);
 }

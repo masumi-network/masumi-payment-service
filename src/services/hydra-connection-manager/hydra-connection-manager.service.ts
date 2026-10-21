@@ -522,7 +522,14 @@ export class HydraConnectionManager {
 		// any live status, as a rejected history can, so an unknown status is
 		// recorded as Connecting.
 		head.mainNode.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => {
-			void recordUnburnedL2Mint(hydraHeadId, head.status ?? HydraHeadStatus.Connecting, incident);
+			recordUnburnedL2Mint(hydraHeadId, head.status ?? HydraHeadStatus.Connecting, incident).catch(
+				(recordError: unknown) => {
+					logger.error('[HydraConnectionManager] could not record an unburned L2 mint', {
+						hydraHeadId,
+						error: recordError instanceof Error ? recordError.message : recordError,
+					});
+				},
+			);
 		});
 
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {
