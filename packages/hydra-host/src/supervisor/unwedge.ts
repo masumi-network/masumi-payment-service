@@ -15,8 +15,12 @@
  * unverified state into the service.
  */
 
+import type { NodeClient } from '../node-client.js';
 import { getOwnValue, isPlainObject } from '../registry/json.js';
+import type { NodeRegistryStore } from '../registry/store.js';
+import type { NodeRecord } from '../registry/types.js';
 import { isSafeToStop, type LastSeenSnapshotResponse } from './drain.js';
+import type { SupervisorLogger } from './supervisor.js';
 
 export type UnwedgeOutcome =
 	/** No round was in flight; nothing to do. */
@@ -28,6 +32,12 @@ export type UnwedgeOutcome =
 	/** Stranded, side-load attempted, still stuck. Needs an operator. */
 	| { kind: 'Unrecovered'; tag: string | null; reason: string }
 	/**
+	 * Stranded, but a side-load now can stall the head again. Left for an
+	 * operator, with the node's API still open, so the head can be reset from the
+	 * payment service or closed.
+	 */
+	| { kind: 'Held'; tag: string | null; reason: string }
+	/**
 	 * A shutdown began mid-check. The record is left exactly as it was, so the
 	 * undrained stop is still on it and the check runs again on the way back up.
 	 */
@@ -37,7 +47,7 @@ export type UnwedgeOptions = {
 	fetchLastSeen: () => Promise<LastSeenSnapshotResponse>;
 	/** `GET /snapshot` — the last confirmed snapshot. */
 	fetchConfirmedSnapshot: () => Promise<unknown>;
-	/** `GET /head` — the node's head state. */
+	/** `GET /head`: the node's head state. */
 	fetchHead: () => Promise<unknown>;
 	/** `POST /snapshot` — side-load. */
 	sideLoadSnapshot: (snapshot: unknown) => Promise<void>;
@@ -45,32 +55,13 @@ export type UnwedgeOptions = {
 	settleWaitMs: number;
 	sleep: (ms: number) => Promise<void>;
 	/**
-	 * Checked between steps, because this whole procedure can cost ~90 seconds —
-	 * a 10s read, a 30s settle wait, two more reads and a side-load — and it runs
-	 * inside the tick, holding the node against the shutdown's drain. Charged in
+	 * Checked between steps, because this whole procedure can cost ~90 seconds:
+	 * five 10s reads, a 30s settle wait and a side-load. It runs inside the tick, holding the node against the shutdown's drain. Charged in
 	 * full against a 240s stop grace it does not know about, one unwedge is the
 	 * difference between draining the fleet and being SIGKILLed mid-drain.
 	 */
 	isAborted?: () => boolean;
 };
-
-/**
- * The node calls `unwedgeNode` needs, taken from one client. Kept here so the
- * supervisor wires them in one line.
- */
-export function unwedgeReads(client: {
-	fetchLastSeen: () => Promise<LastSeenSnapshotResponse>;
-	fetchConfirmedSnapshot: () => Promise<unknown>;
-	fetchHead: () => Promise<unknown>;
-	sideLoadSnapshot: (snapshot: unknown) => Promise<void>;
-}): Pick<UnwedgeOptions, 'fetchLastSeen' | 'fetchConfirmedSnapshot' | 'fetchHead' | 'sideLoadSnapshot'> {
-	return {
-		fetchLastSeen: () => client.fetchLastSeen(),
-		fetchConfirmedSnapshot: () => client.fetchConfirmedSnapshot(),
-		fetchHead: () => client.fetchHead(),
-		sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
-	};
-}
 
 /**
  * Whether the confirmed snapshot holds a deposit that the chain has not
@@ -194,11 +185,13 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 		return { kind: 'Unrecovered', tag, reason: 'the node reports no confirmed snapshot to side-load' };
 	}
 
-	// A side-load clears the node's record of the deposit in flight. While the
-	// confirmed snapshot holds a deposit that the chain has not settled, the
-	// next deposit then makes the leader request a snapshot that every node
-	// rejects (hydra-node 2.4.1 `ReqSnCommitNotSettled`), and the head stalls
-	// again after a side-load reported as a recovery.
+	// A side-load clears the node's record of the deposit in flight. If the
+	// confirmed snapshot holds a deposit that the chain has not settled and that
+	// deposit has expired, this node, once it leads, requests a snapshot with
+	// the next deposit, and every node rejects it (hydra-node 2.4.1
+	// `ReqSnCommitNotSettled`). While the deposit is still active the leader
+	// picks it again, oldest first, but nothing here can see its status, so both
+	// cases are held.
 	let headState: unknown;
 	try {
 		headState = await fetchHead();
@@ -211,12 +204,13 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 	}
 	if (holdsUnsettledCommit(headState)) {
 		return {
-			kind: 'Unrecovered',
+			kind: 'Held',
 			tag,
 			reason:
-				'the confirmed snapshot holds a deposit that the chain has not settled, and a side-load now can stall the head again at the next deposit. Restart the node once the head absorbs the deposit. If the deposit passes its deadline first, close the head',
+				'the confirmed snapshot holds a deposit that the chain has not settled, so a side-load now can stall the head again. The stranded round is left for an operator: reset it from the payment service once the head absorbs the deposit, or close the head',
 		};
 	}
+	if (aborted()) return { kind: 'Deferred' };
 
 	try {
 		await sideLoadSnapshot(confirmed);
@@ -239,4 +233,64 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 		tag,
 		reason: 'side-load completed but the round is still stranded; the head needs manual inspection',
 	};
+}
+
+export type UnwedgeRecordDeps = {
+	client: Pick<NodeClient, 'fetchLastSeen' | 'fetchConfirmedSnapshot' | 'fetchHead' | 'sideLoadSnapshot'>;
+	store: Pick<NodeRegistryStore, 'update'>;
+	logger: SupervisorLogger;
+	settleWaitMs: number;
+	sleep: (ms: number) => Promise<void>;
+	isAborted: () => boolean;
+};
+
+/** Check one node for a stranded round, recover it if that is safe, and record the outcome. */
+export async function unwedgeRecord(record: NodeRecord, reason: string, deps: UnwedgeRecordDeps): Promise<void> {
+	const { client, store, logger } = deps;
+	logger.info(`[supervisor] checking ${record.nodeId} for a stranded round: ${reason}`);
+
+	const outcome = await unwedgeNode({
+		fetchLastSeen: () => client.fetchLastSeen(),
+		fetchConfirmedSnapshot: () => client.fetchConfirmedSnapshot(),
+		fetchHead: () => client.fetchHead(),
+		sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
+		settleWaitMs: deps.settleWaitMs,
+		sleep: deps.sleep,
+		isAborted: deps.isAborted,
+	});
+
+	switch (outcome.kind) {
+		case 'Deferred':
+			logger.info(
+				`[supervisor] deferring the stranded-round check for ${record.nodeId}: a shutdown began. ` +
+					'The undrained stop stays recorded, so the check runs on the way back up',
+			);
+			return;
+		case 'Healthy':
+		case 'Progressing':
+		case 'Recovered':
+		case 'Held':
+			if (outcome.kind === 'Recovered') {
+				logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
+			}
+			// Not `Failed`: that closes the node's API, and the head could then be
+			// neither reset from the payment service nor closed from this side.
+			if (outcome.kind === 'Held') {
+				logger.warn(`[supervisor] ${record.nodeId} left a stranded round alone: ${outcome.reason}`);
+			}
+			await store.update(record.nodeId, (current) => ({
+				...current,
+				lastStopUndrained: false,
+				startAttempts: 0,
+			}));
+			return;
+		case 'Unrecovered':
+			logger.error(`[supervisor] ${record.nodeId} could not be unwedged: ${outcome.reason}`);
+			await store.update(record.nodeId, (current) => ({
+				...current,
+				state: 'Failed',
+				failureReason: outcome.reason,
+			}));
+			return;
+	}
 }

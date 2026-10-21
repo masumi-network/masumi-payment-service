@@ -1,5 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { holdsUnsettledCommit, roundSignature, unwedgeNode, type UnwedgeOptions } from './unwedge.js';
+import type { NodeRecord } from '../registry/types.js';
+import { holdsUnsettledCommit, roundSignature, unwedgeNode, unwedgeRecord, type UnwedgeOptions } from './unwedge.js';
 import type { LastSeenSnapshotResponse } from './drain.js';
 
 const noopSleep = async () => undefined;
@@ -31,6 +32,25 @@ describe('holdsUnsettledCommit', () => {
 		['the chain has settled it', headHolding(DEPOSIT, 4)],
 		['the snapshot holds no commit', headHolding(null, 3)],
 		['the snapshot holds an empty commit', headHolding({}, 3)],
+		[
+			'the head is still on its initial snapshot',
+			{
+				tag: 'Open',
+				contents: { coordinatedHeadState: { version: 0, confirmedSnapshot: { tag: 'InitialSnapshot', headId: 'cc' } } },
+			},
+		],
+		[
+			'the head version is not a number',
+			{
+				tag: 'Open',
+				contents: {
+					coordinatedHeadState: {
+						version: '3',
+						confirmedSnapshot: { snapshot: { version: 3, utxoToCommit: DEPOSIT } },
+					},
+				},
+			},
+		],
 	])('reports nothing unsettled when %s', (_label, state) => {
 		expect(holdsUnsettledCommit(state)).toBe(false);
 	});
@@ -137,8 +157,10 @@ describe('unwedgeNode', () => {
 		});
 
 		const outcome = await unwedgeNode(opts);
-		expect(outcome.kind).toBe('Unrecovered');
-		expect(outcome).toMatchObject({ reason: expect.stringContaining('not settled') as unknown as string });
+		expect(outcome).toMatchObject({
+			kind: 'Held',
+			reason: expect.stringContaining('not settled') as unknown as string,
+		});
 		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
 	});
 
@@ -237,6 +259,23 @@ describe('unwedgeNode read failures', () => {
 // about, one unwedge is the difference between draining the fleet and being
 // SIGKILLed mid-drain.
 describe('unwedgeNode during a shutdown', () => {
+	it('defers before the side-load when a shutdown begins during the head-state read', async () => {
+		let stopping = false;
+		const opts = options({
+			fetchLastSeen: jest
+				.fn<() => Promise<LastSeenSnapshotResponse>>()
+				.mockResolvedValue({ tag: 'SeenSnapshot', number: 7 }),
+			fetchHead: () => {
+				stopping = true;
+				return Promise.resolve({ tag: 'Open' });
+			},
+			isAborted: () => stopping,
+		});
+
+		expect(await unwedgeNode(opts)).toEqual({ kind: 'Deferred' });
+		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
+	});
+
 	it('defers before the settle wait, leaving the record untouched', async () => {
 		let slept = false;
 		const outcome = await unwedgeNode({
@@ -268,5 +307,37 @@ describe('unwedgeNode during a shutdown', () => {
 		});
 
 		expect(outcome.kind).toBe('Healthy');
+	});
+});
+
+describe('unwedgeRecord', () => {
+	// `Failed` closes the node's API, and the head could then be neither reset
+	// from the payment service nor closed from this side.
+	it('keeps a node it leaves stranded running, with its API open', async () => {
+		let record = { nodeId: 'node-1', state: 'Running', lastStopUndrained: true, startAttempts: 2 } as NodeRecord;
+		const store = {
+			update: async (_nodeId: string, mutate: (current: NodeRecord) => NodeRecord) => (record = mutate(record)),
+		};
+		const client = {
+			fetchLastSeen: () => Promise.resolve<LastSeenSnapshotResponse>({ tag: 'SeenSnapshot', number: 7 }),
+			fetchConfirmedSnapshot: () => Promise.resolve({ snapshot: 'confirmed' }),
+			fetchHead: () => Promise.resolve(headHolding(DEPOSIT, 3)),
+			sideLoadSnapshot: jest.fn<(snapshot: unknown) => Promise<void>>().mockResolvedValue(undefined),
+		};
+		const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+		await unwedgeRecord(record, 'previous stop could not be drained', {
+			client,
+			store,
+			logger,
+			settleWaitMs: 0,
+			sleep: noopSleep,
+			isAborted: () => false,
+		});
+
+		expect(record).toMatchObject({ state: 'Running', lastStopUndrained: false, startAttempts: 0 });
+		expect(record.failureReason).toBeUndefined();
+		expect(client.sideLoadSnapshot).not.toHaveBeenCalled();
+		expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('left a stranded round alone'));
 	});
 });
