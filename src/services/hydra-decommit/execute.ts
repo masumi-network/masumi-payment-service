@@ -739,6 +739,9 @@ function assertSendableInHead(signedTx: string, maxTxSize: number): void {
 	try {
 		assertL2TxWithinMaxSize(signedTx, maxTxSize);
 	} catch (error) {
-		throw createHttpError(422, errorMessage(error));
+		throw createHttpError(
+			422,
+			`${errorMessage(error)}. Consolidate the wallet in the head first, or withdraw a smaller amount`,
+		);
 	}
 }

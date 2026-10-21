@@ -216,6 +216,15 @@ describe('nudgeIdleHeadForRelease', () => {
 		expect(h.head.newTx).toHaveBeenCalledWith(expect.objectContaining({ cborHex: validNudge }));
 	});
 
+	// Recorded before the 15,000-byte L2 limit: the head would refuse it at
+	// every interval, and a second nudge must never be built.
+	it('holds a recorded nudge above the L2 limit instead of resending it', async () => {
+		const h = harness();
+		await expect(h.run({ l2ReleaseNudgeTx: '00'.repeat(15_001) })).resolves.toBe(false);
+		expect(h.head.newTx).not.toHaveBeenCalled();
+		expect(h.signSpendNudge).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		['the wallet is not pinned by this reservation', { wallet: false }],
 		['a withdrawal is being prepared', { decommit: true }],

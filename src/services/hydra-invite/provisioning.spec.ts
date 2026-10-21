@@ -220,6 +220,18 @@ describe('reserveNodeForExchange', () => {
 		expect(mockAcknowledge).not.toHaveBeenCalled();
 	});
 
+	it('explains a Host that refuses new nodes', async () => {
+		mockProvision.mockRejectedValue(
+			new HydraHostRequestError('POST /v1/nodes on the hydra host failed (409): maxTxSize 16384, above 15000', 409),
+		);
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringMatching(/refused a new node: .*maxTxSize 16384, above 15000/),
+		});
+		expect(mockCreate).not.toHaveBeenCalled();
+	});
+
 	it('passes any other Host error through', async () => {
 		const failure = new HydraHostRequestError('POST /v1/nodes on the hydra host failed (500): internal error', 500);
 		mockProvision.mockRejectedValue(failure);
