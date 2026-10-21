@@ -163,7 +163,7 @@ export async function getSnapshotRoundStatus(headId: string): Promise<SnapshotRo
 export async function resetSnapshotRound(params: {
 	headId: string;
 	expectedSignature: string;
-	/** The confirmed snapshot number the counterparty's node reports, read off it by the admin. */
+	/** The confirmed snapshot number the counterparty's node reports, as its operator relays it. */
 	peerConfirmedSnapshotNumber: number;
 	actorApiKeyId: string;
 }): Promise<ResetSnapshotRoundResult> {

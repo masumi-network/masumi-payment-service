@@ -155,8 +155,9 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 			tag,
 			reason:
 				'the snapshot round is stranded and automatic side-load is off (HYDRA_HOST_AUTO_SIDELOAD), because the ' +
-				'counterparty may already have confirmed the next snapshot. Read its confirmed snapshot number, then reset ' +
-				'the round from the payment service',
+				'counterparty may already have confirmed the round. Get its confirmed snapshot number from its operator and ' +
+				'follow "Stranded snapshot rounds" in docs/hydra-operations.md; reset the round from the payment service ' +
+				'only if the counterparty is not ahead',
 		};
 	}
 
