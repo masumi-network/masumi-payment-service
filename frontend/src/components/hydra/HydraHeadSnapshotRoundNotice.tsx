@@ -53,7 +53,7 @@ function resetDescription(round: HydraSnapshotRound, peerNumber: number): string
     round.txIds.length === 0
       ? 'The round names no transactions.'
       : `The round names ${round.txIds.length} transaction(s):\n${round.txIds.map((txId) => shortenAddress(txId, 12)).join('\n')}`;
-  return `Our node goes back to its last confirmed snapshot, which every party already signed. Nothing new enters the head.\n\nOur node drops every transaction it has not confirmed. ${named}\nThe node can hold more unconfirmed transactions than this list shows.\n\nDo not rebuild a dropped payment by hand. The other party's node can still hold the original, and then both can confirm.\n\nThis resets our node only. If the other party's node is stuck on the same round, its operator must reset it too. If it is one snapshot behind ours, its operator side-loads our node's confirmed snapshot instead, and if Hydra refuses that, the head has to be closed.\n\nYou entered ${peerNumber} as the snapshot the other party's node has confirmed. If that is not what its operator reported, cancel and check again.`;
+  return `Our node goes back to its last confirmed snapshot, which every party already signed. Nothing new enters the head.\n\nOur node drops every transaction it has not confirmed. ${named}\nThe node can hold more unconfirmed transactions than this list shows.\n\nDo not rebuild a dropped payment by hand. The other party's node can still hold the original, and then both can confirm.\n\nThis resets our node only. If the other party's node is stuck on the same round, its operator must reset it too. If it is one snapshot behind ours, its operator side-loads our node's confirmed snapshot instead, and if Hydra refuses that, the head has to be closed.\n\nYou entered ${peerNumber} as the snapshot the other party's node has confirmed. That node can still confirm the round after its operator reads the number, so ask for it again just before you confirm. If it changed, cancel and enter the new number.`;
 }
 
 export function HydraHeadSnapshotRoundNotice({
@@ -89,6 +89,10 @@ export function HydraHeadSnapshotRoundNotice({
 
   if (!isOpen || !round?.stuck) return null;
 
+  // A node signs snapshot n only after it confirmed n - 1, so the round on
+  // screen is one above what the server compares the typed number with.
+  const ourConfirmed = round.snapshotNumber === null ? null : round.snapshotNumber - 1;
+
   const handleReset = async () => {
     if (!pending) return;
     setIsResetting(true);
@@ -101,8 +105,6 @@ export function HydraHeadSnapshotRoundNotice({
       toast.success(
         `Reset to confirmed snapshot ${result.confirmedSnapshotNumber}. Unconfirmed transactions were dropped, including the round's ${result.droppedTxIds.length}.`,
       );
-      setPending(null);
-      setPeerInput(null);
     } catch (error) {
       // The API layer toasts the cause; catching keeps it from escaping the handler.
       console.error('Hydra snapshot round reset failed', error);
@@ -166,8 +168,12 @@ export function HydraHeadSnapshotRoundNotice({
           />
           <p className="text-xs">
             Required. The other party&apos;s operator reads it from GET /snapshot on their node (0
-            if it shows InitialSnapshot). Resetting is refused if it is ahead of our node (our node
-            is then behind and the reset does not help) or more than one behind it.
+            if it shows InitialSnapshot).{' '}
+            {ourConfirmed === null
+              ? 'Our node has confirmed the snapshot one below the round shown above.'
+              : `Our node has confirmed snapshot ${ourConfirmed}, one below the round shown above.`}{' '}
+            Resetting is refused if the number is ahead of that (our node is then behind and the
+            reset does not help) or more than one behind it.
           </p>
         </div>
       </HydraNotice>
