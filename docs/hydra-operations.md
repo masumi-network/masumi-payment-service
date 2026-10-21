@@ -142,26 +142,30 @@ A node that is killed mid-round (an out-of-memory kill, a host failure) can come
 back with a snapshot round that never completes, so the head confirms nothing.
 The recovery is to side-load the node's own last confirmed snapshot. That
 discards the round in flight, so it is only safe if the counterparty has not
-already confirmed the next snapshot. If it has, it holds a snapshot this node
-would lose, and the two can no longer agree.
+already confirmed that round.
+
+If the counterparty has confirmed it, this node is one snapshot behind. Hydra
+refuses a side-load below a node's confirmed number, so the counterparty cannot
+go back. This node has to adopt the counterparty's confirmed snapshot instead.
+Hydra accepts that side-load because every party signed the snapshot, as long as
+its version, pending commit, deposit and decommit match this node's confirmed
+snapshot. Neither the Host nor the payment service does this step.
+
+Two confirmed numbers are never more than one apart: a node signs snapshot n
+only after it confirmed n - 1, and n confirms only with every party's signature.
 
 Neither the Host nor the payment service can see the counterparty's node (its API
-binds loopback), so neither repairs on its own:
+binds loopback), so neither repairs on its own. The counterparty's operator runs
+`GET /snapshot` on their node and sends you `snapshot.number`:
 
 - **Host:** `HYDRA_HOST_AUTO_SIDELOAD` is off by default. A stranded node is left
   running, so it can still contest a close, and the Host logs
   `needs an operator`. Set it to `true` only if you accept that risk for every
   node on the Host.
 - **Payment service:** `POST /hydra/head/snapshot-round/reset` requires
-  `peerConfirmedSnapshotNumber`, the confirmed snapshot number read off the
-  counterparty's node (`GET /snapshot`). Read it just before the reset, because
-  the counterparty can still confirm the next snapshot from an acknowledgement
-  in transit. The reset is refused if it is ahead of this node's. The admin UI
-  asks for the same number, and asks again after every attempt.
-
-The Host does not mark a node that needs an operator on its record. The
-`needs an operator` log line is its only signal. The payment service's round
-watch alerts on the same stuck round independently.
+  `peerConfirmedSnapshotNumber`, the number the counterparty's operator sent. The
+  reset is refused if it is ahead of this node's confirmed snapshot or more than
+  one behind it. The admin UI asks for the same number.
 
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.

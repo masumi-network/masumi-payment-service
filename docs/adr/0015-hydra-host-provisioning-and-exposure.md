@@ -110,14 +110,15 @@ authentication anchor (see "Snapshot verification" in
 `docs/hydra-architecture.md`), so side-loading can
 restore a node without becoming a channel for injecting unverified state.
 
-**Amended (MAS-643).** Levels 2 and 3 are no longer automatic by default. The
-side-load discards the round in flight, so it loses a snapshot that the
-counterparty already confirmed, and the Host cannot see the counterparty's node.
-The supervisor now side-loads only with `HYDRA_HOST_AUTO_SIDELOAD=true`.
-Otherwise it leaves the node running and logs that it needs an operator, who
-resets the round from the payment service after reading the counterparty's
-confirmed snapshot number. See "Stranded snapshot rounds" in
-`docs/hydra-operations.md`.
+**Amendment (2026-10-21, MAS-643).** Levels 2 and 3 are no longer automatic by
+default. The side-load discards the round in flight. If the counterparty already
+confirmed that round, this node ends up one snapshot behind it, and the
+counterparty cannot step back, because Hydra refuses a side-load below a node's
+confirmed number. So "no counterparty action is required" holds only when the
+counterparty has not confirmed the round, and the Host cannot see whether it
+has. The supervisor now side-loads only with `HYDRA_HOST_AUTO_SIDELOAD=true`.
+Otherwise it leaves the node running and logs it for an operator. See "Stranded
+snapshot rounds" in `docs/hydra-operations.md`.
 
 The supervisor also owns a **drift watchdog**: on Blockfrost the chain follower
 loses ≈17 s per minute with no catch-up path (upstream `#2753`), and past

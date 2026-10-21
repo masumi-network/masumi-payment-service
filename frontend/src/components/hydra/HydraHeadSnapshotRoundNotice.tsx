@@ -7,10 +7,11 @@
  * round's signature is what the server checks. A round that moved in the
  * meantime is refused, not reset.
  *
- * The other party's node is not reachable from here, so the operator reads its
- * confirmed snapshot number off it and types it in. The server refuses a reset
- * when that number is ahead of ours, because the reset would discard a
- * snapshot only the other party holds.
+ * The other party's node is not reachable from here, so its operator reads the
+ * confirmed snapshot number off it and the admin types it in. The server
+ * refuses a reset when that number is ahead of ours, because the reset would
+ * discard a snapshot only the other party holds, or more than one behind ours,
+ * which no party can be.
  */
 
 import { useState } from 'react';
@@ -46,7 +47,7 @@ function resetDescription(round: HydraSnapshotRound, peerNumber: number): string
     round.txIds.length === 0
       ? 'The round names no transactions.'
       : `The round names ${round.txIds.length} transaction(s):\n${round.txIds.map((txId) => shortenAddress(txId, 12)).join('\n')}`;
-  return `Our node goes back to its last confirmed snapshot, which every party already signed. Nothing new enters the head.\n\nOur node drops every transaction it has not confirmed. ${named}\nThe node can hold more unconfirmed transactions than this list shows.\n\nDo not rebuild a dropped payment by hand. The other party's node can still hold the original, and then both can confirm.\n\nThis resets our node only. If the other party's node is stuck on the same round, its operator must reset it too.\n\nYou entered ${peerNumber} as the snapshot the other party's node has confirmed. Read it off that node just before you confirm. If it is not what the node shows now, cancel and check again.`;
+  return `Our node goes back to its last confirmed snapshot, which every party already signed. Nothing new enters the head.\n\nOur node drops every transaction it has not confirmed. ${named}\nThe node can hold more unconfirmed transactions than this list shows.\n\nDo not rebuild a dropped payment by hand. The other party's node can still hold the original, and then both can confirm.\n\nThis resets our node only. If the other party's node is stuck on the same round, its operator must reset it too.\n\nYou entered ${peerNumber} as the snapshot the other party's node has confirmed. If that is not what its operator reported, cancel and check again.`;
 }
 
 export function HydraHeadSnapshotRoundNotice({
@@ -146,15 +147,16 @@ export function HydraHeadSnapshotRoundNotice({
           <Input
             id={`peer-snapshot-${headId}`}
             inputMode="numeric"
-            placeholder="Read it off the other party's node"
+            placeholder="Ask the other party's operator"
             value={peerInput?.value ?? ''}
             onChange={(event) =>
               setPeerInput({ signature: round.signature, value: event.target.value })
             }
           />
           <p className="text-xs">
-            Required. Resetting is refused if it is ahead of our node, because the reset would
-            discard a snapshot only the other party holds.
+            Required. The other party&apos;s operator reads it from GET /snapshot on their node.
+            Resetting is refused if it is ahead of our node, because the reset would discard a
+            snapshot only the other party holds.
           </p>
         </div>
       </HydraNotice>

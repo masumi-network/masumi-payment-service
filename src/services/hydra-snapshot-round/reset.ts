@@ -6,8 +6,8 @@
  * every party, so nothing new enters the head: the node only discards the round
  * in flight and its unconfirmed local transactions, which a round that can never
  * complete would never have confirmed anyway. hydra-host's `unwedge` does the
- * same after an undrained restart, but only with `HYDRA_HOST_AUTO_SIDELOAD=true`;
- * otherwise it leaves the round for this live, operator-approved path.
+ * same after an undrained restart when `HYDRA_HOST_AUTO_SIDELOAD` is on; this is
+ * the live, operator-approved path.
  *
  * Every precondition is re-checked here, against live node state, because the
  * request only carries what the admin saw:
