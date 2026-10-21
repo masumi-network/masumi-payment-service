@@ -127,6 +127,9 @@ export const hydraHeadSchema = z
 		initTxHash: z.string().nullable(),
 		closeTxHash: z.string().nullable(),
 		fanoutTxHash: z.string().nullable(),
+		retiredAt: z.string().nullable().describe('When an operator retired this head because it cannot reach Final'),
+		retiredReason: z.string().nullable(),
+		retiredHeadOutputTxHash: z.string().nullable().describe('L1 tx holding the head output at retirement'),
 		Invite: z
 			.object({
 				role: z.nativeEnum(HydraInviteRole),
@@ -582,6 +585,7 @@ export async function updateHydraHeadEnabledState(
 ): Promise<HydraHeadRecord> {
 	const existing = await prisma.hydraHead.findUnique({ where: { id } });
 	if (!existing) throw createHttpError(404, 'Hydra head not found');
+	if (existing.retiredAt) throw createHttpError(409, 'A retired Hydra head cannot be enabled or disabled');
 	if (isEnabled && existing.isEnabled) {
 		// Already enabled: its InitTx binding still stands. Re-proving it would
 		// mean disabling first, which drops the live session and the counterparty

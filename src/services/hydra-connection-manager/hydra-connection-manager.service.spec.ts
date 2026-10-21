@@ -1191,7 +1191,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			},
 		});
 		expect(mockHydraHeadUpdateMany).toHaveBeenNthCalledWith(2, {
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		expect(mockPaymentRequestUpdateMany).not.toHaveBeenCalled();
@@ -1314,7 +1314,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			}),
 		);
 		expect(mockHydraHeadUpdateMany).toHaveBeenNthCalledWith(2, {
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		const lockedHeadQuery = (
@@ -1374,7 +1374,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 		expect(mockPrismaTransaction).toHaveBeenCalledTimes(2);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 	});

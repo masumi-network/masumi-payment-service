@@ -121,6 +121,7 @@ import {
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
 	fanoutHeadPost,
+	retireHeadPost,
 	getLocalParticipantGet,
 	getOrListHeadsGet,
 	getHeadBalanceGet,
@@ -584,6 +585,7 @@ export const apiRouter: Routing = {
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
+				retire: { post: retireHeadPost },
 				// Read-only: the head's state on L1, from an independent observer.
 				'chain-check': { post: checkHeadOnChainPost },
 				balance: { get: getHeadBalanceGet },

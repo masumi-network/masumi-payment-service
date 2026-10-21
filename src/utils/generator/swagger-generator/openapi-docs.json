@@ -6790,6 +6790,20 @@
                         "type": "string",
                         "nullable": true
                     },
+                    "retiredAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "When an operator retired this head because it cannot reach Final"
+                    },
+                    "retiredReason": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "retiredHeadOutputTxHash": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "L1 tx holding the head output at retirement"
+                    },
                     "Invite": {
                         "type": "object",
                         "nullable": true,
@@ -7011,7 +7025,10 @@
                     "reconciliationStalledSince",
                     "initTxHash",
                     "closeTxHash",
-                    "fanoutTxHash"
+                    "fanoutTxHash",
+                    "retiredAt",
+                    "retiredReason",
+                    "retiredHeadOutputTxHash"
                 ]
             },
             "HydraHostPauseState": {
@@ -38373,6 +38390,152 @@
                     },
                     "503": {
                         "description": "Independent L1 evidence not yet available"
+                    }
+                }
+            }
+        },
+        "/hydra/head/retire": {
+            "post": {
+                "summary": "Retire a Hydra head that cannot reach Final. (admin access required)",
+                "description": "Marks a closed head that fanout cannot finish as retired and frees its relation for a new head. Moves no funds: whatever is left stays on L1 behind the head script. Allowed for FanoutPossible heads, and for Closed heads after the contestation deadline, when L1 shows the head closed. Stores the reason, the L1 tx that holds the head output and the remaining UTxO set for a later recovery. Cannot be undone through the API.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "headId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "ID of the HydraHead"
+                                    },
+                                    "reason": {
+                                        "type": "string",
+                                        "minLength": 10,
+                                        "maxLength": 1000,
+                                        "description": "Why the head cannot reach Final. Stored with the head for a later recovery."
+                                    },
+                                    "acknowledgeStrandedFunds": {
+                                        "type": "boolean",
+                                        "enum": [
+                                            true
+                                        ]
+                                    },
+                                    "acknowledgeRemainingUtxoUnknown": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "required": [
+                                    "headId",
+                                    "reason",
+                                    "acknowledgeStrandedFunds"
+                                ],
+                                "example": {
+                                    "headId": "cuid_v2_auto_generated",
+                                    "reason": "An output above the fanout size limit blocks the final fanout step",
+                                    "acknowledgeStrandedFunds": true
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Head retired",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Disconnected",
+                                                        "Connected",
+                                                        "Connecting",
+                                                        "Idle",
+                                                        "Initializing",
+                                                        "Open",
+                                                        "Closed",
+                                                        "FanoutPossible",
+                                                        "Final"
+                                                    ]
+                                                },
+                                                "retiredAt": {
+                                                    "type": "string"
+                                                },
+                                                "retiredHeadOutputTxHash": {
+                                                    "type": "string"
+                                                },
+                                                "remainingUtxoCount": {
+                                                    "type": "number",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "status",
+                                                "retiredAt",
+                                                "retiredHeadOutputTxHash",
+                                                "remainingUtxoCount"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "status": "FanoutPossible",
+                                            "retiredAt": "2026-10-21T12:00:00.000Z",
+                                            "retiredHeadOutputTxHash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                                            "remainingUtxoCount": 1
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input, or the stranded funds were not acknowledged"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, or the head changed meanwhile"
+                    },
+                    "502": {
+                        "description": "The head state could not be read on chain"
+                    },
+                    "503": {
+                        "description": "Independent L1 evidence or the remaining UTxO set is not available yet"
                     }
                 }
             }

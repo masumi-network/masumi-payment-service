@@ -28,6 +28,7 @@ export type LockedHydraHeadLifecycle = {
 	headIdentifier: string | null;
 	fanoutTxHash: string | null;
 	ownerEpoch: bigint;
+	retiredAt: Date | null;
 };
 
 export type RegressiveStatusResult =

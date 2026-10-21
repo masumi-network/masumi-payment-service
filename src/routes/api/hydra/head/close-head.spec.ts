@@ -265,6 +265,17 @@ describe('Hydra head state convergence', () => {
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
 	});
 
+	// Disabling clears the init anchors that a recovery of a retired head
+	// restarts the node from.
+	it.each([false, true])('refuses to set a retired head enabled=%s', async (isEnabled) => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible, retiredAt: new Date() });
+
+		await expect(updateHydraHeadEnabledState('head-1', isEnabled, jest.fn() as AnyMock)).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(mockUpdateHead).not.toHaveBeenCalled();
+	});
+
 	// Re-proving an enabled head meant disabling it first, which dropped the
 	// live session and the counterparty with it.
 	it('leaves an already enabled head enabled and only reconciles it', async () => {

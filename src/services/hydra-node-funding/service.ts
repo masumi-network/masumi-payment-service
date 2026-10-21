@@ -268,7 +268,8 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 				// balance to a dead node, which the operator sweeps again, at two L1
 				// fees per round for as long as both keep running. The status was
 				// already being selected; it was simply never consulted.
-				{ HydraHead: { status: { not: HydraHeadStatus.Final } } },
+				// A retired head never reaches Final, but its node needs no fuel.
+				{ HydraHead: { status: { not: HydraHeadStatus.Final }, retiredAt: null } },
 				// Reserved by an invite that is still alive. A revoked or expired
 				// one is reaped, and its node goes with it.
 				...liveInvites.map((invite) => ({
