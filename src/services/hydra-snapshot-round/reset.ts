@@ -96,11 +96,12 @@ async function loadOwnedHead(headId: string): Promise<{ head: HeadRow; node: Hyd
 	return { head, node };
 }
 
-async function readRound(node: HydraNode): Promise<HydraSnapshotRound> {
+async function readRound(node: HydraNode, hydraHeadId: string): Promise<HydraSnapshotRound> {
 	try {
 		return await fetchHydraSnapshotRound(node);
 	} catch (error) {
 		logger.warn('[HydraSnapshotRound] could not read the snapshot round', {
+			hydraHeadId,
 			error: error instanceof Error ? error.message : 'Unknown error',
 		});
 		throw createHttpError(502, 'Could not read the snapshot round from the Hydra node');
@@ -138,7 +139,7 @@ async function assertStillOwned(
 ): Promise<void> {
 	// The round can complete while the confirmed snapshot is read; a reset then
 	// would side-load a snapshot older than the one just confirmed.
-	const roundNow = await readRound(node);
+	const roundNow = await readRound(node, head.id);
 	const current = await prisma.hydraHead.findUnique({ where: { id: head.id }, select: headSelect });
 	if (
 		getHydraConnectionManager().getNode(head.id) !== node ||
@@ -159,13 +160,13 @@ async function assertStillOwned(
  * Refuse a reset while the confirmed snapshot holds a deposit that the chain
  * has not settled.
  *
- * A side-load clears the node's record of the deposit in flight. Once the
- * unsettled deposit has expired, this node, when it leads, requests a snapshot
- * with the next deposit, and every node rejects it (hydra-node 2.4.1
- * `ReqSnCommitNotSettled`). The head stalls again after a reset that reported
- * success. While the deposit is still active the tick usually picks it
- * again: it takes the oldest active deposit, which is the held one unless an
- * older one is also active. The node's HTTP API does not report a deposit's
+ * A side-load clears the node's record of the deposit in flight. Whether the
+ * head then stalls depends on deposit state. For example, if the unsettled
+ * deposit has expired, this node, when it leads, requests a snapshot with
+ * another deposit, and every node rejects it (hydra-node 2.4.1
+ * `ReqSnCommitNotSettled`). The head then stalls again after a reset that
+ * reported success. In other cases the tick picks the held deposit again and
+ * the reset is safe, but the node's HTTP API does not report a deposit's
  * status, so this refuses every case.
  *
  * `GET /head` carries the snapshot more than once, so a large head can outgrow
@@ -201,7 +202,7 @@ async function assertCommitSettled(node: HydraNode, hydraHeadId: string): Promis
 
 export async function getSnapshotRoundStatus(headId: string): Promise<SnapshotRoundStatus> {
 	const { head, node } = await loadOwnedHead(headId);
-	return toStatus(head, await readRound(node), new Date());
+	return toStatus(head, await readRound(node, head.id), new Date());
 }
 
 export async function resetSnapshotRound(params: {
@@ -217,7 +218,7 @@ export async function resetSnapshotRound(params: {
 		if (!head.isEnabled) throw createHttpError(409, 'Cannot reset a round in a disabled Hydra head');
 		if (head.isClosing) throw createHttpError(409, 'Cannot reset a round in a Hydra head that is closing');
 
-		const round = await readRound(node);
+		const round = await readRound(node, head.id);
 		if (!round.inFlight) throw createHttpError(409, 'No snapshot round is in flight; nothing to reset');
 		// An unknown tag counts as in flight for the watch, but without a number
 		// nothing shows the round is ahead of the confirmed snapshot.
