@@ -6,7 +6,8 @@
  * every party, so nothing new enters the head: the node only discards the round
  * in flight and its unconfirmed local transactions, which a round that can never
  * complete would never have confirmed anyway. hydra-host's `unwedge` does the
- * same after an undrained restart; this is the live, operator-approved path.
+ * same after an undrained restart, but only with `HYDRA_HOST_AUTO_SIDELOAD=true`;
+ * otherwise it leaves the round for this live, operator-approved path.
  *
  * Every precondition is re-checked here, against live node state, because the
  * request only carries what the admin saw:
@@ -223,7 +224,7 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(
 				409,
 				`The counterparty has confirmed snapshot ${peerConfirmedSnapshotNumber}, ahead of this node's ${snapshot.number}. ` +
-					'Resetting this node would discard that snapshot and could split the head. Do not reset; the counterparty must resolve it',
+					'This node is behind, and resetting it would discard that snapshot and could split the head. Do not reset; escalate instead',
 			);
 		}
 
@@ -238,12 +239,16 @@ export async function resetSnapshotRound(params: {
 			droppedTxIds: round.txIds,
 			stuckSince: status.since?.toISOString(),
 			confirmedSnapshotNumber: snapshot.number,
+			peerConfirmedSnapshotNumber,
 		});
 		try {
 			await node.post('/snapshot', confirmed);
 		} catch (error) {
 			if (error instanceof HydraTransportAmbiguousError) {
-				throw createHttpError(504, 'The node did not answer the reset; check the round before retrying');
+				throw createHttpError(
+					504,
+					"The node did not answer the reset; check the round and read the counterparty's snapshot number again before retrying",
+				);
 			}
 			logger.warn('[HydraSnapshotRound] node refused the reset', {
 				hydraHeadId: head.id,
@@ -263,7 +268,7 @@ export async function resetSnapshotRound(params: {
 			// then only drops our unconfirmed transactions again.
 			throw createHttpError(
 				502,
-				'Our node is in the same round after the reset. The other party may have proposed it again; reset their node before retrying.',
+				'Our node is in the same round after the reset. The other party may have proposed it again; reset their node, then read its snapshot number again before retrying.',
 			);
 		}
 		if (after) {

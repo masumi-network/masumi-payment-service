@@ -46,7 +46,7 @@ function resetDescription(round: HydraSnapshotRound, peerNumber: number): string
     round.txIds.length === 0
       ? 'The round names no transactions.'
       : `The round names ${round.txIds.length} transaction(s):\n${round.txIds.map((txId) => shortenAddress(txId, 12)).join('\n')}`;
-  return `Our node goes back to its last confirmed snapshot, which every party already signed. Nothing new enters the head.\n\nOur node drops every transaction it has not confirmed. ${named}\nThe node can hold more unconfirmed transactions than this list shows.\n\nDo not rebuild a dropped payment by hand. The other party's node can still hold the original, and then both can confirm.\n\nThis resets our node only. If the other party's node is stuck on the same round, its operator must reset it too.\n\nYou entered ${peerNumber} as the snapshot the other party's node has confirmed. If that is not what its node shows, cancel and check again.`;
+  return `Our node goes back to its last confirmed snapshot, which every party already signed. Nothing new enters the head.\n\nOur node drops every transaction it has not confirmed. ${named}\nThe node can hold more unconfirmed transactions than this list shows.\n\nDo not rebuild a dropped payment by hand. The other party's node can still hold the original, and then both can confirm.\n\nThis resets our node only. If the other party's node is stuck on the same round, its operator must reset it too.\n\nYou entered ${peerNumber} as the snapshot the other party's node has confirmed. Read it off that node just before you confirm. If it is not what the node shows now, cancel and check again.`;
 }
 
 export function HydraHeadSnapshotRoundNotice({
@@ -61,17 +61,21 @@ export function HydraHeadSnapshotRoundNotice({
   const [pending, setPending] = useState<{ round: HydraSnapshotRound; peerNumber: number } | null>(
     null,
   );
-  const [peerSnapshot, setPeerSnapshot] = useState('');
+  // The counterparty's number as typed, with the round it was read for.
+  const [peerInput, setPeerInput] = useState<{ signature: string; value: string } | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const peerSnapshot = peerInput?.value.trim() ?? '';
   // Whole numbers only, and short enough to stay a safe integer.
-  const peerNumber = /^\d{1,15}$/.test(peerSnapshot.trim()) ? Number(peerSnapshot.trim()) : null;
+  const peerNumber = /^\d{1,15}$/.test(peerSnapshot) ? Number(peerSnapshot) : null;
 
   // A choice made for one round never carries to a later one, even one that
-  // comes back with the same signature. Set during render, not in an effect,
-  // so the dialog never paints for a round that is gone.
-  const isPendingStale =
-    pending !== null && (!isOpen || !round?.stuck || round.signature !== pending.round.signature);
-  if (isPendingStale && !isResetting) setPending(null);
+  // comes back with the same signature. That covers the typed counterparty
+  // number too. Set during render, not in an effect, so the dialog never paints
+  // for a round that is gone.
+  const isRoundGone = (signature: string) =>
+    !isOpen || !round?.stuck || round.signature !== signature;
+  if (!isResetting && pending !== null && isRoundGone(pending.round.signature)) setPending(null);
+  if (!isResetting && peerInput !== null && isRoundGone(peerInput.signature)) setPeerInput(null);
 
   if (!isOpen || !round?.stuck) return null;
 
@@ -87,11 +91,15 @@ export function HydraHeadSnapshotRoundNotice({
       toast.success(
         `Reset to confirmed snapshot ${result.confirmedSnapshotNumber}. Unconfirmed transactions were dropped, including the round's ${result.droppedTxIds.length}.`,
       );
-      setPending(null);
     } catch (error) {
       // The API layer toasts the cause; catching keeps it from escaping the handler.
       console.error('Hydra snapshot round reset failed', error);
     } finally {
+      // Every attempt, failed ones too, ends the choice. A reset that reached the
+      // node can leave the same round in flight while the other party moves on,
+      // so a retry needs its number read again.
+      setPending(null);
+      setPeerInput(null);
       setIsResetting(false);
     }
     // Outside the try, so a failed refresh is never reported as a failed reset.
@@ -137,8 +145,10 @@ export function HydraHeadSnapshotRoundNotice({
             id={`peer-snapshot-${headId}`}
             inputMode="numeric"
             placeholder="Read it off the other party's node"
-            value={peerSnapshot}
-            onChange={(event) => setPeerSnapshot(event.target.value)}
+            value={peerInput?.value ?? ''}
+            onChange={(event) =>
+              setPeerInput({ signature: round.signature, value: event.target.value })
+            }
           />
           <p className="text-xs">
             Required. Resetting is refused if it is ahead of our node, because the reset would
