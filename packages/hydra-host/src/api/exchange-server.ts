@@ -40,6 +40,13 @@ const DEFAULT_MAX_IN_FLIGHT = 16;
 const DEFAULT_MAX_BODY_READERS = 32;
 const DEFAULT_MAX_BODY_READERS_PER_SOURCE = 4;
 const DEFAULT_BODY_TIMEOUT_MS = 5_000;
+/**
+ * Body deadline for a request past the shared budget. A redemption is a few
+ * hundred bytes and arrives at once, so this costs a real redeemer nothing,
+ * but a slow body past the budget frees its reader five times sooner. Holding
+ * every reader then takes several times more sources.
+ */
+const OVER_BUDGET_BODY_TIMEOUT_MS = 1_000;
 const DEFAULT_REQUESTS_PER_MINUTE = 120;
 
 /**
@@ -52,10 +59,10 @@ const DEFAULT_REQUESTS_PER_MINUTE = 120;
  * bounds what the whole plane admits per minute, whatever the address count.
  *
  * Sized from what legitimate traffic can be. A redemption is one POST, retried
- * at most twice and only on 503 (`postRedemption` in the payment service), and
- * every invite reserves one node slot, 32 by default
+ * at most three times and only on 503 (`postRedemption` in the payment
+ * service), and every invite reserves one node slot, 32 by default
  * (`HYDRA_HOST_PEER_PORT_COUNT`). So even every outstanding invite redeemed in
- * the same minute is 96 requests at most.
+ * the same minute is 128 requests at most.
  * Twice the per-source limit leaves that peak a wide margin, and one source
  * at its own limit still leaves half the budget for everyone else.
  */
@@ -388,7 +395,15 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		bodyReadersBySource.set(source, sourceReaders + 1);
 		let body: RedeemBody | null;
 		try {
-			body = readRedeemBody(await readBody(request, bodyTimeoutMs));
+			body = readRedeemBody(
+				await readBody(request, overBudget ? Math.min(bodyTimeoutMs, OVER_BUDGET_BODY_TIMEOUT_MS) : bodyTimeoutMs),
+			);
+		} catch (error) {
+			// Past the budget every refusal is the same 429, including a body that
+			// is not JSON or is too large; within budget handle()'s catch sends 400.
+			if (!overBudget) throw error;
+			if (!response.destroyed) refuseOverBudget(response);
+			return;
 		} finally {
 			bodyReaders -= 1;
 			const remaining = (bodyReadersBySource.get(source) ?? 1) - 1;

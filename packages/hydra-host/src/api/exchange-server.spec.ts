@@ -537,6 +537,17 @@ describe('total request budget', () => {
 		expect(await redeem('203.0.113.9', 'nonce-afterflood')).toBe(200);
 	});
 
+	it('past the budget, answers a body that is not JSON with 429, and recovers after the window', async () => {
+		for (let index = 1; index <= 5; index += 1) {
+			await from(`198.51.100.${index}`);
+		}
+		expect(await from('198.51.100.40', 'not json')).toBe(429);
+
+		const realNow = Date.now.bind(Date);
+		jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 61_000);
+		expect(await from('198.51.100.41', 'not json')).toBe(400);
+	});
+
 	it('past the budget, answers an unknown, spent or expired nonce with the same 429', async () => {
 		for (let index = 1; index <= 5; index += 1) {
 			await from(`198.51.100.${index}`);
@@ -690,6 +701,42 @@ describe('incomplete redemption bodies', () => {
 				body,
 			});
 			expect(allowed.status).toBe(200);
+		} finally {
+			socket.destroy();
+			limited.closeAllConnections();
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
+	});
+
+	it('past the shared budget, cuts a slow body off after one second', async () => {
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			isNodeStopped,
+			limits: { totalRequestsPerMinute: 1 },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const url = `http://127.0.0.1:${(limited.address() as AddressInfo).port}/exchange/redeem`;
+		await fetch(url, { method: 'POST', headers: { Connection: 'close' }, body: '{}' });
+		const startedAt = Date.now();
+		const socket = await openIncomplete(limited);
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const drip = setInterval(() => socket.write(' '), 50);
+				const deadline = setTimeout(() => {
+					clearInterval(drip);
+					reject(new Error('over-budget body deadline did not close the socket'));
+				}, 3_000);
+				socket.once('close', () => {
+					clearInterval(drip);
+					clearTimeout(deadline);
+					resolve();
+				});
+			});
+			expect(Date.now() - startedAt).toBeLessThan(2_500);
 		} finally {
 			socket.destroy();
 			limited.closeAllConnections();
