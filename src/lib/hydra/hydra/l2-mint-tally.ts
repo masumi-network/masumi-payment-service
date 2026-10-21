@@ -100,7 +100,7 @@ export function recordL2TransactionMints(
 		}
 	}
 	if (wasClear && tally.size > 0) {
-		logger.error('[HydraNode] The head holds a nonzero L2 mint balance and cannot finalize until it is back to zero', {
+		logger.error('[HydraNode] The head holds a nonzero L2 mint balance; unburned L2-minted tokens block finalization', {
 			snapshotNumber,
 			unburnedUnits: describeUnits(tally.keys()),
 		});

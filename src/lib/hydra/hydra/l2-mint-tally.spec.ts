@@ -5,7 +5,7 @@ import { HydraTransactionType } from './types';
 
 const POLICY = 'ab'.repeat(28);
 
-/** A Conway body (one input, one 1 ADA output, zero fee) whose mint field is the CBOR map `mintHex`. */
+/** A Conway transaction (one input, one 1 ADA output, zero fee) whose mint field is the CBOR map `mintHex`. */
 function transactionWithMint(mintHex: string) {
 	const output = `82581d61${'cd'.repeat(28)}1a000f4240`;
 	const body = `a40081825820${'11'.repeat(32)}000181${output}020009${mintHex}`;
