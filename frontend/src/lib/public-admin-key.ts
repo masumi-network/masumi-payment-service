@@ -7,6 +7,8 @@ export const PUBLIC_ADMIN_KEYS: readonly string[] = [
   'abcdef_this_should_be_very_secure',
 ];
 
+// The token header loses outer whitespace on the way to the backend, so a
+// pasted key with a trailing space still signs in. Compare it the same way.
 export function isPublicAdminKey(apiKey: string | null): boolean {
-  return apiKey !== null && PUBLIC_ADMIN_KEYS.includes(apiKey);
+  return apiKey !== null && PUBLIC_ADMIN_KEYS.includes(apiKey.trim());
 }

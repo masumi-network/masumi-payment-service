@@ -9,11 +9,11 @@ import { isPublicAdminKey } from '@/lib/public-admin-key';
  * purpose: the warning goes away only when the operator signs in with another key.
  */
 export function PublicAdminKeyBanner() {
-  const { apiKey } = useAppContext();
+  const { apiKey, capabilities } = useAppContext();
   if (!isPublicAdminKey(apiKey)) return null;
 
   return (
-    <div role="alert" className="border-b border-destructive/30 bg-destructive/10 text-foreground">
+    <div role="status" className="border-b border-destructive/30 bg-destructive/10 text-foreground">
       <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-3">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -26,9 +26,11 @@ export function PublicAdminKeyBanner() {
             </p>
           </div>
         </div>
-        <Button size="sm" variant="destructive" asChild>
-          <Link href="/api-keys">Manage API keys</Link>
-        </Button>
+        {capabilities.canAdmin && (
+          <Button size="sm" variant="destructive" asChild>
+            <Link href="/api-keys">Manage API keys</Link>
+          </Button>
+        )}
       </div>
     </div>
   );

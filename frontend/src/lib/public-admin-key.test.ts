@@ -17,5 +17,8 @@ test('PUBLIC_ADMIN_KEYS matches the backend DEFAULTS', () => {
   });
 
   assert.deepEqual([...PUBLIC_ADMIN_KEYS].sort(), backendKeys.sort());
-  for (const key of backendKeys) assert.equal(isPublicAdminKey(key), true);
+});
+
+test('isPublicAdminKey matches a pasted key with outer whitespace', () => {
+  assert.equal(isPublicAdminKey(` ${PUBLIC_ADMIN_KEYS[0]}\t`), true);
 });
