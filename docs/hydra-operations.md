@@ -162,8 +162,8 @@ not help). If Hydra refuses that, close the head: this node contests the close
 with its later snapshot. A counterparty further behind has lost or restored its
 node state. It has to adopt this node's confirmed snapshot too, and if Hydra
 refuses that, close the head. Once it reports this node's confirmed number, reset
-this node: its round is still stuck, because nothing sends that round's request
-again.
+this node: it still holds that round and refuses a new request for the same
+number.
 
 To adopt a snapshot, the operator of the node that is ahead sends the full JSON
 from `GET /snapshot` on their node (the snapshot and its signatures, not only the
@@ -180,9 +180,15 @@ binds loopback), so neither repairs on its own. The counterparty's operator runs
   `needs an operator`. Set it to `true` only if you accept that risk for every
   node on the Host.
 - **Payment service:** `POST /hydra/head/snapshot-round/reset` requires
-  `peerConfirmedSnapshotNumber`, the number the counterparty's operator sent. The
-  reset is refused if it is ahead of this node's confirmed snapshot or more than
-  one behind it. The admin UI asks for the same number.
+  `peerConfirmedSnapshotNumber`, the number the counterparty's operator sent. Ask
+  for it again just before the reset: the counterparty can still confirm the
+  round if this node's signature reaches it late. The reset is refused if it is
+  ahead of this node's confirmed snapshot or more than one behind it. The admin
+  UI asks for the same number, and again after every attempt.
+
+The Host does not mark a node that needs an operator on its record. The
+`needs an operator` log line is its only signal. The payment service's round
+watch alerts on the same stuck round on its own.
 
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.
