@@ -78,10 +78,10 @@ export function HydraHeadSnapshotRoundNotice({
   // A choice made for one round never carries to a later one, even one that
   // comes back with the same signature. Set during render, not in an effect,
   // so the dialog never paints for a round that is gone. The typed number goes
-  // the same way, and also when the same round is recorded again: a stale lower
-  // number would pass the server's check.
+  // the same way: a stale lower number would pass the server's check.
   const isPendingStale =
-    pending !== null && (!isOpen || !round?.stuck || round.signature !== pending.round.signature);
+    pending !== null &&
+    (!isOpen || !round?.stuck || roundInstance(round) !== roundInstance(pending.round));
   if (isPendingStale && !isResetting) setPending(null);
   const isPeerInputStale =
     peerInput !== null && (!isOpen || !round?.stuck || roundInstance(round) !== peerInput.instance);
@@ -173,7 +173,7 @@ export function HydraHeadSnapshotRoundNotice({
 
       <ConfirmDialog
         elevatedChildStack
-        open={pending !== null && pending.round.signature === round.signature}
+        open={pending !== null && roundInstance(pending.round) === roundInstance(round)}
         onClose={() => {
           if (!isResetting) setPending(null);
         }}
