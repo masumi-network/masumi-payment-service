@@ -6,12 +6,14 @@
  * reports an open incident on every verified snapshot and on every replay
  * pass. A peer also decides how often incidents start: minting and burning in
  * turn opens a new one every other snapshot. So each head keeps one row,
- * updated in place to the latest incident, and touches the database at most
- * once per interval.
+ * updated in place to the latest incident, and checks the database at most
+ * once per interval. A report that arrives inside the interval is held and
+ * checked when the interval ends, so an incident that starts there is written
+ * even if the head sends nothing after it.
  *
  * Best effort across processes: there is no unique constraint, so two owners
- * during a lease handover can both write a row. That duplicates a row and
- * loses nothing.
+ * during a lease handover can both write a row. Both rows then follow the
+ * latest incident.
  */
 
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
@@ -24,10 +26,11 @@ export const UNBURNED_L2_MINT_CLIENT_INPUT = 'L2Mint';
 
 /**
  * How long a head waits after a database check before the next one. Reports
- * arrive per snapshot, so they must not cost a query each. The first report
- * after the interval checks again: it brings back a row an operator cleared
- * while the head is still blocked, and moves the row to a newer incident.
- * A head that sends no reports (idle, or Closed) is not checked until it does.
+ * arrive per snapshot, so they must not cost a query each. The latest report
+ * held during the wait is checked when it ends: that brings back a row an
+ * operator cleared while the head is still blocked, and moves the row to a
+ * newer incident. A head that sends no report after a check (idle, or Closed)
+ * is not checked again until it does.
  */
 const RECHECK_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -36,6 +39,12 @@ const RETRY_INTERVAL_MS = 30 * 1000;
 
 /** Per head: the monotonic time before which reports skip the database. */
 const nextCheckByHead = new Map<string, number>();
+
+/** Per head: the latest report that arrived before that time, and the timer that checks it then. */
+const heldReportByHead = new Map<
+	string,
+	{ headStatus: HydraHeadStatus; incident: L2MintIncident; timer: ReturnType<typeof setTimeout> }
+>();
 
 function describeIncident(incident: L2MintIncident): string {
 	const { count, sample } = incident.netUnits;
@@ -54,24 +63,36 @@ export async function recordUnburnedL2Mint(
 	incident: L2MintIncident,
 ): Promise<void> {
 	const now = performance.now();
-	if (now < (nextCheckByHead.get(hydraHeadId) ?? 0)) return;
+	const nextCheckAt = nextCheckByHead.get(hydraHeadId) ?? 0;
+	if (now < nextCheckAt) {
+		const timer =
+			heldReportByHead.get(hydraHeadId)?.timer ??
+			setTimeout(() => {
+				const held = heldReportByHead.get(hydraHeadId);
+				heldReportByHead.delete(hydraHeadId);
+				if (held) void recordUnburnedL2Mint(hydraHeadId, held.headStatus, held.incident);
+			}, nextCheckAt - now).unref();
+		heldReportByHead.set(hydraHeadId, { headStatus, incident, timer });
+		return;
+	}
+	// This report is newer than a held one, so this check replaces it.
+	clearTimeout(heldReportByHead.get(hydraHeadId)?.timer);
+	heldReportByHead.delete(hydraHeadId);
 	// Claimed before the first await, so a report that arrives while this one
-	// is still writing skips the database.
+	// is still writing is held.
 	nextCheckByHead.set(hydraHeadId, now + RECHECK_INTERVAL_MS);
+	const where = { hydraHeadId, clientInput: UNBURNED_L2_MINT_CLIENT_INPUT };
 	try {
-		const existing = await prisma.hydraHeadError.findFirst({
-			where: { hydraHeadId, clientInput: UNBURNED_L2_MINT_CLIENT_INPUT },
-			select: { id: true, txHash: true },
-		});
-		if (existing?.txHash === incident.txHash) return;
+		const existing = await prisma.hydraHeadError.findMany({ where, select: { txHash: true } });
+		if (existing.length > 0 && existing.every((row) => row.txHash === incident.txHash)) return;
 		const data = {
 			errorMessage: describeIncident(incident),
 			headStatus,
 			txHash: incident.txHash,
 			errorAt: new Date(),
 		};
-		if (existing) {
-			await prisma.hydraHeadError.update({ where: { id: existing.id }, data });
+		if (existing.length > 0) {
+			await prisma.hydraHeadError.updateMany({ where, data });
 		} else {
 			await prisma.hydraHeadError.create({
 				data: {

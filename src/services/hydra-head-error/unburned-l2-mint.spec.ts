@@ -12,7 +12,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@j
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import type { L2MintIncident } from '@/lib/hydra/hydra/l2-mint-tally';
 
-type Row = { id: string; hydraHeadId: string; clientInput: string | null; txHash: string | null };
+type Row = {
+	id: string;
+	hydraHeadId: string;
+	clientInput: string | null;
+	txHash: string | null;
+	errorMessage?: string;
+};
 
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
@@ -36,9 +42,9 @@ async function query(): Promise<void> {
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHeadError: {
-			findFirst: async ({ where }: { where: Partial<Row> }) => {
+			findMany: async ({ where }: { where: Partial<Row> }) => {
 				await query();
-				return rows.find((row) => matches(row, where)) ?? null;
+				return rows.filter((row) => matches(row, where));
 			},
 			create: async ({ data }: { data: Omit<Row, 'id'> }) => {
 				await query();
@@ -46,12 +52,11 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 				rows.push(row);
 				return row;
 			},
-			update: async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
+			updateMany: async ({ where, data }: { where: Partial<Row>; data: Partial<Row> }) => {
 				await query();
-				const row = rows.find((candidate) => candidate.id === where.id);
-				if (!row) throw new Error('row not found');
-				Object.assign(row, data);
-				return row;
+				const matching = rows.filter((row) => matches(row, where));
+				for (const row of matching) Object.assign(row, data);
+				return { count: matching.length };
 			},
 		},
 	},
@@ -67,6 +72,7 @@ beforeAll(async () => {
 	({ recordUnburnedL2Mint } = await import('./unburned-l2-mint'));
 });
 
+// The module keeps its per-head state across tests, so each test uses its own head id.
 beforeEach(() => {
 	jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });
 	rows = [];
@@ -75,6 +81,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	jest.clearAllTimers();
 	jest.useRealTimers();
 });
 
@@ -96,19 +103,34 @@ describe('recordUnburnedL2Mint', () => {
 	});
 
 	// A peer that mints and burns in turn opens a new incident every other
-	// snapshot. The row follows the latest one; it does not multiply.
-	it('keeps one row per head when a peer keeps opening incidents', async () => {
+	// snapshot, and can then go quiet. The row follows the latest incident
+	// without a later report; it does not multiply.
+	it('moves the one row to the latest incident when the wait ends', async () => {
 		for (let cycle = 0; cycle < 20; cycle += 1) {
 			await recordUnburnedL2Mint('head-cycling', HydraHeadStatus.Open, incident(cycle.toString(16).padStart(64, '0')));
 		}
 		expect(rows).toHaveLength(1);
 		expect(queries).toBe(2);
 
-		jest.advanceTimersByTime(TEN_MINUTES_MS);
-		const latest = incident('ff'.repeat(32));
-		await recordUnburnedL2Mint('head-cycling', HydraHeadStatus.Open, latest);
+		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS);
 
-		expect(rows.map((row) => row.txHash)).toEqual([latest.txHash]);
+		const latest = (19).toString(16).padStart(64, '0');
+		expect(rows.map((row) => row.txHash)).toEqual([latest]);
+		expect(rows[0].errorMessage).toContain(latest);
+	});
+
+	// A lease handover can leave two rows. Both must follow the incident.
+	it('moves every row of the head to a new incident', async () => {
+		const old = '66'.repeat(32);
+		rows.push(
+			{ id: 'owner-a', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: old },
+			{ id: 'owner-b', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: old },
+		);
+		const next = incident('77'.repeat(32));
+
+		await recordUnburnedL2Mint('head-handover', HydraHeadStatus.Open, next);
+
+		expect(rows.map((row) => row.txHash)).toEqual([next.txHash, next.txHash]);
 	});
 
 	// A restart empties the in-process gate; the stored row must still count.
@@ -122,15 +144,14 @@ describe('recordUnburnedL2Mint', () => {
 	});
 
 	// An operator can clear the head's errors while the head is still blocked.
-	it('writes the row again on the first report after the interval', async () => {
+	it('writes the row again when the wait ends', async () => {
 		const open = incident('55'.repeat(32));
 		await recordUnburnedL2Mint('head-cleared', HydraHeadStatus.Open, open);
 		rows = [];
 
 		await recordUnburnedL2Mint('head-cleared', HydraHeadStatus.Open, open);
 		expect(rows).toHaveLength(0);
-		jest.advanceTimersByTime(TEN_MINUTES_MS);
-		await recordUnburnedL2Mint('head-cleared', HydraHeadStatus.Open, open);
+		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS);
 
 		expect(rows.map((row) => row.txHash)).toEqual([open.txHash]);
 	});
@@ -146,9 +167,26 @@ describe('recordUnburnedL2Mint', () => {
 		expect(queries).toBe(1);
 		expect(rows).toHaveLength(0);
 
-		jest.advanceTimersByTime(30 * 1000);
-		await recordUnburnedL2Mint('head-retry', HydraHeadStatus.Open, pending);
+		await jest.advanceTimersByTimeAsync(30 * 1000);
 
 		expect(rows.map((row) => row.txHash)).toEqual([pending.txHash]);
+	});
+
+	// A report held while a check was running is older than any report that
+	// starts the next check, so it must not be written after that one.
+	it('drops a held report once a newer report is checked', async () => {
+		const first = incident('88'.repeat(32));
+		const held = incident('99'.repeat(32));
+		const newest = incident('aa'.repeat(32));
+		failNextQuery = true;
+		const failing = recordUnburnedL2Mint('head-race', HydraHeadStatus.Open, first);
+		await recordUnburnedL2Mint('head-race', HydraHeadStatus.Open, held);
+		await failing;
+
+		await jest.advanceTimersByTimeAsync(31 * 1000);
+		await recordUnburnedL2Mint('head-race', HydraHeadStatus.Open, newest);
+		await jest.advanceTimersByTimeAsync(3 * TEN_MINUTES_MS);
+
+		expect(rows.map((row) => row.txHash)).toEqual([newest.txHash]);
 	});
 });

@@ -515,10 +515,10 @@ export class HydraConnectionManager {
 			});
 		});
 
-		// The head's net L2 mint balance left zero; an unburned L2-minted token
-		// blocks its final fanout. The row deduplicates itself per incident. The
-		// report can come from replay before any live status, as a rejected
-		// history can, so an unknown status is recorded as Connecting.
+		// The head's net L2 mint balance left zero. The head keeps one row for it,
+		// updated to the latest incident. The report can come from replay before
+		// any live status, as a rejected history can, so an unknown status is
+		// recorded as Connecting.
 		head.mainNode.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => {
 			void recordUnburnedL2Mint(hydraHeadId, head.status ?? HydraHeadStatus.Connecting, incident);
 		});
