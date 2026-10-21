@@ -164,9 +164,8 @@ export function HydraHeadSnapshotRoundNotice({
           />
           <p className="text-xs">
             Required. The other party&apos;s operator reads it from GET /snapshot on their node (0
-            if it shows InitialSnapshot). Resetting is refused if it is ahead of our node, because
-            the reset would discard a snapshot only the other party holds, or more than one behind
-            it.
+            if it shows InitialSnapshot). Resetting is refused if it is ahead of our node (the reset
+            would discard a snapshot only the other party holds) or more than one behind it.
           </p>
         </div>
       </HydraNotice>
