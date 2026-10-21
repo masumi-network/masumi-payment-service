@@ -164,13 +164,14 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/invite',
 		summary: 'Revoke an unredeemed invite. (admin access required)',
 		description:
-			'Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head.',
+			'Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head. Set `discardRedemption` to cancel a redemption this service could not adopt; its node is removed unless a head here claims it.',
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(deleteInviteSchemaInput, {}) },
 		responses: {
 			200: successResponse('Invite revoked', deleteInviteSchemaOutput, {}),
-			409: { description: 'Already redeemed, or not an invite we issued' },
+			409: { description: 'Already redeemed without discardRedemption, adopted meanwhile, or not an invite we issued' },
+			502: { description: 'Revoked here, but the Host refused to remove the node or forget the redemption' },
 			...unauthorized,
 		},
 	});
