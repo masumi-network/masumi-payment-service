@@ -1,8 +1,11 @@
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { isPublicAdminKey } from '@/lib/public-admin-key';
+
+const API_KEYS_PATH = '/api-keys';
 
 /**
  * Warns while the session uses a public admin key. It has no dismiss button on
@@ -10,6 +13,7 @@ import { isPublicAdminKey } from '@/lib/public-admin-key';
  */
 export function PublicAdminKeyBanner() {
   const { apiKey, capabilities } = useAppContext();
+  const router = useRouter();
   if (!isPublicAdminKey(apiKey)) return null;
 
   return (
@@ -26,9 +30,9 @@ export function PublicAdminKeyBanner() {
             </p>
           </div>
         </div>
-        {capabilities.canAdmin && (
+        {capabilities.canAdmin && router.pathname !== API_KEYS_PATH && (
           <Button size="sm" variant="destructive" asChild>
-            <Link href="/api-keys">Manage API keys</Link>
+            <Link href={API_KEYS_PATH}>Manage API keys</Link>
           </Button>
         )}
       </div>
