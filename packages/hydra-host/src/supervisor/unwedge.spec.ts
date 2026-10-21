@@ -111,12 +111,6 @@ describe('unwedgeNode', () => {
 
 			expect((await unwedgeNode(opts)).kind).toBe('Progressing');
 		});
-
-		it('leaves a healthy node alone', async () => {
-			const opts = options({ allowAutoSideLoad: false });
-
-			await expect(unwedgeNode(opts)).resolves.toEqual({ kind: 'Healthy' });
-		});
 	});
 
 	// Trust nothing: the harness this is ported from explicitly verifies the

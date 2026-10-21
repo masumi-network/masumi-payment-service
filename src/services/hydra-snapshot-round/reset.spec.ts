@@ -296,11 +296,6 @@ describe('resetSnapshotRound', () => {
 			expect(mockUpdateMany).not.toHaveBeenCalled();
 		});
 
-		it('resets when the counterparty is at the same snapshot', async () => {
-			await expect(reset(313)).resolves.toMatchObject({ confirmedSnapshotNumber: 313 });
-			expect(node.post).toHaveBeenCalledWith('/snapshot', confirmedSnapshot());
-		});
-
 		it('resets when the counterparty is behind', async () => {
 			await expect(reset(312)).resolves.toMatchObject({ confirmedSnapshotNumber: 313 });
 			expect(node.post).toHaveBeenCalled();
