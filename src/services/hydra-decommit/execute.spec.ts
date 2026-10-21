@@ -280,6 +280,20 @@ describe('executeHydraDecommit request outcomes', () => {
 		expect(mockDecommitCall).not.toHaveBeenCalled();
 	});
 
+	// A failed /head read once came back as "nothing pending", which let a split
+	// start that the head could never confirm.
+	it('refuses before the split when the node cannot say whether a decommit is pending', async () => {
+		mockFetchPendingDecommitRefs.mockResolvedValue(undefined);
+
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 5_000_000n })).rejects.toMatchObject({
+			statusCode: 502,
+			message: expect.stringContaining('Could not read the head state'),
+		});
+
+		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+	});
+
 	// Checked again where the row is created, under the Host lock, so a pause
 	// that lands after the route check still stops the withdrawal.
 	it('refuses without creating a row when the host was paused in the meantime', async () => {

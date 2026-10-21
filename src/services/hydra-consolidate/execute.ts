@@ -58,6 +58,12 @@ export async function executeHydraConsolidation(headId: string): Promise<Execute
 	// The head confirms no new snapshot while a decommit is in flight, so a
 	// self-send started now would be accepted and never confirmed.
 	const pendingDecommits = await hydraHead.mainNode.fetchPendingDecommitRefs();
+	if (pendingDecommits === undefined) {
+		throw createHttpError(
+			502,
+			'Could not read the head state to check for a withdrawal still settling on L1; retry once the node answers',
+		);
+	}
 	if (pendingDecommits.length > 0) {
 		throw createHttpError(409, 'A withdrawal from this head is still settling on L1; retry once it has finalized');
 	}

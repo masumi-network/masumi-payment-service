@@ -306,7 +306,14 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// window gets a split that is TxValid but can never be snapshot-confirmed,
 		// so this must be refused before any split is attempted, not discovered
 		// after a 60s wait. Mirror of the deposit-side pendingIncrementRefs guard.
+		// A node that cannot be asked is not a node with nothing pending.
 		const pendingDecommits = await hydraHead.mainNode.fetchPendingDecommitRefs();
+		if (pendingDecommits === undefined) {
+			throw createHttpError(
+				502,
+				'Could not read the head state to check for a previous withdrawal still settling on L1; retry once the node answers',
+			);
+		}
 		if (pendingDecommits.length > 0) {
 			throw createHttpError(
 				409,

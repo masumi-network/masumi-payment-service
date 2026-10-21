@@ -583,7 +583,7 @@ export class HydraNode extends EventEmitter {
 	}
 
 	/** See `fetchHydraPendingDecommitRefs`: output refs still awaiting L1 decommit. */
-	async fetchPendingDecommitRefs(): Promise<string[]> {
+	async fetchPendingDecommitRefs(): Promise<string[] | undefined> {
 		return await fetchHydraPendingDecommitRefs(this);
 	}
 
