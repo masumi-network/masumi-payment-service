@@ -17,7 +17,7 @@ import { redemptionNetwork, verifyRedemptionSignature } from './registry/redempt
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
 import { peerTargetRejection } from './peer-target-policy.js';
-import { assertLedgerParamsSettleable } from './ledger-params.js';
+import { describeUnsettleableLedgerParams } from './ledger-params.js';
 import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
@@ -81,7 +81,12 @@ async function main(): Promise<void> {
 				'(a network needs a reviewed base file in packages/hydra-host/params/base first)',
 		);
 	}
-	assertLedgerParamsSettleable(config.ledgerProtocolParametersFile);
+	// Logged and enforced at provision only: refusing the boot would also stop
+	// the nodes of heads already open on this file.
+	const ledgerParamsRefusal = describeUnsettleableLedgerParams(config.ledgerProtocolParametersFile);
+	if (ledgerParamsRefusal !== null) {
+		logger.error(`[host] ${ledgerParamsRefusal}. Running nodes keep running; new nodes are refused`);
+	}
 
 	// Same reasoning for the two executables every node needs. Neither is used
 	// until a node is provisioned, and a node that cannot find them dies seconds
@@ -186,6 +191,7 @@ async function main(): Promise<void> {
 		supervisor,
 		provision: provisionDeps,
 		logger,
+		ledgerParamsRefusal,
 	});
 	// Without this the listen failure surfaces as an unhandled 'error' event and
 	// a raw stack trace. The two ways this fails in production — the port is

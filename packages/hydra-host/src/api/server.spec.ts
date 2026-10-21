@@ -395,6 +395,61 @@ describe('lifecycle guards over HTTP', () => {
 	});
 });
 
+// A separate control plane, because the refusal is computed at boot.
+describe('control plane on ledger params above the L2 maxTxSize cap', () => {
+	let refusingDir: string;
+	let refusingServer: Server;
+	let refusingBaseUrl: string;
+
+	beforeEach(async () => {
+		refusingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-params-'));
+		const config = { ...loadHostConfig(env), dataDir: refusingDir };
+		const store = new NodeRegistryStore(refusingDir);
+		const ports = new PortAllocator(config.ports);
+		refusingServer = createControlPlane({
+			config,
+			store,
+			exchange: new ExchangeStore(refusingDir),
+			ports,
+			supervisor: { tick: async () => undefined } as unknown as Supervisor,
+			provision: {
+				store,
+				ports,
+				advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+				checkPeerTarget: async () => null,
+				newNodeId: () => 'node-refused',
+				now: () => new Date('2026-07-28T12:00:00.000Z'),
+			},
+			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+			ledgerParamsRefusal: 'maxTxSize 16384, above 15000',
+		});
+		await new Promise<void>((resolve) => refusingServer.listen(0, '127.0.0.1', resolve));
+		refusingBaseUrl = `http://127.0.0.1:${(refusingServer.address() as AddressInfo).port}`;
+	});
+
+	afterEach(async () => {
+		await new Promise<void>((resolve) => refusingServer.close(() => resolve()));
+		await fs.rm(refusingDir, { recursive: true, force: true });
+	});
+
+	// The Host still boots, so nodes of heads already open keep running; only
+	// a new node, which would start a new head on these params, is refused.
+	it('refuses to provision a node and keeps serving the rest', async () => {
+		const headers = { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' };
+		const provisioned = await fetch(`${refusingBaseUrl}/v1/nodes`, {
+			method: 'POST',
+			headers: { ...headers, 'idempotency-key': 'idem-refused' },
+			body: JSON.stringify({}),
+		});
+
+		expect(provisioned.status).toBe(409);
+		expect(await provisioned.json()).toEqual({ error: 'maxTxSize 16384, above 15000' });
+		const listed = await fetch(`${refusingBaseUrl}/v1/nodes`, { headers });
+		expect(listed.status).toBe(200);
+		expect(await listed.json()).toMatchObject({ nodes: [] });
+	});
+});
+
 // A separate control plane, because the override is read at config load.
 describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 	let overrideDir: string;

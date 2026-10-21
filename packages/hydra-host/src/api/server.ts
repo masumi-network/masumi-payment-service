@@ -47,6 +47,8 @@ export type ServerDeps = {
 	supervisor: Supervisor;
 	provision: ProvisionDeps;
 	logger: SupervisorLogger;
+	/** Why new nodes are refused on this Host's ledger params, or null. See `ledger-params.ts`. */
+	ledgerParamsRefusal?: string | null;
 };
 
 /**
@@ -450,6 +452,10 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'provisionNode': {
+				if (deps.ledgerParamsRefusal) {
+					send(response, 409, { error: deps.ledgerParamsRefusal });
+					return;
+				}
 				const body = await readBody(request);
 				const idempotencyKey =
 					(typeof request.headers['idempotency-key'] === 'string' ? request.headers['idempotency-key'] : '') || '';

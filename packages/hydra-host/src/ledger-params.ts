@@ -9,6 +9,9 @@
  *
  * Checked at boot for every network, because the params file is an operator
  * setting (`HYDRA_HOST_LEDGER_PARAMS_FILE`) and mainnet ships no reviewed file.
+ * A failing file refuses new nodes, never the boot: a Host that would not start
+ * would also stop the nodes of heads already open on that file, and an open
+ * head whose node is down cannot contest a close.
  */
 
 import { readFileSync } from 'node:fs';
@@ -30,22 +33,23 @@ export const FANOUT_ENVELOPE_BYTES = 917;
  */
 export const MAX_L2_TX_SIZE = 15_000;
 
-/** Throws unless the ledger params file sets a `maxTxSize` fanout can always settle. */
-export function assertLedgerParamsSettleable(file: string): void {
+/** Why new nodes must not start on this ledger params file, or null when they may. */
+export function describeUnsettleableLedgerParams(file: string): string | null {
 	let maxTxSize: unknown;
 	try {
 		maxTxSize = (JSON.parse(readFileSync(file, 'utf8')) as { maxTxSize?: unknown }).maxTxSize;
 	} catch (error) {
-		throw new Error(`cannot read the ledger protocol parameters at ${file}: ${(error as Error).message}`);
+		return `cannot read the ledger protocol parameters at ${file}: ${(error as Error).message}`;
 	}
 	if (typeof maxTxSize !== 'number' || !Number.isInteger(maxTxSize) || maxTxSize <= 0) {
-		throw new Error(`the ledger protocol parameters at ${file} set no usable maxTxSize`);
+		return `the ledger protocol parameters at ${file} set no usable maxTxSize`;
 	}
 	if (maxTxSize > MAX_L2_TX_SIZE) {
-		throw new Error(
+		return (
 			`the ledger protocol parameters at ${file} set maxTxSize ${maxTxSize}, above ${MAX_L2_TX_SIZE}. ` +
-				'A head on them can hold an output no fanout transaction can move to L1, and then never reaches Final. ' +
-				`Set maxTxSize to ${MAX_L2_TX_SIZE} or less, and restart nodes on the new file only between heads`,
+			'A head on them can hold an output no fanout transaction can move to L1, and then never reaches Final. ' +
+			`Set maxTxSize to ${MAX_L2_TX_SIZE} or less, and switch a running node to the new file only between heads`
 		);
 	}
+	return null;
 }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-	assertLedgerParamsSettleable,
+	describeUnsettleableLedgerParams,
 	FANOUT_ENVELOPE_BYTES,
 	L1_MAX_TX_SIZE,
 	MAX_L2_TX_SIZE,
@@ -62,16 +62,21 @@ describe('shipped L2 ledger params', () => {
 		expect(MAX_L2_TX_SIZE + FANOUT_ENVELOPE_BYTES).toBeLessThan(L1_MAX_TX_SIZE);
 		for (const network of shippedNetworks) {
 			expect({ network, maxTxSize: load(network).maxTxSize }).toEqual({ network, maxTxSize: MAX_L2_TX_SIZE });
-			expect(() => assertLedgerParamsSettleable(path.join(paramsDir, `${network}.json`))).not.toThrow();
+			expect(describeUnsettleableLedgerParams(path.join(paramsDir, `${network}.json`))).toBeNull();
 		}
 	});
 
 	// HYDRA_HOST_LEDGER_PARAMS_FILE can point a Host at any file, and mainnet
 	// ships none, so the shipped files alone do not bound what a Host runs.
-	it('refuses to boot on the pre-cap maxTxSize 16,384', () => {
-		const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ledger-params-')), 'mainnet.json');
-		fs.writeFileSync(file, JSON.stringify({ ...load('preprod'), maxTxSize: 16_384 }));
-		expect(() => assertLedgerParamsSettleable(file)).toThrow(/maxTxSize 16384, above 15000/);
+	it('refuses new nodes on the pre-cap maxTxSize 16,384', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ledger-params-'));
+		try {
+			const file = path.join(dir, 'mainnet.json');
+			fs.writeFileSync(file, JSON.stringify({ ...load('preprod'), maxTxSize: 16_384 }));
+			expect(describeUnsettleableLedgerParams(file)).toMatch(/maxTxSize 16384, above 15000/);
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it('carries all three Plutus cost models at their pinned lengths', () => {
