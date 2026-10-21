@@ -20,12 +20,13 @@ const MAX_ERROR_RESPONSE_BYTES = 4 * 1024;
 /**
  * 503 is the only refusal worth retrying in place: the Host answers it before
  * it spends the nonce, when its body readers or in-flight slots are full, which
- * a flood against its Exchange Plane can cause. A few short tries ride that out;
- * a stopped node answers 503 too, but stays refused, so the tries stay short.
+ * a flood against its Exchange Plane can cause. The waits add up to 7 s, longer
+ * than the Host's 5 s body deadline, so a reader held by a slow body has been
+ * freed by the last try. A stopped node answers 503 too and stays refused, so
+ * the waits stay short.
  */
 const BUSY_STATUS = 503;
-const MAX_REDEMPTION_ATTEMPTS = 3;
-const BUSY_RETRY_DELAY_MS = 1_000;
+const BUSY_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
 
 export type RedemptionBody = {
 	nonce: string;
@@ -259,8 +260,9 @@ async function post(
 		let result = await send(url, target, payload);
 		// Only a status the Host answered counts: a transport failure may have
 		// landed and spent the nonce, so it is never retried.
-		for (let attempt = 1; result.status === BUSY_STATUS && attempt < MAX_REDEMPTION_ATTEMPTS; attempt += 1) {
-			await sleep(BUSY_RETRY_DELAY_MS);
+		for (const delayMs of BUSY_RETRY_DELAYS_MS) {
+			if (result.status !== BUSY_STATUS) break;
+			await sleep(delayMs);
 			result = await send(url, target, payload);
 		}
 		if (result.status < 200 || result.status >= 300) {

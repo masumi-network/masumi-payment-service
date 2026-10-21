@@ -135,12 +135,15 @@ describe('redemption retry on a busy Host', () => {
 		expect(send).toHaveBeenCalledTimes(2);
 	});
 
-	it('gives up after three 503s', async () => {
+	it('gives up after four 503s, waiting longer than the Host body deadline', async () => {
+		sleep.mockClear();
 		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue(busy);
 		await expect(
 			postRedemption('https://issuer.example/exchange', redemption, transport, { resolve: PUBLIC_DNS, send, sleep }),
 		).rejects.toThrow(/refused the redemption \(503\)/);
-		expect(send).toHaveBeenCalledTimes(3);
+		expect(send).toHaveBeenCalledTimes(4);
+		const waitedMs = sleep.mock.calls.reduce((total, [ms]) => total + ms, 0);
+		expect(waitedMs).toBeGreaterThan(5_000);
 	});
 
 	it.each([409, 429])('does not retry a %s', async (status) => {
