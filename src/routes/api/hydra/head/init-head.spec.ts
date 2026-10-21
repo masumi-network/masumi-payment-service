@@ -9,6 +9,7 @@ const mockFindHead = jest.fn() as AnyMock;
 const mockConnect = jest.fn() as AnyMock;
 const mockInit = jest.fn() as AnyMock;
 const mockFlush = jest.fn() as AnyMock;
+const mockWarn = jest.fn() as AnyMock;
 const mockReadNodeState = jest.fn() as AnyMock;
 const mockRecordHeadError = jest.fn() as AnyMock;
 
@@ -35,7 +36,7 @@ jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: jest.fn(), warn: mockWarn, error: jest.fn(), debug: jest.fn() },
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/node-state', () => ({
@@ -215,7 +216,7 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 	// waited for the node to catch up, and only the diagnosis can see the head
 	// moved. Short of that it is a refusal: nothing was posted, so a node that is
 	// behind must not turn it into "wait, do not re-post".
-	it('diagnoses a CommandFailed, and records it unless the head moved', async () => {
+	it('records a CommandFailed from a node that is behind, without saying to wait', async () => {
 		mockInit.mockRejectedValue(new HydraCommandRejectedError('Command Init failed'));
 		mockReadNodeState.mockResolvedValue({
 			state: 'Running',
@@ -233,6 +234,7 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 		expect(mockFlush).toHaveBeenCalled();
 		expect(mockReadNodeState).toHaveBeenCalled();
 		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+		expect(mockWarn).not.toHaveBeenCalledWith(expect.stringMatching(/race/), expect.anything());
 	});
 
 	it('falls back to a failure when the diagnosis itself cannot run', async () => {

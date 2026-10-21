@@ -154,6 +154,12 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 						chainSynced: nodeState.chainSynced,
 						driftSeconds: nodeState.driftSeconds,
 					});
+					// A CommandFailed is the node refusing this Init, so nothing was
+					// posted and "wait, do not re-post" would be false. Only a head seen
+					// moving clears it.
+					if (verdict.kind === 'awaiting-node' && initError instanceof HydraCommandRejectedError) {
+						verdict = { kind: 'failed' };
+					}
 					if (verdict.kind === 'observed') {
 						logger.info('[Hydra] Init was observed after the wait ran out; head is already moving', {
 							hydraHeadId: head.id,
@@ -170,12 +176,6 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 						hydraHeadId: head.id,
 						diagnosisError: getErrorMessage(diagnosisError),
 					});
-					verdict = { kind: 'failed' };
-				}
-				// A CommandFailed is the node refusing this Init, so nothing was posted
-				// and "wait, do not re-post" would be false. Only a head seen moving
-				// clears it.
-				if (verdict.kind === 'awaiting-node' && initError instanceof HydraCommandRejectedError) {
 					verdict = { kind: 'failed' };
 				}
 
