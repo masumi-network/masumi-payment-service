@@ -9,6 +9,13 @@ const mockExecuteHydraTopup = jest.fn() as AnyMock;
 const mockLoggerWarn = jest.fn() as AnyMock;
 
 const mockIsHydraHeadOnPausedHost = jest.fn() as AnyMock;
+const mockUnburnedUnits = new Set<string>();
+
+jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
+	getHydraConnectionManager: () => ({
+		getNode: () => ({ l2MintCheck: { unburnedUnits: mockUnburnedUnits, verifiedOutputs: new Map() } }),
+	}),
+}));
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	isHydraHeadOnPausedHost: mockIsHydraHeadOnPausedHost,
@@ -49,6 +56,7 @@ function rule(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockUnburnedUnits.clear();
 	mockCount.mockResolvedValue([]);
 	mockIsHydraHeadOnPausedHost.mockResolvedValue(false);
 	mockExecuteHydraTopup.mockResolvedValue({ topupId: 't1', depositTxHash: 'a'.repeat(64) });
@@ -97,6 +105,18 @@ describe('runHydraAutoTopupCycle', () => {
 			filter: { unit, exclusive: true },
 			exact: { unit, amount: 500n },
 		});
+	});
+
+	// A deposit of a unit with a nonzero net L2 mint never counts as spendable,
+	// so the rule would stay Low and every cycle would deposit more of it.
+	it('sends no deposit of a unit that has a nonzero net L2 mint in the head', async () => {
+		const unit = 'cc'.repeat(28) + '0014df10';
+		mockUnburnedUnits.add(unit);
+		mockFindMany.mockResolvedValue([rule({ assetUnit: unit.toUpperCase(), topupAmount: 500n })]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
 	});
 
 	it('skips when a top-up is already pending for the participant', async () => {

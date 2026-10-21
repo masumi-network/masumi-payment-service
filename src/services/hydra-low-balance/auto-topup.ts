@@ -2,6 +2,7 @@ import { HydraHeadStatus, HydraTopupStatus, LowBalanceStatus } from '@/generated
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { isHydraHeadOnPausedHost } from '@/services/hydra-host/pause';
 import { AUTO_TOPUP_BACKOFF_SAMPLE, evaluateAutoTopupBackoff } from '@/services/hydra-low-balance/auto-topup-backoff';
 
@@ -16,7 +17,7 @@ import { AUTO_TOPUP_BACKOFF_SAMPLE, evaluateAutoTopupBackoff } from '@/services/
  * participant (the deposit could still land) — executeHydraTopup also enforces
  * this atomically, so a race merely surfaces a benign 409. Because the scan only
  * acts while the rule stays Low and the monitor flips it back to Healthy once the
- * in-head balance recovers, top-ups stop on their own; they also stop when the
+ * spendable in-head balance recovers, top-ups stop on their own; they also stop when the
  * wallet has no more matching UTxOs (nothing left to commit).
  */
 /**
@@ -44,6 +45,19 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// A paused host refuses new deposits; skip quietly until it resumes.
 			if (await isHydraHeadOnPausedHost(head.id)) continue;
 			if (rule.topupAmount == null || rule.topupAmount <= 0n) continue;
+			// The rule reads the spendable balance, and an own UTxO carrying a unit
+			// with a nonzero net L2 mint never counts as spendable. A deposit of that
+			// unit would therefore leave the rule Low, and every later cycle would
+			// send another until the wallet ran out of it.
+			const l2MintCheck = getHydraConnectionManager().getNode(head.id)?.l2MintCheck;
+			if (l2MintCheck?.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
+				logger.warn('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
+					ruleId: rule.id,
+					headId: head.id,
+					assetUnit: rule.assetUnit,
+				});
+				continue;
+			}
 
 			// Counted up to and including `Confirmed`, not just `Pending`. A deposit
 			// reaching the chain is not the head holding it: the node ignores a
