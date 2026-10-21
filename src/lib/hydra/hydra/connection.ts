@@ -87,8 +87,10 @@ export class Connection extends EventEmitter {
 
 		websocket.on('error', (error: Error) => {
 			if (generation !== this._socketGeneration || this._isManuallyDisconnected) return;
+			// A refused connect to a dual-stack host is an AggregateError with an empty message and only a code.
+			const code = 'code' in error && typeof error.code === 'string' ? error.code : error.name;
 			this.handleTransportFailure(
-				new HydraTransportError(`WebSocket error: ${errorToString(error)}`),
+				new HydraTransportError(`WebSocket error: ${errorToString(error) || code}`),
 				websocket,
 				generation,
 			);
