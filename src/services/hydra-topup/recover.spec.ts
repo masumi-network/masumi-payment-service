@@ -219,13 +219,13 @@ describe('recoverHydraDeposit', () => {
 	});
 
 	// Not being able to tell is not permission: the delete cannot be taken back.
-	it('does not recover when the head state cannot be read', async () => {
+	it('does not recover when the node cannot be asked, and names the cause', async () => {
 		mockNodeGet.mockRejectedValue(new Error('connection reset'));
 
 		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({
 			depositTxHash: DEPOSIT_TX,
 			requested: false,
-			reason: expect.stringContaining('could not check'),
+			reason: expect.stringContaining('(connection reset)'),
 		});
 		expect(mockNodeDelete).not.toHaveBeenCalled();
 		expect(mockTopupUpdateMany).not.toHaveBeenCalled();

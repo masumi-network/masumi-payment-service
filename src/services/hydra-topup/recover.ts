@@ -116,14 +116,15 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	try {
 		acknowledgedDeposits = await fetchHydraAcknowledgedDeposits(node);
 	} catch (error) {
-		logger.warn(
-			`hydra: could not check whether the head acknowledged deposit ${topup.depositTxHash}: ${error instanceof Error ? error.message : 'unknown error'}`,
-		);
+		const message = error instanceof Error ? error.message : 'unknown error';
+		logger.warn(`hydra: could not check whether the head acknowledged deposit ${topup.depositTxHash}: ${message}`);
+		// A reason rather than an error status: a 5xx message is replaced by its
+		// status text in production, and the operator needs the cause. No promise
+		// that a retry helps: an answer over the byte limit repeats on every try.
 		return {
 			depositTxHash: topup.depositTxHash,
 			requested: false,
-			reason:
-				'could not check whether the head has already acknowledged this deposit, so it was not recovered. Try again shortly',
+			reason: `could not check whether the head has acknowledged this deposit (${message}), so it was not recovered`,
 		};
 	}
 	const depositTxId = topup.depositTxHash.toLowerCase();
