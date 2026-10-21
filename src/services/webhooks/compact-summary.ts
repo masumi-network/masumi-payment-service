@@ -140,6 +140,17 @@ export function buildCompactSummary(payload: WebhookSendPayload): string {
 		return lines.join('\n');
 	}
 
+	if (payload.event_type === WebhookEventType.HYDRA_HEAD_CONTEST_MISSING) {
+		lines.push('');
+		appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
+		appendDetailLine(lines, '📍', 'Head status', payload.data.headStatus);
+		appendDetailLine(lines, '⛓️', 'Snapshot on chain', String(payload.data.closedSnapshotNumber));
+		appendDetailLine(lines, '✍️', 'Snapshot signed', String(payload.data.verifiedSnapshotNumber));
+		appendDetailLine(lines, '🕒', 'Gap since', payload.data.gapSince);
+		appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+		return lines.join('\n');
+	}
+
 	lines.push('');
 	appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
 	appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);

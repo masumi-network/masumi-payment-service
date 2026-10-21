@@ -25,6 +25,7 @@ import {
 	assertExpectedFrameHeadId,
 	parseBoundedJsonFrame,
 	protocolErrorToString,
+	readClosedSnapshotNumber,
 	readDecommitSettled,
 	readDepositRecorded,
 } from './node-frames';
@@ -116,6 +117,8 @@ export class HydraHistoryReplay {
 	private _lastSequence: number | undefined;
 	private _partyIdentityVerified = false;
 	private _verifiedSnapshot: VerifiedHydraSnapshot | undefined;
+	/** Newest snapshot a close or contest put on chain this pass. Only history has it after a restart. */
+	private _closedSnapshotNumber: number | undefined;
 	/**
 	 * The exact signed payload behind `_verifiedSnapshot` (version, accumulator,
 	 * party signatures), kept only to tell an idempotent re-delivery of that same
@@ -182,6 +185,10 @@ export class HydraHistoryReplay {
 		return this._verifiedSnapshot;
 	}
 
+	get closedSnapshotNumber(): number | undefined {
+		return this._closedSnapshotNumber;
+	}
+
 	fail(error: unknown): void {
 		const normalizedError =
 			error instanceof HydraProtocolError || error instanceof HydraTransportError
@@ -229,6 +236,7 @@ export class HydraHistoryReplay {
 		this._partyIdentityVerified = false;
 		this._verifiedSnapshot = undefined;
 		this._lastVerifiedFrame = undefined;
+		this._closedSnapshotNumber = undefined;
 		const rotationError = this.host.persistenceRotationError;
 		if (rotationError) {
 			this._failed = true;
@@ -387,6 +395,8 @@ export class HydraHistoryReplay {
 			if (parsedEnvelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
 				this.host.recordFinalizedFanout(message);
 			}
+			const closedAt = readClosedSnapshotNumber(parsedEnvelope);
+			if (closedAt !== undefined) this._closedSnapshotNumber = Math.max(this._closedSnapshotNumber ?? 0, closedAt);
 
 			// A deposit stays pending for a deposit period or more, so a service
 			// that reconnected in between meets its CommitRecorded only here. Held

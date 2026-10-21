@@ -699,3 +699,15 @@ export function readPostTxFailed(message: unknown, expectedHeadId: string | unde
 		reason: describePostTxError(frame.data.postTxError),
 	};
 }
+
+/**
+ * The snapshot a close or contest put on chain, when this frame reports one.
+ *
+ * hydra-node contests whenever its own confirmed snapshot is newer than the
+ * one on chain, so this is what the contest watch holds the verified snapshot
+ * against. Both frames are in the node's persisted history, so a restarted
+ * service still learns them.
+ */
+export function readClosedSnapshotNumber(envelope: { tag: string; snapshotNumber?: number }): number | undefined {
+	return envelope.tag === 'HeadIsClosed' || envelope.tag === 'HeadIsContested' ? envelope.snapshotNumber : undefined;
+}

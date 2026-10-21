@@ -26623,7 +26623,8 @@
                                                                         "X402_WALLET_LOW_BALANCE",
                                                                         "HYDRA_HEAD_LOW_BALANCE",
                                                                         "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
-                                                                        "HYDRA_HEAD_POST_TX_FAILED"
+                                                                        "HYDRA_HEAD_POST_TX_FAILED",
+                                                                        "HYDRA_HEAD_CONTEST_MISSING"
                                                                     ]
                                                                 }
                                                             },
@@ -26803,11 +26804,12 @@
                                                 "X402_WALLET_LOW_BALANCE",
                                                 "HYDRA_HEAD_LOW_BALANCE",
                                                 "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
-                                                "HYDRA_HEAD_POST_TX_FAILED"
+                                                "HYDRA_HEAD_POST_TX_FAILED",
+                                                "HYDRA_HEAD_CONTEST_MISSING"
                                             ]
                                         },
                                         "minItems": 1,
-                                        "maxItems": 14,
+                                        "maxItems": 15,
                                         "description": "Array of event types to subscribe to"
                                     },
                                     "name": {
@@ -26886,7 +26888,8 @@
                                                             "X402_WALLET_LOW_BALANCE",
                                                             "HYDRA_HEAD_LOW_BALANCE",
                                                             "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
-                                                            "HYDRA_HEAD_POST_TX_FAILED"
+                                                            "HYDRA_HEAD_POST_TX_FAILED",
+                                                            "HYDRA_HEAD_CONTEST_MISSING"
                                                         ]
                                                     }
                                                 },
@@ -27021,11 +27024,12 @@
                                                 "X402_WALLET_LOW_BALANCE",
                                                 "HYDRA_HEAD_LOW_BALANCE",
                                                 "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
-                                                "HYDRA_HEAD_POST_TX_FAILED"
+                                                "HYDRA_HEAD_POST_TX_FAILED",
+                                                "HYDRA_HEAD_CONTEST_MISSING"
                                             ]
                                         },
                                         "minItems": 1,
-                                        "maxItems": 14,
+                                        "maxItems": 15,
                                         "description": "Array of event types to subscribe to"
                                     },
                                     "name": {
@@ -27102,7 +27106,8 @@
                                                             "X402_WALLET_LOW_BALANCE",
                                                             "HYDRA_HEAD_LOW_BALANCE",
                                                             "HYDRA_HEAD_SNAPSHOT_ROUND_STUCK",
-                                                            "HYDRA_HEAD_POST_TX_FAILED"
+                                                            "HYDRA_HEAD_POST_TX_FAILED",
+                                                            "HYDRA_HEAD_CONTEST_MISSING"
                                                         ]
                                                     }
                                                 },
@@ -36920,7 +36925,8 @@
                                                                     "CommandFailed",
                                                                     "PostTxOnChainFailed",
                                                                     "TxInvalid",
-                                                                    "InvalidInput"
+                                                                    "InvalidInput",
+                                                                    "ContestMissing"
                                                                 ]
                                                             },
                                                             "errorMessage": {

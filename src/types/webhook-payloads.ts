@@ -215,7 +215,20 @@ const hydraHeadPostTxFailedPayloadSchema = createWebhookPayloadSchema(
 			.describe('True when the failed post answers an API call (Init, Close, Fanout), which fails with it'),
 		failedAt: z.string().datetime().describe('When this service received the failure'),
 	}),
-	'Emitted for every L1 transaction the Hydra node could not post. A failed ContestTx means the node did not defend the head against a close on an older snapshot.',
+	'Emitted for every L1 transaction the Hydra node could not post. A failed ContestTx is a warning: another party may still have contested. HYDRA_HEAD_CONTEST_MISSING says when no contest landed.',
+);
+
+const hydraHeadContestMissingPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_CONTEST_MISSING'),
+	z.object({
+		hydraHeadId: z.string().describe('The closed head that holds an older snapshot on chain than this node'),
+		headStatus: z.string().describe('Closed, or FanoutPossible once the contestation deadline has passed'),
+		closedSnapshotNumber: z.number().int().describe('The newest snapshot a close or contest put on chain'),
+		verifiedSnapshotNumber: z.number().int().describe('The newest snapshot every party signed, as this node holds it'),
+		gapSince: z.string().datetime().describe('When this service first saw the gap'),
+		checkedAt: z.string().datetime().describe('Timestamp when the gap was evaluated'),
+	}),
+	'Emitted once per gap when a closed Hydra head holds an older snapshot on chain than one every party signed, and no contest closed the gap within the grace period. A fanout from that state pays out the older snapshot.',
 );
 
 // Union schema for all webhook payloads
@@ -234,6 +247,7 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	hydraHeadLowBalancePayloadSchema,
 	hydraHeadSnapshotRoundStuckPayloadSchema,
 	hydraHeadPostTxFailedPayloadSchema,
+	hydraHeadContestMissingPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;

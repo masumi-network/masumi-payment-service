@@ -414,6 +414,12 @@ export class HydraNode extends EventEmitter {
 		return this.hasVerifiedPinnedSessions && snapshot ? BigInt(snapshot.number) : undefined;
 	}
 
+	/** Newest snapshot a close or contest put on chain, on the same trust as `verifiedSnapshotNumber`. */
+	get closedSnapshotNumber(): bigint | undefined {
+		const closed = this._replay.closedSnapshotNumber;
+		return this.hasVerifiedPinnedSessions && closed !== undefined ? BigInt(closed) : undefined;
+	}
+
 	/** Both evidence sockets have authenticated the same explicitly pinned head. */
 	get hasVerifiedPinnedSessions(): boolean {
 		return (

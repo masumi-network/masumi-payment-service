@@ -1614,6 +1614,7 @@ enum WebhookEventType {
   HYDRA_HEAD_LOW_BALANCE
   HYDRA_HEAD_SNAPSHOT_ROUND_STUCK
   HYDRA_HEAD_POST_TX_FAILED
+  HYDRA_HEAD_CONTEST_MISSING
 }
 
 // Critical is retained for historical rows only: the dispatcher creates
@@ -1671,6 +1672,8 @@ enum HydraErrorType {
   TxInvalid
   /// Client input was invalid.
   InvalidInput
+  /// The head was closed on an older snapshot than this node holds and no contest landed.
+  ContestMissing
 }
 
 /// Lifecycle of a single incremental-commit (top-up) deposit into an Open head.
@@ -1825,6 +1828,15 @@ model HydraHead {
   snapshotRoundSignature String?
   snapshotRoundSince     DateTime?
   snapshotRoundAlertedAt DateTime?
+
+  /// Contest watch (`services/hydra-contest-watch`). Set while the head is
+  /// closed on an older snapshot than the one this node holds, which is exactly
+  /// when hydra-node must contest. The signature names the gap (on-chain number
+  /// and ours); `since` is when it was first seen; the alert time makes the
+  /// webhook fire once per gap. Cleared once a contest closes the gap.
+  contestGapSignature String?
+  contestGapSince     DateTime?
+  contestGapAlertedAt DateTime?
 
   /// Durable admission gate set before Close is sent. Reservation writers lock
   /// the head row and refuse new L2 work once closing has begun.
