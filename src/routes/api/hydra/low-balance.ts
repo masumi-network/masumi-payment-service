@@ -48,9 +48,9 @@ export const listHydraLowBalanceRulesSchemaOutput = z.object({
 });
 
 export const setHydraLowBalanceRuleSchemaInput = z.object({
-	hydraLocalParticipantId: z.string().describe('Local participant whose in-head balance to monitor'),
+	hydraLocalParticipantId: z.string().describe('Local participant whose spendable in-head balance to monitor'),
 	assetUnit: z.string().describe('"lovelace" or a policyId+assetName hex unit'),
-	thresholdAmount: amountString.describe('Alert when the in-head balance falls below this'),
+	thresholdAmount: amountString.describe('Alert when the spendable in-head balance falls below this'),
 	enabled: z.boolean().optional().default(true),
 	topupEnabled: z.boolean().optional().default(false).describe('Auto top-up from the assigned funding wallet when low'),
 	topupAmount: amountString

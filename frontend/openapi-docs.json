@@ -36350,7 +36350,7 @@
                                                 },
                                                 "l2MintedUtxoCount": {
                                                     "type": "number",
-                                                    "description": "In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero. The service never spends them. A token minted inside the head and still unburned blocks its final fanout."
+                                                    "description": "In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout."
                                                 },
                                                 "l2MintedLovelace": {
                                                     "type": "string",
@@ -36396,7 +36396,7 @@
                                                             "quantity"
                                                         ]
                                                     },
-                                                    "description": "balance without the L2-minted UTxOs: what this node can still spend. Low-balance rules compare against this."
+                                                    "description": "balance without the L2-minted UTxOs counted above. Low-balance rules compare against this. It still counts token UTxOs the replay has not checked yet and UTxOs of a deposit the head has not finished folding in; the service does not spend those until they are checked or folded in."
                                                 }
                                             },
                                             "required": [
@@ -37621,7 +37621,7 @@
             },
             "post": {
                 "summary": "Create or update a Hydra in-head low-balance rule. (admin access required)",
-                "description": "Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
+                "description": "Upserts a rule (keyed by participant + asset) that alerts when the participant's own spendable in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
                 "tags": [
                     "hydra"
                 ],
@@ -37638,7 +37638,7 @@
                                 "properties": {
                                     "hydraLocalParticipantId": {
                                         "type": "string",
-                                        "description": "Local participant whose in-head balance to monitor"
+                                        "description": "Local participant whose spendable in-head balance to monitor"
                                     },
                                     "assetUnit": {
                                         "type": "string",
@@ -37647,7 +37647,7 @@
                                     "thresholdAmount": {
                                         "type": "string",
                                         "pattern": "^\\d+$",
-                                        "description": "Alert when the in-head balance falls below this"
+                                        "description": "Alert when the spendable in-head balance falls below this"
                                     },
                                     "enabled": {
                                         "type": "boolean",

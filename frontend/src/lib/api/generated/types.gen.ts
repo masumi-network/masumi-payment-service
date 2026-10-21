@@ -15373,7 +15373,7 @@ export type GetHydraHeadBalanceResponses = {
              */
             hasUnbackedUtxos: boolean;
             /**
-             * In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
+             * In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
              */
             l2MintedUtxoCount: number;
             /**
@@ -15394,7 +15394,7 @@ export type GetHydraHeadBalanceResponses = {
                 quantity: string;
             }>;
             /**
-             * balance without the L2-minted UTxOs: what this node can still spend. Low-balance rules compare against this.
+             * balance without the L2-minted UTxOs counted above. Low-balance rules compare against this. It still counts token UTxOs the replay has not checked yet and UTxOs of a deposit the head has not finished folding in; the service does not spend those until they are checked or folded in.
              */
             spendableBalance: Array<{
                 /**
@@ -15942,7 +15942,7 @@ export type GetHydraLowBalanceResponse = GetHydraLowBalanceResponses[keyof GetHy
 export type PostHydraLowBalanceData = {
     body?: {
         /**
-         * Local participant whose in-head balance to monitor
+         * Local participant whose spendable in-head balance to monitor
          */
         hydraLocalParticipantId: string;
         /**
@@ -15950,7 +15950,7 @@ export type PostHydraLowBalanceData = {
          */
         assetUnit: string;
         /**
-         * Alert when the in-head balance falls below this
+         * Alert when the spendable in-head balance falls below this
          */
         thresholdAmount: string;
         enabled?: boolean;

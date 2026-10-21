@@ -579,7 +579,7 @@ class WebhookSenderService {
 			this.appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
 			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.assetUnit);
 			this.appendDetailLine(lines, '🎯', 'Threshold', payload.data.thresholdAmount);
-			this.appendDetailLine(lines, '💰', 'In-head balance', payload.data.currentAmount);
+			this.appendDetailLine(lines, '💰', 'Spendable in-head balance', payload.data.currentAmount);
 			this.appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
 			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 			return lines.join('\n');

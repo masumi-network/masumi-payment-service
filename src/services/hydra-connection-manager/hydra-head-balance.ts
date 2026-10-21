@@ -43,7 +43,8 @@ export interface HydraHeadOwnBalance {
 	hasUnbackedUtxos: boolean;
 	/**
 	 * Own UTxOs that carry a token minted or burned inside the head whose net is
-	 * not back at zero.
+	 * not back at zero, as far as the history replay has checked: 0 until the
+	 * replay is current, and a token UTxO it has not reached is not counted.
 	 *
 	 * The service never spends them (see `l2-mint-tally`): an unburned L2-minted
 	 * token can never leave the head, and spending the UTxO would carry it into
@@ -54,7 +55,11 @@ export interface HydraHeadOwnBalance {
 	l2MintedUtxoCount: number;
 	/** Lovelace held by those UTxOs. */
 	l2MintedLovelace: string;
-	/** `balance` without those UTxOs: what the service can still spend. Low-balance rules read this. */
+	/**
+	 * `balance` without those UTxOs. Low-balance rules read this. It still counts
+	 * token UTxOs the replay has not checked and UTxOs of a deposit the head has
+	 * not finished folding in, which the service does not spend yet either.
+	 */
 	spendableBalance: HydraHeadBalanceAsset[];
 	hydraHeadId: string;
 	/** The local participant's wallet address whose in-head funds are reported. */

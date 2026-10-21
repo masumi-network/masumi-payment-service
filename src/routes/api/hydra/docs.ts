@@ -570,7 +570,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/low-balance',
 		summary: 'Create or update a Hydra in-head low-balance rule. (admin access required)',
 		description:
-			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
+			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own spendable in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
 		tags: TAG,
 		security: secured,
 		request: {

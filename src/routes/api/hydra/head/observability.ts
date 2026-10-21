@@ -286,7 +286,7 @@ export const headBalanceSchemaOutput = z.object({
 	l2MintedUtxoCount: z
 		.number()
 		.describe(
-			'In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.',
+			'In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.',
 		),
 	l2MintedLovelace: z.string().describe('Lovelace held by those UTxOs. It is counted in balance but cannot be spent.'),
 	balance: z
@@ -295,7 +295,7 @@ export const headBalanceSchemaOutput = z.object({
 	spendableBalance: z
 		.array(inHeadAssetSchema)
 		.describe(
-			'balance without the L2-minted UTxOs: what this node can still spend. Low-balance rules compare against this.',
+			'balance without the L2-minted UTxOs counted above. Low-balance rules compare against this. It still counts token UTxOs the replay has not checked yet and UTxOs of a deposit the head has not finished folding in; the service does not spend those until they are checked or folded in.',
 		),
 });
 
