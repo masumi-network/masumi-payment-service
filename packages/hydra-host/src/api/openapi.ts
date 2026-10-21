@@ -43,7 +43,16 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 		tier: 'admin',
 		summary: 'Peer-port firewall allowlist',
 		description:
-			'Every head peer port and the counterparty addresses allowed to reach it, plus rendered nftables rules.',
+			'Every head peer port and the counterparty addresses allowed to reach it, plus rendered nftables rules and the generation to acknowledge once they are applied.',
+	},
+	{
+		path: '/v1/peer-allowlist/applied',
+		method: 'post',
+		kind: 'peerAllowlistApplied',
+		tier: 'admin',
+		summary: 'Acknowledge an applied peer-port ruleset',
+		description:
+			'Body {"generation"} from GET /v1/peer-allowlist, sent after the ruleset is applied and verified. Frees the peer ports released before it for reuse. 409 for a generation the running Host did not issue.',
 	},
 	{
 		path: '/v1/invites',

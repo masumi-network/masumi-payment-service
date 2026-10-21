@@ -24,6 +24,7 @@ export type RouteKind =
 	| 'nodeHealth'
 	| 'capabilities'
 	| 'peerAllowlist'
+	| 'peerAllowlistApplied'
 	| 'registerInvite'
 	| 'listInvites'
 	| 'forgetInvite';
@@ -60,6 +61,10 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 	// a map of the Host's public surface.
 	if (segments.length === 2 && segments[1] === 'peer-allowlist' && method === 'GET') {
 		return { kind: 'peerAllowlist', tier: 'admin' };
+	}
+	// Admin: it frees released peer ports for reuse.
+	if (segments.length === 3 && segments[1] === 'peer-allowlist' && segments[2] === 'applied' && method === 'POST') {
+		return { kind: 'peerAllowlistApplied', tier: 'admin' };
 	}
 
 	// Exchange administration. The Exchange Plane itself is a separate listener

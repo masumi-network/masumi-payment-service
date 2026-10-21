@@ -20,6 +20,7 @@ const EVERY_ROUTE_KIND: Record<RouteKind, true> = {
 	nodeHealth: true,
 	capabilities: true,
 	peerAllowlist: true,
+	peerAllowlistApplied: true,
 	registerInvite: true,
 	listInvites: true,
 	forgetInvite: true,

@@ -411,6 +411,7 @@ describe('what the exchange plane does not expose', () => {
 		'/v1/allowed-issuers',
 		'/v1/nodes/node-1/api/config',
 		'/v1/peer-allowlist',
+		'/v1/peer-allowlist/applied',
 	])('has no route for %s', async (pathname) => {
 		const result = await post(pathname, {});
 		expect(result.status).toBe(404);
