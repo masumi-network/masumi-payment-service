@@ -76,6 +76,8 @@ export interface IHydraNode {
 	get headClock(): HydraHeadClock | undefined;
 	readonly hasPendingIncrement?: boolean;
 	readonly pendingIncrementUtxoRefs?: ReadonlySet<string>;
+	/** Units minted in the head and not burned; undefined while unknown. See `l2-mint-tally`. */
+	readonly unburnedL2MintUnits?: ReadonlySet<string>;
 	readonly hasVerifiedPinnedSessions?: boolean;
 	readonly expectedHeadId?: string;
 	pinExpectedHeadId?(headId: string): void;

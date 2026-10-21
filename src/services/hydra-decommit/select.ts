@@ -12,6 +12,7 @@
  */
 
 import type { UTxO } from '@meshsdk/core';
+import { holdsUnburnedL2Mint } from '@/lib/hydra/hydra/l2-mint-tally';
 
 /**
  * Lovelace kept in a spendable UTxO so the wallet can still post script
@@ -35,6 +36,8 @@ export interface DecommitSelectionInput {
 	utxos: readonly UTxO[];
 	/** Refs the head has promised to a deposit but not yet folded in. */
 	pendingIncrementRefs: ReadonlySet<string>;
+	/** Units minted in the head and not burned; undefined until history replay completes. */
+	unburnedL2MintUnits: ReadonlySet<string> | undefined;
 	/**
 	 * Take everything, including the collateral reserve.
 	 *
@@ -114,6 +117,15 @@ export function selectDecommittableUtxos(input: DecommitSelectionInput): Decommi
 		}
 		if (!isPlainValue(utxo)) {
 			excluded.set(ref, 'carries a reference script, so other transactions may depend on it');
+			continue;
+		}
+		if (holdsUnburnedL2Mint(utxo, input.unburnedL2MintUnits)) {
+			excluded.set(
+				ref,
+				input.unburnedL2MintUnits === undefined
+					? 'carries a token, and the head history is still being checked for tokens minted inside it'
+					: 'carries a token minted inside the head, which L1 cannot pay out',
+			);
 			continue;
 		}
 		candidates.push(utxo);

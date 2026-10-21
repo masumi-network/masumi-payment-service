@@ -88,7 +88,7 @@ export async function executeHydraConsolidation(headId: string): Promise<Execute
 	try {
 		const headParameters = await provider.fetchProtocolParameters();
 		const plan = planConsolidation({
-			utxos: await provider.fetchAddressUTxOs(address),
+			utxos: provider.spendableUTxOs(await provider.fetchAddressUTxOs(address)),
 			pendingIncrementRefs: hydraHead.mainNode.pendingIncrementUtxoRefs,
 			address,
 			coinsPerUtxoSize: headParameters.coinsPerUtxoSize,

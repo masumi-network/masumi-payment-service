@@ -381,6 +381,11 @@ export class HydraNode extends EventEmitter {
 		return this._live.pendingIncrementUtxoRefs;
 	}
 
+	/** Units minted in the head and not burned; undefined until history replay completes. See `l2-mint-tally`. */
+	get unburnedL2MintUnits(): ReadonlySet<string> | undefined {
+		return this._replay.unburnedL2MintUnits;
+	}
+
 	get headClock(): HydraHeadClock | undefined {
 		return this._live.headClock;
 	}

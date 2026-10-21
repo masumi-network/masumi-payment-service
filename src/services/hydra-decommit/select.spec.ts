@@ -24,6 +24,7 @@ function utxo(txHash: string, lovelace: bigint, extra: Partial<UTxO['output']> =
 }
 
 const NO_PENDING = new Set<string>();
+const NO_MINTS = new Set<string>();
 
 describe('selectDecommittableUtxos', () => {
 	// The failure this exists to prevent: withdraw the last collateral-sized UTxO
@@ -33,6 +34,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 6_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: NO_MINTS,
 			drain: false,
 		});
 
@@ -46,6 +48,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 30_000_000n), utxo('b'.repeat(64), 5_000_000n), utxo('c'.repeat(64), 9_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: NO_MINTS,
 			drain: false,
 		});
 
@@ -59,6 +62,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 2_000_000n), utxo('b'.repeat(64), 1_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: NO_MINTS,
 			drain: false,
 		});
 
@@ -70,6 +74,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 6_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: NO_MINTS,
 			drain: true,
 		});
 
@@ -85,6 +90,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 20_000_000n)],
 			pendingIncrementRefs: pending,
+			unburnedL2MintUnits: NO_MINTS,
 			drain: true,
 		});
 
@@ -93,12 +99,53 @@ describe('selectDecommittableUtxos', () => {
 		expect(result.excluded.get(`${'a'.repeat(64)}#0`)).toContain('deposit');
 	});
 
+	// A peer can mint a token in the head and send it to us. L1 cannot pay that
+	// token out, so a decommit that includes it fails, and the funds beside it
+	// would go nowhere either.
+	it('excludes UTxOs that hold a token minted in the head, and every token while that is unknown', () => {
+		const minted = `${'c'.repeat(56)}6576696c`;
+		const l1Token = `${'d'.repeat(56)}5553444d`;
+		const utxos = [
+			utxo('a'.repeat(64), 20_000_000n, {
+				amount: [
+					{ unit: 'lovelace', quantity: '20000000' },
+					{ unit: minted, quantity: '1' },
+				],
+			}),
+			utxo('b'.repeat(64), 20_000_000n, {
+				amount: [
+					{ unit: 'lovelace', quantity: '20000000' },
+					{ unit: l1Token, quantity: '5' },
+				],
+			}),
+			utxo('e'.repeat(64), 20_000_000n),
+		];
+
+		const known = selectDecommittableUtxos({
+			utxos,
+			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: new Set([minted]),
+			drain: true,
+		});
+		expect(known.eligible.map((u) => u.input.txHash)).toEqual(['b'.repeat(64), 'e'.repeat(64)]);
+		expect(known.excluded.get(`${'a'.repeat(64)}#0`)).toContain('minted inside the head');
+
+		const unknown = selectDecommittableUtxos({
+			utxos,
+			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: undefined,
+			drain: true,
+		});
+		expect(unknown.eligible.map((u) => u.input.txHash)).toEqual(['e'.repeat(64)]);
+	});
+
 	// A reference script is something other transactions point at; taking it out
 	// of the head would break them while leaving them looking intact.
 	it('refuses UTxOs carrying a reference script', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('b'.repeat(64), 20_000_000n, { scriptRef: 'ref' }), utxo('c'.repeat(64), 20_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: NO_MINTS,
 			drain: true,
 		});
 
@@ -121,6 +168,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [payout, utxo('b'.repeat(64), 20_000_000n, { dataHash: 'd'.repeat(64) })],
 			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: NO_MINTS,
 			drain: true,
 		});
 
@@ -129,7 +177,12 @@ describe('selectDecommittableUtxos', () => {
 	});
 
 	it('reports nothing eligible for an empty wallet', () => {
-		const result = selectDecommittableUtxos({ utxos: [], pendingIncrementRefs: NO_PENDING, drain: false });
+		const result = selectDecommittableUtxos({
+			utxos: [],
+			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: NO_MINTS,
+			drain: false,
+		});
 
 		expect(result.eligible).toHaveLength(0);
 		expect(result.eligibleLovelace).toBe(0n);
@@ -139,6 +192,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 6_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
+			unburnedL2MintUnits: NO_MINTS,
 			drain: false,
 		});
 

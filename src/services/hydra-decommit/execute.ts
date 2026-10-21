@@ -317,6 +317,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		const selection = selectDecommittableUtxos({
 			utxos: await provider.fetchAddressUTxOs(address),
 			pendingIncrementRefs: hydraHead.mainNode.pendingIncrementUtxoRefs,
+			unburnedL2MintUnits: hydraHead.mainNode.unburnedL2MintUnits,
 			drain: params.drain === true,
 		});
 

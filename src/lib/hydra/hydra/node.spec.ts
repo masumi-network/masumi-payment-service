@@ -4,7 +4,14 @@ import { createPrivateKey, createPublicKey, sign as signEd25519, type KeyObject 
 import { resolveTxHash } from '@meshsdk/core';
 import {
 	Address,
+	AssetName,
+	Assets,
 	BigNum,
+	Int,
+	Mint,
+	MintAssets,
+	MultiAsset,
+	ScriptHash,
 	Transaction,
 	TransactionBody,
 	TransactionHash,
@@ -145,6 +152,41 @@ function makeSpendingHydraTransaction(inputTxHash: string, inputIndex: number, o
 	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
 	const transaction = Transaction.new(body, TransactionWitnessSet.new());
 	const cborHex = Buffer.from(transaction.to_bytes()).toString('hex');
+	return {
+		type: HydraTransactionType.TxConwayEra,
+		cborHex,
+		description: '',
+		txId: String(resolveTxHash(cborHex)).toLowerCase(),
+	};
+}
+
+const MINT_POLICY_ID = 'ab'.repeat(28);
+const MINT_ASSET_NAME = '6576696c';
+
+/** Spends output 0 of `inputTxHash` and mints (positive) or burns (negative) one asset. */
+function makeMintingHydraTransaction(inputTxHash: string, outputLovelace: number, mintQuantity: number) {
+	const inputs = TransactionInputs.new();
+	inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(inputTxHash, 'hex')), 0));
+	const value = Value.new(BigNum.from_str(String(outputLovelace)));
+	if (mintQuantity > 0) {
+		const assets = Assets.new();
+		assets.insert(AssetName.new(Buffer.from(MINT_ASSET_NAME, 'hex')), BigNum.from_str(String(mintQuantity)));
+		const multiAsset = MultiAsset.new();
+		multiAsset.insert(ScriptHash.from_hex(MINT_POLICY_ID), assets);
+		value.set_multiasset(multiAsset);
+	}
+	const outputs = TransactionOutputs.new();
+	outputs.add(TransactionOutput.new(Address.from_bech32(TEST_ADDRESS), value));
+	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+	const mintAssets = MintAssets.new();
+	mintAssets.insert(
+		AssetName.new(Buffer.from(MINT_ASSET_NAME, 'hex')),
+		mintQuantity < 0
+			? Int.new_negative(BigNum.from_str(String(-mintQuantity)))
+			: Int.new(BigNum.from_str(String(mintQuantity))),
+	);
+	body.set_mint(Mint.new_from_entry(ScriptHash.from_hex(MINT_POLICY_ID), mintAssets));
+	const cborHex = Buffer.from(Transaction.new(body, TransactionWitnessSet.new()).to_bytes()).toString('hex');
 	return {
 		type: HydraTransactionType.TxConwayEra,
 		cborHex,
@@ -652,6 +694,41 @@ describe('HydraNode', () => {
 			liveConnection.emit('message', JSON.stringify(liveGreetings()));
 			expect(node.status).toBe(HydraHeadStatus.Open);
 			expect(node.getVerifiedFanoutReference(hydraReference, 3)).toBeNull();
+		});
+
+		// A peer can mint through its own node, and Hydra cannot finalize a head
+		// that still holds the token. Replay has to name the unit so our own
+		// spending leaves it alone, name nothing before the whole history is in,
+		// and drop the unit once it is burned.
+		it('tracks units minted in the head and not burned', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
+			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
+			const tokenOutput = {
+				...snapshotOutput(9_000_000),
+				value: { lovelace: 9_000_000, [MINT_POLICY_ID]: { [MINT_ASSET_NAME]: 1 } },
+			} as unknown as TestSnapshotOutput;
+			const frames = [
+				signedSnapshotFrame({
+					seq: 1,
+					number: 1,
+					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
+					confirmed: [],
+				}),
+				signedSnapshotFrame({ seq: 2, number: 2, utxo: { [`${mintTx.txId}#0`]: tokenOutput }, confirmed: [mintTx] }),
+			];
+			for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
+
+			expect(node.unburnedL2MintUnits).toBeUndefined();
+			finishHistoryReplay(historyConnection);
+			expect(node.unburnedL2MintUnits).toEqual(new Set([`${MINT_POLICY_ID}${MINT_ASSET_NAME}`]));
+
+			const burn = { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) };
+			historyConnection.emit(
+				'message',
+				JSON.stringify(signedSnapshotFrame({ seq: 3, number: 3, utxo: burn, confirmed: [burnTx] })),
+			);
+			expect(node.unburnedL2MintUnits).toEqual(new Set());
 		});
 
 		// Hydra 2.2.0 renamed HeadIsFinalized's `utxo` to `finalizedUTxO`, and 2.3.0

@@ -41,6 +41,7 @@ import {
 	hasFinalizedUtxoField,
 } from './schemas';
 import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
+import { addL2TransactionMints } from './l2-mint-tally';
 import {
 	completeHydraSnapshotVerification,
 	doesHydraTransactionTransitionReachSnapshot,
@@ -152,6 +153,9 @@ export class HydraHistoryReplay {
 	/** Unknown snapshot fields already reported, so a replay says it once. */
 	private readonly _reportedDriftFields = new Set<string>();
 
+	/** Net L2 mint per unit over this pass's confirmed transactions; see `l2-mint-tally`. */
+	private readonly _l2MintTally = new Map<string, bigint>();
+
 	constructor(
 		private readonly connection: Connection,
 		private readonly ledger: ConfirmedTransactionLedger,
@@ -180,6 +184,11 @@ export class HydraHistoryReplay {
 
 	get verifiedSnapshot(): VerifiedHydraSnapshot | undefined {
 		return this._verifiedSnapshot;
+	}
+
+	/** Units minted in the head and not burned. Undefined until this pass has replayed the whole history. */
+	get unburnedL2MintUnits(): ReadonlySet<string> | undefined {
+		return this._complete && !this._failed ? new Set(this._l2MintTally.keys()) : undefined;
 	}
 
 	fail(error: unknown): void {
@@ -229,6 +238,7 @@ export class HydraHistoryReplay {
 		this._partyIdentityVerified = false;
 		this._verifiedSnapshot = undefined;
 		this._lastVerifiedFrame = undefined;
+		this._l2MintTally.clear();
 		const rotationError = this.host.persistenceRotationError;
 		if (rotationError) {
 			this._failed = true;
@@ -711,6 +721,12 @@ export class HydraHistoryReplay {
 			);
 		}
 		this.captureVerifiedFrame(verifiedSnapshot, parsedMessage);
+		if (addL2TransactionMints(this._l2MintTally, transitionTransactions)) {
+			logger.error('[HydraNode] A transaction in the head minted or burned tokens; unburned ones block finalization', {
+				snapshotNumber: verifiedSnapshot.number,
+				unburnedUnits: [...this._l2MintTally.keys()],
+			});
+		}
 		const protectedProducerTxIds = this.ledger.resolveProtectedSnapshotProducerTxIds(verifiedSnapshot);
 		// Hydra 2.3 signatures authenticate only the TxOut multiset. Recording
 		// tx ids/CBOR therefore additionally relies on this explicitly configured
