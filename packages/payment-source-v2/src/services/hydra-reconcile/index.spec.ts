@@ -570,6 +570,53 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});
 
+	// hydra-node 2.4.1 answers GET /snapshot/utxo with a 404 once a head is
+	// finalized, and the live pass reads that route. The handoff only needs the
+	// node's verified fanout map, so a finalized head with no live outputs must
+	// still complete.
+	describe('the snapshot UTxO route answering 404', () => {
+		const routeGone = () =>
+			Object.assign(new Error('Hydra HTTP request failed (404)'), { name: 'HydraHttpResponseError', status: 404 });
+		const serverError = () =>
+			Object.assign(new Error('Hydra HTTP request failed (500)'), { name: 'HydraHttpResponseError', status: 500 });
+
+		it('completes the handoff of a finalized head', async () => {
+			mockFetchAddressUtxos.mockRejectedValue(routeGone());
+
+			await reconcileHydraHeadEscrowStates();
+
+			expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: { fanoutTxHash: FANOUT_TX_HASH, reconciliationCompletedAt: expect.any(Date) },
+				}),
+			);
+			expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+		});
+
+		it('still fails a finalized head on any other error', async () => {
+			mockFetchAddressUtxos.mockRejectedValue(serverError());
+
+			await reconcileHydraHeadEscrowStates();
+
+			expect(mockHydraHeadUpdateMany).not.toHaveBeenCalledWith(
+				expect.objectContaining({ data: expect.objectContaining({ fanoutTxHash: FANOUT_TX_HASH }) }),
+			);
+			expect(mockDisconnect).not.toHaveBeenCalled();
+		});
+
+		it('still fails a head that is not finalized', async () => {
+			await useOpenHead();
+			mockFetchAddressUtxos.mockRejectedValue(routeGone());
+
+			await reconcileHydraHeadEscrowStates();
+
+			expect(mockHydraHeadUpdateMany).not.toHaveBeenCalledWith(
+				expect.objectContaining({ data: expect.objectContaining({ fanoutTxHash: FANOUT_TX_HASH }) }),
+			);
+			expect(mockDisconnect).not.toHaveBeenCalled();
+		});
+	});
+
 	// A fanout over several L1 steps reports partial-step outputs under in-head
 	// keys. Completing the handoff from those would record L1 references that
 	// do not exist.

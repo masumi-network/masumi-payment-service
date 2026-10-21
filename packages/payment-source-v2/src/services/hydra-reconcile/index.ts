@@ -115,6 +115,22 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	}
 }
 
+/**
+ * Whether the node answered a GET with a 404.
+ *
+ * Matched on the error's name and status rather than `instanceof`, so this file
+ * does not import `HydraHttpResponseError` from `node-frames.ts` (whose imports
+ * the spec for this file does not mock).
+ */
+function isSnapshotRouteGone(error: unknown): boolean {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		(error as { name?: unknown }).name === 'HydraHttpResponseError' &&
+		(error as { status?: unknown }).status === 404
+	);
+}
+
 type ReconcileSource = {
 	id: string;
 	network: Network;
@@ -231,7 +247,17 @@ async function reconcileHead(
 	const isFinalized = finalizedAt != null;
 	if (!isFinalized && !isLivePassDue(hydraHeadId, CONFIG.HYDRA_ESCROW_RECONCILE_INTERVAL * 1000)) return;
 
-	const utxos = await provider.fetchAddressUTxOs(source.smartContractAddress);
+	// hydra-node 2.4.1 answers GET /snapshot/utxo with a 404 once a head is
+	// finalized. The handoff below reads only the node's verified fanout map, so a
+	// finalized head with no live outputs must still complete. Anything but that
+	// 404, and any head that is not finalized, keeps failing loudly.
+	let utxos: UTxO[];
+	try {
+		utxos = await provider.fetchAddressUTxOs(source.smartContractAddress);
+	} catch (error) {
+		if (!isFinalized || !isSnapshotRouteGone(error)) throw error;
+		utxos = [];
+	}
 	const observations: Array<{
 		utxo: UTxO;
 		decoded: DecodedV1ContractDatum;
