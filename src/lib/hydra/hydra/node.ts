@@ -61,6 +61,7 @@ import {
 	validateHydraNodeLimits,
 } from './node-api';
 import { withHistorySetting } from './node-url';
+import type { L2MintCheck } from './l2-mint-tally';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { FinalizedFanoutState, type FinalizedFanoutBindingInput } from './node-finalized-fanout';
 import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
@@ -381,9 +382,9 @@ export class HydraNode extends EventEmitter {
 		return this._live.pendingIncrementUtxoRefs;
 	}
 
-	/** Units minted in the head and not burned; undefined until history replay completes. See `l2-mint-tally`. */
-	get unburnedL2MintUnits(): ReadonlySet<string> | undefined {
-		return this._replay.unburnedL2MintUnits;
+	/** Unburned L2 mints as of the replay's verified snapshot; undefined until replay completes. See `l2-mint-tally`. */
+	get l2MintCheck(): L2MintCheck | undefined {
+		return this._replay.l2MintCheck;
 	}
 
 	get headClock(): HydraHeadClock | undefined {

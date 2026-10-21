@@ -95,7 +95,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 			newTx: mockNewTx,
 			mainNode: {
 				pendingIncrementUtxoRefs: new Set<string>(),
-				unburnedL2MintUnits: new Set<string>(),
+				l2MintCheck: { unburnedUnits: new Set<string>(), verifiedOutputs: { has: () => true } },
 				fetchPendingDecommitRefs: mockFetchPendingDecommitRefs,
 				isTxConfirmed: mockIsTxConfirmed,
 				get: mockNodeGet,

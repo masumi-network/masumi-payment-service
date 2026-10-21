@@ -1,4 +1,5 @@
 import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { logger } from '@masumi/payment-core/logger';
 
 import type { HydraTransaction } from './types';
 
@@ -16,13 +17,29 @@ import type { HydraTransaction } from './types';
  */
 
 /**
+ * What the history replay can vouch for: the units still unburned as of the
+ * signed snapshot whose outputs are `verifiedOutputs` (keyed `txid#index`,
+ * lowercase). The node's HTTP UTxO view runs ahead of the replay, and a peer
+ * can widen that gap, so a token UTxO missing from `verifiedOutputs` comes from
+ * a transaction the tally has not seen and counts as unchecked.
+ */
+export interface L2MintCheck {
+	unburnedUnits: ReadonlySet<string>;
+	verifiedOutputs: ReadonlyMap<string, string>;
+}
+
+/**
  * Add the mint field of each transaction into `tally` (unit → net quantity).
  * A unit whose net reaches zero is dropped, so the keys are exactly the units
- * still outstanding. Returns whether any transaction minted or burned.
+ * still outstanding.
  *
  * Only called on transactions the conservation check has already decoded.
  */
-export function addL2TransactionMints(tally: Map<string, bigint>, transactions: readonly HydraTransaction[]): boolean {
+export function recordL2TransactionMints(
+	tally: Map<string, bigint>,
+	transactions: readonly HydraTransaction[],
+	snapshotNumber: number,
+): void {
 	let hasMint = false;
 	for (const { cborHex } of transactions) {
 		const mint = FixedTransaction.from_bytes(Buffer.from(cborHex, 'hex')).body().mint();
@@ -53,22 +70,29 @@ export function addL2TransactionMints(tally: Map<string, bigint>, transactions: 
 			}
 		}
 	}
-	return hasMint;
+	if (hasMint) {
+		logger.error('[HydraNode] A transaction in the head minted or burned tokens; unburned ones block finalization', {
+			snapshotNumber,
+			unburnedUnits: [...tally.keys()],
+		});
+	}
 }
 
 /**
- * Whether our own transactions must leave this UTxO unspent: it holds a unit
- * from `units` (lowercase policy id + asset name hex). `units` is undefined
- * while the history replay is still running, so no token can be checked yet,
- * and then any non-ADA asset counts.
+ * Why our own transactions must leave this UTxO unspent, or null when they may
+ * spend it. A UTxO with only ADA is always safe. One with any other asset is
+ * `minted` when it holds an unburned unit, and `unchecked` when the replay has
+ * not finished (`check` undefined) or has not reached the snapshot that made it.
  */
-export function holdsUnburnedL2Mint(
-	utxo: { output: { amount: ReadonlyArray<{ unit: string }> } },
-	units: ReadonlySet<string> | undefined,
-): boolean {
-	return utxo.output.amount.some((asset) => {
-		const unit = asset.unit.toLowerCase();
-		if (unit === '' || unit === 'lovelace') return false;
-		return units === undefined || units.has(unit);
-	});
+export function l2TokenRisk(
+	utxo: { input: { txHash: string; outputIndex: number }; output: { amount: ReadonlyArray<{ unit: string }> } },
+	check: L2MintCheck | undefined,
+): 'unchecked' | 'minted' | null {
+	const tokenUnits = utxo.output.amount
+		.map((asset) => asset.unit.toLowerCase())
+		.filter((unit) => unit !== '' && unit !== 'lovelace');
+	if (tokenUnits.length === 0) return null;
+	if (check === undefined) return 'unchecked';
+	if (!check.verifiedOutputs.has(`${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase())) return 'unchecked';
+	return tokenUnits.some((unit) => check.unburnedUnits.has(unit)) ? 'minted' : null;
 }

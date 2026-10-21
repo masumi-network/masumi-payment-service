@@ -18,7 +18,7 @@ import { HydraTransactionType } from './types';
 import type { HydraTransaction } from './types';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTransportError } from './errors';
-import { holdsUnburnedL2Mint } from './l2-mint-tally';
+import { l2TokenRisk } from './l2-mint-tally';
 
 export class HydraProvider implements IFetcher, ISubmitter {
 	private readonly _node: IHydraNode;
@@ -112,17 +112,18 @@ export class HydraProvider implements IFetcher, ISubmitter {
 	/**
 	 * The UTxOs our own transactions may spend. Leaves out any UTxO holding a
 	 * token minted in the head and not burned, which can never leave the head
-	 * and would carry that token into our change (see `l2-mint-tally`). Filter
-	 * inputs through this before selecting them; `fetchAddressUTxOs` stays the
-	 * full view for balances and escrow lookups.
+	 * and would carry that token into our change, and any token UTxO the replay
+	 * has not checked yet (see `l2TokenRisk`). Filter inputs through this before
+	 * selecting them; `fetchAddressUTxOs` stays the full view for balances and
+	 * escrow lookups.
 	 */
-	spendableUTxOs<T extends { output: { amount: ReadonlyArray<{ unit: string }> } }>(utxos: readonly T[]): T[] {
-		const units = this._node.unburnedL2MintUnits;
-		const spendable = utxos.filter((utxo) => !holdsUnburnedL2Mint(utxo, units));
+	spendableUTxOs<T extends Parameters<typeof l2TokenRisk>[0]>(utxos: readonly T[]): T[] {
+		const check = this._node.l2MintCheck;
+		const spendable = utxos.filter((utxo) => l2TokenRisk(utxo, check) === null);
 		if (spendable.length !== utxos.length) {
-			logger.warn('[HydraProvider] Leaving in-head UTxOs that hold an unburned L2-minted token out of spending', {
+			logger.warn('[HydraProvider] Leaving in-head token UTxOs that are L2-minted or not yet checked out of spending', {
 				excludedCount: utxos.length - spendable.length,
-				unburnedUnits: units === undefined ? 'unknown until history replay completes' : [...units],
+				unburnedUnits: check === undefined ? 'unknown until history replay completes' : [...check.unburnedUnits],
 			});
 		}
 		return spendable;

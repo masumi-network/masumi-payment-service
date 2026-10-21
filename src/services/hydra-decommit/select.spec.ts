@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
+import type { L2MintCheck } from '@/lib/hydra/hydra/l2-mint-tally';
 import {
 	coverAssetForCarve,
 	coverLovelace,
@@ -24,7 +25,11 @@ function utxo(txHash: string, lovelace: bigint, extra: Partial<UTxO['output']> =
 }
 
 const NO_PENDING = new Set<string>();
-const NO_MINTS = new Set<string>();
+/** A finished replay that found no L2 mints and has verified every output. */
+const ALL_CHECKED: L2MintCheck = {
+	unburnedUnits: new Set(),
+	verifiedOutputs: { has: () => true } as unknown as ReadonlyMap<string, string>,
+};
 
 describe('selectDecommittableUtxos', () => {
 	// The failure this exists to prevent: withdraw the last collateral-sized UTxO
@@ -34,7 +39,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 6_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: false,
 		});
 
@@ -48,7 +53,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 30_000_000n), utxo('b'.repeat(64), 5_000_000n), utxo('c'.repeat(64), 9_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: false,
 		});
 
@@ -62,7 +67,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 2_000_000n), utxo('b'.repeat(64), 1_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: false,
 		});
 
@@ -74,7 +79,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 6_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: true,
 		});
 
@@ -90,7 +95,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 20_000_000n)],
 			pendingIncrementRefs: pending,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: true,
 		});
 
@@ -102,7 +107,7 @@ describe('selectDecommittableUtxos', () => {
 	// A peer can mint a token in the head and send it to us. L1 cannot pay that
 	// token out, so a decommit that includes it fails, and the funds beside it
 	// would go nowhere either.
-	it('excludes UTxOs that hold a token minted in the head, and every token while that is unknown', () => {
+	it('excludes token UTxOs that are minted in the head or not yet checked by the replay', () => {
 		const minted = `${'c'.repeat(56)}6576696c`;
 		const l1Token = `${'d'.repeat(56)}5553444d`;
 		const utxos = [
@@ -121,22 +126,21 @@ describe('selectDecommittableUtxos', () => {
 			utxo('e'.repeat(64), 20_000_000n),
 		];
 
-		const known = selectDecommittableUtxos({
-			utxos,
-			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: new Set([minted]),
-			drain: true,
-		});
+		const select = (l2MintCheck: L2MintCheck | undefined) =>
+			selectDecommittableUtxos({ utxos, pendingIncrementRefs: NO_PENDING, l2MintCheck, drain: true });
+		const verified = (...refs: string[]) => new Map(refs.map((ref) => [ref, '']));
+
+		const known = select({ unburnedUnits: new Set([minted]), verifiedOutputs: verified(...utxos.map(utxoRef)) });
 		expect(known.eligible.map((u) => u.input.txHash)).toEqual(['b'.repeat(64), 'e'.repeat(64)]);
 		expect(known.excluded.get(`${'a'.repeat(64)}#0`)).toContain('minted inside the head');
 
-		const unknown = selectDecommittableUtxos({
-			utxos,
-			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: undefined,
-			drain: true,
-		});
-		expect(unknown.eligible.map((u) => u.input.txHash)).toEqual(['e'.repeat(64)]);
+		// The node's UTxO view runs ahead of the replay: a token output the
+		// replay has not reached may come from a mint the tally has not seen.
+		const lagging = select({ unburnedUnits: new Set(), verifiedOutputs: verified(`${'e'.repeat(64)}#0`) });
+		expect(lagging.eligible.map((u) => u.input.txHash)).toEqual(['e'.repeat(64)]);
+		expect(lagging.excluded.get(`${'b'.repeat(64)}#0`)).toContain('not been checked');
+
+		expect(select(undefined).eligible.map((u) => u.input.txHash)).toEqual(['e'.repeat(64)]);
 	});
 
 	// A reference script is something other transactions point at; taking it out
@@ -145,7 +149,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('b'.repeat(64), 20_000_000n, { scriptRef: 'ref' }), utxo('c'.repeat(64), 20_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: true,
 		});
 
@@ -168,7 +172,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [payout, utxo('b'.repeat(64), 20_000_000n, { dataHash: 'd'.repeat(64) })],
 			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: true,
 		});
 
@@ -180,7 +184,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [],
 			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: false,
 		});
 
@@ -192,7 +196,7 @@ describe('selectDecommittableUtxos', () => {
 		const result = selectDecommittableUtxos({
 			utxos: [utxo('a'.repeat(64), 20_000_000n), utxo('b'.repeat(64), 6_000_000n)],
 			pendingIncrementRefs: NO_PENDING,
-			unburnedL2MintUnits: NO_MINTS,
+			l2MintCheck: ALL_CHECKED,
 			drain: false,
 		});
 

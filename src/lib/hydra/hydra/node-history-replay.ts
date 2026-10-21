@@ -41,7 +41,7 @@ import {
 	hasFinalizedUtxoField,
 } from './schemas';
 import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
-import { addL2TransactionMints } from './l2-mint-tally';
+import { recordL2TransactionMints, type L2MintCheck } from './l2-mint-tally';
 import {
 	completeHydraSnapshotVerification,
 	doesHydraTransactionTransitionReachSnapshot,
@@ -186,9 +186,11 @@ export class HydraHistoryReplay {
 		return this._verifiedSnapshot;
 	}
 
-	/** Units minted in the head and not burned. Undefined until this pass has replayed the whole history. */
-	get unburnedL2MintUnits(): ReadonlySet<string> | undefined {
-		return this._complete && !this._failed ? new Set(this._l2MintTally.keys()) : undefined;
+	/** Unburned L2 mints as of the last verified snapshot. Undefined until this pass has replayed the whole history. */
+	get l2MintCheck(): L2MintCheck | undefined {
+		const snapshot = this._verifiedSnapshot;
+		if (!this._complete || this._failed || !snapshot) return undefined;
+		return { unburnedUnits: new Set(this._l2MintTally.keys()), verifiedOutputs: snapshot.outputs };
 	}
 
 	fail(error: unknown): void {
@@ -721,12 +723,7 @@ export class HydraHistoryReplay {
 			);
 		}
 		this.captureVerifiedFrame(verifiedSnapshot, parsedMessage);
-		if (addL2TransactionMints(this._l2MintTally, transitionTransactions)) {
-			logger.error('[HydraNode] A transaction in the head minted or burned tokens; unburned ones block finalization', {
-				snapshotNumber: verifiedSnapshot.number,
-				unburnedUnits: [...this._l2MintTally.keys()],
-			});
-		}
+		recordL2TransactionMints(this._l2MintTally, transitionTransactions, verifiedSnapshot.number);
 		const protectedProducerTxIds = this.ledger.resolveProtectedSnapshotProducerTxIds(verifiedSnapshot);
 		// Hydra 2.3 signatures authenticate only the TxOut multiset. Recording
 		// tx ids/CBOR therefore additionally relies on this explicitly configured

@@ -719,16 +719,18 @@ describe('HydraNode', () => {
 			];
 			for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
 
-			expect(node.unburnedL2MintUnits).toBeUndefined();
+			expect(node.l2MintCheck).toBeUndefined();
 			finishHistoryReplay(historyConnection);
-			expect(node.unburnedL2MintUnits).toEqual(new Set([`${MINT_POLICY_ID}${MINT_ASSET_NAME}`]));
+			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set([`${MINT_POLICY_ID}${MINT_ASSET_NAME}`]));
+			expect(node.l2MintCheck?.verifiedOutputs.has(`${mintTx.txId}#0`)).toBe(true);
 
 			const burn = { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) };
 			historyConnection.emit(
 				'message',
 				JSON.stringify(signedSnapshotFrame({ seq: 3, number: 3, utxo: burn, confirmed: [burnTx] })),
 			);
-			expect(node.unburnedL2MintUnits).toEqual(new Set());
+			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set());
+			expect(node.l2MintCheck?.verifiedOutputs.has(`${burnTx.txId}#0`)).toBe(true);
 		});
 
 		// Hydra 2.2.0 renamed HeadIsFinalized's `utxo` to `finalizedUTxO`, and 2.3.0
