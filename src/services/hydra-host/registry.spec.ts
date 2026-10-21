@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { HydraHostStatus } from '@/generated/prisma/client';
-import { nextHostStatus, normalizeHostBaseUrl, normalizeHostToken } from './registry';
+import { encrypt } from '@/utils/security/encryption';
+import { nextHostStatus, normalizeHostBaseUrl, normalizeHostToken, willRunOnAdminToken } from './registry';
 
 describe('normalizeHostBaseUrl', () => {
 	it('keeps a plain origin', () => {
@@ -119,5 +120,35 @@ describe('normalizeHostToken', () => {
 
 	it('names the field it rejected, so a form can point at it', () => {
 		expect(() => normalizeHostToken(`key\t${TOKEN}`, 'userToken')).toThrow(/userToken/);
+	});
+});
+
+describe('willRunOnAdminToken', () => {
+	const ADMIN = 'a'.repeat(40);
+	const USER = 'u'.repeat(40);
+	const sharedHost = { encryptedUserToken: encrypt(ADMIN), encryptedAdminToken: encrypt(ADMIN) };
+
+	it('detects a Host whose runtime slot holds the admin token', () => {
+		expect(willRunOnAdminToken(sharedHost, {})).toBe(true);
+	});
+
+	it('clears once a separate user token is set', () => {
+		expect(willRunOnAdminToken(sharedHost, { userToken: USER })).toBe(false);
+	});
+
+	// Clearing the admin slot does not revoke the token on the Host, so the
+	// runtime slot still carries fleet control.
+	it('still detects the old admin token after the admin slot is cleared', () => {
+		expect(willRunOnAdminToken(sharedHost, { adminToken: null })).toBe(true);
+	});
+
+	it('detects a new user token set to the admin value', () => {
+		const host = { encryptedUserToken: encrypt(USER), encryptedAdminToken: encrypt(ADMIN) };
+		expect(willRunOnAdminToken(host, { userToken: ` ${ADMIN} ` })).toBe(true);
+	});
+
+	it('returns false instead of throwing on a slot it cannot decrypt', () => {
+		const host = { encryptedUserToken: 'not-ciphertext', encryptedAdminToken: encrypt(ADMIN) };
+		expect(willRunOnAdminToken(host, {})).toBe(false);
 	});
 });
