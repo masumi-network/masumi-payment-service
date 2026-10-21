@@ -500,7 +500,11 @@ refuses a new head.
    or `DistributingSelection` and `chain-check` shows the same head output
    tx for several minutes, the step is stuck. Then add
    `"replaceInProgressSelection": true` to the selection, or add
-   `"acknowledgeFanoutStalled": true` to the retire call.
+   `"acknowledgeFanoutStalled": true` to the retire call. A replacement
+   selection helps only while other outputs are left to move: when only the
+   stuck output remains, any selection is that output again and fails again,
+   so retire instead. A replacement can also report a refusal that belongs to
+   the replaced step. Read `fanoutMode` again before you retry.
 
 3. Retire the head:
 

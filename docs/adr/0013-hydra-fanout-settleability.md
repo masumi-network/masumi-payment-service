@@ -179,7 +179,12 @@ Document all four limits. Build against none of them.
    for good, so both take an explicit override: `replaceInProgressSelection`
    on the endpoint and `acknowledgeFanoutStalled` on retire. A
    `PartialFanout` command completes only on a step that distributed part of
-   its own selection, never on a step already in flight. Retire accepts a `FanningOut` head too and stores the
+   its own selection, matched by reference or by output content, because the
+   node removes outputs by content. Two limits remain. A step in flight that
+   moves an output identical to one selected can settle the command early, and
+   after a replacement a post failure of the replaced step can be reported as
+   a refusal of the new selection. The node checks every selection again, so
+   neither can move funds the operator did not select. Retire accepts a `FanningOut` head too and stores the
    remaining set.
 
    _Original decision, superseded:_ do not build an operator retire path yet. A head that cannot reach
