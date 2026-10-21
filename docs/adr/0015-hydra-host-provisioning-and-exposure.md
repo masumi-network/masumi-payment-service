@@ -89,8 +89,8 @@ polling `/snapshot/last-seen` until `LastSeenSnapshot`/`NoSeenSnapshot`.
 But a container can always be killed involuntarily — OOM, host failure,
 platform eviction — so **draining is a probability reduction, not a guarantee**,
 and correctness rests on recovery rather than on clean shutdown. Recovery is
-automatic and needs no operator (levels 2 and 3 changed, see the amendment
-below):
+automatic except at levels 2 and 3, which need an operator by default (see the
+amendment below):
 
 | Level | Situation                             | Action                                                                                                |
 | ----- | ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -98,7 +98,7 @@ below):
 | 1     | container/host SIGKILL                | identical to level 0 on next boot                                                                     |
 | 2     | restarted but snapshot round stranded | detect, then side-load the node's own confirmed snapshot via `POST /snapshot` (opt-in, see amendment) |
 | 3     | offline past etcd's compaction window | same side-load path (opt-in, see amendment)                                                           |
-| 4     | persistence volume destroyed          | restore a volume snapshot plus the escrowed keys — the only manual case                               |
+| 4     | persistence volume destroyed          | restore a volume snapshot plus the escrowed keys (manual)                                             |
 
 The level-2/3 procedure is not new: it is already proven in
 `hydra-l2-flow/run-hydra-e2e.sh:909-921`, which detects a stranded round and
