@@ -136,7 +136,7 @@ describe('resetSnapshotRound', () => {
 		});
 		expect(mockWarn).toHaveBeenCalledWith(
 			'[HydraSnapshotRound] admin is resetting a stuck snapshot round',
-			expect.objectContaining({ actorApiKeyId: 'admin-key', droppedTxIds: [TX_ID] }),
+			expect.objectContaining({ actorApiKeyId: 'admin-key', droppedTxIds: [TX_ID], peerConfirmedSnapshotNumber: 313 }),
 		);
 	});
 
