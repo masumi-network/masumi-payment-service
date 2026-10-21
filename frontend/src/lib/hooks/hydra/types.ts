@@ -230,7 +230,10 @@ export type HydraHeadBalance = {
    */
   l2MintedUtxoCount?: number;
   l2MintedLovelace?: string;
-  /** False until the node's history replay is current; the L2-minted figures are 0 until then. */
+  /**
+   * False when not connected, until the node's history replay is current, and while it has
+   * failed; the L2-minted figures are 0 then.
+   */
   l2MintChecked?: boolean;
   balance: HydraHeadBalanceAsset[];
   /** `balance` without those UTxOs. Low-balance rules compare against this. */

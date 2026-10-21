@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
 const mockUnburnedUnits = new Set<string>();
+const mockPendingIncrementRefs = new Set<string>();
 const mockDecommitUpdateMany = jest.fn() as AnyMock;
 const mockDecommitUpdate = jest.fn() as AnyMock;
 const mockDecommitCreate = jest.fn() as AnyMock;
@@ -95,7 +96,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 			decommit: mockDecommitCall,
 			newTx: mockNewTx,
 			mainNode: {
-				pendingIncrementUtxoRefs: new Set<string>(),
+				pendingIncrementUtxoRefs: mockPendingIncrementRefs,
 				l2MintCheck: { unburnedUnits: mockUnburnedUnits, verifiedOutputs: { has: () => true } },
 				fetchPendingDecommitRefs: mockFetchPendingDecommitRefs,
 				isTxConfirmed: mockIsTxConfirmed,
@@ -510,8 +511,11 @@ describe('withdrawing a token that sits on the collateral reserve', () => {
 
 	// "Only 0 is eligible" for a token the balance shows sent operators hunting.
 	// The refusal has to say which rule held the token back.
+	// Only UTxOs that hold the requested token are named: an ADA-only deposit
+	// still being folded in has nothing to do with it.
 	it('names why a requested token is held back', async () => {
 		mockUnburnedUnits.add(USDM);
+		mockPendingIncrementRefs.add(`${'e'.repeat(64)}#0`);
 		try {
 			mockFetchAddressUTxOs.mockResolvedValue([
 				reserveWithToken('10000000'),
@@ -519,13 +523,20 @@ describe('withdrawing a token that sits on the collateral reserve', () => {
 					input: { txHash: 'd'.repeat(64), outputIndex: 0 },
 					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '50000000' }] },
 				},
+				{
+					input: { txHash: 'e'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '30000000' }] },
+				},
 			]);
 
-			await expect(
-				executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 20_000_000n } }),
-			).rejects.toThrow('Held back: carries a token minted inside the head, which L1 cannot pay out');
+			const refusal = executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 20_000_000n } });
+			await expect(refusal).rejects.toThrow(
+				'Held back: carries a token minted inside the head, which L1 cannot pay out',
+			);
+			await expect(refusal).rejects.not.toThrow('still being folded');
 		} finally {
 			mockUnburnedUnits.clear();
+			mockPendingIncrementRefs.clear();
 		}
 	});
 

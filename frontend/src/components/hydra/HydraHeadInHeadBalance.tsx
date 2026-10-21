@@ -129,7 +129,8 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
           {data.l2MintChecked === false && (
             <div className="border-t px-4 py-2 text-xs text-muted-foreground">
               Not yet checked for tokens minted inside the head: this node&apos;s history replay is
-              not current, so funds it will not spend are not flagged here yet.
+              not current, so funds it will not spend are not flagged here. A failed replay stays
+              this way until the node reconnects.
             </div>
           )}
           {(data.l2MintedUtxoCount ?? 0) > 0 && (

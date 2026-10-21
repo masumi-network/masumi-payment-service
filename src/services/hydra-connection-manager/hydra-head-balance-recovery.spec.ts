@@ -20,8 +20,11 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({ logger: { warn:
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	getBlockfrostInstance: () => ({ txsUtxos }),
 }));
+let hasProvider = true;
 jest.unstable_mockModule('./hydra-connection-manager.service', () => ({
-	getHydraConnectionManager: () => ({ getProvider: () => ({ fetchAddressUTxOs: fetchUtxos, getL2MintCheck }) }),
+	getHydraConnectionManager: () => ({
+		getProvider: () => (hasProvider ? { fetchAddressUTxOs: fetchUtxos, getL2MintCheck } : null),
+	}),
 }));
 
 const { getOwnInHeadBalance } = await import('./hydra-head-balance');
@@ -43,6 +46,7 @@ beforeEach(() => {
 	});
 	findRecovered.mockResolvedValue([{ depositTxHash: depositHash, splitTxHash: splitHash }]);
 	getL2MintCheck.mockReturnValue(undefined);
+	hasProvider = true;
 	txsUtxos.mockResolvedValue({ inputs: [{ address, tx_hash: splitHash, output_index: 0 }] });
 });
 
@@ -93,6 +97,13 @@ describe('L2-minted balance', () => {
 		];
 		return { input: { txHash, outputIndex: 0 }, output: { address, amount } };
 	}
+
+	// The API promises clients that a disconnected reading is never checked.
+	it('says a disconnected reading is not checked', async () => {
+		hasProvider = false;
+
+		expect(await getOwnInHeadBalance('head')).toMatchObject({ connected: false, l2MintChecked: false });
+	});
 
 	// The low-balance monitor must not mark a rule Healthy from this reading.
 	it('says the reading is unchecked while the replay is not current', async () => {

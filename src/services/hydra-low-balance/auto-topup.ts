@@ -128,8 +128,8 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// Until the history replay is current, nothing says which units a peer
 			// minted, and the monitor does not mark a rule Healthy, so the rule's
 			// Low status cannot be trusted either. Checked after the database-only
-			// gates above, so their warnings still show, and before any read of the
-			// head or of L1.
+			// gates above, so the stalled-deposit warning still shows, and before
+			// any read of the head or of L1.
 			const l2MintCheck = getHydraConnectionManager().getNode(head.id)?.l2MintCheck;
 			if (!l2MintCheck) {
 				logger.debug('hydra-auto-topup: head not connected or its replay not current; no top-up', {
@@ -139,11 +139,11 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 				continue;
 			}
 			// The rule reads the spendable balance, and an own UTxO carrying a unit
-			// with a nonzero net L2 mint never counts as spendable. A deposit of that
-			// unit would therefore leave the rule Low, and every later cycle would
-			// send another until the wallet ran out of it. Debug, not warn: this
-			// repeats every cycle, and the head error row and the Low webhook
-			// already tell the operator.
+			// with a nonzero net L2 mint does not count once the replay has verified
+			// it. A deposit of that unit would therefore leave the rule Low, and
+			// every later cycle would send another until the wallet ran out of it.
+			// Debug, not warn: this repeats every cycle, and the head error row
+			// already names the unit.
 			if (l2MintCheck.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
 				logger.debug('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
 					ruleId: rule.id,
@@ -162,7 +162,7 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// above.
 			const balance = await getOwnInHeadBalance(head.id);
 			if (!balance?.connected || !balance.l2MintChecked) {
-				logger.debug('hydra-auto-topup: head not connected or its replay not current; no top-up', {
+				logger.debug('hydra-auto-topup: balance re-read not connected or not checked; no top-up', {
 					ruleId: rule.id,
 					headId: head.id,
 				});

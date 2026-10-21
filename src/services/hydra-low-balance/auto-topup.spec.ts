@@ -143,7 +143,7 @@ describe('runHydraAutoTopupCycle', () => {
 
 	// The replay can turn current while the cycle reads the head. The unit check
 	// must not have been skipped in that case: it would deposit a minted unit.
-	it('sends no deposit and reads nothing while the history replay is not current', async () => {
+	it('sends no deposit and reads nothing from the head while the history replay is not current', async () => {
 		const unit = 'cc'.repeat(28) + '0014df10';
 		isReplayCurrent = false;
 		mockUnburnedUnits.add(unit);
@@ -153,6 +153,7 @@ describe('runHydraAutoTopupCycle', () => {
 
 		expect(mockGetOwnInHeadBalance).not.toHaveBeenCalled();
 		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+		expect(mockLoggerError).not.toHaveBeenCalled();
 	});
 
 	// A reconnect between the replay check and the balance read.
@@ -160,6 +161,7 @@ describe('runHydraAutoTopupCycle', () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockGetOwnInHeadBalance.mockResolvedValueOnce({ connected: true, l2MintChecked: false, spendableBalance: [] });
 		await runHydraAutoTopupCycle();
+		// Defense in depth: the balance service pairs connected false with l2MintChecked false.
 		mockGetOwnInHeadBalance.mockResolvedValueOnce({ connected: false, l2MintChecked: true, spendableBalance: [] });
 		await runHydraAutoTopupCycle();
 
