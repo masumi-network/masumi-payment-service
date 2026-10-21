@@ -319,6 +319,36 @@ describe('webhookSenderService.sendWebhook', () => {
 		expect(discordBody.content).toContain('🧾 Transactions: tx0, tx1, tx2, tx3, tx4 (+2 more)');
 	});
 
+	// A node reason can be 2000 characters on its own, and Discord refuses a
+	// message longer than that, so the alert about a failed contest never arrived.
+	it('keeps a failed L1 post alert under the Discord message limit', async () => {
+		const payload = {
+			event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			service_name: 'masumi-test-service',
+			timestamp: '2026-10-22T12:00:00.000Z',
+			webhook_id: 'webhook-6',
+			data: {
+				hydraHeadId: 'head-1',
+				headStatus: 'Closed',
+				postChainTxTag: 'ContestTx',
+				reason: `FailedToPostTx: the chain backend refused the transaction (${'x'.repeat(2000)})`,
+				reportedToCaller: false,
+				failedAt: '2026-10-22T12:00:00.000Z',
+			},
+		} as unknown as StoredWebhookPayload;
+
+		await webhookSenderService.sendWebhook(
+			'https://discord.com/api/webhooks/test/token',
+			WebhookFormat.DISCORD,
+			null,
+			payload,
+		);
+
+		const discordBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		expect(discordBody.content).toContain('🧾 Transaction: ContestTx');
+		expect(discordBody.content.length).toBeLessThan(2000);
+	});
+
 	it('blocks private destinations before making an outbound request and logs only the redacted destination', async () => {
 		mockAssertWebhookDestinationAllowed.mockRejectedValue(new Error('blocked'));
 

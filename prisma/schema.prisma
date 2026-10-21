@@ -1613,6 +1613,7 @@ enum WebhookEventType {
   X402_WALLET_LOW_BALANCE
   HYDRA_HEAD_LOW_BALANCE
   HYDRA_HEAD_SNAPSHOT_ROUND_STUCK
+  HYDRA_HEAD_POST_TX_FAILED
 }
 
 // Critical is retained for historical rows only: the dispatcher creates

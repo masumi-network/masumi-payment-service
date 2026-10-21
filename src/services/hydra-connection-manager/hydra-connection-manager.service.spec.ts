@@ -28,6 +28,7 @@ const mockParseEvidence = jest.fn<(cborHex: string) => unknown>();
 const mockFetchUtxos = jest.fn<(_txId?: string) => Promise<unknown[]>>();
 const mockDecodeV2ContractDatum = jest.fn<(...args: unknown[]) => unknown>();
 const mockRecordHeadError = jest.fn<(...args: unknown[]) => Promise<void>>();
+const mockTriggerPostTxFailed = jest.fn<(...args: unknown[]) => Promise<void>>();
 
 const transactionClient = {
 	$queryRaw: mockQueryRaw,
@@ -74,6 +75,10 @@ jest.unstable_mockModule('@/utils/converter/string-datum-convert', () => ({
 
 jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
 	recordHeadError: mockRecordHeadError,
+}));
+
+jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
+	webhookEventsService: { triggerHydraHeadPostTxFailed: mockTriggerPostTxFailed },
 }));
 
 const { HydraConnectionManager } = await import('./hydra-connection-manager.service');
@@ -664,10 +669,10 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	});
 
 	// The node posts a contest on its own when a peer closes on an old snapshot.
-	// When that post fails nothing is waiting on it, so without a record the
-	// operator never learns why. A failed Close already has its caller's
-	// CommandFailed row, so it must not get a second one.
-	it('records an L1 transaction the node could not post, once', async () => {
+	// When that post fails nothing is waiting on it, so without a record and an
+	// alert the operator never learns why. Every failure is announced; a failed
+	// Close already has its caller's CommandFailed row, so it gets no second one.
+	it('announces every L1 transaction the node could not post and records it once', async () => {
 		const manager = new HydraConnectionManager();
 		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & { status: HydraHeadStatus } };
 		head.mainNode = Object.assign(new EventEmitter(), { status: HydraHeadStatus.Closed });
@@ -684,6 +689,16 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			answersCommand: false,
 		});
 
+		expect(mockTriggerPostTxFailed.mock.calls.map(([payload]) => payload)).toEqual([
+			expect.objectContaining({ hydraHeadId: 'head-1', postChainTxTag: 'CloseTx', reportedToCaller: true }),
+			expect.objectContaining({
+				hydraHeadId: 'head-1',
+				headStatus: HydraHeadStatus.Closed,
+				postChainTxTag: 'ContestTx',
+				reason: 'NotEnoughFuel: fund the node',
+				reportedToCaller: false,
+			}),
+		]);
 		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
 		expect(mockRecordHeadError).toHaveBeenCalledWith(
 			'head-1',

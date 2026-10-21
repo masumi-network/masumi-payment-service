@@ -27,6 +27,8 @@ class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
 	private static readonly MAX_SUMMARY_TX_IDS = 5;
+	/** A node reason can run to 2000 characters, and Discord refuses a message longer than that. */
+	private static readonly MAX_SUMMARY_REASON_LENGTH = 500;
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
 	private static readonly LOVELACE_DECIMALS = 1_000_000n;
 	private static readonly MAINNET_USDCX_UNIT = '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378';
@@ -593,6 +595,22 @@ class WebhookSenderService {
 			this.appendDetailLine(lines, '✍️', 'Signatures', payload.data.signatoryCount.toString());
 			this.appendDetailLine(lines, '🧾', 'Transactions', this.summarizeTxIds(payload.data.txIds));
 			this.appendDetailLine(lines, '🕒', 'Stuck since', payload.data.stuckSince);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+			return lines.join('\n');
+		}
+
+		if (payload.event_type === WebhookEventType.HYDRA_HEAD_POST_TX_FAILED) {
+			lines.push('');
+			this.appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
+			this.appendDetailLine(lines, '📍', 'Head status', payload.data.headStatus);
+			this.appendDetailLine(lines, '🧾', 'Transaction', payload.data.postChainTxTag);
+			this.appendDetailLine(
+				lines,
+				'📝',
+				'Reason',
+				payload.data.reason.slice(0, WebhookSenderService.MAX_SUMMARY_REASON_LENGTH),
+			);
+			this.appendDetailLine(lines, '🕒', 'Failed at', payload.data.failedAt);
 			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 			return lines.join('\n');
 		}

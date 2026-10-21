@@ -203,6 +203,21 @@ const hydraHeadSnapshotRoundStuckPayloadSchema = createWebhookPayloadSchema(
 	'Emitted once per round when a Hydra head snapshot round has not moved for the stuck threshold. The head confirms nothing until an admin resets the round.',
 );
 
+const hydraHeadPostTxFailedPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_POST_TX_FAILED'),
+	z.object({
+		hydraHeadId: z.string().describe('The head the node tried to post an L1 transaction for'),
+		headStatus: z.string().describe('The head status this service held when the failure arrived'),
+		postChainTxTag: z.string().describe('Which L1 transaction failed, for example ContestTx; "unknown" if unnamed'),
+		reason: z.string().describe("The node's reason, with remedy advice where one is known"),
+		reportedToCaller: z
+			.boolean()
+			.describe('True when the failed post answers an API call (Init, Close, Fanout), which fails with it'),
+		failedAt: z.string().datetime().describe('When this service received the failure'),
+	}),
+	'Emitted for every L1 transaction the Hydra node could not post. A failed ContestTx means the node did not defend the head against a close on an older snapshot.',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -218,6 +233,7 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	x402WalletLowBalancePayloadSchema,
 	hydraHeadLowBalancePayloadSchema,
 	hydraHeadSnapshotRoundStuckPayloadSchema,
+	hydraHeadPostTxFailedPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;
