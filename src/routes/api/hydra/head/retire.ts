@@ -106,8 +106,14 @@ async function readRemainingUtxo(
 		if (!node) throw new Error('no active connection to the Hydra node');
 		state = await readFanoutHeadState(node);
 	} catch (error) {
-		if (acknowledge.remainingUnknown) return null;
 		const message = error instanceof Error ? error.message : String(error);
+		if (acknowledge.remainingUnknown) {
+			logger.warn(`[HydraAPI] Retiring head ${headId} without its remaining UTxO set: ${message}`);
+			return null;
+		}
+		// The node answered, but with a state that cannot be retired from (not
+		// closed, or unreadable): keep that status rather than calling it down.
+		if (createHttpError.isHttpError(error)) throw error;
 		throw createHttpError(
 			503,
 			`Could not read the remaining UTxO set from the node (${message}); ` +

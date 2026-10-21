@@ -35,9 +35,9 @@ export function registerHydraHeadRetirePath({ registry, apiKeyAuth }: SwaggerReg
 			404: { description: 'Hydra head not found' },
 			409: {
 				description:
-					'Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head (pass acknowledgeFanoutStalled for a stuck drain), or the head changed meanwhile',
+					'Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head (pass acknowledgeFanoutStalled for a stuck drain) or does not hold it as closed, or the head changed meanwhile',
 			},
-			502: { description: 'The head state could not be read on chain' },
+			502: { description: 'The head state could not be read on chain, or the node returned an unreadable head state' },
 			503: { description: 'Independent L1 evidence or the remaining UTxO set is not available yet' },
 		},
 	});

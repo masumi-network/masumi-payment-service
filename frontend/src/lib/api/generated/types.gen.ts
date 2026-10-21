@@ -16289,11 +16289,11 @@ export type PostHydraHeadRetireErrors = {
      */
     404: unknown;
     /**
-     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head (pass acknowledgeFanoutStalled for a stuck drain), or the head changed meanwhile
+     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head (pass acknowledgeFanoutStalled for a stuck drain) or does not hold it as closed, or the head changed meanwhile
      */
     409: unknown;
     /**
-     * The head state could not be read on chain
+     * The head state could not be read on chain, or the node returned an unreadable head state
      */
     502: unknown;
     /**

@@ -160,6 +160,16 @@ describe('retireHeadPost', () => {
 		expect(update.data.retiredRemainingUtxo).toEqual(stored(AFTER_STEP));
 	});
 
+	// The node answered with a state retire cannot use: that is no outage.
+	it('reports a node that does not hold the head as closed as a conflict', async () => {
+		mockGetNode.mockReturnValue({ get: async () => ({ tag: 'Open', contents: {} }) });
+
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+		await expect(handler({ input: { ...input, acknowledgeRemainingUtxoUnknown: true } })).resolves.toMatchObject({
+			remainingUtxoCount: null,
+		});
+	});
+
 	it('refuses a head that is already retired', async () => {
 		mockFindHead.mockResolvedValue({ ...fanoutPossible, retiredAt: new Date() });
 
