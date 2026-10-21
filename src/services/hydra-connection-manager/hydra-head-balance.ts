@@ -14,6 +14,8 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getHydraConnectionManager } from './hydra-connection-manager.service';
+import { l2TokenRisk } from '@/lib/hydra/hydra/l2-mint-tally';
+import type { UTxO } from '@meshsdk/core';
 
 export interface HydraHeadBalanceAsset {
 	/** Empty string for lovelace/ADA; otherwise policyId+assetName hex. */
@@ -39,6 +41,21 @@ export interface HydraHeadOwnBalance {
 	unbackedLovelace: string;
 	/** Whether any UTxO here is unbacked, so the balance above is optimistic. */
 	hasUnbackedUtxos: boolean;
+	/**
+	 * Own UTxOs that carry a token minted or burned inside the head whose net is
+	 * not back at zero.
+	 *
+	 * The service never spends them (see `l2-mint-tally`): an unburned L2-minted
+	 * token can never leave the head, and spending the UTxO would carry it into
+	 * our change.
+	 * Their ADA stays counted in `balance`, because the head does hold it.
+	 * A peer can create such an output at this address.
+	 */
+	l2MintedUtxoCount: number;
+	/** Lovelace held by those UTxOs. */
+	l2MintedLovelace: string;
+	/** `balance` without those UTxOs: what the service can still spend. Low-balance rules read this. */
+	spendableBalance: HydraHeadBalanceAsset[];
 	hydraHeadId: string;
 	/** The local participant's wallet address whose in-head funds are reported. */
 	address: string;
@@ -119,6 +136,9 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 			balance: [],
 			unbackedLovelace: '0',
 			hasUnbackedUtxos: false,
+			l2MintedUtxoCount: 0,
+			l2MintedLovelace: '0',
+			spendableBalance: [],
 		};
 	}
 
@@ -168,6 +188,18 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 	}
 
 	const balance = aggregateInHeadAmounts(utxos.map((utxo) => utxo.output.amount));
+	// Only a verified mint counts. A token UTxO the replay has not reached yet
+	// is usually our own fresh change, and leaving it out would make the
+	// spendable figure dip below a rule threshold for a moment and alert.
+	const l2MintCheck = provider.getL2MintCheck();
+	const isL2Minted = (utxo: UTxO) => l2TokenRisk(utxo, l2MintCheck) === 'minted';
+	const l2Minted = utxos.filter(isL2Minted);
+	const spendableBalance = aggregateInHeadAmounts(
+		utxos.filter((utxo) => !isL2Minted(utxo)).map((utxo) => utxo.output.amount),
+	);
+	const l2MintedLovelace =
+		aggregateInHeadAmounts(l2Minted.map((utxo) => utxo.output.amount)).find((asset) => asset.unit === '')?.quantity ??
+		'0';
 
 	return {
 		hydraHeadId,
@@ -177,5 +209,8 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 		balance,
 		unbackedLovelace: unbackedLovelace.toString(),
 		hasUnbackedUtxos: unbacked.length > 0,
+		l2MintedUtxoCount: l2Minted.length,
+		l2MintedLovelace,
+		spendableBalance,
 	};
 }

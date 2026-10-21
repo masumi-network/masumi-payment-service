@@ -3,25 +3,39 @@ import { describeL2FundingBlock, L2_FUNDING_BLOCK_MESSAGE } from '@/utils/hydra/
 
 describe('describeL2FundingBlock', () => {
 	it('reports the block when an open head holds none of this wallet’s funds', () => {
-		expect(describeL2FundingBlock(HydraHeadStatus.Open, { connected: true, utxoCount: 0 })).toBe(
+		expect(describeL2FundingBlock(HydraHeadStatus.Open, { connected: true, utxoCount: 0, l2MintedUtxoCount: 0 })).toBe(
 			L2_FUNDING_BLOCK_MESSAGE,
 		);
 	});
 
 	it('says nothing when the wallet has funds in the head', () => {
-		expect(describeL2FundingBlock(HydraHeadStatus.Open, { connected: true, utxoCount: 1 })).toBeNull();
+		expect(
+			describeL2FundingBlock(HydraHeadStatus.Open, { connected: true, utxoCount: 1, l2MintedUtxoCount: 0 }),
+		).toBeNull();
 	});
 
 	// One UTxO is enough to build with; the amount is not what this answers.
 	it('says nothing for a single UTxO however many the head holds in total', () => {
-		expect(describeL2FundingBlock(HydraHeadStatus.Open, { connected: true, utxoCount: 32 })).toBeNull();
+		expect(
+			describeL2FundingBlock(HydraHeadStatus.Open, { connected: true, utxoCount: 32, l2MintedUtxoCount: 0 }),
+		).toBeNull();
+	});
+
+	// A peer can leave an output carrying its own L2-minted token at this
+	// address. The service never spends that, so it cannot carry a build.
+	it('reports the block when every own UTxO carries an unburned L2-minted token', () => {
+		expect(describeL2FundingBlock(HydraHeadStatus.Open, { connected: true, utxoCount: 2, l2MintedUtxoCount: 2 })).toBe(
+			L2_FUNDING_BLOCK_MESSAGE,
+		);
 	});
 
 	// Unknown is not blocked. The connection fields reported next to this
 	// already say the head could not be reached, and telling an operator to top
 	// up a head nobody could read sends them to fix the wrong thing.
 	it('says nothing when no live snapshot could be read', () => {
-		expect(describeL2FundingBlock(HydraHeadStatus.Open, { connected: false, utxoCount: 0 })).toBeNull();
+		expect(
+			describeL2FundingBlock(HydraHeadStatus.Open, { connected: false, utxoCount: 0, l2MintedUtxoCount: 0 }),
+		).toBeNull();
 		expect(describeL2FundingBlock(HydraHeadStatus.Open, null)).toBeNull();
 	});
 
@@ -33,7 +47,7 @@ describe('describeL2FundingBlock', () => {
 			HydraHeadStatus.FanoutPossible,
 			HydraHeadStatus.Final,
 		]) {
-			expect(describeL2FundingBlock(status, { connected: true, utxoCount: 0 })).toBeNull();
+			expect(describeL2FundingBlock(status, { connected: true, utxoCount: 0, l2MintedUtxoCount: 0 })).toBeNull();
 		}
 	});
 });

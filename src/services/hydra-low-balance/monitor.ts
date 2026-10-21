@@ -39,7 +39,7 @@ function balanceKeyForAssetUnit(assetUnit: string): string {
 
 /**
  * Evaluate every enabled Hydra low-balance rule against its participant's OWN
- * in-head balance and advance each rule's status. Returns the rules that
+ * spendable in-head balance and advance each rule's status. Returns the rules that
  * transitioned Healthy/Unknown -> Low this cycle (the once-per-edge alerts);
  * callers emit the webhook. Rules whose head is not Open or has no live snapshot
  * are skipped (balance unknown, not treated as zero) so a disconnected head never
@@ -62,8 +62,12 @@ export async function evaluateHydraLowBalanceRules(): Promise<HydraLowBalanceAle
 			const balance = await getOwnInHeadBalance(head.id);
 			if (!balance || !balance.connected) continue;
 
+			// Spendable funds only: ADA under an unburned L2-minted token is in the
+			// head but no use to us, and counting it kept a starved head from alerting.
 			const key = balanceKeyForAssetUnit(rule.assetUnit);
-			const currentAmount = BigInt(balance.balance.find((asset) => asset.unit.toLowerCase() === key)?.quantity ?? '0');
+			const currentAmount = BigInt(
+				balance.spendableBalance.find((asset) => asset.unit.toLowerCase() === key)?.quantity ?? '0',
+			);
 			const checkedAt = new Date();
 
 			if (currentAmount < rule.thresholdAmount) {

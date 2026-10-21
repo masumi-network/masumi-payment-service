@@ -46,8 +46,15 @@ function rule(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function balance(quantity: string, unit = '') {
-	return { hydraHeadId: 'head-1', address: 'addr', connected: true, utxoCount: 1, balance: [{ unit, quantity }] };
+function balance(quantity: string, unit = '', spendableQuantity = quantity) {
+	return {
+		hydraHeadId: 'head-1',
+		address: 'addr',
+		connected: true,
+		utxoCount: 1,
+		balance: [{ unit, quantity }],
+		spendableBalance: [{ unit, quantity: spendableQuantity }],
+	};
 }
 
 beforeEach(() => {
@@ -141,6 +148,18 @@ describe('evaluateHydraLowBalanceRules', () => {
 
 		expect(alerts).toHaveLength(0);
 		expect(mockUpdate).not.toHaveBeenCalled();
+	});
+
+	// ADA under an unburned L2-minted token is in the head but the service
+	// never spends it. Counting it kept a head with nothing usable from alerting.
+	it('compares the spendable balance, not the total the head reports', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockGetOwnInHeadBalance.mockResolvedValue(balance('60000000', '', '10000000'));
+
+		const alerts = await evaluateHydraLowBalanceRules();
+
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0].currentAmount).toBe(10_000_000n);
 	});
 
 	it('matches a token assetUnit and treats a missing asset as zero', async () => {

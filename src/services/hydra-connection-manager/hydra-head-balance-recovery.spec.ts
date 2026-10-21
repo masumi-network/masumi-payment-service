@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
+import type { L2MintCheck } from '@/lib/hydra/hydra/l2-mint-tally';
 
 const address = 'wallet-address';
 const splitHash = 'a'.repeat(64);
@@ -10,6 +11,7 @@ const findRecovered = jest.fn<() => Promise<Array<{ depositTxHash: string | null
 const fetchUtxos = jest.fn<() => Promise<UTxO[]>>();
 type ChainInput = { address: string; tx_hash: string; output_index: number; collateral?: boolean; reference?: boolean };
 const txsUtxos = jest.fn<(hash: string) => Promise<{ inputs: ChainInput[] }>>();
+const getL2MintCheck = jest.fn<() => L2MintCheck | undefined>();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: { hydraHead: { findUnique: findHead }, hydraTopup: { findMany: findRecovered } },
@@ -19,7 +21,7 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	getBlockfrostInstance: () => ({ txsUtxos }),
 }));
 jest.unstable_mockModule('./hydra-connection-manager.service', () => ({
-	getHydraConnectionManager: () => ({ getProvider: () => ({ fetchAddressUTxOs: fetchUtxos }) }),
+	getHydraConnectionManager: () => ({ getProvider: () => ({ fetchAddressUTxOs: fetchUtxos, getL2MintCheck }) }),
 }));
 
 const { getOwnInHeadBalance } = await import('./hydra-head-balance');
@@ -40,6 +42,7 @@ beforeEach(() => {
 		},
 	});
 	findRecovered.mockResolvedValue([{ depositTxHash: depositHash, splitTxHash: splitHash }]);
+	getL2MintCheck.mockReturnValue(undefined);
 	txsUtxos.mockResolvedValue({ inputs: [{ address, tx_hash: splitHash, output_index: 0 }] });
 });
 
@@ -77,5 +80,45 @@ describe('recovered deposit balance', () => {
 		txsUtxos.mockRejectedValueOnce(new Error('chain unavailable'));
 		fetchUtxos.mockResolvedValue([utxo(originalHash, 2)]);
 		await expect(getOwnInHeadBalance('head')).rejects.toMatchObject({ status: 502 });
+	});
+});
+
+describe('L2-minted balance', () => {
+	const minted = 'ab'.repeat(28) + '61';
+	const usdm = 'cd'.repeat(28) + '62';
+	function tokenUtxo(txHash: string, unit: string, lovelace: string): UTxO {
+		const amount = [
+			{ unit: 'lovelace', quantity: lovelace },
+			{ unit, quantity: '1' },
+		];
+		return { input: { txHash, outputIndex: 0 }, output: { address, amount } };
+	}
+
+	// The low-balance rule reads `spendableBalance`, so a verified L2 mint has
+	// to leave it while a token the replay has not reached yet stays in.
+	it('keeps verified L2-minted UTxOs out of the spendable balance only', async () => {
+		findRecovered.mockResolvedValue([]);
+		const tainted = tokenUtxo('1'.repeat(64), minted, '3000000');
+		const pending = tokenUtxo('2'.repeat(64), usdm, '2000000');
+		fetchUtxos.mockResolvedValue([tainted, pending, utxo(originalHash, 0)]);
+		getL2MintCheck.mockReturnValue({
+			unburnedUnits: new Set([minted]),
+			verifiedOutputs: new Map([[`${'1'.repeat(64)}#0`, '']]),
+		});
+
+		expect(await getOwnInHeadBalance('head')).toMatchObject({
+			utxoCount: 3,
+			l2MintedUtxoCount: 1,
+			l2MintedLovelace: '3000000',
+			balance: [
+				{ unit: '', quantity: '14000000' },
+				{ unit: minted, quantity: '1' },
+				{ unit: usdm, quantity: '1' },
+			],
+			spendableBalance: [
+				{ unit: '', quantity: '11000000' },
+				{ unit: usdm, quantity: '1' },
+			],
+		});
 	});
 });
