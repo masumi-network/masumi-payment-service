@@ -100,12 +100,12 @@ export function recordL2TransactionMints(
 		}
 	}
 	if (wasClear && tally.size > 0) {
-		logger.error('[HydraNode] The head holds tokens minted inside it and cannot finalize until they are burned', {
+		logger.error('[HydraNode] The head holds a nonzero L2 mint balance and cannot finalize until it is back to zero', {
 			snapshotNumber,
 			unburnedUnits: describeUnits(tally.keys()),
 		});
 	} else if (!wasClear && tally.size === 0) {
-		logger.info('[HydraNode] Every token minted inside the head is burned again', { snapshotNumber });
+		logger.info('[HydraNode] The head L2 mint balance is back to zero', { snapshotNumber });
 	}
 }
 
