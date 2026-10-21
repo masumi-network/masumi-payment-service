@@ -20,14 +20,23 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 5 },
 }));
 
-jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: {
+const mockQueryRaw = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
+	withSerializableSlotRetry: async <T>(operation: () => Promise<T>) => await operation(),
+}));
+
+jest.unstable_mockModule('@masumi/payment-core/db', () => {
+	const prisma: Record<string, unknown> = {
+		$queryRaw: mockQueryRaw,
 		hydraLocalParticipant: {
 			findMany: mockFindMany,
 			updateMany: mockUpdateMany,
 		},
-	},
-}));
+	};
+	prisma.$transaction = async (run: (tx: unknown) => Promise<unknown>) => await run(prisma);
+	return { prisma };
+});
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -66,6 +75,7 @@ function candidate(
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockQueryRaw.mockResolvedValue([{ status: 'Open', isEnabled: true, isClosing: false }]);
 	mockUpdateMany.mockResolvedValue({ count: 1 });
 	mockFindMany.mockResolvedValue([]);
 	mockLookupConfirmedChainTx.mockResolvedValue('confirmed-valid');
@@ -75,6 +85,7 @@ beforeEach(() => {
 describe('reserveAndSubmitHydraCommit', () => {
 	const reservation = {
 		participantId: 'participant-1',
+		hydraHeadId: 'head-1',
 		commitTxHash: COMMIT_TX_HASH,
 		invalidHereafterSlot: INVALID_HEREAFTER_SLOT,
 	};
@@ -104,6 +115,17 @@ describe('reserveAndSubmitHydraCommit', () => {
 
 		await expect(reserveAndSubmitHydraCommit(reservation, submit)).resolves.toBe(rejection);
 		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+	});
+
+	// A close admitted while the commit was carved must stop it before L1: a
+	// deposit that lands after close is not in the fanout.
+	it('does not reserve or submit once the head is closing', async () => {
+		mockQueryRaw.mockResolvedValue([{ status: 'Open', isEnabled: true, isClosing: true }]);
+		const submit = jest.fn<() => Promise<unknown>>();
+
+		await expect(reserveAndSubmitHydraCommit(reservation, submit)).rejects.toMatchObject({ status: 409 });
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(submit).not.toHaveBeenCalled();
 	});
 
 	it('does not submit when another exact reservation won the race', async () => {

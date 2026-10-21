@@ -27,6 +27,7 @@ const transactionClient = {
 	paymentRequest: { count: mockPaymentCount },
 	purchaseRequest: { count: mockPurchaseCount },
 	hydraTopup: { count: mockTopupCount },
+	hydraLocalParticipant: { findFirst: async () => null },
 	hydraHead: { updateMany: mockClaimClose },
 };
 
@@ -174,8 +175,11 @@ describe('beginHydraHeadClose', () => {
 		expect(mockTopupCount).toHaveBeenCalledWith({
 			where: {
 				hydraHeadId: 'head-1',
-				depositTxHash: { not: null },
-				status: { notIn: ['Absorbed', 'Recovered', 'Failed'] },
+				OR: [
+					{ depositTxHash: { not: null }, status: { notIn: ['Absorbed', 'Recovered', 'Failed'] } },
+					// A deposit still being prepared lands on L1 after the close.
+					{ status: 'Preparing', createdAt: { gte: expect.any(Date) } },
+				],
 			},
 		});
 	});

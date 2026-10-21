@@ -24,16 +24,25 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 5 },
 }));
 
-jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: {
+const mockQueryRaw = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
+	withSerializableSlotRetry: async <T>(operation: () => Promise<T>) => await operation(),
+}));
+
+jest.unstable_mockModule('@masumi/payment-core/db', () => {
+	const prisma: Record<string, unknown> = {
+		$queryRaw: mockQueryRaw,
 		hydraTopup: {
 			create: mockCreate,
 			update: mockUpdate,
 			updateMany: mockUpdateMany,
 			findMany: mockFindMany,
 		},
-	},
-}));
+	};
+	prisma.$transaction = async (run: (tx: unknown) => Promise<unknown>) => await run(prisma);
+	return { prisma };
+});
 
 jest.unstable_mockModule('@masumi/payment-core/db-retry', () => ({
 	isUniqueConstraintError: mockIsUniqueConstraintError,
@@ -78,6 +87,7 @@ function candidate(overrides: Partial<Parameters<typeof reconcilePendingHydraTop
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockQueryRaw.mockResolvedValue([{ status: 'Open', isEnabled: true, isClosing: false }]);
 	mockCreate.mockResolvedValue({ id: 'topup-1' });
 	mockUpdate.mockResolvedValue({ id: 'topup-1' });
 	mockUpdateMany.mockResolvedValue({ count: 1 });
@@ -115,6 +125,33 @@ describe('reserveAndSubmitHydraTopup', () => {
 		await expect(reserveAndSubmitHydraTopup(reservation, submit)).rejects.toThrow('connection reset');
 		expect(mockUpdate).toHaveBeenCalledTimes(1);
 		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	// A close admitted while the top-up was Preparing must stop it before L1: a
+	// deposit that lands after close is not in the fanout.
+	it('does not promote or submit once the head is closing', async () => {
+		mockQueryRaw.mockResolvedValue([{ status: 'Open', isEnabled: true, isClosing: true }]);
+		const submit = jest.fn<() => Promise<unknown>>();
+
+		await expect(reserveAndSubmitHydraTopup(reservation, submit)).rejects.toMatchObject({ status: 409 });
+		expect(mockUpdate).not.toHaveBeenCalled();
+		expect(submit).not.toHaveBeenCalled();
+	});
+
+	// A row failed as stale while its slow process was still alive must not be
+	// flipped back to Pending beside the top-up that replaced it.
+	it('does not promote a row that is no longer Preparing', async () => {
+		const { Prisma } = await import('@/generated/prisma/client');
+		mockUpdate.mockRejectedValue(
+			new Prisma.PrismaClientKnownRequestError('not found', { code: 'P2025', clientVersion: 'test' }),
+		);
+		const submit = jest.fn<() => Promise<unknown>>();
+
+		await expect(reserveAndSubmitHydraTopup(reservation, submit)).rejects.toBeInstanceOf(
+			HydraTopupReservationConflictError,
+		);
+		expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'topup-1', status: 'Preparing' } }));
+		expect(submit).not.toHaveBeenCalled();
 	});
 
 	// The unique index on the deposit hash is what actually reserves the deposit,
