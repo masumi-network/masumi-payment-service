@@ -120,6 +120,9 @@ export function getStageDisabledReason(head: HydraHead, action: HydraLifecycleAc
     return undefined;
   }
 
+  // Once a step has landed, hydra-node accepts only partial fanouts.
+  if (head.status === 'FanningOut')
+    return 'Fanning out in steps: select what is left with the partial fanout API';
   if (head.status !== 'FanoutPossible')
     return 'Available once the head is closed and its dispute window has passed';
   return undefined;

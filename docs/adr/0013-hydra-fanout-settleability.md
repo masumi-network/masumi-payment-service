@@ -163,6 +163,15 @@ Document all four limits. Build against none of them.
    requests bound to it stay unsettled: their funds are on L1 behind the head
    script, and nothing here can prove where they go next.
 
+   Before retiring, an operator can move every output that fits out of the
+   head with `POST /hydra/head/partial-fanout` (`head/partial-fanout.ts`). It
+   sends hydra-node 2.4.1 a `PartialFanout` with the chosen in-head
+   references. After the first step the head is `FanningOut` (a status ranked
+   between `FanoutPossible` and `Final`), hydra-node refuses a plain `Fanout`,
+   and `GET /snapshot/utxo` still returns the confirmed snapshot. The next
+   selection is therefore built from the newest `HeadPartiallyFannedOut`
+   frame. Retire accepts a `FanningOut` head too and stores that remaining set.
+
    _Original decision, superseded:_ do not build an operator retire path yet. A head that cannot reach
    `Final` blocks its relation permanently: `head/create-head.ts` rejects any new
    head while a non-`Final` one exists, `deletion-guard.ts` requires a

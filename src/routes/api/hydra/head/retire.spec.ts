@@ -37,7 +37,21 @@ beforeAll(async () => {
 });
 
 const HEAD_OUTPUT_TX = 'cd'.repeat(32);
-const REMAINING = [{ input: { txHash: 'aa'.repeat(32), outputIndex: 0 }, output: { address: 'addr', amount: [] } }];
+const OUTPUT = {
+	address: 'addr_test1vz',
+	value: { lovelace: 2_000_000 },
+	referenceScript: null,
+	inlineDatum: null,
+	inlineDatumRaw: null,
+	datum: null,
+};
+const REMAINING = { [`${'aa'.repeat(32)}#0`]: OUTPUT };
+const AFTER_STEP = { [`${'bb'.repeat(32)}#1`]: OUTPUT };
+/** As stored: Prisma JSON holds the BigInt quantity as a string. */
+const stored = (utxo: Record<string, typeof OUTPUT>) =>
+	Object.fromEntries(
+		Object.entries(utxo).map(([reference, output]) => [reference, { ...output, value: { lovelace: '2000000' } }]),
+	);
 const input = {
 	headId: 'head-1',
 	reason: 'An oversized output blocks the final fanout step',
@@ -54,7 +68,7 @@ beforeEach(() => {
 	jest.resetAllMocks();
 	mockFindHead.mockResolvedValue(fanoutPossible);
 	mockReadChain.mockResolvedValue({ state: 'closed', latestTxHash: HEAD_OUTPUT_TX });
-	mockGetNode.mockReturnValue({ snapshotUTxO: async () => REMAINING });
+	mockGetNode.mockReturnValue({ get: async () => REMAINING, getFanoutProgress: () => undefined });
 	mockUpdateMany.mockResolvedValue({ count: 1 });
 });
 
@@ -74,7 +88,7 @@ describe('retireHeadPost', () => {
 			// Fences the old session: its status writes match no row after this.
 			ownerEpoch: { increment: 1 },
 			retiredReason: input.reason,
-			retiredRemainingUtxo: REMAINING,
+			retiredRemainingUtxo: stored(REMAINING),
 			retiredHeadOutputTxHash: HEAD_OUTPUT_TX,
 		});
 		// A later recovery restarts the node from the init anchors.
@@ -94,6 +108,32 @@ describe('retireHeadPost', () => {
 			expect(mockUpdateMany).not.toHaveBeenCalled();
 		},
 	);
+
+	// During FanningOut the snapshot still shows everything; only the newest
+	// partial fanout step reports what is left.
+	it('stores the remaining set of the newest step for a FanningOut head', async () => {
+		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.FanningOut });
+		mockGetNode.mockReturnValue({
+			get: async () => REMAINING,
+			// As the frame schema parses it: quantities are BigInt.
+			getFanoutProgress: () => ({
+				remainingUTxO: { [`${'bb'.repeat(32)}#1`]: { ...OUTPUT, value: { lovelace: 2_000_000n } } },
+				fanoutMode: 'AwaitingFanoutSelection',
+			}),
+		});
+
+		await handler({ input });
+
+		const update = mockUpdateMany.mock.calls[0]![0] as { data: Record<string, unknown> };
+		expect(update.data.retiredRemainingUtxo).toEqual(stored(AFTER_STEP));
+	});
+
+	it('refuses a FanningOut head whose node has not reported a step', async () => {
+		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.FanningOut });
+
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 503 });
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
 
 	it('refuses a head that is already retired', async () => {
 		mockFindHead.mockResolvedValue({ ...fanoutPossible, retiredAt: new Date() });

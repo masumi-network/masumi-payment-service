@@ -57,6 +57,7 @@ const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
 	HydraHeadStatus.Open,
 	HydraHeadStatus.Closed,
 	HydraHeadStatus.FanoutPossible,
+	HydraHeadStatus.FanningOut,
 	HydraHeadStatus.Final,
 ]);
 
@@ -93,6 +94,8 @@ export interface HistoryReplayHost {
 	setNetworkConnected(connected: boolean): void;
 	/** Record a finalized fanout map, shared with the live session's copy. */
 	recordFinalizedFanout(message: unknown): void;
+	/** Record a partial fanout step, shared with the live session's copy. */
+	recordPartialFanout(message: unknown): void;
 	rememberReplayedDeposit(data: DepositRecordedData): void;
 	rememberReplayedDecommit(data: DecommitSettledData): void;
 	emitTxConfirmed(txId: string, transaction: HydraConfirmedTransaction): void;
@@ -386,6 +389,7 @@ export class HydraHistoryReplay {
 			if (parsedEnvelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
 				this.host.recordFinalizedFanout(message);
 			}
+			if (parsedEnvelope.tag === 'HeadPartiallyFannedOut') this.host.recordPartialFanout(message);
 
 			// A deposit stays pending for a deposit period or more, so a service
 			// that reconnected in between meets its CommitRecorded only here. Held

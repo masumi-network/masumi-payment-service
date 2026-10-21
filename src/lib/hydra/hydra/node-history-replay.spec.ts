@@ -35,6 +35,7 @@ function createReplay() {
 		verifyGreetingsPartyIdentity,
 		setNetworkConnected: (_connected: boolean): void => undefined,
 		recordFinalizedFanout: () => undefined,
+		recordPartialFanout: () => undefined,
 		rememberReplayedDeposit: () => undefined,
 		rememberReplayedDecommit: () => undefined,
 		emitTxConfirmed: () => undefined,
