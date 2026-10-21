@@ -31,13 +31,15 @@ import { canRemoveReservedHostNode, releaseReservedParticipants } from './releas
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 
 /**
- * How far back to re-ask when we have no watermark for a Host.
+ * Where to start when we have no watermark for a Host: the beginning.
  *
- * Bounded rather than "since the beginning" so a service that has never polled
- * a Host does not adopt redemptions older than any invite it could still hold,
- * but generous enough that a restart during an exchange loses nothing.
+ * The Host keeps a redeemed invite until this service forgets it, after
+ * adoption or on cancellation, so everything it returns from zero is either
+ * unadopted or an acknowledgement that did not reach it. A fixed lookback
+ * used to hide a redemption older than the window after a restart, though the
+ * Host still held it and the invite here was still `Issued`.
  */
-const COLD_START_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const COLD_START_WATERMARK_MS = 0;
 
 /**
  * Watermark per Host, kept in memory.
@@ -73,7 +75,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		if (host.encryptedAdminToken === null) {
 			continue;
 		}
-		const since = watermarks.get(host.id) ?? Date.now() - COLD_START_LOOKBACK_MS;
+		const since = watermarks.get(host.id) ?? COLD_START_WATERMARK_MS;
 		let redemptions: { invites: HostInviteRecord[]; now: number };
 		try {
 			redemptions = await fetchHostRedemptions(host.baseUrl, decrypt(host.encryptedAdminToken), since, {
@@ -116,9 +118,15 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 			}
 			if (result === 'adopted') {
 				outcome.adopted += 1;
+			} else if (result === 'rejected') {
+				outcome.rejected += 1;
+			}
+			if (result === 'adopted' || result === 'finished') {
 				// The database nonce remains the permanent replay guard. Once the
 				// signed redemption is adopted, the Host no longer needs to retain
-				// its public-plane copy or its larger key/signature payload.
+				// its public-plane copy or its larger key/signature payload. A
+				// finished invite replayed here means an earlier acknowledgement
+				// did not reach the Host, which keeps the record until one does.
 				await forgetHostInvite(host.baseUrl, decrypt(host.encryptedAdminToken), record.nonce, {
 					allowInsecureHttp: host.allowInsecureHttp,
 				}).catch((error: unknown) =>
@@ -126,8 +134,6 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 						`hydra: could not prune adopted invite ${nonceLogRef(record.nonce)}: ${(error as Error).message}`,
 					),
 				);
-			} else if (result === 'rejected') {
-				outcome.rejected += 1;
 			}
 		}
 		// Advanced only after the batch is processed, and to the Host's clock
@@ -141,7 +147,11 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 	return outcome;
 }
 
-type AdoptionResult = 'adopted' | 'rejected' | 'skipped';
+/**
+ * `finished` is a redemption for an invite this service already adopted or
+ * gave up on, so the Host's copy only needs forgetting.
+ */
+type AdoptionResult = 'adopted' | 'rejected' | 'finished' | 'skipped';
 
 /**
  * Give up on a redemption that can never be adopted, and free what it holds.
@@ -360,7 +370,7 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 	if (invite.hydraHeadId !== null || invite.status !== HydraInviteStatus.Issued) {
 		// Already adopted, or already given up on. This is the normal case for a
 		// replayed watermark.
-		return 'skipped';
+		return 'finished';
 	}
 
 	try {

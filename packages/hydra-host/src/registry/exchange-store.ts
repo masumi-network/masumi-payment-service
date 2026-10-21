@@ -21,7 +21,16 @@ import type { ExchangeMaterial, ExchangeSignature, InviteRecord } from './exchan
 import type { NodeRegistryStore } from './store.js';
 
 const EXCHANGE_FILE = 'exchange.json';
-/** Replay tombstones need not live forever after the invite can no longer be used. */
+/**
+ * How long an unredeemed invite is kept after it expires.
+ *
+ * Only unredeemed invites age out. A redeemed invite holds the counterparty's
+ * signed redemption, the one copy the owning service needs to adopt the head,
+ * so it stays until the service forgets it: after adoption, or when it cancels
+ * the invite. Ageing it out on a timer let a service that was down, or whose
+ * adoption kept failing, lose the evidence for good, and left a reserved node
+ * and an `Issued` invite that only manual repair could clear.
+ */
 export const INVITE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export class ExchangeStoreError extends Error {
@@ -237,7 +246,7 @@ function copyInvite(invite: InviteRecord): InviteRecord {
 
 function pruneRetainedInvites(state: ExchangeState, now: number): boolean {
 	const cutoff = now - INVITE_RETENTION_MS;
-	const retained = state.invites.filter((invite) => (invite.redeemedAt ?? invite.expiresAt) > cutoff);
+	const retained = state.invites.filter((invite) => invite.redeemedAt !== null || invite.expiresAt > cutoff);
 	if (retained.length === state.invites.length) {
 		return false;
 	}

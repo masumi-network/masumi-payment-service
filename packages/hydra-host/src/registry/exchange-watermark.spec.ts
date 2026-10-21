@@ -12,11 +12,11 @@
  * lookback.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ExchangeStore } from './exchange-store.js';
+import { ExchangeStore, INVITE_RETENTION_MS } from './exchange-store.js';
 import type { ExchangeMaterial, ExchangeSignature } from './exchange-types.js';
 
 const REDEEMER: ExchangeMaterial = {
@@ -47,6 +47,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	jest.restoreAllMocks();
 	await fs.rm(directory, { recursive: true, force: true });
 });
 
@@ -74,5 +75,25 @@ describe('the redemption watermark', () => {
 		const changed = invites.filter((invite) => invite.redeemedAt !== null && invite.redeemedAt > first.now);
 
 		expect(changed.map((invite) => invite.nonce)).toEqual(['nonce-one']);
+	});
+});
+
+describe('redemption retention', () => {
+	it('keeps a redemption past the retention window until the service forgets it', async () => {
+		await store.redeem('nonce-one', REDEEMER, SIGNATURE);
+		const later = Date.now() + 2 * INVITE_RETENTION_MS;
+		jest.spyOn(Date, 'now').mockReturnValue(later);
+
+		const { invites } = await store.listInvitesWithWatermark();
+		expect(invites.map((invite) => invite.redeemerSignature)).toEqual([SIGNATURE]);
+
+		expect(await store.forgetInvite('nonce-one')).toBe(true);
+		expect(await store.listInvites()).toEqual([]);
+	});
+
+	it('still drops an unredeemed invite once it is past the retention window', async () => {
+		jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 2 * INVITE_RETENTION_MS);
+
+		expect((await store.listInvitesWithWatermark()).invites).toEqual([]);
 	});
 });
