@@ -62,6 +62,8 @@ describe('GET /security-status', () => {
 		mockFindApiKey.mockResolvedValue(apiKey(false));
 		const { responseMock } = await getSecurityStatus();
 		expect(responseMock.statusCode).toBe(401);
-		expect(JSON.stringify(responseMock._getJSONData())).not.toContain('isEncryptionKeyPublic');
+		const body = JSON.stringify(responseMock._getJSONData());
+		expect(body).toContain('admin access required');
+		expect(body).not.toContain('isEncryptionKeyPublic');
 	});
 });
