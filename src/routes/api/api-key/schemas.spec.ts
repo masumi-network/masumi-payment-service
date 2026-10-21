@@ -63,4 +63,9 @@ describe('addAPIKeySchemaInput', () => {
 		expect(addAPIKeySchemaInput.parse({ UsageCredits: [], usageLimited: 'true' }).usageLimited).toBe(true);
 		expect(addAPIKeySchemaInput.parse({ UsageCredits: [], usageLimited: 'false' }).usageLimited).toBe(false);
 	});
+
+	it('defaults UsageCredits to an empty array when omitted', () => {
+		const parsed = addAPIKeySchemaInput.parse({});
+		expect(parsed.UsageCredits).toEqual([]);
+	});
 });

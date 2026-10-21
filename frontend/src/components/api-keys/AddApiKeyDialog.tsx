@@ -291,12 +291,6 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     const isReadOnly = !data.canPay && !data.canAdmin;
-    const readOnlyDefaultCredits = [
-      {
-        unit: 'lovelace',
-        amount: '1000000000', // 1000 ADA
-      },
-    ];
     // Errors are toasted by the mutation hook; nothing further to do here.
     const response = await createApiKey
       .mutateAsync({
@@ -322,7 +316,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             ? undefined
             : data.evmChains,
         UsageCredits: isReadOnly
-          ? readOnlyDefaultCredits
+          ? []
           : data.usageLimited
             ? [
                 ...(data.credits.lovelace
