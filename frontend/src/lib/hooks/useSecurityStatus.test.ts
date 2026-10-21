@@ -52,5 +52,8 @@ test('returns the security status of a successful check', async () => {
 // An empty error body is falsy. Caching it as "no warning" would hide the
 // banner for the whole session, because the query never goes stale.
 test('fails on a bare 502 so the check is not cached as no warning', async () => {
-  await assert.rejects(fetchSecurityStatus({ status: 502, data: '' }));
+  await assert.rejects(
+    fetchSecurityStatus({ status: 502, data: '' }),
+    /Security status check failed/,
+  );
 });
