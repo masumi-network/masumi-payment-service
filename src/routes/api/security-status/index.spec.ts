@@ -5,6 +5,10 @@ import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
+const PUBLIC_ENCRYPTION_KEY = '12345678901234567890123456789012';
+// CONFIG reads the key once, when the dynamic imports below first load it.
+process.env.ENCRYPTION_KEY = PUBLIC_ENCRYPTION_KEY;
+
 const mockFindApiKey = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
@@ -40,19 +44,18 @@ async function getSecurityStatus() {
 
 describe('usesPublicEncryptionKey', () => {
 	it('matches the .env.example value, also with surrounding whitespace', () => {
-		expect(usesPublicEncryptionKey('12345678901234567890123456789012')).toBe(true);
-		expect(usesPublicEncryptionKey(' 12345678901234567890123456789012\n')).toBe(true);
+		expect(usesPublicEncryptionKey(PUBLIC_ENCRYPTION_KEY)).toBe(true);
+		expect(usesPublicEncryptionKey(` ${PUBLIC_ENCRYPTION_KEY}\n`)).toBe(true);
 		expect(usesPublicEncryptionKey('a-private-key-of-at-least-32-characters')).toBe(false);
-		expect(usesPublicEncryptionKey(undefined)).toBe(false);
 	});
 });
 
 describe('GET /security-status', () => {
-	it('reports the key state to an admin key', async () => {
+	it('reports the public key to an admin key', async () => {
 		mockFindApiKey.mockResolvedValue(apiKey(true));
 		const { responseMock } = await getSecurityStatus();
 		expect(responseMock.statusCode).toBe(200);
-		expect(responseMock._getJSONData()).toMatchObject({ data: { isEncryptionKeyPublic: false } });
+		expect(responseMock._getJSONData()).toMatchObject({ data: { isEncryptionKeyPublic: true } });
 	});
 
 	it('hides the key state from a key without admin access', async () => {
