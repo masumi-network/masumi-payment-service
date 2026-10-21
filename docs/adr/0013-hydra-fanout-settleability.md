@@ -223,18 +223,20 @@ Document all four limits. Build against none of them.
   on 16,384 this service could itself build an L2 tx above 15,000 bytes. Every
   L2 tx is now refused above 15,000 bytes before it is sent, with no
   reservation for it left held (`assertL2TxWithinMaxSize`), and builders get
-  the head's `maxTxSize` capped
-  at 15,000. On any network, mainnet included, a Host whose params file sets
+  the head's `maxTxSize` capped at 15,000. A release nudge that comes out
+  too large is not sent, so the reservation it would release stays held.
+  On any network, mainnet included, a Host whose params file sets
   `maxTxSize` above 15,000 refuses every node not yet acked and peered: no
   provision, first ack, first peer set or invite redemption. It still boots, so
   nodes of heads already open keep running
   (`packages/hydra-host/src/ledger-params.ts`). A node acked and peered before
   such a restart still starts, and so does any node on an older Host build:
   this service refuses to Init a head on a node whose L2 `maxTxSize` is above
-  15,000. That check reads only the node of the side that Inits, the
-  redeemer, so the issuer's node is not checked there. Every node must sign
-  each snapshot, so the smaller of the two limits should bind the head
-  (INFERRED from the Hydra snapshot protocol, not measured).
+  15,000. That check reads only the node of the side that Inits. For a head
+  made from an invite that is the redeemer, so the issuer's node is not
+  checked there. Every node must sign each snapshot, so the smaller of the
+  two limits should bind what gets confirmed, and a larger tx stalls its
+  snapshot as above (INFERRED from the Hydra snapshot protocol, not measured).
 - _Original consequence, kept for the record:_ we remain exposed to limit 3
   by construction. It requires a counterparty to
   deliberately park an output with a very large resting datum, costs them its

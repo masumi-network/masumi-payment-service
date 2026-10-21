@@ -366,9 +366,10 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 					? {
 							409: {
 								description:
-									'Head is disabled, is not Idle, is opened by the counterparty, or its node reports ' +
-									`no numeric L2 maxTxSize or one above ${EXPECTED_MAX_TX_SIZE}`,
+									'Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, ' +
+									`or its node reports no numeric L2 maxTxSize or one above ${EXPECTED_MAX_TX_SIZE}`,
 							},
+							400: { description: 'Head has no local participant' },
 							502: { description: 'The Hydra node could not be reached, or the InitTx could not be verified' },
 						}
 					: { 409: { description: `Head is not in a state that permits ${action}` } }),
