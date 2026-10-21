@@ -154,8 +154,14 @@ binds loopback), so neither repairs on its own:
   node on the Host.
 - **Payment service:** `POST /hydra/head/snapshot-round/reset` requires
   `peerConfirmedSnapshotNumber`, the confirmed snapshot number read off the
-  counterparty's node (`GET /snapshot`). The reset is refused if it is ahead of
-  this node's. The admin UI asks for the same number.
+  counterparty's node (`GET /snapshot`). Read it just before the reset, because
+  the counterparty can still confirm the next snapshot from an acknowledgement
+  in transit. The reset is refused if it is ahead of this node's. The admin UI
+  asks for the same number, and asks again after every attempt.
+
+The Host does not mark a node that needs an operator on its record. The
+`needs an operator` log line is its only signal. The payment service's round
+watch alerts on the same stuck round independently.
 
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.
