@@ -41,7 +41,7 @@ import {
 	hasFinalizedUtxoField,
 } from './schemas';
 import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
-import { recordL2TransactionMints, type L2MintCheck } from './l2-mint-tally';
+import { buildL2MintCheck, recordL2TransactionMints, type L2MintCheck } from './l2-mint-tally';
 import {
 	completeHydraSnapshotVerification,
 	doesHydraTransactionTransitionReachSnapshot,
@@ -189,8 +189,7 @@ export class HydraHistoryReplay {
 	/** Unburned L2 mints as of the last verified snapshot. Undefined until this pass has replayed the whole history. */
 	get l2MintCheck(): L2MintCheck | undefined {
 		const snapshot = this._verifiedSnapshot;
-		if (!this._complete || this._failed || !snapshot) return undefined;
-		return { unburnedUnits: new Set(this._l2MintTally.keys()), verifiedOutputs: snapshot.outputs };
+		return this._complete && !this._failed && snapshot ? buildL2MintCheck(this._l2MintTally, snapshot) : undefined;
 	}
 
 	fail(error: unknown): void {

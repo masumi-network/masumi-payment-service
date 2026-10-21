@@ -23,9 +23,33 @@ import type { HydraTransaction } from './types';
  * can widen that gap, so a token UTxO missing from `verifiedOutputs` comes from
  * a transaction the tally has not seen and counts as unchecked.
  */
+/** Units named in one log line; a peer chooses how many units the tally holds. */
+const LOGGED_UNIT_SAMPLE = 5;
+
+/** A log-sized description of `units`. */
+export function describeUnits(units: Iterable<string>): { count: number; sample: string[] } {
+	const all = [...units];
+	return { count: all.length, sample: all.slice(0, LOGGED_UNIT_SAMPLE) };
+}
+
 export interface L2MintCheck {
 	unburnedUnits: ReadonlySet<string>;
 	verifiedOutputs: ReadonlyMap<string, string>;
+}
+
+/**
+ * The check for the replay's current signed state. Snapshot 0 is the node's own
+ * unsigned ledger report (a head with no signed snapshot yet, or a node rebuilt
+ * from L1): no transaction behind it was tallied, so it vouches for no output.
+ */
+export function buildL2MintCheck(
+	tally: ReadonlyMap<string, bigint>,
+	snapshot: { number: number; outputs: ReadonlyMap<string, string> },
+): L2MintCheck {
+	return {
+		unburnedUnits: new Set(tally.keys()),
+		verifiedOutputs: snapshot.number === 0 ? new Map() : snapshot.outputs,
+	};
 }
 
 /**
@@ -73,7 +97,7 @@ export function recordL2TransactionMints(
 	if (hasMint) {
 		logger.error('[HydraNode] A transaction in the head minted or burned tokens; unburned ones block finalization', {
 			snapshotNumber,
-			unburnedUnits: [...tally.keys()],
+			unburnedUnits: describeUnits(tally.keys()),
 		});
 	}
 }

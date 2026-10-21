@@ -18,7 +18,7 @@ import { HydraTransactionType } from './types';
 import type { HydraTransaction } from './types';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTransportError } from './errors';
-import { l2TokenRisk } from './l2-mint-tally';
+import { describeUnits, l2TokenRisk } from './l2-mint-tally';
 
 export class HydraProvider implements IFetcher, ISubmitter {
 	private readonly _node: IHydraNode;
@@ -123,7 +123,8 @@ export class HydraProvider implements IFetcher, ISubmitter {
 		if (spendable.length !== utxos.length) {
 			logger.warn('[HydraProvider] Leaving in-head token UTxOs that are L2-minted or not yet checked out of spending', {
 				excludedCount: utxos.length - spendable.length,
-				unburnedUnits: check === undefined ? 'unknown until history replay completes' : [...check.unburnedUnits],
+				unburnedUnits:
+					check === undefined ? 'unknown until history replay completes' : describeUnits(check.unburnedUnits),
 			});
 		}
 		return spendable;

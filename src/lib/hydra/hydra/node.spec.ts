@@ -195,6 +195,14 @@ function makeMintingHydraTransaction(inputTxHash: string, outputLovelace: number
 	};
 }
 
+/** A snapshot output holding one unit of the test mint. */
+function mintedTokenOutput(lovelace: number): TestSnapshotOutput {
+	return {
+		...snapshotOutput(lovelace),
+		value: { lovelace, [MINT_POLICY_ID]: { [MINT_ASSET_NAME]: 1 } },
+	} as unknown as TestSnapshotOutput;
+}
+
 function signedSnapshotFrame(options: {
 	seq: number;
 	number: number;
@@ -704,10 +712,6 @@ describe('HydraNode', () => {
 			const { node, historyConnection } = await startSignedNode();
 			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
 			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
-			const tokenOutput = {
-				...snapshotOutput(9_000_000),
-				value: { lovelace: 9_000_000, [MINT_POLICY_ID]: { [MINT_ASSET_NAME]: 1 } },
-			} as unknown as TestSnapshotOutput;
 			const frames = [
 				signedSnapshotFrame({
 					seq: 1,
@@ -715,22 +719,46 @@ describe('HydraNode', () => {
 					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
 					confirmed: [],
 				}),
-				signedSnapshotFrame({ seq: 2, number: 2, utxo: { [`${mintTx.txId}#0`]: tokenOutput }, confirmed: [mintTx] }),
+				signedSnapshotFrame({
+					seq: 2,
+					number: 2,
+					utxo: { [`${mintTx.txId}#0`]: mintedTokenOutput(9_000_000) },
+					confirmed: [mintTx],
+				}),
+				signedSnapshotFrame({
+					seq: 3,
+					number: 3,
+					utxo: { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) },
+					confirmed: [burnTx],
+				}),
 			];
-			for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
+			for (const frame of frames.slice(0, 2)) historyConnection.emit('message', JSON.stringify(frame));
 
 			expect(node.l2MintCheck).toBeUndefined();
 			finishHistoryReplay(historyConnection);
 			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set([`${MINT_POLICY_ID}${MINT_ASSET_NAME}`]));
 			expect(node.l2MintCheck?.verifiedOutputs.has(`${mintTx.txId}#0`)).toBe(true);
 
-			const burn = { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) };
-			historyConnection.emit(
-				'message',
-				JSON.stringify(signedSnapshotFrame({ seq: 3, number: 3, utxo: burn, confirmed: [burnTx] })),
-			);
+			// A new history socket replays from the start. Counting the mint again
+			// on top of the old pass would leave the unit flagged after its burn.
+			historyConnection.emit('close');
+			expect(node.l2MintCheck).toBeUndefined();
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
 			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set());
 			expect(node.l2MintCheck?.verifiedOutputs.has(`${burnTx.txId}#0`)).toBe(true);
+		});
+
+		// A head with no signed snapshot, or a node rebuilt from L1, states its
+		// ledger only in Greetings. No transaction behind it was tallied, so a
+		// token there must not pass as checked.
+		it('vouches for no output on the unsigned Greetings anchor', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const snapshotUtxo = { [`${'22'.repeat(32)}#0`]: mintedTokenOutput(9_000_000) };
+			historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), snapshotUtxo }));
+
+			expect(node.l2MintCheck).toEqual({ unburnedUnits: new Set(), verifiedOutputs: new Map() });
 		});
 
 		// Hydra 2.2.0 renamed HeadIsFinalized's `utxo` to `finalizedUTxO`, and 2.3.0
