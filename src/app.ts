@@ -37,6 +37,7 @@ async function initialize() {
 	await backfillTransactionAgentNames();
 	await warnOutOfSyncV2PaymentSources();
 
+	// Public keys only warn, by design: see docs/security.md, Accepted Risks #4.
 	const publicAdminHashes = await Promise.all(
 		[DEFAULTS.DEFAULT_ADMIN_KEY, DEFAULTS.EXAMPLE_ADMIN_KEY].map((key) => generateApiKeySecureHash(key)),
 	);

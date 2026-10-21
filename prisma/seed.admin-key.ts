@@ -6,7 +6,10 @@ import { isPublicAdminKey } from './seed.public-secrets';
 
 const MIN_ADMIN_KEY_LENGTH = 15;
 
-/** Falls back to the public DEFAULT_ADMIN_KEY, a bootstrap convenience. */
+/**
+ * Falls back to the public DEFAULT_ADMIN_KEY, a bootstrap convenience.
+ * Intended: see docs/security.md, Accepted Risks #4.
+ */
 export function resolveAdminKey(rawAdminKey: string | undefined): string {
 	if (!rawAdminKey) {
 		console.warn('ADMIN_KEY is not set: falling back to DEFAULT_ADMIN_KEY.');

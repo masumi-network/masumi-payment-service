@@ -8,6 +8,7 @@ import { DEFAULTS } from '@masumi/payment-core/config';
  * allowed on purpose for one-off setups. The seed warns, and asks for a
  * confirmation when a person runs it in a terminal. Non-interactive runs
  * (CI, containers) only warn, so they keep working unchanged.
+ * Intended: see docs/security.md, Accepted Risks #4.
  */
 
 const TERMINAL_DEVICE = '/dev/tty';

@@ -90,6 +90,19 @@ These behaviours are intended. Reviewers do not need to report them again.
    - Clearing the admin token: `adminToken: null` on update clears only the admin slot. The runtime slot still holds the old admin token. Rotate `userToken` at the same time
    - When to revisit: if Hosts run on networks you do not control. Then make `userToken` required at registration and rotation
 
+4. **A seed without a unique `ADMIN_KEY` creates a public admin key**
+   - Where: `resolveAdminKey` in `prisma/seed.admin-key.ts` returns `DEFAULTS.DEFAULT_ADMIN_KEY` when `ADMIN_KEY` is not set. `seedAdminKey` then stores that key as an active key with `canAdmin: true`. `.env.example` publishes two more values, `ADMIN_KEY` and `ENCRYPTION_KEY`. All three are in `DEFAULTS` in `packages/payment-core/src/config.ts`. The seed and the server accept all three
+   - Effect: an operator can seed an empty database without a unique `ADMIN_KEY`. If the API of that deployment is reachable, anyone who reads the source can authenticate as admin (`packages/payment-core/src/auth-middleware.ts`). An admin key has all permissions. With the example `ENCRYPTION_KEY`, a copy of the database exposes every encrypted secret, such as wallet mnemonics
+   - Why accepted: a one-off or local setup must run with no secret preparation. This is a product decision. The seed does not run by itself: the Docker image only starts the server (`CMD [ "pnpm", "run", "start" ]`), so an operator must run `pnpm run prisma:seed`. The service must also sit behind the network allowlist (see above)
+   - Guards in place:
+     - A seed in a terminal names the public values and continues only after the person types `yes` (`prisma/seed.public-secrets.ts`)
+     - A seed without a terminal (CI, containers) shows the same warning and continues. This keeps automated seeds working
+     - The seed does not add a public admin key when an active admin key already exists (`seedAdminKey`). So a later seed without `ADMIN_KEY` cannot put a public admin key next to a real one
+     - The server logs a warning at each start while a public admin key is in the database, or while `ENCRYPTION_KEY` is the example value (`initialize` in `src/app.ts`). The server does not stop
+   - Do not make the seed or the server fail on these values. A report such as "public admin backdoor", "hardcoded admin key", "first unattended seed creates a public admin key", or "published master key" against the lines above is answered by this entry. Report it again only for a new path that the guards above do not cover. Examples: a seed path that does not call `seedAdminKey`, or a public admin key that gets added next to an existing admin key
+   - Remove a public admin key: create a new admin key, then revoke the public one (`DELETE /api-key`). For a new deployment, set `ADMIN_KEY` before the first seed. Do not change `ENCRYPTION_KEY` in the environment only: it encrypts the stored secrets and derives the API key hash salt (`packages/payment-core/src/api-key-hash.ts`), so a change needs a migration
+   - When to revisit: if the service runs on a public network, or if a deployment template runs the seed automatically. Then require a unique `ADMIN_KEY` on that path
+
 ### Maintenance
 
 1. **Updates**
