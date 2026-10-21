@@ -186,14 +186,12 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 		return { kind: 'Unrecovered', tag, reason: 'the node reports no confirmed snapshot to side-load' };
 	}
 
-	// A side-load clears the node's record of the deposit in flight. Whether
-	// the head then stalls depends on deposit state and on which node leads.
-	// For example, if the confirmed snapshot holds a deposit that the chain has
-	// not settled, that deposit has expired, and another non-empty deposit is or
-	// becomes active before a transaction snapshot drops the commit, this node,
-	// once it leads, requests a snapshot with that deposit, and every node
-	// rejects it (hydra-node 2.4.1 `ReqSnCommitNotSettled`). Nothing here can
-	// see a deposit's status, so every case is held.
+	// A side-load clears the node's record of the deposit in flight. While the
+	// confirmed snapshot holds a commit that the chain has not settled, this
+	// node, once it leads, can then request a snapshot with a different deposit,
+	// which every node rejects (hydra-node 2.4.1 `ReqSnCommitNotSettled`), so
+	// the head stalls again. Whether that happens depends on deposit state that
+	// nothing here can see, so every case is held.
 	let headState: unknown;
 	try {
 		headState = await fetchHead();
@@ -246,7 +244,10 @@ export type UnwedgeRecordDeps = {
 	isAborted: () => boolean;
 };
 
-/** Check one node for a stranded round, recover it if that is safe, and record the outcome. */
+/**
+ * Check one node for a stranded round, side-load it unless the confirmed
+ * snapshot holds an unsettled commit, and record the outcome.
+ */
 export async function unwedgeRecord(record: NodeRecord, reason: string, deps: UnwedgeRecordDeps): Promise<void> {
 	const { client, store, logger } = deps;
 	logger.info(`[supervisor] checking ${record.nodeId} for a stranded round: ${reason}`);
