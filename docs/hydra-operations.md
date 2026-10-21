@@ -149,6 +149,10 @@ starts, so the whole range is refused and verified. Then run
 `hydra-peer-firewall refresh` on a timer and after every membership change, so
 each peered port opens to its counterparty only. Skipping it leaves 32
 unauthenticated etcd raft ports open to every address the cloud firewall admits.
+Also set `HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true`. The Host then keeps a
+removed node's peer port out of use until `refresh` acknowledges a ruleset
+without that node's peers. Without it, a new node on that port is open to the
+old counterparty until the next successful refresh.
 
 How you open the range depends on how you run the Host:
 
