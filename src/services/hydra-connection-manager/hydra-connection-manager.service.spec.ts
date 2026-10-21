@@ -415,6 +415,30 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			}
 		});
 
+		// A node too slow to answer and a node that is down need different fixes.
+		it('says the probe timed out', async () => {
+			const manager = new HydraConnectionManager();
+			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(
+				(_url, init) =>
+					new Promise((_resolve, reject) => {
+						init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+					}),
+			);
+			jest.useFakeTimers();
+
+			try {
+				const pendingConnect = manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+				await jest.advanceTimersByTimeAsync(5_000);
+				const error = await pendingConnect;
+				expect(error).toBeInstanceOf(HydraTransportError);
+				expect((error as Error).message).toContain('did not answer within 5000ms');
+			} finally {
+				jest.useRealTimers();
+				fetchSpy.mockRestore();
+			}
+		});
+
 		it('names the status a node answered with', async () => {
 			const manager = new HydraConnectionManager();
 			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
@@ -429,13 +453,13 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			}
 		});
 
-		// A retry cannot fix a token that cannot be a header, so it must not read as unreachable.
-		it('raises an unusable token as a protocol error before probing', async () => {
+		// A retry cannot fix a blank token, so it must not read as unreachable.
+		it('raises a blank token as a protocol error before probing', async () => {
 			const manager = new HydraConnectionManager();
 			const head = connectableConfiguredHead();
 			head.LocalParticipant.HydraHost.encryptedUserToken = encrypt('   ');
 			mockHydraHeadFindUnique.mockResolvedValue(head);
-			const fetchSpy = jest.spyOn(globalThis, 'fetch');
+			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('the probe must not run'));
 
 			try {
 				await expect(manager.connect({ id: 'head-1' })).rejects.toBeInstanceOf(HydraProtocolError);
@@ -465,11 +489,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			return await epochResult;
 		});
 		const probeSpy = jest
-			.spyOn(
-				manager as unknown as { probeNode: (httpUrl: string, timeoutMs?: number) => Promise<boolean> },
-				'probeNode',
-			)
-			.mockResolvedValue(true);
+			.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
+			.mockResolvedValue(undefined);
 		const connectSpy = jest.spyOn(CustomHydraHead.prototype, 'connect').mockImplementation(async () => undefined);
 
 		try {
@@ -623,7 +644,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('drains a headless rollback and removes listeners when pinned connect then rejects', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { probeNode: () => Promise<boolean> }).probeNode = async () => true;
+		(manager as unknown as { probeNode: () => Promise<void> }).probeNode = async () => undefined;
 		const localSigningKey = `5820${'11'.repeat(32)}`;
 		const remoteSigningKey = `5820${'22'.repeat(32)}`;
 		const configuredHead = {

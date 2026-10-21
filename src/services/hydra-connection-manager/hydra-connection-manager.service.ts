@@ -324,6 +324,7 @@ export class HydraConnectionManager {
 	}
 
 	private static readonly HEAD_CLOCK_REFRESH_INTERVAL_MS = 25_000;
+	private static readonly PROBE_TIMEOUT_MS = 5_000;
 
 	/**
 	 * Periodically refresh a connected head's clock from a fresh Greetings
@@ -455,15 +456,21 @@ export class HydraConnectionManager {
 	}
 
 	/**
-	 * Throws a HydraTransportError that says why the node did not answer. No
-	 * command was sent to the node, so a caller may retry and need not treat it
-	 * as a failed command. The status or the fetch error is the only thing that
-	 * tells a node still starting from a wrong URL or token.
+	 * Throws a HydraTransportError that says why the probe failed. No command
+	 * was sent to the node, so a caller may retry and need not treat it as a
+	 * failed command. The status or the fetch error is the only thing that tells
+	 * a node still starting from a wrong URL or token. A blank token, or one with
+	 * CR, LF or NUL, throws a HydraProtocolError instead: a retry cannot fix it.
 	 */
-	private async probeNode(hydraHeadId: string, httpUrl: string, authToken?: string, timeoutMs = 5000): Promise<void> {
-		// A Host rejects an unauthenticated probe, which would otherwise look
-		// exactly like an unreachable node and disable a healthy head. A token
-		// that cannot be a header is a config fault, so it throws before the try.
+	private async probeNode(
+		hydraHeadId: string,
+		httpUrl: string,
+		authToken?: string,
+		timeoutMs = HydraConnectionManager.PROBE_TIMEOUT_MS,
+	): Promise<void> {
+		// A Host rejects an unauthenticated probe, so the probe sends the token.
+		// The token check runs before the try, so its config fault is not read as
+		// an unreachable node.
 		const headers = { 'Content-Type': 'application/json', ...hydraAuthHeaders(authToken) };
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), timeoutMs);
