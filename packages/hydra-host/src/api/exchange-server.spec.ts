@@ -321,6 +321,35 @@ describe('redeeming an invite', () => {
 		expect(retried.status).toBe(200);
 	});
 
+	// Redeeming configures a node that has no head yet, so a Host on unsafe L2
+	// params refuses it as busy before the nonce is spent.
+	it('refuses a redemption while the Host refuses new heads, leaving the invite open', async () => {
+		server.closeIdleConnections();
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+		server = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			isNodeStopped,
+			ledgerParamsRefusal: 'the ledger protocol parameters at /params/mainnet.json set maxTxSize 16384',
+		});
+		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+		base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+		await issue('nonce-unsafe-params');
+
+		const result = await post('/exchange/redeem', {
+			nonce: 'nonce-unsafe-params',
+			redeemer: MATERIAL,
+			signature: SIGNATURE,
+		});
+
+		expect(result).toEqual({ status: 503, body: { error: 'this host is not taking new heads; retry later' } });
+		expect(onRedeemed).not.toHaveBeenCalled();
+		expect((await store.listInvites())[0].redeemedAt).toBeNull();
+	});
+
 	it('answers 410 for an expired invite even while its node is stopped', async () => {
 		await issue('nonce-expired-stopped', -1_000);
 		isNodeStopped.mockResolvedValue(true);

@@ -10,7 +10,7 @@ import { NodeRegistryStore } from '../registry/store.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
-import { provisionNode, type ProvisionDeps } from './provision.js';
+import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
@@ -416,6 +416,7 @@ describe('control plane on ledger params above the L2 maxTxSize cap', () => {
 			checkPeerTarget: async () => null,
 			newNodeId: () => 'node-refused',
 			now: () => new Date('2026-07-28T12:00:00.000Z'),
+			ledgerParamsRefusal: 'maxTxSize 16384, above 15000',
 		};
 		refusingServer = createControlPlane({
 			config,
@@ -425,7 +426,6 @@ describe('control plane on ledger params above the L2 maxTxSize cap', () => {
 			supervisor: { tick: async () => undefined } as unknown as Supervisor,
 			provision: refusingProvision,
 			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
-			ledgerParamsRefusal: 'maxTxSize 16384, above 15000',
 		});
 		await new Promise<void>((resolve) => refusingServer.listen(0, '127.0.0.1', resolve));
 		refusingBaseUrl = `http://127.0.0.1:${(refusingServer.address() as AddressInfo).port}`;
@@ -453,9 +453,9 @@ describe('control plane on ledger params above the L2 maxTxSize cap', () => {
 		expect(await listed.json()).toMatchObject({ nodes: [] });
 	});
 
-	// Provisioned before the Host restarted onto these params: the ack would
-	// start it, and it would Init a head on them.
-	it('refuses to ack a node that has no head yet', async () => {
+	/** A node provisioned, and acked if asked, before the Host restarted onto these params. */
+	async function nodeFromBeforeRestart(acked: boolean): Promise<string> {
+		const beforeRestart = { ...refusingProvision, ledgerParamsRefusal: null };
 		const { record } = await provisionNode(
 			{
 				idempotencyKey: 'idem-before-restart',
@@ -465,16 +465,50 @@ describe('control plane on ledger params above the L2 maxTxSize cap', () => {
 				unsyncedPeriodSeconds: 60,
 				depositActivationSeconds: 120,
 			},
-			refusingProvision,
+			beforeRestart,
 		);
+		if (acked) await acknowledgeEscrow(record.nodeId, beforeRestart);
+		return record.nodeId;
+	}
 
-		const acked = await fetch(`${refusingBaseUrl}/v1/nodes/${record.nodeId}/escrow-ack`, {
+	function ack(nodeId: string): Promise<Response> {
+		return fetch(`${refusingBaseUrl}/v1/nodes/${nodeId}/escrow-ack`, {
 			method: 'POST',
 			headers: { authorization: `Bearer ${ADMIN}` },
 		});
+	}
 
-		expect(acked.status).toBe(409);
-		expect((await refusingStore.read(record.nodeId))?.escrowAckedAt).toBeNull();
+	// The ack would start it, and it would Init a head on these params.
+	it('refuses to ack a node never acked', async () => {
+		const nodeId = await nodeFromBeforeRestart(false);
+
+		expect((await ack(nodeId)).status).toBe(409);
+		expect((await refusingStore.read(nodeId))?.escrowAckedAt).toBeNull();
+	});
+
+	// A repeated ack for an acked node is a no-op, and that node can belong to a
+	// head that is already open.
+	it('answers a repeated ack for an acked node', async () => {
+		const nodeId = await nodeFromBeforeRestart(true);
+		const ackedAt = (await refusingStore.read(nodeId))?.escrowAckedAt;
+
+		expect((await ack(nodeId)).status).toBe(200);
+		expect((await refusingStore.read(nodeId))?.escrowAckedAt).toBe(ackedAt);
+	});
+
+	// An acked node without peers has no head yet: peers would make it start.
+	// Redemption recovery sets peers through the same path.
+	it('refuses peers for an acked node that has none', async () => {
+		const nodeId = await nodeFromBeforeRestart(true);
+
+		const patched = await fetch(`${refusingBaseUrl}/v1/nodes/${nodeId}`, {
+			method: 'PATCH',
+			headers: { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' },
+			body: JSON.stringify({ peers: [PEER] }),
+		});
+
+		expect(patched.status).toBe(409);
+		expect((await refusingStore.read(nodeId))?.peers).toEqual([]);
 	});
 });
 

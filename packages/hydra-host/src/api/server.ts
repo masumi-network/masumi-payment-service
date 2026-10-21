@@ -47,8 +47,6 @@ export type ServerDeps = {
 	supervisor: Supervisor;
 	provision: ProvisionDeps;
 	logger: SupervisorLogger;
-	/** Why new nodes are refused on this Host's ledger params, or null. See `ledger-params.ts`. */
-	ledgerParamsRefusal?: string | null;
 };
 
 /**
@@ -452,12 +450,6 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'provisionNode': {
-				// Before the idempotency replay too: a replayed node runs on these
-				// params as well, and its ack below is refused anyway.
-				if (deps.ledgerParamsRefusal) {
-					send(response, 409, { error: deps.ledgerParamsRefusal });
-					return;
-				}
 				const body = await readBody(request);
 				const idempotencyKey =
 					(typeof request.headers['idempotency-key'] === 'string' ? request.headers['idempotency-key'] : '') || '';
@@ -508,13 +500,6 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'escrowAck': {
-				// The ack is what starts a node, and a node not yet acked has no head:
-				// acking it would Init a new head on these params. An acked node is
-				// left alone, because it can belong to a head that is already open.
-				if (deps.ledgerParamsRefusal && (await store.read(nodeId ?? ''))?.escrowAckedAt === null) {
-					send(response, 409, { error: deps.ledgerParamsRefusal });
-					return;
-				}
 				const record = await acknowledgeEscrow(nodeId ?? '', provision);
 				tickSupervisor();
 				send(response, 200, publicNode(record));

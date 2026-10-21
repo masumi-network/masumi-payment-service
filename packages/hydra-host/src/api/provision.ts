@@ -78,6 +78,14 @@ export type ProvisionDeps = {
 	 * here is the one below that leaves key material on disk.
 	 */
 	logger?: Pick<SupervisorLogger, 'error'>;
+	/**
+	 * Why a node that has no head yet must not become startable, or null. Set at
+	 * boot from the L2 ledger params (`../ledger-params.ts`). Such a node is one
+	 * not acked or without peers (`couldHoldHeadState` in `./transitions.ts`). A
+	 * node that may hold a head is never refused: an open head's node must stay
+	 * up to contest a close.
+	 */
+	ledgerParamsRefusal?: string | null;
 };
 
 /** Key material is readable only before escrow-ack, and only then. */
@@ -112,6 +120,11 @@ async function readSecrets(store: NodeRegistryStore, nodeId: string): Promise<Pr
 const inFlightProvisions = new Map<string, Promise<unknown>>();
 
 export function provisionNode(request: ProvisionRequest, deps: ProvisionDeps): Promise<ProvisionResult> {
+	// Before the idempotency replay too: a replayed node runs on these params as
+	// well, and its ack is refused anyway.
+	if (deps.ledgerParamsRefusal) {
+		return Promise.reject(new ProvisionError(deps.ledgerParamsRefusal, 409));
+	}
 	const key = request.idempotencyKey.trim();
 	if (key.length === 0) {
 		return Promise.reject(
@@ -260,6 +273,8 @@ export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Pr
 	const updated = await deps.store.update(nodeId, (current) => {
 		// Check under the write queue so a delayed duplicate cannot reset a live node.
 		if (current.escrowAckedAt !== null) return current;
+		// The ack is what starts a node, and a node never acked has no head.
+		if (deps.ledgerParamsRefusal) throw new ProvisionError(deps.ledgerParamsRefusal, 409);
 		return {
 			...current,
 			state: 'Stopped',
@@ -322,6 +337,11 @@ export async function setPeers(
 			(current.peers.length > 0 || current.removalRequested || current.state === 'Removing')
 		) {
 			return current;
+		}
+		// Peers make an acked node startable, and a node without peers has no head.
+		// Redemption recovery comes through here too.
+		if (deps.ledgerParamsRefusal && current.peers.length === 0) {
+			throw new ProvisionError(deps.ledgerParamsRefusal, 409);
 		}
 		// Enforced, not merely documented: the peer set becomes --initial-cluster,
 		// which is fixed at process start and determines the content-addressed etcd

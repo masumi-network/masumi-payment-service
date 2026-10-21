@@ -1,5 +1,5 @@
 /**
- * The one L2 ledger setting a Host refuses to run without: a `maxTxSize` small
+ * The one L2 ledger setting a Host refuses new heads without: a `maxTxSize` small
  * enough that fanout can move every output a head can create.
  *
  * An L2 tx can create an output almost as large as the L2 `maxTxSize`, and a

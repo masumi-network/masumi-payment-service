@@ -171,6 +171,7 @@ async function main(): Promise<void> {
 		// key material on the volume for a node no record mentions. Without this,
 		// that rollback failure was logged to an optional logger nothing supplied.
 		logger,
+		ledgerParamsRefusal,
 	};
 
 	const recoverRedemptions = createRedemptionRecovery(exchange, provisionDeps, logger);
@@ -191,7 +192,6 @@ async function main(): Promise<void> {
 		supervisor,
 		provision: provisionDeps,
 		logger,
-		ledgerParamsRefusal,
 	});
 	// Without this the listen failure surfaces as an unhandled 'error' event and
 	// a raw stack trace. The two ways this fails in production — the port is
@@ -221,6 +221,7 @@ async function main(): Promise<void> {
 		verifyRedemption: async (nonce, redeemer, signature) =>
 			await verifyRedemptionSignature(nonce, redemptionNetwork(config.network), redeemer, signature),
 		isNodeStopped: async (hostNodeId) => (await store.read(hostNodeId))?.desired === 'Stopped',
+		ledgerParamsRefusal,
 		onRedeemed: async () => {
 			await recoverRedemptions();
 			tickSupervisor('exchange redemption');
