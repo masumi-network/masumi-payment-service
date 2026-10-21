@@ -599,12 +599,28 @@ describe('HydraNode', () => {
 	// The node posts some L1 transactions on its own, a contest above all: when a
 	// peer closes on an old snapshot it answers with ContestTx without being
 	// asked. If that post fails, no command is waiting on it, so the frame used to
-	// be read and dropped and the head went undefended with nothing recorded.
+	// be read and dropped and the failure left no trace. Frames below use the real
+	// hydra-node shape: no top-level head id, the head named inside postChainTx.
 	describe('PostTxOnChainFailed processing', () => {
 		function failureEvents(node: { on(event: string, listener: (data: unknown) => void): unknown }) {
 			const events: unknown[] = [];
 			node.on(HydraNodeEvent.PostTxFailed, (data) => events.push(data));
 			return events;
+		}
+
+		function postTxFailedFrame(postChainTx: Record<string, unknown>, postTxError: Record<string, unknown>) {
+			return JSON.stringify({ tag: 'PostTxOnChainFailed', postChainTx, postTxError });
+		}
+
+		async function pinnedNode() {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const connectPromise = node.connect();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Open', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+			return node;
 		}
 
 		it('reports a failed contest with the transaction and the node reason', () => {
@@ -614,15 +630,12 @@ describe('HydraNode', () => {
 
 			mockConnectionInstance.emit(
 				'message',
-				JSON.stringify({
-					tag: 'PostTxOnChainFailed',
-					headId: HEAD_ID_A,
-					postChainTx: { tag: 'ContestTx' },
-					postTxError: { tag: 'NotEnoughFuel' },
-				}),
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
 			);
 
-			expect(events).toEqual([{ postChainTxTag: 'ContestTx', reason: expect.stringContaining('NotEnoughFuel') }]);
+			expect(events).toEqual([
+				{ postChainTxTag: 'ContestTx', reason: expect.stringContaining('NotEnoughFuel'), answersCommand: false },
+			]);
 		});
 
 		it.each(['DecrementTx', 'IncrementTx', 'RecoverTx', 'FanoutTx'])('reports a failed %s too', (tag) => {
@@ -630,10 +643,7 @@ describe('HydraNode', () => {
 			node.connect();
 			const events = failureEvents(node);
 
-			mockConnectionInstance.emit(
-				'message',
-				JSON.stringify({ tag: 'PostTxOnChainFailed', postChainTx: { tag }, postTxError: { tag: 'FailedToPostTx' } }),
-			);
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag }, { tag: 'FailedToPostTx' }));
 
 			expect(events).toEqual([expect.objectContaining({ postChainTxTag: tag })]);
 		});
@@ -644,14 +654,7 @@ describe('HydraNode', () => {
 			node.connect();
 			const events = failureEvents(node);
 
-			mockConnectionInstance.emit(
-				'message',
-				JSON.stringify({
-					tag: 'PostTxOnChainFailed',
-					postChainTx: { tag: 42 },
-					postTxError: { tag: 'FailedToPostTx' },
-				}),
-			);
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag: 42 }, { tag: 'FailedToPostTx' }));
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
 
 			expect(events).toEqual([
@@ -660,27 +663,68 @@ describe('HydraNode', () => {
 			]);
 		});
 
-		it('does not report a frame for a different head', async () => {
-			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
-			const connectPromise = node.connect();
-			mockConnectionInstance.emit(
-				'message',
-				JSON.stringify({ tag: 'Greetings', headStatus: 'Open', hydraHeadId: HEAD_ID_A }),
-			);
-			await connectPromise;
+		it('reports only the failures that name the pinned head', async () => {
+			const node = await pinnedNode();
 			const events = failureEvents(node);
 
 			mockConnectionInstance.emit(
 				'message',
-				JSON.stringify({
-					tag: 'PostTxOnChainFailed',
-					headId: 'b'.repeat(56),
-					postChainTx: { tag: 'ContestTx' },
-					postTxError: { tag: 'FailedToPostTx' },
-				}),
+				postTxFailedFrame({ tag: 'ContestTx', headId: 'b'.repeat(56) }, { tag: 'FailedToPostTx' }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A.toUpperCase() }, { tag: 'FailedToPostTx' }),
 			);
 
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+		});
+
+		// Held like a settlement outcome: a frame that arrives before the session
+		// proves its identity is emitted once it does, not dropped.
+		it('holds a failure seen before the session is authenticated until it is', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const events = failureEvents(node);
+			const connectPromise = node.connect();
+
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag: 'ContestTx' }, { tag: 'NotEnoughFuel' }));
 			expect(events).toEqual([]);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Closed', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+		});
+
+		// The waiting Close reports its own failure, so the event says so and the
+		// manager does not write the same failure twice.
+		it('marks a failure a waiting command answers, and only that one', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+
+			expect(events).toEqual([
+				expect.objectContaining({ postChainTxTag: 'ContestTx', answersCommand: false }),
+				expect.objectContaining({ postChainTxTag: 'CloseTx', answersCommand: true }),
+				expect.objectContaining({ postChainTxTag: 'CloseTx', answersCommand: false }),
+			]);
 		});
 	});
 

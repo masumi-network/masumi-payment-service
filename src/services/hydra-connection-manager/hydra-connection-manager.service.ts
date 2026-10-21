@@ -516,9 +516,12 @@ export class HydraConnectionManager {
 
 		// An L1 transaction the node could not post. A contest it posts on its own
 		// has no command waiting on it, so this record is the only place the
-		// failure shows up, and it is the head's defence that did not happen.
+		// failure shows up. A failed command already has its CommandFailed row from
+		// the caller, so it gets no second one. Whether the head ended up
+		// undefended is the contest watch's call, made from chain state.
 		// `recordHeadError` logs its own failures, so nothing here needs catching.
 		head.mainNode.on(HydraNodeEvent.PostTxFailed, (data: PostTxFailedData) => {
+			if (data.answersCommand) return;
 			void recordHeadError(
 				hydraHeadId,
 				head.mainNode.status,

@@ -33,7 +33,14 @@ import {
 } from './schemas';
 import { describeDecommitInvalidReason, describePostTxError, postTxErrorTag } from './post-tx-error';
 import { HydraHeadStatus } from '@/generated/prisma/client';
-import type { DecommitDistributedValue, DecommitSettledData, DepositRecordedData, StatusChangeData } from './types';
+import {
+	UNKNOWN_POST_CHAIN_TX_TAG,
+	type DecommitDistributedValue,
+	type DecommitSettledData,
+	type DepositRecordedData,
+	type PostTxFailure,
+	type StatusChangeData,
+} from './types';
 
 const MAX_HYDRA_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024;
 
@@ -350,7 +357,7 @@ export function resolveCommandTransactionHash(transaction: { txId?: string; cbor
  */
 const FANOUT_POST_CHAIN_TX_TAGS: ReadonlySet<string> = new Set(['FanoutTx', 'PartialFanoutTx', 'FinalPartialFanoutTx']);
 
-function postChainTxTagsFor(command: string): ReadonlySet<string> {
+export function postChainTxTagsFor(command: string): ReadonlySet<string> {
 	if (command === 'Fanout' || command === 'PartialFanout') return FANOUT_POST_CHAIN_TX_TAGS;
 	return new Set([`${command}Tx`]);
 }
@@ -662,4 +669,33 @@ export function readDecommitSettled(tag: string, message: unknown): DecommitSett
 		};
 	}
 	return undefined;
+}
+
+/**
+ * What a `PostTxOnChainFailed` frame says went wrong, or undefined when it is
+ * about another head.
+ *
+ * hydra-node puts no head id on the frame itself; the transactions that name a
+ * head (`CloseTx`, `ContestTx`, `FanoutTx`, ...) carry it inside `postChainTx`.
+ * That one is checked against the pinned head. A frame this service cannot read
+ * is still a failure, so it is reported as an unknown transaction instead of
+ * being dropped: dropping it is how a failed contest went unnoticed.
+ */
+export function readPostTxFailed(message: unknown, expectedHeadId: string | undefined): PostTxFailure | undefined {
+	const frame = postTxOnChainFailedMessageSchema.safeParse(message);
+	if (!frame.success) {
+		return {
+			postChainTxTag: UNKNOWN_POST_CHAIN_TX_TAG,
+			reason: 'the node reported a failed transaction this service could not read',
+		};
+	}
+	const namedHeadId = canonicalHydraHeadIdSchema.safeParse(frame.data.postChainTx?.headId).data;
+	if (expectedHeadId && namedHeadId && namedHeadId !== expectedHeadId) {
+		logger.warn('[HydraNode] Ignoring a failed L1 transaction for another head', { headId: namedHeadId });
+		return undefined;
+	}
+	return {
+		postChainTxTag: frame.data.postChainTx?.tag ?? UNKNOWN_POST_CHAIN_TX_TAG,
+		reason: describePostTxError(frame.data.postTxError),
+	};
 }

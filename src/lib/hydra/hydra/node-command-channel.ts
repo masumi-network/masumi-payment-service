@@ -12,7 +12,7 @@
 import { resolveTxHash } from '@meshsdk/core';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportAmbiguousError, HydraTransportError } from './errors';
-import { handleWsResponse, type HydraResponseMessage } from './node-frames';
+import { handleWsResponse, postChainTxTagsFor, type HydraResponseMessage } from './node-frames';
 import { canonicalHydraTransactionIdSchema, hydraCommandTransactionSchema } from './schemas';
 import { HydraTransaction } from './types';
 
@@ -24,6 +24,21 @@ export interface HydraCommandOptions {
 	isComplete: (message: HydraResponseMessage) => boolean;
 	timeoutMessage: string;
 	retryIntervalMs?: number;
+}
+
+/**
+ * Commands still waiting for their answer, per live socket.
+ *
+ * The node answers a command's failed L1 post with the same
+ * `PostTxOnChainFailed` frame it sends for a post nobody asked for, such as a
+ * contest. The live frame processor reads that frame before the command's own
+ * listener does, so it asks here whether a waiting caller will report it.
+ */
+const awaitedCommands = new WeakMap<Connection, string[]>();
+
+/** Whether a command waiting on `connection` posts the L1 transaction `postChainTxTag`. */
+export function isAwaitingPostChainTx(connection: Connection, postChainTxTag: string): boolean {
+	return (awaitedCommands.get(connection) ?? []).some((command) => postChainTxTagsFor(command).has(postChainTxTag));
 }
 
 export function sendHydraCommandAndWait(
@@ -38,7 +53,11 @@ export function sendHydraCommandAndWait(
 		const pendingSend = new AbortController();
 		let retryInterval: ReturnType<typeof setInterval> | undefined;
 
+		const awaited = awaitedCommands.get(connection) ?? [];
+		awaitedCommands.set(connection, awaited);
+		awaited.push(command);
 		const cleanup = () => {
+			awaited.splice(awaited.indexOf(command), 1);
 			clearTimeout(timeout);
 			if (retryInterval) clearInterval(retryInterval);
 			// A command deadline can precede Connection.send's open deadline. Stop

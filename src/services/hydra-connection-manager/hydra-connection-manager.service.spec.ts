@@ -664,9 +664,10 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	});
 
 	// The node posts a contest on its own when a peer closes on an old snapshot.
-	// When that post fails nothing is waiting on it, so without a record the head
-	// sits undefended and the operator never learns why.
-	it('records an L1 transaction the node could not post, with the node reason', async () => {
+	// When that post fails nothing is waiting on it, so without a record the
+	// operator never learns why. A failed Close already has its caller's
+	// CommandFailed row, so it must not get a second one.
+	it('records an L1 transaction the node could not post, once', async () => {
 		const manager = new HydraConnectionManager();
 		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & { status: HydraHeadStatus } };
 		head.mainNode = Object.assign(new EventEmitter(), { status: HydraHeadStatus.Closed });
@@ -676,8 +677,14 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			head,
 		);
 
-		head.mainNode.emit('PostTxFailed', { postChainTxTag: 'ContestTx', reason: 'NotEnoughFuel: fund the node' });
+		head.mainNode.emit('PostTxFailed', { postChainTxTag: 'CloseTx', reason: 'NotEnoughFuel', answersCommand: true });
+		head.mainNode.emit('PostTxFailed', {
+			postChainTxTag: 'ContestTx',
+			reason: 'NotEnoughFuel: fund the node',
+			answersCommand: false,
+		});
 
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
 		expect(mockRecordHeadError).toHaveBeenCalledWith(
 			'head-1',
 			HydraHeadStatus.Closed,

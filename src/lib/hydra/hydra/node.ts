@@ -27,6 +27,7 @@ import {
 	HydraCommandOptions,
 	assertTxConfirmationPolling,
 	awaitHydraTxConfirmation,
+	isAwaitingPostChainTx,
 	prepareNewTxCommand,
 	sendHydraCommandAndWait,
 } from './node-command-channel';
@@ -224,6 +225,7 @@ export class HydraNode extends EventEmitter {
 			},
 			onRotationError: (error) => this._replay.fail(error),
 			invalidateLiveConnection: (error) => this._connection.invalidate(error),
+			isAwaitingPostChainTx: (postChainTxTag) => isAwaitingPostChainTx(this._connection, postChainTxTag),
 		};
 	}
 

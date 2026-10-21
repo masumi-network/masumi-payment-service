@@ -22,15 +22,10 @@ import {
 	protocolErrorToString,
 	readDecommitSettled,
 	readDepositRecorded,
+	readPostTxFailed,
 } from './node-frames';
 import { HeldBackEmissions } from './node-held-back';
-import { describePostTxError } from './post-tx-error';
-import {
-	hasFinalizedUtxoField,
-	headClockMessageSchema,
-	messageSchema,
-	postTxOnChainFailedMessageSchema,
-} from './schemas';
+import { hasFinalizedUtxoField, headClockMessageSchema, messageSchema } from './schemas';
 import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, PostTxFailedData, StatusChangeData } from './types';
 
 export const LIVE_SESSION_READY_EVENT = 'hydraLiveSessionReady';
@@ -97,6 +92,8 @@ export interface LiveFrameHost {
 	/** The rotation latch was hit on the live socket: fail the replay with it. */
 	onRotationError(error: unknown): void;
 	invalidateLiveConnection(error: Error): void;
+	/** A command waiting on this node posts `postChainTxTag`, so its caller hears of a failure to post it. */
+	isAwaitingPostChainTx(postChainTxTag: string): boolean;
 }
 
 export class LiveFrameProcessor {
@@ -245,6 +242,7 @@ export class LiveFrameProcessor {
 		// finalization that followed it.
 		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
 		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
+		this._heldBack.flushPostTxFailures((data) => this.emitter.emit(HydraNodeEvent.PostTxFailed, data));
 	}
 
 	applyObservedHeadClock(chainTimeMs: number, chainSlot: number): void {
@@ -407,7 +405,12 @@ export class LiveFrameProcessor {
 			}
 			decommitSettled = readDecommitSettled(envelope.tag, message);
 			if (envelope.tag === 'PostTxOnChainFailed') {
-				postTxFailed = readPostTxFailed(message);
+				const failure = readPostTxFailed(message, this.host.expectedHeadId);
+				// Asked now, while the frame is current: the waiting command settles on
+				// this same frame and is gone by the time anything reads the event.
+				if (failure) {
+					postTxFailed = { ...failure, answersCommand: this.host.isAwaitingPostChainTx(failure.postChainTxTag) };
+				}
 			}
 			if (envelope.tag === 'CommitRecovered') {
 				// Deliberately does NOT decrement. Recovery is the path for a deposit
@@ -461,10 +464,12 @@ export class LiveFrameProcessor {
 			// reading as still paying out forever, with nothing to correct it.
 			if (decommitSettled) this._heldBack.rememberDecommit(decommitSettled);
 			if (depositRecorded) this._heldBack.rememberDeposit(depositRecorded);
+			if (postTxFailed) this._heldBack.rememberPostTxFailure(postTxFailed);
 			return;
 		}
 		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
 		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
+		this._heldBack.flushPostTxFailures((data) => this.emitter.emit(HydraNodeEvent.PostTxFailed, data));
 		if (decommitSettled) this.emitter.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
 		if (depositRecorded) this.emitter.emit(HydraNodeEvent.DepositRecorded, depositRecorded);
 		if (postTxFailed) this.emitter.emit(HydraNodeEvent.PostTxFailed, postTxFailed);
@@ -513,22 +518,4 @@ export class LiveFrameProcessor {
 			}
 		}
 	}
-}
-
-/**
- * What a `PostTxOnChainFailed` frame says went wrong.
- *
- * A frame this service cannot read is still a failure, so it is reported as an
- * unknown transaction instead of being dropped: dropping it is how a failed
- * contest went unnoticed.
- */
-function readPostTxFailed(message: unknown): PostTxFailedData {
-	const frame = postTxOnChainFailedMessageSchema.safeParse(message);
-	if (!frame.success) {
-		return { postChainTxTag: 'unknown', reason: 'the node reported a failed transaction this service could not read' };
-	}
-	return {
-		postChainTxTag: frame.data.postChainTx?.tag ?? 'unknown',
-		reason: describePostTxError(frame.data.postTxError),
-	};
 }
