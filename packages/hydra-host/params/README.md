@@ -37,6 +37,10 @@ protocol parameters, zeroing the fee fields, dropping `costModels`, and
 reviewing the result. The Host refuses to start if the file for its configured
 network is missing, so this fails loudly rather than silently.
 
+Set `maxTxSize` to 15,000, not mainnet's L1 value. The Host refuses to start on
+any params file above 15,000, because a head on a larger limit can hold an
+output no fanout can move (`src/ledger-params.ts`).
+
 ## Drift
 
 CI runs the generator with `--check`. It fails when the committed files no

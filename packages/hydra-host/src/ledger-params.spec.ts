@@ -1,19 +1,23 @@
 import { describe, expect, it } from '@jest/globals';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+	assertLedgerParamsSettleable,
+	FANOUT_ENVELOPE_BYTES,
+	L1_MAX_TX_SIZE,
+	MAX_L2_TX_SIZE,
+} from './ledger-params.js';
+
 const paramsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../params');
 
-/** L1 Conway `maxTxSize` on preprod and mainnet. */
-const L1_MAX_TX_SIZE = 16_384;
-
-/**
- * Bytes a hydra-node 2.4.1 fanout tx adds around one distributed output, measured
- * on devnet (docs/hydra-fanout-output-size-measurement.md). Re-measure on a
- * hydra-node version change.
- */
-const FANOUT_ENVELOPE_BYTES = 917;
+/** Every generated network file the Host image ships. */
+const shippedNetworks = fs
+	.readdirSync(paramsDir)
+	.filter((file) => file.endsWith('.json'))
+	.map((file) => file.slice(0, -'.json'.length));
 
 type Params = {
 	maxTxSize: number;
@@ -55,9 +59,19 @@ describe('shipped L2 ledger params', () => {
 	// The same value is asserted against the RUNNING head by
 	// src/lib/hydra/hydra/params-drift.ts (EXPECTED_MAX_TX_SIZE). Change both.
 	it('keeps maxTxSize small enough that any single L2 output can be fanned out', () => {
-		const { maxTxSize } = load('preprod');
-		expect(maxTxSize + FANOUT_ENVELOPE_BYTES).toBeLessThan(L1_MAX_TX_SIZE);
-		expect(maxTxSize).toBe(15_000);
+		expect(MAX_L2_TX_SIZE + FANOUT_ENVELOPE_BYTES).toBeLessThan(L1_MAX_TX_SIZE);
+		for (const network of shippedNetworks) {
+			expect({ network, maxTxSize: load(network).maxTxSize }).toEqual({ network, maxTxSize: MAX_L2_TX_SIZE });
+			expect(() => assertLedgerParamsSettleable(path.join(paramsDir, `${network}.json`))).not.toThrow();
+		}
+	});
+
+	// HYDRA_HOST_LEDGER_PARAMS_FILE can point a Host at any file, and mainnet
+	// ships none, so the shipped files alone do not bound what a Host runs.
+	it('refuses to boot on the pre-cap maxTxSize 16,384', () => {
+		const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ledger-params-')), 'mainnet.json');
+		fs.writeFileSync(file, JSON.stringify({ ...load('preprod'), maxTxSize: 16_384 }));
+		expect(() => assertLedgerParamsSettleable(file)).toThrow(/maxTxSize 16384, above 15000/);
 	});
 
 	it('carries all three Plutus cost models at their pinned lengths', () => {

@@ -17,6 +17,7 @@ import { redemptionNetwork, verifyRedemptionSignature } from './registry/redempt
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
 import { peerTargetRejection } from './peer-target-policy.js';
+import { assertLedgerParamsSettleable } from './ledger-params.js';
 import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
 				'(a network needs a reviewed base file in packages/hydra-host/params/base first)',
 		);
 	}
+	assertLedgerParamsSettleable(config.ledgerProtocolParametersFile);
 
 	// Same reasoning for the two executables every node needs. Neither is used
 	// until a node is provisioned, and a node that cannot find them dies seconds
