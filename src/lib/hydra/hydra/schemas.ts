@@ -330,6 +330,26 @@ export const hydraConfirmedSnapshotSchema = z.union([
 ]);
 
 /**
+ * `GET /snapshot`, read for the deposit the head has agreed to absorb.
+ *
+ * Its own schema rather than a widening of the one above: that one is shared
+ * with the snapshot reset, which must keep accepting every snapshot it accepts
+ * today. In hydra-node 2.4.1 a confirmed snapshot carries `utxoToCommit` and the
+ * `depositTxId` it came from while an increment is pending (`api.yaml`,
+ * `Snapshot`).
+ */
+export const hydraAcknowledgedDepositSchema = z.union([
+	z.looseObject({
+		tag: z.literal('ConfirmedSnapshot'),
+		snapshot: z.looseObject({
+			utxoToCommit: hydraSnapshotUtxoSchema.nullish(),
+			depositTxId: canonicalHydraTransactionIdSchema.nullish(),
+		}),
+	}),
+	z.looseObject({ tag: z.literal('InitialSnapshot') }),
+]);
+
+/**
  * `GET /snapshot/last-seen`: the node's view of the snapshot round in flight.
  * Only the fields that identify a round are read. Any tag is accepted, because
  * an unknown tag must still count as a round in flight, never as idle.

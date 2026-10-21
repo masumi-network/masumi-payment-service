@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { fetchHydraSnapshotRound } from './node-control-queries';
+import { fetchHydraAcknowledgedDeposit, fetchHydraSnapshotRound } from './node-control-queries';
 import { HydraProtocolError } from './errors';
 
 const TX_ID = 'DC3EDEE5C3EB0B5B50809EC9FA41FB590818412383DA4F03CBF645FB0C1728E7';
@@ -86,5 +86,56 @@ describe('fetchHydraSnapshotRound', () => {
 		await expect(
 			fetchHydraSnapshotRound(transportReturning({ tag: 'SeenSnapshot', snapshot: { number: 1 }, signatories })),
 		).rejects.toBeInstanceOf(HydraProtocolError);
+	});
+});
+
+describe('fetchHydraAcknowledgedDeposit', () => {
+	const DEPOSIT_TX = 'DD'.repeat(32);
+	const OUTPUT = {
+		address: 'addr_test1vz',
+		value: { lovelace: 5_000_000 },
+		referenceScript: null,
+		inlineDatum: null,
+		inlineDatumRaw: null,
+		datum: null,
+	};
+	const confirmed = (snapshot: Record<string, unknown>) => ({
+		tag: 'ConfirmedSnapshot',
+		signatures: { multiSignature: [] },
+		snapshot: { headId: 'cc'.repeat(28), version: 1, number: 7, confirmed: [], utxo: {}, ...snapshot },
+	});
+
+	it('reads the deposit a confirmed snapshot holds, with its id in lowercase', async () => {
+		const transport = transportReturning(
+			confirmed({ utxoToCommit: { [`${DEPOSIT_TX}#0`]: OUTPUT }, depositTxId: DEPOSIT_TX }),
+		);
+
+		await expect(fetchHydraAcknowledgedDeposit(transport)).resolves.toEqual({
+			acknowledged: true,
+			depositTxId: DEPOSIT_TX.toLowerCase(),
+		});
+		expect(transport.paths).toEqual(['/snapshot']);
+	});
+
+	it.each([
+		['null', null],
+		['absent', undefined],
+		['empty', {}],
+	])('reads a snapshot whose utxoToCommit is %s as holding no deposit', async (_label, utxoToCommit) => {
+		const transport = transportReturning(confirmed({ utxoToCommit, depositTxId: null }));
+
+		await expect(fetchHydraAcknowledgedDeposit(transport)).resolves.toEqual({ acknowledged: false, depositTxId: null });
+	});
+
+	it('reads a head still on its initial snapshot as holding no deposit', async () => {
+		const transport = transportReturning({ tag: 'InitialSnapshot', headId: 'cc'.repeat(28) });
+
+		await expect(fetchHydraAcknowledgedDeposit(transport)).resolves.toEqual({ acknowledged: false, depositTxId: null });
+	});
+
+	it('refuses an answer it cannot read, rather than reporting no deposit', async () => {
+		const transport = transportReturning({ tag: 'ConfirmedSnapshot', snapshot: { utxoToCommit: 'not-a-map' } });
+
+		await expect(fetchHydraAcknowledgedDeposit(transport)).rejects.toBeInstanceOf(HydraProtocolError);
 	});
 });

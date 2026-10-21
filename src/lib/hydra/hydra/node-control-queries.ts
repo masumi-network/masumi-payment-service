@@ -14,6 +14,7 @@ import { type HydraRawCostModels } from './node-api';
 import { reportParamsDrift } from './params-drift';
 import {
 	hydraCostModelSchema,
+	hydraAcknowledgedDepositSchema,
 	hydraConfirmedSnapshotSchema,
 	hydraCostModelsEnvelopeSchema,
 	hydraLastSeenSnapshotSchema,
@@ -109,6 +110,36 @@ export async function fetchHydraConfirmedSnapshotNumber(
 	return data.tag === 'ConfirmedSnapshot'
 		? { headId: data.snapshot.headId, number: BigInt(data.snapshot.number) }
 		: { headId: data.headId, number: 0n };
+}
+
+export type HydraAcknowledgedDeposit = {
+	/** The latest confirmed snapshot holds a deposit the head has agreed to absorb. */
+	acknowledged: boolean;
+	/** The deposit transaction it came from, lowercase. Null when the snapshot names none. */
+	depositTxId: string | null;
+};
+
+/**
+ * Whether the head has already acknowledged a deposit, read from `GET /snapshot`.
+ *
+ * Once a signed snapshot carries `utxoToCommit` the increment that claims it is
+ * on its way, and recovering the deposit then can leave an empty head that
+ * cannot be closed or fanned out (docs/hydra-persistence-recovery-verification.md,
+ * finding 12). Throws on a malformed answer, so a caller can refuse rather than guess.
+ */
+export async function fetchHydraAcknowledgedDeposit(transport: HydraQueryTransport): Promise<HydraAcknowledgedDeposit> {
+	const response = hydraAcknowledgedDepositSchema.safeParse(await transport.get('/snapshot'));
+	if (!response.success) {
+		throw new HydraProtocolError('Hydra confirmed snapshot response failed schema validation', {
+			cause: response.error,
+		});
+	}
+	if (response.data.tag === 'InitialSnapshot') return { acknowledged: false, depositTxId: null };
+	const { utxoToCommit, depositTxId } = response.data.snapshot;
+	return {
+		acknowledged: utxoToCommit != null && Object.keys(utxoToCommit).length > 0,
+		depositTxId: depositTxId ?? null,
+	};
 }
 
 /** `last-seen` tags that mean no snapshot round is in flight. Kept in sync with hydra-host's drain gate. */
