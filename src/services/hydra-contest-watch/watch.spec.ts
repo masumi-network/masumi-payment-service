@@ -124,7 +124,19 @@ describe('applyContestGapObservation', () => {
 		const pastDeadline = { ...closedOnThree, status: HydraHeadStatus.FanoutPossible };
 		await watch.applyContestGapObservation({ id: 'head-1', ...empty }, pastDeadline, NOW);
 		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		// Marked alerted in that write, so the next run does not alert again.
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', contestGapSignature: null },
+			data: expect.objectContaining({ contestGapAlertedAt: NOW }),
+		});
 		expect(mockTrigger).toHaveBeenCalledWith(expect.objectContaining({ gapSince: NOW.toISOString() }));
+	});
+
+	it('stays quiet when another instance recorded the gap first', async () => {
+		mockUpdateMany.mockResolvedValue({ count: 0 } as never);
+		const pastDeadline = { ...closedOnThree, status: HydraHeadStatus.FanoutPossible };
+		await watch.applyContestGapObservation({ id: 'head-1', ...empty }, pastDeadline, NOW);
+		expect(mockTrigger).not.toHaveBeenCalled();
 	});
 
 	it('stays quiet when another instance claimed the alert first', async () => {
