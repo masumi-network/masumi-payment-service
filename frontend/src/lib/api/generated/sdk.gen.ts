@@ -2741,7 +2741,7 @@ export const getReleaseStatus = <ThrowOnError extends boolean = false>(options?:
 /**
  * Report insecure service configuration.
  *
- * Reports whether ENCRYPTION_KEY is the public value from .env.example. The service still starts with that key, but anyone with a copy of the database can then decrypt wallet and Hydra Host secrets. Set a new key and re-encrypt the secrets before production use. Admin access is required.
+ * Reports whether ENCRYPTION_KEY is the public value from .env.example. The service still starts with that key, but anyone with a copy of the database can then decrypt every stored secret. The service has no tool to re-encrypt secrets: a new key on an existing database makes the stored secrets unreadable and every API key invalid. For production, start a new database with a private key. Admin access is required.
  */
 export const getSecurityStatus = <ThrowOnError extends boolean = false>(options?: Options<GetSecurityStatusData, ThrowOnError>): RequestResult<GetSecurityStatusResponses, GetSecurityStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetSecurityStatusResponses, GetSecurityStatusErrors, ThrowOnError>({
     responseType: 'json',
