@@ -28,10 +28,13 @@ function headHolding(utxoToCommit: unknown, version: number): unknown {
 }
 
 describe('holdsUnsettledCommit', () => {
+	it('reports an empty commit as unsettled, as hydra checks only that it is set', () => {
+		expect(holdsUnsettledCommit(headHolding({}, 3))).toBe(true);
+	});
+
 	it.each([
 		['the chain has settled it', headHolding(DEPOSIT, 4)],
 		['the snapshot holds no commit', headHolding(null, 3)],
-		['the snapshot holds an empty commit', headHolding({}, 3)],
 		[
 			'the head is still on its initial snapshot',
 			{

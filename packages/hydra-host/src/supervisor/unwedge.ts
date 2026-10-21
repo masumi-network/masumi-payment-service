@@ -56,8 +56,9 @@ export type UnwedgeOptions = {
 	sleep: (ms: number) => Promise<void>;
 	/**
 	 * Checked between steps, because this whole procedure can cost ~90 seconds:
-	 * five 10s reads, a 30s settle wait and a side-load. It runs inside the tick, holding the node against the shutdown's drain. Charged in
-	 * full against a 240s stop grace it does not know about, one unwedge is the
+	 * five 10s reads, a 30s settle wait and a side-load. It runs inside the
+	 * tick, holding the node against the shutdown's drain. Charged in full
+	 * against a 240s stop grace it does not know about, one unwedge is the
 	 * difference between draining the fleet and being SIGKILLed mid-drain.
 	 */
 	isAborted?: () => boolean;
@@ -81,7 +82,7 @@ export function holdsUnsettledCommit(headState: unknown): boolean {
 	const snapshot = isPlainObject(confirmed) ? getOwnValue(confirmed, 'snapshot') : undefined;
 	if (!isPlainObject(snapshot)) return false;
 	const utxoToCommit = getOwnValue(snapshot, 'utxoToCommit');
-	if (!isPlainObject(utxoToCommit) || Object.keys(utxoToCommit).length === 0) return false;
+	if (!isPlainObject(utxoToCommit)) return false;
 	const version = getOwnValue(coordinated, 'version');
 	return typeof version === 'number' && version === getOwnValue(snapshot, 'version');
 }
@@ -189,9 +190,10 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 	// confirmed snapshot holds a deposit that the chain has not settled and that
 	// deposit has expired, this node, once it leads, requests a snapshot with
 	// the next deposit, and every node rejects it (hydra-node 2.4.1
-	// `ReqSnCommitNotSettled`). While the deposit is still active the leader
-	// picks it again, oldest first, but nothing here can see its status, so both
-	// cases are held.
+	// `ReqSnCommitNotSettled`). While the deposit is still active the tick
+	// usually picks it again: it takes the oldest active deposit, which is the
+	// held one unless an older one is also pending. Nothing here can see a
+	// deposit's status, so every case is held.
 	let headState: unknown;
 	try {
 		headState = await fetchHead();
