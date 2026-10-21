@@ -111,6 +111,15 @@ export async function evaluateHydraLowBalanceRules(): Promise<HydraLowBalanceAle
 						data: { lastKnownAmount: currentAmount, lastCheckedAt: checkedAt },
 					});
 				}
+			} else if (!balance.l2MintChecked) {
+				// The replay has not checked this reading for L2-minted tokens, so it
+				// can count funds the service will not spend. It can show a rule is Low
+				// but not that it recovered: Healthy now and Low once the replay is
+				// current would alert again on every reconnect.
+				await prisma.hydraLowBalanceRule.update({
+					where: { id: rule.id },
+					data: { lastKnownAmount: currentAmount, lastCheckedAt: checkedAt },
+				});
 			} else {
 				// Healthy (incl. Unknown -> Healthy). Recovery re-arms the next alert.
 				await prisma.hydraLowBalanceRule.update({

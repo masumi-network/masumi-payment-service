@@ -56,6 +56,12 @@ export interface HydraHeadOwnBalance {
 	/** Lovelace held by those UTxOs. */
 	l2MintedLovelace: string;
 	/**
+	 * Whether the history replay is current, so the two fields above are checked.
+	 * False right after a connect and while the replay has failed: then no UTxO
+	 * counts as L2-minted, and `spendableBalance` can read high.
+	 */
+	l2MintChecked: boolean;
+	/**
 	 * `balance` without those UTxOs. Low-balance rules read this. It still counts
 	 * token UTxOs the replay has not checked and UTxOs of a deposit the head has
 	 * not finished folding in, which the service does not spend yet either.
@@ -143,6 +149,7 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 			hasUnbackedUtxos: false,
 			l2MintedUtxoCount: 0,
 			l2MintedLovelace: '0',
+			l2MintChecked: false,
 			spendableBalance: [],
 		};
 	}
@@ -216,6 +223,7 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 		hasUnbackedUtxos: unbacked.length > 0,
 		l2MintedUtxoCount: l2Minted.length,
 		l2MintedLovelace,
+		l2MintChecked: l2MintCheck !== undefined,
 		spendableBalance,
 	};
 }

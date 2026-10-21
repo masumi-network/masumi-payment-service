@@ -10,10 +10,13 @@ const mockLoggerWarn = jest.fn() as AnyMock;
 
 const mockIsHydraHeadOnPausedHost = jest.fn() as AnyMock;
 const mockUnburnedUnits = new Set<string>();
+let isReplayCurrent = true;
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({
-		getNode: () => ({ l2MintCheck: { unburnedUnits: mockUnburnedUnits, verifiedOutputs: new Map() } }),
+		getNode: () => ({
+			l2MintCheck: isReplayCurrent ? { unburnedUnits: mockUnburnedUnits, verifiedOutputs: new Map() } : undefined,
+		}),
 	}),
 }));
 
@@ -57,6 +60,7 @@ function rule(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockUnburnedUnits.clear();
+	isReplayCurrent = true;
 	mockCount.mockResolvedValue([]);
 	mockIsHydraHeadOnPausedHost.mockResolvedValue(false);
 	mockExecuteHydraTopup.mockResolvedValue({ topupId: 't1', depositTxHash: 'a'.repeat(64) });
@@ -113,6 +117,27 @@ describe('runHydraAutoTopupCycle', () => {
 		const unit = 'cc'.repeat(28) + '0014df10';
 		mockUnburnedUnits.add(unit);
 		mockFindMany.mockResolvedValue([rule({ assetUnit: unit.toUpperCase(), topupAmount: 500n })]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+	});
+
+	// A peer mint of one unit must not stop the ADA top-ups the stranded ADA makes necessary.
+	it('still tops up ADA while a different unit has a nonzero net L2 mint', async () => {
+		mockUnburnedUnits.add('cc'.repeat(28) + '0014df10');
+		mockFindMany.mockResolvedValue([rule()]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).toHaveBeenCalledTimes(1);
+	});
+
+	// The monitor does not mark a rule Healthy until the replay is current, so a
+	// deposit now would be followed by another on the next cycle.
+	it('sends no deposit while the history replay is not current', async () => {
+		isReplayCurrent = false;
+		mockFindMany.mockResolvedValue([rule()]);
 
 		await runHydraAutoTopupCycle();
 

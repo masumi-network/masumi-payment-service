@@ -52,7 +52,13 @@ export const setHydraLowBalanceRuleSchemaInput = z.object({
 	assetUnit: z.string().describe('"lovelace" or a policyId+assetName hex unit'),
 	thresholdAmount: amountString.describe('Alert when the spendable in-head balance falls below this'),
 	enabled: z.boolean().optional().default(true),
-	topupEnabled: z.boolean().optional().default(false).describe('Auto top-up from the assigned funding wallet when low'),
+	topupEnabled: z
+		.boolean()
+		.optional()
+		.default(false)
+		.describe(
+			'Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a nonzero net L2 mint in the head.',
+		),
 	topupAmount: amountString
 		.optional()
 		.describe('Exact amount deposited by each auto top-up (carved into its own L1 UTxO first)'),

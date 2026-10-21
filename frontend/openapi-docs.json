@@ -36354,7 +36354,11 @@
                                                 },
                                                 "l2MintedLovelace": {
                                                     "type": "string",
-                                                    "description": "Lovelace held by those UTxOs. It is counted in balance but cannot be spent."
+                                                    "description": "Lovelace held by those UTxOs. It is counted in balance, and the service does not spend it."
+                                                },
+                                                "l2MintChecked": {
+                                                    "type": "boolean",
+                                                    "description": "True when the history replay is current, so l2MintedUtxoCount and spendableBalance are checked. False right after a connect and while the replay has failed: then no UTxO counts as L2-minted, and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading."
                                                 },
                                                 "balance": {
                                                     "type": "array",
@@ -36408,6 +36412,7 @@
                                                 "hasUnbackedUtxos",
                                                 "l2MintedUtxoCount",
                                                 "l2MintedLovelace",
+                                                "l2MintChecked",
                                                 "balance",
                                                 "spendableBalance"
                                             ]
@@ -36428,6 +36433,7 @@
                                             "hasUnbackedUtxos": false,
                                             "l2MintedUtxoCount": 0,
                                             "l2MintedLovelace": "0",
+                                            "l2MintChecked": true,
                                             "balance": [
                                                 {
                                                     "unit": "",
@@ -37656,7 +37662,7 @@
                                     "topupEnabled": {
                                         "type": "boolean",
                                         "default": false,
-                                        "description": "Auto top-up from the assigned funding wallet when low"
+                                        "description": "Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a nonzero net L2 mint in the head."
                                     },
                                     "topupAmount": {
                                         "type": "string",

@@ -45,13 +45,19 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// A paused host refuses new deposits; skip quietly until it resumes.
 			if (await isHydraHeadOnPausedHost(head.id)) continue;
 			if (rule.topupAmount == null || rule.topupAmount <= 0n) continue;
+			// Until the history replay is current, the monitor does not mark a rule
+			// Healthy, so a rule topped up now would stay Low and the next cycle
+			// would deposit again.
+			const l2MintCheck = getHydraConnectionManager().getNode(head.id)?.l2MintCheck;
+			if (!l2MintCheck) continue;
 			// The rule reads the spendable balance, and an own UTxO carrying a unit
 			// with a nonzero net L2 mint never counts as spendable. A deposit of that
 			// unit would therefore leave the rule Low, and every later cycle would
-			// send another until the wallet ran out of it.
-			const l2MintCheck = getHydraConnectionManager().getNode(head.id)?.l2MintCheck;
-			if (l2MintCheck?.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
-				logger.warn('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
+			// send another until the wallet ran out of it. Debug, not warn: this
+			// repeats every cycle, and the head error row and the Low webhook
+			// already tell the operator.
+			if (l2MintCheck.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
+				logger.debug('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
 					ruleId: rule.id,
 					headId: head.id,
 					assetUnit: rule.assetUnit,

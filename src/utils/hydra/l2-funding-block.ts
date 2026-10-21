@@ -25,7 +25,7 @@ export type InHeadBalanceReading = {
 	connected: boolean;
 	/** In-head UTxOs held by the local participant's address. */
 	utxoCount: number;
-	/** Those of them carrying an unburned L2-minted token, which the service never spends. */
+	/** Those of them carrying a unit with a nonzero net L2 mint in the head, which the service never spends. */
 	l2MintedUtxoCount: number;
 };
 

@@ -444,6 +444,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				hasUnbackedUtxos: false,
 				l2MintedUtxoCount: 0,
 				l2MintedLovelace: '0',
+				l2MintChecked: true,
 				balance: [{ unit: '', quantity: '10000000' }],
 				spendableBalance: [{ unit: '', quantity: '10000000' }],
 			}),

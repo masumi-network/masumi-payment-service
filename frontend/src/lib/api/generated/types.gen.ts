@@ -15377,9 +15377,13 @@ export type GetHydraHeadBalanceResponses = {
              */
             l2MintedUtxoCount: number;
             /**
-             * Lovelace held by those UTxOs. It is counted in balance but cannot be spent.
+             * Lovelace held by those UTxOs. It is counted in balance, and the service does not spend it.
              */
             l2MintedLovelace: string;
+            /**
+             * True when the history replay is current, so l2MintedUtxoCount and spendableBalance are checked. False right after a connect and while the replay has failed: then no UTxO counts as L2-minted, and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading.
+             */
+            l2MintChecked: boolean;
             /**
              * This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty.
              */
@@ -15955,7 +15959,7 @@ export type PostHydraLowBalanceData = {
         thresholdAmount: string;
         enabled?: boolean;
         /**
-         * Auto top-up from the assigned funding wallet when low
+         * Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a nonzero net L2 mint in the head.
          */
         topupEnabled?: boolean;
         /**

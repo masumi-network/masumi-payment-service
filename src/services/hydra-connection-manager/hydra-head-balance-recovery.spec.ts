@@ -96,6 +96,14 @@ describe('L2-minted balance', () => {
 
 	// The low-balance rule reads `spendableBalance`, so a verified L2 mint has
 	// to leave it while a token the replay has not reached yet stays in.
+	// The low-balance monitor must not mark a rule Healthy from this reading.
+	it('says the reading is unchecked while the replay is not current', async () => {
+		findRecovered.mockResolvedValue([]);
+		fetchUtxos.mockResolvedValue([tokenUtxo('1'.repeat(64), minted, '3000000')]);
+
+		expect(await getOwnInHeadBalance('head')).toMatchObject({ l2MintedUtxoCount: 0, l2MintChecked: false });
+	});
+
 	it('keeps verified L2-minted UTxOs out of the spendable balance only', async () => {
 		findRecovered.mockResolvedValue([]);
 		const tainted = tokenUtxo('1'.repeat(64), minted, '3000000');
@@ -110,6 +118,7 @@ describe('L2-minted balance', () => {
 			utxoCount: 3,
 			l2MintedUtxoCount: 1,
 			l2MintedLovelace: '3000000',
+			l2MintChecked: true,
 			balance: [
 				{ unit: '', quantity: '14000000' },
 				{ unit: minted, quantity: '1' },

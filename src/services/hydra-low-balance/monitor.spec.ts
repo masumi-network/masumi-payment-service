@@ -52,6 +52,7 @@ function balance(quantity: string, unit = '', spendableQuantity = quantity) {
 		address: 'addr',
 		connected: true,
 		utxoCount: 1,
+		l2MintChecked: true,
 		balance: [{ unit, quantity }],
 		spendableBalance: [{ unit, quantity: spendableQuantity }],
 	};
@@ -152,6 +153,21 @@ describe('evaluateHydraLowBalanceRules', () => {
 
 	// ADA under an unburned L2-minted token is in the head but the service
 	// never spends it. Counting it kept a head with nothing usable from alerting.
+	// An unchecked reading can count funds the service will not spend. A rule set
+	// Healthy by it alerts again once the replay is current, on every reconnect.
+	it('keeps the status on a reading the replay has not checked', async () => {
+		mockFindMany.mockResolvedValue([rule({ status: 'Low' })]);
+		mockGetOwnInHeadBalance.mockResolvedValue({ ...balance('60000000'), l2MintChecked: false });
+
+		const alerts = await evaluateHydraLowBalanceRules();
+
+		expect(alerts).toHaveLength(0);
+		expect(mockUpdate).toHaveBeenCalledWith({
+			where: { id: 'rule-1' },
+			data: { lastKnownAmount: 60_000_000n, lastCheckedAt: expect.any(Date) },
+		});
+	});
+
 	it('compares the spendable balance, not the total the head reports', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockGetOwnInHeadBalance.mockResolvedValue(balance('60000000', '', '10000000'));
