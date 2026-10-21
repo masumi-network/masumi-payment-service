@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import type { AddressInfo, Socket } from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,6 +15,8 @@ import type { ProvisionDeps } from './provision.js';
 
 const ADMIN = 'a'.repeat(40);
 const USER = 'u'.repeat(40);
+/** Long enough that only a hung response reaches it. */
+const CALLER_TIMEOUT_MS = 2_000;
 
 const env: EnvSource = {
 	get: (key) =>
@@ -81,8 +83,10 @@ let baseUrl: string;
 let node: FakeNode;
 let tickCalls: number;
 let releaseTick: () => void;
+let loggedErrors: string[];
 
 beforeEach(async () => {
+	loggedErrors = [];
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-proxy-'));
 	node = await startFakeNode();
 	store = new NodeRegistryStore(dataDir);
@@ -115,7 +119,7 @@ beforeEach(async () => {
 			newNodeId: () => 'node-x',
 			now: () => new Date(),
 		} as ProvisionDeps,
-		logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		logger: { info: () => undefined, warn: () => undefined, error: (message) => loggedErrors.push(message) },
 	});
 	await new Promise<void>((resolve) => host.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(host.address() as AddressInfo).port}`;
@@ -201,6 +205,48 @@ describe('node api proxy', () => {
 	it('502s when the node is recorded running but unreachable', async () => {
 		await store.update('node-1', (current) => ({ ...current, apiPort: 1 }));
 		expect((await call('GET', '/v1/nodes/node-1/api/head', USER)).status).toBe(502);
+	});
+
+	// A clean close fails only the node's response, which pipe() does not pass
+	// on, so the caller's 200 stayed open until its own timeout. A reset fails
+	// the request too, and its handler appended a JSON error body to the partial
+	// one, so the caller read a complete-looking 200.
+	it.each([
+		['closes', (socket: Socket) => socket.destroy()],
+		['resets', (socket: Socket) => socket.resetAndDestroy()],
+	])('cuts the caller off when the node %s the connection mid-body', async (_label, drop) => {
+		let nodeSocket: Socket | undefined;
+		const dropping = createServer((request, response) => {
+			nodeSocket = request.socket;
+			response.writeHead(200, { 'Content-Type': 'application/json' });
+			response.write('{"tag":"Open","contents":');
+		});
+		await new Promise<void>((resolve) => dropping.listen(0, '127.0.0.1', resolve));
+		try {
+			const apiPort = (dropping.address() as AddressInfo).port;
+			await store.update('node-1', (current) => ({ ...current, apiPort }));
+			const response = await fetch(`${baseUrl}/v1/nodes/node-1/api/head`, {
+				headers: { Authorization: `Bearer ${USER}` },
+				signal: AbortSignal.timeout(CALLER_TIMEOUT_MS),
+			});
+			// The headers came through the proxy, so the drop lands mid-body.
+			expect(nodeSocket).toBeDefined();
+			drop(nodeSocket as Socket);
+			const bodyError = await response.text().then(
+				() => null,
+				(error: unknown) => error,
+			);
+			// fetch's `TypeError: terminated`, not a body read that succeeds or
+			// the TimeoutError the hang ended in.
+			expect((bodyError as Error | null)?.name).toBe('TypeError');
+			// The clean close used to fail without a word in the log.
+			expect(loggedErrors).toEqual(expect.arrayContaining([expect.stringContaining(`port ${apiPort} failed`)]));
+		} finally {
+			// A failed run can leave the proxy's connection open, and close() would
+			// wait on it until jest's own timeout hid the real failure.
+			dropping.closeAllConnections();
+			await new Promise<void>((resolve) => dropping.close(() => resolve()));
+		}
 	});
 
 	it('does not shadow the control plane', async () => {
