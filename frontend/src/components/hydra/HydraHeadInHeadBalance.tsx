@@ -126,6 +126,14 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
               Closing may fail until it is cleared.
             </div>
           )}
+          {(data.l2MintedUtxoCount ?? 0) > 0 && (
+            <div className="border-t px-4 py-2 text-xs text-amber-600 dark:text-amber-400">
+              {formatAssetAmount(data.l2MintedLovelace ?? '0', 'lovelace', network)} of this sits in{' '}
+              {data.l2MintedUtxoCount} piece{data.l2MintedUtxoCount === 1 ? '' : 's'} carrying a
+              token minted or burned inside the head. This node will not spend them, and the head
+              cannot fully settle on chain while a token minted in it stays unburned.
+            </div>
+          )}
         </div>
       )}
     </div>
