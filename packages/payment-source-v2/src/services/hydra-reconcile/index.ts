@@ -48,6 +48,7 @@ import {
 	verifyHydraFanoutOnChain,
 	type HydraFanoutChainObserver,
 } from '@/lib/hydra/hydra/fanout-validation';
+import type { HydraHeadChainObserver } from '@/lib/hydra/hydra/head-init-validation';
 import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-verification';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
@@ -348,10 +349,10 @@ async function reconcileHead(
 			node == null
 		)
 			return;
-		const fanoutObserver = getBlockfrostInstance(
-			source.network,
-			source.PaymentSourceConfig.rpcProviderApiKey,
-		) as unknown as HydraFanoutChainObserver;
+		const blockfrost = getBlockfrostInstance(source.network, source.PaymentSourceConfig.rpcProviderApiKey);
+		const fanoutObserver = blockfrost as unknown as HydraFanoutChainObserver;
+		// Finds the burn step of a fanout whose last step distributed nothing.
+		const headStateObserver = blockfrost as unknown as HydraHeadChainObserver;
 		// A fanout over several L1 steps reports the earlier steps' outputs under
 		// in-head keys. Until they are bound to L1, the node resolves no fanout
 		// reference at all, so this must run before anything below reads one.
@@ -359,6 +360,7 @@ async function reconcileHead(
 		if (bindingInput) {
 			const bound = await bindFinalizedFanoutToL1Chain({
 				observer: fanoutObserver,
+				headStateObserver,
 				headId: headIdentifier,
 				participantVkeys: [localParticipantVkey, remoteParticipantVkey],
 				...bindingInput,
@@ -377,6 +379,7 @@ async function reconcileHead(
 				fanoutChecks.get(key) ??
 				verifyHydraFanoutOnChain({
 					observer: fanoutObserver,
+					headStateObserver,
 					headId: headIdentifier,
 					participantVkeys: [localParticipantVkey, remoteParticipantVkey],
 					references,

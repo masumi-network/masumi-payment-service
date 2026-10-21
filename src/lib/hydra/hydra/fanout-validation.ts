@@ -1,7 +1,12 @@
 import { Address, Transaction, type TransactionOutput } from '@emurgo/cardano-serialization-lib-nodejs';
 import { resolveTxHash } from '@meshsdk/core';
 
-import { HYDRA_HEAD_V2_ASSET_NAME_HEX, knownHydraHeadScriptHashes } from './head-init-validation';
+import {
+	HYDRA_HEAD_V2_ASSET_NAME_HEX,
+	knownHydraHeadScriptHashes,
+	observeHydraHeadIsOpenOnChain,
+	type HydraHeadChainObserver,
+} from './head-init-validation';
 import { serializeCardanoTransactionOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './schemas';
 
@@ -451,8 +456,39 @@ async function verifyFanoutStep(params: {
  *
  * Returns the steps in chain order; the last is the terminal one.
  */
+/**
+ * The burn transaction of a head, from the newest transaction that moved its
+ * state token.
+ *
+ * hydra-node 2.4.1 can burn in a step that distributes nothing. A selection
+ * that drains the head leaves an empty remaining set, and the node then posts
+ * a `FinalPartialFanoutTx` with only the wallet change (`HeadLogic.hs:1620` at
+ * 2.4.1). No entry of the finalized map is keyed by that transaction, so its
+ * hash has to come from L1.
+ */
+async function findHeadBurnTxHash(options: {
+	headStateObserver: HydraHeadChainObserver | undefined;
+	headId: string;
+	headScriptHash?: string;
+	observerTimeoutMs: number;
+}): Promise<string> {
+	if (!options.headStateObserver) {
+		fail('Hydra fanout names no terminal step and no head state observer was configured to find it');
+	}
+	const chain = await observeHydraHeadIsOpenOnChain({
+		observer: options.headStateObserver,
+		headId: options.headId,
+		headScriptHash: options.headScriptHash,
+		observerTimeoutMs: options.observerTimeoutMs,
+	});
+	if (chain.state !== 'gone') fail('Hydra head is still held on L1, so its fanout has no terminal step yet');
+	return chain.latestTxHash;
+}
+
 export async function verifyHydraFanoutOnChain(options: {
 	observer: HydraFanoutChainObserver;
+	/** Finds the burn step when no reference points into it; see `findHeadBurnTxHash`. */
+	headStateObserver?: HydraHeadChainObserver;
 	headId: string;
 	participantVkeys: readonly string[];
 	references: readonly VerifiedHydraFanoutReference[];
@@ -519,6 +555,30 @@ export async function verifyHydraFanoutOnChain(options: {
 		);
 	}
 
+	if (![...steps.values()].some((step) => step.role === 'terminal')) {
+		const remainingMs = chainDeadline - Date.now();
+		if (remainingMs <= 0) fail('Hydra fanout verification exceeded its total L1 observer budget');
+		const burnTxHash = await findHeadBurnTxHash({
+			headStateObserver: options.headStateObserver,
+			headId,
+			headScriptHash: options.headScriptHash,
+			observerTimeoutMs: Math.min(observerTimeoutMs, remainingMs),
+		});
+		if (steps.has(burnTxHash)) fail('Hydra fanout state token ended in a step that burned nothing');
+		steps.set(
+			burnTxHash,
+			await verifyFanoutStep({
+				observer: options.observer,
+				txHash: burnTxHash,
+				headId,
+				expectedUnits,
+				acceptedHeadScriptHashes,
+				references: [],
+				requiredConfirmations: options.requiredConfirmations,
+				observerTimeoutMs: Math.min(observerTimeoutMs, Math.max(1, chainDeadline - Date.now())),
+			}),
+		);
+	}
 	const terminals = [...steps.values()].filter((step) => step.role === 'terminal');
 	if (terminals.length !== 1) {
 		fail('Hydra fanout did not burn the exact bound head and participant token set exactly once');
@@ -568,6 +628,8 @@ export async function verifyHydraFanoutOnChain(options: {
  */
 export async function bindFinalizedFanoutToL1Chain(options: {
 	observer: HydraFanoutChainObserver;
+	/** Finds the burn step when no finalized entry is keyed by it; see `findHeadBurnTxHash`. */
+	headStateObserver?: HydraHeadChainObserver;
 	headId: string;
 	participantVkeys: readonly string[];
 	finalizedOutputs: ReadonlyMap<string, string>;
@@ -598,6 +660,16 @@ export async function bindFinalizedFanoutToL1Chain(options: {
 		}
 	}
 	if (unboundCount === 0) return bound;
+	if (terminalTxHashes.size === 0) {
+		terminalTxHashes.add(
+			await findHeadBurnTxHash({
+				headStateObserver: options.headStateObserver,
+				headId,
+				headScriptHash: options.headScriptHash,
+				observerTimeoutMs,
+			}),
+		);
+	}
 	if (terminalTxHashes.size !== 1) {
 		fail('Hydra finalized output map did not name exactly one terminal L1 fanout step');
 	}

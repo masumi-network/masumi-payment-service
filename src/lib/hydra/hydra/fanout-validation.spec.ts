@@ -333,7 +333,7 @@ describe('verifyHydraFanoutOnChain', () => {
 		it('rejects a chain that never burns the head tokens', async () => {
 			const only = buildFanout({ outputCount: 1, continuingHead: true, burns: [] });
 
-			await expect(verify(fixture({ chain: [only] }))).rejects.toThrow('exactly once');
+			await expect(verify(fixture({ chain: [only] }))).rejects.toThrow('names no terminal step');
 		});
 
 		// Without the linkage check, any transaction that merely spends some head
@@ -585,6 +585,81 @@ describe('bindFinalizedFanoutToL1Chain', () => {
 			return { txHash, outputIndex: Number(outputIndex), snapshotNumber: 7, serializedOutput };
 		});
 		await expect(verify(chain.value, { references })).resolves.toHaveLength(3);
+	});
+
+	// hydra-node 2.4.1: a selection that drains the head ends in a burn step
+	// with only wallet change, so no finalized entry names that step.
+	describe('a burn step that distributes nothing', () => {
+		function drainedChain() {
+			const first = buildFanout({ continuingHead: true, burns: [], outputCount: 2, change: {} });
+			const terminal = buildFanout({ headInput: { txHash: first.txHash, index: 0 }, outputCount: 0, change: {} });
+			const value = fixture({ chain: [first, terminal] });
+			const reported = new Map<string, string>();
+			const inHeadReferences = new Set<string>();
+			first.outputs.forEach((output, index) => {
+				reported.set(inHeadKey(index), serializeCardanoTransactionOutput(output));
+				inHeadReferences.add(inHeadKey(index));
+			});
+			// The newest tx moving the state token is the burn; it leaves no head output.
+			const headStateObserver = {
+				assetsTransactions: jest.fn(async () => [{ tx_hash: terminal.txHash }]),
+				txsUtxos: jest.fn(async (txHash: string) => ({ hash: txHash, outputs: [] })),
+			};
+			return { value, reported, inHeadReferences, first, terminal, headStateObserver };
+		}
+
+		it('binds from the burn step found through the state token, and the result verifies', async () => {
+			const chain = drainedChain();
+			const bound = await bindFinalizedFanoutToL1Chain({
+				observer: chain.value.observer,
+				headStateObserver: chain.headStateObserver,
+				headId: HEAD_ID,
+				participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				finalizedOutputs: chain.reported,
+				inHeadReferences: chain.inHeadReferences,
+			});
+
+			expect([...bound.keys()].sort()).toEqual([`${chain.first.txHash}#1`, `${chain.first.txHash}#2`]);
+			const references = [...bound].map(([reference, serializedOutput]) => {
+				const [txHash, outputIndex] = reference.split('#');
+				return { txHash, outputIndex: Number(outputIndex), snapshotNumber: 7, serializedOutput };
+			});
+			await expect(
+				verifyHydraFanoutOnChain({
+					observer: chain.value.observer,
+					headStateObserver: chain.headStateObserver,
+					headId: HEAD_ID,
+					participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+					references,
+					requiredConfirmations: 5,
+				}),
+			).resolves.toHaveLength(2);
+		});
+
+		it('refuses while L1 still holds the head', async () => {
+			const chain = drainedChain();
+			chain.headStateObserver.txsUtxos.mockResolvedValue({
+				hash: chain.first.txHash,
+				outputs: [
+					{
+						address: HEAD_ADDRESS,
+						amount: [{ unit: `${HEAD_ID}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`, quantity: '1' }],
+						inline_datum: null,
+					},
+				],
+			} as never);
+
+			await expect(
+				bindFinalizedFanoutToL1Chain({
+					observer: chain.value.observer,
+					headStateObserver: chain.headStateObserver,
+					headId: HEAD_ID,
+					participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+					finalizedOutputs: chain.reported,
+					inHeadReferences: chain.inHeadReferences,
+				}),
+			).rejects.toThrow('still held on L1');
+		});
 	});
 
 	it('returns a map without in-head keys unchanged and asks the chain nothing', async () => {
