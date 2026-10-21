@@ -816,7 +816,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		// enabled (it misses here, as every write does), then unconditionally.
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(5);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
-			where: { id: 'head-1' },
+			where: { id: 'head-1', retiredAt: null },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -1125,7 +1125,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 		expect(mockTransactionFindFirst).not.toHaveBeenCalled();
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', isEnabled: true },
+			where: { id: 'head-1', isEnabled: true, retiredAt: null },
 			data: {
 				isEnabled: false,
 				initTxHash: null,

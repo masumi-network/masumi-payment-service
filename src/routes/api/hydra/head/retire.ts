@@ -19,6 +19,7 @@ import createHttpError from 'http-errors';
 import { HydraHeadInitObservationError } from '@/lib/hydra/hydra/head-init-validation';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { HYDRA_HEAD_STATUS_RANK } from '@/services/hydra-connection-manager/head-status-rank';
 
 import { readHeadChainState } from './chain-check';
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
@@ -70,6 +71,17 @@ async function readHeadOutputOnChain(headId: string): Promise<string> {
 	return chain.latestTxHash;
 }
 
+/**
+ * The node sees a fanout before this service persists it. A node already past
+ * the stored status is settling the head, and retiring it would hide that.
+ */
+function assertNodeNotPastStatus(headId: string, status: HydraHeadStatus): void {
+	const nodeStatus = getHydraConnectionManager().getNode(headId)?.status;
+	if (nodeStatus != null && HYDRA_HEAD_STATUS_RANK[nodeStatus] > HYDRA_HEAD_STATUS_RANK[status]) {
+		throw createHttpError(409, `The Hydra node reports the head ${nodeStatus}; it is settling, nothing to retire`);
+	}
+}
+
 async function readRemainingUtxo(headId: string, acknowledgeUnknown: boolean): Promise<Prisma.InputJsonArray | null> {
 	const node = getHydraConnectionManager().getNode(headId);
 	try {
@@ -116,19 +128,29 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 
 		// Independent of the node: a head that L1 shows fanned out or still open
 		// is not stuck, and retiring it would strand a settleable head.
+		assertNodeNotPastStatus(head.id, head.status);
 		const retiredHeadOutputTxHash = await readHeadOutputOnChain(head.id);
 		const remainingUtxo = await readRemainingUtxo(head.id, input.acknowledgeRemainingUtxoUnknown === true);
+		// The node read above can take a while. Read L1 again just before the
+		// write: a fanout that landed meanwhile moves the head output. A fanout
+		// posted but not yet on chain stays invisible here (see ADR 0013).
+		assertNodeNotPastStatus(head.id, head.status);
+		if ((await readHeadOutputOnChain(head.id)) !== retiredHeadOutputTxHash) {
+			throw createHttpError(409, 'The head output moved on L1 while the head was being retired');
+		}
 
 		// The operator's decision now: automatic recovery must not re-enable it.
 		forgetHeadFailedClosed(head.id);
 		const retiredAt = new Date();
 		// Guarded on the status read above, so a head that moved on meanwhile
-		// (for example a fanout that landed) is not retired. Init anchors stay: a
-		// later recovery restarts the node from them.
+		// (for example a fanout that landed) is not retired. The init anchors the
+		// head still has stay: a later recovery restarts the node from them. The
+		// epoch bump fences the old session, so it cannot write to the record.
 		const retired = await prisma.hydraHead.updateMany({
 			where: { id: head.id, status: head.status, retiredAt: null },
 			data: {
 				isEnabled: false,
+				ownerEpoch: { increment: 1 },
 				retiredAt,
 				retiredReason: input.reason,
 				retiredRemainingUtxo: remainingUtxo ?? Prisma.DbNull,

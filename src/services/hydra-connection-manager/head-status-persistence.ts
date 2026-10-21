@@ -273,7 +273,8 @@ export async function failClosedAfterStatusPersistenceFailure(
 					await prisma.hydraHead.updateMany({
 						// Fenced: a stale session must never durably disable a head a newer
 						// session owns. Its local quarantine and teardown are enough.
-						where: { id: hydraHeadId, ownerEpoch, ...(onlyIfEnabled ? { isEnabled: true } : {}) },
+						// A retired head keeps its init anchors: its recovery starts from them.
+						where: { id: hydraHeadId, ownerEpoch, retiredAt: null, ...(onlyIfEnabled ? { isEnabled: true } : {}) },
 						data: {
 							isEnabled: false,
 							initTxHash: null,

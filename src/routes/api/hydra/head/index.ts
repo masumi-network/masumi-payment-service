@@ -600,8 +600,10 @@ export async function updateHydraHeadEnabledState(
 	// before the write, so a recovery that runs meanwhile finds no mark.
 	if (!isEnabled) forgetHeadFailedClosed(id);
 	const manager = getHydraConnectionManager();
-	const quarantined = await prisma.hydraHead.update({
-		where: { id },
+	// Guarded on retiredAt: a retire that commits after the read above keeps
+	// the anchors its recovery needs.
+	const disabled = await prisma.hydraHead.updateMany({
+		where: { id, retiredAt: null },
 		// A disabled head's prior InitTx binding is no longer an admission token.
 		// Re-enable always proves the current head/participants/configuration
 		// again. The chain-replay anchor is derived from that binding, so it is
@@ -609,8 +611,10 @@ export async function updateHydraHeadEnabledState(
 		// block, and a stale anchor would silently defeat --start-chain-from
 		// recovery. The init backfill re-resolves it after re-enable.
 		data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
-		include: headInclude,
 	});
+	if (disabled.count !== 1) throw createHttpError(409, 'A retired Hydra head cannot be enabled or disabled');
+	const quarantined = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
+	if (!quarantined) throw createHttpError(404, 'Hydra head not found');
 	await manager.reconcileEnabledState(id);
 	if (!isEnabled) return quarantined;
 
@@ -648,6 +652,7 @@ export async function updateHydraHeadEnabledState(
 		where: {
 			id,
 			isEnabled: false,
+			retiredAt: null,
 			initTxHash: null,
 			updatedAt: quarantined.updatedAt,
 			headIdentifier: quarantined.headIdentifier,

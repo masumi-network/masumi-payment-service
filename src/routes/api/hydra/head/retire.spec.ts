@@ -71,6 +71,8 @@ describe('retireHeadPost', () => {
 		expect(update.where).toEqual({ id: 'head-1', status: HydraHeadStatus.FanoutPossible, retiredAt: null });
 		expect(update.data).toMatchObject({
 			isEnabled: false,
+			// Fences the old session: its status writes match no row after this.
+			ownerEpoch: { increment: 1 },
 			retiredReason: input.reason,
 			retiredRemainingUtxo: REMAINING,
 			retiredHeadOutputTxHash: HEAD_OUTPUT_TX,
@@ -147,6 +149,32 @@ describe('retireHeadPost', () => {
 		});
 		const update = mockUpdateMany.mock.calls[0]![0] as { data: Record<string, unknown> };
 		expect(update.data.retiredRemainingUtxo).toBe(Prisma.DbNull);
+	});
+
+	// The node sees a fanout before this service stores it.
+	it.each([HydraHeadStatus.Final])('refuses while the node already reports the head %s', async (nodeStatus) => {
+		mockGetNode.mockReturnValue({ status: nodeStatus, snapshotUTxO: async () => REMAINING });
+
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('refuses when a fanout lands on L1 while the remaining set is read', async () => {
+		mockReadChain
+			.mockResolvedValueOnce({ state: 'closed', latestTxHash: HEAD_OUTPUT_TX })
+			.mockResolvedValueOnce({ state: 'closed', latestTxHash: 'ef'.repeat(32) });
+
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('refuses when the head is gone from L1 on the second read', async () => {
+		mockReadChain
+			.mockResolvedValueOnce({ state: 'closed', latestTxHash: HEAD_OUTPUT_TX })
+			.mockResolvedValueOnce({ state: 'gone', latestTxHash: 'ef'.repeat(32) });
+
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
 	it('does not retire a head that moved on while it was checked', async () => {

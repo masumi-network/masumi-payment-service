@@ -500,6 +500,11 @@ remaining UTxO set, so a later recovery has what it needs. A retired head
 cannot be enabled again, and its relation, participants and host cannot be
 deleted.
 
+Do not retire a head while a fanout is in flight. The endpoint refuses when
+the node already reports the head past its stored status, or when the head
+output moves on L1 during the request. It cannot see a fanout that is posted
+but not yet on L1. Wait for a failed fanout to fail before you retire.
+
 The endpoint refuses a head inside its contestation period. If the node is
 down, it refuses too, because it cannot read the remaining UTxO set. Add
 `"acknowledgeRemainingUtxoUnknown": true` to retire without that set.

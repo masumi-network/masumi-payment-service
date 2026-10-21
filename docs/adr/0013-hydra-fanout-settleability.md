@@ -142,8 +142,16 @@ Document all four limits. Build against none of them.
    after its contestation deadline, and only when the independent L1 observer
    shows the head closed. It disables the head and stores `retiredAt`, the
    reason, the remaining UTxO set from the node and the L1 tx that holds the
-   head output. It keeps `headIdentifier` and the init anchors, because a later
-   recovery restarts a node from them. The one-live-head index
+   head output. It keeps `headIdentifier` and whatever init anchors the head
+   still has, because a later recovery restarts a node from them. Retire does
+   not check that the anchors exist: a head that was disabled before may have
+   lost them. Retire bumps `ownerEpoch`, so the old session cannot write to the
+   record, and enable, disable and the status fail-closed path all skip a
+   retired head. Before the write it refuses when the node reports a later
+   status than the database, and it reads L1 a second time and requires the
+   same head output tx. A fanout that is posted but not yet on L1 stays
+   invisible to both checks, so an operator must not retire a head while a
+   fanout is in flight. The one-live-head index
    (`HydraHead_one_live_per_relation_key`) leaves retired heads out. A retired
    head still blocks deletion of its relation, participants and host, and the
    requests bound to it stay unsettled: their funds are on L1 behind the head
