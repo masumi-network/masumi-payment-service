@@ -32,14 +32,15 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 	const rules = await prisma.hydraLowBalanceRule.findMany({
 		where: { enabled: true, topupEnabled: true, status: LowBalanceStatus.Low },
 		include: {
-			LocalParticipant: { select: { id: true, HydraHead: { select: { id: true, status: true } } } },
+			LocalParticipant: { select: { id: true, HydraHead: { select: { id: true, status: true, isClosing: true } } } },
 		},
 	});
 
 	for (const rule of rules) {
 		try {
 			const head = rule.LocalParticipant.HydraHead;
-			if (!head || head.status !== HydraHeadStatus.Open) continue;
+			// A closing head refuses new deposits for good; skip it quietly too.
+			if (!head || head.status !== HydraHeadStatus.Open || head.isClosing) continue;
 			// A paused host refuses new deposits; skip quietly until it resumes.
 			if (await isHydraHeadOnPausedHost(head.id)) continue;
 			if (rule.topupAmount == null || rule.topupAmount <= 0n) continue;

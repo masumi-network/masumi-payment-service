@@ -68,6 +68,10 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
 }));
 
+jest.unstable_mockModule('@/utils/hydra/deposit-admission', () => ({
+	lockOpenHydraHeadForDeposit: jest.fn(async () => undefined),
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHead: { findUnique: mockFindUniqueHead, update: mockUpdateHead },
