@@ -1,6 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
-import { fetchHydraAcknowledgedDeposit, fetchHydraSnapshotRound } from './node-control-queries';
-import { HydraProtocolError } from './errors';
+import {
+	fetchHydraAcknowledgedDeposit,
+	fetchHydraPendingDecommitRefs,
+	fetchHydraSnapshotRound,
+} from './node-control-queries';
+import { HydraProtocolError, HydraTransportError } from './errors';
+import { HydraHttpResponseError } from './node-frames';
 
 const TX_ID = 'DC3EDEE5C3EB0B5B50809EC9FA41FB590818412383DA4F03CBF645FB0C1728E7';
 
@@ -14,6 +19,36 @@ function transportReturning(body: unknown) {
 		},
 	};
 }
+
+function transportThrowing(error: Error) {
+	return {
+		get: async <T>(_url: string): Promise<T> => {
+			throw error;
+		},
+	};
+}
+
+describe('fetchHydraPendingDecommitRefs', () => {
+	// An empty list lets a caller start an in-head split, and one started while
+	// a decommit is pending is accepted but never snapshot-confirmed.
+	// The two shapes an unreachable node takes: a direct connection failure, and
+	// hydra-host's 502 when it cannot reach the node behind it.
+	it.each([
+		['the connection fails', new HydraTransportError('Hydra HTTP GET failed before a response was received')],
+		['the proxy answers 502', new HydraHttpResponseError('Hydra HTTP request failed with 502 Bad Gateway', 502)],
+	])('reads the head state as unknown, never as nothing pending, when %s', async (_label, error) => {
+		await expect(fetchHydraPendingDecommitRefs(transportThrowing(error))).resolves.toBeUndefined();
+	});
+
+	// `/head` carries the snapshot more than once, so a large head can outgrow
+	// the byte limit for good. Refusing on that would block every withdrawal
+	// and consolidation from it.
+	it('clears the guard when the node answered with something it cannot use', async () => {
+		const transport = transportThrowing(new HydraProtocolError('Hydra HTTP response exceeded its byte limit'));
+
+		await expect(fetchHydraPendingDecommitRefs(transport)).resolves.toEqual([]);
+	});
+});
 
 describe('fetchHydraSnapshotRound', () => {
 	it('reads a SeenSnapshot round as in flight, with its number, signers and transactions', async () => {

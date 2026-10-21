@@ -124,7 +124,8 @@ describe('nudgeIdleHeadForRelease', () => {
 		options: {
 			wallet?: boolean;
 			decommit?: boolean;
-			pendingDecommits?: readonly string[];
+			/** Null: the node could not be asked. */
+			pendingDecommits?: readonly string[] | null;
 			recordedCount?: number;
 			noHead?: boolean;
 			utxos?: UTxO[];
@@ -148,7 +149,9 @@ describe('nudgeIdleHeadForRelease', () => {
 		const node = {
 			verifiedSnapshotNumber: 7n as bigint | undefined,
 			pendingIncrementUtxoRefs: new Set<string>(),
-			fetchPendingDecommitRefs: jest.fn(async () => [...(options.pendingDecommits ?? [])]),
+			fetchPendingDecommitRefs: jest.fn(async () =>
+				options.pendingDecommits === null ? undefined : [...(options.pendingDecommits ?? [])],
+			),
 		};
 		const provider = {
 			fetchAddressUTxOs: jest.fn(async (_address: string) => options.utxos ?? [lockInputA, lockInputB, utxo('c', 0)]),
@@ -217,6 +220,7 @@ describe('nudgeIdleHeadForRelease', () => {
 		['the wallet is not pinned by this reservation', { wallet: false }],
 		['a withdrawal is being prepared', { decommit: true }],
 		['a decommit is in flight on the node', { pendingDecommits: ['f'.repeat(64)] }],
+		['the node cannot say whether a decommit is in flight', { pendingDecommits: null }],
 		['the head session is gone at send time', { noHead: true }],
 	] as const)('sends nothing, not even a resend, when %s', async (_label, options) => {
 		const h = harness(options);
