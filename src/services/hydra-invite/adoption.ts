@@ -154,6 +154,13 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 type AdoptionResult = 'adopted' | 'rejected' | 'finished' | 'skipped';
 
 /**
+ * `raced` means the invite left `Issued` first, so nothing was discarded.
+ * `host-refused` means the invite is discarded here, but the Host still holds
+ * the node, which must then be removed by hand.
+ */
+export type DiscardOutcome = 'discarded' | 'raced' | 'host-refused';
+
+/**
  * Give up on a redemption that can never be adopted, and free what it holds.
  *
  * A rejected redemption used to be a permanent wedge. The Host accepts a
@@ -190,7 +197,7 @@ type AdoptionResult = 'adopted' | 'rejected' | 'finished' | 'skipped';
  * The nonce is not reopened. Whoever posted the forgery holds it, so the
  * operator issues a new invite instead.
  */
-async function discardUnadoptableRedemption(
+export async function discardUnadoptableRedemption(
 	invite: {
 		id: string;
 		nonce: string;
@@ -199,20 +206,20 @@ async function discardUnadoptableRedemption(
 		HydraHost: { baseUrl: string; encryptedAdminToken: string | null; allowInsecureHttp: boolean };
 	},
 	options: { removeNode: boolean; failedVerification: boolean; force: boolean },
-): Promise<void> {
+): Promise<DiscardOutcome> {
 	const { removeNode, failedVerification, force } = options;
 	const discarded = await prisma.hydraHeadInvite.updateMany({
 		where: { id: invite.id, status: HydraInviteStatus.Issued },
 		data: { status: failedVerification ? HydraInviteStatus.Failed : HydraInviteStatus.Revoked },
 	});
-	if (discarded.count !== 1) return;
+	if (discarded.count !== 1) return 'raced';
 
 	if (invite.HydraHost.encryptedAdminToken === null) {
 		logger.error(
 			`hydra: discarded invite ${nonceLogRef(invite.nonce)}, but its host has no admin token; ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
-		return;
+		return 'host-refused';
 	}
 
 	const adminToken = decrypt(invite.HydraHost.encryptedAdminToken);
@@ -242,12 +249,13 @@ async function discardUnadoptableRedemption(
 			`hydra: discarded invite ${nonceLogRef(invite.nonce)} locally, but its host refused (${(error as Error).message}); ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
-		return;
+		return 'host-refused';
 	}
 
 	if (removeNode) {
 		await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
 	}
+	return 'discarded';
 }
 
 type RedeemedRecord = {

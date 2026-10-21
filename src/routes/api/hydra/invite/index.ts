@@ -35,6 +35,7 @@ import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
 import { canRemoveReservedHostNode, releaseReservedParticipants } from '@/services/hydra-invite/release-reservation';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
+import { discardUnadoptableRedemption } from '@/services/hydra-invite/adoption';
 import { inspectExchangeNetwork } from '@/services/hydra-invite/exchange-client';
 import {
 	registryPolicyIdFor,
@@ -422,7 +423,15 @@ export const redeemInvitePost = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: revoke an unredeemed invite ---
 
-export const deleteInviteSchemaInput = z.object({ id: z.string().min(1) });
+export const deleteInviteSchemaInput = z.object({
+	id: z.string().min(1),
+	discardRedemption: z
+		.boolean()
+		.optional()
+		.describe(
+			'Also cancel an invite the counterparty already redeemed but this service could not adopt. Its node is removed unless a head here claims it.',
+		),
+});
 export const deleteInviteSchemaOutput = z.object({ id: z.string(), status: z.nativeEnum(HydraInviteStatus) });
 
 /**
@@ -431,6 +440,13 @@ export const deleteInviteSchemaOutput = z.object({ id: z.string(), status: z.nat
  * Refused once redeemed, because by then the reservation is a running node with
  * a peer: taking that away is closing a head, which has its own path and its own
  * on-chain consequences.
+ *
+ * Unless `discardRedemption` is set. The Host keeps a redemption until this
+ * service adopts or cancels it, so one whose adoption fails on every pass
+ * would otherwise hold its node, port and fuel forever: the expiry sweep
+ * skips it while the Host holds the redemption. Cancelling it is the same
+ * discard adoption runs on a redemption it cannot use, and it races adoption
+ * on the `Issued` status, so a redemption adopted first is never undone.
  */
 export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 	method: 'delete',
@@ -467,10 +483,38 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		// whose peer can never join and us with nothing to reconstruct it from.
 		const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
 		if (held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
-			throw createHttpError(
-				409,
-				'this invite has already been redeemed by the counterparty; it becomes a head within seconds and can be closed from there, but it can no longer be revoked',
-			);
+			if (input.discardRedemption !== true) {
+				throw createHttpError(
+					409,
+					'this invite has already been redeemed by the counterparty; it becomes a head within seconds and can be closed from there. ' +
+						'If it never becomes one, revoke it again with discardRedemption set',
+				);
+			}
+			// Force skips the Host's head-state guard, so a node a head here
+			// claims is kept, as adoption's own discard does.
+			const boundToHead = await prisma.hydraLocalParticipant.count({
+				where: { hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId, hydraHeadId: { not: null } },
+			});
+			const outcome = await discardUnadoptableRedemption(invite, {
+				removeNode: boundToHead === 0,
+				failedVerification: false,
+				force: true,
+			});
+			const current = await prisma.hydraHeadInvite.findUniqueOrThrow({ where: { id: invite.id } });
+			if (outcome === 'raced') {
+				throw createHttpError(
+					409,
+					`this invite was ${current.status.toLowerCase()} while the revoke was in progress, so it was not revoked`,
+				);
+			}
+			if (outcome === 'host-refused') {
+				throw createHttpError(
+					502,
+					`the invite is revoked here, but its host refused the cleanup; node ${invite.hostNodeId} must be removed by hand`,
+				);
+			}
+			logger.info(`hydra: revoked redeemed invite ${nonceLogRef(invite.nonce)} and discarded its redemption`);
+			return { id: current.id, status: current.status };
 		}
 
 		// Host first: while it still honours the nonce, a redemption in flight
