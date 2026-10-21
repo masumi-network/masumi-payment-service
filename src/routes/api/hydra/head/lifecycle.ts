@@ -282,9 +282,9 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
  * head error. The cause goes into the text: a node still starting and a wrong
  * URL or token can fail the same way, and the cause often tells them apart.
  * Exposed errors skip the server-error log, so the warn is the only record.
- * Faults that ws itself rejects, such as an oversized frame, a log rotation
- * before Greetings, and a local disconnect racing Init also arrive here as a
- * closed session.
+ * Some faults also arrive here as a closed session: a frame that ws rejects,
+ * such as an oversized one, a log rotation before Greetings, and a local
+ * disconnect racing Init.
  */
 function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unknown): HttpError {
 	const cause = describeTransportFailure(error);
@@ -296,8 +296,8 @@ function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unkno
 	);
 }
 
-/** Fetch puts the socket error two levels under the transport error. */
-const MAX_TRANSPORT_CAUSE_DEPTH = 3;
+/** Fetch puts the socket error two levels under the transport error, the deepest any path goes. */
+const MAX_TRANSPORT_CAUSE_DEPTH = 2;
 
 /**
  * A transport error's message plus the deepest reason it wraps: the close code
