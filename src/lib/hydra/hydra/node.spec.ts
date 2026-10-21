@@ -698,6 +698,27 @@ describe('HydraNode', () => {
 			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
 		});
 
+		// The live path ignores a failure for another head, so a waiting Close must
+		// too: otherwise the Close fails on a frame nothing else records.
+		it('keeps a waiting Close for a failure that names another head', async () => {
+			const node = await pinnedNode();
+			const closePromise = node.close();
+			let isSettled = false;
+			void closePromise.catch(() => undefined).finally(() => (isSettled = true));
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_B }, { tag: 'NotEnoughFuel' }),
+			);
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(isSettled).toBe(false);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			await expect(closePromise).rejects.toThrow(/NotEnoughFuel/);
+		});
+
 		// The waiting Close reports its own failure, so the event says so and the
 		// manager does not write the same failure twice.
 		it('marks a failure a waiting command answers, and only that one', async () => {

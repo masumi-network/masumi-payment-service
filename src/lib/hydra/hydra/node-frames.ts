@@ -423,20 +423,22 @@ export function handleWsResponse(
 			return { kind: 'message', message };
 		}
 		if (envelope.tag === 'PostTxOnChainFailed') {
-			const message = postTxOnChainFailedMessageSchema.parse(raw);
-			assertExpectedFrameHeadId(message, expectedHeadId);
-			if (postChainTxTagsFor(command).has(message.postChainTx?.tag ?? '')) {
-				// Name the node's own reason. Without it every L1 refusal reads the
-				// same, and the operator has no way to tell "the node's key holds
-				// nothing" (NoSeedInput) from a genuine protocol rejection — the two
-				// have completely different fixes.
-				const reason = describePostTxError(message.postTxError);
+			// Read exactly as the live path reads it, so the failure a waiting
+			// command answers is the one the connection manager leaves to it.
+			const failure = readPostTxFailed(raw, expectedHeadId);
+			if (failure && postChainTxTagsFor(command).has(failure.postChainTxTag)) {
+				// The reason names the node's own words. Without them every L1 refusal
+				// reads the same, and the operator has no way to tell "the node's key
+				// holds nothing" (NoSeedInput) from a genuine protocol rejection, and the
+				// two have completely different fixes.
 				return {
 					kind: 'reject',
-					error: new HydraPostTxRejectedError(`hydra-node refused to post the ${command} transaction: ${reason}`),
+					error: new HydraPostTxRejectedError(
+						`hydra-node refused to post the ${command} transaction: ${failure.reason}`,
+					),
 				};
 			}
-			return { kind: 'message', message };
+			return { kind: 'ignore' };
 		}
 
 		return { kind: 'message', message: envelope };
