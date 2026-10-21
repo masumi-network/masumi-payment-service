@@ -79,15 +79,17 @@ describe('detectParamsDrift', () => {
 		expect(drift[0]?.key).toBe('costModels.PlutusV4');
 	});
 
-	it('catches a maxTxSize above L1, which is what makes an output unfanoutable', () => {
+	// 16,384 is L1's own limit and the value heads ran before the fanout
+	// envelope was measured. A head still on it can accept an unfanoutable output.
+	it('catches a head still running the L1 maxTxSize, which is what makes an output unfanoutable', () => {
 		const params = shippedParams();
-		params.maxTxSize = 32_768;
+		params.maxTxSize = 16_384;
 
 		const drift = detectParamsDrift(params);
 
 		expect(drift).toHaveLength(1);
 		expect(drift[0]?.key).toBe('maxTxSize');
-		expect(drift[0]?.detail).toContain('32768');
+		expect(drift[0]?.detail).toContain('16384');
 	});
 
 	it('catches execution unit changes on both axes', () => {
