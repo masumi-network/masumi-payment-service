@@ -278,7 +278,7 @@ describe('resetSnapshotRound', () => {
 			node.get.mockImplementation(async (path: string) => (path === '/head' ? head() : confirmedSnapshot()));
 
 		// A side-load clears the node's record of the deposit in flight, and the
-		// next deposit then stalls the head again (hydra-node 2.4.1
+		// next deposit can then stall the head again (hydra-node 2.4.1
 		// `ReqSnCommitNotSettled`).
 		it('refuses while the confirmed snapshot holds a deposit the chain has not settled', async () => {
 			const deposit = { [`${'dd'.repeat(32)}#0`]: { address: 'addr_test1vz', value: { lovelace: 5_000_000 } } };

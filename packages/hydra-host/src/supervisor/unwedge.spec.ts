@@ -149,7 +149,7 @@ describe('unwedgeNode', () => {
 	});
 
 	// A side-load clears the node's record of the deposit in flight, and the
-	// next deposit then stalls the head again (hydra-node 2.4.1
+	// next deposit can then stall the head again (hydra-node 2.4.1
 	// `ReqSnCommitNotSettled`).
 	it('leaves a stranded round alone while the confirmed snapshot holds a deposit the chain has not settled', async () => {
 		const opts = options({
