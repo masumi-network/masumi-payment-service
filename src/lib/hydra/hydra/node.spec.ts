@@ -1724,6 +1724,24 @@ describe('HydraNode', () => {
 			await expect(secondSubmit).resolves.toBe(tx2.txId);
 		});
 
+		// An unnamed L1 failure is no answer to an L2 transaction. Failing it as
+		// ambiguous would fail an escrow step closed for nothing.
+		it('keeps waiting on a failed L1 post that names no transaction', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const transaction = makeHydraTransaction(19);
+			const submit = node.newTx(transaction);
+			await Promise.resolve();
+
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'TxValid', headId: HEAD_ID_A, transactionId: transaction.txId }),
+			);
+
+			await expect(submit).resolves.toBe(transaction.txId);
+		});
+
 		it('does not accept a matching TxValid that omits the pinned head id', async () => {
 			const { node, liveConnection } = await startSignedNode();
 			const transaction = makeHydraTransaction(40);
