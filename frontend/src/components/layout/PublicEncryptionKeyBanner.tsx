@@ -10,8 +10,10 @@ export function PublicEncryptionKeyBanner() {
   if (!securityStatus?.isEncryptionKeyPublic) return null;
 
   return (
-    <div
-      role="status"
+    // A landmark, not a live region: the layout remounts on every page, and a live
+    // region would read the warning again on each navigation.
+    <section
+      aria-labelledby="public-encryption-key-title"
       className="border-b border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100"
     >
       <div className="mx-auto flex max-w-[1400px] gap-3 px-4 py-3 text-sm">
@@ -20,7 +22,9 @@ export function PublicEncryptionKeyBanner() {
           aria-hidden
         />
         <div className="space-y-1">
-          <p className="font-medium">This service uses the public example encryption key</p>
+          <h2 id="public-encryption-key-title" className="font-medium">
+            This service uses the public example encryption key
+          </h2>
           <p className="opacity-85">
             <code>ENCRYPTION_KEY</code> is the value from <code>.env.example</code>. Anyone with a
             copy of the database can decrypt every stored secret, including wallet keys, API keys
@@ -30,6 +34,6 @@ export function PublicEncryptionKeyBanner() {
           </p>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
