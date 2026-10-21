@@ -96,9 +96,10 @@ export enum HydraNodeEvent {
 	 *
 	 * Some of these the node posts on its own, a contest above all: when a peer
 	 * closes on an old snapshot it answers with `ContestTx` unasked. No command is
-	 * waiting on that, so nothing else would ever say it failed. A failure of a
-	 * command a caller is waiting on is also reported here, marked
-	 * `answersCommand`; that caller sees it as well.
+	 * waiting on that, so nothing else would ever say it failed. A failure of the
+	 * transaction a waiting command posts is also reported here, marked
+	 * `answersCommand`; that caller sees it as well. A failure that names no
+	 * transaction is never marked, even when it also fails a waiting command.
 	 *
 	 * Proof that one post failed, not that the head is undefended: another party
 	 * may have contested with the same snapshot first. Whether a contest landed

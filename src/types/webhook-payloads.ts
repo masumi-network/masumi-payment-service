@@ -212,7 +212,9 @@ const hydraHeadPostTxFailedPayloadSchema = createWebhookPayloadSchema(
 		reason: z.string().describe("The node's reason, with remedy advice where one is known"),
 		reportedToCaller: z
 			.boolean()
-			.describe('True when the failed post answers an API call (Init, Close, Fanout), which fails with it'),
+			.describe(
+				'True when the failed transaction is the one a waiting API call (Init, Close, Fanout) posts; that call fails with it and records it. False otherwise, also for a failure that names no transaction, even when it fails a waiting call too',
+			),
 		failedAt: z.string().datetime().describe('When this service received the failure'),
 	}),
 	'Emitted for every L1 transaction the Hydra node could not post. A failed ContestTx is a warning: another party may still have contested. HYDRA_HEAD_CONTEST_MISSING says when no contest landed.',
