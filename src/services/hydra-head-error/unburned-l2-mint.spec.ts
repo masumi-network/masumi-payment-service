@@ -2,10 +2,11 @@
  * One HydraHeadError row per head for unburned-mint incidents.
  *
  * The node reports an open incident on every verified snapshot while its
- * replay is current and at the end of each complete pass, and a peer that mints and burns in turn opens a new incident every
- * other snapshot. A plain write per report or per incident would grow the
- * table without limit, so each head keeps one row and, within one connection,
- * checks the database at most once per interval.
+ * replay is current and at the end of each complete pass, and a peer that
+ * mints and burns in turn opens a new incident every other snapshot. A plain
+ * write per report or per incident would grow the table without limit, so
+ * each head keeps one row and, within one connection, checks the database at
+ * most once per interval.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -122,7 +123,9 @@ describe('recordUnburnedL2Mint', () => {
 		expect(rows).toHaveLength(1);
 		expect(queries).toBe(2);
 
-		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS);
+		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS - 1);
+		expect(queries).toBe(2);
+		await jest.advanceTimersByTimeAsync(1);
 
 		const latest = (19).toString(16).padStart(64, '0');
 		expect(rows.map((row) => row.txHash)).toEqual([latest]);
@@ -134,8 +137,8 @@ describe('recordUnburnedL2Mint', () => {
 	it('moves every row of the head to a new incident', async () => {
 		const next = incident('77'.repeat(32));
 		rows.push(
-			{ id: 'owner-a', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: '66'.repeat(32) },
-			{ id: 'owner-b', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: next.txHash },
+			{ id: 'owner-a', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: next.txHash },
+			{ id: 'owner-b', hydraHeadId: 'head-handover', clientInput: 'L2Mint', txHash: '66'.repeat(32) },
 		);
 
 		await recordUnburnedL2Mint('head-handover', HydraHeadStatus.Open, next);

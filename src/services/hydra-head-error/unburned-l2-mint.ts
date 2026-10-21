@@ -4,8 +4,9 @@
  * A peer can mint through its own node, and the head cannot reach its final
  * fanout while such a token stays unburned (see `l2-mint-tally`). The node
  * reports an open incident on every verified snapshot while its replay is
- * current, and at the end of every complete replay pass. A peer also decides how often incidents start: minting and burning in
- * turn opens a new one every other snapshot. So each head keeps one row,
+ * current, and at the end of every complete replay pass. A peer also decides
+ * how often incidents start: minting and burning in turn opens a new one
+ * every other snapshot. So each head keeps one row,
  * updated in place to the latest incident, and runs one database check at a
  * time, at most once per interval. A report that arrives in between is kept
  * and checked when the interval ends, so an incident that starts there is
@@ -142,9 +143,9 @@ export async function recordUnburnedL2Mint(
 
 /**
  * Forgets the head's kept report when this process stops the head. A check
- * that is already running still finishes, and keeps the head's entry until it
- * does: a reconnect's reports then wait for it rather than start a second
- * check beside it.
+ * that is already running still finishes, and its entry stays until the
+ * head's next drop: a reconnect's reports wait for that check's interval
+ * rather than start a second check beside it.
  */
 export function dropUnburnedL2MintReports(hydraHeadId: string): void {
 	const head = reportsByHead.get(hydraHeadId);
