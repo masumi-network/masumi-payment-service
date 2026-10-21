@@ -12,9 +12,9 @@
 import { resolveTxHash } from '@meshsdk/core';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportAmbiguousError, HydraTransportError } from './errors';
-import { handleWsResponse, postChainTxTagsFor, type HydraResponseMessage } from './node-frames';
+import { handleWsResponse, postChainTxTagsFor, postsOnL1, type HydraResponseMessage } from './node-frames';
 import { canonicalHydraTransactionIdSchema, hydraCommandTransactionSchema } from './schemas';
-import { HydraTransaction } from './types';
+import { HydraTransaction, UNKNOWN_POST_CHAIN_TX_TAG } from './types';
 
 export interface HydraCommandOptions {
 	command: string;
@@ -36,9 +36,15 @@ export interface HydraCommandOptions {
  */
 const awaitedCommands = new WeakMap<Connection, string[]>();
 
-/** Whether a command waiting on `connection` posts the L1 transaction `postChainTxTag`. */
+/**
+ * Whether a command waiting on `connection` fails with a failed post of
+ * `postChainTxTag`: it posts that transaction, or the failure names none and so
+ * fails every waiting L1 command (see `handleWsResponse`).
+ */
 export function isAwaitingPostChainTx(connection: Connection, postChainTxTag: string): boolean {
-	return (awaitedCommands.get(connection) ?? []).some((command) => postChainTxTagsFor(command).has(postChainTxTag));
+	return (awaitedCommands.get(connection) ?? []).some((command) =>
+		postChainTxTag === UNKNOWN_POST_CHAIN_TX_TAG ? postsOnL1(command) : postChainTxTagsFor(command).has(postChainTxTag),
+	);
 }
 
 export function sendHydraCommandAndWait(

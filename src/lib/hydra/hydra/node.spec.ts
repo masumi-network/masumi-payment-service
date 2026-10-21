@@ -706,10 +706,13 @@ describe('HydraNode', () => {
 		// timeout for a Close that may be the one that failed helps no one.
 		it('fails a waiting Close at once on a failure that names no transaction', async () => {
 			const node = await pinnedNode();
+			const events = failureEvents(node);
 			const closePromise = node.close();
 			await Promise.resolve();
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
 			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The Close caller records it, so the manager must not record it again.
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'unknown', answersCommand: true })]);
 		});
 
 		// The live path ignores a failure for another head, so a waiting Close must

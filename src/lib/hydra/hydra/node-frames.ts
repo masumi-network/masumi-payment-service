@@ -362,6 +362,11 @@ export function resolveCommandTransactionHash(transaction: { txId?: string; cbor
  */
 const FANOUT_POST_CHAIN_TX_TAGS: ReadonlySet<string> = new Set(['FanoutTx', 'PartialFanoutTx', 'FinalPartialFanoutTx']);
 
+/** Whether a command posts an L1 transaction. NewTx only touches the head. */
+export function postsOnL1(command: string): boolean {
+	return command !== 'NewTx';
+}
+
 export function postChainTxTagsFor(command: string): ReadonlySet<string> {
 	if (command === 'Fanout' || command === 'PartialFanout') return FANOUT_POST_CHAIN_TX_TAGS;
 	return new Set([`${command}Tx`]);
@@ -429,7 +434,7 @@ export function handleWsResponse(
 			// The node says an L1 post failed but not which one, and it may be this
 			// command's. Failing now as ambiguous beats waiting out the whole
 			// timeout for an answer that already came. NewTx posts nothing on L1.
-			if (failure?.postChainTxTag === UNKNOWN_POST_CHAIN_TX_TAG && command !== 'NewTx') {
+			if (failure?.postChainTxTag === UNKNOWN_POST_CHAIN_TX_TAG && postsOnL1(command)) {
 				throw new HydraProtocolError(`hydra-node reported an unnamed failed L1 transaction: ${failure.reason}`);
 			}
 			if (failure && postChainTxTagsFor(command).has(failure.postChainTxTag)) {
