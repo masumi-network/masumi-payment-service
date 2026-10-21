@@ -40,15 +40,29 @@ They are worth separating, because only one of them is ours to fix.
    change output; `coverFee_` then adds them and the same script exceeds
    `maxTxExUnits`. Balancing costs 62,013,782 steps and the fit check left
    3,722,596. There is no feedback path, so the identical chunk is retried
-   forever. **Upstream.**
+   forever. **Upstream.** _Still true in 2.4.1:_ `fitsTx` checks the built
+   transaction and `finalizeTx` balances it afterwards
+   (`Chain/Direct/Handlers.hs:211-257`).
 
-2. **Chunks are prefixes.** `partialFanout` takes `take chunkSize` over
-   TxIn-ordered UTxOs and only the length varies — no offset, no skip. One
-   undistributable UTxO therefore blocks everything ordered behind it, and at
-   index 0 nothing leaves the head at all. The on-chain side does not require
-   this: `FanoutProgressDatum` carries only an accumulator commitment and
-   `headAdaOverhead`, with no cursor or count, so arbitrary partitions are
-   valid. **Upstream**, and it needs no contract change.
+2. **Chunks are prefixes.** In hydra-node 2.3, `partialFanout` takes
+   `take chunkSize` over TxIn-ordered UTxOs and only the length varies — no
+   offset, no skip. One undistributable UTxO therefore blocks everything
+   ordered behind it, and at index 0 nothing leaves the head at all. The
+   on-chain side does not require this: `FanoutProgressDatum` carries only an
+   accumulator commitment and `headAdaOverhead`, with no cursor or count, so
+   arbitrary partitions are valid. **Upstream**, and it needs no contract
+   change.
+
+   _Corrected 2026-10-21 for hydra-node 2.4.1, which this service now pins:_
+   the paragraph above is stale. 2.4.1 adds a client-driven `PartialFanout
+{utxoToFanout}` command (`hydra-node/src/Hydra/API/ClientInput.hs:22`).
+   The node accepts any non-empty sub-multiset of the remaining outputs
+   (`HeadLogic.hs:1493-1531`), so healthy outputs can leave the head even when
+   a bad output sorts before them. Inside one selection the node still chunks
+   by prefix (`take chunkSize`, `Chain/Direct/State.hs:669`). A bad output
+   therefore blocks only the selection that contains it. The earlier text
+   described 2.3 correctly; it went stale when the pin moved to 2.4.1 and the
+   ADR was not reviewed with it.
 
 3. **A single output can be individually undistributable.** A chunk cannot be
    smaller than one output. The L2 ledger and L1 share `maxTxSize` 16,384, but
@@ -60,6 +74,14 @@ They are worth separating, because only one of them is ours to fix.
    the full set to reconcile, and it is the step that burns the head tokens.
    **Upstream** for the abandonment path; **ours** for not creating such an
    output.
+
+   _Still true in 2.4.1 (checked 2026-10-21):_ `finalPartialFanout`
+   (`Chain/Direct/State.hs:684`) must distribute every remaining output, and
+   it is the only step that burns the head tokens. A selection never removes
+   the bad output, so the head can drain everything else and still never
+   reach `Final`. The relation stays blocked (see decision 3). The size at
+   which one output stops fitting is not measured for 2.4.1; the
+   15,544 to 16,028 byte range above is an estimate from 2.3 envelope sizes.
 
 4. **Accumulation costs time and node funds.** Chunking means a large head is
    survivable, not free: every chunk is a separate L1 transaction at roughly
