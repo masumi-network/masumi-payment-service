@@ -115,7 +115,7 @@ export class ExchangeStore {
 	 * redemption stamped earlier than the watermark but written later is invisible
 	 * for good: its invite stays `Issued` with no head, holding a node, its port
 	 * and its fuel, and blocking deletion of the Host until a process restart
-	 * falls back to the cold-start lookback. Taking it after `await listInvites()`
+	 * falls back to the cold-start watermark. Taking it after `await listInvites()`
 	 * resolved was exactly that window — the queue is FIFO, so a redemption
 	 * enqueued behind this read has its own timestamp taken behind it too, and
 	 * only a clock read from inside the queue orders the two.

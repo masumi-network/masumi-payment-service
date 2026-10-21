@@ -2,7 +2,13 @@ import { beforeEach, expect, it, jest } from '@jest/globals';
 
 const host = { id: 'host', baseUrl: 'https://host.example', encryptedAdminToken: 'token', allowInsecureHttp: false };
 // Adopted on an earlier run, but the acknowledgement never reached the Host.
-const invite = { id: 'invite', nonce: 'nonce', role: 'Issuer', status: 'Completed', hydraHeadId: 'head' };
+const invite = {
+	id: 'invite',
+	nonce: 'nonce',
+	role: 'Issuer',
+	status: 'Completed',
+	hydraHeadId: null as string | null,
+};
 const fetchRedemptions =
 	jest.fn<(baseUrl: string, token: string, since: number) => Promise<{ now: number; invites: object[] }>>();
 const forget =
@@ -38,6 +44,8 @@ const { pollHydraRedemptions } = await import('./adoption');
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	invite.status = 'Completed';
+	invite.hydraHeadId = 'head';
 	fetchRedemptions.mockResolvedValue({
 		now: Date.now(),
 		// Older than any fixed lookback window: the Host keeps it until acknowledged.
@@ -50,4 +58,11 @@ it('asks a Host from the beginning on cold start and acknowledges a finished rep
 	expect(await pollHydraRedemptions()).toEqual({ polled: 1, adopted: 0, rejected: 0 });
 	expect(fetchRedemptions.mock.calls[0][2]).toBe(0);
 	expect(forget).toHaveBeenCalledWith('https://host.example', 'token', 'nonce', { allowInsecureHttp: false });
+});
+
+it('leaves a discarded invite on the Host so its failed node removal stays visible', async () => {
+	invite.status = 'Failed';
+	invite.hydraHeadId = null;
+	expect(await pollHydraRedemptions()).toEqual({ polled: 1, adopted: 0, rejected: 0 });
+	expect(forget).not.toHaveBeenCalled();
 });

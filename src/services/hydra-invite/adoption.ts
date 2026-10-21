@@ -95,7 +95,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		// process — and the ordinary failure here is temporary: the relation still
 		// holds a head that has not reached Final, which the operator finalises
 		// minutes later. Nothing retried it, the invite stayed Issued with no
-		// head, and only a restart (which falls back to the cold-start lookback)
+		// head, and only a restart (which falls back to the cold-start watermark)
 		// ever picked it up again.
 		let retryFromMs: number | null = null;
 		for (const record of redemptions.invites) {
@@ -148,8 +148,8 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 }
 
 /**
- * `finished` is a redemption for an invite this service already adopted or
- * gave up on, so the Host's copy only needs forgetting.
+ * `finished` is a redemption for an invite this service already adopted, so
+ * the Host's copy only needs forgetting.
  */
 type AdoptionResult = 'adopted' | 'rejected' | 'finished' | 'skipped';
 
@@ -369,8 +369,10 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 	// through verification again on the next replayed watermark.
 	if (invite.hydraHeadId !== null || invite.status !== HydraInviteStatus.Issued) {
 		// Already adopted, or already given up on. This is the normal case for a
-		// replayed watermark.
-		return 'finished';
+		// replayed watermark. Only an adopted invite is acknowledged here: a
+		// discarded one forgets its Host copy after removing the node, and a
+		// copy still on the Host marks a removal that failed and needs a hand.
+		return invite.status === HydraInviteStatus.Completed ? 'finished' : 'skipped';
 	}
 
 	try {

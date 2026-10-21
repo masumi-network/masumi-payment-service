@@ -9,7 +9,7 @@
  * it, and the next poll's `since` had already passed it: the invite stayed
  * `Issued` with no head, holding a node, its peer port and its fuel, and
  * blocking deletion of the Host until a restart fell back to the cold-start
- * lookback.
+ * watermark.
  */
 
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
