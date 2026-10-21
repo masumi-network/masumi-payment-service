@@ -294,7 +294,7 @@ export const headBalanceSchemaOutput = z.object({
 	l2MintChecked: z
 		.boolean()
 		.describe(
-			'True when the history replay is current, so l2MintedUtxoCount counts every L2-minted UTxO the replay has verified; spendableBalance still counts token UTxOs from transactions it has not reached. False when not connected, right after a connect until the replay completes, and while the replay has failed: then no UTxO counts as L2-minted, and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading, and auto top-up waits.',
+			'True when the history replay is current, so l2MintedUtxoCount counts every L2-minted UTxO the replay has verified; spendableBalance still counts token UTxOs from transactions it has not reached. False when not connected, right after a connect until the replay completes, and while the replay has failed. While connected and false, no UTxO counts as L2-minted and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading, and auto top-up waits.',
 		),
 	balance: z
 		.array(inHeadAssetSchema)

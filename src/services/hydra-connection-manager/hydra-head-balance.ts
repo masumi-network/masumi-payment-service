@@ -59,8 +59,9 @@ export interface HydraHeadOwnBalance {
 	/**
 	 * Whether the history replay is current, so the two fields above count every
 	 * L2-minted UTxO it has verified. False when not connected, right after a
-	 * connect until the replay completes, and while the replay has failed: then
-	 * no UTxO counts as L2-minted, and `spendableBalance` can read high.
+	 * connect until the replay completes, and while the replay has failed. While
+	 * connected and false, no UTxO counts as L2-minted and `spendableBalance` can
+	 * read high.
 	 */
 	l2MintChecked: boolean;
 	/**

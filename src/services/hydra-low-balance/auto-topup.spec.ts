@@ -160,7 +160,7 @@ describe('runHydraAutoTopupCycle', () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockGetOwnInHeadBalance.mockResolvedValueOnce({ connected: true, l2MintChecked: false, spendableBalance: [] });
 		await runHydraAutoTopupCycle();
-		mockGetOwnInHeadBalance.mockResolvedValueOnce({ connected: false, l2MintChecked: false, spendableBalance: [] });
+		mockGetOwnInHeadBalance.mockResolvedValueOnce({ connected: false, l2MintChecked: true, spendableBalance: [] });
 		await runHydraAutoTopupCycle();
 
 		expect(mockGetOwnInHeadBalance).toHaveBeenCalledTimes(2);
@@ -219,6 +219,28 @@ describe('runHydraAutoTopupCycle', () => {
 		expect(mockLoggerWarn).toHaveBeenCalledWith(
 			expect.stringContaining('in flight too long'),
 			expect.objectContaining({ topupId: 'topup-1' }),
+		);
+	});
+
+	// The replay can stay down as long as the deposit stays stuck; the warning
+	// is the only sign of the stuck deposit.
+	it('still says so about a stalled deposit while the history replay is not current', async () => {
+		isReplayCurrent = false;
+		mockFindMany.mockResolvedValue([rule()]);
+		mockCount.mockResolvedValue([
+			{
+				id: 'topup-2',
+				status: 'Confirmed',
+				createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+				depositTxHash: 'bb'.repeat(32),
+			},
+		]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockLoggerWarn).toHaveBeenCalledWith(
+			expect.stringContaining('in flight too long'),
+			expect.objectContaining({ topupId: 'topup-2' }),
 		);
 	});
 

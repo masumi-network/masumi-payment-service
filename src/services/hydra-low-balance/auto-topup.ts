@@ -47,33 +47,6 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// A paused host refuses new deposits; skip quietly until it resumes.
 			if (await isHydraHeadOnPausedHost(head.id)) continue;
 			if (rule.topupAmount == null || rule.topupAmount <= 0n) continue;
-			// The rule reads the spendable balance, and an own UTxO carrying a unit
-			// with a nonzero net L2 mint never counts as spendable. A deposit of that
-			// unit would therefore leave the rule Low, and every later cycle would
-			// send another until the wallet ran out of it. Debug, not warn: this
-			// repeats every cycle, and the head error row and the Low webhook
-			// already tell the operator.
-			// Until the history replay is current, nothing says which units a peer
-			// minted, and the monitor does not mark a rule Healthy, so its Low status
-			// cannot be trusted either. Checked first, so a head in that state costs
-			// no reads of the head or of L1.
-			const l2MintCheck = getHydraConnectionManager().getNode(head.id)?.l2MintCheck;
-			if (!l2MintCheck) {
-				logger.debug('hydra-auto-topup: waiting for the history replay before a top-up', {
-					ruleId: rule.id,
-					headId: head.id,
-				});
-				continue;
-			}
-			if (l2MintCheck.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
-				logger.debug('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
-					ruleId: rule.id,
-					headId: head.id,
-					assetUnit: rule.assetUnit,
-				});
-				continue;
-			}
-
 			// Counted up to and including `Confirmed`, not just `Pending`. A deposit
 			// reaching the chain is not the head holding it: the node ignores a
 			// deposit until it is older than the deposit period — ten minutes on
@@ -148,6 +121,34 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 					headId: head.id,
 					consecutiveFailures: backoff.consecutiveFailures,
 					retryAt: backoff.retryAt?.toISOString(),
+				});
+				continue;
+			}
+
+			// Until the history replay is current, nothing says which units a peer
+			// minted, and the monitor does not mark a rule Healthy, so the rule's
+			// Low status cannot be trusted either. Checked after the database-only
+			// gates above, so their warnings still show, and before any read of the
+			// head or of L1.
+			const l2MintCheck = getHydraConnectionManager().getNode(head.id)?.l2MintCheck;
+			if (!l2MintCheck) {
+				logger.debug('hydra-auto-topup: head not connected or its replay not current; no top-up', {
+					ruleId: rule.id,
+					headId: head.id,
+				});
+				continue;
+			}
+			// The rule reads the spendable balance, and an own UTxO carrying a unit
+			// with a nonzero net L2 mint never counts as spendable. A deposit of that
+			// unit would therefore leave the rule Low, and every later cycle would
+			// send another until the wallet ran out of it. Debug, not warn: this
+			// repeats every cycle, and the head error row and the Low webhook
+			// already tell the operator.
+			if (l2MintCheck.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
+				logger.debug('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
+					ruleId: rule.id,
+					headId: head.id,
+					assetUnit: rule.assetUnit,
 				});
 				continue;
 			}
