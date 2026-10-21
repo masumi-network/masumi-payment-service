@@ -77,10 +77,10 @@ describe('unwedgeNode', () => {
 		expect(opts.sideLoadSnapshot).toHaveBeenCalledWith({ snapshot: 'confirmed' });
 	});
 
-	// The side-load discards the round. If the counterparty already confirmed the
-	// next snapshot, it holds signatures this node would lose, and the Host cannot
-	// see the counterparty's node (its API binds loopback), so by default it
-	// leaves the decision to an operator who can.
+	// The side-load discards the round. If the counterparty already confirmed it,
+	// this node ends up a snapshot behind, and the Host cannot see the
+	// counterparty's node (its API binds loopback), so by default it leaves the
+	// decision to an operator who can.
 	describe('without permission to side-load automatically', () => {
 		const stuck = () =>
 			jest
