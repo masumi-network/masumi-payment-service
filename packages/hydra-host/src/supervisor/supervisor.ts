@@ -793,19 +793,27 @@ export class Supervisor {
 			case 'Healthy':
 			case 'Progressing':
 			case 'Recovered':
-			case 'NeedsOperator':
 				if (outcome.kind === 'Recovered') {
 					this.logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
-				}
-				// The node keeps running, so it can still contest a close. Marking it
-				// Failed would take it down for a decision only an operator can make.
-				if (outcome.kind === 'NeedsOperator') {
-					this.logger.error(`[supervisor] ${record.nodeId} needs an operator: ${outcome.reason}`);
 				}
 				await this.store.update(record.nodeId, (current) => ({
 					...current,
 					lastStopUndrained: false,
 					startAttempts: 0,
+				}));
+				return;
+			case 'NeedsOperator':
+				// The node keeps running, so it can still contest a close. Marking it
+				// Failed would take it down for a decision only an operator can make.
+				// The reason goes on the record so the API shows it. Nothing re-checks
+				// the round, and an admin may reset it from the payment service, so the
+				// reason carries when it was seen. The next start clears it.
+				this.logger.error(`[supervisor] ${record.nodeId} needs an operator: ${outcome.reason}`);
+				await this.store.update(record.nodeId, (current) => ({
+					...current,
+					lastStopUndrained: false,
+					startAttempts: 0,
+					failureReason: `${outcome.reason} (seen ${new Date().toISOString()})`,
 				}));
 				return;
 			case 'Unrecovered':
