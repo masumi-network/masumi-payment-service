@@ -26,7 +26,7 @@ Generated Code
 
 - Never manually edit files in `src/generated/prisma/`; they are auto-generated.
 - Import types from `@/generated/prisma/client` for type safety.
-- Import the Prisma client instance from `@/utils/db`.
+- Import the Prisma client instance from `@masumi/payment-core/db`.
 
 BigInt Handling
 
@@ -34,14 +34,6 @@ BigInt Handling
 - Prisma returns BigInt values as JavaScript BigInt type.
 - Convert BigInt to string for JSON serialization in API responses.
 - Use BigInt literals (e.g., `5000000n`) or `BigInt()` constructor in code.
-
-Query Patterns
-
-- Use `findUnique()` for fetching single records by unique identifier.
-- Use `findMany()` for fetching multiple records with filters.
-- Use `create()`, `update()`, and `delete()` for mutations.
-- Use `include` option to fetch related records in a single query.
-- Use `select` option to fetch only needed fields for performance.
 
 Related Data Loading
 
@@ -76,14 +68,7 @@ Common Commands
 - `pnpm run prisma:migrate` - Apply pending migrations (deploy to production).
 - `pnpm run prisma:generate` - Regenerate Prisma client.
 - `pnpm run prisma:seed` - Seed the database with initial data.
-- `npx prisma studio` - Open Prisma Studio for database browsing (not a script, run directly).
-- `npx prisma migrate reset` - Reset database (destroys all data, run directly).
-
-Performance Considerations
-
-- Add database indexes for frequently queried fields.
-- Use `select` to limit returned fields when full records aren't needed.
-- Use pagination for large result sets.
-- Monitor query performance and optimize slow queries.
+- `pnpm run prisma:studio` - Open Prisma Studio for database browsing.
+- `pnpm run prisma:migrate:reset` - Reset database (destroys all data).
 
 Refer to `prisma/schema.prisma` for the complete data model and relationships.
