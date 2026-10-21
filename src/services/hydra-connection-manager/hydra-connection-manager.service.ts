@@ -479,7 +479,8 @@ export class HydraConnectionManager {
 			response = await fetch(buildHydraHttpEndpoint(httpUrl, 'protocol-parameters'), {
 				signal: controller.signal,
 				headers,
-				redirect: 'error',
+				// Not followed, so the token never goes to another host, and a redirect reads as the status it answered.
+				redirect: 'manual',
 			});
 		} catch (error) {
 			throw new HydraTransportError(
