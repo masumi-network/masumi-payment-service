@@ -239,7 +239,7 @@ export async function resetSnapshotRound(params: {
 				409,
 				`The counterparty reports snapshot ${peerConfirmedSnapshotNumber}, more than one behind this node's ${snapshot.number}. ` +
 					'Within the protocol two parties are never more than one snapshot apart, so the number is wrong or the counterparty’s node lost or restored its state. ' +
-					'Check the number with its operator. Do not reset: resetting this node does not bring the counterparty forward',
+					'Check the number with its operator. Do not reset: if the number is right, the counterparty has to adopt this node’s confirmed snapshot, and if Hydra refuses that, close the head',
 			);
 		}
 
