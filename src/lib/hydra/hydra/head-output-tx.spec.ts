@@ -349,6 +349,13 @@ describe('extractCommitNotSettled', () => {
 		['the chain has settled it', commitHeadState(COMMIT, 4, 3)],
 		['the snapshot holds no commit', commitHeadState(null)],
 		['the snapshot holds an empty commit', commitHeadState({})],
+		[
+			'the head is still on its initial snapshot',
+			{
+				tag: 'Open',
+				contents: { coordinatedHeadState: { version: 0, confirmedSnapshot: { tag: 'InitialSnapshot' } } },
+			},
+		],
 		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
 	])('reports nothing unsettled when %s', (_label, state) => {
 		expect(extractCommitNotSettled(state)).toBe(false);

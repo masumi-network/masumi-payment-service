@@ -126,7 +126,7 @@ function toStatus(head: HeadRow, round: HydraSnapshotRound, now: Date): Snapshot
 }
 
 /**
- * The checks above awaited the node twice. Before the side-load, confirm this
+ * The checks above awaited the node three times. Before the side-load, confirm this
  * instance still holds the same session, the service still verifies the same
  * snapshot, and no other attachment or close started meanwhile.
  */
@@ -159,16 +159,18 @@ async function assertStillOwned(
  * Refuse a reset while the confirmed snapshot holds a deposit that the chain
  * has not settled.
  *
- * A side-load clears the node's record of the deposit in flight. If another
- * deposit is waiting, the leader then requests a snapshot with it, and while
- * the confirmed snapshot still holds the unsettled deposit every node rejects
- * that request (hydra-node 2.4.1 `ReqSnCommitNotSettled`). The head stalls
- * again after a reset that reported success. This also refuses a reset that
- * would only have carried the same deposit again.
+ * A side-load clears the node's record of the deposit in flight. Once the
+ * unsettled deposit has expired, this node, when it leads, requests a snapshot
+ * with the next deposit, and every node rejects it (hydra-node 2.4.1
+ * `ReqSnCommitNotSettled`). The head stalls again after a reset that reported
+ * success. While the deposit is still active the leader picks it again, oldest
+ * first, and the reset would be safe, but the node's HTTP API does not report
+ * a deposit's status, so this refuses both cases.
  *
  * `GET /head` carries the snapshot more than once, so a large head can outgrow
- * the byte limit for good. Such an answer lets the reset go ahead, as it did
- * before this check: refusing would block the only live recovery for that head.
+ * the byte limit for good. An answer the client cannot use, such as one over
+ * the byte limit, lets the reset go ahead as it did before this check:
+ * refusing would block the only live recovery for that head.
  */
 async function assertCommitSettled(node: HydraNode): Promise<void> {
 	let headState: unknown;
