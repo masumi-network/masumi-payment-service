@@ -53,6 +53,11 @@ const HEAD_ADDRESS = headAddressForScriptHash(DEFAULT_HYDRA_HEAD_SCRIPT_HASH);
 const OUTPUT_ADDRESS = EnterpriseAddress.new(0, Credential.from_keyhash(Ed25519KeyHash.from_hex('44'.repeat(28))))
 	.to_address()
 	.to_bech32();
+/** The node wallet that pays the fee and takes the change. */
+const WALLET_ADDRESS = EnterpriseAddress.new(0, Credential.from_keyhash(Ed25519KeyHash.from_hex('55'.repeat(28))))
+	.to_address()
+	.to_bech32();
+const WALLET_INPUT_HASH = '66'.repeat(32);
 
 type BuiltFanout = {
 	txHash: string;
@@ -62,6 +67,8 @@ type BuiltFanout = {
 	firstDistributedIndex: number;
 	/** The head state-machine output this body spends. */
 	headInput: { txHash: string; index: number };
+	/** Whether the node wallet added a fee input and a trailing change output. */
+	hasChange: boolean;
 };
 
 function headTokenValue(lovelace: number): Value {
@@ -87,6 +94,8 @@ function buildFanout(options?: {
 	 * step does. Such a step burns nothing, so `burns` is normally `[]` with it.
 	 */
 	continuingHead?: boolean;
+	/** Add the fee input and trailing change output hydra-node's wallet adds. */
+	change?: { address?: string; value?: Value };
 }): BuiltFanout {
 	const inputs = TransactionInputs.new();
 	const headInput = options?.headInput ?? { txHash: HEAD_INPUT_HASH, index: 0 };
@@ -104,6 +113,15 @@ function buildFanout(options?: {
 		);
 		outputs.add(output);
 		outputValues.push(output);
+	}
+	if (options?.change) {
+		inputs.add(TransactionInput.new(TransactionHash.from_hex(WALLET_INPUT_HASH), 0));
+		outputs.add(
+			TransactionOutput.new(
+				Address.from_bech32(options.change.address ?? WALLET_ADDRESS),
+				options.change.value ?? Value.new(BigNum.from_str('108000000')),
+			),
+		);
 	}
 	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str(options?.fee ?? '200000'));
 	const burns = options?.burns ?? [
@@ -131,6 +149,7 @@ function buildFanout(options?: {
 		outputs: outputValues,
 		firstDistributedIndex: options?.continuingHead ? 1 : 0,
 		headInput,
+		hasChange: options?.change != null,
 	};
 }
 
@@ -195,6 +214,16 @@ function fixture(options?: {
 						{ unit: REMOTE_UNIT, quantity: '1' },
 					],
 				},
+				...(stepFor(txHash).hasChange
+					? [
+							{
+								tx_hash: WALLET_INPUT_HASH,
+								output_index: 0,
+								address: WALLET_ADDRESS,
+								amount: [{ unit: 'lovelace', quantity: '110000000' }],
+							},
+						]
+					: []),
 			],
 		})),
 	};
@@ -443,8 +472,12 @@ describe('verifyHydraFanoutOnChain', () => {
 	});
 
 	it('rejects incomplete/extra output coverage and a changed serialized output', async () => {
-		const extraOutput = fixture({ fanout: buildFanout({ outputCount: 2 }) });
-		await expect(verify(extraOutput, { references: [extraOutput.references[0]] })).rejects.toThrow(
+		const gap = fixture({ fanout: buildFanout({ outputCount: 3 }) });
+		await expect(verify(gap, { references: [gap.references[0], gap.references[2]] })).rejects.toThrow(
+			'complete L1 fanout output sequence',
+		);
+		const twoUnreported = fixture({ fanout: buildFanout({ outputCount: 3 }) });
+		await expect(verify(twoUnreported, { references: [twoUnreported.references[0]] })).rejects.toThrow(
 			'complete L1 fanout output sequence',
 		);
 		const value = fixture();
@@ -453,6 +486,35 @@ describe('verifyHydraFanoutOnChain', () => {
 				references: [{ ...value.references[0], serializedOutput: `${value.references[0].serializedOutput}00` }],
 			}),
 		).rejects.toThrow('did not match the signed final snapshot');
+	});
+
+	// Regression: hydra-node's wallet appends a change output to every fanout
+	// step it posts (preprod fanout 92dff849…: outputs #0 distributed, #1 change
+	// back to the fee input's address). Requiring every output to be in the
+	// finalized map rejected that shape, so no 2.4.1 head ever recorded its
+	// fanoutTxHash and its relation could not host another head.
+	describe('the node wallet change output', () => {
+		it('accepts a terminal fanout that ends with change back to its fee wallet', async () => {
+			const value = fixture({ fanout: buildFanout({ outputCount: 2, change: {} }) });
+			await expect(verify(value)).resolves.toEqual([expect.objectContaining({ txHash: value.fanout.txHash })]);
+		});
+
+		it('accepts change on every step of a partial chain', async () => {
+			const first = buildFanout({ continuingHead: true, burns: [], change: {} });
+			const last = buildFanout({ headInput: { txHash: first.txHash, index: 0 }, change: {} });
+			const value = fixture({ chain: [first, last] });
+			await expect(verify(value)).resolves.toHaveLength(2);
+		});
+
+		it('rejects a trailing output that pays an address no wallet input came from', async () => {
+			const value = fixture({ fanout: buildFanout({ change: { address: OUTPUT_ADDRESS } }) });
+			await expect(verify(value)).rejects.toThrow('not change back to a spending wallet');
+		});
+
+		it('rejects a trailing output that carries head tokens', async () => {
+			const value = fixture({ fanout: buildFanout({ change: { value: headTokenValue(108_000_000) } }) });
+			await expect(verify(value)).rejects.toThrow('not change back to a spending wallet');
+		});
 	});
 
 	it('bounds a hung independent observer', async () => {

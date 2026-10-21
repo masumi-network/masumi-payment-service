@@ -345,16 +345,39 @@ async function verifyFanoutStep(params: {
 		}
 	}
 
-	const distributedCount = outputs.len() - firstDistributedIndex;
+	// hydra-node builds the step unbalanced, then its wallet adds a fee input and
+	// appends one change output back to that wallet. So the distributed outputs
+	// are one contiguous run, followed by at most that one change output. Only
+	// the run is in the finalized map; requiring every output to be in it
+	// rejected every real fanout.
+	const distributedCount = references.length;
+	const trailingCount = outputs.len() - firstDistributedIndex - distributedCount;
 	const referencedIndices = new Set(references.map(({ outputIndex }) => outputIndex));
 	if (
-		distributedCount !== references.length ||
+		trailingCount < 0 ||
+		trailingCount > 1 ||
 		referencedIndices.size !== distributedCount ||
 		Array.from({ length: distributedCount }, (_, offset) => offset + firstDistributedIndex).some(
 			(index) => !referencedIndices.has(index),
 		)
 	) {
 		fail('Hydra finalized output map did not cover the complete L1 fanout output sequence');
+	}
+	if (trailingCount === 1) {
+		const change = outputs.get(outputs.len() - 1);
+		const changeAddress = change.address().to_bech32();
+		const walletInputAddresses = new Set(
+			utxos.inputs
+				.filter((input) => input.collateral !== true && input.reference !== true && input !== indexedHeadInput)
+				.map((input) => input.address),
+		);
+		if (
+			!walletInputAddresses.has(changeAddress) ||
+			acceptedHeadScriptHashes.has(paymentScriptHash(changeAddress) ?? '') ||
+			headPolicyAmounts(serializeCardanoOutputAmounts(change), headId).size !== 0
+		) {
+			fail('Hydra fanout output after the distributed run was not change back to a spending wallet');
+		}
 	}
 	for (const reference of references) {
 		if (
