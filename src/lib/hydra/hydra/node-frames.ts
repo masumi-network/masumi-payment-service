@@ -426,6 +426,12 @@ export function handleWsResponse(
 			// Read exactly as the live path reads it, so the failure a waiting
 			// command answers is the one the connection manager leaves to it.
 			const failure = readPostTxFailed(raw, expectedHeadId);
+			// The node says an L1 post failed but not which one, and it may be this
+			// command's. Failing now as ambiguous beats waiting out the whole
+			// timeout for an answer that already came. NewTx posts nothing on L1.
+			if (failure?.postChainTxTag === UNKNOWN_POST_CHAIN_TX_TAG && command !== 'NewTx') {
+				throw new HydraProtocolError(`hydra-node reported an unnamed failed L1 transaction: ${failure.reason}`);
+			}
 			if (failure && postChainTxTagsFor(command).has(failure.postChainTxTag)) {
 				// The reason names the node's own words. Without them every L1 refusal
 				// reads the same, and the operator has no way to tell "the node's key

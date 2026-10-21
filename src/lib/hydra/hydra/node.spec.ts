@@ -702,6 +702,16 @@ describe('HydraNode', () => {
 			expect(statusAtFailure).toEqual([HydraHeadStatus.Closed]);
 		});
 
+		// The node said an L1 post failed but not which. Waiting out the full
+		// timeout for a Close that may be the one that failed helps no one.
+		it('fails a waiting Close at once on a failure that names no transaction', async () => {
+			const node = await pinnedNode();
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+		});
+
 		// The live path ignores a failure for another head, so a waiting Close must
 		// too: otherwise the Close fails on a frame nothing else records.
 		it('keeps a waiting Close for a failure that names another head', async () => {
