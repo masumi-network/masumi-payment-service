@@ -167,6 +167,20 @@ describe('runHydraAutoTopupCycle', () => {
 		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
 	});
 
+	// Every cycle would otherwise be refused and logged as an error until the
+	// close finishes.
+	it('skips an open head whose close is in progress', async () => {
+		mockFindMany.mockResolvedValue([
+			rule({
+				LocalParticipant: { id: 'participant-1', HydraHead: { id: 'head-1', status: 'Open', isClosing: true } },
+			}),
+		]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+	});
+
 	it('skips a rule with no positive topupAmount', async () => {
 		mockFindMany.mockResolvedValue([rule({ topupAmount: null })]);
 

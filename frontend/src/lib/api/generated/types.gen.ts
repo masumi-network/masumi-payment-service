@@ -13598,6 +13598,10 @@ export type PostFundDistributionTriggerResponse = PostFundDistributionTriggerRes
 export type DeleteHydraInviteData = {
     body?: {
         id: string;
+        /**
+         * Also cancel an invite the counterparty already redeemed but this service could not adopt. Its node is removed unless a head here claims it.
+         */
+        discardRedemption?: boolean;
     };
     path?: never;
     query?: never;
@@ -13610,9 +13614,13 @@ export type DeleteHydraInviteErrors = {
      */
     401: unknown;
     /**
-     * Already redeemed, or not an invite we issued
+     * Already redeemed without discardRedemption, adopted meanwhile, or not an invite we issued
      */
     409: unknown;
+    /**
+     * Revoked here, but the Host refused to remove the node or forget the redemption
+     */
+    502: unknown;
 };
 
 export type DeleteHydraInviteResponses = {

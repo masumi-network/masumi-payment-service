@@ -284,6 +284,12 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			);
 		}
 
+		// Rechecked under the head lock at reservation; refused here too so a
+		// closing head costs no carve.
+		if (head.isClosing) {
+			throw createHttpError(409, 'Cannot commit: Hydra head close is in progress');
+		}
+
 		const localParticipant = head.LocalParticipant;
 		if (!localParticipant) {
 			throw createHttpError(400, 'Head has no local participant');
@@ -472,6 +478,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				submitResult = await reserveAndSubmitHydraCommit(
 					{
 						participantId: localParticipant.id,
+						hydraHeadId: head.id,
 						commitTxHash,
 						invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
 						walletClaimToken,

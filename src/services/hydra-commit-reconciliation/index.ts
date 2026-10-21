@@ -1,10 +1,12 @@
-import type { Network } from '@/generated/prisma/client';
+import { type Network, Prisma } from '@/generated/prisma/client';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { CONFIG } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
+import { lockOpenHydraHeadForDeposit } from '@/utils/hydra/deposit-admission';
 
 /**
  * Wait beyond invalid-hereafter before declaring an absent commit impossible.
@@ -44,22 +46,38 @@ export class HydraCommitReservationConflictError extends Error {
 
 /** Persist the exact signed body identity before any potentially ambiguous I/O. */
 export async function reserveAndSubmitHydraCommit<T>(
-	reservation: { participantId: string; commitTxHash: string; invalidHereafterSlot: bigint; walletClaimToken: string },
+	reservation: {
+		participantId: string;
+		hydraHeadId: string;
+		commitTxHash: string;
+		invalidHereafterSlot: bigint;
+		walletClaimToken: string;
+	},
 	submit: () => Promise<T>,
 ): Promise<T> {
-	const reserved = await prisma.hydraLocalParticipant.updateMany({
-		where: {
-			id: reservation.participantId,
-			hasCommitted: false,
-			commitTxHash: null,
-			commitInvalidHereafterSlot: null,
-		},
-		data: {
-			commitTxHash: reservation.commitTxHash,
-			commitInvalidHereafterSlot: reservation.invalidHereafterSlot,
-			commitWalletClaimToken: reservation.walletClaimToken,
-		},
-	});
+	// Under the close admission's row lock, so a close admitted while this commit
+	// was being prepared stops it here, and a close admitted after counts it.
+	const reserved = await withSerializableSlotRetry(() =>
+		prisma.$transaction(
+			async (tx) => {
+				await lockOpenHydraHeadForDeposit(tx, reservation.hydraHeadId);
+				return await tx.hydraLocalParticipant.updateMany({
+					where: {
+						id: reservation.participantId,
+						hasCommitted: false,
+						commitTxHash: null,
+						commitInvalidHereafterSlot: null,
+					},
+					data: {
+						commitTxHash: reservation.commitTxHash,
+						commitInvalidHereafterSlot: reservation.invalidHereafterSlot,
+						commitWalletClaimToken: reservation.walletClaimToken,
+					},
+				});
+			},
+			{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+		),
+	);
 	if (reserved.count !== 1) throw new HydraCommitReservationConflictError();
 
 	// Deliberately no catch/cleanup: a throw or explicit node rejection cannot

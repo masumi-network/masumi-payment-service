@@ -49,8 +49,9 @@ type DecommitOutcomeParams = {
 	hydraHeadId: string;
 	/**
 	 * Absent on finalization, which the head reports without one. The row is
-	 * then matched by head and open status, which is unambiguous because a
-	 * participant may only have one withdrawal in flight at a time.
+	 * then matched by head, open status and observedAt, which is unambiguous
+	 * because a participant may only have one withdrawal in flight at a time.
+	 * Without observedAt as well, the finalization is ignored.
 	 */
 	decommitTxId?: string;
 	outcome: HydraDecommitOutcome;
@@ -147,6 +148,17 @@ async function finalizeDecommit(params: {
 	now: Date;
 }): Promise<boolean> {
 	const { hydraHeadId, decommitTxId, distributed, observedAt, now } = params;
+
+	// An anonymous finalization is attributed by head and age alone. Without a
+	// time the age filter has nothing to compare, so a replayed finalization
+	// from an earlier withdrawal would settle the one open today. The frame
+	// parser already turns a missing or unparseable timestamp into undefined.
+	if (decommitTxId === undefined && observedAt === undefined) {
+		logger.warn(
+			`[HydraDecommit] head ${hydraHeadId} reported a finalization with neither a withdrawal id nor a time; ignoring it`,
+		);
+		return false;
+	}
 
 	const open = await prisma.hydraDecommit.findMany({
 		where: {

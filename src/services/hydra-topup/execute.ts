@@ -31,6 +31,7 @@ import {
 	isHydraHeadOnPausedHostLocked,
 } from '@/services/hydra-host/pause';
 import { PREPARING_STALE_AFTER_MS } from './stale';
+import { lockOpenHydraHeadForDeposit } from '@/utils/hydra/deposit-admission';
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -76,6 +77,10 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	if (head.status !== HydraHeadStatus.Open) {
 		throw createHttpError(409, `Cannot top up: head status is ${head.status}, expected Open`);
 	}
+	// Early and cheap, before the wallet claim and the chain check. The claim
+	// below refuses this too, but only after both, and an auto-top-up cycle
+	// would pay for them every 30 seconds while the close is in progress.
+	if (head.isClosing) throw createHttpError(409, 'Cannot top up: Hydra head close is in progress');
 	const localParticipant = head.LocalParticipant;
 	if (!localParticipant) throw createHttpError(400, 'Head has no local participant');
 	// Re-checked here because minutes can pass between the route and this point.
@@ -170,6 +175,10 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		const claim = await withSerializableSlotRetry(() =>
 			prisma.$transaction(
 				async (tx) => {
+					// Under the close admission's row lock, taken first so every deposit
+					// writer locks the head before its top-up row: a close that commits
+					// first is seen here, and one that commits after counts this row.
+					await lockOpenHydraHeadForDeposit(tx, head.id);
 					const active = await tx.hydraTopup.findFirst({
 						where: {
 							hydraLocalParticipantId: localParticipant.id,
