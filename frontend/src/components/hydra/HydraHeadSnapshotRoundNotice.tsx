@@ -90,7 +90,8 @@ export function HydraHeadSnapshotRoundNotice({
   if (!isOpen || !round?.stuck) return null;
 
   // A node signs snapshot n only after it confirmed n - 1, so the round on
-  // screen is one above what the server compares the typed number with.
+  // screen is one above what the server compares the typed number with. A
+  // stuck round always has a number; the null check only narrows the type.
   const ourConfirmed = round.snapshotNumber === null ? null : round.snapshotNumber - 1;
 
   const handleReset = async () => {
@@ -169,9 +170,8 @@ export function HydraHeadSnapshotRoundNotice({
           <p className="text-xs">
             Required. The other party&apos;s operator reads it from GET /snapshot on their node (0
             if it shows InitialSnapshot).{' '}
-            {ourConfirmed === null
-              ? 'Our node has confirmed the snapshot one below the round shown above.'
-              : `Our node has confirmed snapshot ${ourConfirmed}, one below the round shown above.`}{' '}
+            {ourConfirmed !== null &&
+              `Our node has confirmed snapshot ${ourConfirmed}, one below the round shown above.`}{' '}
             Resetting is refused if the number is ahead of that (our node is then behind and the
             reset does not help) or more than one behind it.
           </p>
