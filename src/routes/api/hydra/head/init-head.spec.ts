@@ -166,12 +166,17 @@ describe('initHeadPost, on a node with unsafe L2 params', () => {
 // A transport failure in connect happens before anything is sent, so it is not a failed Init.
 describe('initHeadPost, when the node cannot be reached', () => {
 	it('answers an exposed 502 that names the cause, without a head error', async () => {
-		mockConnect.mockRejectedValue(new HydraTransportError('Connection closed unexpectedly (code 1006)'));
+		// The node wraps the reason a session closed before Greetings; the reason is the useful part.
+		mockConnect.mockRejectedValue(
+			new HydraTransportError('Hydra live session closed before identity verification', {
+				cause: new HydraTransportError('Connection closed unexpectedly (code 1006)'),
+			}),
+		);
 
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 			statusCode: 502,
 			expose: true,
-			// A node still starting and a wrong URL fail alike; only the cause tells them apart.
+			// A node still starting and a wrong URL can fail alike; the cause tells them apart.
 			message: expect.stringContaining('Connection closed unexpectedly (code 1006)'),
 		});
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
@@ -188,13 +193,12 @@ describe('initHeadPost, when the node cannot be reached', () => {
 
 	// A retry cannot fix a node that breaks the protocol, so it must not read as unreachable.
 	it('records a protocol fault that closed the session before Greetings', async () => {
-		mockConnect.mockRejectedValue(
-			new HydraTransportError('Hydra live session closed before identity verification', {
-				cause: new HydraProtocolError('Hydra websocket sent a non-text frame'),
-			}),
-		);
+		const protocolFault = new HydraTransportError('Hydra live session closed before identity verification', {
+			cause: new HydraProtocolError('Hydra websocket sent a non-text frame'),
+		});
+		mockConnect.mockRejectedValue(protocolFault);
 
-		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toThrow('closed before identity');
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toBe(protocolFault);
 		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
 	});
 });

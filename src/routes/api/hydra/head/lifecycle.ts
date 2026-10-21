@@ -281,11 +281,17 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
  * reached the node, so this is not a failed Init and the handler records no
  * head error. The cause goes into the text: a node still starting and a wrong
  * URL or token can fail the same way, and the cause often tells them apart.
- * Exposed errors skip the server-error log, so the warn is the only record.
- * A log rotation before Greetings also arrives here as a closed session.
+ * A transport error that wraps another, such as a session closed before
+ * Greetings, also gets the inner reason. Exposed errors skip the server-error
+ * log, so the warn is the only record. Faults that ws itself rejects, such as
+ * an oversized frame, and a log rotation before Greetings also arrive here as
+ * a closed session.
  */
 function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unknown): HttpError {
-	const cause = getErrorMessage(error);
+	const cause =
+		error instanceof HydraTransportError && error.cause instanceof Error
+			? `${error.message}: ${error.cause.message}`
+			: getErrorMessage(error);
 	logger.warn(`[HydraAPI] ${message} before Init`, { hydraHeadId, error: cause });
 	return createHttpError(
 		502,
