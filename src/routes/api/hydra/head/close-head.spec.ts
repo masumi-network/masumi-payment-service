@@ -252,17 +252,45 @@ describe('Hydra head state convergence', () => {
 
 	it('clears stale InitTx admission evidence when disabling a head', async () => {
 		const disabledHead = { ...openHead, isEnabled: false, initTxHash: null };
-		mockUpdateHead.mockResolvedValue(disabledHead);
+		mockFindHead.mockResolvedValueOnce(openHead).mockResolvedValueOnce(disabledHead);
 
 		await expect(updateHydraHeadEnabledState('head-1', false)).resolves.toBe(disabledHead);
 
-		expect(mockUpdateHead).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
-			}),
-		);
-		expect(mockReleaseClose).not.toHaveBeenCalled();
+		expect(mockReleaseClose).toHaveBeenCalledWith({
+			where: { id: 'head-1', retiredAt: null },
+			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
+		});
+		// The disable write is the only updateMany: the close latch is untouched.
+		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
+	});
+
+	// Disabling clears the init anchors that a recovery of a retired head
+	// restarts the node from.
+	it.each([false, true])('refuses to set a retired head enabled=%s', async (isEnabled) => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible, retiredAt: new Date() });
+
+		await expect(updateHydraHeadEnabledState('head-1', isEnabled, jest.fn() as AnyMock)).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(mockUpdateHead).not.toHaveBeenCalled();
+		expect(mockReleaseClose).not.toHaveBeenCalled();
+	});
+
+	it('reports a head deleted during a disable as not found', async () => {
+		mockReleaseClose.mockResolvedValue({ count: 0 });
+		mockFindHead.mockResolvedValueOnce(openHead).mockResolvedValueOnce(null);
+
+		await expect(updateHydraHeadEnabledState('head-1', false)).rejects.toMatchObject({ statusCode: 404 });
+	});
+
+	// A retire that commits between the read and the disable write must keep
+	// the anchors: the guarded write matches nothing and the request fails.
+	it('refuses a disable that races a retire', async () => {
+		mockReleaseClose.mockResolvedValue({ count: 0 });
+
+		await expect(updateHydraHeadEnabledState('head-1', false)).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockReconcileEnabledState).not.toHaveBeenCalled();
 	});
 
 	// Re-proving an enabled head meant disabling it first, which dropped the
@@ -296,8 +324,10 @@ describe('Hydra head state convergence', () => {
 			updatedAt: new Date('2026-07-23T01:01:00Z'),
 		};
 		const enabledHead = { ...quarantinedHead, isEnabled: true, initTxHash: 'c'.repeat(64) };
-		mockFindHead.mockResolvedValueOnce(staleHead).mockResolvedValueOnce(enabledHead);
-		mockUpdateHead.mockResolvedValue(quarantinedHead);
+		mockFindHead
+			.mockResolvedValueOnce(staleHead)
+			.mockResolvedValueOnce(quarantinedHead)
+			.mockResolvedValueOnce(enabledHead);
 		const verify = jest.fn<(headId: string) => Promise<{ headIdentifier: string; initTxHash: string }>>(async () => ({
 			headIdentifier: staleHead.headIdentifier,
 			initTxHash: 'c'.repeat(64),
@@ -305,17 +335,16 @@ describe('Hydra head state convergence', () => {
 
 		await expect(updateHydraHeadEnabledState('head-1', true, verify)).resolves.toBe(enabledHead);
 
-		expect(mockUpdateHead).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: { id: 'head-1' },
-				data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
-			}),
-		);
+		expect(mockReleaseClose).toHaveBeenCalledWith({
+			where: { id: 'head-1', retiredAt: null },
+			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
+		});
 		expect(verify).toHaveBeenCalledWith('head-1');
 		expect(mockReleaseClose).toHaveBeenCalledWith({
 			where: {
 				id: 'head-1',
 				isEnabled: false,
+				retiredAt: null,
 				initTxHash: null,
 				updatedAt: quarantinedHead.updatedAt,
 				headIdentifier: staleHead.headIdentifier,
@@ -341,8 +370,10 @@ describe('Hydra head state convergence', () => {
 		};
 		const quarantinedHead = { ...staleHead, initTxHash: null, updatedAt: new Date('2026-07-23T01:01:00Z') };
 		const enabledHead = { ...quarantinedHead, isEnabled: true, initTxHash: 'c'.repeat(64) };
-		mockFindHead.mockResolvedValueOnce(staleHead).mockResolvedValueOnce(enabledHead);
-		mockUpdateHead.mockResolvedValue(quarantinedHead);
+		mockFindHead
+			.mockResolvedValueOnce(staleHead)
+			.mockResolvedValueOnce(quarantinedHead)
+			.mockResolvedValueOnce(enabledHead);
 		mockReleaseClose.mockResolvedValue({ count: 1 });
 		// The quarantine reconcile settles; the connect after enable never does.
 		mockReconcileEnabledState.mockResolvedValueOnce(false).mockReturnValueOnce(new Promise(() => undefined));
@@ -375,8 +406,7 @@ describe('Hydra head state convergence', () => {
 			contestationPeriod: 86_400n,
 			HydraRelation: {},
 		};
-		mockFindHead.mockResolvedValue(staleHead);
-		mockUpdateHead.mockResolvedValue({
+		mockFindHead.mockResolvedValueOnce(staleHead).mockResolvedValueOnce({
 			...staleHead,
 			isEnabled: false,
 			initTxHash: null,
@@ -388,7 +418,8 @@ describe('Hydra head state convergence', () => {
 
 		await expect(updateHydraHeadEnabledState('head-1', true, verify)).rejects.toMatchObject({ statusCode: 503 });
 
-		expect(mockReleaseClose).not.toHaveBeenCalled();
+		// Only the quarantine write ran: the enable CAS never did.
+		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
 	});
 

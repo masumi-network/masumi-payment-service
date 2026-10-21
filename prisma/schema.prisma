@@ -1896,8 +1896,20 @@ model HydraHead {
 
   /// Is enabled
   isEnabled Boolean @default(true)
-  // One non-Final head per relation is enforced by the partial unique index
-  // HydraHead_one_non_final_per_relation_key in the head-binding migration.
+
+  /// Set when an operator retired a head that cannot reach Final. A retired
+  /// head is disabled, never Final, and no longer blocks its relation.
+  retiredAt               DateTime?
+  /// The operator's stated reason for retiring the head.
+  retiredReason           String?
+  /// The UTxO set the node still held in the head at retirement, or null when
+  /// the node could not be reached.
+  retiredRemainingUtxo    Json?
+  /// The L1 tx that holds the head output at retirement; where recovery starts.
+  retiredHeadOutputTxHash String?
+  // One live (non-Final, non-retired) head per relation is enforced by the
+  // partial unique index HydraHead_one_live_per_relation_key
+  // (migration 20261021000200_hydra_head_retirement).
 
   @@index([status])
   @@index([hydraRelationId, status])

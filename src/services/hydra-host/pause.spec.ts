@@ -393,7 +393,10 @@ describe('advanceHydraHostPause', () => {
 		expect(mockHeadCount).toHaveBeenCalledWith({
 			where: {
 				LocalParticipant: { hydraHostId: 'host-1' },
-				OR: [{ isClosing: true, status: 'Open' }, { status: { in: ['Closed', 'FanoutPossible'] } }],
+				OR: [
+					{ isClosing: true, status: 'Open' },
+					{ status: { in: ['Closed', 'FanoutPossible'] }, retiredAt: null },
+				],
 			},
 		});
 	});

@@ -6814,6 +6814,20 @@ export const HydraHeadSchema = {
             type: 'string',
             nullable: true
         },
+        retiredAt: {
+            type: 'string',
+            nullable: true,
+            description: 'When an operator retired this head because it cannot reach Final'
+        },
+        retiredReason: {
+            type: 'string',
+            nullable: true
+        },
+        retiredHeadOutputTxHash: {
+            type: 'string',
+            nullable: true,
+            description: 'L1 tx holding the head output at retirement'
+        },
         Invite: {
             type: 'object',
             nullable: true,
@@ -7035,7 +7049,10 @@ export const HydraHeadSchema = {
         'reconciliationStalledSince',
         'initTxHash',
         'closeTxHash',
-        'fanoutTxHash'
+        'fanoutTxHash',
+        'retiredAt',
+        'retiredReason',
+        'retiredHeadOutputTxHash'
     ]
 } as const;
 

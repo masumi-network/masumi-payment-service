@@ -188,7 +188,7 @@ describe('failClosedAfterStatusPersistenceFailure under the ownership fence', ()
 		await failClosedAfterStatusPersistenceFailure(persistenceHost, 'head-1', fakeHead(), 3n);
 
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', ownerEpoch: 3n, isEnabled: true },
+			where: { id: 'head-1', ownerEpoch: 3n, retiredAt: null, isEnabled: true },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -212,7 +212,7 @@ describe('failClosedAfterStatusPersistenceFailure under the ownership fence', ()
 		await failClosedAfterStatusPersistenceFailure(host(), 'head-1', fakeHead(), 1n);
 		expect(mockMarkHeadFailedClosed).not.toHaveBeenCalled();
 		expect(mockUpdateMany).toHaveBeenLastCalledWith(
-			expect.objectContaining({ where: { id: 'head-1', ownerEpoch: 1n } }),
+			expect.objectContaining({ where: { id: 'head-1', ownerEpoch: 1n, retiredAt: null } }),
 		);
 
 		// Fenced out by a newer owner: not ours either.

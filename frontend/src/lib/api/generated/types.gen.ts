@@ -3422,6 +3422,15 @@ export type HydraHead = {
     closeTxHash: string | null;
     fanoutTxHash: string | null;
     /**
+     * When an operator retired this head because it cannot reach Final
+     */
+    retiredAt: string | null;
+    retiredReason: string | null;
+    /**
+     * L1 tx holding the head output at retirement
+     */
+    retiredHeadOutputTxHash: string | null;
+    /**
      * Which side of the invite exchange this head came from; absent for heads not created from one
      */
     Invite?: {
@@ -16246,6 +16255,69 @@ export type PostHydraHeadChainCheckResponses = {
 };
 
 export type PostHydraHeadChainCheckResponse = PostHydraHeadChainCheckResponses[keyof PostHydraHeadChainCheckResponses];
+
+export type PostHydraHeadRetireData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+        /**
+         * Why the head cannot reach Final. Stored with the head for a later recovery.
+         */
+        reason: string;
+        acknowledgeStrandedFunds: true;
+        acknowledgeRemainingUtxoUnknown?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/retire';
+};
+
+export type PostHydraHeadRetireErrors = {
+    /**
+     * Invalid input, or the stranded funds were not acknowledged
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, or the head changed meanwhile
+     */
+    409: unknown;
+    /**
+     * The head state could not be read on chain
+     */
+    502: unknown;
+    /**
+     * Independent L1 evidence or the remaining UTxO set is not available yet
+     */
+    503: unknown;
+};
+
+export type PostHydraHeadRetireResponses = {
+    /**
+     * Head retired
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            retiredAt: string;
+            retiredHeadOutputTxHash: string;
+            remainingUtxoCount: number | null;
+        };
+    };
+};
+
+export type PostHydraHeadRetireResponse = PostHydraHeadRetireResponses[keyof PostHydraHeadRetireResponses];
 
 export type GetRailReadinessData = {
     body?: never;

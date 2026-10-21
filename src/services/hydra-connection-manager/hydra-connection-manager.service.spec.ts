@@ -816,7 +816,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		// enabled (it misses here, as every write does), then unconditionally.
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(5);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
-			where: { id: 'head-1' },
+			where: { id: 'head-1', retiredAt: null },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -1125,7 +1125,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 		expect(mockTransactionFindFirst).not.toHaveBeenCalled();
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', isEnabled: true },
+			where: { id: 'head-1', isEnabled: true, retiredAt: null },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -1191,7 +1191,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			},
 		});
 		expect(mockHydraHeadUpdateMany).toHaveBeenNthCalledWith(2, {
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		expect(mockPaymentRequestUpdateMany).not.toHaveBeenCalled();
@@ -1314,7 +1314,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			}),
 		);
 		expect(mockHydraHeadUpdateMany).toHaveBeenNthCalledWith(2, {
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		const lockedHeadQuery = (
@@ -1374,7 +1374,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 		expect(mockPrismaTransaction).toHaveBeenCalledTimes(2);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 	});

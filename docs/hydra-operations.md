@@ -472,6 +472,45 @@ rest of the head keeps working. If the arriving deposit is the _only_ money in
 the head, there is nothing to work with and payments wait for the fold to
 finish. That is expected; it resolves itself.
 
+### A head that stays in FanoutPossible
+
+A head can close and then never reach `Final`. The usual cause is one output
+that no fanout transaction can carry (ADR 0013, limit 3). Its relation then
+refuses a new head.
+
+1. Read the head on L1 with `POST /hydra/head/chain-check`. If it shows
+   `gone`, the fanout landed: reconciliation adopts it, so wait.
+2. If it shows `closed` and fanout keeps failing, retire the head:
+
+   ```json
+   POST /hydra/head/retire
+   {
+     "headId": "<head id>",
+     "reason": "<why the head cannot reach Final>",
+     "acknowledgeStrandedFunds": true
+   }
+   ```
+
+3. Open a new head on the same relation.
+
+Retiring moves no money. What is left in the head stays on L1 behind the head
+script, and the requests that were in the head stay unsettled. The head record
+keeps the head identifier, the L1 tx that holds the head output and the
+remaining UTxO set, so a later recovery has what it needs. A retired head
+cannot be enabled again, and its relation, participants and host cannot be
+deleted.
+
+Do not retire a head while a fanout is in flight. The endpoint refuses when
+the node already reports the head past its stored status, or when the head
+output moves on L1 during the request. It cannot see a fanout that is posted
+but not yet on L1. Wait for a failed fanout to fail before you retire.
+
+The endpoint refuses a head inside its contestation period. It also refuses a
+`Closed` head with no stored contestation deadline: wait until the head is
+`FanoutPossible`, then retire it. If the node is
+down, it refuses too, because it cannot read the remaining UTxO set. Add
+`"acknowledgeRemainingUtxoUnknown": true` to retire without that set.
+
 ### "Transaction is invalid" on a head
 
 The head's own reason is included after the colon. `All inputs are spent`

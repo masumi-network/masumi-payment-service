@@ -52,7 +52,7 @@ export async function persistRegressiveHeadStatus(
 				`);
 				if (relations.length !== 1) return 'ignored';
 				const rows = await tx.$queryRaw<LockedHydraHeadLifecycle[]>(Prisma.sql`
-					SELECT "id", "hydraRelationId", "isEnabled", "status", "headIdentifier", "fanoutTxHash", "ownerEpoch"
+					SELECT "id", "hydraRelationId", "isEnabled", "status", "headIdentifier", "fanoutTxHash", "ownerEpoch", "retiredAt"
 					FROM "HydraHead"
 					WHERE "hydraRelationId" = ${hydraRelationId}
 					ORDER BY "id"
@@ -63,6 +63,9 @@ export async function persistRegressiveHeadStatus(
 				// Fenced under the row lock: a rollback (and the relation quarantines
 				// it can trigger) must never be driven by a superseded session.
 				if (current.ownerEpoch !== ownerEpoch) return 'stale-owner';
+				// A session that took the epoch after retire must not move a retired
+				// head back or clear the init anchors its recovery starts from.
+				if (current.retiredAt != null) return 'ignored';
 				if (headId && current.headIdentifier != null && current.headIdentifier !== headId) return 'ignored';
 				if (HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[current.status]) {
 					return 'not-regressive';
@@ -92,8 +95,9 @@ export async function persistRegressiveHeadStatus(
 					if (quarantined.count !== 1) {
 						throw new Error('Confirmed Hydra fanout rollback quarantine lost the locked head row');
 					}
+					// A retired head keeps its init anchors: its recovery starts from them.
 					await tx.hydraHead.updateMany({
-						where: { hydraRelationId, id: { not: hydraHeadId } },
+						where: { hydraRelationId, id: { not: hydraHeadId }, retiredAt: null },
 						data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 					});
 					return 'quarantined-confirmed-finality-conflict';
@@ -158,7 +162,10 @@ export async function persistRegressiveHeadStatus(
 					updateData.latestSnapshotNumber = 0n;
 				}
 
-				const replacementHead = rows.find((row) => row.id !== hydraHeadId && row.status !== HydraHeadStatus.Final);
+				// A retired head is outside the unique index, so it is no replacement.
+				const replacementHead = rows.find(
+					(row) => row.id !== hydraHeadId && row.status !== HydraHeadStatus.Final && row.retiredAt == null,
+				);
 				if (replacementHead) {
 					// The partial unique index cannot represent both the rolled-back old
 					// head and an already-created replacement as non-Final. Preserve the
@@ -183,8 +190,9 @@ export async function persistRegressiveHeadStatus(
 					if (invalidated.count !== 1) {
 						throw new Error('Hydra rollback invalidation lost ownership of the locked head row');
 					}
+					// A retired head keeps its init anchors: its recovery starts from them.
 					await tx.hydraHead.updateMany({
-						where: { hydraRelationId, id: { not: hydraHeadId } },
+						where: { hydraRelationId, id: { not: hydraHeadId }, retiredAt: null },
 						data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 					});
 					return 'quarantined-relation-conflict';

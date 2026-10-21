@@ -286,6 +286,7 @@ async function assertRelationHasNoLiveHead(input: {
 	const liveHead = await prisma.hydraHead.findFirst({
 		where: {
 			status: { not: HydraHeadStatus.Final },
+			retiredAt: null,
 			HydraRelation: {
 				network: input.network,
 				localHotWalletId: input.localHotWalletId,

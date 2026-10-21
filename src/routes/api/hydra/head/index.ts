@@ -127,6 +127,9 @@ export const hydraHeadSchema = z
 		initTxHash: z.string().nullable(),
 		closeTxHash: z.string().nullable(),
 		fanoutTxHash: z.string().nullable(),
+		retiredAt: z.string().nullable().describe('When an operator retired this head because it cannot reach Final'),
+		retiredReason: z.string().nullable(),
+		retiredHeadOutputTxHash: z.string().nullable().describe('L1 tx holding the head output at retirement'),
 		Invite: z
 			.object({
 				role: z.nativeEnum(HydraInviteRole),
@@ -582,6 +585,7 @@ export async function updateHydraHeadEnabledState(
 ): Promise<HydraHeadRecord> {
 	const existing = await prisma.hydraHead.findUnique({ where: { id } });
 	if (!existing) throw createHttpError(404, 'Hydra head not found');
+	if (existing.retiredAt) throw createHttpError(409, 'A retired Hydra head cannot be enabled or disabled');
 	if (isEnabled && existing.isEnabled) {
 		// Already enabled: its InitTx binding still stands. Re-proving it would
 		// mean disabling first, which drops the live session and the counterparty
@@ -596,8 +600,10 @@ export async function updateHydraHeadEnabledState(
 	// before the write, so a recovery that runs meanwhile finds no mark.
 	if (!isEnabled) forgetHeadFailedClosed(id);
 	const manager = getHydraConnectionManager();
-	const quarantined = await prisma.hydraHead.update({
-		where: { id },
+	// Guarded on retiredAt: a retire that commits after the read above keeps
+	// the anchors its recovery needs.
+	const disabled = await prisma.hydraHead.updateMany({
+		where: { id, retiredAt: null },
 		// A disabled head's prior InitTx binding is no longer an admission token.
 		// Re-enable always proves the current head/participants/configuration
 		// again. The chain-replay anchor is derived from that binding, so it is
@@ -605,8 +611,10 @@ export async function updateHydraHeadEnabledState(
 		// block, and a stale anchor would silently defeat --start-chain-from
 		// recovery. The init backfill re-resolves it after re-enable.
 		data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
-		include: headInclude,
 	});
+	const quarantined = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
+	if (!quarantined) throw createHttpError(404, 'Hydra head not found');
+	if (disabled.count !== 1) throw createHttpError(409, 'A retired Hydra head cannot be enabled or disabled');
 	await manager.reconcileEnabledState(id);
 	if (!isEnabled) return quarantined;
 
@@ -644,6 +652,7 @@ export async function updateHydraHeadEnabledState(
 		where: {
 			id,
 			isEnabled: false,
+			retiredAt: null,
 			initTxHash: null,
 			updatedAt: quarantined.updatedAt,
 			headIdentifier: quarantined.headIdentifier,

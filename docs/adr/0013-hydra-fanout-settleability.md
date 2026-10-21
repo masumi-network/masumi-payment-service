@@ -134,7 +134,36 @@ Document all four limits. Build against none of them.
    precisely. It was wrong in one respect: the guard needed no constant in our
    code, because the L2 ledger already has one. The boundary is now measured.
 
-3. **Do not build an operator retire path yet.** A head that cannot reach
+3. **Give operators a retire path.** _Revised 2026-10-21; the original
+   decision follows._ `POST /hydra/head/retire` (`head/retire.ts`) retires a
+   head that cannot reach `Final` and frees its relation for a new head. It
+   moves no funds. The caller must send `acknowledgeStrandedFunds: true` and a
+   reason. The endpoint accepts a `FanoutPossible` head, or a `Closed` head
+   after its stored contestation deadline (a `Closed` head with no stored
+   deadline is refused), and only when the independent L1 observer
+   shows the head closed. It disables the head and stores `retiredAt`, the
+   reason, the remaining UTxO set from the node and the L1 tx that holds the
+   head output. It keeps `headIdentifier` and whatever init anchors the head
+   still has, because a later recovery restarts a node from them. Retire does
+   not check that the anchors exist: a head that was disabled before may have
+   lost them. Retire bumps `ownerEpoch`, so the old session cannot write to the
+   record, and enable, disable and the status fail-closed path all skip a
+   retired head. Before the write it refuses when the node reports a later
+   status than the database, and it reads L1 a second time and requires the
+   same head output tx. A fanout that is posted but not yet on L1 stays
+   invisible to both checks, so an operator must not retire a head while a
+   fanout is in flight. The contestation guard reads the stored
+   `contestationDeadline`, which is written once at close and does not move
+   when a contest extends the deadline. The L1 observer reads Close and
+   Contest both as `closed`. So retire can pass while a contest is still
+   running. The hydra-node process contests on its own and retire does not
+   stop it, so we accept this. The one-live-head index
+   (`HydraHead_one_live_per_relation_key`) leaves retired heads out. A retired
+   head still blocks deletion of its relation, participants and host, and the
+   requests bound to it stay unsettled: their funds are on L1 behind the head
+   script, and nothing here can prove where they go next.
+
+   _Original decision, superseded:_ do not build an operator retire path yet. A head that cannot reach
    `Final` blocks its relation permanently: `head/create-head.ts` rejects any new
    head while a non-`Final` one exists, `deletion-guard.ts` requires a
    `fanoutTxHash` verified on chain that such a head does not have, and the
@@ -175,8 +204,12 @@ Document all four limits. Build against none of them.
   still be changed by spending the offending output on L2; after close nothing
   about it can change. We do not implement detection for this today, which
   means in practice the mitigation is unavailable.
-- If a head does become unsettleable, its relation is dead until someone edits
-  the database. That is a known, accepted operational gap, not an oversight.
+- _Superseded 2026-10-21 by revised decision 3:_ an unsettleable head no
+  longer kills its relation. An operator retires it and opens a new head. The
+  funds left in the retired head stay stranded until the protocol frees them.
+- _Original consequence, kept for the record:_ if a head does become
+  unsettleable, its relation is dead until someone edits the database. That is
+  a known, accepted operational gap, not an oversight.
 - `docs/adr/0005-meshsdk-version-pinning-v1-v2.md` governs why the head's cost
   models must match the pinned mesh line; `src/lib/hydra/hydra/params-drift.ts`
   now checks the running head against the ledger we ship, including `maxTxSize`
