@@ -16,13 +16,6 @@ import type { HydraTransaction } from './types';
  * funds would carry the token into our change.
  */
 
-/**
- * What the history replay can vouch for: the units still unburned as of the
- * signed snapshot whose outputs are `verifiedOutputs` (keyed `txid#index`,
- * lowercase). The node's HTTP UTxO view runs ahead of the replay, and a peer
- * can widen that gap, so a token UTxO missing from `verifiedOutputs` comes from
- * a transaction the tally has not seen and counts as unchecked.
- */
 /** Units named in one log line; a peer chooses how many units the tally holds. */
 const LOGGED_UNIT_SAMPLE = 5;
 
@@ -32,6 +25,13 @@ export function describeUnits(units: Iterable<string>): { count: number; sample:
 	return { count: all.length, sample: all.slice(0, LOGGED_UNIT_SAMPLE) };
 }
 
+/**
+ * What the history replay can vouch for: the units still unburned as of the
+ * signed snapshot whose outputs are `verifiedOutputs` (keyed `txid#index`,
+ * lowercase). The node's HTTP UTxO view runs ahead of the replay, and a peer
+ * can widen that gap, so a token UTxO missing from `verifiedOutputs` comes from
+ * a transaction the tally has not seen and counts as unchecked.
+ */
 export interface L2MintCheck {
 	unburnedUnits: ReadonlySet<string>;
 	verifiedOutputs: ReadonlyMap<string, string>;
@@ -55,7 +55,8 @@ export function buildL2MintCheck(
 /**
  * Add the mint field of each transaction into `tally` (unit → net quantity).
  * A unit whose net reaches zero is dropped, so the keys are exactly the units
- * still outstanding.
+ * still outstanding. Logs only when the head starts or stops holding such
+ * units: a peer decides how often it mints.
  *
  * Only called on transactions the conservation check has already decoded.
  */
@@ -64,14 +65,18 @@ export function recordL2TransactionMints(
 	transactions: readonly HydraTransaction[],
 	snapshotNumber: number,
 ): void {
-	let hasMint = false;
+	const wasClear = tally.size === 0;
 	for (const { cborHex } of transactions) {
 		const mint = FixedTransaction.from_bytes(Buffer.from(cborHex, 'hex')).body().mint();
 		if (!mint) continue;
-		hasMint = true;
+		// CSL lists a repeated policy key once per entry, and `get` returns every
+		// group for it each time, so visit each policy once.
+		const seenPolicies = new Set<string>();
 		const policies = mint.keys();
 		for (let policyIndex = 0; policyIndex < policies.len(); policyIndex += 1) {
 			const policy = policies.get(policyIndex);
+			if (seenPolicies.has(policy.to_hex())) continue;
+			seenPolicies.add(policy.to_hex());
 			const groups = mint.get(policy);
 			if (!groups) continue;
 			for (let groupIndex = 0; groupIndex < groups.len(); groupIndex += 1) {
@@ -94,11 +99,13 @@ export function recordL2TransactionMints(
 			}
 		}
 	}
-	if (hasMint) {
-		logger.error('[HydraNode] A transaction in the head minted or burned tokens; unburned ones block finalization', {
+	if (wasClear && tally.size > 0) {
+		logger.error('[HydraNode] The head holds tokens minted inside it and cannot finalize until they are burned', {
 			snapshotNumber,
 			unburnedUnits: describeUnits(tally.keys()),
 		});
+	} else if (!wasClear && tally.size === 0) {
+		logger.info('[HydraNode] Every token minted inside the head is burned again', { snapshotNumber });
 	}
 }
 
