@@ -684,6 +684,9 @@ describe('HydraNode', () => {
 		it('holds a failure seen before the session is authenticated until it is', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
 			const events = failureEvents(node);
+			// The manager records the failure with the status it reads at this moment.
+			const statusAtFailure: HydraHeadStatus[] = [];
+			node.on(HydraNodeEvent.PostTxFailed, () => statusAtFailure.push(node.status));
 			const connectPromise = node.connect();
 
 			mockConnectionInstance.emit('message', postTxFailedFrame({ tag: 'ContestTx' }, { tag: 'NotEnoughFuel' }));
@@ -696,6 +699,7 @@ describe('HydraNode', () => {
 			await connectPromise;
 
 			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+			expect(statusAtFailure).toEqual([HydraHeadStatus.Closed]);
 		});
 
 		// The live path ignores a failure for another head, so a waiting Close must

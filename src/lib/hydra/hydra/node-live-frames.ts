@@ -469,10 +469,8 @@ export class LiveFrameProcessor {
 		}
 		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
 		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
-		this._heldBack.flushPostTxFailures((data) => this.emitter.emit(HydraNodeEvent.PostTxFailed, data));
 		if (decommitSettled) this.emitter.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
 		if (depositRecorded) this.emitter.emit(HydraNodeEvent.DepositRecorded, depositRecorded);
-		if (postTxFailed) this.emitter.emit(HydraNodeEvent.PostTxFailed, postTxFailed);
 		const changeData = extractStatusChangeData(rawMessage, this.host.expectedHeadId);
 		if (changeData && changeData.status !== HydraHeadStatus.Final) {
 			// A history replay can contain a prior Final while the authenticated
@@ -484,6 +482,11 @@ export class LiveFrameProcessor {
 			this._status = changeData.status;
 			this.emitter.emit(HydraNodeEvent.StatusChange, changeData);
 		}
+		// After the status change: a listener records the failure with the node's
+		// status, and the frame that releases held failures is the authenticating
+		// Greetings, which is also what moves the status off its initial value.
+		this._heldBack.flushPostTxFailures((data) => this.emitter.emit(HydraNodeEvent.PostTxFailed, data));
+		if (postTxFailed) this.emitter.emit(HydraNodeEvent.PostTxFailed, postTxFailed);
 		if (headWasAborted) {
 			// The head is over before it ever opened, and nothing this session proved
 			// about it survives: there is no head left to clock, and a fanout map
