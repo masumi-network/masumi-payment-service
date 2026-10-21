@@ -31,13 +31,13 @@ cannot come back.
 
 ## What you need
 
-|                                      |                                                                                                                                                                                                          |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A Hydra Host**                     | Supervises one `hydra-node` process per head. Ships as a container; see [hydra-host-native-mode.md](hydra-host-native-mode.md) for macOS and arm64 Linux, where it runs as a plain Node process instead. |
-| **A public address**                 | Your counterparty's node connects to yours directly. A hostname or IP that resolves from outside, and one open TCP port per head.                                                                        |
-| **A Blockfrost project**             | The node follows the chain through it. Same network as your payment source.                                                                                                                              |
-| **ADA in a purchasing wallet**       | For the funds you put in the head, plus about 30 ADA per head for its node to pay the on-chain fees (topped back up whenever it falls under 15).                                                         |
-| **A counterparty who also runs one** | Both sides need a node. There is no one-sided head.                                                                                                                                                      |
+|                                      |                                                                                                                                                                                                 |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A Hydra Host**                     | Supervises one `hydra-node` process per head. Ships as a container; native mode ([hydra-host-native-mode.md](hydra-host-native-mode.md)) runs it as a plain Node process, for development only. |
+| **A public address**                 | Your counterparty's node connects to yours directly. A hostname or IP that resolves from outside, and one open TCP port per head.                                                               |
+| **A Blockfrost project**             | The node follows the chain through it. Same network as your payment source.                                                                                                                     |
+| **ADA in a purchasing wallet**       | For the funds you put in the head, plus about 30 ADA per head for its node to pay the on-chain fees (topped back up whenever it falls under 15).                                                |
+| **A counterparty who also runs one** | Both sides need a node. There is no one-sided head.                                                                                                                                             |
 
 Both nodes must run the **same `hydra-node` version** (2.4.1 at the time of
 writing; see [hydra-2.4.1-upgrade-runbook.md](hydra-2.4.1-upgrade-runbook.md)
@@ -156,7 +156,7 @@ How you open the range depends on how you run the Host:
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A droplet, or any plain `docker run`** | Host networking exposes it already, so the cloud firewall and this ruleset are the only things holding it shut. See [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md). |
 | **Local testing with compose**           | Add `-f docker-compose.public-peer.yml`, which publishes the range behind `HYDRA_HOST_PEER_FIREWALL_ACK`.                                                                         |
-| **Native mode**                          | There is no override file and no port publication. The ruleset is the whole of it. See [hydra-host-native-mode.md](hydra-host-native-mode.md).                                    |
+| **Native mode**                          | Development only. There is no override file and no port publication. The ruleset is the whole of it. See [hydra-host-native-mode.md](hydra-host-native-mode.md).                  |
 
 `HYDRA_HOST_PEER_FIREWALL_ACK` is a compose convention, not a code gate. Nothing
 in the Host reads it. Set it from `hydra-peer-firewall verify`, which prints a
