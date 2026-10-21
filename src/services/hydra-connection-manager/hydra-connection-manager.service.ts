@@ -224,7 +224,7 @@ export class HydraConnectionManager {
 		const relation = configuredHead.HydraRelation;
 		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
 		if (!isReachable) {
-			// Nothing was sent to the node, so a caller may retry and need not treat it as a failed command.
+			// No command was sent to the node, so a caller may retry and need not treat it as a failed command.
 			throw new HydraTransportError(`Local Hydra node unreachable for head ${head.id}`);
 		}
 		if (session.transportGeneration !== transportGeneration) {

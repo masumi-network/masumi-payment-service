@@ -27,6 +27,7 @@ import {
 	HydraPostTxRejectedError,
 	HydraCommitFlowError,
 	HydraHeadInitObservationError,
+	HydraProtocolError,
 	HydraTransactionType,
 	HydraTransportError,
 	interpretCardanoTxSubmitResult,
@@ -112,7 +113,8 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				await cm.connect(head);
 			} catch (error) {
-				if (!(error instanceof HydraTransportError)) throw error;
+				// A closed live session wraps its reason, so a protocol fault before Greetings arrives as a transport error.
+				if (!(error instanceof HydraTransportError) || error.cause instanceof HydraProtocolError) throw error;
 				throw nodeFailedBeforeInit(head.id, "Could not reach this head's Hydra node", error);
 			}
 			const hydraHead = cm.getHead(head.id);
@@ -275,11 +277,12 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 });
 
 /**
- * An exposed 502 for a node that failed before Init was sent. Nothing reached
- * the node, so this is not a failed Init and the handler records no head error.
- * The cause goes into the text: a node still starting and a wrong URL or token
- * fail the same way, and only the cause tells them apart. Exposed errors skip
- * the server-error log, so the warn is the only record.
+ * An exposed 502 for a node that failed before Init was sent. Init never
+ * reached the node, so this is not a failed Init and the handler records no
+ * head error. The cause goes into the text: a node still starting and a wrong
+ * URL or token can fail the same way, and the cause often tells them apart.
+ * Exposed errors skip the server-error log, so the warn is the only record.
+ * A log rotation before Greetings also arrives here as a closed session.
  */
 function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unknown): HttpError {
 	const cause = getErrorMessage(error);

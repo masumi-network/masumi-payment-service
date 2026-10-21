@@ -1,7 +1,12 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
-import { HydraCommandRejectedError, HydraPostTxRejectedError, HydraTransportError } from '@/lib/hydra';
+import {
+	HydraCommandRejectedError,
+	HydraPostTxRejectedError,
+	HydraProtocolError,
+	HydraTransportError,
+} from '@/lib/hydra';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -178,6 +183,18 @@ describe('initHeadPost, when the node cannot be reached', () => {
 		mockConnect.mockRejectedValue(new Error('Hydra head head-1 transport was revoked while connecting'));
 
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toThrow('revoked');
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+	});
+
+	// A retry cannot fix a node that breaks the protocol, so it must not read as unreachable.
+	it('records a protocol fault that closed the session before Greetings', async () => {
+		mockConnect.mockRejectedValue(
+			new HydraTransportError('Hydra live session closed before identity verification', {
+				cause: new HydraProtocolError('Hydra websocket sent a non-text frame'),
+			}),
+		);
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toThrow('closed before identity');
 		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
 	});
 });
