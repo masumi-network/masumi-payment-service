@@ -15025,7 +15025,7 @@ export type PostHydraHeadSnapshotRoundResetErrors = {
      */
     502: unknown;
     /**
-     * The node did not answer the reset; read the round again before retrying
+     * The node did not answer the reset; read the round and ask for the counterparty's snapshot number again before retrying
      */
     504: unknown;
 };

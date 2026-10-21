@@ -78,7 +78,10 @@ export function registerHydraSnapshotRoundPaths({ registry, apiKeyAuth }: Swagge
 					'Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, the confirmed snapshot does not match the verified one, or the counterparty number is ahead of this node or more than one behind it',
 			},
 			502: { description: 'No live connection to the head, or the node refused the reset or is still stuck' },
-			504: { description: 'The node did not answer the reset; read the round again before retrying' },
+			504: {
+				description:
+					"The node did not answer the reset; read the round and ask for the counterparty's snapshot number again before retrying",
+			},
 		},
 	});
 }
