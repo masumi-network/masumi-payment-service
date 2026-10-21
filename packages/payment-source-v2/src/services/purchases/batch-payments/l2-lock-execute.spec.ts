@@ -30,7 +30,8 @@ type LockArgs = Parameters<typeof executeL2Lock>;
  * Jest runs Mesh in a VM context, but its `structuredClone` is Node's, so the
  * Map it returns fails Mesh's `instanceof Map` once the builder clones its
  * metadata ("metadatumToObj: Unsupported Metadatum type"). Production has one
- * realm. This rebuilds a clone's containers in this realm.
+ * realm. This rebuilds a clone's Maps, and the arrays and objects that hold
+ * them, in this realm.
  */
 function rebuildInThisRealm(value: unknown): unknown {
 	const tag = Object.prototype.toString.call(value);
@@ -39,7 +40,6 @@ function rebuildInThisRealm(value: unknown): unknown {
 			[...(value as Map<unknown, unknown>)].map(([key, entry]) => [rebuildInThisRealm(key), rebuildInThisRealm(entry)]),
 		);
 	}
-	if (tag === '[object Uint8Array]') return new Uint8Array(value as Uint8Array);
 	if (Array.isArray(value)) return value.map(rebuildInThisRealm);
 	if (tag === '[object Object]') {
 		return Object.fromEntries(Object.entries(value as object).map(([key, entry]) => [key, rebuildInThisRealm(entry)]));
@@ -60,8 +60,12 @@ const SCRIPT_ADDRESS = EnterpriseAddress.new(0, Credential.from_scripthash(Scrip
 	.to_address()
 	.to_bech32();
 const HOUR_MS = 60 * 60 * 1000;
-/** The shipped L2 limit, as `fetchHydraProtocolParameters` caps it. */
-const L2_MAX_TX_SIZE = 15_000;
+/**
+ * A head on a smaller limit than the shipped one. The check must use the head's
+ * own limit: that head would refuse a lock between the two only after the
+ * reservation.
+ */
+const HEAD_MAX_TX_SIZE = 12_000;
 
 const mockSubmitTx = jest.fn<(cbor: string) => Promise<string>>();
 
@@ -69,7 +73,7 @@ const mockSubmitTx = jest.fn<(cbor: string) => Promise<string>>();
 function fakeHead() {
 	return {
 		getHeadClock: () => ({ chainTimeMs: Date.now(), receivedAtMs: Date.now() }),
-		fetchProtocolParameters: async () => ({ ...DEFAULT_PROTOCOL_PARAMETERS, maxTxSize: L2_MAX_TX_SIZE }),
+		fetchProtocolParameters: async () => ({ ...DEFAULT_PROTOCOL_PARAMETERS, maxTxSize: HEAD_MAX_TX_SIZE }),
 		getPendingIncrementUtxoRefs: () => new Set<string>(),
 		fetchAddressUTxOs: async (address: string): Promise<UTxO[]> => [
 			{
@@ -148,9 +152,10 @@ function signWithExtraWitnesses(count: number): void {
  */
 describe('executeL2Lock size check', () => {
 	it('refuses a lock above the head limit before the reservation and the submit', async () => {
-		signWithExtraWitnesses(150);
+		// About 12,900 bytes signed: above this head's limit, below the shipped one.
+		signWithExtraWitnesses(120);
 
-		await expect(executeL2Lock(...lockArgs())).rejects.toThrow(`above the ${L2_MAX_TX_SIZE}-byte L2 limit`);
+		await expect(executeL2Lock(...lockArgs())).rejects.toThrow(`above the ${HEAD_MAX_TX_SIZE}-byte L2 limit`);
 		expect(mockPrismaTransaction).not.toHaveBeenCalled();
 		expect(mockSubmitTx).not.toHaveBeenCalled();
 	});
