@@ -76,6 +76,12 @@ These behaviours are intended. Reviewers do not need to report them again.
    - When to revisit: if you expose the service to public networks. Then add ingress rate limits, or replace PBKDF2 with a keyed HMAC. A keyed HMAC gives the same protection here, because the hash salt and the stored `encryptedToken` both depend on `ENCRYPTION_KEY`
    - Scope: this applies to the payment service only. The `hydra-host` package does not use this hash
 
+2. **Pull request CI jobs run branch code with preprod secrets**
+   - Where: `.github/workflows/e2e.yml` gives preprod wallet mnemonics and other secrets to the E2E job. `.github/workflows/dev.yml` gives `BLOCKFROST_API_KEY_PREPROD` to a job that runs a PR script. Both trigger on pull requests to `dev` and name no protected Environment
+   - Effect: a person who can push a branch to this repository can change a script or an install hook and read those secrets
+   - Why accepted: all of these secrets are preprod only. The wallets hold test ADA, and the Blockfrost key reaches preprod only. No mainnet key or production credential is in these jobs. Only internal team members can push branches to this repository. Fork pull requests get no secrets
+   - When to revisit: if a job gets a mainnet or production secret, or if people outside the team get write access. Then put the secret-bearing jobs behind a reviewed Environment, or run them only from reviewed code
+
 ### Maintenance
 
 1. **Updates**
