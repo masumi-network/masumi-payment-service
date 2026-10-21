@@ -269,8 +269,6 @@ describe('nudgeIdleHeadForRelease', () => {
 		expect(h.head.newTx).not.toHaveBeenCalled();
 	});
 
-	// The node reports input values. Under-reported values make the nudge
-	// output fall below the floor, so nothing is recorded or sent.
 	// Only a row with no nudge recorded takes one, so recording an oversized
 	// nudge would block every smaller one for good.
 	it('records nothing when the signed nudge is above the L2 limit', async () => {
@@ -286,6 +284,8 @@ describe('nudgeIdleHeadForRelease', () => {
 		expect(h.head.newTx).not.toHaveBeenCalled();
 	});
 
+	// The node reports input values. Under-reported values make the nudge
+	// output fall below the floor, so nothing is recorded or sent.
 	it('records nothing when the node under-reports the input values', async () => {
 		const h = harness({
 			utxos: [

@@ -1889,8 +1889,8 @@ describe('HydraNode', () => {
 			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
 		});
 
-		// The backstop for paths without their own early check (consolidate,
-		// split, release nudge, decommit).
+		// The backstop. Consolidate has no earlier check of its own; split,
+		// release nudge and decommit check before they record anything.
 		it('refuses a NewTx or Decommit above the shipped L2 maxTxSize before sending', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();

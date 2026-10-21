@@ -262,6 +262,22 @@ describe('executeHydraDecommit request outcomes', () => {
 			message: expect.stringContaining('Consolidate the wallet in the head first'),
 		});
 		expect(mockDecommitCall).not.toHaveBeenCalled();
+		expect(mockDecommitUpdate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: 'Pending' }) }),
+		);
+	});
+
+	// A recorded splitTxId is what the withdrawal waits on, so an oversized split
+	// is refused before it is written.
+	it('refuses a split too large for the head before recording it', async () => {
+		mockSignTx.mockResolvedValue('ff'.repeat(16_385));
+
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 10_000_000n })).rejects.toMatchObject({
+			statusCode: 422,
+		});
+		expect(mockDecommitUpdate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ splitTxId: expect.anything() }) }),
+		);
 	});
 
 	it('leaves an ambiguous request Pending for the head to settle', async () => {
