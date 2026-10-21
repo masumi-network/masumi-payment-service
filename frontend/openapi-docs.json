@@ -24028,6 +24028,20 @@
                         "description": "Used to paginate through the payment sources",
                         "name": "cursorId",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks."
+                        },
+                        "required": false,
+                        "description": "When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks.",
+                        "name": "filterNetwork",
+                        "in": "query"
                     }
                 ],
                 "responses": {

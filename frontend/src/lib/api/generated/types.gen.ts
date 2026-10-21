@@ -10719,6 +10719,10 @@ export type GetPaymentSourceData = {
          * Used to paginate through the payment sources
          */
         cursorId?: string;
+        /**
+         * When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks.
+         */
+        filterNetwork?: 'Preprod' | 'Mainnet';
     };
     url: '/payment-source';
 };

@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { AuthContext } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import {
 	adminWalletSchema,
 	paymentSourceOutputSchema,
@@ -17,6 +17,9 @@ export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
 	input: paymentSourceSchemaInput,
 	output: paymentSourceSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof paymentSourceSchemaInput>; ctx: AuthContext }) => {
+		if (input.filterNetwork != null) {
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.filterNetwork);
+		}
 		const paymentSources = await getPaymentSourcesForQuery(input, ctx.networkLimit);
 		return serializePaymentSourcesResponse(paymentSources);
 	},
