@@ -49,7 +49,11 @@ const recorded = (minutes: number) => ({ ...empty, contestGapSignature: '3<5', c
 
 describe('decideContestGap', () => {
 	it('starts the clock when the chain holds an older snapshot than ours', () => {
-		expect(watch.decideContestGap(empty, closedOnThree, NOW)).toEqual({ action: 'record', signature: '3<5' });
+		expect(watch.decideContestGap(empty, closedOnThree, NOW)).toEqual({
+			action: 'record',
+			signature: '3<5',
+			isAlerting: false,
+		});
 	});
 
 	it('waits while a contest can still land', () => {
@@ -63,6 +67,12 @@ describe('decideContestGap', () => {
 	it('alerts at once when fanout is already possible', () => {
 		const pastDeadline = { ...closedOnThree, status: HydraHeadStatus.FanoutPossible };
 		expect(watch.decideContestGap(recorded(0), pastDeadline, NOW)).toEqual({ action: 'alert' });
+		// A service that comes back after the deadline must not wait a round to say so.
+		expect(watch.decideContestGap(empty, pastDeadline, NOW)).toEqual({
+			action: 'record',
+			signature: '3<5',
+			isAlerting: true,
+		});
 	});
 
 	it('never alerts twice for one gap', () => {
@@ -75,7 +85,11 @@ describe('decideContestGap', () => {
 	it('restarts the clock when a contest moved the chain but not far enough', () => {
 		const alerted = { ...recorded(30), contestGapAlertedAt: minutesAgo(20) };
 		const contestedOnFour = { ...closedOnThree, closedSnapshotNumber: 4n };
-		expect(watch.decideContestGap(alerted, contestedOnFour, NOW)).toEqual({ action: 'record', signature: '4<5' });
+		expect(watch.decideContestGap(alerted, contestedOnFour, NOW)).toEqual({
+			action: 'record',
+			signature: '4<5',
+			isAlerting: false,
+		});
 	});
 
 	it('clears the gap once a contest put our snapshot on chain', () => {
@@ -104,6 +118,13 @@ describe('applyContestGapObservation', () => {
 		expect(mockTrigger).toHaveBeenCalledWith(
 			expect.objectContaining({ hydraHeadId: 'head-1', closedSnapshotNumber: 3, verifiedSnapshotNumber: 5 }),
 		);
+	});
+
+	it('alerts in the same write that records a gap first seen past the deadline', async () => {
+		const pastDeadline = { ...closedOnThree, status: HydraHeadStatus.FanoutPossible };
+		await watch.applyContestGapObservation({ id: 'head-1', ...empty }, pastDeadline, NOW);
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockTrigger).toHaveBeenCalledWith(expect.objectContaining({ gapSince: NOW.toISOString() }));
 	});
 
 	it('stays quiet when another instance claimed the alert first', async () => {

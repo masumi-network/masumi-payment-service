@@ -39,8 +39,8 @@ export type ContestObservation = {
 export type ContestGapDecision =
 	/** No gap: clear whatever was recorded. */
 	| { action: 'clear' }
-	/** A gap we have not seen before: start its clock. */
-	| { action: 'record'; signature: string }
+	/** A gap we have not seen before: start its clock, and alert at once when fanout is already possible. */
+	| { action: 'record'; signature: string; isAlerting: boolean }
 	/** Nothing to write. */
 	| { action: 'unchanged' }
 	/** The same gap, past the grace period or past the deadline, not yet alerted. */
@@ -56,15 +56,39 @@ export function decideContestGap(
 			? { action: 'unchanged' }
 			: { action: 'clear' };
 	}
+	const isFanoutPossible = observed.status === HydraHeadStatus.FanoutPossible;
 	const signature = `${observed.closedSnapshotNumber}<${observed.verifiedSnapshotNumber}`;
 	if (stored.contestGapSignature !== signature || stored.contestGapSince === null) {
-		return { action: 'record', signature };
+		return { action: 'record', signature, isAlerting: isFanoutPossible };
 	}
 	if (stored.contestGapAlertedAt !== null) return { action: 'unchanged' };
 	const isGraceOver = now.getTime() - stored.contestGapSince.getTime() >= CONTEST_GRACE_MS;
-	return isGraceOver || observed.status === HydraHeadStatus.FanoutPossible
-		? { action: 'alert' }
-		: { action: 'unchanged' };
+	return isGraceOver || isFanoutPossible ? { action: 'alert' } : { action: 'unchanged' };
+}
+
+async function announceContestGap(
+	hydraHeadId: string,
+	observed: ContestObservation,
+	gapSince: Date,
+	now: Date,
+): Promise<void> {
+	const message = `The head is closed on snapshot ${observed.closedSnapshotNumber} and no contest put snapshot ${observed.verifiedSnapshotNumber} on chain. A fanout pays out the older snapshot.`;
+	logger.warn('[HydraContestWatch] no contest landed for a newer snapshot', {
+		hydraHeadId,
+		headStatus: observed.status,
+		closedSnapshotNumber: observed.closedSnapshotNumber.toString(),
+		verifiedSnapshotNumber: observed.verifiedSnapshotNumber.toString(),
+		gapSince: gapSince.toISOString(),
+	});
+	await recordHeadError(hydraHeadId, observed.status, HydraErrorType.ContestMissing, message, 'ContestWatch');
+	await webhookEventsService.triggerHydraHeadContestMissing({
+		hydraHeadId,
+		headStatus: observed.status,
+		closedSnapshotNumber: Number(observed.closedSnapshotNumber),
+		verifiedSnapshotNumber: Number(observed.verifiedSnapshotNumber),
+		gapSince: gapSince.toISOString(),
+		checkedAt: now.toISOString(),
+	});
 }
 
 /**
@@ -87,35 +111,25 @@ export async function applyContestGapObservation(
 				data: { contestGapSignature: null, contestGapSince: null, contestGapAlertedAt: null },
 			});
 			break;
-		case 'record':
-			await database.hydraHead.updateMany({
+		case 'record': {
+			const recorded = await database.hydraHead.updateMany({
 				where: readState,
-				data: { contestGapSignature: decision.signature, contestGapSince: now, contestGapAlertedAt: null },
+				data: {
+					contestGapSignature: decision.signature,
+					contestGapSince: now,
+					contestGapAlertedAt: decision.isAlerting ? now : null,
+				},
 			});
+			if (decision.isAlerting && recorded.count === 1) await announceContestGap(head.id, observed, now, now);
 			break;
+		}
 		case 'alert': {
 			const claimed = await database.hydraHead.updateMany({
 				where: { ...readState, contestGapAlertedAt: null },
 				data: { contestGapAlertedAt: now },
 			});
 			if (claimed.count !== 1 || head.contestGapSince === null) return 'unchanged';
-			const message = `The head is closed on snapshot ${observed.closedSnapshotNumber} and no contest put snapshot ${observed.verifiedSnapshotNumber} on chain. A fanout pays out the older snapshot.`;
-			logger.warn('[HydraContestWatch] no contest landed for a newer snapshot', {
-				hydraHeadId: head.id,
-				headStatus: observed.status,
-				closedSnapshotNumber: observed.closedSnapshotNumber.toString(),
-				verifiedSnapshotNumber: observed.verifiedSnapshotNumber.toString(),
-				gapSince: head.contestGapSince.toISOString(),
-			});
-			await recordHeadError(head.id, observed.status, HydraErrorType.ContestMissing, message, 'ContestWatch');
-			await webhookEventsService.triggerHydraHeadContestMissing({
-				hydraHeadId: head.id,
-				headStatus: observed.status,
-				closedSnapshotNumber: Number(observed.closedSnapshotNumber),
-				verifiedSnapshotNumber: Number(observed.verifiedSnapshotNumber),
-				gapSince: head.contestGapSince.toISOString(),
-				checkedAt: now.toISOString(),
-			});
+			await announceContestGap(head.id, observed, head.contestGapSince, now);
 			break;
 		}
 		case 'unchanged':
