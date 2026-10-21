@@ -149,7 +149,10 @@ describe('initHeadPost, on a node with unsafe L2 params', () => {
 	it('answers 502 without a head error when the params cannot be read', async () => {
 		mockNodeGet.mockRejectedValue(new Error('connect ECONNREFUSED'));
 
-		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({ statusCode: 502 });
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 502,
+			expose: true,
+		});
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
 		expect(mockInit).not.toHaveBeenCalled();
 	});

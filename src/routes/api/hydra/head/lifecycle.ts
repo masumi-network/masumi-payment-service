@@ -120,8 +120,11 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			let maxTxSize: unknown;
 			try {
 				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
-			} catch {
-				throw createHttpError(502, "Could not read the L2 maxTxSize from this head's node. Try again later");
+			} catch (error) {
+				throw createHttpError(502, "Could not read the L2 maxTxSize from this head's node. Try again later", {
+					cause: error,
+					expose: true,
+				});
 			}
 			if (typeof maxTxSize !== 'number') {
 				throw createHttpError(409, "This head's node reports no numeric L2 maxTxSize, so it cannot be checked");
