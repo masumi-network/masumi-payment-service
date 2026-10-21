@@ -24,6 +24,8 @@ import {
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { recordHeadError } from '@/services/hydra-head-error/record';
+import { recordUnburnedL2Mint } from '@/services/hydra-head-error/unburned-l2-mint';
+import type { L2MintIncident } from '@/lib/hydra/hydra/l2-mint-tally';
 import { HydraErrorType, HydraHeadStatus, Network } from '@/generated/prisma/client';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
@@ -511,6 +513,14 @@ export class HydraConnectionManager {
 					error: recordError instanceof Error ? recordError.message : recordError,
 				});
 			});
+		});
+
+		// The head's net L2 mint balance left zero; an unburned L2-minted token
+		// blocks its final fanout. The row deduplicates itself per incident. The
+		// report can come from replay before any live status, as a rejected
+		// history can, so an unknown status is recorded as Connecting.
+		head.mainNode.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => {
+			void recordUnburnedL2Mint(hydraHeadId, head.status ?? HydraHeadStatus.Connecting, incident);
 		});
 
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {

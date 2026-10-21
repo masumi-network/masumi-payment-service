@@ -26,6 +26,26 @@ export function describeUnits(units: Iterable<string>): { count: number; sample:
 }
 
 /**
+ * The transaction that took the head's net L2 mint balance from zero to
+ * nonzero, and the units with a nonzero net after its snapshot, each with its
+ * signed net (`<unit> +1`). A negative net is a committed L1 token burned in
+ * the head; later transactions in the same snapshot may have added units.
+ * It stays the same on every replay of the same history, so it names the
+ * incident however often it is reported.
+ */
+export interface L2MintIncident {
+	txHash: string;
+	snapshotNumber: number;
+	netUnits: { count: number; sample: string[] };
+}
+
+/** Net L2 mint per unit (zero entries dropped), and the incident behind a nonzero balance. */
+export interface L2MintTally {
+	units: Map<string, bigint>;
+	openedBy?: L2MintIncident;
+}
+
+/**
  * What the history replay can vouch for: the units still unburned as of the
  * signed snapshot whose outputs are `verifiedOutputs` (keyed `txid#index`,
  * lowercase). The node's HTTP UTxO view runs ahead of the replay, and a peer
@@ -43,32 +63,38 @@ export interface L2MintCheck {
  * from L1): no transaction behind it was tallied, so it vouches for no output.
  */
 export function buildL2MintCheck(
-	tally: ReadonlyMap<string, bigint>,
+	tally: L2MintTally,
 	snapshot: { number: number; outputs: ReadonlyMap<string, string> },
 ): L2MintCheck {
 	return {
-		unburnedUnits: new Set(tally.keys()),
+		unburnedUnits: new Set(tally.units.keys()),
 		verifiedOutputs: snapshot.number === 0 ? new Map() : snapshot.outputs,
 	};
 }
 
 /**
- * Add the mint field of each transaction into `tally` (unit → net quantity).
- * A unit whose net reaches zero is dropped, so the keys are exactly the units
- * still outstanding. Logs only when the head starts or stops holding such
- * units: a peer decides how often it mints.
+ * Add the mint field of each transaction into `tally.units` (unit → net
+ * quantity). A unit whose net reaches zero is dropped, so the keys are exactly
+ * the units still outstanding. Sets `tally.openedBy` when one of these
+ * transactions took the balance from zero to nonzero and it is still nonzero
+ * at the end, and clears it at zero. Logs only when the head starts or stops
+ * holding such units: a peer decides how often it mints.
  *
  * Only called on transactions the conservation check has already decoded.
  */
 export function recordL2TransactionMints(
-	tally: Map<string, bigint>,
+	tally: L2MintTally,
 	transactions: readonly HydraTransaction[],
 	snapshotNumber: number,
 ): void {
-	const wasClear = tally.size === 0;
+	const units = tally.units;
+	const wasOpen = tally.openedBy !== undefined;
+	let openingTxHash: string | undefined;
 	for (const { cborHex } of transactions) {
-		const mint = FixedTransaction.from_bytes(Buffer.from(cborHex, 'hex')).body().mint();
+		const transaction = FixedTransaction.from_bytes(Buffer.from(cborHex, 'hex'));
+		const mint = transaction.body().mint();
 		if (!mint) continue;
+		const wasClear = units.size === 0;
 		// CSL lists a repeated policy key once per entry, and `get` returns every
 		// group for it each time, so visit each policy once.
 		const seenPolicies = new Set<string>();
@@ -92,21 +118,25 @@ export function recordL2TransactionMints(
 					const signed = positive ? BigInt(positive.to_str()) : negative ? -BigInt(negative.to_str()) : 0n;
 					// `.name()`, not `.to_hex()`: the latter CBOR-wraps the asset name.
 					const unit = `${policy.to_hex()}${Buffer.from(name.name()).toString('hex')}`.toLowerCase();
-					const net = (tally.get(unit) ?? 0n) + signed;
-					if (net === 0n) tally.delete(unit);
-					else tally.set(unit, net);
+					const net = (units.get(unit) ?? 0n) + signed;
+					if (net === 0n) units.delete(unit);
+					else units.set(unit, net);
 				}
 			}
 		}
+		if (wasClear && units.size > 0) openingTxHash = transaction.transaction_hash().to_hex().toLowerCase();
 	}
-	if (wasClear && tally.size > 0) {
-		logger.error('[HydraNode] The head holds a nonzero L2 mint balance; unburned L2-minted tokens block finalization', {
-			snapshotNumber,
-			unburnedUnits: describeUnits(tally.keys()),
-		});
-	} else if (!wasClear && tally.size === 0) {
-		logger.info('[HydraNode] The head L2 mint balance is back to zero', { snapshotNumber });
+	if (units.size === 0) {
+		tally.openedBy = undefined;
+		if (wasOpen) logger.info('[HydraNode] The head L2 mint balance is back to zero', { snapshotNumber });
+		return;
 	}
+	if (openingTxHash === undefined) return;
+	const netUnits = describeUnits([...units].map(([unit, net]) => `${unit} ${net > 0n ? '+' : ''}${net}`));
+	tally.openedBy = { txHash: openingTxHash, snapshotNumber, netUnits };
+	logger.error('[HydraNode] The head holds a nonzero L2 mint balance; unburned L2-minted tokens block finalization', {
+		...tally.openedBy,
+	});
 }
 
 /**

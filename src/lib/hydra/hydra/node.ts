@@ -255,6 +255,7 @@ export class HydraNode extends EventEmitter {
 			emitTxConfirmed: (txId, transaction) => {
 				this.emit(HydraNodeEvent.TxConfirmed, txId, transaction);
 			},
+			reportL2MintOutstanding: (incident) => this.emit(HydraNodeEvent.L2MintOutstanding, incident),
 			onProtocolDrift: (description) => {
 				this.emit(HydraNodeEvent.ProtocolDriftDetected, description);
 			},

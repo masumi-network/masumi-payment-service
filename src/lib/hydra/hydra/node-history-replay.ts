@@ -41,7 +41,7 @@ import {
 	hasFinalizedUtxoField,
 } from './schemas';
 import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
-import { buildL2MintCheck, recordL2TransactionMints, type L2MintCheck } from './l2-mint-tally';
+import * as l2Mint from './l2-mint-tally';
 import {
 	completeHydraSnapshotVerification,
 	doesHydraTransactionTransitionReachSnapshot,
@@ -98,6 +98,7 @@ export interface HistoryReplayHost {
 	rememberReplayedDeposit(data: DepositRecordedData): void;
 	rememberReplayedDecommit(data: DecommitSettledData): void;
 	emitTxConfirmed(txId: string, transaction: HydraConfirmedTransaction): void;
+	reportL2MintOutstanding(incident: l2Mint.L2MintIncident): void;
 	onProtocolDrift(description: string): void;
 	/** Rotation is fatal for this client instance: tear down the live session and both transports. */
 	onRotationReplayFailure(error: HydraProtocolError): void;
@@ -153,8 +154,8 @@ export class HydraHistoryReplay {
 	/** Unknown snapshot fields already reported, so a replay says it once. */
 	private readonly _reportedDriftFields = new Set<string>();
 
-	/** Net L2 mint per unit over this pass's confirmed transactions; see `l2-mint-tally`. */
-	private readonly _l2MintTally = new Map<string, bigint>();
+	/** Net L2 mint over this pass's confirmed transactions, reported while current; see `l2-mint-tally`. */
+	private _l2MintTally: l2Mint.L2MintTally = { units: new Map() };
 
 	constructor(
 		private readonly connection: Connection,
@@ -187,9 +188,9 @@ export class HydraHistoryReplay {
 	}
 
 	/** Unburned L2 mints as of the last verified snapshot. Undefined until this pass has replayed the whole history. */
-	get l2MintCheck(): L2MintCheck | undefined {
-		const snapshot = this._verifiedSnapshot;
-		return this._complete && !this._failed && snapshot ? buildL2MintCheck(this._l2MintTally, snapshot) : undefined;
+	get l2MintCheck(): l2Mint.L2MintCheck | undefined {
+		const snapshot = this._complete && !this._failed ? this._verifiedSnapshot : undefined;
+		return snapshot && l2Mint.buildL2MintCheck(this._l2MintTally, snapshot);
 	}
 
 	fail(error: unknown): void {
@@ -239,7 +240,7 @@ export class HydraHistoryReplay {
 		this._partyIdentityVerified = false;
 		this._verifiedSnapshot = undefined;
 		this._lastVerifiedFrame = undefined;
-		this._l2MintTally.clear();
+		this._l2MintTally = { units: new Map() };
 		const rotationError = this.host.persistenceRotationError;
 		if (rotationError) {
 			this._failed = true;
@@ -476,6 +477,7 @@ export class HydraHistoryReplay {
 				if (this._complete) {
 					this._error = undefined;
 					this.ledger.trim();
+					if (this._l2MintTally.openedBy) this.host.reportL2MintOutstanding(this._l2MintTally.openedBy);
 				} else this.maybeRestartTruncated();
 			}
 		} catch (error) {
@@ -722,7 +724,8 @@ export class HydraHistoryReplay {
 			);
 		}
 		this.captureVerifiedFrame(verifiedSnapshot, parsedMessage);
-		recordL2TransactionMints(this._l2MintTally, transitionTransactions, verifiedSnapshot.number);
+		l2Mint.recordL2TransactionMints(this._l2MintTally, transitionTransactions, verifiedSnapshot.number);
+		if (this._complete && this._l2MintTally.openedBy) this.host.reportL2MintOutstanding(this._l2MintTally.openedBy);
 		const protectedProducerTxIds = this.ledger.resolveProtectedSnapshotProducerTxIds(verifiedSnapshot);
 		// Hydra 2.3 signatures authenticate only the TxOut multiset. Recording
 		// tx ids/CBOR therefore additionally relies on this explicitly configured

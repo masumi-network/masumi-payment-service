@@ -24,6 +24,7 @@ import {
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
+import type { L2MintIncident } from './l2-mint-tally';
 import {
 	HydraProtocolError,
 	HydraTransactionRejectedError,
@@ -748,6 +749,68 @@ describe('HydraNode', () => {
 			finishHistoryReplay(historyConnection);
 			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set());
 			expect(node.l2MintCheck?.verifiedOutputs.has(`${burnTx.txId}#0`)).toBe(true);
+		});
+
+		// The operator record is written from this event. It must not fire for
+		// history still being read, must fire again on a later pass so a restart
+		// cannot lose it, and must name the transaction that opened the incident.
+		it('reports an unburned mint once the replay is current', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const reported: string[] = [];
+			node.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => reported.push(incident.txHash));
+			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
+			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
+			const remintTx = makeMintingHydraTransaction(burnTx.txId, 7_000_000, 1);
+			const laterTx = makeMintingHydraTransaction(remintTx.txId, 6_000_000, 1);
+			const history = [
+				signedSnapshotFrame({
+					seq: 1,
+					number: 1,
+					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
+					confirmed: [],
+				}),
+				signedSnapshotFrame({
+					seq: 2,
+					number: 2,
+					utxo: { [`${mintTx.txId}#0`]: mintedTokenOutput(9_000_000) },
+					confirmed: [mintTx],
+				}),
+			];
+			for (const frame of history) historyConnection.emit('message', JSON.stringify(frame));
+			expect(reported).toEqual([]);
+			finishHistoryReplay(historyConnection);
+			expect(reported).toEqual([mintTx.txId]);
+
+			historyConnection.emit('close');
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			for (const frame of history) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			expect(reported).toEqual([mintTx.txId, mintTx.txId]);
+
+			// Live from here: the burn closes the incident, the next mint opens a
+			// new one, and each later snapshot reports it again while it is open.
+			const live = [
+				signedSnapshotFrame({
+					seq: 3,
+					number: 3,
+					utxo: { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) },
+					confirmed: [burnTx],
+				}),
+				signedSnapshotFrame({
+					seq: 4,
+					number: 4,
+					utxo: { [`${remintTx.txId}#0`]: mintedTokenOutput(7_000_000) },
+					confirmed: [remintTx],
+				}),
+				signedSnapshotFrame({
+					seq: 5,
+					number: 5,
+					utxo: { [`${laterTx.txId}#0`]: mintedTokenOutput(6_000_000) },
+					confirmed: [laterTx],
+				}),
+			];
+			for (const frame of live) historyConnection.emit('message', JSON.stringify(frame));
+			expect(reported).toEqual([mintTx.txId, mintTx.txId, remintTx.txId, remintTx.txId]);
 		});
 
 		// A head with no signed snapshot, or a node rebuilt from L1, states its
