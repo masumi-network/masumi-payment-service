@@ -160,10 +160,11 @@ const RELEASE_ACKNOWLEDGED_DEPOSIT =
  * replaces it. Recovering the deposit clears the node's record of the deposit
  * in flight, so the next deposit makes the leader request a snapshot that every
  * node rejects (`ReqSnCommitNotSettled`), and that leader then requests no
- * other snapshot. A side-load that resets a round clears the record too, which
- * is why the refusal does not suggest one. Left alone, the record holds the
- * next deposit back, and once this deposit has expired the next transaction's
- * snapshot drops it (hydra-node 2.4.1 `HeadLogic`).
+ * other snapshot. A side-load of a confirmed snapshot, which is how a round is
+ * reset, clears the record too, which is why the refusal does not suggest one.
+ * Left alone, the record holds the next deposit back, and once this deposit
+ * has expired the next transaction's snapshot drops it (hydra-node 2.4.1
+ * `HeadLogic`).
  */
 async function refuseAcknowledgedDeposit(
 	node: HydraNode,
@@ -199,7 +200,7 @@ async function refuseAcknowledgedDeposit(
 			depositTxHash,
 			requested: false,
 			reason:
-				'the head has acknowledged this deposit in a snapshot it signed and may still absorb it before its deadline. Wait for the deposit to be absorbed. If it stays unabsorbed, submitting any transaction in the head makes the node try the increment again',
+				'the head has acknowledged this deposit in a snapshot it signed and may still absorb it before its deadline. Wait for the deposit to be absorbed',
 		};
 	}
 	const absorbOutlook =
