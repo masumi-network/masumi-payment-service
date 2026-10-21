@@ -25,6 +25,8 @@ const { PENDING_EXPIRED_REASON, PENDING_EXPIRED_REASONS } = await import('./stal
 const HEAD = 'head-1';
 const TX = 'a'.repeat(64);
 
+const OBSERVED_AT = new Date('2026-08-05T22:37:49.553Z');
+
 const OPEN_ROW = { id: 'decommit-1', approvedAt: null, l1TxId: null };
 
 beforeEach(() => {
@@ -118,7 +120,7 @@ describe('applyDecommitOutcome', () => {
 	// found by head alone. Requiring an id here dropped every finalization and
 	// left settled withdrawals reading as still paying out.
 	it('finalizes a withdrawal the head did not name', async () => {
-		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized' })).toBe(true);
+		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT })).toBe(true);
 
 		expect(findClauses()[0].decommitTxId).toBeUndefined();
 		expect(mockUpdate.mock.calls[0]![0].data.status).toBe('Finalized');
@@ -154,10 +156,18 @@ describe('applyDecommitOutcome', () => {
 		expect(mockUpdate.mock.calls[0]![0].data.approvedAt).toBeInstanceOf(Date);
 	});
 
-	// Older heads report no timestamp; the filter is dropped rather than being
-	// applied against a guessed time.
-	it('does not filter by age when the head reported no timestamp', async () => {
-		await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized' });
+	// M3: without a time the age filter cannot run, so a replayed finalization
+	// from an earlier withdrawal would settle the sole one open today.
+	it('ignores an unnamed finalization that carries no timestamp', async () => {
+		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized' })).toBe(false);
+
+		expect(mockFindMany).not.toHaveBeenCalled();
+		expect(mockUpdate).not.toHaveBeenCalled();
+	});
+
+	// A named finalization is matched by its id, so it needs no time.
+	it('does not filter a named finalization by age when the head reported no timestamp', async () => {
+		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'finalized' });
 
 		expect(findClauses()).toHaveLength(1);
 	});
@@ -167,7 +177,9 @@ describe('applyDecommitOutcome', () => {
 	it('refuses to attribute an unnamed finalization when several are open', async () => {
 		mockFindMany.mockResolvedValue([OPEN_ROW, { ...OPEN_ROW, id: 'decommit-2' }]);
 
-		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized' })).toBe(false);
+		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT })).toBe(
+			false,
+		);
 		expect(mockUpdate).not.toHaveBeenCalled();
 	});
 
@@ -178,6 +190,7 @@ describe('applyDecommitOutcome', () => {
 		await applyDecommitOutcome({
 			hydraHeadId: HEAD,
 			outcome: 'finalized',
+			observedAt: OBSERVED_AT,
 			distributed: { lovelace: 4_829_879n, assets: { '67ab': '1' } },
 		});
 
@@ -249,7 +262,7 @@ describe('applyDecommitOutcome on an expired withdrawal', () => {
 		mockUpdateMany.mockReturnValueOnce(new Promise((resolve) => (releaseApproval = resolve)));
 
 		const approval = applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'approved' });
-		const finalization = applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized' });
+		const finalization = applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT });
 		await new Promise((resolve) => setImmediate(resolve));
 		expect(mockFindMany).not.toHaveBeenCalled();
 
@@ -298,7 +311,7 @@ describe('applyDecommitOutcome on an expired withdrawal', () => {
 	// An unnamed finalization could belong to any withdrawal of the head: a
 	// replayed one from a later request would otherwise mark the expired row paid.
 	it('never attributes an unnamed finalization to an expired row', async () => {
-		await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized' });
+		await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT });
 
 		expect(findClauses()[0]).toEqual({ status: { in: ['Preparing', 'Pending', 'Approved'] } });
 	});
