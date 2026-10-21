@@ -14,8 +14,12 @@
  * It does not refuse the boot. A Host that would not start would also stop the
  * nodes of heads already open on that file, and an open head whose node is
  * down cannot contest a close. A node acked and peered before the restart still
- * starts, and the payment service refuses to Init a head on it. A missing file
- * is a different fault and still stops the boot (src/index.ts).
+ * starts, and the payment service refuses to Init a head on it. That check reads
+ * only the node of the side that Inits, the redeemer, so the issuer's node is not
+ * checked there. Every node must sign each snapshot, so the smaller of the two
+ * limits should bind the head (INFERRED from the snapshot protocol, not
+ * measured). A missing file is a different fault and still stops the boot
+ * (src/index.ts).
  */
 
 import { readFileSync } from 'node:fs';

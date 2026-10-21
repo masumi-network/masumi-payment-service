@@ -230,7 +230,10 @@ Document all four limits. Build against none of them.
   (`packages/hydra-host/src/ledger-params.ts`). A node acked and peered before
   such a restart still starts, and so does any node on an older Host build:
   this service refuses to Init a head on a node whose L2 `maxTxSize` is above
-  15,000.
+  15,000. That check reads only the node of the side that Inits, the
+  redeemer, so the issuer's node is not checked there. Every node must sign
+  each snapshot, so the smaller of the two limits should bind the head
+  (INFERRED from the Hydra snapshot protocol, not measured).
 - _Original consequence, kept for the record:_ we remain exposed to limit 3
   by construction. It requires a counterparty to
   deliberately park an output with a very large resting datum, costs them its
