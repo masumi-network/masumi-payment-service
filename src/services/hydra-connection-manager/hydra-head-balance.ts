@@ -56,9 +56,10 @@ export interface HydraHeadOwnBalance {
 	/** Lovelace held by those UTxOs. */
 	l2MintedLovelace: string;
 	/**
-	 * Whether the history replay is current, so the two fields above are checked.
-	 * False right after a connect and while the replay has failed: then no UTxO
-	 * counts as L2-minted, and `spendableBalance` can read high.
+	 * Whether the history replay is current, so the two fields above count every
+	 * L2-minted UTxO it has verified. False right after a connect and until the
+	 * replay completes: then no UTxO counts as L2-minted, and `spendableBalance`
+	 * can read high.
 	 */
 	l2MintChecked: boolean;
 	/**

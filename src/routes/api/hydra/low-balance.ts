@@ -32,7 +32,11 @@ export const hydraLowBalanceRuleSchema = z
 		enabled: z.boolean(),
 		topupEnabled: z.boolean(),
 		topupAmount: z.string().nullable(),
-		status: z.nativeEnum(LowBalanceStatus),
+		status: z
+			.nativeEnum(LowBalanceStatus)
+			.describe(
+				'Last evaluated state. A Low rule stays Low on a reading the history replay has not checked, so lastKnownAmount can be at or above the threshold while it is Low.',
+			),
 		lastKnownAmount: z.string().nullable(),
 		lastCheckedAt: z.string().nullable(),
 		lastAlertedAt: z.string().nullable(),

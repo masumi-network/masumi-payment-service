@@ -151,8 +151,6 @@ describe('evaluateHydraLowBalanceRules', () => {
 		expect(mockUpdate).not.toHaveBeenCalled();
 	});
 
-	// ADA under an unburned L2-minted token is in the head but the service
-	// never spends it. Counting it kept a head with nothing usable from alerting.
 	// An unchecked reading can count funds the service will not spend. A rule set
 	// Healthy by it alerts again once the replay is current, on every reconnect.
 	it('keeps the status on a reading the replay has not checked', async () => {
@@ -168,6 +166,19 @@ describe('evaluateHydraLowBalanceRules', () => {
 		});
 	});
 
+	// An unchecked reading is never lower than the checked one, so it can still
+	// show a rule is Low. A failed replay must not silence the alert.
+	it('alerts on a reading the replay has not checked when it is below the threshold', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockGetOwnInHeadBalance.mockResolvedValue({ ...balance('10000000'), l2MintChecked: false });
+
+		const alerts = await evaluateHydraLowBalanceRules();
+
+		expect(alerts).toHaveLength(1);
+	});
+
+	// ADA under an unburned L2-minted token is in the head but the service
+	// never spends it. Counting it kept a head with nothing usable from alerting.
 	it('compares the spendable balance, not the total the head reports', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockGetOwnInHeadBalance.mockResolvedValue(balance('60000000', '', '10000000'));

@@ -7,6 +7,8 @@ const mockFindMany = jest.fn() as AnyMock;
 const mockCount = jest.fn() as AnyMock;
 const mockExecuteHydraTopup = jest.fn() as AnyMock;
 const mockLoggerWarn = jest.fn() as AnyMock;
+const mockLoggerError = jest.fn() as AnyMock;
+const mockGetOwnInHeadBalance = jest.fn() as AnyMock;
 
 const mockIsHydraHeadOnPausedHost = jest.fn() as AnyMock;
 const mockUnburnedUnits = new Set<string>();
@@ -18,6 +20,10 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 			l2MintCheck: isReplayCurrent ? { unburnedUnits: mockUnburnedUnits, verifiedOutputs: new Map() } : undefined,
 		}),
 	}),
+}));
+
+jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-head-balance', () => ({
+	getOwnInHeadBalance: mockGetOwnInHeadBalance,
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
@@ -36,7 +42,7 @@ jest.unstable_mockModule('@/services/hydra-topup/execute', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: mockLoggerWarn, error: jest.fn(), debug: jest.fn() },
+	logger: { info: jest.fn(), warn: mockLoggerWarn, error: mockLoggerError, debug: jest.fn() },
 }));
 
 let runHydraAutoTopupCycle: typeof import('./auto-topup').runHydraAutoTopupCycle;
@@ -51,6 +57,7 @@ function rule(overrides: Record<string, unknown> = {}) {
 		hydraLocalParticipantId: 'participant-1',
 		assetUnit: 'lovelace',
 		topupAmount: 100_000_000n,
+		thresholdAmount: 50_000_000n,
 		status: 'Low',
 		LocalParticipant: { id: 'participant-1', HydraHead: { id: 'head-1', status: 'Open' } },
 		...overrides,
@@ -61,6 +68,7 @@ beforeEach(() => {
 	jest.clearAllMocks();
 	mockUnburnedUnits.clear();
 	isReplayCurrent = true;
+	mockGetOwnInHeadBalance.mockResolvedValue({ connected: true, l2MintChecked: true, spendableBalance: [] });
 	mockCount.mockResolvedValue([]);
 	mockIsHydraHeadOnPausedHost.mockResolvedValue(false);
 	mockExecuteHydraTopup.mockResolvedValue({ topupId: 't1', depositTxHash: 'a'.repeat(64) });
@@ -133,10 +141,27 @@ describe('runHydraAutoTopupCycle', () => {
 		expect(mockExecuteHydraTopup).toHaveBeenCalledTimes(1);
 	});
 
-	// The monitor does not mark a rule Healthy until the replay is current, so a
-	// deposit now would be followed by another on the next cycle.
+	// The monitor does not mark a rule Healthy until the replay is current, so
+	// the rule's Low status cannot be trusted before then.
 	it('sends no deposit while the history replay is not current', async () => {
 		isReplayCurrent = false;
+		mockGetOwnInHeadBalance.mockResolvedValue({ connected: true, l2MintChecked: false, spendableBalance: [] });
+		mockFindMany.mockResolvedValue([rule()]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+		expect(mockLoggerError).not.toHaveBeenCalled();
+	});
+
+	// A rule held Low through a reconnect, or one whose last deposit was
+	// absorbed after the monitor's last cycle, already has the funds.
+	it('sends no deposit when the spendable balance already covers the threshold', async () => {
+		mockGetOwnInHeadBalance.mockResolvedValue({
+			connected: true,
+			l2MintChecked: true,
+			spendableBalance: [{ unit: '', quantity: '60000000' }],
+		});
 		mockFindMany.mockResolvedValue([rule()]);
 
 		await runHydraAutoTopupCycle();

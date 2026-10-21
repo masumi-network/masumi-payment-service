@@ -3515,6 +3515,9 @@ export type HydraLowBalanceRule = {
     enabled: boolean;
     topupEnabled: boolean;
     topupAmount: string | null;
+    /**
+     * Last evaluated state. A Low rule stays Low on a reading the history replay has not checked, so lastKnownAmount can be at or above the threshold while it is Low.
+     */
     status: 'Unknown' | 'Healthy' | 'Low';
     lastKnownAmount: string | null;
     lastCheckedAt: string | null;
@@ -15381,7 +15384,7 @@ export type GetHydraHeadBalanceResponses = {
              */
             l2MintedLovelace: string;
             /**
-             * True when the history replay is current, so l2MintedUtxoCount and spendableBalance are checked. False right after a connect and while the replay has failed: then no UTxO counts as L2-minted, and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading.
+             * True when the history replay is current, so l2MintedUtxoCount counts every L2-minted UTxO the replay has verified; spendableBalance still counts token UTxOs from transactions it has not reached. False right after a connect and until the replay completes: then no UTxO counts as L2-minted, and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading, and auto top-up waits.
              */
             l2MintChecked: boolean;
             /**

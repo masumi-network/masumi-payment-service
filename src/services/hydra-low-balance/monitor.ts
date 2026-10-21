@@ -3,6 +3,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { webhookEventsService } from '@/services/webhooks/events.service';
+import { spendableAmountOf } from './spendable-amount';
 
 export type HydraLowBalanceAlert = {
 	ruleId: string;
@@ -31,12 +32,6 @@ export type HydraLowBalanceAlert = {
  */
 const LOW_BALANCE_REALERT_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-/** Rule `assetUnit` uses 'lovelace'; the balance snapshot keys ADA as ''. */
-function balanceKeyForAssetUnit(assetUnit: string): string {
-	const normalized = assetUnit.toLowerCase();
-	return normalized === 'lovelace' ? '' : normalized;
-}
-
 /**
  * Evaluate every enabled Hydra low-balance rule against its participant's OWN
  * spendable in-head balance and advance each rule's status. Returns the rules that
@@ -64,10 +59,7 @@ export async function evaluateHydraLowBalanceRules(): Promise<HydraLowBalanceAle
 
 			// Spendable funds only: ADA under an unburned L2-minted token is in the
 			// head but no use to us, and counting it kept a starved head from alerting.
-			const key = balanceKeyForAssetUnit(rule.assetUnit);
-			const currentAmount = BigInt(
-				balance.spendableBalance.find((asset) => asset.unit.toLowerCase() === key)?.quantity ?? '0',
-			);
+			const currentAmount = spendableAmountOf(balance, rule.assetUnit);
 			const checkedAt = new Date();
 
 			if (currentAmount < rule.thresholdAmount) {
