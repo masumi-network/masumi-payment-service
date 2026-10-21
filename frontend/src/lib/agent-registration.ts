@@ -375,9 +375,9 @@ export function buildAgentMetadataPayload(
     contactOther?: string;
     organization?: string;
   } = {
-    // Preserve the operator's real input, empty included. The backend
-    // accepts an empty author name; defaulting it to a placeholder would
-    // fabricate on-chain authorship that was never entered.
+    // The operator's real input, never a placeholder. The form and the backend
+    // both require it, because the registry cannot read an agent with an empty
+    // author name.
     name: data.authorName ?? '',
   };
   if (data.authorEmail) author.contactEmail = data.authorEmail;

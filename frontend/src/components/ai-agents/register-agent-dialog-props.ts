@@ -3,7 +3,8 @@ import type { RegistryEntry } from '@/lib/api/generated';
 export interface RegisterAIAgentDialogProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  /** Called after a registration or update was accepted. A new registration passes the id of its registry request. */
+  onSuccess: (registryRequestId?: string) => void;
   /**
    * When set, the dialog operates in update mode for the given agent: the
    * form pre-fills with the agent's current metadata, the selling wallet

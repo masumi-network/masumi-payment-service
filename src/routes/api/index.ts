@@ -101,6 +101,7 @@ import {
 } from './fund-wallet';
 import { getFundDistributionEndpointGet, triggerFundDistributionEndpointPost } from './fund-distribution';
 import { railReadinessEndpointGet } from './rail-readiness';
+import { agentValidationHashPost, agentValidationProbePost, agentValidationValidatePost } from './agent-validation';
 import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
@@ -618,6 +619,17 @@ export const apiRouter: Routing = {
 		},
 		'rail-readiness': {
 			get: railReadinessEndpointGet,
+		},
+		'agent-validation': {
+			probe: {
+				post: agentValidationProbePost,
+			},
+			validate: {
+				post: agentValidationValidatePost,
+			},
+			hash: {
+				post: agentValidationHashPost,
+			},
 		},
 		reports: {
 			facets: {

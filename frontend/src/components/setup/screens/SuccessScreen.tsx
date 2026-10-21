@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
@@ -92,6 +93,15 @@ export function SuccessScreen({
             Go to dashboard{' '}
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
           </Button>
+          <p className="mt-3 text-center text-sm text-muted-foreground">
+            Releasing an agent?{' '}
+            <Link
+              href="/agent-validation"
+              className="text-primary underline underline-offset-2 hover:no-underline"
+            >
+              Validate your agent
+            </Link>
+          </p>
         </div>
       </CardContent>
     </Card>

@@ -46,7 +46,7 @@ export function RegisterAgentAdditionalSection({
       {show && (
         <>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Author Name</label>
+            <label className="text-sm font-medium">Author Name *</label>
             <Input
               {...register('authorName')}
               placeholder="Enter the author's name"

@@ -202,6 +202,9 @@ importers:
       json-bigint:
         specifier: 1.0.0
         version: 1.0.0
+      json-canonicalize:
+        specifier: 3.0.1
+        version: 3.0.1
       jspdf:
         specifier: ^4.2.1
         version: 4.2.1
@@ -6595,6 +6598,10 @@ packages:
 
   json-buffer@3.0.1:
     resolution: {integrity: sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ==}
+
+  json-canonicalize@3.0.1:
+    resolution: {integrity: sha512-xEzkTucfHhDooWOSMOvrlll9oTk6/mXZIerF2DFWA2chHZsnc2zrmAKjVOyDbSYHr0e3Djx9F89nZ3U2Bn+lSw==}
+    engines: {node: '>=8.5'}
 
   json-parse-even-better-errors@2.3.1:
     resolution: {integrity: sha512-xyFwyhro/JEof6Ghe2iz2NcXoj2sloNsWr/XsERDK/oiPCfaNhl5ONfp+jQdAZRQQ0IJWNzH9zIZF7li91kh2w==}
@@ -16051,6 +16058,8 @@ snapshots:
       bignumber.js: 9.3.1
 
   json-buffer@3.0.1: {}
+
+  json-canonicalize@3.0.1: {}
 
   json-parse-even-better-errors@2.3.1: {}
 

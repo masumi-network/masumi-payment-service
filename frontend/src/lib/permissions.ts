@@ -42,6 +42,8 @@ export const ADMIN_ONLY_PATHS = [
   '/setup',
   '/x402-setup',
   '/payment-sources',
+  // Registers agents and runs test purchases, so it is for the node operator.
+  '/agent-validation',
   // Every route under /api/v1/hydra is registered with the admin factory, so
   // this page has nothing a read or pay key can load.
   '/hydra-heads',

@@ -194,7 +194,13 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     const legacyOnlyPaymentSources = hasLegacyOnlyPaymentSources(currentNetworkPaymentSources);
     // Pages accessible even without payment sources (shown in setup sidebar).
     // Only consulted on the admin branch below — non-admins never enter setup mode.
-    const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
+    const setupAccessiblePages = [
+      '/api-keys',
+      '/developers',
+      '/settings',
+      '/x402-setup',
+      '/agent-validation',
+    ];
     // The x402 rail stands alone, so don't force Cardano setup for it. Two strengths:
     // - `x402MaybeStandalone` stays true WHILE the chain list is loading, so an EVM
     //   operator on a shared page (e.g. /ai-agents) isn't bounced to Cardano /setup during

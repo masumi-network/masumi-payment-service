@@ -14,6 +14,7 @@ import {
 	metadataSchema,
 	resolveAgentPricingFromMetadata,
 } from '@/routes/api/registry/metadata-schema';
+import { describeMetadataIssues } from '@/routes/api/registry/metadata-issues';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { supportedPaymentSourcesSchema } from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
@@ -259,7 +260,12 @@ export const queryAgentByIdentifierGet = agentIdentifierEndpointFactory.build({
 				error: parsedMetadata.error,
 				agentIdentifier: input.agentIdentifier,
 			});
-			throw createHttpError(422, 'Agent metadata is invalid or malformed');
+			// The metadata is public on-chain data, so naming the offending fields leaks nothing and tells the
+			// registrant what to fix.
+			throw createHttpError(
+				422,
+				`Agent metadata is invalid or malformed: ${describeMetadataIssues(parsedMetadata.error.issues)}`,
+			);
 		}
 
 		if (!isRegistryMetadataAllowedForPaymentSource(parsedMetadata.data, paymentSource.paymentSourceType)) {

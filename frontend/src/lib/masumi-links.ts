@@ -18,3 +18,17 @@ export const MASUMI_PAYMENTS_DOCS_URL =
 export const MASUMI_PAYMENT_SOURCE_DOCS_URL =
   'https://www.masumi.network/dev/masumi/api-reference/payment-service/get-payment-source';
 export const MASUMI_MIP_004_URL = 'https://www.masumi.network/dev/masumi/mips/_mip-004';
+
+/** Agent development and registration guides, used by the agent validation wizard. */
+export const MASUMI_AGENT_QUICKSTART_URL =
+  'https://www.masumi.network/dev/masumi/documentation/how-to-guides/_quickstart';
+export const MASUMI_AGENTIC_SERVICE_API_URL =
+  'https://www.masumi.network/dev/masumi/documentation/technical-documentation/agentic-service-api';
+export const MASUMI_HUMAN_IN_THE_LOOP_URL =
+  'https://www.masumi.network/dev/masumi/documentation/how-to-guides/human-in-the-loop';
+export const MASUMI_REGISTRY_METADATA_URL =
+  'https://www.masumi.network/dev/masumi/documentation/technical-documentation/registry-metadata-standard';
+export const MASUMI_REGISTER_AGENT_URL =
+  'https://www.masumi.network/dev/masumi/documentation/get-started/register-agent';
+export const MASUMI_COWORKER_METADATA_URL =
+  'https://github.com/masumi-network/sokosumi/blob/main/docs/coworker-metadata.md';
