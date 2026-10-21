@@ -223,3 +223,36 @@ export function extractDecommitInFlight(headState: unknown): boolean | undefined
 	if (decommitTx !== null) return undefined;
 	return extractPendingDecommitRefs(headState).length > 0;
 }
+
+/**
+ * Whether the head's confirmed snapshot holds a deposit that the chain has not
+ * settled yet.
+ *
+ * This is hydra-node's own test (2.4.1 `HeadLogic`, `waitForDeposit`): while
+ * the confirmed snapshot carries `utxoToCommit` and the head's version still
+ * equals that snapshot's version, every node rejects a snapshot request that
+ * carries a different deposit (`ReqSnCommitNotSettled`). The version moves on
+ * when the node observes the increment on chain.
+ *
+ * False for any state that cannot show it, so a caller only refuses on
+ * positive evidence.
+ */
+export function extractCommitNotSettled(headState: unknown): boolean {
+	if (!isPlainObject(headState)) return false;
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	const coordinatedHeadState = getOwnPlainObject(state, 'coordinatedHeadState');
+	if (coordinatedHeadState === undefined) return false;
+	const confirmedSnapshot = getOwnPlainObject(coordinatedHeadState, 'confirmedSnapshot');
+	if (confirmedSnapshot === undefined) return false;
+	const snapshot = getOwnPlainObject(confirmedSnapshot, 'snapshot');
+	if (snapshot === undefined) return false;
+	const utxoToCommit = getOwnPlainObject(snapshot, 'utxoToCommit');
+	if (utxoToCommit === undefined || Object.keys(utxoToCommit).length === 0) return false;
+	const version = getOwnValue(coordinatedHeadState, 'version');
+	const snapshotVersion = getOwnValue(snapshot, 'version');
+	if (typeof version !== 'number' || typeof snapshotVersion !== 'number') {
+		logger.warn('[HydraNode] Head state holds a commit but no numeric version pair; treating the commit as settled');
+		return false;
+	}
+	return version === snapshotVersion;
+}

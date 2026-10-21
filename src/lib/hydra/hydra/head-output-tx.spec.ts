@@ -6,7 +6,8 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
 }));
 
-const { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } = await import('./head-output-tx');
+const { extractCommitNotSettled, extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } =
+	await import('./head-output-tx');
 
 const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
 const CLOSE_TX = 'f96e9b1375c44ac6865c19682df5043911f15682db436ba27948421d75ccc2f5';
@@ -324,5 +325,32 @@ describe('extractDecommitInFlight', () => {
 	it('cannot tell from a state without a coordinated head state', () => {
 		expect(extractDecommitInFlight({ tag: 'Idle' })).toBeUndefined();
 		expect(extractDecommitInFlight('not json')).toBeUndefined();
+	});
+});
+
+/**
+ * hydra-node 2.4.1 `waitForDeposit`: a commit is unsettled while the head's
+ * version still equals the confirmed snapshot's version.
+ */
+describe('extractCommitNotSettled', () => {
+	const COMMIT = { [`${OTHER_TX}#0`]: {} };
+	const commitHeadState = (utxoToCommit: unknown, version: unknown = 3, snapshotVersion: unknown = 3) => ({
+		tag: 'Open',
+		contents: {
+			coordinatedHeadState: { version, confirmedSnapshot: { snapshot: { version: snapshotVersion, utxoToCommit } } },
+		},
+	});
+
+	it('reports a commit the chain has not settled', () => {
+		expect(extractCommitNotSettled(commitHeadState(COMMIT))).toBe(true);
+	});
+
+	it.each([
+		['the chain has settled it', commitHeadState(COMMIT, 4, 3)],
+		['the snapshot holds no commit', commitHeadState(null)],
+		['the snapshot holds an empty commit', commitHeadState({})],
+		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
+	])('reports nothing unsettled when %s', (_label, state) => {
+		expect(extractCommitNotSettled(state)).toBe(false);
 	});
 });

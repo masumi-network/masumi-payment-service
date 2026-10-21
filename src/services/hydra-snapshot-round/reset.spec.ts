@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import type { HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
+import { HydraProtocolError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -79,6 +80,17 @@ const confirmedSnapshot = (overrides: { headId?: string; number?: number } = {})
 	tag: 'ConfirmedSnapshot',
 	signatures: { multiSignature: ['a', 'b'] },
 	snapshot: { headId: HEAD_IDENTIFIER, number: 313, version: 52, accumulator: '12e9', utxo: {}, ...overrides },
+});
+
+/** `GET /head` while Open, with the confirmed snapshot holding `utxoToCommit`. */
+const headHolding = (utxoToCommit: unknown, version: number) => ({
+	tag: 'Open',
+	contents: {
+		coordinatedHeadState: {
+			version,
+			confirmedSnapshot: { ...confirmedSnapshot(), snapshot: { ...confirmedSnapshot().snapshot, utxoToCommit } },
+		},
+	},
 });
 
 let node: { get: AnyMock; post: AnyMock; verifiedSnapshotNumber: bigint | undefined; expectedHeadId: string };
@@ -259,6 +271,38 @@ describe('resetSnapshotRound', () => {
 			resetSnapshotRound({ headId: 'head-1', expectedSignature: 'SeenSnapshot|313|1', actorApiKeyId: 'admin-key' }),
 		).rejects.toMatchObject({ status: 409 });
 		expect(node.post).not.toHaveBeenCalled();
+	});
+
+	describe('reading the head state first', () => {
+		const answeringHead = (head: () => Promise<unknown>) =>
+			node.get.mockImplementation(async (path: string) => (path === '/head' ? head() : confirmedSnapshot()));
+
+		// A side-load clears the node's record of the deposit in flight, and the
+		// next deposit then stalls the head again (hydra-node 2.4.1
+		// `ReqSnCommitNotSettled`).
+		it('refuses while the confirmed snapshot holds a deposit the chain has not settled', async () => {
+			const deposit = { [`${'dd'.repeat(32)}#0`]: { address: 'addr_test1vz', value: { lovelace: 5_000_000 } } };
+			answeringHead(async () => headHolding(deposit, 52));
+			await expect(reset()).rejects.toMatchObject({ status: 409, message: expect.stringContaining('not settled') });
+			expect(node.post).not.toHaveBeenCalled();
+		});
+
+		it('refuses when the node cannot answer for its head state', async () => {
+			answeringHead(async () => {
+				throw new HydraTransportError('Hydra HTTP GET failed before a response was received');
+			});
+			await expectRefused(502);
+		});
+
+		// A large head's answer can outgrow the byte limit for good, and refusing
+		// on it would block the only live recovery for that head.
+		it('resets when the head state is too large to read', async () => {
+			answeringHead(async () => {
+				throw new HydraProtocolError('Hydra HTTP response exceeded its byte limit');
+			});
+			await expect(reset()).resolves.toMatchObject({ confirmedSnapshotNumber: 313 });
+			expect(node.post).toHaveBeenCalledWith('/snapshot', confirmedSnapshot());
+		});
 	});
 
 	it('reports an unanswered reset as unknown and keeps the recorded round', async () => {
