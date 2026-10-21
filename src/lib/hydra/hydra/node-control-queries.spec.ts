@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import {
-	fetchHydraAcknowledgedDeposit,
+	fetchHydraAcknowledgedDeposits,
 	fetchHydraPendingDecommitRefs,
 	fetchHydraSnapshotRound,
 } from './node-control-queries';
@@ -124,7 +124,7 @@ describe('fetchHydraSnapshotRound', () => {
 	});
 });
 
-describe('fetchHydraAcknowledgedDeposit', () => {
+describe('fetchHydraAcknowledgedDeposits', () => {
 	const DEPOSIT_TX = 'DD'.repeat(32);
 	const OUTPUT = {
 		address: 'addr_test1vz',
@@ -134,22 +134,91 @@ describe('fetchHydraAcknowledgedDeposit', () => {
 		inlineDatumRaw: null,
 		datum: null,
 	};
-	const confirmed = (snapshot: Record<string, unknown>) => ({
+	const IDLE_ROUND = { tag: 'LastSeenSnapshot', lastSeen: 7 };
+	const NO_DEPOSIT = { utxoToCommit: null, depositTxId: null };
+	const snapshotBody = (fields: { utxoToCommit?: unknown; depositTxId?: string | null }) => ({
+		headId: 'cc'.repeat(28),
+		version: 1,
+		number: 7,
+		confirmed: [],
+		utxo: {},
+		...fields,
+	});
+	const confirmed = (fields: { utxoToCommit?: unknown; depositTxId?: string | null }) => ({
 		tag: 'ConfirmedSnapshot',
 		signatures: { multiSignature: [] },
-		snapshot: { headId: 'cc'.repeat(28), version: 1, number: 7, confirmed: [], utxo: {}, ...snapshot },
+		snapshot: snapshotBody(fields),
 	});
 
+	/** Answers `GET /snapshot` and `GET /snapshot/last-seen`. */
+	function nodeAnswering(snapshot: unknown, lastSeen: unknown = IDLE_ROUND) {
+		return {
+			get: async <T>(url: string): Promise<T> => (url === '/snapshot/last-seen' ? lastSeen : snapshot) as T,
+		};
+	}
+
 	it('reads the deposit a confirmed snapshot holds, with its id in lowercase', async () => {
-		const transport = transportReturning(
+		const transport = nodeAnswering(
 			confirmed({ utxoToCommit: { [`${DEPOSIT_TX}#0`]: OUTPUT }, depositTxId: DEPOSIT_TX }),
 		);
 
-		await expect(fetchHydraAcknowledgedDeposit(transport)).resolves.toEqual({
-			acknowledged: true,
-			depositTxId: DEPOSIT_TX.toLowerCase(),
-		});
-		expect(transport.paths).toEqual(['/snapshot']);
+		await expect(fetchHydraAcknowledgedDeposits(transport)).resolves.toEqual([DEPOSIT_TX.toLowerCase()]);
+	});
+
+	// A signed round that confirms between the two reads must show up in the
+	// second one. Asking for both at once would let it slip past both.
+	it('asks for the confirmed snapshot only once the round in flight has answered', async () => {
+		let answerRound: (body: unknown) => void = () => undefined;
+		const paths: string[] = [];
+		const transport = {
+			get: async <T>(url: string): Promise<T> => {
+				paths.push(url);
+				if (url !== '/snapshot/last-seen') return confirmed(NO_DEPOSIT) as T;
+				return await new Promise<T>((resolve) => {
+					answerRound = (body) => resolve(body as T);
+				});
+			},
+		};
+
+		const acknowledged = fetchHydraAcknowledgedDeposits(transport);
+		await Promise.resolve();
+		expect(paths).toEqual(['/snapshot/last-seen']);
+
+		answerRound(IDLE_ROUND);
+		await expect(acknowledged).resolves.toEqual([]);
+		expect(paths).toEqual(['/snapshot/last-seen', '/snapshot']);
+	});
+
+	/** A node reporting `roundTag` that refuses `GET /snapshot` with `status`. */
+	function refusingSnapshot(status: number, roundTag: string) {
+		const error = new HydraHttpResponseError(`Hydra HTTP request failed with ${status}`, status);
+		const transport = {
+			get: async <T>(url: string): Promise<T> => {
+				if (url === '/snapshot/last-seen') return { tag: roundTag, lastSeen: 7 } as T;
+				throw error;
+			},
+		};
+		return { error, transport };
+	}
+
+	// hydra-node answers 404 for an Idle head, which is where a head ends after
+	// fanout, and an Idle head reports NoSeenSnapshot.
+	it('reads a node that holds no head as holding no deposit', async () => {
+		const { transport } = refusingSnapshot(404, 'NoSeenSnapshot');
+
+		await expect(fetchHydraAcknowledgedDeposits(transport)).resolves.toEqual([]);
+	});
+
+	// A Closed head reports LastSeenSnapshot, so a 404 beside it came from
+	// something in front of the node, not from an Idle head.
+	it.each([
+		['a 404 beside a round tag an Idle head never reports', 404, 'LastSeenSnapshot'],
+		['a 409', 409, 'NoSeenSnapshot'],
+		['a 503', 503, 'NoSeenSnapshot'],
+	])('passes on %s from the confirmed snapshot', async (_label, status, roundTag) => {
+		const { error, transport } = refusingSnapshot(status, roundTag);
+
+		await expect(fetchHydraAcknowledgedDeposits(transport)).rejects.toBe(error);
 	});
 
 	it.each([
@@ -157,20 +226,49 @@ describe('fetchHydraAcknowledgedDeposit', () => {
 		['absent', undefined],
 		['empty', {}],
 	])('reads a snapshot whose utxoToCommit is %s as holding no deposit', async (_label, utxoToCommit) => {
-		const transport = transportReturning(confirmed({ utxoToCommit, depositTxId: null }));
+		const transport = nodeAnswering(confirmed({ utxoToCommit, depositTxId: null }));
 
-		await expect(fetchHydraAcknowledgedDeposit(transport)).resolves.toEqual({ acknowledged: false, depositTxId: null });
+		await expect(fetchHydraAcknowledgedDeposits(transport)).resolves.toEqual([]);
 	});
 
 	it('reads a head still on its initial snapshot as holding no deposit', async () => {
-		const transport = transportReturning({ tag: 'InitialSnapshot', headId: 'cc'.repeat(28) });
+		const transport = nodeAnswering({ tag: 'InitialSnapshot', headId: 'cc'.repeat(28) });
 
-		await expect(fetchHydraAcknowledgedDeposit(transport)).resolves.toEqual({ acknowledged: false, depositTxId: null });
+		await expect(fetchHydraAcknowledgedDeposits(transport)).resolves.toEqual([]);
 	});
 
 	it('refuses an answer it cannot read, rather than reporting no deposit', async () => {
-		const transport = transportReturning({ tag: 'ConfirmedSnapshot', snapshot: { utxoToCommit: 'not-a-map' } });
+		const transport = nodeAnswering({ tag: 'ConfirmedSnapshot', snapshot: { utxoToCommit: 'not-a-map' } });
 
-		await expect(fetchHydraAcknowledgedDeposit(transport)).rejects.toBeInstanceOf(HydraProtocolError);
+		await expect(fetchHydraAcknowledgedDeposits(transport)).rejects.toBeInstanceOf(HydraProtocolError);
+	});
+
+	// This node has signed it, so the round can still confirm once the other
+	// signatures arrive.
+	it('reads the deposit a round this node has signed holds', async () => {
+		const seen = {
+			tag: 'SeenSnapshot',
+			snapshot: snapshotBody({ utxoToCommit: { [`${DEPOSIT_TX}#0`]: OUTPUT }, depositTxId: DEPOSIT_TX }),
+			signatories: {},
+		};
+
+		await expect(fetchHydraAcknowledgedDeposits(nodeAnswering(confirmed(NO_DEPOSIT), seen))).resolves.toEqual([
+			DEPOSIT_TX.toLowerCase(),
+		]);
+	});
+
+	it('reads a round this node has only requested as holding no deposit', async () => {
+		const requested = { tag: 'RequestedSnapshot', lastSeen: 7, requested: 8 };
+
+		await expect(fetchHydraAcknowledgedDeposits(nodeAnswering(confirmed(NO_DEPOSIT), requested))).resolves.toEqual([]);
+	});
+
+	it.each([
+		['a round tag it does not know', { tag: 'FutureSnapshot' }],
+		['a signed round without its snapshot', { tag: 'SeenSnapshot', signatories: {} }],
+	])('refuses %s, rather than reporting no deposit', async (_label, lastSeen) => {
+		await expect(fetchHydraAcknowledgedDeposits(nodeAnswering(confirmed(NO_DEPOSIT), lastSeen))).rejects.toBeInstanceOf(
+			HydraProtocolError,
+		);
 	});
 });

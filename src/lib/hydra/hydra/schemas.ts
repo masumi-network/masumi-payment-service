@@ -329,6 +329,12 @@ export const hydraConfirmedSnapshotSchema = z.union([
 	z.looseObject({ tag: z.literal('InitialSnapshot'), headId: z.string() }),
 ]);
 
+/** The fields of a snapshot that say which deposit it holds. */
+const hydraSnapshotDepositSchema = z.looseObject({
+	utxoToCommit: hydraSnapshotUtxoSchema.nullish(),
+	depositTxId: canonicalHydraTransactionIdSchema.nullish(),
+});
+
 /**
  * `GET /snapshot`, read for the deposit the head has agreed to absorb.
  *
@@ -339,15 +345,19 @@ export const hydraConfirmedSnapshotSchema = z.union([
  * `Snapshot`).
  */
 export const hydraAcknowledgedDepositSchema = z.union([
-	z.looseObject({
-		tag: z.literal('ConfirmedSnapshot'),
-		snapshot: z.looseObject({
-			utxoToCommit: hydraSnapshotUtxoSchema.nullish(),
-			depositTxId: canonicalHydraTransactionIdSchema.nullish(),
-		}),
-	}),
+	z.looseObject({ tag: z.literal('ConfirmedSnapshot'), snapshot: hydraSnapshotDepositSchema }),
 	z.looseObject({ tag: z.literal('InitialSnapshot') }),
 ]);
+
+/**
+ * `GET /snapshot/last-seen`, read for the deposit in the round being signed.
+ * Only a `SeenSnapshot` carries its snapshot. Any tag is accepted here, and the
+ * caller decides what an unknown one means.
+ */
+export const hydraSeenDepositSchema = z.looseObject({
+	tag: z.string().max(64),
+	snapshot: hydraSnapshotDepositSchema.optional(),
+});
 
 /**
  * `GET /snapshot/last-seen`: the node's view of the snapshot round in flight.

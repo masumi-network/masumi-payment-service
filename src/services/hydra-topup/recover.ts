@@ -20,7 +20,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
-import { fetchHydraAcknowledgedDeposit, type HydraAcknowledgedDeposit } from '@/lib/hydra/hydra/node-control-queries';
+import { fetchHydraAcknowledgedDeposits, type HydraAcknowledgedDeposit } from '@/lib/hydra/hydra/node-control-queries';
 import { assertHydraHeadHostNotPaused, assertHydraHeadHostNotStopping } from '@/services/hydra-host/pause';
 
 export type DepositRecovery = {
@@ -106,14 +106,14 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 		);
 	}
 
-	// Once the head has acknowledged the deposit in a signed snapshot, the
-	// increment that claims it is on its way. Deleting it then can leave an empty
-	// head that can be neither closed nor fanned out, and nothing takes it back.
-	// So a snapshot that holds a deposit blocks this one unless it names a
-	// different deposit, and not being able to read the snapshot blocks it too.
-	let acknowledgement: HydraAcknowledgedDeposit;
+	// Once the head has acknowledged the deposit in a snapshot it signed,
+	// deleting it can leave an empty head that can be neither closed nor fanned
+	// out, and nothing takes that back. So a snapshot that holds a deposit blocks
+	// this one unless it names a different deposit, and not being able to read
+	// the snapshots blocks it too.
+	let acknowledgedDeposits: HydraAcknowledgedDeposit[];
 	try {
-		acknowledgement = await fetchHydraAcknowledgedDeposit(node);
+		acknowledgedDeposits = await fetchHydraAcknowledgedDeposits(node);
 	} catch (error) {
 		logger.warn(
 			`hydra: could not check whether the head acknowledged deposit ${topup.depositTxHash}: ${error instanceof Error ? error.message : 'unknown error'}`,
@@ -125,10 +125,8 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 				'could not check whether the head has already acknowledged this deposit, so it was not recovered. Try again shortly',
 		};
 	}
-	if (
-		acknowledgement.acknowledged &&
-		(acknowledgement.depositTxId === null || acknowledgement.depositTxId === topup.depositTxHash.toLowerCase())
-	) {
+	const depositTxId = topup.depositTxHash.toLowerCase();
+	if (acknowledgedDeposits.some((acknowledged) => acknowledged === null || acknowledged === depositTxId)) {
 		return {
 			depositTxHash: topup.depositTxHash,
 			requested: false,

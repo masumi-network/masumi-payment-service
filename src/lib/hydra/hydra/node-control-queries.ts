@@ -9,7 +9,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { HydraProtocolError } from './errors';
 import { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
-import { protocolErrorToString } from './node-frames';
+import { HydraHttpResponseError, protocolErrorToString } from './node-frames';
 import { type HydraRawCostModels } from './node-api';
 import { reportParamsDrift } from './params-drift';
 import {
@@ -19,6 +19,7 @@ import {
 	hydraCostModelsEnvelopeSchema,
 	hydraLastSeenSnapshotSchema,
 	hydraProtocolParametersSchema,
+	hydraSeenDepositSchema,
 	hydraSnapshotUtxoSchema,
 } from './schemas';
 import { HydraUTxO } from './types';
@@ -112,38 +113,83 @@ export async function fetchHydraConfirmedSnapshotNumber(
 		: { headId: data.headId, number: 0n };
 }
 
-export type HydraAcknowledgedDeposit = {
-	/** The latest confirmed snapshot holds a deposit the head has agreed to absorb. */
-	acknowledged: boolean;
-	/** The deposit transaction it came from, lowercase. Null when the snapshot names none. */
-	depositTxId: string | null;
-};
-
-/**
- * Whether the head has already acknowledged a deposit, read from `GET /snapshot`.
- *
- * Once a signed snapshot carries `utxoToCommit` the increment that claims it is
- * on its way, and recovering the deposit then can leave an empty head that
- * cannot be closed or fanned out (docs/hydra-persistence-recovery-verification.md,
- * finding 12). Throws on a malformed answer, so a caller can refuse rather than guess.
- */
-export async function fetchHydraAcknowledgedDeposit(transport: HydraQueryTransport): Promise<HydraAcknowledgedDeposit> {
-	const response = hydraAcknowledgedDepositSchema.safeParse(await transport.get('/snapshot'));
-	if (!response.success) {
-		throw new HydraProtocolError('Hydra confirmed snapshot response failed schema validation', {
-			cause: response.error,
-		});
-	}
-	if (response.data.tag === 'InitialSnapshot') return { acknowledged: false, depositTxId: null };
-	const { utxoToCommit, depositTxId } = response.data.snapshot;
-	return {
-		acknowledged: utxoToCommit != null && Object.keys(utxoToCommit).length > 0,
-		depositTxId: depositTxId ?? null,
-	};
-}
-
 /** `last-seen` tags that mean no snapshot round is in flight. Kept in sync with hydra-host's drain gate. */
 const IDLE_SNAPSHOT_ROUND_TAGS = new Set(['LastSeenSnapshot', 'NoSeenSnapshot']);
+
+/** `last-seen` tags for which this node has not signed the round in flight, if there is one. */
+const UNSIGNED_SNAPSHOT_ROUND_TAGS = new Set([...IDLE_SNAPSHOT_ROUND_TAGS, 'RequestedSnapshot']);
+
+/** A deposit a snapshot holds in `utxoToCommit`: its transaction id, lowercase, or null when the snapshot names none. */
+export type HydraAcknowledgedDeposit = string | null;
+
+function heldDeposits(snapshot: {
+	utxoToCommit?: object | null;
+	depositTxId?: string | null;
+}): HydraAcknowledgedDeposit[] {
+	const holdsDeposit = snapshot.utxoToCommit != null && Object.keys(snapshot.utxoToCommit).length > 0;
+	return holdsDeposit ? [snapshot.depositTxId ?? null] : [];
+}
+
+/** The deposit the latest confirmed snapshot holds, from `GET /snapshot`. */
+async function fetchConfirmedSnapshotDeposits(
+	transport: HydraQueryTransport,
+	roundTag: string,
+): Promise<HydraAcknowledgedDeposit[]> {
+	let body: unknown;
+	try {
+		body = await transport.get('/snapshot');
+	} catch (error) {
+		// hydra-node answers 404 only for an Idle head (`getConfirmedSnapshot` in
+		// Hydra/API/ServerOutput.hs), which is where a head ends after fanout, and
+		// an Idle head reports `NoSeenSnapshot`. No head is left to wedge then, and
+		// recovery is the only way back for the funds. A 404 next to any other
+		// round tag did not come from the node, so it is not read as Idle.
+		if (error instanceof HydraHttpResponseError && error.status === 404 && roundTag === 'NoSeenSnapshot') {
+			return [];
+		}
+		throw error;
+	}
+	const confirmed = hydraAcknowledgedDepositSchema.safeParse(body);
+	if (!confirmed.success) {
+		throw new HydraProtocolError('Hydra snapshot deposit response failed schema validation', {
+			cause: confirmed.error,
+		});
+	}
+	return confirmed.data.tag === 'ConfirmedSnapshot' ? heldDeposits(confirmed.data.snapshot) : [];
+}
+
+/**
+ * The deposits the head has acknowledged: the one the latest confirmed snapshot
+ * holds, and the one in a round this node has already signed.
+ *
+ * Once a signed snapshot carries `utxoToCommit`, recovering that deposit can
+ * leave an empty head that cannot be closed or fanned out
+ * (docs/hydra-persistence-recovery-verification.md, finding 12). A round this
+ * node has not signed cannot confirm a deposit the node would recover:
+ * hydra-node 2.4.1 expires a deposit one deposit period before the deadline a
+ * recovery waits for, and rejects a snapshot request for an expired one.
+ *
+ * `last-seen` is read first: a signed round that confirms between the two reads
+ * then shows up in `GET /snapshot`, instead of slipping past both. Throws on a
+ * malformed answer or an unknown round tag, so a caller can refuse rather than
+ * guess.
+ */
+export async function fetchHydraAcknowledgedDeposits(
+	transport: HydraQueryTransport,
+): Promise<HydraAcknowledgedDeposit[]> {
+	const seen = hydraSeenDepositSchema.safeParse(await transport.get('/snapshot/last-seen'));
+	if (!seen.success) {
+		throw new HydraProtocolError('Hydra last-seen snapshot deposit response failed schema validation', {
+			cause: seen.error,
+		});
+	}
+	const acknowledged = await fetchConfirmedSnapshotDeposits(transport, seen.data.tag);
+	if (UNSIGNED_SNAPSHOT_ROUND_TAGS.has(seen.data.tag)) return acknowledged;
+	if (seen.data.tag !== 'SeenSnapshot' || seen.data.snapshot === undefined) {
+		throw new HydraProtocolError(`Hydra snapshot round ${seen.data.tag} does not show the snapshot it signs`);
+	}
+	return [...acknowledged, ...heldDeposits(seen.data.snapshot)];
+}
 
 /** The snapshot round a node reports in flight, reduced to what identifies it. */
 export type HydraSnapshotRound = {

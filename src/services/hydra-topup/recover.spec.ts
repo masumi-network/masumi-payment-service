@@ -26,9 +26,11 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 }));
 
 let recoverHydraDeposit: typeof import('./recover').recoverHydraDeposit;
+let HydraHttpResponseError: typeof import('@/lib/hydra/hydra/node-frames').HydraHttpResponseError;
 
 beforeAll(async () => {
 	({ recoverHydraDeposit } = await import('./recover'));
+	({ HydraHttpResponseError } = await import('@/lib/hydra/hydra/node-frames'));
 });
 
 beforeEach(() => {
@@ -44,7 +46,7 @@ beforeEach(() => {
 	mockAssertNotStopping.mockResolvedValue(undefined);
 	mockGetNode.mockReturnValue({ delete: mockNodeDelete, get: mockNodeGet });
 	mockNodeDelete.mockResolvedValue(undefined);
-	mockNodeGet.mockResolvedValue(confirmedSnapshot({ utxoToCommit: null, depositTxId: null }));
+	nodeAnswers({});
 });
 
 const HEAD_ID = 'cc'.repeat(28);
@@ -65,6 +67,15 @@ function confirmedSnapshot(fields: { utxoToCommit: Record<string, unknown> | nul
 		signatures: { multiSignature: [] },
 		snapshot: { headId: HEAD_ID, version: 1, number: 7, confirmed: [], utxo: {}, utxoToDecommit: null, ...fields },
 	};
+}
+
+/** What the node answers for GET /snapshot and GET /snapshot/last-seen. Defaults: no deposit, no round in flight. */
+function nodeAnswers(answers: { snapshot?: unknown; lastSeen?: unknown }) {
+	mockNodeGet.mockImplementation(async (path: string) =>
+		path === '/snapshot/last-seen'
+			? (answers.lastSeen ?? { tag: 'LastSeenSnapshot', lastSeen: 7 })
+			: (answers.snapshot ?? confirmedSnapshot({ utxoToCommit: null, depositTxId: null })),
+	);
 }
 
 describe('recoverHydraDeposit', () => {
@@ -121,45 +132,65 @@ describe('recoverHydraDeposit', () => {
 			confirmedSnapshot({ utxoToCommit: { [`${DEPOSIT_TX}#0`]: OUTPUT }, depositTxId });
 
 		it('is not recovered', async () => {
-			mockNodeGet.mockResolvedValue(acknowledged(DEPOSIT_TX));
+			nodeAnswers({ snapshot: acknowledged(DEPOSIT_TX) });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({
 				depositTxHash: DEPOSIT_TX,
 				requested: false,
-				reason: expect.stringContaining('acknowledged'),
 			});
 			expect(mockNodeGet).toHaveBeenCalledWith('/snapshot');
 			expect(mockNodeDelete).not.toHaveBeenCalled();
 			expect(mockTopupUpdateMany).not.toHaveBeenCalled();
 		});
 
+		// The round can still confirm once the other signatures arrive.
+		it('is not recovered while a round this node has signed holds it', async () => {
+			const { snapshot } = acknowledged(DEPOSIT_TX);
+			nodeAnswers({ lastSeen: { tag: 'SeenSnapshot', snapshot, signatories: {} } });
+
+			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: false });
+			expect(mockNodeDelete).not.toHaveBeenCalled();
+		});
+
 		it('is not recovered when the snapshot does not name which deposit it holds', async () => {
-			mockNodeGet.mockResolvedValue(acknowledged(null));
+			nodeAnswers({ snapshot: acknowledged(null) });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: false });
 			expect(mockNodeDelete).not.toHaveBeenCalled();
 		});
 
 		it('is not recovered when the snapshot names it in capitals', async () => {
-			mockNodeGet.mockResolvedValue(acknowledged(DEPOSIT_TX.toUpperCase()));
+			nodeAnswers({ snapshot: acknowledged(DEPOSIT_TX.toUpperCase()) });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: false });
 			expect(mockNodeDelete).not.toHaveBeenCalled();
 		});
 
 		it('leaves another deposit recoverable while this one is acknowledged', async () => {
-			mockNodeGet.mockResolvedValue(acknowledged('bb'.repeat(32)));
+			nodeAnswers({ snapshot: acknowledged('bb'.repeat(32)) });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
 			expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${DEPOSIT_TX}`);
 		});
 
 		it('is recoverable on a head that closed on its initial snapshot', async () => {
-			mockNodeGet.mockResolvedValue({ tag: 'InitialSnapshot', headId: HEAD_ID });
+			nodeAnswers({ snapshot: { tag: 'InitialSnapshot', headId: HEAD_ID } });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
 			expect(mockNodeDelete).toHaveBeenCalled();
 		});
+	});
+
+	// After fanout the node is Idle and answers GET /snapshot with 404, and
+	// recovery is the only way back for a deposit the head never absorbed.
+	it('recovers a deposit of a head that has fanned out', async () => {
+		mockNodeGet.mockImplementation(async (path: string) => {
+			if (path === '/snapshot/last-seen') return { tag: 'NoSeenSnapshot' };
+			throw new HydraHttpResponseError('Hydra HTTP request failed with 404 Not Found', 404);
+		});
+
+		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
+		expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${DEPOSIT_TX}`);
 	});
 
 	// Not being able to tell is not permission: the delete cannot be taken back.
@@ -176,7 +207,7 @@ describe('recoverHydraDeposit', () => {
 	});
 
 	it('does not recover when the head state is malformed', async () => {
-		mockNodeGet.mockResolvedValue({ tag: 'ConfirmedSnapshot', snapshot: { utxoToCommit: 'not-a-map' } });
+		nodeAnswers({ snapshot: { tag: 'ConfirmedSnapshot', snapshot: { utxoToCommit: 'not-a-map' } } });
 
 		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: false });
 		expect(mockNodeDelete).not.toHaveBeenCalled();
