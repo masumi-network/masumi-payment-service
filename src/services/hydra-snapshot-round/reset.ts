@@ -163,9 +163,10 @@ async function assertStillOwned(
  * unsettled deposit has expired, this node, when it leads, requests a snapshot
  * with the next deposit, and every node rejects it (hydra-node 2.4.1
  * `ReqSnCommitNotSettled`). The head stalls again after a reset that reported
- * success. While the deposit is still active the leader picks it again, oldest
- * first, and the reset would be safe, but the node's HTTP API does not report
- * a deposit's status, so this refuses both cases.
+ * success. While the deposit is still active the tick usually picks it
+ * again: it takes the oldest active deposit, which is the held one unless an
+ * older one is also pending. The node's HTTP API does not report a deposit's
+ * status, so this refuses every case.
  *
  * `GET /head` carries the snapshot more than once, so a large head can outgrow
  * the byte limit for good. An answer the client cannot use, such as one over
@@ -178,6 +179,9 @@ async function assertCommitSettled(node: HydraNode): Promise<void> {
 		headState = await node.get('/head');
 	} catch (error) {
 		if (!(error instanceof HydraProtocolError)) {
+			logger.warn('[HydraSnapshotRound] could not read the head state', {
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
 			throw createHttpError(502, 'Could not read the head state from the Hydra node');
 		}
 		logger.warn('[HydraSnapshotRound] could not use the head state; resetting without the deposit check', {

@@ -247,7 +247,7 @@ export function extractCommitNotSettled(headState: unknown): boolean {
 	const snapshot = getOwnPlainObject(confirmedSnapshot, 'snapshot');
 	if (snapshot === undefined) return false;
 	const utxoToCommit = getOwnPlainObject(snapshot, 'utxoToCommit');
-	if (utxoToCommit === undefined || Object.keys(utxoToCommit).length === 0) return false;
+	if (utxoToCommit === undefined) return false;
 	const version = getOwnValue(coordinatedHeadState, 'version');
 	const snapshotVersion = getOwnValue(snapshot, 'version');
 	if (typeof version !== 'number' || typeof snapshotVersion !== 'number') {

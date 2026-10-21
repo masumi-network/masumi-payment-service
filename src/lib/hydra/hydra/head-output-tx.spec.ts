@@ -341,14 +341,14 @@ describe('extractCommitNotSettled', () => {
 		},
 	});
 
-	it('reports a commit the chain has not settled', () => {
+	it('reports a commit the chain has not settled, even an empty one, as hydra checks only that it is set', () => {
 		expect(extractCommitNotSettled(commitHeadState(COMMIT))).toBe(true);
+		expect(extractCommitNotSettled(commitHeadState({}))).toBe(true);
 	});
 
 	it.each([
 		['the chain has settled it', commitHeadState(COMMIT, 4, 3)],
 		['the snapshot holds no commit', commitHeadState(null)],
-		['the snapshot holds an empty commit', commitHeadState({})],
 		[
 			'the head is still on its initial snapshot',
 			{
