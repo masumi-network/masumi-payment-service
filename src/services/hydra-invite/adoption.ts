@@ -31,13 +31,15 @@ import { canRemoveReservedHostNode, releaseReservedParticipants } from './releas
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 
 /**
- * How far back to re-ask when we have no watermark for a Host.
+ * Where to start when we have no watermark for a Host: the beginning.
  *
- * Bounded rather than "since the beginning" so a service that has never polled
- * a Host does not adopt redemptions older than any invite it could still hold,
- * but generous enough that a restart during an exchange loses nothing.
+ * The Host keeps a redeemed invite until this service forgets it, after
+ * adoption or on cancellation, so everything it returns from zero is either
+ * unadopted or an acknowledgement that did not reach it. A fixed lookback
+ * used to hide a redemption older than the window after a restart, though the
+ * Host still held it and the invite here was still `Issued`.
  */
-const COLD_START_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const COLD_START_WATERMARK_MS = 0;
 
 /**
  * Watermark per Host, kept in memory.
@@ -73,7 +75,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		if (host.encryptedAdminToken === null) {
 			continue;
 		}
-		const since = watermarks.get(host.id) ?? Date.now() - COLD_START_LOOKBACK_MS;
+		const since = watermarks.get(host.id) ?? COLD_START_WATERMARK_MS;
 		let redemptions: { invites: HostInviteRecord[]; now: number };
 		try {
 			redemptions = await fetchHostRedemptions(host.baseUrl, decrypt(host.encryptedAdminToken), since, {
@@ -93,7 +95,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		// process — and the ordinary failure here is temporary: the relation still
 		// holds a head that has not reached Final, which the operator finalises
 		// minutes later. Nothing retried it, the invite stayed Issued with no
-		// head, and only a restart (which falls back to the cold-start lookback)
+		// head, and only a restart (which falls back to the cold-start watermark)
 		// ever picked it up again.
 		let retryFromMs: number | null = null;
 		for (const record of redemptions.invites) {
@@ -116,9 +118,15 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 			}
 			if (result === 'adopted') {
 				outcome.adopted += 1;
+			} else if (result === 'rejected') {
+				outcome.rejected += 1;
+			}
+			if (result === 'adopted' || result === 'finished') {
 				// The database nonce remains the permanent replay guard. Once the
 				// signed redemption is adopted, the Host no longer needs to retain
-				// its public-plane copy or its larger key/signature payload.
+				// its public-plane copy or its larger key/signature payload. A
+				// finished invite replayed here means an earlier acknowledgement
+				// did not reach the Host, which keeps the record until one does.
 				await forgetHostInvite(host.baseUrl, decrypt(host.encryptedAdminToken), record.nonce, {
 					allowInsecureHttp: host.allowInsecureHttp,
 				}).catch((error: unknown) =>
@@ -126,8 +134,6 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 						`hydra: could not prune adopted invite ${nonceLogRef(record.nonce)}: ${(error as Error).message}`,
 					),
 				);
-			} else if (result === 'rejected') {
-				outcome.rejected += 1;
 			}
 		}
 		// Advanced only after the batch is processed, and to the Host's clock
@@ -141,7 +147,18 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 	return outcome;
 }
 
-type AdoptionResult = 'adopted' | 'rejected' | 'skipped';
+/**
+ * `finished` is a redemption for an invite this service already adopted, so
+ * the Host's copy only needs forgetting.
+ */
+type AdoptionResult = 'adopted' | 'rejected' | 'finished' | 'skipped';
+
+/**
+ * `raced` means the invite left `Issued` first, so nothing was discarded.
+ * `host-refused` means the invite is discarded here, but the Host still holds
+ * the node, which must then be removed by hand.
+ */
+export type DiscardOutcome = 'discarded' | 'raced' | 'host-refused';
 
 /**
  * Give up on a redemption that can never be adopted, and free what it holds.
@@ -180,7 +197,7 @@ type AdoptionResult = 'adopted' | 'rejected' | 'skipped';
  * The nonce is not reopened. Whoever posted the forgery holds it, so the
  * operator issues a new invite instead.
  */
-async function discardUnadoptableRedemption(
+export async function discardUnadoptableRedemption(
 	invite: {
 		id: string;
 		nonce: string;
@@ -189,20 +206,20 @@ async function discardUnadoptableRedemption(
 		HydraHost: { baseUrl: string; encryptedAdminToken: string | null; allowInsecureHttp: boolean };
 	},
 	options: { removeNode: boolean; failedVerification: boolean; force: boolean },
-): Promise<void> {
+): Promise<DiscardOutcome> {
 	const { removeNode, failedVerification, force } = options;
 	const discarded = await prisma.hydraHeadInvite.updateMany({
 		where: { id: invite.id, status: HydraInviteStatus.Issued },
 		data: { status: failedVerification ? HydraInviteStatus.Failed : HydraInviteStatus.Revoked },
 	});
-	if (discarded.count !== 1) return;
+	if (discarded.count !== 1) return 'raced';
 
 	if (invite.HydraHost.encryptedAdminToken === null) {
 		logger.error(
 			`hydra: discarded invite ${nonceLogRef(invite.nonce)}, but its host has no admin token; ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
-		return;
+		return 'host-refused';
 	}
 
 	const adminToken = decrypt(invite.HydraHost.encryptedAdminToken);
@@ -232,12 +249,13 @@ async function discardUnadoptableRedemption(
 			`hydra: discarded invite ${nonceLogRef(invite.nonce)} locally, but its host refused (${(error as Error).message}); ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
-		return;
+		return 'host-refused';
 	}
 
 	if (removeNode) {
 		await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
 	}
+	return 'discarded';
 }
 
 type RedeemedRecord = {
@@ -359,8 +377,10 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 	// through verification again on the next replayed watermark.
 	if (invite.hydraHeadId !== null || invite.status !== HydraInviteStatus.Issued) {
 		// Already adopted, or already given up on. This is the normal case for a
-		// replayed watermark.
-		return 'skipped';
+		// replayed watermark. Only an adopted invite is acknowledged here: a
+		// discarded one forgets its Host copy after removing the node, and a
+		// copy still on the Host marks a removal that failed and needs a hand.
+		return invite.status === HydraInviteStatus.Completed ? 'finished' : 'skipped';
 	}
 
 	try {

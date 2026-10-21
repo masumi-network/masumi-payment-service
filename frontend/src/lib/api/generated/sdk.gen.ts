@@ -1735,7 +1735,7 @@ export const postFundDistributionTrigger = <ThrowOnError extends boolean = false
 /**
  * Revoke an unredeemed invite. (admin access required)
  *
- * Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head.
+ * Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head. Set `discardRedemption` to cancel a redemption this service could not adopt; its node is removed unless a head here claims it.
  */
 export const deleteHydraInvite = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraInviteData, ThrowOnError>): RequestResult<DeleteHydraInviteResponses, DeleteHydraInviteErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraInviteResponses, DeleteHydraInviteErrors, ThrowOnError>({
     responseType: 'json',

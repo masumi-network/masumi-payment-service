@@ -532,13 +532,51 @@ describe('total request budget', () => {
 		expect(statuses.slice(0, 5)).toEqual([400, 400, 400, 400, 400]);
 		expect(statuses.slice(5).every((status) => status === 429)).toBe(true);
 
+		// The flood spent the budget, but it cannot lock out an open invite.
 		await issue('nonce-afterflood');
-		expect(await redeem('203.0.113.9', 'nonce-afterflood')).toBe(429);
+		expect(await redeem('203.0.113.9', 'nonce-afterflood')).toBe(200);
+	});
+
+	it('past the budget, answers a body that is not JSON with 429, and recovers after the window', async () => {
+		for (let index = 1; index <= 5; index += 1) {
+			await from(`198.51.100.${index}`);
+		}
+		expect(await from('198.51.100.40', 'not json')).toBe(429);
 
 		const realNow = Date.now.bind(Date);
 		jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 61_000);
-		await issue('nonce-afterflood2');
-		expect(await redeem('203.0.113.9', 'nonce-afterflood2')).toBe(200);
+		expect(await from('198.51.100.41', 'not json')).toBe(400);
+	});
+
+	it('past the budget, answers an unknown, spent or expired nonce with the same 429', async () => {
+		for (let index = 1; index <= 5; index += 1) {
+			await from(`198.51.100.${index}`);
+		}
+		await issue('nonce-spent');
+		expect(await redeem('203.0.113.9', 'nonce-spent')).toBe(200);
+		await issue('nonce-expired', -1);
+
+		const responses = await Promise.all(
+			['nonce-unknown', 'nonce-spent', 'nonce-expired'].map((nonce, index) =>
+				fetch(url, {
+					method: 'POST',
+					headers: { Connection: 'close', 'X-Forwarded-For': `203.0.113.${20 + index}` },
+					body: JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }),
+				}).then(async (response) => ({ status: response.status, body: await response.text() })),
+			),
+		);
+		expect(new Set(responses.map((response) => JSON.stringify(response)))).toEqual(
+			new Set([JSON.stringify({ status: 429, body: '{"error":"too many requests"}' })]),
+		);
+		expect(await from('198.51.100.30', '{}')).toBe(429);
+	});
+
+	it('past the budget, still refuses a bad signature with 401 whatever the nonce', async () => {
+		for (let index = 1; index <= 5; index += 1) {
+			await from(`198.51.100.${index}`);
+		}
+		verifyRedemption.mockResolvedValueOnce(false);
+		expect(await redeem('203.0.113.9', 'nonce-unknown')).toBe(401);
 	});
 
 	it('does not let one source spend the shared budget', async () => {
@@ -663,6 +701,42 @@ describe('incomplete redemption bodies', () => {
 				body,
 			});
 			expect(allowed.status).toBe(200);
+		} finally {
+			socket.destroy();
+			limited.closeAllConnections();
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
+	});
+
+	it('past the shared budget, cuts a slow body off after one second', async () => {
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			isNodeStopped,
+			limits: { totalRequestsPerMinute: 1 },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const url = `http://127.0.0.1:${(limited.address() as AddressInfo).port}/exchange/redeem`;
+		await fetch(url, { method: 'POST', headers: { Connection: 'close' }, body: '{}' });
+		const startedAt = Date.now();
+		const socket = await openIncomplete(limited);
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const drip = setInterval(() => socket.write(' '), 50);
+				const deadline = setTimeout(() => {
+					clearInterval(drip);
+					reject(new Error('over-budget body deadline did not close the socket'));
+				}, 3_000);
+				socket.once('close', () => {
+					clearInterval(drip);
+					clearTimeout(deadline);
+					resolve();
+				});
+			});
+			expect(Date.now() - startedAt).toBeLessThan(2_500);
 		} finally {
 			socket.destroy();
 			limited.closeAllConnections();

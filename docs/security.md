@@ -76,6 +76,20 @@ These behaviours are intended. Reviewers do not need to report them again.
    - When to revisit: if you expose the service to public networks. Then add ingress rate limits, or replace PBKDF2 with a keyed HMAC. A keyed HMAC gives the same protection here, because the hash salt and the stored `encryptedToken` both depend on `ENCRYPTION_KEY`
    - Scope: this applies to the payment service only. The `hydra-host` package does not use this hash
 
+2. **Pull request CI jobs run branch code with preprod secrets**
+   - Where: `.github/workflows/e2e.yml` gives preprod wallet mnemonics and other secrets to the E2E job. `.github/workflows/dev.yml` gives `BLOCKFROST_API_KEY_PREPROD` to a job that runs a PR script. Both trigger on pull requests to `dev` and name no protected Environment
+   - Effect: a person who can push a branch to this repository can change a script or an install hook and read those secrets
+   - Why accepted: all of these secrets are preprod only. The wallets hold test ADA, and the Blockfrost key reaches preprod only. No mainnet key or production credential is in these jobs. Only internal team members can push branches to this repository. Fork pull requests get no secrets
+   - When to revisit: if a job gets a mainnet or production secret, or if people outside the team get write access. Then put the secret-bearing jobs behind a reviewed Environment, or run them only from reviewed code
+
+3. **A Hydra Host registered without a user token runs on its admin token**
+   - Where: `registerHydraHost` in `src/services/hydra-host/registry.ts` stores the admin token in `encryptedUserToken` when the request has no `userToken`. The Host accepts the admin token for user operations (`packages/hydra-host/src/api/auth.ts`)
+   - Effect: every runtime call (node WebSocket, node HTTP API, health checks) sends the admin token. A leak on the runtime path, such as a proxy log or a memory dump, gives full control of the Host fleet (provision, reconfigure, delete), not only node access
+   - Why accepted: it keeps Host setup to one key. Both tokens sit in the same database under the same `ENCRYPTION_KEY`, and the same process reads them. So a split does not protect against a server compromise. It protects only against leaks on the runtime path, and the service runs behind the network allowlist
+   - HTTP: a Host with `allowInsecureHttp` sends the admin token in cleartext on every node call. The service does not block this. It logs a warning at registration and on each update of such a Host, also when the user token equals the admin token. The connect dialog shows a warning too. The service cannot see the case after an earlier update cleared the admin slot, so that Host gets no warning. For HTTP Hosts, set a separate `userToken` (the value of `HYDRA_HOST_USER_TOKEN`)
+   - Clearing the admin token: `adminToken: null` on update clears only the admin slot. The runtime slot still holds the old admin token. Rotate `userToken` at the same time
+   - When to revisit: if Hosts run on networks you do not control. Then make `userToken` required at registration and rotation
+
 ### Maintenance
 
 1. **Updates**

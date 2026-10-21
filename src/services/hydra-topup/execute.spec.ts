@@ -68,6 +68,10 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 	HYDRA_HOST_PAUSED_MESSAGE: 'hydra host is paused for maintenance',
 }));
 
+jest.unstable_mockModule('@/utils/hydra/deposit-admission', () => ({
+	lockOpenHydraHeadForDeposit: jest.fn(async () => undefined),
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHead: { findUnique: mockFindUniqueHead, update: mockUpdateHead },
@@ -163,7 +167,7 @@ beforeEach(() => {
 	});
 	mockGetHead.mockReturnValue({ commit: jest.fn(), cardanoTransaction: jest.fn() });
 	mockAssertNodeReadyForDeposit.mockResolvedValue(undefined);
-	mockClaimHotWalletForL1.mockResolvedValue(undefined);
+	mockClaimHotWalletForL1.mockResolvedValue('claim-token-1');
 	mockVerifyPersistedHydraHeadOnChain.mockResolvedValue({ headIdentifier: 'a'.repeat(64) });
 	mockFindUniqueOrThrowHotWallet.mockResolvedValue({
 		id: WALLET_ID,
@@ -226,7 +230,7 @@ describe('executeHydraTopup — DepositTooLarge draft refusal', () => {
 
 		// Nothing else was left outstanding (the row is Failed) and no carve ran
 		// (whole-UTxO top-up), so the wallet is handed back rather than wedged.
-		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID);
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID, 'claim-token-1');
 	});
 });
 

@@ -1,12 +1,14 @@
-import type { Network, Prisma } from '@/generated/prisma/client';
-import { HydraTopupStatus } from '@/generated/prisma/client';
+import type { Network } from '@/generated/prisma/client';
+import { HydraTopupStatus, Prisma } from '@/generated/prisma/client';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { CONFIG } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
+import { lockOpenHydraHeadForDeposit } from '@/utils/hydra/deposit-admission';
 
 /**
  * Wait beyond invalid-hereafter before declaring an absent deposit impossible.
@@ -46,8 +48,8 @@ export type HydraTopupReconciliationResult =
 	| 'raced';
 
 export class HydraTopupReservationConflictError extends Error {
-	constructor() {
-		super('Another Hydra top-up is already pending reconciliation for this participant');
+	constructor(message = 'Another Hydra top-up is already pending reconciliation for this participant') {
+		super(message);
 		this.name = 'HydraTopupReservationConflictError';
 	}
 }
@@ -72,20 +74,37 @@ export async function reserveAndSubmitHydraTopup<T>(
 		// by `HydraTopup_one_pending_per_participant_key`, the partial unique index
 		// on `hydraLocalParticipantId WHERE status = 'Pending'` — not by anything on
 		// the hash, which has no unique constraint.
-		const promoted = await prisma.hydraTopup.update({
-			where: { id: reservation.topupId },
-			data: {
-				depositTxHash: reservation.depositTxHash,
-				invalidHereafterSlot: reservation.invalidHereafterSlot,
-				committedLovelace: reservation.committedLovelace,
-				committedAssets: reservation.committedAssets,
-				status: HydraTopupStatus.Pending,
-			},
-			select: { id: true },
-		});
+		//
+		// Rechecked under the close admission's row lock: a close admitted while
+		// this deposit was being prepared must stop it here, before it reaches L1.
+		const promoted = await withSerializableSlotRetry(() =>
+			prisma.$transaction(
+				async (tx) => {
+					await lockOpenHydraHeadForDeposit(tx, reservation.hydraHeadId);
+					// Only a row still Preparing: a stale-failed one must not come back.
+					return await tx.hydraTopup.update({
+						where: { id: reservation.topupId, status: HydraTopupStatus.Preparing },
+						data: {
+							depositTxHash: reservation.depositTxHash,
+							invalidHereafterSlot: reservation.invalidHereafterSlot,
+							committedLovelace: reservation.committedLovelace,
+							committedAssets: reservation.committedAssets,
+							status: HydraTopupStatus.Pending,
+						},
+						select: { id: true },
+					});
+				},
+				{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+			),
+		);
 		topupId = promoted.id;
 	} catch (error) {
 		if (isUniqueConstraintError(error)) throw new HydraTopupReservationConflictError();
+		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+			throw new HydraTopupReservationConflictError(
+				'This Hydra top-up was failed as stale before it could be submitted; any carved UTxO remains in the wallet',
+			);
+		}
 		throw error;
 	}
 
@@ -210,13 +229,6 @@ export async function reconcilePendingHydraTopups(): Promise<void> {
 					// commit reconciler already releases on it — so both jobs released,
 					// on their own schedules, for one deposit.
 					//
-					// The second release is the dangerous one. `releaseHotWalletAfterL1`
-					// is fenced on `lockPurpose` alone, which is a shared constant rather
-					// than an operation's identity, so once this row has resolved and a
-					// later Hydra top-up has claimed the same wallet, the commit job's
-					// release frees THAT operation's lock while its carve is still
-					// unconfirmed — and a batcher then builds over the carve's inputs.
-					//
 					// One deposit, one releaser: the commit reservation owns this lock.
 					// Read off the row. Deriving it from `LocalParticipant.commitTxHash` meant
 					// the guard stopped holding the moment a cleared commit was retried under a
@@ -228,7 +240,7 @@ export async function reconcilePendingHydraTopups(): Promise<void> {
 						// submitted stops being outstanding, which is here. Releasing when
 						// the request returned handed the wallet to a batcher that could
 						// still see the deposit's inputs as unspent.
-						await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId);
+						await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId, candidate.walletClaimToken);
 					}
 				}
 			} catch (error) {

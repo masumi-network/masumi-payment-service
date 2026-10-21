@@ -87,7 +87,8 @@ async function unstickPurposeLocks(purpose: string, staleAfterMs: number): Promi
 	const staleLockFilter: Prisma.HotWalletWhereInput = {
 		deletedAt: null,
 		pendingTransactionId: null,
-		lockPurpose: purpose,
+		// Each claim appends its own token to the marker.
+		lockPurpose: { startsWith: purpose },
 		// The `lockedAt: null` branch is not redundant. Prisma's `lt` does not
 		// match NULL, so without it a marker left behind on an ALREADY UNLOCKED row
 		// was invisible to the only sweep written for it — while every 300s orphan
