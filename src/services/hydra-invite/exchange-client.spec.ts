@@ -119,6 +119,50 @@ describe('Hydra invite exchange transport security', () => {
 	});
 });
 
+describe('redemption retry on a busy Host', () => {
+	const transport = { allowInsecureHttp: false, allowPrivateNetwork: false };
+	const sleep = jest.fn(async (_ms: number) => undefined);
+	const busy = { status: 503, detail: '{"error":"exchange is busy"}' };
+
+	it('retries a 503 and succeeds once the Host has room', async () => {
+		const send = jest
+			.fn<NonNullable<ExchangeClientDeps['send']>>()
+			.mockResolvedValueOnce(busy)
+			.mockResolvedValueOnce({ status: 200, detail: '' });
+		await expect(
+			postRedemption('https://issuer.example/exchange', redemption, transport, { resolve: PUBLIC_DNS, send, sleep }),
+		).resolves.toBeUndefined();
+		expect(send).toHaveBeenCalledTimes(2);
+	});
+
+	it('gives up after four 503s, waiting longer than the Host body deadline', async () => {
+		sleep.mockClear();
+		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue(busy);
+		await expect(
+			postRedemption('https://issuer.example/exchange', redemption, transport, { resolve: PUBLIC_DNS, send, sleep }),
+		).rejects.toThrow(/refused the redemption \(503\)/);
+		expect(send).toHaveBeenCalledTimes(4);
+		const waitedMs = sleep.mock.calls.reduce((total, [ms]) => total + ms, 0);
+		expect(waitedMs).toBeGreaterThan(5_000);
+	});
+
+	it.each([409, 429])('does not retry a %s', async (status) => {
+		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue({ status, detail: '' });
+		await expect(
+			postRedemption('https://issuer.example/exchange', redemption, transport, { resolve: PUBLIC_DNS, send, sleep }),
+		).rejects.toThrow(new RegExp(`\\(${status}\\)`));
+		expect(send).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not retry a transport failure, which may have spent the nonce', async () => {
+		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockRejectedValue(new Error('socket hang up'));
+		await expect(
+			postRedemption('https://issuer.example/exchange', redemption, transport, { resolve: PUBLIC_DNS, send, sleep }),
+		).rejects.toThrow(/could not reach/);
+		expect(send).toHaveBeenCalledTimes(1);
+	});
+});
+
 // Teredo and 6to4 addresses embed an IPv4 address, so an unfiltered one reaches
 // a blocked range under a different family.
 describe('isPrivateOrSpecialAddress — IPv4-in-IPv6 transition ranges', () => {
