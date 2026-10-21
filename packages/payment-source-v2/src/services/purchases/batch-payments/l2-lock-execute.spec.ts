@@ -75,6 +75,8 @@ function fakeHead() {
 		getHeadClock: () => ({ chainTimeMs: Date.now(), receivedAtMs: Date.now() }),
 		fetchProtocolParameters: async () => ({ ...DEFAULT_PROTOCOL_PARAMETERS, maxTxSize: HEAD_MAX_TX_SIZE }),
 		getPendingIncrementUtxoRefs: () => new Set<string>(),
+		// No unburned L2 mint in this head, so nothing is held back.
+		spendableUTxOs: <T>(utxos: readonly T[]): T[] => [...utxos],
 		fetchAddressUTxOs: async (address: string): Promise<UTxO[]> => [
 			{
 				input: { txHash: 'a'.repeat(64), outputIndex: 0 },
