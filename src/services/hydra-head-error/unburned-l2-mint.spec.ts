@@ -25,13 +25,17 @@ const TEN_MINUTES_MS = 10 * 60 * 1000;
 let rows: Row[];
 let queries: number;
 let failNextQuery: boolean;
+let stallNextQuery: Promise<void> | undefined;
+let afterNextRead: (() => void) | undefined;
 
 function matches(row: Row, where: Partial<Row>): boolean {
 	return Object.entries(where).every(([key, value]) => row[key as keyof Row] === value);
 }
 
 async function query(): Promise<void> {
-	await Promise.resolve();
+	const stall = stallNextQuery;
+	stallNextQuery = undefined;
+	await (stall ?? Promise.resolve());
 	queries += 1;
 	if (failNextQuery) {
 		failNextQuery = false;
@@ -44,7 +48,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		hydraHeadError: {
 			findMany: async ({ where }: { where: Partial<Row> }) => {
 				await query();
-				return rows.filter((row) => matches(row, where));
+				const found = rows.filter((row) => matches(row, where));
+				afterNextRead?.();
+				afterNextRead = undefined;
+				return found;
 			},
 			create: async ({ data }: { data: Omit<Row, 'id'> }) => {
 				await query();
@@ -67,9 +74,10 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 }));
 
 let recordUnburnedL2Mint: typeof import('./unburned-l2-mint').recordUnburnedL2Mint;
+let dropUnburnedL2MintReports: typeof import('./unburned-l2-mint').dropUnburnedL2MintReports;
 
 beforeAll(async () => {
-	({ recordUnburnedL2Mint } = await import('./unburned-l2-mint'));
+	({ recordUnburnedL2Mint, dropUnburnedL2MintReports } = await import('./unburned-l2-mint'));
 });
 
 // The module keeps its per-head state across tests, so each test uses its own head id.
@@ -78,6 +86,8 @@ beforeEach(() => {
 	rows = [];
 	queries = 0;
 	failNextQuery = false;
+	stallNextQuery = undefined;
+	afterNextRead = undefined;
 });
 
 afterEach(() => {
@@ -172,21 +182,65 @@ describe('recordUnburnedL2Mint', () => {
 		expect(rows.map((row) => row.txHash)).toEqual([pending.txHash]);
 	});
 
-	// A report held while a check was running is older than any report that
-	// starts the next check, so it must not be written after that one.
-	it('drops a held report once a newer report is checked', async () => {
+	// A report that arrives during a failed check must wait for the retry
+	// interval, not the full one, even if the head sends nothing after it.
+	it('checks a report kept during a failed check after the retry interval', async () => {
 		const first = incident('88'.repeat(32));
-		const held = incident('99'.repeat(32));
-		const newest = incident('aa'.repeat(32));
+		const kept = incident('99'.repeat(32));
 		failNextQuery = true;
-		const failing = recordUnburnedL2Mint('head-race', HydraHeadStatus.Open, first);
-		await recordUnburnedL2Mint('head-race', HydraHeadStatus.Open, held);
+		const failing = recordUnburnedL2Mint('head-failed-check', HydraHeadStatus.Open, first);
+		await recordUnburnedL2Mint('head-failed-check', HydraHeadStatus.Open, kept);
 		await failing;
 
 		await jest.advanceTimersByTimeAsync(31 * 1000);
-		await recordUnburnedL2Mint('head-race', HydraHeadStatus.Open, newest);
+
+		expect(rows.map((row) => row.txHash)).toEqual([kept.txHash]);
+	});
+
+	// A database call can hang for longer than the interval. A second check
+	// started meanwhile would finish first, and the stalled one would then
+	// write its older incident over the newer row.
+	it('runs one check at a time, so a stalled check cannot overwrite a newer row', async () => {
+		let release!: () => void;
+		stallNextQuery = new Promise((resolve) => {
+			release = resolve;
+		});
+		const older = incident('bb'.repeat(32));
+		const newer = incident('cc'.repeat(32));
+		const stalled = recordUnburnedL2Mint('head-stall', HydraHeadStatus.Open, older);
+		await recordUnburnedL2Mint('head-stall', HydraHeadStatus.Open, newer);
+
+		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS);
+		expect(rows).toHaveLength(0);
+		release();
+		await stalled;
+		await jest.advanceTimersByTimeAsync(TEN_MINUTES_MS);
+
+		expect(rows.map((row) => row.txHash)).toEqual([newer.txHash]);
+	});
+
+	// After a lease handover the new owner writes the row; the old process must
+	// not move it back to the report it kept.
+	it('writes nothing for a head after it is dropped', async () => {
+		const current = incident('dd'.repeat(32));
+		await recordUnburnedL2Mint('head-dropped', HydraHeadStatus.Open, current);
+		await recordUnburnedL2Mint('head-dropped', HydraHeadStatus.Open, incident('ee'.repeat(32)));
+
+		dropUnburnedL2MintReports('head-dropped');
 		await jest.advanceTimersByTimeAsync(3 * TEN_MINUTES_MS);
 
-		expect(rows.map((row) => row.txHash)).toEqual([newest.txHash]);
+		expect(rows.map((row) => row.txHash)).toEqual([current.txHash]);
+	});
+
+	it('creates the row when an operator clears it between the read and the write', async () => {
+		rows.push({ id: 'old', hydraHeadId: 'head-cleared-mid', clientInput: 'L2Mint', txHash: '00'.repeat(32) });
+		afterNextRead = () => {
+			rows = [];
+		};
+		const next = incident('ab'.repeat(32));
+
+		await recordUnburnedL2Mint('head-cleared-mid', HydraHeadStatus.Open, next);
+
+		expect(rows.map((row) => row.txHash)).toEqual([next.txHash]);
 	});
 });

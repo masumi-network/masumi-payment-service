@@ -6,14 +6,15 @@
  * reports an open incident on every verified snapshot and on every replay
  * pass. A peer also decides how often incidents start: minting and burning in
  * turn opens a new one every other snapshot. So each head keeps one row,
- * updated in place to the latest incident, and checks the database at most
- * once per interval. A report that arrives inside the interval is held and
- * checked when the interval ends, so an incident that starts there is written
- * even if the head sends nothing after it.
+ * updated in place to the latest incident, and runs one database check at a
+ * time, at most once per interval. A report that arrives in between is kept
+ * and checked when the interval ends, so an incident that starts there is
+ * written even if the head sends nothing after it.
  *
  * Best effort across processes: there is no unique constraint, so two owners
- * during a lease handover can both write a row. Both rows then follow the
- * latest incident.
+ * during a lease handover can both write a row. Each check moves every row of
+ * the head to its incident. A process drops its kept report when it stops the
+ * head, so it does not write after the handover.
  */
 
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
@@ -27,24 +28,35 @@ export const UNBURNED_L2_MINT_CLIENT_INPUT = 'L2Mint';
 /**
  * How long a head waits after a database check before the next one. Reports
  * arrive per snapshot, so they must not cost a query each. The latest report
- * held during the wait is checked when it ends: that brings back a row an
- * operator cleared while the head is still blocked, and moves the row to a
- * newer incident. A head that sends no report after a check (idle, or Closed)
- * is not checked again until it does.
+ * kept during the wait is checked when it ends: that brings back a row an
+ * operator cleared, and moves the row to a newer incident. The node does not
+ * report an incident closing, so a kept report is written even if its
+ * incident closed during the wait. A head that sends no report after a check
+ * (idle, or Closed) is not checked again until it does.
  */
 const RECHECK_INTERVAL_MS = 10 * 60 * 1000;
 
-/** How long a head waits after a failed check, so an outage costs one query per head per interval, not per snapshot. */
+/**
+ * How long a head waits after a failed check. An outage costs one query per
+ * head per interval, not per snapshot. The failed report itself is not kept;
+ * the next report brings the incident back.
+ */
 const RETRY_INTERVAL_MS = 30 * 1000;
 
-/** Per head: the monotonic time before which reports skip the database. */
-const nextCheckByHead = new Map<string, number>();
+type Report = { headStatus: HydraHeadStatus; incident: L2MintIncident };
 
-/** Per head: the latest report that arrived before that time, and the timer that checks it then. */
-const heldReportByHead = new Map<
-	string,
-	{ headStatus: HydraHeadStatus; incident: L2MintIncident; timer: ReturnType<typeof setTimeout> }
->();
+interface HeadReports {
+	/** Monotonic time before which no check starts. */
+	nextCheckAt: number;
+	/** The latest report not yet checked. */
+	pending?: Report;
+	/** Starts the check of `pending` at `nextCheckAt`. */
+	timer?: ReturnType<typeof setTimeout>;
+	/** One check at a time, so an older check that stalls cannot finish after a newer one. */
+	isChecking: boolean;
+}
+
+const reportsByHead = new Map<string, HeadReports>();
 
 function describeIncident(incident: L2MintIncident): string {
 	const { count, sample } = incident.netUnits;
@@ -57,58 +69,73 @@ function describeIncident(incident: L2MintIncident): string {
 	);
 }
 
+/** Moves every row of the head to the incident, or creates the row. One query when every row already names it. */
+async function writeIncident(hydraHeadId: string, { headStatus, incident }: Report): Promise<void> {
+	const where = { hydraHeadId, clientInput: UNBURNED_L2_MINT_CLIENT_INPUT };
+	const existing = await prisma.hydraHeadError.findMany({ where, select: { txHash: true } });
+	if (existing.length > 0 && existing.every((row) => row.txHash === incident.txHash)) return;
+	const data = { errorMessage: describeIncident(incident), headStatus, txHash: incident.txHash, errorAt: new Date() };
+	// An operator can clear the rows between the read and this write.
+	if (existing.length > 0 && (await prisma.hydraHeadError.updateMany({ where, data })).count > 0) return;
+	await prisma.hydraHeadError.create({
+		data: { ...data, hydraHeadId, errorType: HydraErrorType.CommandFailed, clientInput: UNBURNED_L2_MINT_CLIENT_INPUT },
+	});
+}
+
+function armCheck(hydraHeadId: string, head: HeadReports): void {
+	head.timer = setTimeout(
+		() => {
+			head.timer = undefined;
+			void checkPending(hydraHeadId, head);
+		},
+		Math.max(0, head.nextCheckAt - performance.now()),
+	).unref();
+}
+
+async function checkPending(hydraHeadId: string, head: HeadReports): Promise<void> {
+	const report = head.pending;
+	if (!report) return;
+	head.pending = undefined;
+	head.isChecking = true;
+	let wait = RECHECK_INTERVAL_MS;
+	try {
+		await writeIncident(hydraHeadId, report);
+	} catch (error) {
+		wait = RETRY_INTERVAL_MS;
+		logger.error('[HydraHeadError] could not record an unburned L2 mint', {
+			hydraHeadId,
+			txHash: report.incident.txHash,
+			error: error instanceof Error ? error.message : error,
+		});
+	}
+	head.isChecking = false;
+	head.nextCheckAt = performance.now() + wait;
+	// A report that arrived during this check waits for the next one, unless
+	// the head was dropped meanwhile.
+	if (head.pending && reportsByHead.get(hydraHeadId) === head) armCheck(hydraHeadId, head);
+}
+
 export async function recordUnburnedL2Mint(
 	hydraHeadId: string,
 	headStatus: HydraHeadStatus,
 	incident: L2MintIncident,
 ): Promise<void> {
-	const now = performance.now();
-	const nextCheckAt = nextCheckByHead.get(hydraHeadId) ?? 0;
-	if (now < nextCheckAt) {
-		const timer =
-			heldReportByHead.get(hydraHeadId)?.timer ??
-			setTimeout(() => {
-				const held = heldReportByHead.get(hydraHeadId);
-				heldReportByHead.delete(hydraHeadId);
-				if (held) void recordUnburnedL2Mint(hydraHeadId, held.headStatus, held.incident);
-			}, nextCheckAt - now).unref();
-		heldReportByHead.set(hydraHeadId, { headStatus, incident, timer });
+	let head = reportsByHead.get(hydraHeadId);
+	if (!head) {
+		head = { nextCheckAt: 0, isChecking: false };
+		reportsByHead.set(hydraHeadId, head);
+	}
+	head.pending = { headStatus, incident };
+	if (head.isChecking || head.timer) return;
+	if (performance.now() < head.nextCheckAt) {
+		armCheck(hydraHeadId, head);
 		return;
 	}
-	// This report is newer than a held one, so this check replaces it.
-	clearTimeout(heldReportByHead.get(hydraHeadId)?.timer);
-	heldReportByHead.delete(hydraHeadId);
-	// Claimed before the first await, so a report that arrives while this one
-	// is still writing is held.
-	nextCheckByHead.set(hydraHeadId, now + RECHECK_INTERVAL_MS);
-	const where = { hydraHeadId, clientInput: UNBURNED_L2_MINT_CLIENT_INPUT };
-	try {
-		const existing = await prisma.hydraHeadError.findMany({ where, select: { txHash: true } });
-		if (existing.length > 0 && existing.every((row) => row.txHash === incident.txHash)) return;
-		const data = {
-			errorMessage: describeIncident(incident),
-			headStatus,
-			txHash: incident.txHash,
-			errorAt: new Date(),
-		};
-		if (existing.length > 0) {
-			await prisma.hydraHeadError.updateMany({ where, data });
-		} else {
-			await prisma.hydraHeadError.create({
-				data: {
-					...data,
-					hydraHeadId,
-					errorType: HydraErrorType.CommandFailed,
-					clientInput: UNBURNED_L2_MINT_CLIENT_INPUT,
-				},
-			});
-		}
-	} catch (error) {
-		nextCheckByHead.set(hydraHeadId, performance.now() + RETRY_INTERVAL_MS);
-		logger.error('[HydraHeadError] could not record an unburned L2 mint', {
-			hydraHeadId,
-			txHash: incident.txHash,
-			error: error instanceof Error ? error.message : error,
-		});
-	}
+	await checkPending(hydraHeadId, head);
+}
+
+/** Forgets the head's kept report, so this process writes nothing for it after it stops the head. */
+export function dropUnburnedL2MintReports(hydraHeadId: string): void {
+	clearTimeout(reportsByHead.get(hydraHeadId)?.timer);
+	reportsByHead.delete(hydraHeadId);
 }

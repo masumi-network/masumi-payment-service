@@ -24,7 +24,7 @@ import {
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { recordHeadError } from '@/services/hydra-head-error/record';
-import { recordUnburnedL2Mint } from '@/services/hydra-head-error/unburned-l2-mint';
+import { dropUnburnedL2MintReports, recordUnburnedL2Mint } from '@/services/hydra-head-error/unburned-l2-mint';
 import type { L2MintIncident } from '@/lib/hydra/hydra/l2-mint-tally';
 import { HydraErrorType, HydraHeadStatus, Network } from '@/generated/prisma/client';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
@@ -303,6 +303,7 @@ export class HydraConnectionManager {
 				await this.flushHeadStatus(head.id);
 				hydraHead.removeAllListeners();
 				hydraHead.mainNode.removeAllListeners();
+				dropUnburnedL2MintReports(head.id);
 				session.detachIfCurrent(hydraHead);
 			}
 			throw error;
@@ -384,6 +385,7 @@ export class HydraConnectionManager {
 			await this.flushHeadStatus(hydraHeadId);
 			attachment.head.removeAllListeners();
 			attachment.head.mainNode.removeAllListeners();
+			dropUnburnedL2MintReports(hydraHeadId);
 			// The revocation fence is instance-based and only meaningful while the
 			// attachment still holds this instance; `detachIfCurrent` drops both so
 			// a newer attachment is unaffected.
