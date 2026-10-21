@@ -24,8 +24,14 @@ import {
 	readDepositRecorded,
 } from './node-frames';
 import { HeldBackEmissions } from './node-held-back';
-import { hasFinalizedUtxoField, headClockMessageSchema, messageSchema } from './schemas';
-import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, StatusChangeData } from './types';
+import { describePostTxError } from './post-tx-error';
+import {
+	hasFinalizedUtxoField,
+	headClockMessageSchema,
+	messageSchema,
+	postTxOnChainFailedMessageSchema,
+} from './schemas';
+import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, PostTxFailedData, StatusChangeData } from './types';
 
 export const LIVE_SESSION_READY_EVENT = 'hydraLiveSessionReady';
 export const LIVE_SESSION_REJECTED_EVENT = 'hydraLiveSessionRejected';
@@ -285,6 +291,7 @@ export class LiveFrameProcessor {
 		// the same proof of identity every other persisted transition does.
 		let decommitSettled: ReturnType<typeof readDecommitSettled>;
 		let depositRecorded: DepositRecordedData | undefined;
+		let postTxFailed: PostTxFailedData | undefined;
 		/** Acted on after the status change is emitted, never before — see below. */
 		let headWasAborted = false;
 		try {
@@ -399,6 +406,9 @@ export class LiveFrameProcessor {
 				depositRecorded = readDepositRecorded(message);
 			}
 			decommitSettled = readDecommitSettled(envelope.tag, message);
+			if (envelope.tag === 'PostTxOnChainFailed') {
+				postTxFailed = readPostTxFailed(message);
+			}
 			if (envelope.tag === 'CommitRecovered') {
 				// Deliberately does NOT decrement. Recovery is the path for a deposit
 				// the head did not take, so a recovered deposit was never
@@ -457,6 +467,7 @@ export class LiveFrameProcessor {
 		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
 		if (decommitSettled) this.emitter.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
 		if (depositRecorded) this.emitter.emit(HydraNodeEvent.DepositRecorded, depositRecorded);
+		if (postTxFailed) this.emitter.emit(HydraNodeEvent.PostTxFailed, postTxFailed);
 		const changeData = extractStatusChangeData(rawMessage, this.host.expectedHeadId);
 		if (changeData && changeData.status !== HydraHeadStatus.Final) {
 			// A history replay can contain a prior Final while the authenticated
@@ -502,4 +513,22 @@ export class LiveFrameProcessor {
 			}
 		}
 	}
+}
+
+/**
+ * What a `PostTxOnChainFailed` frame says went wrong.
+ *
+ * A frame this service cannot read is still a failure, so it is reported as an
+ * unknown transaction instead of being dropped: dropping it is how a failed
+ * contest went unnoticed.
+ */
+function readPostTxFailed(message: unknown): PostTxFailedData {
+	const frame = postTxOnChainFailedMessageSchema.safeParse(message);
+	if (!frame.success) {
+		return { postChainTxTag: 'unknown', reason: 'the node reported a failed transaction this service could not read' };
+	}
+	return {
+		postChainTxTag: frame.data.postChainTx?.tag ?? 'unknown',
+		reason: describePostTxError(frame.data.postTxError),
+	};
 }

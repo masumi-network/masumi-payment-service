@@ -20,6 +20,7 @@ import {
 	StatusChangeData,
 	type DecommitSettledData,
 	type DepositRecordedData,
+	type PostTxFailedData,
 	buildHydraHttpEndpoint,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
@@ -511,6 +512,20 @@ export class HydraConnectionManager {
 					error: recordError instanceof Error ? recordError.message : recordError,
 				});
 			});
+		});
+
+		// An L1 transaction the node could not post. A contest it posts on its own
+		// has no command waiting on it, so this record is the only place the
+		// failure shows up, and it is the head's defence that did not happen.
+		// `recordHeadError` logs its own failures, so nothing here needs catching.
+		head.mainNode.on(HydraNodeEvent.PostTxFailed, (data: PostTxFailedData) => {
+			void recordHeadError(
+				hydraHeadId,
+				head.mainNode.status,
+				HydraErrorType.PostTxOnChainFailed,
+				`${data.postChainTxTag} failed: ${data.reason}`,
+				`PostTx:${data.postChainTxTag}`,
+			);
 		});
 
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {

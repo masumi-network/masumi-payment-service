@@ -596,6 +596,94 @@ describe('HydraNode', () => {
 		});
 	});
 
+	// The node posts some L1 transactions on its own, a contest above all: when a
+	// peer closes on an old snapshot it answers with ContestTx without being
+	// asked. If that post fails, no command is waiting on it, so the frame used to
+	// be read and dropped and the head went undefended with nothing recorded.
+	describe('PostTxOnChainFailed processing', () => {
+		function failureEvents(node: { on(event: string, listener: (data: unknown) => void): unknown }) {
+			const events: unknown[] = [];
+			node.on(HydraNodeEvent.PostTxFailed, (data) => events.push(data));
+			return events;
+		}
+
+		it('reports a failed contest with the transaction and the node reason', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'PostTxOnChainFailed',
+					headId: HEAD_ID_A,
+					postChainTx: { tag: 'ContestTx' },
+					postTxError: { tag: 'NotEnoughFuel' },
+				}),
+			);
+
+			expect(events).toEqual([{ postChainTxTag: 'ContestTx', reason: expect.stringContaining('NotEnoughFuel') }]);
+		});
+
+		it.each(['DecrementTx', 'IncrementTx', 'RecoverTx', 'FanoutTx'])('reports a failed %s too', (tag) => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'PostTxOnChainFailed', postChainTx: { tag }, postTxError: { tag: 'FailedToPostTx' } }),
+			);
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: tag })]);
+		});
+
+		// Reported, not dropped: a failure whose shape we cannot read is still a failure.
+		it('reports a failure it cannot read as an unknown transaction', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'PostTxOnChainFailed',
+					postChainTx: { tag: 42 },
+					postTxError: { tag: 'FailedToPostTx' },
+				}),
+			);
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+
+			expect(events).toEqual([
+				expect.objectContaining({ postChainTxTag: 'unknown' }),
+				expect.objectContaining({ postChainTxTag: 'unknown', reason: 'no reason given' }),
+			]);
+		});
+
+		it('does not report a frame for a different head', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const connectPromise = node.connect();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Open', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'PostTxOnChainFailed',
+					headId: 'b'.repeat(56),
+					postChainTx: { tag: 'ContestTx' },
+					postTxError: { tag: 'FailedToPostTx' },
+				}),
+			);
+
+			expect(events).toEqual([]);
+		});
+	});
+
 	describe('unsigned SnapshotConfirmed processing', () => {
 		it('fails closed, invalidates the history socket, and retains no evidence', async () => {
 			const { node, historyConnection } = await startSignedNode();
