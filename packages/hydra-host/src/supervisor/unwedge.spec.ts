@@ -11,6 +11,7 @@ function options(overrides: Partial<UnwedgeOptions> = {}): UnwedgeOptions {
 		sideLoadSnapshot: jest.fn<(snapshot: unknown) => Promise<void>>().mockResolvedValue(undefined),
 		settleWaitMs: 30_000,
 		sleep: noopSleep,
+		allowAutoSideLoad: true,
 		...overrides,
 	};
 }
@@ -76,6 +77,48 @@ describe('unwedgeNode', () => {
 		expect(opts.sideLoadSnapshot).toHaveBeenCalledWith({ snapshot: 'confirmed' });
 	});
 
+	// The side-load discards the round. If the counterparty already confirmed the
+	// next snapshot, it holds signatures this node would lose, and the Host cannot
+	// see the counterparty's node (its API binds loopback), so by default it
+	// leaves the decision to an operator who can.
+	describe('without permission to side-load automatically', () => {
+		const stuck = () =>
+			jest
+				.fn<() => Promise<LastSeenSnapshotResponse>>()
+				.mockResolvedValueOnce({ tag: 'SeenSnapshot', number: 7 })
+				.mockResolvedValueOnce({ tag: 'SeenSnapshot', number: 7 });
+
+		it('leaves a stuck round for an operator and does not touch the node', async () => {
+			const opts = options({ fetchLastSeen: stuck(), allowAutoSideLoad: false });
+
+			const outcome = await unwedgeNode(opts);
+
+			expect(outcome).toEqual({
+				kind: 'NeedsOperator',
+				tag: 'SeenSnapshot',
+				reason: expect.stringContaining('HYDRA_HOST_AUTO_SIDELOAD') as unknown as string,
+			});
+			expect(opts.fetchConfirmedSnapshot).not.toHaveBeenCalled();
+			expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
+		});
+
+		it('still waits to be sure the round is stuck before asking for an operator', async () => {
+			const fetchLastSeen = jest
+				.fn<() => Promise<LastSeenSnapshotResponse>>()
+				.mockResolvedValueOnce({ tag: 'SeenSnapshot', number: 7 })
+				.mockResolvedValueOnce({ tag: 'LastSeenSnapshot', number: 7 });
+			const opts = options({ fetchLastSeen, allowAutoSideLoad: false });
+
+			expect((await unwedgeNode(opts)).kind).toBe('Progressing');
+		});
+
+		it('leaves a healthy node alone', async () => {
+			const opts = options({ allowAutoSideLoad: false });
+
+			await expect(unwedgeNode(opts)).resolves.toEqual({ kind: 'Healthy' });
+		});
+	});
+
 	// Trust nothing: the harness this is ported from explicitly verifies the
 	// side-load worked and fails loudly when it did not.
 	it('reports unrecovered when the side-load does not clear the round', async () => {
@@ -132,6 +175,7 @@ describe('unwedgeNode read failures', () => {
 			fetchLastSeen: rejecting,
 			fetchConfirmedSnapshot: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
+			allowAutoSideLoad: true,
 			settleWaitMs: 0,
 			sleep: () => Promise.resolve(),
 		});
@@ -149,6 +193,7 @@ describe('unwedgeNode read failures', () => {
 			},
 			fetchConfirmedSnapshot: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
+			allowAutoSideLoad: true,
 			settleWaitMs: 0,
 			sleep: () => Promise.resolve(),
 		});
@@ -165,6 +210,7 @@ describe('unwedgeNode read failures', () => {
 			},
 			fetchConfirmedSnapshot: () => Promise.resolve({ snapshotNumber: 4 }),
 			sideLoadSnapshot: () => Promise.resolve(),
+			allowAutoSideLoad: true,
 			settleWaitMs: 0,
 			sleep: () => Promise.resolve(),
 		});
@@ -186,6 +232,7 @@ describe('unwedgeNode during a shutdown', () => {
 			fetchLastSeen: () => Promise.resolve({ tag: 'SeenSnapshot', snapshotNumber: 4 }),
 			fetchConfirmedSnapshot: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
+			allowAutoSideLoad: true,
 			settleWaitMs: 30_000,
 			sleep: () => {
 				slept = true;
@@ -203,6 +250,7 @@ describe('unwedgeNode during a shutdown', () => {
 			fetchLastSeen: () => Promise.resolve({ tag: 'LastSeenSnapshot' }),
 			fetchConfirmedSnapshot: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
+			allowAutoSideLoad: true,
 			settleWaitMs: 0,
 			sleep: () => Promise.resolve(),
 			isAborted: () => false,

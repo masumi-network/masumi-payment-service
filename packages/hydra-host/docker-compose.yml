@@ -104,6 +104,13 @@ services:
       # Peers must resolve to public addresses unless this is true. Set it only
       # when the counterparties' nodes really sit on a private network.
       HYDRA_HOST_ALLOW_PRIVATE_PEERS: ${HYDRA_HOST_ALLOW_PRIVATE_PEERS:-false}
+      # Off unless you accept the risk. After a crash the Host can side-load a
+      # node's last confirmed snapshot to clear a stranded round, but that
+      # discards the round, and a counterparty that already confirmed the next
+      # snapshot would then hold one the node has lost. The Host cannot see the
+      # counterparty's node, so by default it leaves the node running and logs it
+      # for an operator (docs/hydra-operations.md, "Stranded snapshot rounds").
+      HYDRA_HOST_AUTO_SIDELOAD: ${HYDRA_HOST_AUTO_SIDELOAD:-false}
 
     volumes:
       # Real block storage, not a network filesystem: this holds a SQLite event

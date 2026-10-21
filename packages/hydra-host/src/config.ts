@@ -86,6 +86,18 @@ export type HostConfig = {
 	 * only for deployments whose peers really live on a private network.
 	 */
 	allowPrivatePeers: boolean;
+	/**
+	 * Let the supervisor repair a stranded snapshot round on its own, by
+	 * side-loading the node's last confirmed snapshot.
+	 *
+	 * Off by default. The side-load discards the round in flight, and if the
+	 * counterparty already confirmed the next snapshot it holds signatures this
+	 * node would lose for good, which can split the head. The counterparty's node
+	 * binds loopback, so the Host cannot look. With this off the node is left
+	 * running (it can still contest a close) and logged for an operator, who resets
+	 * it from the payment service after reading the counterparty's snapshot number.
+	 */
+	allowAutoSideLoad: boolean;
 	/** The project release this image was built from. See release.ts. */
 	release: ReleaseInfo;
 };
@@ -300,6 +312,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',
 		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
 		allowPrivatePeers: optional(env, 'HYDRA_HOST_ALLOW_PRIVATE_PEERS', 'false') === 'true',
+		allowAutoSideLoad: optional(env, 'HYDRA_HOST_AUTO_SIDELOAD', 'false') === 'true',
 		release: readReleaseInfo(env),
 	};
 }

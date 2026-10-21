@@ -25,6 +25,11 @@ export type UnwedgeOutcome =
 	| { kind: 'Progressing'; tag: string | null }
 	/** Stranded and recovered by side-loading the confirmed snapshot. */
 	| { kind: 'Recovered'; tag: string | null }
+	/**
+	 * Stranded, but side-loading on our own is not permitted. Nothing was changed;
+	 * an operator decides after looking at the counterparty's node.
+	 */
+	| { kind: 'NeedsOperator'; tag: string | null; reason: string }
 	/** Stranded, side-load attempted, still stuck. Needs an operator. */
 	| { kind: 'Unrecovered'; tag: string | null; reason: string }
 	/**
@@ -39,6 +44,12 @@ export type UnwedgeOptions = {
 	fetchConfirmedSnapshot: () => Promise<unknown>;
 	/** `POST /snapshot` — side-load. */
 	sideLoadSnapshot: (snapshot: unknown) => Promise<void>;
+	/**
+	 * Whether to side-load without asking. The Host cannot see whether the
+	 * counterparty already confirmed the next snapshot, and side-loading then
+	 * loses it, so this is an explicit opt-in (`HYDRA_HOST_AUTO_SIDELOAD`).
+	 */
+	allowAutoSideLoad: boolean;
 	/** How long to let a round settle before calling it stranded. */
 	settleWaitMs: number;
 	sleep: (ms: number) => Promise<void>;
@@ -85,7 +96,8 @@ function readTag(response: LastSeenSnapshotResponse | null | undefined): string 
  * discard in-flight work for no reason.
  */
 export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutcome> {
-	const { fetchLastSeen, fetchConfirmedSnapshot, sideLoadSnapshot, settleWaitMs, sleep, isAborted } = options;
+	const { fetchLastSeen, fetchConfirmedSnapshot, sideLoadSnapshot, allowAutoSideLoad, settleWaitMs, sleep, isAborted } =
+		options;
 	const aborted = (): boolean => isAborted?.() === true;
 
 	/**
@@ -133,6 +145,18 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 
 	const tag = readTag(second);
 	if (aborted()) return { kind: 'Deferred' };
+
+	// Checked after the settle wait, so a merely busy node is never reported.
+	if (!allowAutoSideLoad) {
+		return {
+			kind: 'NeedsOperator',
+			tag,
+			reason:
+				'the snapshot round is stranded and automatic side-load is off (HYDRA_HOST_AUTO_SIDELOAD), because the ' +
+				'counterparty may already have confirmed the next snapshot. Read its confirmed snapshot number, then reset ' +
+				'the round from the payment service',
+		};
+	}
 
 	let confirmed: unknown;
 	try {

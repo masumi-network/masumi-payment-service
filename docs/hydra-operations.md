@@ -136,6 +136,27 @@ it again on every reconnect, so a counterparty that controls its DNS can rebind
 it later. Block egress from the Host to private, link-local and metadata
 addresses as well.
 
+### Stranded snapshot rounds
+
+A node that is killed mid-round (an out-of-memory kill, a host failure) can come
+back with a snapshot round that never completes, so the head confirms nothing.
+The recovery is to side-load the node's own last confirmed snapshot. That
+discards the round in flight, so it is only safe if the counterparty has not
+already confirmed the next snapshot. If it has, it holds a snapshot this node
+would lose, and the two can no longer agree.
+
+Neither the Host nor the payment service can see the counterparty's node (its API
+binds loopback), so neither repairs on its own:
+
+- **Host:** `HYDRA_HOST_AUTO_SIDELOAD` is off by default. A stranded node is left
+  running, so it can still contest a close, and the Host logs
+  `needs an operator`. Set it to `true` only if you accept that risk for every
+  node on the Host.
+- **Payment service:** `POST /hydra/head/snapshot-round/reset` requires
+  `peerConfirmedSnapshotNumber`, the confirmed snapshot number read off the
+  counterparty's node (`GET /snapshot`). The reset is refused if it is ahead of
+  this node's. The admin UI asks for the same number.
+
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.
 

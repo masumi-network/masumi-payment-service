@@ -777,6 +777,7 @@ export class Supervisor {
 			fetchLastSeen: () => client.fetchLastSeen(),
 			fetchConfirmedSnapshot: () => client.fetchConfirmedSnapshot(),
 			sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
+			allowAutoSideLoad: this.config.allowAutoSideLoad,
 			settleWaitMs: STRANDED_SETTLE_WAIT_MS,
 			sleep,
 			isAborted: () => this.stopped,
@@ -795,6 +796,16 @@ export class Supervisor {
 				if (outcome.kind === 'Recovered') {
 					this.logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
 				}
+				await this.store.update(record.nodeId, (current) => ({
+					...current,
+					lastStopUndrained: false,
+					startAttempts: 0,
+				}));
+				return;
+			case 'NeedsOperator':
+				// The node keeps running, so it can still contest a close. Marking it
+				// Failed would take it down for a decision only an operator can make.
+				this.logger.error(`[supervisor] ${record.nodeId} needs an operator: ${outcome.reason}`);
 				await this.store.update(record.nodeId, (current) => ({
 					...current,
 					lastStopUndrained: false,

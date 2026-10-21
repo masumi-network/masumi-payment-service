@@ -14993,6 +14993,10 @@ export type PostHydraHeadSnapshotRoundResetData = {
          * The round signature from GET /hydra/head/snapshot-round. The reset is refused if the round changed.
          */
         expectedSignature: string;
+        /**
+         * The confirmed snapshot number shown by the counterparty node (GET /snapshot on it). The reset is refused if it is ahead of this node, because resetting would discard a snapshot only the counterparty holds.
+         */
+        peerConfirmedSnapshotNumber: number;
     };
     path?: never;
     query?: never;
@@ -15013,7 +15017,7 @@ export type PostHydraHeadSnapshotRoundResetErrors = {
      */
     404: unknown;
     /**
-     * Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, or the confirmed snapshot does not match the verified one
+     * Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, the confirmed snapshot does not match the verified one, or the counterparty has confirmed a later snapshot
      */
     409: unknown;
     /**

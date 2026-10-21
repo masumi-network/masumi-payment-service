@@ -13,6 +13,8 @@
  * - the session for this head is held by this instance (the ownership fence);
  * - the round in flight is the exact round the admin approved (no stale UI);
  * - that round has been recorded unchanged for the stuck threshold;
+ * - the counterparty has not confirmed a later snapshot than this node (the
+ *   admin reads that number off the counterparty's node);
  * - the body posted is the node's own `GET /snapshot`, never client input, and
  *   it is the pinned head's snapshot at the number this service verified.
  */
@@ -160,9 +162,11 @@ export async function getSnapshotRoundStatus(headId: string): Promise<SnapshotRo
 export async function resetSnapshotRound(params: {
 	headId: string;
 	expectedSignature: string;
+	/** The confirmed snapshot number the counterparty's node reports, read off it by the admin. */
+	peerConfirmedSnapshotNumber: number;
 	actorApiKeyId: string;
 }): Promise<ResetSnapshotRoundResult> {
-	const { headId, expectedSignature, actorApiKeyId } = params;
+	const { headId, expectedSignature, peerConfirmedSnapshotNumber, actorApiKeyId } = params;
 	if (resetsInFlight.has(headId)) throw createHttpError(409, 'A reset of this head is already running');
 	resetsInFlight.add(headId);
 	try {
@@ -210,6 +214,17 @@ export async function resetSnapshotRound(params: {
 		}
 		if (round.number <= snapshot.number) {
 			throw createHttpError(409, 'The round in flight is not newer than the confirmed snapshot');
+		}
+		// The side-load throws away the round in flight. If the counterparty already
+		// confirmed the next snapshot, it holds signatures this node would lose, and
+		// the two nodes could never agree again. Its API is not reachable from here,
+		// so the number is the admin's to read off the counterparty's node.
+		if (peerConfirmedSnapshotNumber > snapshot.number) {
+			throw createHttpError(
+				409,
+				`The counterparty has confirmed snapshot ${peerConfirmedSnapshotNumber}, ahead of this node's ${snapshot.number}. ` +
+					'Resetting this node would discard that snapshot and could split the head. Do not reset; the counterparty must resolve it',
+			);
 		}
 
 		await assertStillOwned(head, node, verifiedNumber, round.signature);
