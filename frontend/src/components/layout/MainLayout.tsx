@@ -43,6 +43,7 @@ import {
 } from '@/lib/payment-source-type';
 import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
 import { PublicEncryptionKeyBanner } from '@/components/layout/PublicEncryptionKeyBanner';
+import { PublicAdminKeyBanner } from '@/components/api-keys/PublicAdminKeyBanner';
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { buildMainNavigation } from '@/components/layout/main-navigation';
@@ -614,6 +615,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </header>
 
         <main className="relative z-10 min-h-0 w-full flex-1 overflow-y-auto overscroll-contain animate-content-fade-in">
+          <PublicAdminKeyBanner />
           {capabilities.canAdmin && <PublicEncryptionKeyBanner />}
           {capabilities.canAdmin && activeRail === 'x402' && !isSetupMode && (
             <div className="mx-auto w-full max-w-[1400px] px-4 pt-4">
