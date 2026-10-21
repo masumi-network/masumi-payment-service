@@ -1,7 +1,7 @@
 import type { UTxO } from '@meshsdk/core';
 import { HydraHead } from './head';
 import { HydraNode } from './node';
-import type { HydraFanoutRemainingUtxo } from './node-fanout-progress';
+import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
 import {
 	HydraTransaction,
 	HydraTransactionType,

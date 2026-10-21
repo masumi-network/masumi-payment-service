@@ -15,8 +15,13 @@ import { logger } from '@masumi/payment-core/logger';
 import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
 
-import type { HydraFanoutRemainingUtxo } from '@/lib/hydra/hydra/node-fanout-progress';
-import { hydraSnapshotUtxoSchema } from '@/lib/hydra/hydra/schemas';
+import {
+	HYDRA_FANOUT_MODES,
+	HydraFanoutHeadStateError,
+	parseFanoutHeadState,
+	type HydraFanoutHeadState,
+	type HydraFanoutRemainingUtxo,
+} from '@/lib/hydra/hydra/fanout-head-state';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from '@/lib/hydra/hydra/snapshot-limits';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
@@ -40,28 +45,33 @@ export const partialFanoutHeadOutput = lifecycleOutput.extend({
 	selectedCount: z.number(),
 });
 
-type FanoutRemainingSource = {
-	get<T>(url: string): Promise<T>;
-	getFanoutProgress(): { remainingUTxO: HydraFanoutRemainingUtxo } | undefined;
-};
+type FanoutHeadStateSource = { get<T>(url: string): Promise<T> };
 
 /**
- * What the head still holds, as the node reports it. Before the first step
- * that is the confirmed snapshot. After it, only the newest
- * `HeadPartiallyFannedOut` frame has it.
+ * What the head still holds, from the node's own head state: the same set the
+ * node checks a selection against. See `fanout-head-state.ts`.
  */
-export async function readFanoutRemainingUtxo(
-	node: FanoutRemainingSource,
-	status: HydraHeadStatus,
-): Promise<HydraFanoutRemainingUtxo> {
-	const progress = node.getFanoutProgress();
-	if (progress) return progress.remainingUTxO;
-	if (status === HydraHeadStatus.FanningOut) {
-		throw createHttpError(503, 'The node has not reported the remaining UTxO set of this fanout yet; retry');
+export async function readFanoutHeadState(node: FanoutHeadStateSource): Promise<HydraFanoutHeadState> {
+	let state: HydraFanoutHeadState | null;
+	try {
+		state = parseFanoutHeadState(await node.get('/head'));
+	} catch (error) {
+		if (error instanceof HydraFanoutHeadStateError) throw createHttpError(502, error.message);
+		throw error;
 	}
-	const snapshot = hydraSnapshotUtxoSchema.safeParse(await node.get('/snapshot/utxo'));
-	if (!snapshot.success) throw createHttpError(502, 'The node returned an invalid snapshot UTxO set');
-	return snapshot.data;
+	if (!state) throw createHttpError(409, 'The Hydra node does not hold this head as closed');
+	return state;
+}
+
+/**
+ * In `AutoDrain` and `DistributingSelection` the node posts the next step on
+ * its own. A new selection then would replace the one in progress, and a
+ * retire would stop tracking a head that is still settling.
+ */
+export function assertNodeAwaitsFanoutSelection(state: HydraFanoutHeadState): void {
+	if (state.mode != null && state.mode !== 'AwaitingSelection') {
+		throw createHttpError(409, `The Hydra node is still fanning out the head on its own (${state.mode}); wait for it`);
+	}
 }
 
 /** The selection, keyed as the node reported it. Throws 409 for a reference it does not hold. */
@@ -84,6 +94,10 @@ export function selectFanoutOutputs(
 }
 
 export const fanoutRemainingOutput = lifecycleOutput.extend({
+	fanoutMode: z
+		.enum(HYDRA_FANOUT_MODES)
+		.nullable()
+		.describe('Null before the first step. A selection is accepted only before it or in AwaitingSelection.'),
 	outputs: z.array(
 		z.object({
 			reference: z.string(),
@@ -110,11 +124,12 @@ export const fanoutRemainingGet = adminAuthenticatedEndpointFactory.build({
 		const node = getHydraConnectionManager().getNode(head.id);
 		if (!node) throw createHttpError(502, 'No active connection to Hydra head');
 
-		const remaining = await readFanoutRemainingUtxo(node, head.status);
+		const { mode, selectable } = await readFanoutHeadState(node);
 		return {
 			headId: head.id,
 			status: head.status,
-			outputs: Object.entries(remaining).map(([reference, output]) => {
+			fanoutMode: mode,
+			outputs: Object.entries(selectable).map(([reference, output]) => {
 				const lovelace = output.value.lovelace;
 				// BigInt on the way in, string on the wire.
 				return {
@@ -147,7 +162,9 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		const node = cm.getNode(head.id);
 		if (!hydraHead || !node) throw createHttpError(502, 'No active connection to Hydra head');
 
-		const remaining = await readFanoutRemainingUtxo(node, head.status);
+		const fanoutState = await readFanoutHeadState(node);
+		assertNodeAwaitsFanoutSelection(fanoutState);
+		const remaining = fanoutState.selectable;
 		const selection = selectFanoutOutputs(remaining, input.outputRefs);
 		const selectedCount = Object.keys(selection).length;
 

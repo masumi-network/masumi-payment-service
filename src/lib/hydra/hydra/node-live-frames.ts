@@ -87,10 +87,6 @@ export interface LiveFrameHost {
 	recordFinalizedFanout(message: unknown): void;
 	/** Never carry an old fanout map past a non-Final tip. */
 	clearFinalizedFanout(): void;
-	/** Record a partial fanout step, shared with history replay's sightings. */
-	recordPartialFanout(message: unknown): void;
-	/** Never carry a remaining set past a tip that is not FanningOut. */
-	clearPartialFanout(): void;
 	setNetworkConnected(connected: boolean): void;
 	/** The rotation latch was hit on the live socket: fail the replay with it. */
 	onRotationError(error: unknown): void;
@@ -386,7 +382,6 @@ export class LiveFrameProcessor {
 			if (envelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
 				this.host.recordFinalizedFanout(message);
 			}
-			if (envelope.tag === 'HeadPartiallyFannedOut') this.host.recordPartialFanout(message);
 			// A deposit is folded in over two events, and in between the head has
 			// agreed to spend its current UTxO set without having produced the
 			// replacement yet. Anything built against that set in the gap is refused
@@ -469,7 +464,6 @@ export class LiveFrameProcessor {
 			// old fanout map into a later finalization attempt.
 			this.host.clearFinalizedFanout();
 		}
-		if (changeData && changeData.status !== HydraHeadStatus.FanningOut) this.host.clearPartialFanout();
 		if (changeData && changeData.status !== this._status) {
 			this._status = changeData.status;
 			this.emitter.emit(HydraNodeEvent.StatusChange, changeData);

@@ -2500,7 +2500,7 @@ export const postHydraHeadRetire = <ThrowOnError extends boolean = false>(option
 /**
  * List what a closed Hydra head can still fan out. (admin access required)
  *
- * Lists the in-head outputs a partial fanout can select now. Before the first step this is the confirmed snapshot. While FanningOut it is the remaining set the node reported with its newest step. Read-only.
+ * Lists the in-head outputs a partial fanout can select now, read from the node head state: the set the node checks a selection against. fanoutMode says whether the node waits for a selection. Read-only.
  */
 export const getHydraHeadPartialFanout = <ThrowOnError extends boolean = false>(options: Options<GetHydraHeadPartialFanoutData, ThrowOnError>): RequestResult<GetHydraHeadPartialFanoutResponses, GetHydraHeadPartialFanoutErrors, ThrowOnError> => (options.client ?? client).get<GetHydraHeadPartialFanoutResponses, GetHydraHeadPartialFanoutErrors, ThrowOnError>({
     responseType: 'json',

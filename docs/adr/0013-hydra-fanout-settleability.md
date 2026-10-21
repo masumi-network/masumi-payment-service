@@ -167,10 +167,16 @@ Document all four limits. Build against none of them.
    head with `POST /hydra/head/partial-fanout` (`head/partial-fanout.ts`). It
    sends hydra-node 2.4.1 a `PartialFanout` with the chosen in-head
    references. After the first step the head is `FanningOut` (a status ranked
-   between `FanoutPossible` and `Final`), hydra-node refuses a plain `Fanout`,
-   and `GET /snapshot/utxo` still returns the confirmed snapshot. The next
-   selection is therefore built from the newest `HeadPartiallyFannedOut`
-   frame. Retire accepts a `FanningOut` head too and stores that remaining set.
+   between `FanoutPossible` and `Final`) and hydra-node refuses a plain
+   `Fanout`. Every selection is built from the node's own head state
+   (`GET /head`, parsed in `fanout-head-state.ts`), the set the node checks
+   a selection against. `GET /snapshot/utxo` is not that set: it adds a
+   pending commit the node may not fan out, leaves out a pending decommit the
+   node does fan out, and keeps the confirmed snapshot after the first step.
+   The endpoint and retire refuse while the node fans out on its own
+   (`AutoDrain` or `DistributingSelection`): a new selection would replace the
+   one in progress. Retire accepts a `FanningOut` head too and stores the
+   remaining set.
 
    _Original decision, superseded:_ do not build an operator retire path yet. A head that cannot reach
    `Final` blocks its relation permanently: `head/create-head.ts` rejects any new

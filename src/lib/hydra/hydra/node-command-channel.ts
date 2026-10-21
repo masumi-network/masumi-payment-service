@@ -166,11 +166,7 @@ export function prepareNewTxCommand(transaction: HydraTransaction): {
 	};
 }
 
-/**
- * Wait for a submitted transaction to show up in confirmed evidence. Closure
- * of either evidence socket makes the outcome explicitly ambiguous — the
- * confirmation may exist and simply not have been observed.
- */
+/** Refuse polling options that would never settle or spin. */
 export function assertTxConfirmationPolling(checkIntervalMs: number, timeoutMs: number): void {
 	if (!Number.isSafeInteger(checkIntervalMs) || checkIntervalMs <= 0) {
 		throw new HydraProtocolError('Hydra confirmation polling interval must be a positive safe integer');
@@ -180,6 +176,11 @@ export function assertTxConfirmationPolling(checkIntervalMs: number, timeoutMs: 
 	}
 }
 
+/**
+ * Wait for a submitted transaction to show up in confirmed evidence. Closure
+ * of either evidence socket makes the outcome explicitly ambiguous — the
+ * confirmation may exist and simply not have been observed.
+ */
 export function awaitHydraTxConfirmation(options: {
 	connections: Connection[];
 	hasConfirmed: (txHash: string) => boolean;

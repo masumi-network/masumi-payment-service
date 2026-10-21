@@ -6,7 +6,7 @@
  */
 
 import type { HydraCommandOptions } from './node-command-channel';
-import type { HydraFanoutRemainingUtxo } from './node-fanout-progress';
+import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
 
 export function closeCommand(timeoutMs: number): HydraCommandOptions {
 	return {

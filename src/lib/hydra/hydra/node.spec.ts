@@ -771,9 +771,7 @@ describe('HydraNode', () => {
 				expect(node.getFinalizedFanoutBindingInput(2)?.inHeadReferences.has(`${chain.first.txId}#0`)).toBe(true);
 			});
 
-			// `/snapshot/utxo` keeps listing outputs a step already moved to L1, so
-			// the next selection can only come from the step's own report.
-			it('holds the remaining set of a partial step only while FanningOut', async () => {
+			it('reports a head between partial fanout steps as FanningOut', async () => {
 				const started = await startSignedNode();
 				const chain = signedTwoOutputHistory();
 				for (const frame of chain.frames) started.historyConnection.emit('message', JSON.stringify(frame));
@@ -792,13 +790,6 @@ describe('HydraNode', () => {
 				);
 
 				expect(started.node.status).toBe(HydraHeadStatus.FanningOut);
-				expect(Object.keys(started.node.getFanoutProgress()!.remainingUTxO)).toEqual([remainingReference]);
-
-				started.liveConnection.emit(
-					'message',
-					JSON.stringify({ tag: 'HeadIsFinalized', headId: HEAD_ID_A, finalizedUTxO: {} }),
-				);
-				expect(started.node.getFanoutProgress()).toBeUndefined();
 			});
 
 			it('resolves the L1 output the partial step created once a binding is adopted, across a replay', async () => {

@@ -16,6 +16,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
 
+import type { HydraFanoutHeadState } from '@/lib/hydra/hydra/fanout-head-state';
 import { HydraHeadInitObservationError } from '@/lib/hydra/hydra/head-init-validation';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
@@ -23,7 +24,7 @@ import { HYDRA_HEAD_STATUS_RANK } from '@/services/hydra-connection-manager/head
 
 import { readHeadChainState } from './chain-check';
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
-import { readFanoutRemainingUtxo } from './partial-fanout';
+import { assertNodeAwaitsFanoutSelection, readFanoutHeadState } from './partial-fanout';
 
 /** Statuses past close where fanout can stall. Open and earlier heads close instead. */
 export const RETIRABLE_HEAD_STATUSES: ReadonlySet<HydraHeadStatus> = new Set([
@@ -84,20 +85,17 @@ function assertNodeNotPastStatus(headId: string, status: HydraHeadStatus): void 
 	}
 }
 
-/** The node's report of what the head still holds, keyed by in-head reference. */
-async function readRemainingUtxo(
-	headId: string,
-	status: HydraHeadStatus,
-	acknowledgeUnknown: boolean,
-): Promise<Prisma.InputJsonObject | null> {
+/**
+ * The node's report of what the head still holds, keyed by in-head reference.
+ * A node still fanning out on its own is refused even when the set is
+ * acknowledged unknown: that head is settling, not stuck.
+ */
+async function readRemainingUtxo(headId: string, acknowledgeUnknown: boolean): Promise<Prisma.InputJsonObject | null> {
 	const node = getHydraConnectionManager().getNode(headId);
+	let state: HydraFanoutHeadState;
 	try {
 		if (!node) throw new Error('no active connection to the Hydra node');
-		// Prisma JSON cannot hold BigInt quantities; strings keep them exact.
-		const remaining = await readFanoutRemainingUtxo(node, status);
-		return JSON.parse(
-			JSON.stringify(remaining, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value)),
-		) as Prisma.InputJsonObject;
+		state = await readFanoutHeadState(node);
 	} catch (error) {
 		if (acknowledgeUnknown) return null;
 		const message = error instanceof Error ? error.message : String(error);
@@ -107,6 +105,11 @@ async function readRemainingUtxo(
 				'retry, or pass acknowledgeRemainingUtxoUnknown to retire without it',
 		);
 	}
+	assertNodeAwaitsFanoutSelection(state);
+	// Prisma JSON cannot hold BigInt quantities; strings keep them exact.
+	return JSON.parse(
+		JSON.stringify(state.selectable, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value)),
+	) as Prisma.InputJsonObject;
 }
 
 export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
@@ -139,7 +142,7 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 		// is not stuck, and retiring it would strand a settleable head.
 		assertNodeNotPastStatus(head.id, head.status);
 		const retiredHeadOutputTxHash = await readHeadOutputOnChain(head.id);
-		const remainingUtxo = await readRemainingUtxo(head.id, head.status, input.acknowledgeRemainingUtxoUnknown === true);
+		const remainingUtxo = await readRemainingUtxo(head.id, input.acknowledgeRemainingUtxoUnknown === true);
 		const remainingUtxoCount = remainingUtxo ? Object.keys(remainingUtxo).length : null;
 		// The node read above can take a while. Read L1 again just before the
 		// write: a fanout that landed meanwhile moves the head output. A fanout

@@ -16288,7 +16288,7 @@ export type PostHydraHeadRetireErrors = {
      */
     404: unknown;
     /**
-     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, or the head changed meanwhile
+     * Already retired, status not retirable, contestation still running, L1 shows the head open or fanned out, the node is still settling the head, or the head changed meanwhile
      */
     409: unknown;
     /**
@@ -16341,17 +16341,13 @@ export type GetHydraHeadPartialFanoutErrors = {
      */
     404: unknown;
     /**
-     * Status not FanoutPossible or FanningOut
+     * Status not FanoutPossible or FanningOut, or the node does not hold the head as closed
      */
     409: unknown;
     /**
-     * No connection to the head, or the node returned an invalid UTxO set
+     * No connection to the head, or the node returned an unreadable head state
      */
     502: unknown;
-    /**
-     * The node has not reported the remaining UTxO set yet
-     */
-    503: unknown;
 };
 
 export type GetHydraHeadPartialFanoutResponses = {
@@ -16363,6 +16359,10 @@ export type GetHydraHeadPartialFanoutResponses = {
         data: {
             headId: string;
             status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            /**
+             * Null before the first step. A selection is accepted only before it or in AwaitingSelection.
+             */
+            fanoutMode: 'AutoDrain' | 'DistributingSelection' | 'AwaitingSelection' | null;
             outputs: Array<{
                 reference: string;
                 address: string;
@@ -16404,17 +16404,13 @@ export type PostHydraHeadPartialFanoutErrors = {
      */
     404: unknown;
     /**
-     * Head disabled, status not FanoutPossible or FanningOut, or an output is not in the head
+     * Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own
      */
     409: unknown;
     /**
-     * No connection to the head, or the node returned an invalid UTxO set
+     * No connection to the head, or the node returned an unreadable head state
      */
     502: unknown;
-    /**
-     * The node has not reported the remaining UTxO set yet
-     */
-    503: unknown;
 };
 
 export type PostHydraHeadPartialFanoutResponses = {

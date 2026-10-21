@@ -13,7 +13,7 @@ export function registerHydraHeadPartialFanoutPath({ registry, apiKeyAuth }: Swa
 		path: '/hydra/head/partial-fanout',
 		summary: 'List what a closed Hydra head can still fan out. (admin access required)',
 		description:
-			'Lists the in-head outputs a partial fanout can select now. Before the first step this is the confirmed snapshot. While FanningOut it is the remaining set the node reported with its newest step. Read-only.',
+			'Lists the in-head outputs a partial fanout can select now, read from the node head state: the set the node checks a selection against. fanoutMode says whether the node waits for a selection. Read-only.',
 		tags: TAG,
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: { query: lifecycleInput.openapi({ example: { headId: 'cuid_v2_auto_generated' } }) },
@@ -21,13 +21,13 @@ export function registerHydraHeadPartialFanoutPath({ registry, apiKeyAuth }: Swa
 			200: successResponse('Outputs left to fan out', fanoutRemainingOutput, {
 				headId: 'cuid_v2_auto_generated',
 				status: 'FanningOut',
+				fanoutMode: 'AwaitingSelection',
 				outputs: [{ reference: `${'ab'.repeat(32)}#0`, address: 'addr_test1vz...', lovelace: '2000000' }],
 			}),
 			401: { description: 'Unauthorized' },
 			404: { description: 'Hydra head not found' },
-			409: { description: 'Status not FanoutPossible or FanningOut' },
-			502: { description: 'No connection to the head, or the node returned an invalid UTxO set' },
-			503: { description: 'The node has not reported the remaining UTxO set yet' },
+			409: { description: 'Status not FanoutPossible or FanningOut, or the node does not hold the head as closed' },
+			502: { description: 'No connection to the head, or the node returned an unreadable head state' },
 		},
 	});
 	registry.registerPath({
@@ -53,9 +53,11 @@ export function registerHydraHeadPartialFanoutPath({ registry, apiKeyAuth }: Swa
 			400: { description: 'Invalid input' },
 			401: { description: 'Unauthorized' },
 			404: { description: 'Hydra head not found' },
-			409: { description: 'Head disabled, status not FanoutPossible or FanningOut, or an output is not in the head' },
-			502: { description: 'No connection to the head, or the node returned an invalid UTxO set' },
-			503: { description: 'The node has not reported the remaining UTxO set yet' },
+			409: {
+				description:
+					'Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own',
+			},
+			502: { description: 'No connection to the head, or the node returned an unreadable head state' },
 		},
 	});
 }

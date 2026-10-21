@@ -494,6 +494,9 @@ refuses a new head.
 
    The head is then `FanningOut`. From here only `partial-fanout` continues
    it; a plain fanout is refused. Repeat until only the stuck output is left.
+   The `GET` reply carries `fanoutMode`. Send the next selection only when it
+   is `null` or `AwaitingSelection`: in the other modes the node posts the
+   next step itself, and the endpoint refuses.
 
 3. Retire the head:
 

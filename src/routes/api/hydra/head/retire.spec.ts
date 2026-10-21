@@ -52,6 +52,21 @@ const stored = (utxo: Record<string, typeof OUTPUT>) =>
 	Object.fromEntries(
 		Object.entries(utxo).map(([reference, output]) => [reference, { ...output, value: { lovelace: '2000000' } }]),
 	);
+/** `GET /head` for a closed head, before any fanout step. */
+const closedNodeState = (utxo: Record<string, unknown>) => ({
+	tag: 'Closed',
+	contents: {
+		version: 0,
+		confirmedSnapshot: {
+			tag: 'ConfirmedSnapshot',
+			snapshot: { version: 0, utxo, utxoToCommit: null, utxoToDecommit: null },
+		},
+	},
+});
+const fanningOutNodeState = (remainingOutputs: Record<string, unknown>, mode: string) => ({
+	tag: 'FanoutProgress',
+	contents: { remainingOutputs, mode: { tag: mode } },
+});
 const input = {
 	headId: 'head-1',
 	reason: 'An oversized output blocks the final fanout step',
@@ -68,7 +83,7 @@ beforeEach(() => {
 	jest.resetAllMocks();
 	mockFindHead.mockResolvedValue(fanoutPossible);
 	mockReadChain.mockResolvedValue({ state: 'closed', latestTxHash: HEAD_OUTPUT_TX });
-	mockGetNode.mockReturnValue({ get: async () => REMAINING, getFanoutProgress: () => undefined });
+	mockGetNode.mockReturnValue({ get: async () => closedNodeState(REMAINING) });
 	mockUpdateMany.mockResolvedValue({ count: 1 });
 });
 
@@ -109,18 +124,11 @@ describe('retireHeadPost', () => {
 		},
 	);
 
-	// During FanningOut the snapshot still shows everything; only the newest
-	// partial fanout step reports what is left.
-	it('stores the remaining set of the newest step for a FanningOut head', async () => {
+	// During FanningOut the snapshot still shows everything; only the node's
+	// head state reports what is left.
+	it('stores what the node still holds for a FanningOut head', async () => {
 		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.FanningOut });
-		mockGetNode.mockReturnValue({
-			get: async () => REMAINING,
-			// As the frame schema parses it: quantities are BigInt.
-			getFanoutProgress: () => ({
-				remainingUTxO: { [`${'bb'.repeat(32)}#1`]: { ...OUTPUT, value: { lovelace: 2_000_000n } } },
-				fanoutMode: 'AwaitingFanoutSelection',
-			}),
-		});
+		mockGetNode.mockReturnValue({ get: async () => fanningOutNodeState(AFTER_STEP, 'AwaitingSelection') });
 
 		await handler({ input });
 
@@ -128,10 +136,15 @@ describe('retireHeadPost', () => {
 		expect(update.data.retiredRemainingUtxo).toEqual(stored(AFTER_STEP));
 	});
 
-	it('refuses a FanningOut head whose node has not reported a step', async () => {
+	// A head the node is still draining is settling, not stuck. Acknowledging an
+	// unknown set does not override that: the set is known.
+	it.each([false, true])('refuses while the node fans out on its own (acknowledged=%s)', async (acknowledged) => {
 		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.FanningOut });
+		mockGetNode.mockReturnValue({ get: async () => fanningOutNodeState(AFTER_STEP, 'AutoDrain') });
 
-		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 503 });
+		await expect(handler({ input: { ...input, acknowledgeRemainingUtxoUnknown: acknowledged } })).rejects.toMatchObject(
+			{ statusCode: 409 },
+		);
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
@@ -208,12 +221,15 @@ describe('retireHeadPost', () => {
 	});
 
 	// The node sees a fanout before this service stores it.
-	it.each([HydraHeadStatus.Final])('refuses while the node already reports the head %s', async (nodeStatus) => {
-		mockGetNode.mockReturnValue({ status: nodeStatus, snapshotUTxO: async () => REMAINING });
+	it.each([HydraHeadStatus.FanningOut, HydraHeadStatus.Final])(
+		'refuses while the node already reports the head %s',
+		async (nodeStatus) => {
+			mockGetNode.mockReturnValue({ status: nodeStatus, get: async () => closedNodeState(REMAINING) });
 
-		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
-		expect(mockUpdateMany).not.toHaveBeenCalled();
-	});
+			await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+			expect(mockUpdateMany).not.toHaveBeenCalled();
+		},
+	);
 
 	it('refuses when a fanout lands on L1 while the remaining set is read', async () => {
 		mockReadChain
