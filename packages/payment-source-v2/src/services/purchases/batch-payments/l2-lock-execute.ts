@@ -43,6 +43,7 @@ import { lockOpenHydraHeadForL2Reservation } from '../../l2-submission';
 import { COLLATERAL_RESERVE_LOVELACE } from '../../wallet-collateral/ensure-collateral-ready';
 import { pickCollateralUtxo } from '@/utils/utxo';
 import { HydraTransactionRejectedError } from '@/lib/hydra/hydra/errors';
+import { assertL2TxWithinMaxSize } from '@/lib/hydra/hydra/l2-tx-size';
 
 type PaymentSourceWithL2Relations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -278,6 +279,8 @@ export async function executeL2Lock(
 	const tSign = Date.now();
 	const signedTx = await wallet.signTx(completeTx);
 	const signMs = Date.now() - tSign;
+	// Before the reservation: a refusal at submit would hold it fail-closed.
+	assertL2TxWithinMaxSize(signedTx);
 	const intendedTxHash = resolveTxHash(signedTx);
 	const invalidHereafterSlot = requireHydraValidityUpperSlot(signedTx);
 	// Build/sign can take long enough for the original Tick to become stale or

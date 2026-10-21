@@ -13,6 +13,7 @@
 import { resolveTxHash } from '@meshsdk/core';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportAmbiguousError, HydraTransportError } from './errors';
+import { assertL2TxWithinMaxSize } from './l2-tx-size';
 import { handleWsResponse, postChainTxTagsFor, type HydraResponseMessage } from './node-frames';
 import { canonicalHydraTransactionIdSchema, hydraCommandTransactionSchema } from './schemas';
 import { HydraTransaction } from './types';
@@ -176,6 +177,7 @@ export function prepareNewTxCommand(transaction: HydraTransaction): {
 			cause: parsedTransaction.error,
 		});
 	}
+	assertL2TxWithinMaxSize(parsedTransaction.data.cborHex);
 	let txHash: string;
 	try {
 		txHash = String(resolveTxHash(parsedTransaction.data.cborHex)).toLowerCase();

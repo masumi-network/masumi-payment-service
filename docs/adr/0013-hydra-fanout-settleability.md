@@ -216,8 +216,15 @@ Document all four limits. Build against none of them.
   before the change still runs `maxTxSize` 16,384 and stays exposed;
   `params-drift.ts` reports it. Restart a node on the new params only between
   heads. INFERRED, not tested: a node mid-head on a smaller limit rejects a
-  peer tx above 15,000 bytes, and that tx's snapshot then stalls. The V2
-  builders cap their unsigned txs at 14,000 bytes (`MAX_SAFE_TX_BYTES`).
+  peer tx above 15,000 bytes, and that tx's snapshot then stalls.
+- _Corrected 2026-10-21:_ the sentence that followed here said the V2
+  builders cap their unsigned txs at 14,000 bytes (`MAX_SAFE_TX_BYTES`). That
+  cap applies only to L1 batch builds; no L2 path used it, so on a head started
+  on 16,384 this service could itself build an L2 tx above 15,000 bytes. Every
+  L2 tx is now refused above 15,000 bytes before anything is reserved for it
+  (`assertL2TxWithinMaxSize`), and builders get the head's `maxTxSize` capped
+  at 15,000. A Host refuses to boot on any network, mainnet included, when its
+  params file sets `maxTxSize` above 15,000 (`packages/hydra-host/src/ledger-params.ts`).
 - _Original consequence, kept for the record:_ we remain exposed to limit 3
   by construction. It requires a counterparty to
   deliberately park an output with a very large resting datum, costs them its

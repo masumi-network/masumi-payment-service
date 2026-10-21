@@ -11,7 +11,7 @@ import { HydraProtocolError } from './errors';
 import { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
 import { HydraHttpResponseError, protocolErrorToString } from './node-frames';
 import { type HydraRawCostModels } from './node-api';
-import { reportParamsDrift } from './params-drift';
+import { EXPECTED_MAX_TX_SIZE, reportParamsDrift } from './params-drift';
 import {
 	hydraCostModelSchema,
 	hydraAcknowledgedDepositSchema,
@@ -53,7 +53,9 @@ export async function fetchHydraProtocolParameters(
 		maxCollateralInputs: rawParameters.maxCollateralInputs,
 		maxTxExMem: String(rawParameters.maxTxExecutionUnits.memory),
 		maxTxExSteps: String(rawParameters.maxTxExecutionUnits.steps),
-		maxTxSize: rawParameters.maxTxSize,
+		// Capped, so builders never aim above the shipped limit on a head started
+		// on the older 16,384. Drift is reported from the raw value above.
+		maxTxSize: Math.min(rawParameters.maxTxSize, EXPECTED_MAX_TX_SIZE),
 		maxValSize: rawParameters.maxValueSize,
 		minFeeA: rawParameters.txFeePerByte,
 		minFeeB: rawParameters.txFeeFixed,

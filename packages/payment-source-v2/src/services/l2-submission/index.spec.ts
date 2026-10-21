@@ -184,6 +184,16 @@ describe('executeReservedL2Submission', () => {
 		expect(callbacks.submit).not.toHaveBeenCalled();
 	});
 
+	// A reservation taken for a body the head then refuses is held as ambiguous,
+	// so an oversized body must stop before it.
+	it('never reserves or submits a body above the shipped L2 maxTxSize', async () => {
+		const callbacks = { ...makeCallbacks(), signedTx: '00'.repeat(15_001) };
+
+		await expect(executeReservedL2Submission(callbacks)).rejects.toThrow('15001 bytes');
+		expect(callbacks.reserve).not.toHaveBeenCalled();
+		expect(callbacks.submit).not.toHaveBeenCalled();
+	});
+
 	it('never reserves or submits a body whose inputs cannot be read', async () => {
 		const callbacks = makeCallbacks();
 		callbacks.resolveInputRefs = () => {

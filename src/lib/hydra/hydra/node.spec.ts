@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { createPrivateKey, createPublicKey, sign as signEd25519, type KeyObject } from 'node:crypto';
 import { resolveTxHash } from '@meshsdk/core';
 import {
@@ -1888,6 +1889,19 @@ describe('HydraNode', () => {
 			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
 		});
 
+		// The backstop for paths without their own early check (consolidate,
+		// split, release nudge, decommit).
+		it('refuses a NewTx or Decommit above the shipped L2 maxTxSize before sending', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const oversized = { type: HydraTransactionType.TxConwayEra, description: '', cborHex: '00'.repeat(15_001) };
+
+			await expect(node.newTx(oversized)).rejects.toThrow('15001 bytes');
+			await expect(node.decommit(oversized)).rejects.toThrow('15001 bytes');
+			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
+			expect(mockFetch).not.toHaveBeenCalled();
+		});
+
 		it('correlates CommandFailed to only the matching concurrent transaction', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();
@@ -2566,6 +2580,19 @@ describe('HydraNode', () => {
 	});
 
 	describe('fetchProtocolParameters()', () => {
+		// Builders take maxTxSize from here. A head started before the L2 cap
+		// reports 16,384, which would let them build a tx whose output no fanout
+		// can move.
+		it('caps maxTxSize at the shipped L2 limit for a head on the older ledger', async () => {
+			const shipped = JSON.parse(
+				readFileSync(new URL('../../../../packages/hydra-host/params/preprod.json', import.meta.url), 'utf8'),
+			) as Record<string, unknown>;
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			mockFetch.mockResolvedValue({ json: async () => ({ ...shipped, maxTxSize: 16_384 }) } as unknown as Response);
+
+			await expect(node.fetchProtocolParameters()).resolves.toMatchObject({ maxTxSize: 15_000 });
+		});
+
 		it('rejects incomplete or non-finite protocol parameters at runtime', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			mockFetch.mockResolvedValue({ json: async () => ({ maxTxSize: Number.NaN }) } as unknown as Response);
