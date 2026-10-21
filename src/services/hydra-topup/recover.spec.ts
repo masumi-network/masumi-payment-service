@@ -40,6 +40,7 @@ beforeEach(() => {
 		depositTxHash: 'aa'.repeat(32),
 		status: 'Failed',
 		hydraHeadId: 'head-1',
+		nodeDeadline: null,
 	});
 	mockTopupUpdateMany.mockResolvedValue({ count: 1 });
 	mockAssertNotPaused.mockResolvedValue(undefined);
@@ -149,6 +150,30 @@ describe('recoverHydraDeposit', () => {
 			nodeAnswers({ lastSeen: { tag: 'SeenSnapshot', snapshot, signatories: {} } });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: false });
+			expect(mockNodeDelete).not.toHaveBeenCalled();
+		});
+
+		// An increment can claim a deposit only before its deadline, so telling
+		// the operator to wait for one past it, or with no known deadline, would
+		// have them wait for good.
+		it.each([
+			['ahead', 60_000, 'Wait for the deposit to be absorbed'],
+			['passed', -60_000, 'the head can no longer absorb it'],
+			['not recorded', null, 'whether the head can still absorb it is unknown'],
+		])('says what to do when its deadline is %s', async (_label, offsetMs, expected) => {
+			mockTopupFindUnique.mockResolvedValue({
+				id: 'topup-1',
+				depositTxHash: DEPOSIT_TX,
+				status: 'Failed',
+				hydraHeadId: 'head-1',
+				nodeDeadline: offsetMs === null ? null : new Date(Date.now() + offsetMs),
+			});
+			nodeAnswers({ snapshot: acknowledged(DEPOSIT_TX) });
+
+			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({
+				requested: false,
+				reason: expect.stringContaining(expected),
+			});
 			expect(mockNodeDelete).not.toHaveBeenCalled();
 		});
 

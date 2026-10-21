@@ -49,6 +49,7 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			depositTxHash: true,
 			status: true,
 			hydraHeadId: true,
+			nodeDeadline: true,
 		},
 	});
 	if (topup === null) {
@@ -127,11 +128,27 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	}
 	const depositTxId = topup.depositTxHash.toLowerCase();
 	if (acknowledgedDeposits.some((acknowledged) => acknowledged === null || acknowledged === depositTxId)) {
+		// An increment can claim a deposit only before its deadline, and the node
+		// recovers one only after it (hydra-node 2.4.1 `deposit.ak`). Past the
+		// deadline this deposit will never be absorbed, so waiting does not help.
+		// Without a recorded deadline nobody here can say it will be.
+		const isAbsorbable = topup.nodeDeadline !== null && topup.nodeDeadline.getTime() > Date.now();
+		if (isAbsorbable) {
+			return {
+				depositTxHash: topup.depositTxHash,
+				requested: false,
+				reason:
+					'the head has acknowledged this deposit in a snapshot it signed and may still absorb it. Recovering it now can leave the head unable to close or fan out. Wait for the deposit to be absorbed',
+			};
+		}
+		const absorbOutlook =
+			topup.nodeDeadline === null
+				? 'its deadline is not recorded, so whether the head can still absorb it is unknown'
+				: 'its deadline has passed, so the head can no longer absorb it';
 		return {
 			depositTxHash: topup.depositTxHash,
 			requested: false,
-			reason:
-				'the head has acknowledged this deposit in a signed snapshot and is about to absorb it. Recovering it now can leave the head unable to close. Wait for the deposit to be absorbed',
+			reason: `the head acknowledged this deposit in a snapshot it signed, but ${absorbOutlook}. Recovering it can leave the head unable to close or fan out, so it needs manual handling: see finding 12 in docs/hydra-persistence-recovery-verification.md`,
 		};
 	}
 
