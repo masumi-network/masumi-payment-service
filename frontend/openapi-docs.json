@@ -47218,6 +47218,65 @@
                     }
                 }
             }
+        },
+        "/security-status": {
+            "get": {
+                "summary": "Report insecure service configuration.",
+                "description": "Reports whether ENCRYPTION_KEY is the public value from .env.example. The service still starts with that key, but anyone with a copy of the database can then decrypt wallet and Hydra Host secrets. Set a new key and re-encrypt the secrets before production use. Admin access is required.",
+                "tags": [
+                    "health"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Security status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "isEncryptionKeyPublic": {
+                                                    "type": "boolean",
+                                                    "description": "True when ENCRYPTION_KEY is the public .env.example value. A database copy then exposes every secret."
+                                                }
+                                            },
+                                            "required": [
+                                                "isEncryptionKeyPublic"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "isEncryptionKeyPublic": false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
         }
     }
 }
