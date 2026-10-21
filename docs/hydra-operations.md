@@ -505,7 +505,9 @@ the node already reports the head past its stored status, or when the head
 output moves on L1 during the request. It cannot see a fanout that is posted
 but not yet on L1. Wait for a failed fanout to fail before you retire.
 
-The endpoint refuses a head inside its contestation period. If the node is
+The endpoint refuses a head inside its contestation period. It also refuses a
+`Closed` head with no stored contestation deadline: wait until the head is
+`FanoutPossible`, then retire it. If the node is
 down, it refuses too, because it cannot read the remaining UTxO set. Add
 `"acknowledgeRemainingUtxoUnknown": true` to retire without that set.
 

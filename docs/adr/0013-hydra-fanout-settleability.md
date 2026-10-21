@@ -139,7 +139,8 @@ Document all four limits. Build against none of them.
    head that cannot reach `Final` and frees its relation for a new head. It
    moves no funds. The caller must send `acknowledgeStrandedFunds: true` and a
    reason. The endpoint accepts a `FanoutPossible` head, or a `Closed` head
-   after its contestation deadline, and only when the independent L1 observer
+   after its stored contestation deadline (a `Closed` head with no stored
+   deadline is refused), and only when the independent L1 observer
    shows the head closed. It disables the head and stores `retiredAt`, the
    reason, the remaining UTxO set from the node and the L1 tx that holds the
    head output. It keeps `headIdentifier` and whatever init anchors the head
