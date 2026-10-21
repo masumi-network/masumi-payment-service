@@ -693,8 +693,15 @@ export function readDecommitSettled(tag: string, message: unknown): DecommitSett
  * That one is checked against the pinned head. A frame this service cannot read
  * is still a failure, so it is reported as an unknown transaction instead of
  * being dropped: dropping it is how a failed contest went unnoticed.
+ *
+ * `onOtherHead` hears of a frame for another head. Both the live path and a
+ * waiting command read every frame, so only one of them should report it.
  */
-export function readPostTxFailed(message: unknown, expectedHeadId: string | undefined): PostTxFailure | undefined {
+export function readPostTxFailed(
+	message: unknown,
+	expectedHeadId: string | undefined,
+	onOtherHead?: (headId: string) => void,
+): PostTxFailure | undefined {
 	const frame = postTxOnChainFailedMessageSchema.safeParse(message);
 	if (!frame.success) {
 		return {
@@ -704,7 +711,7 @@ export function readPostTxFailed(message: unknown, expectedHeadId: string | unde
 	}
 	const namedHeadId = canonicalHydraHeadIdSchema.safeParse(frame.data.postChainTx?.headId).data;
 	if (expectedHeadId && namedHeadId && namedHeadId !== expectedHeadId) {
-		logger.warn('[HydraNode] Ignoring a failed L1 transaction for another head', { headId: namedHeadId });
+		onOtherHead?.(namedHeadId);
 		return undefined;
 	}
 	return {

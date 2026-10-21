@@ -405,7 +405,9 @@ export class LiveFrameProcessor {
 			}
 			decommitSettled = readDecommitSettled(envelope.tag, message);
 			if (envelope.tag === 'PostTxOnChainFailed') {
-				const failure = readPostTxFailed(message, this.host.expectedHeadId);
+				const failure = readPostTxFailed(message, this.host.expectedHeadId, (headId) =>
+					logger.warn('[HydraNode] Ignoring a failed L1 transaction for another head', { headId }),
+				);
 				// Asked now, while the frame is current: the waiting command settles on
 				// this same frame and is gone by the time anything reads the event.
 				if (failure) {
