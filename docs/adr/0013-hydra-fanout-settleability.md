@@ -223,8 +223,9 @@ Document all four limits. Build against none of them.
   on 16,384 this service could itself build an L2 tx above 15,000 bytes. Every
   L2 tx is now refused above 15,000 bytes before anything is reserved for it
   (`assertL2TxWithinMaxSize`), and builders get the head's `maxTxSize` capped
-  at 15,000. A Host refuses to boot on any network, mainnet included, when its
-  params file sets `maxTxSize` above 15,000 (`packages/hydra-host/src/ledger-params.ts`).
+  at 15,000. On any network, mainnet included, a Host whose params file sets
+  `maxTxSize` above 15,000 refuses new nodes. It still boots, so nodes of heads
+  already open keep running (`packages/hydra-host/src/ledger-params.ts`).
 - _Original consequence, kept for the record:_ we remain exposed to limit 3
   by construction. It requires a counterparty to
   deliberately park an output with a very large resting datum, costs them its
