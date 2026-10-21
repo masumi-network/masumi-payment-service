@@ -37,11 +37,15 @@ provided at container runtime, and frontend `NEXT_PUBLIC_*` values must be passe
 3. Run the container with runtime env injection:
 
    ```
-   docker run --env-file .env -d -p 3001:3001 masumi-payment-service
+   docker run --env-file .env -d -p 127.0.0.1:3001:3001 masumi-payment-service
    ```
 
    Replacing `masumi-payment-service` with the image name, and `3001:3001` with the `host:container` ports to
    publish.
+
+   The service serves plain HTTP and sends no HSTS header. Without TLS in front, API keys cross the network
+   unencrypted. The `127.0.0.1` prefix publishes the port on the host loopback only. Put a TLS-terminating reverse
+   proxy in front of it before other hosts can reach it, and do not publish the port on all interfaces without one.
 
 4. If you use Docker Compose, keep the same split between public build args and runtime secrets:
 
@@ -55,8 +59,10 @@ provided at container runtime, and frontend `NEXT_PUBLIC_*` values must be passe
        env_file:
          - .env
        ports:
-         - '3001:3001'
+         - '127.0.0.1:3001:3001'
    ```
+
+   The same TLS requirement applies. Keep the loopback binding unless a TLS-terminating proxy is in front.
 
 5. Verify `.env` and `frontend/.env` are excluded from the image build context via `.dockerignore`. Only
    `.env.example` files should remain available for reference.
