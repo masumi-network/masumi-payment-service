@@ -519,7 +519,9 @@ export class HydraConnectionManager {
 		// has no command waiting on it, so the webhook and this record are the only
 		// places the failure shows up. Every failure is announced; a failed command
 		// already has its CommandFailed row from the caller, so it gets no second
-		// one. Whether the head ended up undefended is the contest watch's call,
+		// one. A failure that names no transaction is always recorded here, even
+		// when it also fails a waiting command: not every caller records an
+		// ambiguous outcome. Whether the head ended up undefended is the contest watch's call,
 		// made from chain state. Both calls log their own failures, so nothing here
 		// needs catching.
 		head.mainNode.on(HydraNodeEvent.PostTxFailed, (data: PostTxFailedData) => {

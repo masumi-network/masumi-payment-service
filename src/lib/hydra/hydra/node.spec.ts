@@ -713,8 +713,9 @@ describe('HydraNode', () => {
 			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
 			// The caller's record is now the only one, so it keeps what the node said.
 			await expect(closePromise).rejects.toThrow(/unnamed failed L1 transaction/);
-			// The Close caller records it, so the manager must not record it again.
-			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'unknown', answersCommand: true })]);
+			// Not marked as the command's: the Init route can settle an ambiguous Init
+			// without a record, so the manager keeps the only sure one.
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'unknown', answersCommand: false })]);
 		});
 
 		// The live path ignores a failure for another head, so a waiting Close must
