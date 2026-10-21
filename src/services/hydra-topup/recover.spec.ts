@@ -41,6 +41,7 @@ beforeEach(() => {
 		status: 'Failed',
 		hydraHeadId: 'head-1',
 		nodeDeadline: null,
+		HydraHead: { status: 'Open' },
 	});
 	mockTopupUpdateMany.mockResolvedValue({ count: 1 });
 	mockAssertNotPaused.mockResolvedValue(undefined);
@@ -103,6 +104,7 @@ describe('recoverHydraDeposit', () => {
 			depositTxHash: 'aa'.repeat(32),
 			status: 'Confirmed',
 			hydraHeadId: 'head-1',
+			HydraHead: { status: 'Open' },
 		});
 		mockAssertNotPaused.mockRejectedValue(Object.assign(new Error('paused'), { status: 409 }));
 
@@ -117,6 +119,7 @@ describe('recoverHydraDeposit', () => {
 			depositTxHash: 'aa'.repeat(32),
 			status: 'Confirmed',
 			hydraHeadId: 'head-1',
+			HydraHead: { status: 'Open' },
 		});
 		mockAssertNotStopping.mockRejectedValue(Object.assign(new Error('stopped'), { status: 409 }));
 
@@ -167,6 +170,7 @@ describe('recoverHydraDeposit', () => {
 				status: 'Failed',
 				hydraHeadId: 'head-1',
 				nodeDeadline: offsetMs === null ? null : new Date(Date.now() + offsetMs),
+				HydraHead: { status: 'Open' },
 			});
 			nodeAnswers({ snapshot: acknowledged(DEPOSIT_TX) });
 
@@ -193,6 +197,23 @@ describe('recoverHydraDeposit', () => {
 
 		it('leaves another deposit recoverable while this one is acknowledged', async () => {
 			nodeAnswers({ snapshot: acknowledged('bb'.repeat(32)) });
+
+			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
+			expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${DEPOSIT_TX}`);
+		});
+
+		// A closed head confirms no more snapshots and fans out only what it holds,
+		// so holding the recovery back until fanout would only delay the funds.
+		it.each(['Closed', 'FanoutPossible', 'FanningOut'])('is recovered once the head is %s', async (status) => {
+			mockTopupFindUnique.mockResolvedValue({
+				id: 'topup-1',
+				depositTxHash: DEPOSIT_TX,
+				status: 'Failed',
+				hydraHeadId: 'head-1',
+				nodeDeadline: null,
+				HydraHead: { status },
+			});
+			nodeAnswers({ snapshot: acknowledged(DEPOSIT_TX) });
 
 			await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
 			expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${DEPOSIT_TX}`);

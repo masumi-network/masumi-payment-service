@@ -15,11 +15,13 @@
  */
 
 import createHttpError from 'http-errors';
-import { HydraTopupStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraTopupStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { HYDRA_HEAD_STATUS_RANK } from '@/services/hydra-connection-manager/head-status-rank';
 import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
+import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { fetchHydraAcknowledgedDeposits, type HydraAcknowledgedDeposit } from '@/lib/hydra/hydra/node-control-queries';
 import { assertHydraHeadHostNotPaused, assertHydraHeadHostNotStopping } from '@/services/hydra-host/pause';
 
@@ -50,6 +52,7 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			status: true,
 			hydraHeadId: true,
 			nodeDeadline: true,
+			HydraHead: { select: { status: true } },
 		},
 	});
 	if (topup === null) {
@@ -107,51 +110,13 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 		);
 	}
 
-	// Once the head has acknowledged the deposit in a snapshot it signed,
-	// deleting it can leave an empty head that can be neither closed nor fanned
-	// out, and nothing takes that back. So a snapshot that holds a deposit blocks
-	// this one unless it names a different deposit, and not being able to read
-	// the snapshots blocks it too.
-	let acknowledgedDeposits: HydraAcknowledgedDeposit[];
-	try {
-		acknowledgedDeposits = await fetchHydraAcknowledgedDeposits(node);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : 'unknown error';
-		logger.warn(`hydra: could not check whether the head acknowledged deposit ${topup.depositTxHash}: ${message}`);
-		// A reason rather than an error status: a 5xx message is replaced by its
-		// status text in production, and the operator needs the cause. No promise
-		// that a retry helps: an answer over the byte limit repeats on every try.
-		return {
-			depositTxHash: topup.depositTxHash,
-			requested: false,
-			reason: `could not check whether the head has acknowledged this deposit (${message}), so it was not recovered`,
-		};
-	}
-	const depositTxId = topup.depositTxHash.toLowerCase();
-	if (acknowledgedDeposits.some((acknowledged) => acknowledged === null || acknowledged === depositTxId)) {
-		// An increment can claim a deposit only before its deadline, and the node
-		// recovers one only after it (hydra-node 2.4.1 `deposit.ak`). Past the
-		// deadline this deposit will never be absorbed, so waiting does not help.
-		// Without a recorded deadline nobody here can say it will be.
-		const isAbsorbable = topup.nodeDeadline !== null && topup.nodeDeadline.getTime() > Date.now();
-		if (isAbsorbable) {
-			return {
-				depositTxHash: topup.depositTxHash,
-				requested: false,
-				reason:
-					'the head has acknowledged this deposit in a snapshot it signed and may still absorb it. Recovering it now can leave the head unable to close or fan out. Wait for the deposit to be absorbed',
-			};
-		}
-		const absorbOutlook =
-			topup.nodeDeadline === null
-				? 'its deadline is not recorded, so whether the head can still absorb it is unknown'
-				: 'its deadline has passed, so the head can no longer absorb it';
-		return {
-			depositTxHash: topup.depositTxHash,
-			requested: false,
-			reason: `the head acknowledged this deposit in a snapshot it signed, but ${absorbOutlook}. Recovering it can leave the head unable to close or fan out, so it needs manual handling: see finding 12 in docs/hydra-persistence-recovery-verification.md`,
-		};
-	}
+	// A closed head confirms no more snapshots, and its fanout pays out only
+	// what the head holds (hydra-node 2.4.1 `effectiveCommitDecommit` and the
+	// head validator's fanout check), so a recovery cannot harm it. The status is
+	// the one the node's own lifecycle frames wrote, rollbacks included.
+	const isHeadClosed = HYDRA_HEAD_STATUS_RANK[topup.HydraHead.status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed];
+	const refusal = isHeadClosed ? null : await refuseAcknowledgedDeposit(node, topup.depositTxHash, topup.nodeDeadline);
+	if (refusal !== null) return refusal;
 
 	try {
 		await node.delete(`/commits/${topup.depositTxHash}`);
@@ -179,6 +144,70 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	logger.info(`hydra: requested recovery of deposit ${topup.depositTxHash} for head ${topup.hydraHeadId}`);
 	await markRecoveryRequested(topup.id);
 	return { depositTxHash: topup.depositTxHash, requested: true, reason: null };
+}
+
+/** How an operator frees a deposit that a signed snapshot still holds. */
+const RELEASE_ACKNOWLEDGED_DEPOSIT =
+	'Recovering it while that snapshot holds it can stop the head from confirming any later snapshot. Submit any transaction in the head: once the deposit has expired, the snapshot that confirms the transaction releases it, and recovery then works. A head that holds no funds cannot do that, so close and fan out the head first, then recover the deposit';
+
+/**
+ * Refuse to recover a deposit that an open head has acknowledged in a
+ * snapshot it signed. Null when the recovery may go ahead.
+ *
+ * Such a snapshot keeps the deposit in `utxoToCommit` until a later snapshot
+ * replaces it. Recovering the deposit clears the node's record of the deposit
+ * in flight, so the next deposit makes the leader request a snapshot that every
+ * node rejects (`ReqSnCommitNotSettled`), and that leader then requests no
+ * other snapshot. Left alone, the record holds the next deposit back, and once
+ * this deposit has expired the next transaction's snapshot drops it
+ * (hydra-node 2.4.1 `HeadLogic`).
+ */
+async function refuseAcknowledgedDeposit(
+	node: HydraNode,
+	depositTxHash: string,
+	nodeDeadline: Date | null,
+): Promise<DepositRecovery | null> {
+	let acknowledgedDeposits: HydraAcknowledgedDeposit[];
+	try {
+		acknowledgedDeposits = await fetchHydraAcknowledgedDeposits(node);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'unknown error';
+		logger.warn(`hydra: could not check whether the head acknowledged deposit ${depositTxHash}: ${message}`);
+		// A reason rather than an error status: a 5xx message is replaced by its
+		// status text in production, and the operator needs the cause. No promise
+		// that a retry helps: an answer over the byte limit repeats on every try.
+		return {
+			depositTxHash,
+			requested: false,
+			reason: `could not check whether the head has acknowledged this deposit (${message}), so it was not recovered`,
+		};
+	}
+	const depositTxId = depositTxHash.toLowerCase();
+	if (!acknowledgedDeposits.some((acknowledged) => acknowledged === null || acknowledged === depositTxId)) {
+		return null;
+	}
+	// An increment can claim a deposit only before its deadline, and the node
+	// recovers one only after it (hydra-node 2.4.1 `deposit.ak`). Past the
+	// deadline this deposit will never be absorbed, so waiting does not help.
+	// Without a recorded deadline nobody here can say it will be.
+	const isAbsorbable = nodeDeadline !== null && nodeDeadline.getTime() > Date.now();
+	if (isAbsorbable) {
+		return {
+			depositTxHash,
+			requested: false,
+			reason:
+				'the head has acknowledged this deposit in a snapshot it signed and may still absorb it before its deadline. Wait for the deposit to be absorbed',
+		};
+	}
+	const absorbOutlook =
+		nodeDeadline === null
+			? 'its deadline is not recorded, so whether the head can still absorb it is unknown'
+			: 'its deadline has passed, so the head can no longer absorb it';
+	return {
+		depositTxHash,
+		requested: false,
+		reason: `the head acknowledged this deposit in a snapshot it signed, but ${absorbOutlook}. ${RELEASE_ACKNOWLEDGED_DEPOSIT}`,
+	};
 }
 
 /**
