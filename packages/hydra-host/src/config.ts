@@ -94,8 +94,8 @@ export type HostConfig = {
 	 * counterparty already confirmed that round, this node ends up a snapshot
 	 * behind it and must adopt the counterparty's snapshot or close the head. The
 	 * counterparty's node binds loopback, so the Host cannot look. With this off the node is left
-	 * running (it can still contest a close) and logged for an operator, who resets
-	 * it from the payment service after reading the counterparty's snapshot number.
+	 * running (it can still contest a close) and logged for an operator, who follows
+	 * "Stranded snapshot rounds" in docs/hydra-operations.md.
 	 */
 	allowAutoSideLoad: boolean;
 	/** The project release this image was built from. See release.ts. */
