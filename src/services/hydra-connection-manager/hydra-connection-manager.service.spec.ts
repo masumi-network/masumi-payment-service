@@ -11,6 +11,8 @@ import {
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { EventEmitter } from 'node:events';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { encrypt } from '@/utils/security/encryption';
 
 const mockTransactionFindFirst = jest.fn<(_args: unknown) => Promise<unknown>>();
@@ -448,6 +450,37 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
 			expect(error).toBeInstanceOf(HydraTransportError);
 			expect((error as Error).message).toContain('answered the probe with HTTP 401');
+		});
+
+		// Real servers: the redirect mode is a runtime behavior, and CI runs the production Node.
+		it('reports a redirect as its status and does not follow it', async () => {
+			const listen = (server: Server) =>
+				new Promise<number>((resolve) =>
+					server.listen(0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port)),
+				);
+			let targetHits = 0;
+			const target = createServer((_request, reply) => {
+				targetHits += 1;
+				reply.writeHead(200).end();
+			});
+			const targetPort = await listen(target);
+			const node = createServer((_request, reply) => {
+				reply.writeHead(302, { Location: `http://127.0.0.1:${targetPort}/protocol-parameters` }).end();
+			});
+			const nodePort = await listen(node);
+			const manager = new HydraConnectionManager() as unknown as {
+				probeNode: (hydraHeadId: string, httpUrl: string, authToken?: string) => Promise<void>;
+			};
+
+			try {
+				await expect(manager.probeNode('head-1', `http://127.0.0.1:${nodePort}`, 'host-user-token')).rejects.toThrow(
+					'answered the probe with HTTP 302',
+				);
+				expect(targetHits).toBe(0);
+			} finally {
+				node.close();
+				target.close();
+			}
 		});
 
 		// A retry cannot fix a blank token, so it must not read as unreachable.
