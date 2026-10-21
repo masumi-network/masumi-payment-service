@@ -127,7 +127,8 @@ export function HydraHeadSnapshotRoundNotice({
             variant="outline"
             size="sm"
             className="shrink-0"
-            disabled={peerNumber === null}
+            // Not while a reset runs: the stale-number clear waits for it to end.
+            disabled={peerNumber === null || isResetting}
             onClick={() => {
               if (peerNumber !== null) setPending({ round, peerNumber });
             }}
@@ -157,6 +158,7 @@ export function HydraHeadSnapshotRoundNotice({
             id={`peer-snapshot-${headId}`}
             inputMode="numeric"
             placeholder="Ask the other party's operator"
+            disabled={isResetting}
             value={peerInput?.value ?? ''}
             onChange={(event) =>
               setPeerInput({ instance: roundInstance(round), value: event.target.value })
