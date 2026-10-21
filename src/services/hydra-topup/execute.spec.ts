@@ -163,7 +163,7 @@ beforeEach(() => {
 	});
 	mockGetHead.mockReturnValue({ commit: jest.fn(), cardanoTransaction: jest.fn() });
 	mockAssertNodeReadyForDeposit.mockResolvedValue(undefined);
-	mockClaimHotWalletForL1.mockResolvedValue(undefined);
+	mockClaimHotWalletForL1.mockResolvedValue('claim-token-1');
 	mockVerifyPersistedHydraHeadOnChain.mockResolvedValue({ headIdentifier: 'a'.repeat(64) });
 	mockFindUniqueOrThrowHotWallet.mockResolvedValue({
 		id: WALLET_ID,
@@ -226,7 +226,7 @@ describe('executeHydraTopup — DepositTooLarge draft refusal', () => {
 
 		// Nothing else was left outstanding (the row is Failed) and no carve ran
 		// (whole-UTxO top-up), so the wallet is handed back rather than wedged.
-		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID);
+		expect(mockReleaseHotWalletAfterL1).toHaveBeenCalledWith(WALLET_ID, 'claim-token-1');
 	});
 });
 

@@ -2065,6 +2065,11 @@ model HydraTopup {
   /// transaction is in a block.
   nodeDeadline DateTime?
 
+  /// The token of the hot-wallet claim this top-up holds until its reconciler
+  /// releases it. A late release for this row then cannot free a newer claim
+  /// that took the wallet over after this one went stale.
+  walletClaimToken String?
+
   /// True when this row is the head's initial commit rather than a later top-up.
   ///
   /// The commit handler records its commit as a deposit so an operator can see

@@ -309,7 +309,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		// commit could choose the same UTxO and one of them would be rejected on
 		// chain after being signed and submitted. Held until the commit is away,
 		// including across the carve's own wait for confirmation.
-		await claimHotWalletForL1(localParticipant.walletId, 'commit');
+		const walletClaimToken = await claimHotWalletForL1(localParticipant.walletId, 'commit');
 		// Set the moment the carve is signed, before it is submitted — see the
 		// release guard in this handler's `finally`.
 		let carveTxHash: string | null = null;
@@ -344,6 +344,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 					hasCommitted: localParticipant.hasCommitted,
 					commitTxHash: localParticipant.commitTxHash,
 					commitInvalidHereafterSlot: localParticipant.commitInvalidHereafterSlot,
+					commitWalletClaimToken: localParticipant.commitWalletClaimToken,
 					network: hotWallet.PaymentSource.network,
 					rpcProviderApiKey,
 				});
@@ -473,6 +474,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 						participantId: localParticipant.id,
 						commitTxHash,
 						invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
+						walletClaimToken,
 					},
 					async () =>
 						await hydraHead.cardanoTransaction(
@@ -545,6 +547,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				hasCommitted: false,
 				commitTxHash,
 				commitInvalidHereafterSlot: validatedDraft.invalidHereafterSlot,
+				commitWalletClaimToken: walletClaimToken,
 				network: hotWallet.PaymentSource.network,
 				rpcProviderApiKey,
 			});
@@ -601,7 +604,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			// case where nothing ever settles it.
 			const pending = await prisma.hydraLocalParticipant.findUnique({
 				where: { id: localParticipant.id },
-				select: { commitTxHash: true, hasCommitted: true },
+				select: { commitTxHash: true, hasCommitted: true, commitWalletClaimToken: true },
 			});
 			// The carve is its own L1 transaction, submitted before the commit is
 			// even built, and a failure after that point says nothing about where it
@@ -611,8 +614,39 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			// once this returns, so the lock is left for the stale-lock sweep half
 			// an hour later.
 			const carveUnsettled = carveTxHash !== null && !pending?.hasCommitted;
-			if ((pending?.commitTxHash == null || pending.hasCommitted) && !carveUnsettled) {
-				await releaseHotWalletAfterL1(localParticipant.walletId);
+			// A refused retry can leave an EARLIER commit's reservation outstanding.
+			// Its reconciler releases with that commit's own token, which no longer
+			// matches the claim this request took over, so the wallet would wait for
+			// the stale-lock sweep. Hand this claim to that reservation instead: its
+			// reconciler then frees the wallet when the earlier commit settles.
+			let heldForPendingCommit = pending?.commitTxHash != null && !pending.hasCommitted;
+			// Not while our own carve is unsettled: that reconciler would free the
+			// wallet when ITS commit settles, with our carve's inputs still in flight.
+			if (heldForPendingCommit && !carveUnsettled && pending?.commitWalletClaimToken !== walletClaimToken) {
+				const handedOver = await prisma.hydraLocalParticipant
+					.updateMany({
+						// Fenced on the token read above too: a holder that took the wallet
+						// over since then may have handed its own claim over already.
+						where: {
+							id: localParticipant.id,
+							hasCommitted: false,
+							commitTxHash: pending?.commitTxHash,
+							commitWalletClaimToken: pending?.commitWalletClaimToken,
+						},
+						data: { commitWalletClaimToken: walletClaimToken },
+					})
+					.catch((handoverError: unknown) => {
+						logger.warn('[HydraAPI] Could not hand the wallet claim to the pending commit', {
+							error: handoverError instanceof Error ? handoverError.message : 'Non-error failure',
+						});
+						return null;
+					});
+				// Settled in the meantime: nothing is left to hold the wallet for. A
+				// failed write keeps the lock and leaves it to the stale-lock sweep.
+				if (handedOver?.count === 0) heldForPendingCommit = false;
+			}
+			if (!heldForPendingCommit && !carveUnsettled) {
+				await releaseHotWalletAfterL1(localParticipant.walletId, walletClaimToken);
 			}
 		}
 	},

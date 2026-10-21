@@ -58,6 +58,7 @@ function candidate(
 		hasCommitted: false,
 		commitTxHash: COMMIT_TX_HASH,
 		commitInvalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+		commitWalletClaimToken: 'claim-token-1',
 		network: 'Preprod',
 		rpcProviderApiKey: 'project-key',
 		...overrides,
@@ -77,6 +78,7 @@ describe('reserveAndSubmitHydraCommit', () => {
 		participantId: 'participant-1',
 		commitTxHash: COMMIT_TX_HASH,
 		invalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+		walletClaimToken: 'claim-token-1',
 	};
 
 	it('retains the reservation when submission throws ambiguously', async () => {
@@ -94,6 +96,7 @@ describe('reserveAndSubmitHydraCommit', () => {
 			data: {
 				commitTxHash: COMMIT_TX_HASH,
 				commitInvalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+				commitWalletClaimToken: 'claim-token-1',
 			},
 		});
 	});
@@ -126,6 +129,7 @@ describe('reconcilePendingHydraCommit', () => {
 				hasCommitted: false,
 				commitTxHash: COMMIT_TX_HASH,
 				commitInvalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+				commitWalletClaimToken: 'claim-token-1',
 			},
 			data: { hasCommitted: true },
 		});
@@ -162,6 +166,7 @@ describe('reconcilePendingHydraCommit', () => {
 				hasCommitted: false,
 				commitTxHash: COMMIT_TX_HASH,
 				commitInvalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+				commitWalletClaimToken: 'claim-token-1',
 			},
 			data: { commitTxHash: null, commitInvalidHereafterSlot: null },
 		});
@@ -186,6 +191,7 @@ describe('reconcilePendingHydraCommit', () => {
 				hasCommitted: false,
 				commitTxHash: COMMIT_TX_HASH,
 				commitInvalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+				commitWalletClaimToken: 'claim-token-1',
 			},
 			data: { commitTxHash: null, commitInvalidHereafterSlot: null },
 		});

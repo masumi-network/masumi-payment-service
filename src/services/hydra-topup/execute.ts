@@ -103,15 +103,12 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	let depositConfirmed = false;
 
 	/**
-	 * Whether this call is holding the wallet, and so whether it may hand it back.
+	 * The token of this call's wallet claim, or null while it holds none.
 	 *
-	 * The claim moved inside the try below, which put it in front of a `finally`
-	 * that releases. Releasing a lock this call never took is not a no-op: the
-	 * release is fenced on the shared `hydra-l1` marker rather than on an
-	 * operation's identity, so it would free whichever Hydra deposit DID claim the
-	 * wallet, mid-carve.
+	 * The release in the `finally` needs it: the lock is fenced on the claim's
+	 * own token, so only the operation that took it can hand it back.
 	 */
-	let holdsWalletLock = false;
+	let walletClaimToken: string | null = null;
 	// After promotion, only the caller that wins the Pending-to-terminal update
 	// may release. Row absence alone can mean the scheduler released already.
 	let walletReleaseTransferred = false;
@@ -140,8 +137,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// the same UTxO, and the loser's signed transaction would be rejected on
 		// chain. Held across the carve's wait for confirmation too: a UTxO spent
 		// during that wait is just as gone by the time the commit selects it.
-		await claimHotWalletForL1(localParticipant.walletId, 'top-up');
-		holdsWalletLock = true;
+		walletClaimToken = await claimHotWalletForL1(localParticipant.walletId, 'top-up');
 
 		let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
 		try {
@@ -214,6 +210,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 									? { [params.exact.unit]: params.exact.amount.toString() }
 									: {},
 							status: HydraTopupStatus.Preparing,
+							walletClaimToken,
 						},
 						select: { id: true },
 					});
@@ -414,11 +411,11 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Topup');
 		throw error;
 	} finally {
-		// `holdsWalletLock` gates the release below. The claim now sits inside the
+		// `walletClaimToken` gates the release below. The claim now sits inside the
 		// try, so this runs for a refusal ahead of it and for a
-		// `claimHotWalletForL1` that threw because someone else holds the wallet —
-		// and the release is fenced on the shared `hydra-l1` marker rather than on
-		// this operation, so releasing there would free whichever deposit does.
+		// `claimHotWalletForL1` that threw because someone else holds the wallet.
+		// The release is fenced on this claim's token, so it would no-op there,
+		// but there is no claim to release either.
 		// Held while a deposit of OURS is still unconfirmed on L1: the call returns
 		// on submission, and the inputs it spends read as unspent from Blockfrost
 		// until it lands, so a batcher that took the wallet here would build a
@@ -456,12 +453,12 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// Nothing tracks a carve after this returns, so the lock is left for the
 		// stale-lock sweep, which frees it half an hour later.
 		if (
-			holdsWalletLock &&
+			walletClaimToken !== null &&
 			(!walletReleaseTransferred || ownsTerminalTransition) &&
 			canReleaseTopupWallet({ outstandingOwnTopup, carveTxHash, depositConfirmed })
 		) {
 			try {
-				await releaseHotWalletAfterL1(localParticipant.walletId);
+				await releaseHotWalletAfterL1(localParticipant.walletId, walletClaimToken);
 			} catch (releaseError: unknown) {
 				// Same reason: the sweep frees a lock nobody released, but nothing
 				// recovers an outcome this `finally` overwrote.
