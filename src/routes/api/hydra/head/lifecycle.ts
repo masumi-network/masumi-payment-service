@@ -113,8 +113,10 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				await cm.connect(head);
 			} catch (error) {
-				// A closed live session wraps its reason, so a protocol fault before Greetings arrives as a transport error.
-				if (!(error instanceof HydraTransportError) || error.cause instanceof HydraProtocolError) throw error;
+				if (!(error instanceof HydraTransportError)) throw error;
+				// A closed live session wraps its reason, so a protocol fault before Greetings arrives as a
+				// transport error. Throw the fault itself, so the head error names it.
+				if (error.cause instanceof HydraProtocolError) throw error.cause;
 				throw nodeFailedBeforeInit(head.id, "Could not reach this head's Hydra node", error);
 			}
 			const hydraHead = cm.getHead(head.id);

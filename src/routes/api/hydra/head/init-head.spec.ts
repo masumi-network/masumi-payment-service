@@ -211,13 +211,20 @@ describe('initHeadPost, when the node cannot be reached', () => {
 
 	// A retry cannot fix a node that breaks the protocol, so it must not read as unreachable.
 	it('records a protocol fault that closed the session before Greetings', async () => {
-		const protocolFault = new HydraTransportError('Hydra live session closed before identity verification', {
-			cause: new HydraProtocolError('Hydra websocket sent a non-text frame'),
-		});
-		mockConnect.mockRejectedValue(protocolFault);
+		const protocolFault = new HydraProtocolError('Hydra websocket sent a non-text frame');
+		mockConnect.mockRejectedValue(
+			new HydraTransportError('Hydra live session closed before identity verification', { cause: protocolFault }),
+		);
 
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toBe(protocolFault);
-		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+		// The head error must name the fault, not the closed session that reads like a passing drop.
+		expect(mockRecordHeadError).toHaveBeenCalledWith(
+			'head-1',
+			expect.anything(),
+			expect.anything(),
+			protocolFault,
+			'Init',
+		);
 	});
 });
 
