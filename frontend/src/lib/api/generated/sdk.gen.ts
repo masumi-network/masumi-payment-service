@@ -2378,7 +2378,7 @@ export const getHydraLowBalance = <ThrowOnError extends boolean = false>(options
 /**
  * Create or update a Hydra in-head low-balance rule. (admin access required)
  *
- * Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.
+ * Upserts a rule (keyed by participant + asset) that alerts when the participant's own spendable in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.
  */
 export const postHydraLowBalance = <ThrowOnError extends boolean = false>(options?: Options<PostHydraLowBalanceData, ThrowOnError>): RequestResult<PostHydraLowBalanceResponses, PostHydraLowBalanceErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraLowBalanceResponses, PostHydraLowBalanceErrors, ThrowOnError>({
     responseType: 'json',

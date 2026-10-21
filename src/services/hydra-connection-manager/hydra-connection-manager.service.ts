@@ -24,6 +24,8 @@ import {
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { recordHeadError } from '@/services/hydra-head-error/record';
+import { dropUnburnedL2MintReports, recordUnburnedL2Mint } from '@/services/hydra-head-error/unburned-l2-mint';
+import type { L2MintIncident } from '@/lib/hydra/hydra/l2-mint-tally';
 import { HydraErrorType, HydraHeadStatus, Network } from '@/generated/prisma/client';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
@@ -301,6 +303,7 @@ export class HydraConnectionManager {
 				await this.flushHeadStatus(head.id);
 				hydraHead.removeAllListeners();
 				hydraHead.mainNode.removeAllListeners();
+				dropUnburnedL2MintReports(head.id);
 				session.detachIfCurrent(hydraHead);
 			}
 			throw error;
@@ -382,6 +385,7 @@ export class HydraConnectionManager {
 			await this.flushHeadStatus(hydraHeadId);
 			attachment.head.removeAllListeners();
 			attachment.head.mainNode.removeAllListeners();
+			dropUnburnedL2MintReports(hydraHeadId);
 			// The revocation fence is instance-based and only meaningful while the
 			// attachment still holds this instance; `detachIfCurrent` drops both so
 			// a newer attachment is unaffected.
@@ -511,6 +515,21 @@ export class HydraConnectionManager {
 					error: recordError instanceof Error ? recordError.message : recordError,
 				});
 			});
+		});
+
+		// The head's net L2 mint balance left zero. The head keeps one row for it,
+		// updated to the latest incident. The report can come from replay before
+		// any live status, as a rejected history can, so an unknown status is
+		// recorded as Connecting.
+		head.mainNode.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => {
+			recordUnburnedL2Mint(hydraHeadId, head.status ?? HydraHeadStatus.Connecting, incident).catch(
+				(recordError: unknown) => {
+					logger.error('[HydraConnectionManager] could not record an unburned L2 mint', {
+						hydraHeadId,
+						error: recordError instanceof Error ? recordError.message : recordError,
+					});
+				},
+			);
 		});
 
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {

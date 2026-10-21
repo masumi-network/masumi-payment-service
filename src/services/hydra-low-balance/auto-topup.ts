@@ -2,8 +2,11 @@ import { HydraHeadStatus, HydraTopupStatus, LowBalanceStatus } from '@/generated
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { isHydraHeadOnPausedHost } from '@/services/hydra-host/pause';
 import { AUTO_TOPUP_BACKOFF_SAMPLE, evaluateAutoTopupBackoff } from '@/services/hydra-low-balance/auto-topup-backoff';
+import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
+import { spendableAmountOf } from './spendable-amount';
 
 /**
  * Automatic low-balance top-up. For every rule that is currently Low with
@@ -16,7 +19,7 @@ import { AUTO_TOPUP_BACKOFF_SAMPLE, evaluateAutoTopupBackoff } from '@/services/
  * participant (the deposit could still land) — executeHydraTopup also enforces
  * this atomically, so a race merely surfaces a benign 409. Because the scan only
  * acts while the rule stays Low and the monitor flips it back to Healthy once the
- * in-head balance recovers, top-ups stop on their own; they also stop when the
+ * spendable in-head balance recovers, top-ups stop on their own; they also stop when the
  * wallet has no more matching UTxOs (nothing left to commit).
  */
 /**
@@ -44,7 +47,6 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// A paused host refuses new deposits; skip quietly until it resumes.
 			if (await isHydraHeadOnPausedHost(head.id)) continue;
 			if (rule.topupAmount == null || rule.topupAmount <= 0n) continue;
-
 			// Counted up to and including `Confirmed`, not just `Pending`. A deposit
 			// reaching the chain is not the head holding it: the node ignores a
 			// deposit until it is older than the deposit period — ten minutes on
@@ -122,6 +124,51 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 				});
 				continue;
 			}
+
+			// Until the history replay is current, nothing says which units a peer
+			// minted, and the monitor does not mark a rule Healthy, so the rule's
+			// Low status cannot be trusted either. Checked after the database-only
+			// gates above, so the stalled-deposit warning still shows, and before
+			// any read of the head or of L1.
+			const l2MintCheck = getHydraConnectionManager().getNode(head.id)?.l2MintCheck;
+			if (!l2MintCheck) {
+				logger.debug('hydra-auto-topup: head not connected or its replay not current; no top-up', {
+					ruleId: rule.id,
+					headId: head.id,
+				});
+				continue;
+			}
+			// The rule reads the spendable balance, and an own UTxO carrying a unit
+			// with a nonzero net L2 mint does not count once the replay has verified
+			// it. A deposit of that unit would therefore leave the rule Low, and
+			// every later cycle would send another until the wallet ran out of it.
+			// Debug, not warn: this repeats every cycle, and the head error row
+			// already names the unit.
+			if (l2MintCheck.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
+				logger.debug('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
+					ruleId: rule.id,
+					headId: head.id,
+					assetUnit: rule.assetUnit,
+				});
+				continue;
+			}
+
+			// Read the balance again right before depositing, because the rule's
+			// status can be stale. The monitor does not mark a rule Healthy from a
+			// reading the history replay has not checked, so a rule topped up during
+			// a reconnect would still look Low once its deposit was absorbed. A
+			// deposit absorbed since the monitor's last cycle can also already cover
+			// the threshold. The head can also have disconnected since the check
+			// above.
+			const balance = await getOwnInHeadBalance(head.id);
+			if (!balance?.connected || !balance.l2MintChecked) {
+				logger.debug('hydra-auto-topup: balance re-read not connected or not checked; no top-up', {
+					ruleId: rule.id,
+					headId: head.id,
+				});
+				continue;
+			}
+			if (spendableAmountOf(balance, rule.assetUnit) >= rule.thresholdAmount) continue;
 
 			// Carved to the exact amount, not selected from what the wallet happens
 			// to hold. Hydra commits WHOLE UTxOs, so a bounded selection can only
