@@ -284,9 +284,9 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
  * head error. The cause goes into the text: a node still starting and a wrong
  * URL or token can fail the same way, and the cause often tells them apart.
  * Exposed errors skip the server-error log, so the warn is the only record.
- * Some faults also arrive here as a closed session: a frame that ws rejects,
- * such as an oversized one, a log rotation before Greetings, and a local
- * disconnect racing Init.
+ * Some faults also arrive here as a closed session: a frame that ws rejects
+ * (an oversized one), a log rotation before Greetings, and a local disconnect
+ * racing Init.
  */
 function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unknown): HttpError {
 	const cause = describeTransportFailure(error);
