@@ -18267,3 +18267,34 @@ export type GetReleaseStatusResponses = {
 };
 
 export type GetReleaseStatusResponse = GetReleaseStatusResponses[keyof GetReleaseStatusResponses];
+
+export type GetSecurityStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/security-status';
+};
+
+export type GetSecurityStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetSecurityStatusResponses = {
+    /**
+     * Security status
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * True when ENCRYPTION_KEY is the public .env.example value. A database copy then exposes every secret.
+             */
+            isEncryptionKeyPublic: boolean;
+        };
+    };
+};
+
+export type GetSecurityStatusResponse = GetSecurityStatusResponses[keyof GetSecurityStatusResponses];
