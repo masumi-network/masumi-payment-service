@@ -5,7 +5,18 @@ import { fileURLToPath } from 'node:url';
 
 const paramsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../params');
 
+/** L1 Conway `maxTxSize` on preprod and mainnet. */
+const L1_MAX_TX_SIZE = 16_384;
+
+/**
+ * Bytes a hydra-node 2.4.1 fanout tx adds around one distributed output, measured
+ * on devnet (docs/hydra-fanout-output-size-measurement.md). Re-measure on a
+ * hydra-node version change.
+ */
+const FANOUT_ENVELOPE_BYTES = 917;
+
 type Params = {
+	maxTxSize: number;
 	txFeeFixed: number;
 	txFeePerByte: number;
 	executionUnitPrices: { priceMemory: number; priceSteps: number };
@@ -37,6 +48,18 @@ describe('shipped L2 ledger params', () => {
 	// These lengths are also asserted against the RUNNING head by
 	// src/lib/hydra/hydra/params-drift.ts. Two copies on purpose — src/ does not
 	// depend on this package — so change one and change the other.
+	// An L2 tx can create an output almost as large as the L2 maxTxSize. Fanout
+	// must move that output to L1 inside a tx that is 917 bytes larger, and
+	// no fanout tx can be smaller than one output. A larger L2 limit lets a peer
+	// park an output that blocks the head from ever reaching Final.
+	// The same value is asserted against the RUNNING head by
+	// src/lib/hydra/hydra/params-drift.ts (EXPECTED_MAX_TX_SIZE). Change both.
+	it('keeps maxTxSize small enough that any single L2 output can be fanned out', () => {
+		const { maxTxSize } = load('preprod');
+		expect(maxTxSize + FANOUT_ENVELOPE_BYTES).toBeLessThan(L1_MAX_TX_SIZE);
+		expect(maxTxSize).toBe(15_000);
+	});
+
 	it('carries all three Plutus cost models at their pinned lengths', () => {
 		const { costModels } = load('preprod');
 		expect(Object.keys(costModels).sort()).toEqual(['PlutusV1', 'PlutusV2', 'PlutusV3']);

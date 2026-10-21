@@ -116,13 +116,23 @@ Document all four limits. Build against none of them.
    trains operators to ignore alerts. It is an operational cost, not a safety
    one, because chunking handles size.
 
-2. **Do not cap per-output datum size in code.** Our resting datums are 771–812
-   bytes against a limit near 15,500. A cap would guard a distance of twenty
-   times, and the guard would be a constant we would have to keep correct
-   against a boundary we have not measured precisely (we have one data point
-   and cannot separate fixed proof cost from per-output and per-byte cost).
-   Revisit if our datum shape grows materially, or if the slope is ever
-   measured.
+2. **Cap output size through the L2 ledger, not in code.** _Revised
+   2026-10-21; the original decision follows._ The shipped L2 ledger now uses
+   `maxTxSize` 15,000. An L2 tx can then create no output larger than that, and
+   the 2.4.1 fanout envelope measured at 917 bytes
+   (`docs/hydra-fanout-output-size-measurement.md`) keeps every such output
+   under L1's 16,384. The node itself enforces the limit on every L2 tx it
+   validates, so a hostile peer cannot park an oversized output in a snapshot
+   our node signs. A deposit cannot bring one in either: the measured deposit
+   limit (datum about 15,266 bytes) is below the fanout limit (15,421).
+   `ledger-params.spec.ts` and `params-drift.ts` both hold the value.
+
+   _Original decision, superseded:_ do not cap per-output datum size in code.
+   Our resting datums are 771 to 812 bytes against a limit near 15,500. A cap
+   would guard a distance of twenty times, and the guard would be a constant
+   we would have to keep correct against a boundary we have not measured
+   precisely. It was wrong in one respect: the guard needed no constant in our
+   code, because the L2 ledger already has one. The boundary is now measured.
 
 3. **Do not build an operator retire path yet.** A head that cannot reach
    `Final` blocks its relation permanently: `head/create-head.ts` rejects any new
@@ -148,7 +158,15 @@ Document all four limits. Build against none of them.
   this, by choice. Roughly: one chunk per 20 in-head UTxOs, about 2.2 ADA each,
   paid from the node's own wallet in one burst at close. An operator closing a
   large head should check the node wallet against that estimate first.
-- We remain exposed to limit 3 by construction. It requires a counterparty to
+- _Superseded 2026-10-21 by revised decision 2:_ a head that runs the shipped
+  L2 ledger cannot hold an output that fanout cannot move. A head started
+  before the change still runs `maxTxSize` 16,384 and stays exposed;
+  `params-drift.ts` reports it. Restart a node on the new params only between
+  heads. INFERRED, not tested: a node mid-head on a smaller limit rejects a
+  peer tx above 15,000 bytes, and that tx's snapshot then stalls. The V2
+  builders cap their unsigned txs at 14,000 bytes (`MAX_SAFE_TX_BYTES`).
+- _Original consequence, kept for the record:_ we remain exposed to limit 3
+  by construction. It requires a counterparty to
   deliberately park an output with a very large resting datum, costs them its
   min-UTxO (roughly 67 ADA at 15.5 KB, at `utxoCostPerByte` 4310), and gains
   them nothing but denial. We accept that rather than carry a guard constant we
