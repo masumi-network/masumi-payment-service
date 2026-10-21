@@ -190,7 +190,7 @@ beforeEach(() => {
 		priceStep: 0,
 		coinsPerUtxoSize: 4310,
 		collateralPercent: 150,
-		maxTxSize: 16384,
+		maxTxSize: 15_000,
 	});
 	mockFetchAddressUTxOs.mockResolvedValue([
 		{
@@ -255,7 +255,7 @@ describe('executeHydraDecommit request outcomes', () => {
 	// Refused before the row is Pending: past that, this service's own send
 	// check would read as the node rejecting the withdrawal.
 	it('refuses a withdrawal too large for the head before sending it', async () => {
-		mockSignTx.mockResolvedValue('ff'.repeat(16_385));
+		mockSignTx.mockResolvedValue('ff'.repeat(15_001));
 
 		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
 			statusCode: 422,
@@ -270,7 +270,7 @@ describe('executeHydraDecommit request outcomes', () => {
 	// A recorded splitTxId is what the withdrawal waits on, so an oversized split
 	// is refused before it is written.
 	it('refuses a split too large for the head before recording it', async () => {
-		mockSignTx.mockResolvedValue('ff'.repeat(16_385));
+		mockSignTx.mockResolvedValue('ff'.repeat(15_001));
 
 		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 10_000_000n })).rejects.toMatchObject({
 			statusCode: 422,
