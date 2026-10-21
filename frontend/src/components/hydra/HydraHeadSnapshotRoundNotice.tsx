@@ -61,7 +61,7 @@ export function HydraHeadSnapshotRoundNotice({
   const [pending, setPending] = useState<{ round: HydraSnapshotRound; peerNumber: number } | null>(
     null,
   );
-  // The counterparty's number as typed, with the round it was read for.
+  // The number typed for the other party's node, kept with the round it was typed for.
   const [peerInput, setPeerInput] = useState<{ signature: string; value: string } | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const peerSnapshot = peerInput?.value.trim() ?? '';
@@ -69,13 +69,15 @@ export function HydraHeadSnapshotRoundNotice({
   const peerNumber = /^\d{1,15}$/.test(peerSnapshot) ? Number(peerSnapshot) : null;
 
   // A choice made for one round never carries to a later one, even one that
-  // comes back with the same signature. That covers the typed counterparty
-  // number too. Set during render, not in an effect, so the dialog never paints
-  // for a round that is gone.
-  const isRoundGone = (signature: string) =>
-    !isOpen || !round?.stuck || round.signature !== signature;
-  if (!isResetting && pending !== null && isRoundGone(pending.round.signature)) setPending(null);
-  if (!isResetting && peerInput !== null && isRoundGone(peerInput.signature)) setPeerInput(null);
+  // comes back with the same signature. Set during render, not in an effect,
+  // so the dialog never paints for a round that is gone. The typed number goes
+  // the same way: a stale lower one would pass the server's check.
+  const isPendingStale =
+    pending !== null && (!isOpen || !round?.stuck || round.signature !== pending.round.signature);
+  if (isPendingStale && !isResetting) setPending(null);
+  const isPeerInputStale =
+    peerInput !== null && (!isOpen || !round?.stuck || round.signature !== peerInput.signature);
+  if (isPeerInputStale && !isResetting) setPeerInput(null);
 
   if (!isOpen || !round?.stuck) return null;
 
