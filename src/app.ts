@@ -14,6 +14,7 @@ import { requestLogger } from '@/utils/middleware/request-logger';
 import { robotsNoindex, serveRobotsTxt } from '@/utils/middleware/robots-noindex';
 import { allowSameOriginFraming } from '@/utils/middleware/allow-same-origin-framing';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
+import { usesPublicEncryptionKey } from '@/utils/security/public-encryption-key';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
 import { backfillTransactionAgentIdentifiers } from '@/utils/startup-migrations/backfill-transaction-agent-identifiers';
@@ -51,7 +52,7 @@ async function initialize() {
 		logger.warn('*  set a secure ADMIN_KEY in .env before seeding or change it in the admin tool now   *');
 		logger.warn('*****************************************************************');
 	}
-	if (CONFIG.ENCRYPTION_KEY?.trim() === DEFAULTS.EXAMPLE_ENCRYPTION_KEY) {
+	if (usesPublicEncryptionKey()) {
 		logger.warn('*****************************************************************');
 		logger.warn('*  WARNING: ENCRYPTION_KEY is the public .env.example value.     *');
 		logger.warn('*  A database copy exposes every encrypted secret. Use it only   *');

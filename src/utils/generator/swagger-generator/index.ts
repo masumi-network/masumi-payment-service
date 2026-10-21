@@ -22,6 +22,7 @@ import { registerTxSyncQuarantinePaths } from '@/routes/api/tx-sync-quarantine/d
 import { registerRequestRepairPaths } from '@/routes/api/request-repair/docs';
 import { registerReportPaths } from '@/routes/api/reports/docs';
 import { registerReleaseStatusPaths } from '@/routes/api/release-status/docs';
+import { registerSecurityStatusPaths } from '@/routes/api/security-status/docs';
 
 extendZodWithOpenApi(z);
 
@@ -54,6 +55,7 @@ export function generateOpenAPI() {
 	registerRequestRepairPaths({ registry, apiKeyAuth });
 	registerReportPaths({ registry, apiKeyAuth });
 	registerReleaseStatusPaths({ registry, apiKeyAuth });
+	registerSecurityStatusPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
 		openapi: '3.0.0',
