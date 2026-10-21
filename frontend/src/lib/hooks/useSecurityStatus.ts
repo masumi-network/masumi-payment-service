@@ -14,11 +14,13 @@ export function useSecurityStatus() {
     queryKey: ['security-status'],
     queryFn: async () => {
       const response = await getSecurityStatus({ client: apiClient });
-      // Throw so a failed check is retried and not cached as "no warning".
-      if (response.error) {
-        throw response.error;
+      // Throw so a failed check is retried and not cached as "no warning". An empty
+      // error body (a bare 502) is falsy, so check for the data too.
+      const status = response.data?.data;
+      if (response.error || !status) {
+        throw new Error('Security status check failed');
       }
-      return response.data?.data ?? null;
+      return status;
     },
     // The endpoint is admin only.
     enabled: !!apiClient && capabilities.canAdmin,
