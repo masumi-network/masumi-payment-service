@@ -145,7 +145,8 @@ export async function nudgeIdleHeadForRelease(params: {
 			select: { id: true },
 		});
 		if (activeWithdrawal) return false;
-		if ((await node.fetchPendingDecommitRefs()).length > 0) return false;
+		const pendingDecommits = await node.fetchPendingDecommitRefs();
+		if (pendingDecommits === undefined || pendingDecommits.length > 0) return false;
 
 		const signedTx =
 			candidate.l2ReleaseNudgeTx ??
