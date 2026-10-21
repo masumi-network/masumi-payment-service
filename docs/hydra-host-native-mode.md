@@ -33,6 +33,14 @@ Linux is served by the same image. Use this document when you want the Host
 without a container at all: no Docker on the machine, or debugging the Host
 process directly against a local `hydra-node`.
 
+Native mode is for development only. Do not use it for a Host that accepts
+peers you do not trust. Native mode runs the etcd 3.5.25 that `hydra-node`
+embeds (see `HYDRA_HOST_USE_SYSTEM_ETCD` below). That etcd reads a peer lease
+request body without a limit, so any peer that can reach the peer port can
+exhaust the node's memory. The peer allowlist does not stop a peer that is on
+the allowlist. For production, run the container: it uses the patched etcd
+3.5.34 that the image bakes in.
+
 There is still no standalone `aarch64-linux` download. Building one from the
 Nix flake is possible in principle (haskell.nix plus a Rust accumulator), but it
 compiles GHC and Rust largely from source, and it produces an unofficial binary
