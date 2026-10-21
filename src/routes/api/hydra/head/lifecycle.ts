@@ -23,6 +23,7 @@ import createHttpError from 'http-errors';
 import {
 	buildValidatedHydraCommit,
 	type ValidatedHydraCommit,
+	HydraCommandRejectedError,
 	HydraPostTxRejectedError,
 	HydraCommitFlowError,
 	HydraHeadInitObservationError,
@@ -169,6 +170,12 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 						hydraHeadId: head.id,
 						diagnosisError: getErrorMessage(diagnosisError),
 					});
+					verdict = { kind: 'failed' };
+				}
+				// A CommandFailed is the node refusing this Init, so nothing was posted
+				// and "wait, do not re-post" would be false. Only a head seen moving
+				// clears it.
+				if (verdict.kind === 'awaiting-node' && initError instanceof HydraCommandRejectedError) {
 					verdict = { kind: 'failed' };
 				}
 

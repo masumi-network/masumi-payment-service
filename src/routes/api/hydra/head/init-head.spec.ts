@@ -212,16 +212,27 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 	});
 
 	// The node also answers CommandFailed when the head initialized while Init
-	// waited for the node to catch up. Only the diagnosis can see the head moved.
-	it('still diagnoses a CommandFailed', async () => {
+	// waited for the node to catch up, and only the diagnosis can see the head
+	// moved. Short of that it is a refusal: nothing was posted, so a node that is
+	// behind must not turn it into "wait, do not re-post".
+	it('diagnoses a CommandFailed, and records it unless the head moved', async () => {
 		mockInit.mockRejectedValue(new HydraCommandRejectedError('Command Init failed'));
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: false,
+			reason: 'catching up',
+			chainSynced: false,
+			driftSeconds: 14_571,
+		});
 
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 			statusCode: 504,
+			message: 'Command Init failed',
 		});
 
 		expect(mockFlush).toHaveBeenCalled();
 		expect(mockReadNodeState).toHaveBeenCalled();
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
 	});
 
 	it('falls back to a failure when the diagnosis itself cannot run', async () => {
