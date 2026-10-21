@@ -225,17 +225,21 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(
 				409,
 				`The counterparty has confirmed snapshot ${peerConfirmedSnapshotNumber}, ahead of this node's ${snapshot.number}. ` +
-					'Resetting would discard that snapshot. Do not reset: this node is behind and has to adopt the counterparty’s confirmed snapshot, which this endpoint does not do',
+					'Resetting would discard that snapshot. Do not reset: this node is behind and has to adopt the counterparty’s confirmed snapshot, which this endpoint does not do. ' +
+					'If Hydra refuses that side-load, close the head: the counterparty’s node contests with its later snapshot',
 			);
 		}
-		// A party signs snapshot n only once it confirmed n - 1, and n confirms only
-		// with every party's signature, so two confirmed numbers are never more than
-		// one apart. A lower number is a typo or one read for an earlier round.
+		// Within the protocol a party signs snapshot n only once it confirmed n - 1,
+		// and n confirms only with every party's signature, so two confirmed numbers
+		// are never more than one apart. Further behind is a typo, a number read for
+		// an earlier round, or a counterparty node that lost or restored its state.
+		// Resetting this node fixes none of those.
 		if (peerConfirmedSnapshotNumber < snapshot.number - 1) {
 			throw createHttpError(
 				409,
-				`The counterparty cannot be at snapshot ${peerConfirmedSnapshotNumber} while this node confirmed ${snapshot.number}: ` +
-					'two parties are never more than one snapshot apart. Check the number with the counterparty’s operator',
+				`The counterparty reports snapshot ${peerConfirmedSnapshotNumber}, more than one behind this node's ${snapshot.number}. ` +
+					'Within the protocol two parties are never more than one snapshot apart, so the number is wrong or the counterparty’s node lost or restored its state. ' +
+					'Check the number with its operator. Do not reset: resetting this node does not bring the counterparty forward',
 			);
 		}
 

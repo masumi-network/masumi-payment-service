@@ -14994,7 +14994,7 @@ export type PostHydraHeadSnapshotRoundResetData = {
          */
         expectedSignature: string;
         /**
-         * The confirmed snapshot number shown by the counterparty node (GET /snapshot on it), as its operator reports it. The reset is refused if it is ahead of this node, because resetting would discard a snapshot only the counterparty holds, or more than one behind it, which no counterparty can be.
+         * The confirmed snapshot number shown by the counterparty node (GET /snapshot on it, 0 if it shows InitialSnapshot), as its operator reports it. The reset is refused if it is ahead of this node, because resetting would discard a snapshot only the counterparty holds, or more than one behind it, which within the protocol no counterparty can be.
          */
         peerConfirmedSnapshotNumber: number;
     };

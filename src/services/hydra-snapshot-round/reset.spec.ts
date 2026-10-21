@@ -301,8 +301,8 @@ describe('resetSnapshotRound', () => {
 			expect(node.post).toHaveBeenCalled();
 		});
 
-		// Two parties' confirmed numbers are never more than one apart, so this is a
-		// typo or a number read for an earlier round.
+		// Within the protocol two parties' confirmed numbers are never more than one
+		// apart, and resetting this node cannot help a counterparty further behind.
 		it('refuses a number more than one behind, which no counterparty can be at', async () => {
 			await expect(reset(311)).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/311.*313/) });
 			expect(node.post).not.toHaveBeenCalled();
