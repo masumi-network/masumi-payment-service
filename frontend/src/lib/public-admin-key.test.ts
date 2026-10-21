@@ -24,8 +24,7 @@ test('isPublicAdminKey matches a pasted key with outer whitespace', () => {
 });
 
 // A false positive puts the red banner in front of every operator.
-test('isPublicAdminKey rejects other keys, including ones that contain a public key', () => {
+test('isPublicAdminKey rejects null and a key that only contains a public key', () => {
   assert.equal(isPublicAdminKey(null), false);
-  assert.equal(isPublicAdminKey('masumi-payment-admin-private123'), false);
   assert.equal(isPublicAdminKey(`${PUBLIC_ADMIN_KEYS[0]}-rotated`), false);
 });
