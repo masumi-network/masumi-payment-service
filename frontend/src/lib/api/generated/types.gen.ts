@@ -14427,11 +14427,11 @@ export type PostHydraHeadInitErrors = {
      */
     404: unknown;
     /**
-     * Head is not in a state that permits init, is opened by the counterparty, or its node runs an L2 maxTxSize above 15000
+     * Head is disabled, is not Idle, is opened by the counterparty, or its node reports no numeric L2 maxTxSize or one above 15000
      */
     409: unknown;
     /**
-     * The Hydra node could not be reached
+     * The Hydra node could not be reached, or the InitTx could not be verified
      */
     502: unknown;
 };

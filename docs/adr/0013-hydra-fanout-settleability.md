@@ -221,8 +221,9 @@ Document all four limits. Build against none of them.
   builders cap their unsigned txs at 14,000 bytes (`MAX_SAFE_TX_BYTES`). That
   cap applies only to L1 batch builds; no L2 path used it, so on a head started
   on 16,384 this service could itself build an L2 tx above 15,000 bytes. Every
-  L2 tx is now refused above 15,000 bytes before anything is reserved for it
-  (`assertL2TxWithinMaxSize`), and builders get the head's `maxTxSize` capped
+  L2 tx is now refused above 15,000 bytes before it is sent, with no
+  reservation for it left held (`assertL2TxWithinMaxSize`), and builders get
+  the head's `maxTxSize` capped
   at 15,000. On any network, mainnet included, a Host whose params file sets
   `maxTxSize` above 15,000 refuses every node not yet acked and peered: no
   provision, first ack, first peer set or invite redemption. It still boots, so
