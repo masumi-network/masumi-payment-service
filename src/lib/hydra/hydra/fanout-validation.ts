@@ -213,6 +213,28 @@ function hasExactTokenSet(
 	);
 }
 
+/** The one spending input that is the bound head output, carrying the exact head token set. */
+function findBoundHeadInput(
+	inputs: readonly FanoutChainInput[],
+	headId: string,
+	expectedUnits: ReadonlySet<string>,
+	acceptedHeadScriptHashes: ReadonlySet<string>,
+): FanoutChainInput {
+	const headInputs = inputs.filter(
+		(input) =>
+			input.collateral !== true &&
+			input.reference !== true &&
+			acceptedHeadScriptHashes.has(paymentScriptHash(input.address) ?? '') &&
+			hasExactTokenSet(headPolicyAmounts(input.amount, headId), expectedUnits, 1n),
+	);
+	if (headInputs.length !== 1) fail('Hydra fanout did not consume exactly one bound official vHead token output');
+	return headInputs[0];
+}
+
+function expectedHeadUnits(headId: string, participantVkeys: readonly string[]): Set<string> {
+	return new Set([`${headId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`, ...participantVkeys.map((vkey) => `${headId}${vkey}`)]);
+}
+
 /** One transaction's place in the fanout chain, decided by what it burns. */
 type FanoutStepRole = 'partial' | 'terminal';
 
@@ -293,21 +315,13 @@ async function verifyFanoutStep(params: {
 	// Every step spends the head state-machine output, and the head tokens ride
 	// along the whole chain until the terminal step burns them. So this check is
 	// identical for a partial step and a final one.
-	const headInputs = utxos.inputs.filter(
-		(input) =>
-			input.collateral !== true &&
-			input.reference !== true &&
-			acceptedHeadScriptHashes.has(paymentScriptHash(input.address) ?? '') &&
-			hasExactTokenSet(headPolicyAmounts(input.amount, headId), expectedUnits, 1n),
-	);
-	if (headInputs.length !== 1) fail('Hydra fanout did not consume exactly one bound official vHead token output');
+	const indexedHeadInput = findBoundHeadInput(utxos.inputs, headId, expectedUnits, acceptedHeadScriptHashes);
 	const bodyInputs = transaction.body().inputs();
 	const bodyInputReferences = new Set<string>();
 	for (let index = 0; index < bodyInputs.len(); index += 1) {
 		const input = bodyInputs.get(index);
 		bodyInputReferences.add(`${input.transaction_id().to_hex().toLowerCase()}#${input.index()}`);
 	}
-	const indexedHeadInput = headInputs[0];
 	const headInputReference = `${normalizeHex(indexedHeadInput.tx_hash, 64, 'Hydra vHead input tx hash')}#${
 		indexedHeadInput.output_index
 	}`;
@@ -477,10 +491,7 @@ export async function verifyHydraFanoutOnChain(options: {
 	}
 	if (byTxHash.size > MAX_FANOUT_STEPS) fail('Hydra fanout spanned more L1 transactions than a head can produce');
 
-	const expectedUnits = new Set([
-		`${headId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`,
-		...participantVkeys.map((vkey) => `${headId}${vkey}`),
-	]);
+	const expectedUnits = expectedHeadUnits(headId, participantVkeys);
 	// Observation, not creation: a fanout being re-verified here may belong to a
 	// head opened under an earlier hydra-node script pin, so any known (current
 	// or legacy) head script hash is accepted rather than only today's default.
@@ -539,4 +550,105 @@ export async function verifyHydraFanoutOnChain(options: {
 	}
 
 	return chain.reverse().map((step) => step.transaction);
+}
+
+/**
+ * Replace the in-head keys hydra-node 2.4.1 gives partially fanned-out outputs
+ * with the L1 references those outputs became.
+ *
+ * Only the terminal step's outputs are keyed by L1 reference in
+ * `HeadIsFinalized`. This walks the chain back from that step: each step spends
+ * the head output its predecessor left at index 0, and the predecessor's
+ * outputs after it are what it distributed (its last output may be wallet
+ * change). Each is bound to an in-head-keyed entry with the same serialized
+ * output. The walk stops once every such entry is bound.
+ *
+ * This is a lookup, not a proof. `verifyHydraFanoutOnChain` still checks the
+ * whole chain against the returned references.
+ */
+export async function bindFinalizedFanoutToL1Chain(options: {
+	observer: HydraFanoutChainObserver;
+	headId: string;
+	participantVkeys: readonly string[];
+	finalizedOutputs: ReadonlyMap<string, string>;
+	/** Every in-head reference of the final snapshot; a reported key in this set is an L2 key. */
+	inHeadReferences: ReadonlySet<string>;
+	headScriptHash?: string;
+	observerTimeoutMs?: number;
+}): Promise<Map<string, string>> {
+	const headId = normalizeHex(options.headId, 56, 'Hydra head id');
+	const participantVkeys = options.participantVkeys.map((vkey, index) =>
+		normalizeHex(vkey, 56, `Hydra participant ${index}`),
+	);
+	const expectedUnits = expectedHeadUnits(headId, participantVkeys);
+	const acceptedHeadScriptHashes = knownHydraHeadScriptHashes(options.headScriptHash);
+	const observerTimeoutMs = options.observerTimeoutMs ?? DEFAULT_FANOUT_OBSERVER_TIMEOUT_MS;
+
+	const bound = new Map<string, string>();
+	const unbound = new Map<string, number>();
+	let unboundCount = 0;
+	const terminalTxHashes = new Set<string>();
+	for (const [reference, output] of options.finalizedOutputs) {
+		if (options.inHeadReferences.has(reference)) {
+			unbound.set(output, (unbound.get(output) ?? 0) + 1);
+			unboundCount += 1;
+		} else {
+			bound.set(reference, output);
+			terminalTxHashes.add(reference.split('#')[0] ?? '');
+		}
+	}
+	if (unboundCount === 0) return bound;
+	if (terminalTxHashes.size !== 1) {
+		fail('Hydra finalized output map did not name exactly one terminal L1 fanout step');
+	}
+
+	const chainDeadline = Date.now() + MAX_FANOUT_CHAIN_OBSERVER_MS;
+	const remainingMs = () => {
+		const remaining = chainDeadline - Date.now();
+		if (remaining <= 0) fail('Hydra fanout binding exceeded its total L1 observer budget');
+		return Math.min(observerTimeoutMs, remaining);
+	};
+	let cursor = normalizeHex([...terminalTxHashes][0], 64, 'Hydra fanout tx hash');
+	for (let step = 0; unboundCount > 0; step += 1) {
+		if (step >= MAX_FANOUT_STEPS) fail('Hydra fanout spanned more L1 transactions than a head can produce');
+		const utxos = await withObserverTimeout(options.observer.txsUtxos(cursor), remainingMs());
+		const headInput = findBoundHeadInput(utxos.inputs, headId, expectedUnits, acceptedHeadScriptHashes);
+		const previousTxHash = normalizeHex(headInput.tx_hash, 64, 'Hydra vHead input tx hash');
+		if (headInput.output_index !== 0) {
+			fail('Hydra fanout step did not consume the continuing head output of its predecessor');
+		}
+		const { cbor } = await withObserverTimeout(options.observer.txsCbor(previousTxHash), remainingMs());
+		if (String(resolveTxHash(cbor)).toLowerCase() !== previousTxHash) {
+			fail('Hydra fanout transaction CBOR hash did not match its indexed hash');
+		}
+		let outputs: ReturnType<ReturnType<Transaction['body']>['outputs']>;
+		try {
+			outputs = Transaction.from_bytes(Buffer.from(cbor, 'hex')).body().outputs();
+		} catch {
+			fail('Hydra fanout transaction CBOR was invalid');
+		}
+		const continuingHead = outputs.len() > 1 ? outputs.get(0) : undefined;
+		if (
+			!continuingHead ||
+			!acceptedHeadScriptHashes.has(paymentScriptHash(continuingHead.address().to_bech32()) ?? '') ||
+			!hasExactTokenSet(headPolicyAmounts(serializeCardanoOutputAmounts(continuingHead), headId), expectedUnits, 1n)
+		) {
+			fail('Hydra fanout chain ended before every partially fanned-out output was bound to L1');
+		}
+		for (let index = 1; index < outputs.len(); index += 1) {
+			const output = serializeCardanoTransactionOutput(outputs.get(index));
+			const count = unbound.get(output);
+			if (count) {
+				if (count === 1) unbound.delete(output);
+				else unbound.set(output, count - 1);
+				unboundCount -= 1;
+				bound.set(`${previousTxHash}#${index}`, output);
+			} else if (index !== outputs.len() - 1) {
+				// Only the last output may be the wallet's change.
+				fail('Hydra partial fanout distributed an output the finalized map did not report');
+			}
+		}
+		cursor = previousTxHash;
+	}
+	return bound;
 }

@@ -46,6 +46,9 @@ const mockReleaseFinalHeadL2Reservations = jest
 const mockGetVerifiedFanoutReferences = jest.fn<(_snapshotNumber: number) => unknown>();
 const mockGetVerifiedFanoutReference = jest.fn<(_reference: string, _snapshotNumber: number) => unknown>();
 const mockVerifyHydraFanout = jest.fn<(_args: unknown) => Promise<unknown>>();
+const mockBindFanout = jest.fn<(_args: unknown) => Promise<Map<string, string>>>();
+const mockGetFanoutBindingInput = jest.fn<(_expectedSnapshotNumber: number) => unknown>();
+const mockAdoptFanoutBinding = jest.fn<(_expectedSnapshotNumber: number, _bound: Map<string, string>) => boolean>();
 const mockFlushHeadStatus = jest.fn<(_hydraHeadId: string) => Promise<void>>();
 const mockRetainMemoHeads = jest.fn<(_hydraHeadIds: string[]) => void>();
 const mockIsLivePassDue = jest.fn<(_hydraHeadId: string, _intervalMs: number) => boolean>();
@@ -98,6 +101,8 @@ const mockNode = {
 	getConfirmedTransaction: mockGetConfirmedTransaction,
 	getVerifiedFanoutReferences: mockGetVerifiedFanoutReferences,
 	getVerifiedFanoutReference: mockGetVerifiedFanoutReference,
+	getFinalizedFanoutBindingInput: mockGetFanoutBindingInput,
+	adoptFinalizedFanoutL1Binding: mockAdoptFanoutBinding,
 	status: HydraHeadStatus.Final as HydraHeadStatus,
 };
 
@@ -227,6 +232,7 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 
 jest.unstable_mockModule('@/lib/hydra/hydra/fanout-validation', () => ({
 	verifyHydraFanoutOnChain: mockVerifyHydraFanout,
+	bindFinalizedFanoutToL1Chain: mockBindFanout,
 }));
 
 const { reconcileHydraHeadEscrowStates } = await import('./index');
@@ -395,6 +401,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockFindRequestLineages.mockResolvedValue(new Map());
 		mockFindNothingToApply.mockResolvedValue(new Set());
 		mockIsLivePassDue.mockReturnValue(true);
+		mockGetFanoutBindingInput.mockReturnValue(null);
 	});
 
 	async function useOpenHead() {
@@ -561,6 +568,41 @@ describe('Hydra live-snapshot reconciliation', () => {
 			mockHydraHeadUpdateMany.mock.invocationCallOrder[0],
 		);
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+	});
+
+	// A fanout over several L1 steps reports partial-step outputs under in-head
+	// keys. Completing the handoff from those would record L1 references that
+	// do not exist.
+	describe('a finalized map with in-head keys', () => {
+		const bindingInput = {
+			finalizedOutputs: new Map([[`${'aa'.repeat(32)}#0`, 'd87980']]),
+			inHeadReferences: new Set([`${'aa'.repeat(32)}#0`]),
+		};
+
+		it('stops the pass when the node refuses the L1 binding', async () => {
+			mockGetFanoutBindingInput.mockReturnValue(bindingInput);
+			mockBindFanout.mockResolvedValue(new Map([[`${FANOUT_TX_HASH}#1`, 'd87980']]));
+			mockAdoptFanoutBinding.mockReturnValue(false);
+
+			await reconcileHydraHeadEscrowStates();
+
+			expect(mockVerifyHydraFanout).not.toHaveBeenCalled();
+			expect(mockHydraHeadUpdateMany).not.toHaveBeenCalledWith(
+				expect.objectContaining({ data: expect.objectContaining({ fanoutTxHash: FANOUT_TX_HASH }) }),
+			);
+			expect(mockDisconnect).not.toHaveBeenCalled();
+		});
+
+		it('completes the handoff once the binding is adopted', async () => {
+			mockGetFanoutBindingInput.mockReturnValue(bindingInput);
+			mockBindFanout.mockResolvedValue(new Map([[`${FANOUT_TX_HASH}#1`, 'd87980']]));
+			mockAdoptFanoutBinding.mockReturnValue(true);
+
+			await reconcileHydraHeadEscrowStates();
+
+			expect(mockBindFanout).toHaveBeenCalledWith(expect.objectContaining(bindingInput));
+			expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+		});
 	});
 
 	// The handoff refuses a Pending L2 row, so a Final head releases the dead

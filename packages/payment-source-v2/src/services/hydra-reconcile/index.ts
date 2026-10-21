@@ -43,7 +43,11 @@ import {
 	observedHydraOutputMatchesEvidence,
 	parseHydraTransactionEvidence,
 } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
-import { verifyHydraFanoutOnChain, type HydraFanoutChainObserver } from '@/lib/hydra/hydra/fanout-validation';
+import {
+	bindFinalizedFanoutToL1Chain,
+	verifyHydraFanoutOnChain,
+	type HydraFanoutChainObserver,
+} from '@/lib/hydra/hydra/fanout-validation';
 import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-verification';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
@@ -344,6 +348,26 @@ async function reconcileHead(
 			node == null
 		)
 			return;
+		const fanoutObserver = getBlockfrostInstance(
+			source.network,
+			source.PaymentSourceConfig.rpcProviderApiKey,
+		) as unknown as HydraFanoutChainObserver;
+		// A fanout over several L1 steps reports the earlier steps' outputs under
+		// in-head keys. Until they are bound to L1, the node resolves no fanout
+		// reference at all, so this must run before anything below reads one.
+		const bindingInput = node.getFinalizedFanoutBindingInput?.(expectedSnapshotNumber);
+		if (bindingInput) {
+			const bound = await bindFinalizedFanoutToL1Chain({
+				observer: fanoutObserver,
+				headId: headIdentifier,
+				participantVkeys: [localParticipantVkey, remoteParticipantVkey],
+				...bindingInput,
+			});
+			if (!node.adoptFinalizedFanoutL1Binding?.(expectedSnapshotNumber, bound)) {
+				logger.error('[HydraReconcile] refused an L1 binding of the finalized fanout map', { hydraHeadId });
+				return;
+			}
+		}
 		// One observer pass per reference set: the release step and the handoff
 		// both check the same fanout when a release happens.
 		const fanoutChecks = new Map<string, ReturnType<typeof verifyHydraFanoutOnChain>>();
@@ -352,10 +376,7 @@ async function reconcileHead(
 			const check =
 				fanoutChecks.get(key) ??
 				verifyHydraFanoutOnChain({
-					observer: getBlockfrostInstance(
-						source.network,
-						source.PaymentSourceConfig.rpcProviderApiKey,
-					) as unknown as HydraFanoutChainObserver,
+					observer: fanoutObserver,
 					headId: headIdentifier,
 					participantVkeys: [localParticipantVkey, remoteParticipantVkey],
 					references,

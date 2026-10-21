@@ -30,6 +30,7 @@ import {
 	LEGACY_HYDRA_HEAD_SCRIPT_HASHES,
 } from './head-init-validation';
 import {
+	bindFinalizedFanoutToL1Chain,
 	HydraFanoutValidationError,
 	verifyHydraFanoutOnChain,
 	type HydraFanoutChainObserver,
@@ -521,5 +522,113 @@ describe('verifyHydraFanoutOnChain', () => {
 		const value = fixture();
 		jest.mocked(value.observer.txs).mockImplementation(async () => await new Promise(() => undefined));
 		await expect(verify(value, { observerTimeoutMs: 10 })).rejects.toBeInstanceOf(HydraFanoutValidationError);
+	});
+});
+
+// hydra-node 2.4.1 keys the outputs of earlier partial steps by their in-head
+// reference (devnet HeadIsFinalized, 2026-10-21: 7 of 15 keys named no L1
+// output). Handing those keys to the verifier looked up L2 tx ids on L1.
+describe('bindFinalizedFanoutToL1Chain', () => {
+	const inHeadKey = (index: number) => `${'aa'.repeat(32)}#${index}`;
+
+	function partialChain() {
+		const first = buildFanout({ continuingHead: true, burns: [], outputCount: 2, change: {} });
+		const second = buildFanout({
+			continuingHead: true,
+			burns: [],
+			headInput: { txHash: first.txHash, index: 0 },
+			change: { value: Value.new(BigNum.from_str('107000000')) },
+		});
+		const terminal = buildFanout({ headInput: { txHash: second.txHash, index: 0 }, outputCount: 2, change: {} });
+		const value = fixture({ chain: [first, second, terminal] });
+		const reported = new Map<string, string>();
+		const inHeadReferences = new Set<string>();
+		let keyIndex = 0;
+		for (const step of [first, second]) {
+			for (const output of step.outputs) {
+				reported.set(inHeadKey(keyIndex), serializeCardanoTransactionOutput(output));
+				inHeadReferences.add(inHeadKey(keyIndex));
+				keyIndex += 1;
+			}
+		}
+		terminal.outputs.forEach((output, index) =>
+			reported.set(`${terminal.txHash}#${index}`, serializeCardanoTransactionOutput(output)),
+		);
+		return { value, reported, inHeadReferences, first, second, terminal };
+	}
+
+	function bind(chain: ReturnType<typeof partialChain>, reported = chain.reported) {
+		return bindFinalizedFanoutToL1Chain({
+			observer: chain.value.observer,
+			headId: HEAD_ID,
+			participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+			finalizedOutputs: reported,
+			inHeadReferences: chain.inHeadReferences,
+		});
+	}
+
+	it('rebinds in-head keys to the L1 outputs the partial steps created, and the result verifies', async () => {
+		const chain = partialChain();
+		const bound = await bind(chain);
+
+		expect([...bound.keys()].sort()).toEqual(
+			[
+				`${chain.first.txHash}#1`,
+				`${chain.first.txHash}#2`,
+				`${chain.second.txHash}#1`,
+				`${chain.terminal.txHash}#0`,
+				`${chain.terminal.txHash}#1`,
+			].sort(),
+		);
+		const references = [...bound].map(([reference, serializedOutput]) => {
+			const [txHash, outputIndex] = reference.split('#');
+			return { txHash, outputIndex: Number(outputIndex), snapshotNumber: 7, serializedOutput };
+		});
+		await expect(verify(chain.value, { references })).resolves.toHaveLength(3);
+	});
+
+	it('returns a map without in-head keys unchanged and asks the chain nothing', async () => {
+		const chain = partialChain();
+		const singleStep = new Map([...chain.reported].filter(([reference]) => !chain.inHeadReferences.has(reference)));
+		await expect(bind(chain, singleStep)).resolves.toEqual(singleStep);
+		expect(chain.value.observer.txsUtxos).not.toHaveBeenCalled();
+	});
+
+	it('refuses when a partial step distributed an output the node did not report', async () => {
+		const chain = partialChain();
+		const reported = new Map(chain.reported);
+		reported.delete(inHeadKey(0));
+		chain.inHeadReferences.delete(inHeadKey(0));
+		await expect(bind(chain, reported)).rejects.toThrow('distributed an output the finalized map did not report');
+	});
+
+	it('refuses when the chain ends before every in-head key is bound', async () => {
+		// The first step spends an output of a tx that is not a fanout step (its
+		// output 0 is no head), the way a close tx ends the walk.
+		const notAFanout = buildFanout({ burns: [] });
+		const first = buildFanout({ continuingHead: true, burns: [], headInput: { txHash: notAFanout.txHash, index: 0 } });
+		const terminal = buildFanout({ headInput: { txHash: first.txHash, index: 0 } });
+		const value = fixture({ chain: [notAFanout, first, terminal] });
+		const reported = new Map([
+			[inHeadKey(0), serializeCardanoTransactionOutput(first.outputs[0])],
+			[inHeadKey(1), serializeCardanoTransactionOutput(notAFanout.outputs[0])],
+			[`${terminal.txHash}#0`, serializeCardanoTransactionOutput(terminal.outputs[0])],
+		]);
+		await expect(
+			bindFinalizedFanoutToL1Chain({
+				observer: value.observer,
+				headId: HEAD_ID,
+				participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				finalizedOutputs: reported,
+				inHeadReferences: new Set([inHeadKey(0), inHeadKey(1)]),
+			}),
+		).rejects.toThrow('ended before every partially fanned-out output was bound');
+	});
+
+	it('refuses a map whose L1 keys name more than one terminal step', async () => {
+		const chain = partialChain();
+		const reported = new Map(chain.reported);
+		reported.set(`${'bb'.repeat(32)}#0`, '00');
+		await expect(bind(chain, reported)).rejects.toThrow('exactly one terminal L1 fanout step');
 	});
 });
