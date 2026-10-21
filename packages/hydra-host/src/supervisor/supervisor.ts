@@ -793,19 +793,15 @@ export class Supervisor {
 			case 'Healthy':
 			case 'Progressing':
 			case 'Recovered':
+			case 'NeedsOperator':
 				if (outcome.kind === 'Recovered') {
 					this.logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
 				}
-				await this.store.update(record.nodeId, (current) => ({
-					...current,
-					lastStopUndrained: false,
-					startAttempts: 0,
-				}));
-				return;
-			case 'NeedsOperator':
 				// The node keeps running, so it can still contest a close. Marking it
 				// Failed would take it down for a decision only an operator can make.
-				this.logger.error(`[supervisor] ${record.nodeId} needs an operator: ${outcome.reason}`);
+				if (outcome.kind === 'NeedsOperator') {
+					this.logger.error(`[supervisor] ${record.nodeId} needs an operator: ${outcome.reason}`);
+				}
 				await this.store.update(record.nodeId, (current) => ({
 					...current,
 					lastStopUndrained: false,

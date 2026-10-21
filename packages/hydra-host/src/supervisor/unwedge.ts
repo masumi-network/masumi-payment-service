@@ -1,5 +1,5 @@
 /**
- * Automatic recovery from a stranded snapshot round.
+ * Opt-in automatic recovery from a stranded snapshot round.
  *
  * Draining covers voluntary stops, but an OOM kill or host failure bypasses it,
  * and a node killed mid-round can come back permanently stuck: the etcd layer
@@ -9,10 +9,14 @@
  *
  * The recovery is to side-load the node's own last *confirmed* snapshot, which
  * resets the round. This is a port of the procedure already proven in
- * `hydra-l2-flow/run-hydra-e2e.sh` — it needs no counterparty action, and the
- * payment service refuses to treat `SnapshotSideLoaded` as a replay
- * authentication anchor, so recovering a node cannot be used to inject
- * unverified state into the service.
+ * `hydra-l2-flow/run-hydra-e2e.sh`, and the payment service refuses to treat
+ * `SnapshotSideLoaded` as a replay authentication anchor, so recovering a node
+ * cannot be used to inject unverified state into the service.
+ *
+ * The side-load is only safe if the counterparty has not confirmed the next
+ * snapshot, and the Host cannot see the counterparty's node. So it runs only
+ * with `allowAutoSideLoad`; otherwise a stranded round is reported for an
+ * operator (`NeedsOperator`).
  */
 
 import { getOwnValue, isPlainObject } from '../registry/json.js';
