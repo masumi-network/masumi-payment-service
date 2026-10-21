@@ -17,8 +17,10 @@
  * snapshot recovers current datum states. Both paths use the same idempotent,
  * evidence-validating writers as the event observer.
  *
- * Retryable replay or live-snapshot evidence keeps a finalized head connected
- * so a later reconciliation pass can finish before the transport is released.
+ * Retryable replay evidence keeps a finalized head connected so a later
+ * reconciliation pass can finish before the transport is released. A finalized
+ * head has no live snapshot to read: its handoff rests on the drained replay and
+ * the node's verified fanout map.
  *
  * Mesh pinning (ADR 0005): lives in payment-source-v2 so `deserializeDatum` /
  * `decodeV2ContractDatum` resolve the V2 mesh line that wrote the datum.
@@ -69,8 +71,9 @@ const MAX_REPLAY_TRANSACTIONS_PER_HEAD_PER_RUN = 250;
 
 /**
  * Reconcile every enabled active/final head's in-head escrow UTxOs against this node's
- * own payment/purchase requests. Runs on the pending L2 tx handler cadence so the
- * ordered replay drains promptly; the live-snapshot pass is throttled per head by
+ * own payment/purchase requests, and hand a final head's escrows back to L1. Runs on
+ * the pending L2 tx handler cadence so the ordered replay drains promptly; the
+ * live-snapshot pass of an active head is throttled per head by
  * HYDRA_ESCROW_RECONCILE_INTERVAL. Idempotent.
  */
 export async function reconcileHydraHeadEscrowStates(): Promise<void> {
@@ -113,22 +116,6 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 			logger.warn('[HydraReconcile] Failed to reconcile head', { hydraHeadId: head.id, error });
 		}
 	}
-}
-
-/**
- * Whether the node answered a GET with a 404.
- *
- * Matched on the error's name and status rather than `instanceof`, so this file
- * does not import `HydraHttpResponseError` from `node-frames.ts` (whose imports
- * the spec for this file does not mock).
- */
-function isSnapshotRouteGone(error: unknown): boolean {
-	return (
-		typeof error === 'object' &&
-		error !== null &&
-		(error as { name?: unknown }).name === 'HydraHttpResponseError' &&
-		(error as { status?: unknown }).status === 404
-	);
 }
 
 type ReconcileSource = {
@@ -242,22 +229,16 @@ async function reconcileHead(
 	await reportExpiredL2Reservations({ hydraHeadId, network: source.network, node });
 
 	// The live snapshot is a safety net behind the TxConfirmed handler, so it is
-	// throttled per head. A finalized head is never throttled or skipped: there a
-	// 'retry' outcome gates the fan-out handoff and disconnect.
+	// throttled per head. A finalized head is never throttled: its handoff below
+	// runs on every pass.
 	const isFinalized = finalizedAt != null;
 	if (!isFinalized && !isLivePassDue(hydraHeadId, CONFIG.HYDRA_ESCROW_RECONCILE_INTERVAL * 1000)) return;
 
-	// hydra-node 2.4.1 answers GET /snapshot/utxo with a 404 once a head is
-	// finalized. The handoff below reads only the node's verified fanout map, so a
-	// finalized head with no live outputs must still complete. Anything but that
-	// 404, and any head that is not finalized, keeps failing loudly.
-	let utxos: UTxO[];
-	try {
-		utxos = await provider.fetchAddressUTxOs(source.smartContractAddress);
-	} catch (error) {
-		if (!isFinalized || !isSnapshotRouteGone(error)) throw error;
-		utxos = [];
-	}
+	// A finalized head has no live snapshot to read. After HeadIsFinalized,
+	// hydra-node (2.3.0 and 2.4.1) is back in its Idle state and answers
+	// GET /snapshot/utxo with a 404. The handoff below rests on the drained
+	// replay and the node's verified fanout map instead.
+	const utxos = isFinalized ? [] : await provider.fetchAddressUTxOs(source.smartContractAddress);
 	const observations: Array<{
 		utxo: UTxO;
 		decoded: DecodedV1ContractDatum;
@@ -362,8 +343,7 @@ async function reconcileHead(
 	// A finalized head can be disconnected only after the history socket's
 	// Greetings marker proves replay completion and every queued tx was resolved.
 	if (
-		finalizedAt != null &&
-		!hasRetryableLiveObservation &&
+		isFinalized &&
 		node?.confirmedTransactionHistoryReady &&
 		node.getConfirmedTransactionsForReconciliation().length === 0
 	) {
