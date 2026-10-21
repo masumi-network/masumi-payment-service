@@ -4,11 +4,13 @@
  * A peer can mint through its own node, and the head cannot reach its final
  * fanout while such a token stays unburned (see `l2-mint-tally`). The node
  * reports an open incident on every verified snapshot and on every replay
- * pass, so the row is keyed by the transaction that started the incident: one
- * row per incident, however often it is reported.
+ * pass. A peer also decides how often incidents start: minting and burning in
+ * turn opens a new one every other snapshot. So each head keeps one row,
+ * updated in place to the latest incident, and touches the database at most
+ * once per interval.
  *
  * Best effort across processes: there is no unique constraint, so two owners
- * during a lease handover can both write the row. That duplicates a row and
+ * during a lease handover can both write a row. That duplicates a row and
  * loses nothing.
  */
 
@@ -21,15 +23,19 @@ import { logger } from '@masumi/payment-core/logger';
 export const UNBURNED_L2_MINT_CLIENT_INPUT = 'L2Mint';
 
 /**
- * How long a recorded incident goes without a database check. Reports arrive
- * per snapshot, so they must not cost a query each; but an operator can clear
- * the head's errors while the incident is still open, and the row should come
- * back rather than wait for a restart.
+ * How long a head waits after a database check before the next one. Reports
+ * arrive per snapshot, so they must not cost a query each. The first report
+ * after the interval checks again: it brings back a row an operator cleared
+ * while the head is still blocked, and moves the row to a newer incident.
+ * A head that sends no reports (idle, or Closed) is not checked until it does.
  */
-const RECORDED_INCIDENT_RECHECK_MS = 10 * 60 * 1000;
+const RECHECK_INTERVAL_MS = 10 * 60 * 1000;
 
-/** Per head: the incident last recorded in this process, and when that was confirmed. */
-const recordedIncidentByHead = new Map<string, { txHash: string; at: number }>();
+/** How long a head waits after a failed check, so an outage costs one query per head per interval, not per snapshot. */
+const RETRY_INTERVAL_MS = 30 * 1000;
+
+/** Per head: the monotonic time before which reports skip the database. */
+const nextCheckByHead = new Map<string, number>();
 
 function describeIncident(incident: L2MintIncident): string {
 	const { count, sample } = incident.netUnits;
@@ -47,33 +53,37 @@ export async function recordUnburnedL2Mint(
 	headStatus: HydraHeadStatus,
 	incident: L2MintIncident,
 ): Promise<void> {
-	const now = Date.now();
-	const recorded = recordedIncidentByHead.get(hydraHeadId);
-	if (recorded?.txHash === incident.txHash && now - recorded.at < RECORDED_INCIDENT_RECHECK_MS) return;
+	const now = performance.now();
+	if (now < (nextCheckByHead.get(hydraHeadId) ?? 0)) return;
 	// Claimed before the first await, so a report that arrives while this one
-	// is still writing does not write a second row.
-	const claim = { txHash: incident.txHash, at: now };
-	recordedIncidentByHead.set(hydraHeadId, claim);
+	// is still writing skips the database.
+	nextCheckByHead.set(hydraHeadId, now + RECHECK_INTERVAL_MS);
 	try {
 		const existing = await prisma.hydraHeadError.findFirst({
-			where: { hydraHeadId, clientInput: UNBURNED_L2_MINT_CLIENT_INPUT, txHash: incident.txHash },
-			select: { id: true },
+			where: { hydraHeadId, clientInput: UNBURNED_L2_MINT_CLIENT_INPUT },
+			select: { id: true, txHash: true },
 		});
-		if (existing) return;
-		await prisma.hydraHeadError.create({
-			data: {
-				hydraHeadId,
-				errorType: HydraErrorType.CommandFailed,
-				errorMessage: describeIncident(incident),
-				headStatus,
-				clientInput: UNBURNED_L2_MINT_CLIENT_INPUT,
-				txHash: incident.txHash,
-				errorAt: new Date(now),
-			},
-		});
+		if (existing?.txHash === incident.txHash) return;
+		const data = {
+			errorMessage: describeIncident(incident),
+			headStatus,
+			txHash: incident.txHash,
+			errorAt: new Date(),
+		};
+		if (existing) {
+			await prisma.hydraHeadError.update({ where: { id: existing.id }, data });
+		} else {
+			await prisma.hydraHeadError.create({
+				data: {
+					...data,
+					hydraHeadId,
+					errorType: HydraErrorType.CommandFailed,
+					clientInput: UNBURNED_L2_MINT_CLIENT_INPUT,
+				},
+			});
+		}
 	} catch (error) {
-		// Released so the next report of this incident tries again.
-		if (recordedIncidentByHead.get(hydraHeadId) === claim) recordedIncidentByHead.delete(hydraHeadId);
+		nextCheckByHead.set(hydraHeadId, performance.now() + RETRY_INTERVAL_MS);
 		logger.error('[HydraHeadError] could not record an unburned L2 mint', {
 			hydraHeadId,
 			txHash: incident.txHash,

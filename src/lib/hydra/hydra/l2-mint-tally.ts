@@ -134,9 +134,10 @@ export function recordL2TransactionMints(
 	if (openingTxHash === undefined) return;
 	const netUnits = describeUnits([...units].map(([unit, net]) => `${unit} ${net > 0n ? '+' : ''}${net}`));
 	tally.openedBy = { txHash: openingTxHash, snapshotNumber, netUnits };
-	logger.error('[HydraNode] The head holds a nonzero L2 mint balance; unburned L2-minted tokens block finalization', {
-		...tally.openedBy,
-	});
+	logger.error(
+		'[HydraNode] The head net L2 mint balance left zero; a token minted in it and not burned blocks finalization',
+		tally.openedBy,
+	);
 }
 
 /**
