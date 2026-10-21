@@ -12,7 +12,8 @@
  *  - redemption requires a nonce this Host issued, unspent and unexpired;
  *  - the redeemer's signature must verify against the wallet it names before
  *    the nonce is spent, so a forged or malformed body cannot burn an invite;
- *  - requests are limited per source and in total before any body is read;
+ *  - requests are limited per source and in total; past the total, only a
+ *    redemption of an open invite is still served;
  *  - bodies are capped and connection timeouts are short.
  *
  * The payment service verifies the same signature again when it adopts the
@@ -22,6 +23,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
+import { constantTimeEquals } from './auth.js';
 import type { ExchangeStore } from '../registry/exchange-store.js';
 import {
 	isExchangeMaterial,
@@ -41,16 +43,19 @@ const DEFAULT_BODY_TIMEOUT_MS = 5_000;
 const DEFAULT_REQUESTS_PER_MINUTE = 120;
 
 /**
- * One budget for every source together, spent before any body is read.
+ * One budget for every source together, spent before any body is read. Once it
+ * is spent, a request is still read but served only if it redeems an open
+ * invite, so junk traffic cannot lock the real counterparty out.
  *
  * The per-source limit stops one caller from starving another, but a flood from
  * many addresses passes it: each address stays under its own limit. This cap
  * bounds what the whole plane admits per minute, whatever the address count.
  *
- * Sized from what legitimate traffic can be. A redemption is one POST with no
- * client retry (`postRedemption` in the payment service), and every invite
- * reserves one node slot, 32 by default (`HYDRA_HOST_PEER_PORT_COUNT`). So
- * even every outstanding invite redeemed in the same minute is 32 requests.
+ * Sized from what legitimate traffic can be. A redemption is one POST, retried
+ * at most twice and only on 503 (`postRedemption` in the payment service), and
+ * every invite reserves one node slot, 32 by default
+ * (`HYDRA_HOST_PEER_PORT_COUNT`). So even every outstanding invite redeemed in
+ * the same minute is 96 requests at most.
  * Twice the per-source limit leaves that peak a wide margin, and one source
  * at its own limit still leaves half the budget for everyone else.
  */
@@ -316,14 +321,18 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		requestsInWindow.set(source, seen);
 		// Per source first, so requests one source has no budget for never spend
 		// the shared budget: one caller alone cannot exhaust it.
-		if (seen > requestsPerMinute || admittedInWindow >= totalRequestsPerMinute) {
-			response.setHeader('Retry-After', '60');
-			send(response, 429, { error: 'too many requests' });
+		if (seen > requestsPerMinute) {
+			refuseOverBudget(response);
 			return;
 		}
-		admittedInWindow += 1;
+		// Past the shared budget the request is not refused yet: junk from many
+		// addresses can spend that budget, and refusing here would deny the real
+		// counterparty until the invite expires. Instead only a redemption of an
+		// open invite gets through, and the body-reader caps bound the extra reads.
+		const overBudget = admittedInWindow >= totalRequestsPerMinute;
+		if (!overBudget) admittedInWindow += 1;
 
-		void handle(request, response, source, pathname).catch((error: unknown) => {
+		void handle(request, response, source, pathname, overBudget).catch((error: unknown) => {
 			// Never echo the message: this is an unauthenticated surface and the
 			// error text can describe internal state.
 			logger.error(`[exchange] ${(error as Error).message}`);
@@ -342,14 +351,19 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		response: ServerResponse,
 		source: string,
 		pathname: string,
+		overBudget: boolean,
 	): Promise<void> {
+		if (overBudget && (request.method !== 'POST' || pathname !== '/exchange/redeem')) {
+			refuseOverBudget(response);
+			return;
+		}
 		if (request.method !== 'POST') {
 			send(response, 405, { error: 'method not allowed' });
 			return;
 		}
 
 		if (pathname === '/exchange/redeem') {
-			await handleRedeem(request, response, source);
+			await handleRedeem(request, response, source, overBudget);
 			return;
 		}
 		// Anything else, including every control-plane path, is simply absent
@@ -357,7 +371,12 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		send(response, 404, { error: 'not found' });
 	}
 
-	async function handleRedeem(request: IncomingMessage, response: ServerResponse, source: string): Promise<void> {
+	async function handleRedeem(
+		request: IncomingMessage,
+		response: ServerResponse,
+		source: string,
+		overBudget: boolean,
+	): Promise<void> {
 		const sourceReaders = bodyReadersBySource.get(source) ?? 0;
 		if (bodyReaders >= maxBodyReaders || sourceReaders >= maxBodyReadersPerSource) {
 			response.setHeader('Connection', 'close');
@@ -377,7 +396,8 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			else bodyReadersBySource.set(source, remaining);
 		}
 		if (body === null || !isExchangeMaterial(body.redeemer) || !isExchangeSignature(body.signature)) {
-			send(response, 400, { error: 'malformed redemption' });
+			if (overBudget) refuseOverBudget(response);
+			else send(response, 400, { error: 'malformed redemption' });
 			return;
 		}
 
@@ -394,6 +414,13 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			if (!(await verifyRedemption(body.nonce, body.redeemer, body.signature))) {
 				logger.warn('[exchange] redemption refused (401 signature does not verify)');
 				send(response, 401, { error: 'signature does not verify' });
+				return;
+			}
+			// After the signature check, so a 401 stays independent of the nonce, as
+			// it is within budget. An unknown, spent or expired nonce all get the same
+			// 429 after the same work, so nothing here tells whether a nonce exists.
+			if (overBudget && !(await isOpenInvite(body.nonce))) {
+				refuseOverBudget(response);
 				return;
 			}
 			// Only for an invite that is still open. A valid signature proves only
@@ -452,4 +479,23 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			inFlight -= 1;
 		}
 	}
+
+	/**
+	 * Scans every invite with a constant-time compare and no early exit, so the
+	 * time taken does not depend on where, or whether, the nonce matches.
+	 */
+	async function isOpenInvite(nonce: string): Promise<boolean> {
+		const now = Date.now();
+		let open = false;
+		for (const invite of await store.listInvites()) {
+			const matches = constantTimeEquals(invite.nonce, nonce);
+			open = (matches && invite.redeemedAt === null && invite.expiresAt > now) || open;
+		}
+		return open;
+	}
+}
+
+function refuseOverBudget(response: ServerResponse): void {
+	response.setHeader('Retry-After', '60');
+	send(response, 429, { error: 'too many requests' });
 }

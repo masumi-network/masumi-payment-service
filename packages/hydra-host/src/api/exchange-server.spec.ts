@@ -532,13 +532,40 @@ describe('total request budget', () => {
 		expect(statuses.slice(0, 5)).toEqual([400, 400, 400, 400, 400]);
 		expect(statuses.slice(5).every((status) => status === 429)).toBe(true);
 
+		// The flood spent the budget, but it cannot lock out an open invite.
 		await issue('nonce-afterflood');
-		expect(await redeem('203.0.113.9', 'nonce-afterflood')).toBe(429);
+		expect(await redeem('203.0.113.9', 'nonce-afterflood')).toBe(200);
+	});
 
-		const realNow = Date.now.bind(Date);
-		jest.spyOn(Date, 'now').mockImplementation(() => realNow() + 61_000);
-		await issue('nonce-afterflood2');
-		expect(await redeem('203.0.113.9', 'nonce-afterflood2')).toBe(200);
+	it('past the budget, answers an unknown, spent or expired nonce with the same 429', async () => {
+		for (let index = 1; index <= 5; index += 1) {
+			await from(`198.51.100.${index}`);
+		}
+		await issue('nonce-spent');
+		expect(await redeem('203.0.113.9', 'nonce-spent')).toBe(200);
+		await issue('nonce-expired', -1);
+
+		const responses = await Promise.all(
+			['nonce-unknown', 'nonce-spent', 'nonce-expired'].map((nonce, index) =>
+				fetch(url, {
+					method: 'POST',
+					headers: { Connection: 'close', 'X-Forwarded-For': `203.0.113.${20 + index}` },
+					body: JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }),
+				}).then(async (response) => ({ status: response.status, body: await response.text() })),
+			),
+		);
+		expect(new Set(responses.map((response) => JSON.stringify(response)))).toEqual(
+			new Set([JSON.stringify({ status: 429, body: '{"error":"too many requests"}' })]),
+		);
+		expect(await from('198.51.100.30', '{}')).toBe(429);
+	});
+
+	it('past the budget, still refuses a bad signature with 401 whatever the nonce', async () => {
+		for (let index = 1; index <= 5; index += 1) {
+			await from(`198.51.100.${index}`);
+		}
+		verifyRedemption.mockResolvedValueOnce(false);
+		expect(await redeem('203.0.113.9', 'nonce-unknown')).toBe(401);
 	});
 
 	it('does not let one source spend the shared budget', async () => {
