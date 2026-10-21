@@ -14419,7 +14419,7 @@ export type PostHydraHeadInitData = {
 
 export type PostHydraHeadInitErrors = {
     /**
-     * Head has no local participant
+     * Invalid input, or the head has no local participant
      */
     400: unknown;
     /**

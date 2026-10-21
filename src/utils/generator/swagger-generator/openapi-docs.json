@@ -34366,7 +34366,7 @@
                         }
                     },
                     "400": {
-                        "description": "Head has no local participant"
+                        "description": "Invalid input, or the head has no local participant"
                     },
                     "401": {
                         "description": "Unauthorized"
