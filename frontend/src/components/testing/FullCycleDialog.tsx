@@ -138,6 +138,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         }
 
         const requestBody = {
+          developerTestIntent: true,
           blockchainIdentifier: payment.blockchainIdentifier,
           network: network,
           inputHash: originalFormData.inputHash,
@@ -228,6 +229,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
             : undefined;
 
         const requestBody = {
+          developerTestIntent: true,
           network: network,
           agentIdentifier: selectedAgent.agentIdentifier,
           paymentSourceType: selectedAgent.paymentSourceType,

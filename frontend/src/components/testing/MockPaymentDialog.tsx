@@ -125,6 +125,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
             : undefined;
 
         const requestBody = {
+          developerTestIntent: true,
           network: network,
           agentIdentifier: selectedAgent.agentIdentifier,
           paymentSourceType: selectedAgent.paymentSourceType,

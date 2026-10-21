@@ -43,6 +43,7 @@ import {
 import { buildPaymentListWhere, getPaymentsForQuery } from './queries';
 import { serializePaymentsResponse } from './serializers';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
+import { assertDeveloperTestPaymentAllowed } from '@/utils/policy/developer-test-payments';
 
 export {
 	createPaymentSchemaOutput,
@@ -92,6 +93,10 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 	output: createPaymentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof createPaymentsSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
+		assertDeveloperTestPaymentAllowed({
+			network: input.network,
+			developerTestIntent: input.developerTestIntent,
+		});
 		const policyId = extractPolicyId(input.agentIdentifier);
 
 		const registryPaymentSource = await prisma.paymentSource.findFirst({

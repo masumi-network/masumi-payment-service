@@ -6556,7 +6556,6 @@ export const HydraRelationDetailSchema = {
                                     'Open',
                                     'Closed',
                                     'FanoutPossible',
-                                    'FanningOut',
                                     'Final'
                                 ]
                             },
@@ -6756,7 +6755,6 @@ export const HydraHeadSchema = {
                 'Open',
                 'Closed',
                 'FanoutPossible',
-                'FanningOut',
                 'Final'
             ]
         },
@@ -7279,7 +7277,6 @@ export const HydraLocalParticipantSchema = {
                         'Open',
                         'Closed',
                         'FanoutPossible',
-                        'FanningOut',
                         'Final'
                     ]
                 }

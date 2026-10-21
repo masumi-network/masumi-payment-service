@@ -3351,7 +3351,7 @@ export type DescribedRelease = {
 export type HydraRelationDetail = HydraRelation & {
     Heads?: Array<{
         id: string;
-        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
         headIdentifier: string | null;
         isEnabled: boolean;
         createdAt: Date;
@@ -3397,7 +3397,7 @@ export type HydraHead = {
     updatedAt: string;
     hydraRelationId: string;
     headIdentifier: string | null;
-    status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+    status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
     contestationPeriod: string;
     isEnabled: boolean;
     openedAt: string | null;
@@ -3538,7 +3538,7 @@ export type HydraLocalParticipant = {
         walletAddress: string;
     };
     HydraHead?: {
-        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
     } | null;
     keysDisclosedAt: Date | null;
 };
@@ -5335,6 +5335,10 @@ export type PostPaymentData = {
          * Optional seller layer override. For V2 this choice is signed into the purchase terms: "Hydra" requires an open head, "L1" forces L1, and a conflict with the buyer's forceLayer is rejected. Hydra is not supported for V1. Omit for automatic routing.
          */
         forceLayer?: 'L1' | 'Hydra';
+        /**
+         * When true, marks a Developers dashboard test action. Mainnet is rejected server-side; omit for normal production payments.
+         */
+        developerTestIntent?: boolean;
     };
     path?: never;
     query?: never;
@@ -8166,6 +8170,10 @@ export type PostPurchaseData = {
          * Seller layer override copied from the payment response. For V2, a non-null value is part of the signed payment terms and cannot be changed or omitted without invalidating the identifier. V1 accepts only the redundant "L1" value for response round-tripping. Omit or pass null when the seller selected automatic routing.
          */
         paymentForceLayer?: 'L1' | 'Hydra' | null;
+        /**
+         * When true, marks a Developers dashboard test action. Mainnet is rejected server-side; omit for normal production purchases.
+         */
+        developerTestIntent?: boolean;
     };
     path?: never;
     query?: never;
@@ -14317,7 +14325,7 @@ export type GetHydraHeadData = {
         /**
          * Filter by head status
          */
-        status?: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+        status?: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
         /**
          * Filter by isEnabled
          */
@@ -14437,7 +14445,7 @@ export type PostHydraHeadInitResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
         };
     };
 };
@@ -14479,7 +14487,7 @@ export type PostHydraHeadFanoutResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
         };
     };
 };
@@ -14522,7 +14530,7 @@ export type PostHydraHeadCloseResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
         };
     };
 };
@@ -15641,7 +15649,7 @@ export type GetHydraHeadErrorsResponses = {
                 createdAt: Date;
                 errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput';
                 errorMessage: string;
-                headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+                headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
                 clientInput: string | null;
                 txHash: string | null;
                 errorAt: Date;
@@ -16310,7 +16318,7 @@ export type PostHydraHeadRetireResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
             retiredAt: string;
             retiredHeadOutputTxHash: string;
             remainingUtxoCount: number | null;
@@ -16359,7 +16367,7 @@ export type GetHydraHeadPartialFanoutResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
             /**
              * Null before the first step. A selection is accepted only before it or in AwaitingSelection.
              */
@@ -16426,7 +16434,7 @@ export type PostHydraHeadPartialFanoutResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
             selectedCount: number;
         };
     };

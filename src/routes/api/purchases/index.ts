@@ -33,6 +33,7 @@ import { buildPurchaseListWhere, getPurchasesForQuery } from './queries';
 import { serializePurchasesResponse } from './serializers';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 import { isRequestVisibleToCaller } from '@/utils/shared/wallet-scope';
+import { assertDeveloperTestPaymentAllowed } from '@/utils/policy/developer-test-payments';
 
 export {
 	createPurchaseInitSchemaInput,
@@ -84,6 +85,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 		const startTime = Date.now();
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
+			assertDeveloperTestPaymentAllowed({
+				network: input.network,
+				developerTestIntent: input.developerTestIntent,
+			});
 			const decodedBlockchainIdentifier = decodeBlockchainIdentifier(input.blockchainIdentifier);
 			if (decodedBlockchainIdentifier == null) {
 				throw createHttpError(400, 'Invalid blockchain identifier, format invalid');

@@ -370,6 +370,12 @@ export const createPaymentsSchemaInput = z
 			.describe(
 				'Optional seller layer override. For V2 this choice is signed into the purchase terms: "Hydra" requires an open head, "L1" forces L1, and a conflict with the buyer\'s forceLayer is rejected. Hydra is not supported for V1. Omit for automatic routing.',
 			),
+		developerTestIntent: z
+			.boolean()
+			.optional()
+			.describe(
+				'When true, marks a Developers dashboard test action. Mainnet is rejected server-side; omit for normal production payments.',
+			),
 	})
 	.refine(
 		(value) =>
