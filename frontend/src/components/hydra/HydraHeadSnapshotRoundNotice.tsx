@@ -40,6 +40,12 @@ function roundLabel(round: HydraSnapshotRound): string {
   return round.snapshotNumber === null ? round.tag : `${round.tag} ${round.snapshotNumber}`;
 }
 
+// One stuck round as the server recorded it. The signature repeats when the same
+// round is stuck again after a reset; the recorded `since` does not.
+function roundInstance(round: HydraSnapshotRound): string {
+  return `${round.signature}|${round.since ?? ''}`;
+}
+
 function resetDescription(round: HydraSnapshotRound, peerNumber: number): string {
   // The round names only the transactions it would confirm. The side-load drops
   // every unconfirmed transaction the node holds, so the list is a floor.
@@ -63,7 +69,7 @@ export function HydraHeadSnapshotRoundNotice({
     null,
   );
   // The number typed for the other party's node, kept with the round it was typed for.
-  const [peerInput, setPeerInput] = useState<{ signature: string; value: string } | null>(null);
+  const [peerInput, setPeerInput] = useState<{ instance: string; value: string } | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const peerSnapshot = peerInput?.value.trim() ?? '';
   // Whole numbers only, and short enough to stay a safe integer.
@@ -72,12 +78,13 @@ export function HydraHeadSnapshotRoundNotice({
   // A choice made for one round never carries to a later one, even one that
   // comes back with the same signature. Set during render, not in an effect,
   // so the dialog never paints for a round that is gone. The typed number goes
-  // the same way: a stale lower one would pass the server's check.
+  // the same way, and also when the same round is recorded again: a stale lower
+  // number would pass the server's check.
   const isPendingStale =
     pending !== null && (!isOpen || !round?.stuck || round.signature !== pending.round.signature);
   if (isPendingStale && !isResetting) setPending(null);
   const isPeerInputStale =
-    peerInput !== null && (!isOpen || !round?.stuck || round.signature !== peerInput.signature);
+    peerInput !== null && (!isOpen || !round?.stuck || roundInstance(round) !== peerInput.instance);
   if (isPeerInputStale && !isResetting) setPeerInput(null);
 
   if (!isOpen || !round?.stuck) return null;
@@ -94,6 +101,8 @@ export function HydraHeadSnapshotRoundNotice({
       toast.success(
         `Reset to confirmed snapshot ${result.confirmedSnapshotNumber}. Unconfirmed transactions were dropped, including the round's ${result.droppedTxIds.length}.`,
       );
+      setPending(null);
+      setPeerInput(null);
     } catch (error) {
       // The API layer toasts the cause; catching keeps it from escaping the handler.
       console.error('Hydra snapshot round reset failed', error);
@@ -150,7 +159,7 @@ export function HydraHeadSnapshotRoundNotice({
             placeholder="Ask the other party's operator"
             value={peerInput?.value ?? ''}
             onChange={(event) =>
-              setPeerInput({ signature: round.signature, value: event.target.value })
+              setPeerInput({ instance: roundInstance(round), value: event.target.value })
             }
           />
           <p className="text-xs">
