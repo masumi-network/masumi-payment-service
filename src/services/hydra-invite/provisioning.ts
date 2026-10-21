@@ -421,7 +421,7 @@ export async function reserveNodeForExchange(
 		// The Host's own refusal, such as unsafe L2 ledger params. An HttpError, so
 		// the operator reads its fix instead of a bare 500.
 		if (error instanceof HydraHostRequestError && error.status === HOST_REFUSED_STATUS) {
-			throw createHttpError(409, `the hydra host at ${host.baseUrl} refused a new node: ${error.message}`);
+			throw createHttpError(409, `the hydra host at ${host.baseUrl} refused to provision a node: ${error.message}`);
 		}
 		throw error;
 	}

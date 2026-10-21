@@ -9,6 +9,7 @@ const mockDecommitUpdate = jest.fn() as AnyMock;
 const mockDecommitCreate = jest.fn() as AnyMock;
 const mockDecommitFindFirst = jest.fn() as AnyMock;
 const mockHeadFindUnique = jest.fn() as AnyMock;
+const mockSignTx = jest.fn() as AnyMock;
 const mockHeadUpdate = jest.fn() as AnyMock;
 const mockDecommitCall = jest.fn() as AnyMock;
 const mockNewTx = jest.fn() as AnyMock;
@@ -124,7 +125,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 			return [];
 		}
 		async signTx() {
-			return 'ff'.repeat(20);
+			return mockSignTx();
 		}
 	},
 	MeshTxBuilder: class {
@@ -202,6 +203,7 @@ beforeEach(() => {
 		},
 	]);
 	mockIsTxConfirmed.mockReturnValue(true);
+	mockSignTx.mockResolvedValue('ff'.repeat(20));
 	mockFetchUTxOs.mockResolvedValue([]);
 	mockTxQueryRaw.mockResolvedValue([]);
 	mockPaymentCount.mockResolvedValue(0);
@@ -248,6 +250,18 @@ describe('executeHydraDecommit request outcomes', () => {
 		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toThrow('rejected the withdrawal');
 
 		expect(mockRecordHeadError).toHaveBeenCalled();
+	});
+
+	// Refused before the row is Pending: past that, this service's own send
+	// check would read as the node rejecting the withdrawal.
+	it('refuses a withdrawal too large for the head before sending it', async () => {
+		mockSignTx.mockResolvedValue('ff'.repeat(16_385));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+			statusCode: 422,
+			message: expect.stringContaining('Consolidate the wallet in the head first'),
+		});
+		expect(mockDecommitCall).not.toHaveBeenCalled();
 	});
 
 	it('leaves an ambiguous request Pending for the head to settle', async () => {

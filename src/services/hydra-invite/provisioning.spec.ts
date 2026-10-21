@@ -227,7 +227,7 @@ describe('reserveNodeForExchange', () => {
 
 		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS)).rejects.toMatchObject({
 			status: 409,
-			message: expect.stringMatching(/refused a new node: .*maxTxSize 16384, above 15000/),
+			message: expect.stringMatching(/refused to provision a node: .*maxTxSize 16384, above 15000/),
 		});
 		expect(mockCreate).not.toHaveBeenCalled();
 	});

@@ -166,8 +166,8 @@ export async function nudgeIdleHeadForRelease(params: {
 				signSpendNudge,
 			}));
 		if (signedTx === null) return false;
-		// Again for a nudge recorded before this limit: the head would refuse it at
-		// every interval, so it is held for an operator instead.
+		// Again for a nudge recorded before this limit: this service's own send
+		// check would refuse it at every interval, so it is held for an operator.
 		if (!nudgeFitsL2(signedTx, hydraHeadId, candidate.id)) return false;
 		const head = params.head === undefined ? getHydraConnectionManager().getHead(hydraHeadId) : params.head;
 		if (!head) return false;
