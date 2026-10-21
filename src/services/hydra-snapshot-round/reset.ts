@@ -265,7 +265,7 @@ export async function resetSnapshotRound(params: {
 			if (error instanceof HydraTransportAmbiguousError) {
 				throw createHttpError(
 					504,
-					"The node did not answer the reset; check the round and read the counterparty's snapshot number again before retrying",
+					"The node did not answer the reset; check the round and ask for the counterparty's snapshot number again before retrying",
 				);
 			}
 			logger.warn('[HydraSnapshotRound] node refused the reset', {
@@ -286,7 +286,7 @@ export async function resetSnapshotRound(params: {
 			// then only drops our unconfirmed transactions again.
 			throw createHttpError(
 				502,
-				'Our node is in the same round after the reset. The other party may have proposed it again; reset their node, then read its snapshot number again before retrying.',
+				'Our node is in the same round after the reset. The other party may have proposed it again; ask its operator to reset it, then ask for its snapshot number again before retrying.',
 			);
 		}
 		if (after) {
