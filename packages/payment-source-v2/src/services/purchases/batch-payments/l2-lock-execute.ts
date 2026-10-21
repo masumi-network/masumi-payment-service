@@ -280,7 +280,7 @@ export async function executeL2Lock(
 	const signedTx = await wallet.signTx(completeTx);
 	const signMs = Date.now() - tSign;
 	// Before the reservation: a refusal at submit would hold it fail-closed.
-	assertL2TxWithinMaxSize(signedTx);
+	assertL2TxWithinMaxSize(signedTx, protocolParameters.maxTxSize);
 	const intendedTxHash = resolveTxHash(signedTx);
 	const invalidHereafterSlot = requireHydraValidityUpperSlot(signedTx);
 	// Build/sign can take long enough for the original Tick to become stale or

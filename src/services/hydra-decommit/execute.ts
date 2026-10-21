@@ -50,6 +50,7 @@ import {
 } from '@/services/hydra-host/pause';
 import { staleWithdrawal } from './stale';
 import { countLiveInHeadEscrows } from './live-escrows';
+import { assertL2TxWithinMaxSize } from '@/lib/hydra/hydra/l2-tx-size';
 
 /**
  * How long the in-head split gets to confirm before the withdrawal gives up.
@@ -521,6 +522,8 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		}
 		const unsignedTx = await builder.changeAddress(address).setNetwork(convertNetwork(network)).complete();
 		const signedTx = await wallet.signTx(unsignedTx, true);
+		// Before the row is Pending, where a refusal would read as the node's.
+		assertSendableInHead(signedTx, headParameters.maxTxSize);
 		const decommitTxId = resolveTxHash(signedTx) as string;
 
 		// Recorded BEFORE the request. The head answers over its socket, and an
@@ -687,6 +690,7 @@ async function splitExactAmountInHead(params: {
 		.setNetwork(convertNetwork(network))
 		.complete();
 	const signedTx = await wallet.signTx(unsignedTx, true);
+	assertSendableInHead(signedTx, headParameters.maxTxSize);
 	const splitTxId = resolveTxHash(signedTx) as string;
 
 	await prisma.hydraDecommit.update({ where: { id: decommitId }, data: { splitTxId } });
@@ -728,4 +732,13 @@ async function splitExactAmountInHead(params: {
 	}
 	logger.info(`[HydraDecommit] split ${amount} ${isLovelace ? 'lovelace' : unit} into ${utxoRef(exact)} in head`);
 	return { txId: splitTxId, exact };
+}
+
+/** A tx this service would refuse to send in a head, as the client error it is. */
+function assertSendableInHead(signedTx: string, maxTxSize: number): void {
+	try {
+		assertL2TxWithinMaxSize(signedTx, maxTxSize);
+	} catch (error) {
+		throw createHttpError(422, errorMessage(error));
+	}
 }
