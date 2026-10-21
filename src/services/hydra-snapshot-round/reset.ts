@@ -14,8 +14,8 @@
  * - the session for this head is held by this instance (the ownership fence);
  * - the round in flight is the exact round the admin approved (no stale UI);
  * - that round has been recorded unchanged for the stuck threshold;
- * - the counterparty has not confirmed a later snapshot than this node (the
- *   admin reads that number off the counterparty's node);
+ * - the counterparty has not confirmed a later snapshot than this node, and is
+ *   not more than one behind it (its operator reports that number);
  * - the body posted is the node's own `GET /snapshot`, never client input, and
  *   it is the pinned head's snapshot at the number this service verified.
  */
@@ -226,6 +226,16 @@ export async function resetSnapshotRound(params: {
 				409,
 				`The counterparty has confirmed snapshot ${peerConfirmedSnapshotNumber}, ahead of this node's ${snapshot.number}. ` +
 					'Resetting would discard that snapshot. Do not reset: this node is behind and has to adopt the counterparty’s confirmed snapshot, which this endpoint does not do',
+			);
+		}
+		// A party signs snapshot n only once it confirmed n - 1, and n confirms only
+		// with every party's signature, so two confirmed numbers are never more than
+		// one apart. A lower number is a typo or one read for an earlier round.
+		if (peerConfirmedSnapshotNumber < snapshot.number - 1) {
+			throw createHttpError(
+				409,
+				`The counterparty cannot be at snapshot ${peerConfirmedSnapshotNumber} while this node confirmed ${snapshot.number}: ` +
+					'two parties are never more than one snapshot apart. Check the number with the counterparty’s operator',
 			);
 		}
 

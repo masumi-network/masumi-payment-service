@@ -283,10 +283,10 @@ describe('resetSnapshotRound', () => {
 		expect(node.post).not.toHaveBeenCalled();
 	});
 
-	// The side-load discards the round, and a peer that already confirmed the next
-	// snapshot holds signatures our node would then lose for good. The peer's API
-	// is not reachable from here, so the admin reads the number off its node.
-	describe('the counterparty has confirmed a later snapshot', () => {
+	// The side-load discards the round, and a peer that already confirmed it is
+	// then a snapshot ahead of our node. The peer's API is not reachable from
+	// here, so its operator reports the number.
+	describe("the counterparty's confirmed snapshot", () => {
 		it('refuses to reset, and names both numbers', async () => {
 			await expect(reset(314)).rejects.toMatchObject({
 				status: 409,
@@ -299,6 +299,13 @@ describe('resetSnapshotRound', () => {
 		it('resets when the counterparty is behind', async () => {
 			await expect(reset(312)).resolves.toMatchObject({ confirmedSnapshotNumber: 313 });
 			expect(node.post).toHaveBeenCalled();
+		});
+
+		// Two parties' confirmed numbers are never more than one apart, so this is a
+		// typo or a number read for an earlier round.
+		it('refuses a number more than one behind, which no counterparty can be at', async () => {
+			await expect(reset(311)).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/311.*313/) });
+			expect(node.post).not.toHaveBeenCalled();
 		});
 	});
 

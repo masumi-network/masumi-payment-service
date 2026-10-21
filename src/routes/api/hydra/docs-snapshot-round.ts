@@ -49,7 +49,7 @@ export function registerHydraSnapshotRoundPaths({ registry, apiKeyAuth }: Swagge
 		path: '/hydra/head/snapshot-round/reset',
 		summary: 'Reset a stuck snapshot round. (admin access required)',
 		description:
-			"Side-loads the node's own latest confirmed snapshot, Hydra's documented recovery for a stuck head. That snapshot is already signed by every party, so nothing new enters the head: the stuck round and its unconfirmed transactions (`droppedTxIds`) are discarded. Refused unless the round in flight still matches `expectedSignature`, has been stuck for ten minutes, and the counterparty has not confirmed a later snapshot than this node (`peerConfirmedSnapshotNumber`, read off the counterparty's node: its API is not reachable from here, so this service cannot check it itself). If the head still does not move afterwards, the other party's node holds a stuck round too and must be reset on its side.",
+			"Side-loads the node's own latest confirmed snapshot, Hydra's documented recovery for a stuck head. That snapshot is already signed by every party, so nothing new enters the head: the stuck round and its unconfirmed transactions (`droppedTxIds`) are discarded. Refused unless the round in flight still matches `expectedSignature`, has been stuck for ten minutes, and the counterparty has not confirmed a later snapshot than this node nor is more than one behind it (`peerConfirmedSnapshotNumber`, which the counterparty's operator reads off their node: its API is not reachable from here, so this service cannot check it itself). If the head still does not move afterwards, the other party's node holds a stuck round too and must be reset on its side.",
 		tags: TAG,
 		security: secured,
 		request: {
@@ -75,7 +75,7 @@ export function registerHydraSnapshotRoundPaths({ registry, apiKeyAuth }: Swagge
 			400: { description: 'Head has no local participant' },
 			409: {
 				description:
-					'Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, the confirmed snapshot does not match the verified one, or the counterparty has confirmed a later snapshot',
+					'Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, the confirmed snapshot does not match the verified one, or the counterparty number is ahead of this node or more than one behind it',
 			},
 			502: { description: 'No live connection to the head, or the node refused the reset or is still stuck' },
 			504: { description: 'The node did not answer the reset; read the round again before retrying' },
