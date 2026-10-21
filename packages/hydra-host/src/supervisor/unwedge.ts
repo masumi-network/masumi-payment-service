@@ -37,6 +37,8 @@ export type UnwedgeOptions = {
 	fetchLastSeen: () => Promise<LastSeenSnapshotResponse>;
 	/** `GET /snapshot` — the last confirmed snapshot. */
 	fetchConfirmedSnapshot: () => Promise<unknown>;
+	/** `GET /head` — the node's head state. */
+	fetchHead: () => Promise<unknown>;
 	/** `POST /snapshot` — side-load. */
 	sideLoadSnapshot: (snapshot: unknown) => Promise<void>;
 	/** How long to let a round settle before calling it stranded. */
@@ -51,6 +53,47 @@ export type UnwedgeOptions = {
 	 */
 	isAborted?: () => boolean;
 };
+
+/**
+ * The node calls `unwedgeNode` needs, taken from one client. Kept here so the
+ * supervisor wires them in one line.
+ */
+export function unwedgeReads(client: {
+	fetchLastSeen: () => Promise<LastSeenSnapshotResponse>;
+	fetchConfirmedSnapshot: () => Promise<unknown>;
+	fetchHead: () => Promise<unknown>;
+	sideLoadSnapshot: (snapshot: unknown) => Promise<void>;
+}): Pick<UnwedgeOptions, 'fetchLastSeen' | 'fetchConfirmedSnapshot' | 'fetchHead' | 'sideLoadSnapshot'> {
+	return {
+		fetchLastSeen: () => client.fetchLastSeen(),
+		fetchConfirmedSnapshot: () => client.fetchConfirmedSnapshot(),
+		fetchHead: () => client.fetchHead(),
+		sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
+	};
+}
+
+/**
+ * Whether the confirmed snapshot holds a deposit that the chain has not
+ * settled: it carries `utxoToCommit`, and the head's version still equals the
+ * snapshot's (hydra-node 2.4.1 `HeadLogic`, `waitForDeposit`). The payment
+ * service reads the same condition in `extractCommitNotSettled`
+ * (`src/lib/hydra/hydra/head-output-tx.ts`), which this package cannot import.
+ * False for any state that cannot show it.
+ */
+export function holdsUnsettledCommit(headState: unknown): boolean {
+	if (!isPlainObject(headState)) return false;
+	const contents = getOwnValue(headState, 'contents');
+	const state = isPlainObject(contents) ? contents : headState;
+	const coordinated = getOwnValue(state, 'coordinatedHeadState');
+	if (!isPlainObject(coordinated)) return false;
+	const confirmed = getOwnValue(coordinated, 'confirmedSnapshot');
+	const snapshot = isPlainObject(confirmed) ? getOwnValue(confirmed, 'snapshot') : undefined;
+	if (!isPlainObject(snapshot)) return false;
+	const utxoToCommit = getOwnValue(snapshot, 'utxoToCommit');
+	if (!isPlainObject(utxoToCommit) || Object.keys(utxoToCommit).length === 0) return false;
+	const version = getOwnValue(coordinated, 'version');
+	return typeof version === 'number' && version === getOwnValue(snapshot, 'version');
+}
 
 /**
  * A stable fingerprint of an in-flight round, used to tell "stuck" from
@@ -85,7 +128,8 @@ function readTag(response: LastSeenSnapshotResponse | null | undefined): string 
  * discard in-flight work for no reason.
  */
 export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutcome> {
-	const { fetchLastSeen, fetchConfirmedSnapshot, sideLoadSnapshot, settleWaitMs, sleep, isAborted } = options;
+	const { fetchLastSeen, fetchConfirmedSnapshot, fetchHead, sideLoadSnapshot, settleWaitMs, sleep, isAborted } =
+		options;
 	const aborted = (): boolean => isAborted?.() === true;
 
 	/**
@@ -148,6 +192,30 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 		// No confirmed snapshot yet means the head has never completed a round,
 		// so there is nothing to reset to.
 		return { kind: 'Unrecovered', tag, reason: 'the node reports no confirmed snapshot to side-load' };
+	}
+
+	// A side-load clears the node's record of the deposit in flight. While the
+	// confirmed snapshot holds a deposit that the chain has not settled, the
+	// next deposit then makes the leader request a snapshot that every node
+	// rejects (hydra-node 2.4.1 `ReqSnCommitNotSettled`), and the head stalls
+	// again after a side-load reported as a recovery.
+	let headState: unknown;
+	try {
+		headState = await fetchHead();
+	} catch (error) {
+		return {
+			kind: 'Unrecovered',
+			tag,
+			reason: `could not read the head state before side-loading: ${(error as Error).message}`,
+		};
+	}
+	if (holdsUnsettledCommit(headState)) {
+		return {
+			kind: 'Unrecovered',
+			tag,
+			reason:
+				'the confirmed snapshot holds a deposit that the chain has not settled, and a side-load now can stall the head again at the next deposit. Restart the node once the head absorbs the deposit. If the deposit passes its deadline first, close the head',
+		};
 	}
 
 	try {

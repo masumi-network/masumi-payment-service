@@ -32,7 +32,7 @@ import {
 	type PlanLimits,
 } from './plan.js';
 import { findProcessRunningNode, isProcessAlive, isProcessRunningNode, NodeProcessManager } from './process.js';
-import { unwedgeNode } from './unwedge.js';
+import { unwedgeNode, unwedgeReads } from './unwedge.js';
 
 /** One initial start plus four retries before a node is declared Failed. */
 const MAX_START_ATTEMPTS = 5;
@@ -774,9 +774,7 @@ export class Supervisor {
 		const client = this.client(record);
 
 		const outcome = await unwedgeNode({
-			fetchLastSeen: () => client.fetchLastSeen(),
-			fetchConfirmedSnapshot: () => client.fetchConfirmedSnapshot(),
-			sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
+			...unwedgeReads(client),
 			settleWaitMs: STRANDED_SETTLE_WAIT_MS,
 			sleep,
 			isAborted: () => this.stopped,
