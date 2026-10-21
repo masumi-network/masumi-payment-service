@@ -23,7 +23,7 @@ import createHttpError from 'http-errors';
 import {
 	buildValidatedHydraCommit,
 	type ValidatedHydraCommit,
-	HydraCommandRejectedError,
+	HydraPostTxRejectedError,
 	HydraCommitFlowError,
 	HydraHeadInitObservationError,
 	HydraTransactionType,
@@ -118,12 +118,13 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				await hydraHead.init();
 			} catch (initError) {
-				// A refusal is not a timeout: the node answered (CommandFailed, or a
-				// PostTxOnChainFailed for the InitTx), so no Init is parked or racing
-				// and there is nothing to diagnose. This row is the refusal's only
-				// record; the connection manager leaves a failure that a waiting
-				// command reports to that command.
-				if (initError instanceof HydraCommandRejectedError) {
+				// A failed InitTx post is not a timeout: the node answered, so no Init
+				// is parked or racing and there is nothing to diagnose. This row is the
+				// failure's only record; the connection manager leaves a failure that a
+				// waiting command reports to that command. A CommandFailed still goes
+				// through the diagnosis below: the node also sends it for a head that
+				// has already initialized, which is no failure.
+				if (initError instanceof HydraPostTxRejectedError) {
 					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
 					throw createHttpError(504, initError.message);
 				}

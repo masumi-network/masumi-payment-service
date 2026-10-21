@@ -14,7 +14,12 @@
 import { resolveTxHash } from '@meshsdk/core';
 
 import { logger } from '@masumi/payment-core/logger';
-import { HydraCommandRejectedError, HydraProtocolError, HydraTransactionRejectedError } from './errors';
+import {
+	HydraCommandRejectedError,
+	HydraPostTxRejectedError,
+	HydraProtocolError,
+	HydraTransactionRejectedError,
+} from './errors';
 import { parseHydraJson, stringifyHydraJson } from './json';
 import {
 	MAX_HYDRA_WS_FRAME_BYTES,
@@ -428,7 +433,7 @@ export function handleWsResponse(
 				const reason = describePostTxError(message.postTxError);
 				return {
 					kind: 'reject',
-					error: new HydraCommandRejectedError(`hydra-node refused to post the ${command} transaction: ${reason}`),
+					error: new HydraPostTxRejectedError(`hydra-node refused to post the ${command} transaction: ${reason}`),
 				};
 			}
 			return { kind: 'message', message };

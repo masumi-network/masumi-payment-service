@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
-import { HydraCommandRejectedError } from '@/lib/hydra';
+import { HydraCommandRejectedError, HydraPostTxRejectedError } from '@/lib/hydra';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -192,7 +192,7 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 	// row, and the waiting Init is the only place this refusal is recorded.
 	it('records an outright refusal without diagnosing it as a wait', async () => {
 		mockInit.mockRejectedValue(
-			new HydraCommandRejectedError('hydra-node refused to post the Init transaction: NoSeedInput'),
+			new HydraPostTxRejectedError('hydra-node refused to post the Init transaction: NoSeedInput'),
 		);
 		mockReadNodeState.mockResolvedValue({
 			state: 'Running',
@@ -209,6 +209,19 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 
 		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
 		expect(mockReadNodeState).not.toHaveBeenCalled();
+	});
+
+	// The node also answers CommandFailed when the head initialized while Init
+	// waited for the node to catch up. Only the diagnosis can see the head moved.
+	it('still diagnoses a CommandFailed', async () => {
+		mockInit.mockRejectedValue(new HydraCommandRejectedError('Command Init failed'));
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 504,
+		});
+
+		expect(mockFlush).toHaveBeenCalled();
+		expect(mockReadNodeState).toHaveBeenCalled();
 	});
 
 	it('falls back to a failure when the diagnosis itself cannot run', async () => {
