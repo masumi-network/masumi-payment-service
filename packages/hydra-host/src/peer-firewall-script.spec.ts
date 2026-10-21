@@ -46,6 +46,7 @@ function allowlist(): ResolvedPeerAllowlist {
 			},
 		],
 		unusedPorts: [5002, 5003, 5004],
+		outOfRange: [],
 	};
 }
 
