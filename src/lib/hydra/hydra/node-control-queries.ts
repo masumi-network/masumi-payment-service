@@ -192,19 +192,31 @@ export async function fetchHydraHeadOutputTxId(
  * Output references the head's confirmed snapshot is still waiting to
  * decommit onto L1. See `extractPendingDecommitRefs`.
  *
- * Returns `[]` on any transport error: this is a pre-flight guard evaluated
- * before every withdrawal, not the system of record on whether one is safe —
- * a head that cannot be asked right now must not be allowed to jam every
- * withdrawal.
+ * `undefined`, never `[]`, when the node cannot be reached or refuses the
+ * request. An empty list is the caller's permission to start an in-head
+ * transaction, and one started while a decommit is pending is accepted but
+ * never snapshot-confirmed. Refusing costs a retry: the decommit request goes
+ * over this same HTTP API.
+ *
+ * A response over the byte limit is `[]` instead. It stays over on every
+ * retry, and `/head` carries the whole snapshot more than once, so refusing on
+ * it would block every withdrawal and consolidation from a large head. Same
+ * reason `extractPendingDecommitRefs` clears on a shape it does not recognise.
+ * Invalid JSON throws the same error class and clears too; a working node does
+ * not send it. So does the persistence-rotation latch `HydraNode.get` throws
+ * before any request, which is harmless: it also rejects every `post` and
+ * `newTx`, so nothing reaches the head.
  */
-export async function fetchHydraPendingDecommitRefs(transport: HydraQueryTransport): Promise<string[]> {
+export async function fetchHydraPendingDecommitRefs(transport: HydraQueryTransport): Promise<string[] | undefined> {
 	try {
 		return extractPendingDecommitRefs(await transport.get('/head'));
 	} catch (error) {
+		const isUnusableAnswer = error instanceof HydraProtocolError;
 		logger.warn('[HydraNode] Could not read the head state for a pending decommit', {
 			error: protocolErrorToString(error),
+			treatedAs: isUnusableAnswer ? 'nothing pending' : 'unknown',
 		});
-		return [];
+		return isUnusableAnswer ? [] : undefined;
 	}
 }
 
