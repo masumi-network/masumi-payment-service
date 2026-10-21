@@ -161,13 +161,13 @@ async function assertStillOwned(
  * has not settled.
  *
  * A side-load clears the node's record of the deposit in flight. Whether the
- * head then stalls depends on deposit state. For example, if the unsettled
- * deposit has expired, this node, when it leads, requests a snapshot with
- * another deposit, and every node rejects it (hydra-node 2.4.1
- * `ReqSnCommitNotSettled`). The head then stalls again after a reset that
- * reported success. In other cases the tick picks the held deposit again and
- * the reset is safe, but the node's HTTP API does not report a deposit's
- * status, so this refuses every case.
+ * head then stalls depends on deposit state and on which node leads. For
+ * example, if the unsettled deposit has expired and another non-empty deposit
+ * is or becomes active before a transaction snapshot drops the commit, this
+ * node, when it leads, requests a snapshot with that deposit, and every node
+ * rejects it (hydra-node 2.4.1 `ReqSnCommitNotSettled`). The head then stalls
+ * again after a reset that reported success. The node's HTTP API does not
+ * report a deposit's status, so this refuses every case.
  *
  * `GET /head` carries the snapshot more than once, so a large head can outgrow
  * the byte limit for good. An answer the client cannot use, such as one over
