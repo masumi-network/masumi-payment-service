@@ -121,6 +121,11 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
 			} catch (error) {
+				// Exposed errors skip the server-error log, so this line is the only record of the cause.
+				logger.warn('[HydraAPI] could not read L2 protocol parameters before Init', {
+					hydraHeadId: head.id,
+					error: getErrorMessage(error),
+				});
 				throw createHttpError(502, "Could not read the L2 maxTxSize from this head's node. Try again later", {
 					cause: error,
 					expose: true,
