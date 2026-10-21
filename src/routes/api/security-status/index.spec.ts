@@ -43,9 +43,11 @@ async function getSecurityStatus() {
 }
 
 describe('usesPublicEncryptionKey', () => {
-	it('matches the .env.example value, also with surrounding whitespace', () => {
+	it('matches the .env.example value, also as docker run --env-file passes it', () => {
 		expect(usesPublicEncryptionKey(PUBLIC_ENCRYPTION_KEY)).toBe(true);
 		expect(usesPublicEncryptionKey(` ${PUBLIC_ENCRYPTION_KEY}\n`)).toBe(true);
+		// Docker keeps the quotes and the inline comment of the .env.example line.
+		expect(usesPublicEncryptionKey(`"${PUBLIC_ENCRYPTION_KEY}" #This is a secret key`)).toBe(true);
 		expect(usesPublicEncryptionKey('a-private-key-of-at-least-32-characters')).toBe(false);
 	});
 });
