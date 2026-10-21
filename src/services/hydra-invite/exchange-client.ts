@@ -17,6 +17,15 @@ import { logger } from '@masumi/payment-core/logger';
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_ERROR_RESPONSE_BYTES = 4 * 1024;
+/**
+ * 503 is the only refusal worth retrying in place: the Host answers it before
+ * it spends the nonce, when its body readers or in-flight slots are full, which
+ * a flood against its Exchange Plane can cause. A few short tries ride that out;
+ * a stopped node answers 503 too, but stays refused, so the tries stay short.
+ */
+const BUSY_STATUS = 503;
+const MAX_REDEMPTION_ATTEMPTS = 3;
+const BUSY_RETRY_DELAY_MS = 1_000;
 
 export type RedemptionBody = {
 	nonce: string;
@@ -48,6 +57,7 @@ type ExchangeRequestResult = { status: number; detail: string };
 export type ExchangeClientDeps = {
 	resolve?: ExchangeResolver;
 	send?: (url: URL, target: ResolvedExchangeTarget, body: Buffer) => Promise<ExchangeRequestResult>;
+	sleep?: (ms: number) => Promise<void>;
 };
 
 const blockedIpv4 = new BlockList();
@@ -243,7 +253,16 @@ async function post(
 	}
 
 	try {
-		const result = await (deps.send ?? sendPinnedRequest)(url, target, Buffer.from(JSON.stringify(body)));
+		const send = deps.send ?? sendPinnedRequest;
+		const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+		const payload = Buffer.from(JSON.stringify(body));
+		let result = await send(url, target, payload);
+		// Only a status the Host answered counts: a transport failure may have
+		// landed and spent the nonce, so it is never retried.
+		for (let attempt = 1; result.status === BUSY_STATUS && attempt < MAX_REDEMPTION_ATTEMPTS; attempt += 1) {
+			await sleep(BUSY_RETRY_DELAY_MS);
+			result = await send(url, target, payload);
+		}
 		if (result.status < 200 || result.status >= 300) {
 			// 401 is the Host refusing our signature before it spent the nonce, so
 			// the invite is still open and the operator can retry. So is 503, which
