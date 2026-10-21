@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { HydraErrorType, HydraHeadStatus, Network, OnChainState, TransactionStatus } from '@/generated/prisma/client';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import {
@@ -397,6 +397,12 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	// and records no head error. The reason is what tells a node still starting
 	// from a wrong URL or token.
 	describe('when the node probe fails', () => {
+		const probeTimeoutMs = (HydraConnectionManager as unknown as { PROBE_TIMEOUT_MS: number }).PROBE_TIMEOUT_MS;
+		// Runs after a test timeout too, so a hung probe cannot leave later tests on fake timers.
+		afterEach(() => {
+			jest.useRealTimers();
+		});
+
 		it('keeps the fetch error, where the socket error sits, as the cause', async () => {
 			const manager = new HydraConnectionManager();
 			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
@@ -429,12 +435,11 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 			try {
 				const pendingConnect = manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
-				await jest.advanceTimersByTimeAsync(5_000);
+				await jest.advanceTimersByTimeAsync(probeTimeoutMs);
 				const error = await pendingConnect;
 				expect(error).toBeInstanceOf(HydraTransportError);
-				expect((error as Error).message).toContain('did not answer within 5000ms');
+				expect((error as Error).message).toContain(`did not answer within ${probeTimeoutMs}ms`);
 			} finally {
-				jest.useRealTimers();
 				fetchSpy.mockRestore();
 			}
 		});
