@@ -14,6 +14,8 @@
  * anything self-describing. So the layout is validated up front instead.
  */
 
+import { randomUUID } from 'node:crypto';
+
 /** `2379 - 5001`. Added to a peer port to get its derived etcd client port. */
 export const ETCD_CLIENT_PORT_OFFSET = -2622;
 
@@ -50,6 +52,23 @@ export class PortExhaustedError extends Error {
 		this.name = 'PortExhaustedError';
 	}
 }
+
+/** A slot is free, but the peer firewall has not yet shut it to its previous peers. */
+export class PeerFirewallPendingError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'PeerFirewallPendingError';
+	}
+}
+
+export type PortAllocatorOptions = {
+	/**
+	 * Hold every released peer port until `hydra-peer-firewall refresh` reports
+	 * that it applied a ruleset rendered after the release. Off by default: a
+	 * Host with no firewall script would otherwise never get a port back.
+	 */
+	requirePeerFirewallRefresh?: boolean;
+};
 
 export function derivedEtcdClientPort(peerPort: number): number {
 	return peerPort + ETCD_CLIENT_PORT_OFFSET;
@@ -126,6 +145,15 @@ export function validatePortLayout(layout: PortLayout): void {
  * set of peer ports currently in use, which the caller rehydrates from the
  * on-disk registry at boot. A node's peer port is fixed for the life of its
  * Head, so allocation happens once and release happens only on removal.
+ *
+ * With `requirePeerFirewallRefresh`, a released port is not free yet. The
+ * loaded nftables ruleset still accepts the old head's peers on it until the
+ * next refresh, and the peer plane is unauthenticated etcd raft, so a new node
+ * on that port would be reachable by them. The port waits until the firewall
+ * script acknowledges a generation taken at or after the release (see
+ * `peerFirewallGeneration`). After a restart, every free port waits for the
+ * first acknowledgement: this process cannot know which ports an earlier one
+ * released, or whether `baseline` ran in between.
  */
 export class PortAllocator {
 	private readonly layout: PortLayout;
@@ -135,10 +163,18 @@ export class PortAllocator {
 	 * reason. The caller logs them; the host still boots.
 	 */
 	readonly unclaimablePorts: ReadonlyArray<{ peerPort: number; reason: string }>;
+	private readonly requirePeerFirewallRefresh: boolean;
+	/** Ties a generation to this process, so an acknowledgement from an earlier one cannot free a port. */
+	private readonly instanceId = randomUUID();
+	private releaseSeq = 0;
+	/** Released ports that wait for the firewall, with the `releaseSeq` of their release. */
+	private readonly awaitingRefresh = new Map<number, number>();
+	private refreshedSinceStart = false;
 
-	constructor(layout: PortLayout, takenPeerPorts: Iterable<number> = []) {
+	constructor(layout: PortLayout, takenPeerPorts: Iterable<number> = [], options: PortAllocatorOptions = {}) {
 		validatePortLayout(layout);
 		this.layout = layout;
+		this.requirePeerFirewallRefresh = options.requirePeerFirewallRefresh === true;
 		this.takenPeerPorts = new Set();
 		// Recorded rather than thrown. This runs at boot over the ports of nodes
 		// that already exist, and an operator who narrows the range or moves its
@@ -175,9 +211,15 @@ export class PortAllocator {
 
 	allocate(): PortTriple {
 		const { peerStart, apiStart, monitoringStart, capacity } = this.layout;
+		const awaitingFirstRefresh = this.requirePeerFirewallRefresh && !this.refreshedSinceStart;
+		let isWaitingOnFirewall = false;
 		for (let index = 0; index < capacity; index++) {
 			const peerPort = peerStart + index;
 			if (this.takenPeerPorts.has(peerPort)) {
+				continue;
+			}
+			if (awaitingFirstRefresh || this.awaitingRefresh.has(peerPort)) {
+				isWaitingOnFirewall = true;
 				continue;
 			}
 			this.takenPeerPorts.add(peerPort);
@@ -187,21 +229,68 @@ export class PortAllocator {
 				monitoringPort: monitoringStart + index,
 			};
 		}
+		if (isWaitingOnFirewall) {
+			throw new PeerFirewallPendingError(
+				'every free node slot waits for the peer firewall to apply a ruleset without its previous peers; ' +
+					'run hydra-peer-firewall refresh, then retry',
+			);
+		}
 		throw new PortExhaustedError(
 			`all ${capacity} node slots are in use; free a slot by removing a finalised head, or add another host`,
 		);
 	}
 
 	release(peerPort: number): void {
-		this.takenPeerPorts.delete(peerPort);
+		if (this.takenPeerPorts.delete(peerPort) && this.requirePeerFirewallRefresh) {
+			this.releaseSeq += 1;
+			this.awaitingRefresh.set(peerPort, this.releaseSeq);
+		}
 	}
 
+	/**
+	 * Opaque marker for the firewall script. Take it synchronously before the
+	 * registry is read for a ruleset: `release` runs only after the node's record
+	 * is deleted, so every port released at or before this generation is absent
+	 * from that ruleset, and so are its old peers.
+	 */
+	peerFirewallGeneration(): string {
+		return `${this.instanceId}.${this.releaseSeq}`;
+	}
+
+	/**
+	 * The firewall script applied and verified the ruleset rendered with
+	 * `generation`. Frees the ports released at or before it and returns them,
+	 * sorted. Returns null for a generation this process did not issue: one from
+	 * an earlier process, or a forged or future one.
+	 */
+	acknowledgePeerFirewall(generation: string): number[] | null {
+		const separator = generation.lastIndexOf('.');
+		const seqText = generation.slice(separator + 1);
+		if (separator === -1 || generation.slice(0, separator) !== this.instanceId || !/^\d{1,15}$/.test(seqText)) {
+			return null;
+		}
+		const seq = Number(seqText);
+		if (seq > this.releaseSeq) {
+			return null;
+		}
+		const released: number[] = [];
+		for (const [peerPort, releasedAt] of this.awaitingRefresh) {
+			if (releasedAt <= seq) {
+				this.awaitingRefresh.delete(peerPort);
+				released.push(peerPort);
+			}
+		}
+		this.refreshedSinceStart = true;
+		return released.sort((a, b) => a - b);
+	}
+
+	/** Slots that cannot be allocated: live nodes, plus released ports that wait for the firewall. */
 	get used(): number {
-		return this.takenPeerPorts.size;
+		return this.takenPeerPorts.size + this.awaitingRefresh.size;
 	}
 
 	get free(): number {
-		return this.layout.capacity - this.takenPeerPorts.size;
+		return this.layout.capacity - this.used;
 	}
 
 	private isInRange(peerPort: number): boolean {

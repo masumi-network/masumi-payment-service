@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import {
 	MAX_NODES_PER_NAMESPACE,
+	PeerFirewallPendingError,
 	PortAllocator,
 	PortExhaustedError,
 	PortLayoutError,
@@ -131,5 +132,62 @@ describe('PortAllocator', () => {
 		expect(allocator.free).toBe(2);
 		allocator.release(triple.peerPort);
 		expect(allocator.free).toBe(3);
+	});
+});
+
+describe('PortAllocator with requirePeerFirewallRefresh', () => {
+	const GATED = { requirePeerFirewallRefresh: true };
+
+	function refreshed(layout = LAYOUT, taken: number[] = []): PortAllocator {
+		const allocator = new PortAllocator(layout, taken, GATED);
+		allocator.acknowledgePeerFirewall(allocator.peerFirewallGeneration());
+		return allocator;
+	}
+
+	// The loaded ruleset still accepts the old head's peers on a released port
+	// until a ruleset rendered after the release is applied.
+	it('holds a released port until the firewall acknowledges a generation taken after the release', () => {
+		const allocator = refreshed(LAYOUT, [5001, 5002]);
+		const beforeRelease = allocator.peerFirewallGeneration();
+		allocator.release(5001);
+		expect(allocator.allocate().peerPort).toBe(5003);
+
+		expect(allocator.acknowledgePeerFirewall(beforeRelease)).toEqual([]);
+		expect(allocator.allocate().peerPort).toBe(5004);
+
+		expect(allocator.acknowledgePeerFirewall(allocator.peerFirewallGeneration())).toEqual([5001]);
+		expect(allocator.allocate().peerPort).toBe(5001);
+	});
+
+	// Not 507: the payment service reads that as "this host is full, drain it".
+	it('reports a held slot as used and refuses with a firewall error, not exhaustion', () => {
+		const allocator = refreshed({ ...LAYOUT, capacity: 1 });
+		allocator.release(allocator.allocate().peerPort);
+		expect(allocator.free).toBe(0);
+		expect(() => allocator.allocate()).toThrow(PeerFirewallPendingError);
+	});
+
+	// An earlier process may have released any free port, and `baseline` may not
+	// have run since.
+	it('allocates nothing after a start until the first acknowledgement', () => {
+		const allocator = new PortAllocator(LAYOUT, [], GATED);
+		expect(() => allocator.allocate()).toThrow(PeerFirewallPendingError);
+		expect(allocator.acknowledgePeerFirewall(allocator.peerFirewallGeneration())).toEqual([]);
+		expect(allocator.allocate().peerPort).toBe(5001);
+	});
+
+	it('rejects a generation this process did not issue', () => {
+		const allocator = new PortAllocator(LAYOUT, [], GATED);
+		const [instance] = allocator.peerFirewallGeneration().split('.');
+		for (const generation of [
+			new PortAllocator(LAYOUT, [], GATED).peerFirewallGeneration(),
+			`${instance}.1`,
+			`${instance}.-1`,
+			instance,
+			'',
+		]) {
+			expect(allocator.acknowledgePeerFirewall(generation)).toBeNull();
+		}
+		expect(() => allocator.allocate()).toThrow(PeerFirewallPendingError);
 	});
 });
