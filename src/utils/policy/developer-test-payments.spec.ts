@@ -4,9 +4,7 @@ import { assertDeveloperTestPaymentAllowed } from './developer-test-payments';
 
 describe('assertDeveloperTestPaymentAllowed', () => {
 	it('allows Mainnet when developerTestIntent is omitted', () => {
-		expect(() =>
-			assertDeveloperTestPaymentAllowed({ network: Network.Mainnet }),
-		).not.toThrow();
+		expect(() => assertDeveloperTestPaymentAllowed({ network: Network.Mainnet })).not.toThrow();
 	});
 
 	it('allows Preprod when developerTestIntent is true', () => {

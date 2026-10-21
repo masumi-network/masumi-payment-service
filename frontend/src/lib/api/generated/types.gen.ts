@@ -3351,7 +3351,7 @@ export type DescribedRelease = {
 export type HydraRelationDetail = HydraRelation & {
     Heads?: Array<{
         id: string;
-        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         headIdentifier: string | null;
         isEnabled: boolean;
         createdAt: Date;
@@ -3397,7 +3397,7 @@ export type HydraHead = {
     updatedAt: string;
     hydraRelationId: string;
     headIdentifier: string | null;
-    status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+    status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
     contestationPeriod: string;
     isEnabled: boolean;
     openedAt: string | null;
@@ -3538,7 +3538,7 @@ export type HydraLocalParticipant = {
         walletAddress: string;
     };
     HydraHead?: {
-        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
     } | null;
     keysDisclosedAt: Date | null;
 };
@@ -14325,7 +14325,7 @@ export type GetHydraHeadData = {
         /**
          * Filter by head status
          */
-        status?: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        status?: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         /**
          * Filter by isEnabled
          */
@@ -14445,7 +14445,7 @@ export type PostHydraHeadInitResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         };
     };
 };
@@ -14487,7 +14487,7 @@ export type PostHydraHeadFanoutResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         };
     };
 };
@@ -14530,7 +14530,7 @@ export type PostHydraHeadCloseResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
         };
     };
 };
@@ -15649,7 +15649,7 @@ export type GetHydraHeadErrorsResponses = {
                 createdAt: Date;
                 errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput';
                 errorMessage: string;
-                headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+                headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
                 clientInput: string | null;
                 txHash: string | null;
                 errorAt: Date;
@@ -16318,7 +16318,7 @@ export type PostHydraHeadRetireResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
             retiredAt: string;
             retiredHeadOutputTxHash: string;
             remainingUtxoCount: number | null;
@@ -16367,7 +16367,7 @@ export type GetHydraHeadPartialFanoutResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
             /**
              * Null before the first step. A selection is accepted only before it or in AwaitingSelection.
              */
@@ -16434,7 +16434,7 @@ export type PostHydraHeadPartialFanoutResponses = {
         status: 'success';
         data: {
             headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
             selectedCount: number;
         };
     };
