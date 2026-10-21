@@ -222,10 +222,7 @@ describe('reconcilePendingHydraTopup', () => {
  * `LocalParticipant.commitTxHash`, which the commit reconciler already releases
  * on — so both jobs released, on their own schedules, for one deposit.
  *
- * The second release is the dangerous one: `releaseHotWalletAfterL1` is fenced
- * on `lockPurpose`, a shared constant rather than an operation's identity, so
- * once this row has resolved and a later top-up has claimed the same wallet, the
- * stale releaser frees THAT operation's lock while its carve is unconfirmed.
+ * One deposit, one releaser: the commit reconciler owns that lock.
  */
 describe('reconcilePendingHydraTopups lock release attribution', () => {
 	function row(commitTxHash: string | null, isInitialCommit = commitTxHash === DEPOSIT_TX_HASH) {
@@ -235,6 +232,7 @@ describe('reconcilePendingHydraTopups lock release attribution', () => {
 			depositTxHash: DEPOSIT_TX_HASH,
 			invalidHereafterSlot: INVALID_HEREAFTER_SLOT,
 			isInitialCommit,
+			walletClaimToken: 'claim-token-1',
 			LocalParticipant: {
 				walletId: 'wallet-1',
 				commitTxHash,
@@ -260,7 +258,7 @@ describe('reconcilePendingHydraTopups lock release attribution', () => {
 
 		await reconcilePendingHydraTopups();
 
-		expect(mockRelease).toHaveBeenCalledWith('wallet-1');
+		expect(mockRelease).toHaveBeenCalledWith('wallet-1', 'claim-token-1');
 	});
 
 	it('leaves the release to the commit reconciler for the commit display row', async () => {

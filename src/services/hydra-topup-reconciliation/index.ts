@@ -229,13 +229,6 @@ export async function reconcilePendingHydraTopups(): Promise<void> {
 					// commit reconciler already releases on it — so both jobs released,
 					// on their own schedules, for one deposit.
 					//
-					// The second release is the dangerous one. `releaseHotWalletAfterL1`
-					// is fenced on `lockPurpose` alone, which is a shared constant rather
-					// than an operation's identity, so once this row has resolved and a
-					// later Hydra top-up has claimed the same wallet, the commit job's
-					// release frees THAT operation's lock while its carve is still
-					// unconfirmed — and a batcher then builds over the carve's inputs.
-					//
 					// One deposit, one releaser: the commit reservation owns this lock.
 					// Read off the row. Deriving it from `LocalParticipant.commitTxHash` meant
 					// the guard stopped holding the moment a cleared commit was retried under a
@@ -247,7 +240,7 @@ export async function reconcilePendingHydraTopups(): Promise<void> {
 						// submitted stops being outstanding, which is here. Releasing when
 						// the request returned handed the wallet to a batcher that could
 						// still see the deposit's inputs as unspent.
-						await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId);
+						await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId, candidate.walletClaimToken);
 					}
 				}
 			} catch (error) {

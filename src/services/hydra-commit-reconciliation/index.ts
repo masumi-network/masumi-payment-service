@@ -22,6 +22,8 @@ export type PendingHydraCommitCandidate = {
 	hasCommitted: boolean;
 	commitTxHash: string | null;
 	commitInvalidHereafterSlot: bigint | null;
+	/** Fences the transition too: a claim handed over mid-check makes it `raced`. */
+	commitWalletClaimToken: string | null;
 	network: Network;
 	rpcProviderApiKey: string;
 };
@@ -44,7 +46,13 @@ export class HydraCommitReservationConflictError extends Error {
 
 /** Persist the exact signed body identity before any potentially ambiguous I/O. */
 export async function reserveAndSubmitHydraCommit<T>(
-	reservation: { participantId: string; hydraHeadId: string; commitTxHash: string; invalidHereafterSlot: bigint },
+	reservation: {
+		participantId: string;
+		hydraHeadId: string;
+		commitTxHash: string;
+		invalidHereafterSlot: bigint;
+		walletClaimToken: string;
+	},
 	submit: () => Promise<T>,
 ): Promise<T> {
 	// Under the close admission's row lock, so a close admitted while this commit
@@ -63,6 +71,7 @@ export async function reserveAndSubmitHydraCommit<T>(
 					data: {
 						commitTxHash: reservation.commitTxHash,
 						commitInvalidHereafterSlot: reservation.invalidHereafterSlot,
+						commitWalletClaimToken: reservation.walletClaimToken,
 					},
 				});
 			},
@@ -115,6 +124,7 @@ export async function reconcilePendingHydraCommit(
 				hasCommitted: false,
 				commitTxHash,
 				commitInvalidHereafterSlot,
+				commitWalletClaimToken: candidate.commitWalletClaimToken,
 			},
 			data: { hasCommitted: true },
 		});
@@ -122,7 +132,7 @@ export async function reconcilePendingHydraCommit(
 	}
 
 	if (chainResult === 'confirmed-invalid') {
-		return await clearExactHydraCommitReservation(candidate.id, commitTxHash, commitInvalidHereafterSlot);
+		return await clearExactHydraCommitReservation(candidate, commitTxHash, commitInvalidHereafterSlot);
 	}
 	if (chainResult === 'pending') return 'pending';
 	if (chainResult === 'transient-error') return 'transient-error';
@@ -131,20 +141,24 @@ export async function reconcilePendingHydraCommit(
 	if (currentSlot == null) return 'transient-error';
 	if (currentSlot <= commitInvalidHereafterSlot + HYDRA_COMMIT_SLOT_GRACE) return 'pending';
 
-	return await clearExactHydraCommitReservation(candidate.id, commitTxHash, commitInvalidHereafterSlot);
+	return await clearExactHydraCommitReservation(candidate, commitTxHash, commitInvalidHereafterSlot);
 }
 
 async function clearExactHydraCommitReservation(
-	participantId: string,
+	candidate: PendingHydraCommitCandidate,
 	commitTxHash: string,
 	commitInvalidHereafterSlot: bigint,
 ): Promise<'cleared' | 'raced'> {
 	const cleared = await prisma.hydraLocalParticipant.updateMany({
 		where: {
-			id: participantId,
+			id: candidate.id,
 			hasCommitted: false,
 			commitTxHash,
 			commitInvalidHereafterSlot,
+			// The caller releases the wallet with this token once the reservation
+			// settles. If a refused retry handed its claim over in the meantime,
+			// that release would miss, so the next tick settles it instead.
+			commitWalletClaimToken: candidate.commitWalletClaimToken,
 		},
 		data: {
 			commitTxHash: null,
@@ -189,6 +203,7 @@ export async function reconcilePendingHydraCommits(): Promise<void> {
 					hasCommitted: candidate.hasCommitted,
 					commitTxHash: candidate.commitTxHash,
 					commitInvalidHereafterSlot: candidate.commitInvalidHereafterSlot,
+					commitWalletClaimToken: candidate.commitWalletClaimToken,
 					network: candidate.Wallet.PaymentSource.network,
 					rpcProviderApiKey,
 				});
@@ -201,7 +216,7 @@ export async function reconcilePendingHydraCommits(): Promise<void> {
 					// transaction it submitted stops being outstanding, which is here.
 					// Releasing at the end of the request instead handed the wallet to
 					// a batcher that could still see the commit's inputs as unspent.
-					await releaseHotWalletAfterL1(candidate.walletId);
+					await releaseHotWalletAfterL1(candidate.walletId, candidate.commitWalletClaimToken);
 				}
 			} catch (error) {
 				logger.error('hydra-commit-reconciliation: candidate failed', {

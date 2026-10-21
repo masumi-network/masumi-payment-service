@@ -20,6 +20,7 @@
  */
 
 import createHttpError from 'http-errors';
+import { createId } from '@paralleldrive/cuid2';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 
@@ -47,16 +48,35 @@ export const HOT_WALLET_LOCK_STALE_AFTER_MS = 30 * 60 * 1000;
  * the carve was still in flight and one of the two spends died on chain as
  * BadInputsUTxO. The marker takes these locks out of that pass and puts them
  * under `HOT_WALLET_LOCK_STALE_AFTER_MS` instead.
+ *
+ * Each claim writes this prefix followed by its own token, see
+ * `hydraL1LockPurpose`. Match it with `startsWith`, never by equality.
  */
 export const HYDRA_L1_LOCK_PURPOSE = 'hydra-l1';
+
+/**
+ * The `lockPurpose` one claim writes: the shared marker plus that claim's token.
+ *
+ * The marker alone named no holder. A claim that went stale was taken over by
+ * the next Hydra L1 operation under the same marker, and the first operation's
+ * late release then cleared the newer lock during its build window, so two
+ * builders could select the same L1 inputs.
+ */
+export function hydraL1LockPurpose(claimToken: string): string {
+	return `${HYDRA_L1_LOCK_PURPOSE}:${claimToken}`;
+}
 
 /**
  * Claim a hot wallet, or refuse.
  *
  * The claim is one statement, so two callers cannot both pass the test: the
  * loser updates nothing and is told the wallet is busy.
+ *
+ * Returns the claim token. Persist it with the operation and pass it to
+ * `releaseHotWalletAfterL1`: only the holder of the token can release the claim.
  */
-export async function claimHotWalletForL1(walletId: string, purpose: string): Promise<void> {
+export async function claimHotWalletForL1(walletId: string, purpose: string): Promise<string> {
+	const claimToken = createId();
 	const staleBefore = new Date(Date.now() - HOT_WALLET_LOCK_STALE_AFTER_MS);
 	const claimed = await prisma.hotWallet.updateMany({
 		where: {
@@ -72,7 +92,7 @@ export async function claimHotWalletForL1(walletId: string, purpose: string): Pr
 			pendingSwapTransactionId: null,
 			OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }],
 		},
-		data: { lockedAt: new Date(), lockPurpose: HYDRA_L1_LOCK_PURPOSE },
+		data: { lockedAt: new Date(), lockPurpose: hydraL1LockPurpose(claimToken) },
 	});
 	if (claimed.count !== 1) {
 		throw createHttpError(
@@ -80,6 +100,7 @@ export async function claimHotWalletForL1(walletId: string, purpose: string): Pr
 			`The wallet for this ${purpose} is busy with another transaction. It is released when that one finishes; try again then`,
 		);
 	}
+	return claimToken;
 }
 
 /**
@@ -97,15 +118,18 @@ export async function claimHotWalletForL1(walletId: string, purpose: string): Pr
  * coin toss. The commit and top-up paths therefore hold the lock while their
  * transaction is pending, and their reconcilers release it.
  */
-export async function releaseHotWalletAfterL1(walletId: string): Promise<void> {
+export async function releaseHotWalletAfterL1(walletId: string, claimToken: string | null): Promise<void> {
+	// A row written before claims carried a token has nothing to prove ownership
+	// with. Its lock ages out through the stale-lock sweep instead.
+	if (claimToken === null) return;
 	try {
 		await prisma.hotWallet.updateMany({
-			// Scoped to this operation's own marker as well as to there being no
-			// pending transaction. Without it a late release — a reconciler landing
-			// after the generic reaper had already freed the wallet and a batcher had
-			// claimed it — would clear a lock this operation does not hold, during
-			// the batcher's build window before its PendingTransaction exists.
-			where: { id: walletId, pendingTransactionId: null, lockPurpose: HYDRA_L1_LOCK_PURPOSE },
+			// Scoped to this claim's own token as well as to there being no pending
+			// transaction. Without it a late release — a reconciler landing after
+			// the claim went stale and another holder took the wallet — would clear
+			// a lock this operation does not hold, during the new holder's build
+			// window.
+			where: { id: walletId, pendingTransactionId: null, lockPurpose: hydraL1LockPurpose(claimToken) },
 			data: { lockedAt: null, lockPurpose: null },
 		});
 	} catch (error) {
