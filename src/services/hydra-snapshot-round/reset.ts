@@ -165,7 +165,7 @@ async function assertStillOwned(
  * `ReqSnCommitNotSettled`). The head stalls again after a reset that reported
  * success. While the deposit is still active the tick usually picks it
  * again: it takes the oldest active deposit, which is the held one unless an
- * older one is also pending. The node's HTTP API does not report a deposit's
+ * older one is also active. The node's HTTP API does not report a deposit's
  * status, so this refuses every case.
  *
  * `GET /head` carries the snapshot more than once, so a large head can outgrow
@@ -173,18 +173,20 @@ async function assertStillOwned(
  * the byte limit, lets the reset go ahead as it did before this check:
  * refusing would block the only live recovery for that head.
  */
-async function assertCommitSettled(node: HydraNode): Promise<void> {
+async function assertCommitSettled(node: HydraNode, hydraHeadId: string): Promise<void> {
 	let headState: unknown;
 	try {
 		headState = await node.get('/head');
 	} catch (error) {
 		if (!(error instanceof HydraProtocolError)) {
 			logger.warn('[HydraSnapshotRound] could not read the head state', {
+				hydraHeadId,
 				error: error instanceof Error ? error.message : 'Unknown error',
 			});
 			throw createHttpError(502, 'Could not read the head state from the Hydra node');
 		}
 		logger.warn('[HydraSnapshotRound] could not use the head state; resetting without the deposit check', {
+			hydraHeadId,
 			error: error.message,
 		});
 		return;
@@ -257,7 +259,7 @@ export async function resetSnapshotRound(params: {
 			throw createHttpError(409, 'The round in flight is not newer than the confirmed snapshot');
 		}
 
-		await assertCommitSettled(node);
+		await assertCommitSettled(node, head.id);
 		await assertStillOwned(head, node, verifiedNumber, round.signature);
 
 		logger.warn('[HydraSnapshotRound] admin is resetting a stuck snapshot round', {
