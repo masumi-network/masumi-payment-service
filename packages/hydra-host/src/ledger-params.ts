@@ -9,11 +9,13 @@
  *
  * Checked at boot for every network, because the params file is an operator
  * setting (`HYDRA_HOST_LEDGER_PARAMS_FILE`) and mainnet ships no reviewed file.
- * A file that exists but fails this check refuses nodes that have no head yet
- * (provision, and the ack that starts one), not the boot: a Host that would not
- * start would also stop the nodes of heads already open on that file, and an
- * open head whose node is down cannot contest a close. A missing file is a
- * different fault and still stops the boot (src/index.ts).
+ * A file that exists but fails this check refuses every node not yet acked and
+ * peered: provision, the first ack, the first peer set and invite redemption.
+ * It does not refuse the boot. A Host that would not start would also stop the
+ * nodes of heads already open on that file, and an open head whose node is
+ * down cannot contest a close. A node acked and peered before the restart still
+ * starts, and the payment service refuses to Init a head on it. A missing file
+ * is a different fault and still stops the boot (src/index.ts).
  */
 
 import { readFileSync } from 'node:fs';

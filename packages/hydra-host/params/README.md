@@ -38,10 +38,11 @@ reviewing the result. The Host refuses to start if the file for its configured
 network is missing, so this fails loudly rather than silently.
 
 Set `maxTxSize` to 15,000, not mainnet's L1 value. On a params file above
-15,000 the Host refuses every node that has no head yet (no provision, first
-ack, first peer set or invite redemption), because a head on a larger limit can
-hold an output no fanout can move (`src/ledger-params.ts`). It still boots, so
-nodes of heads already open on the file keep running.
+15,000 the Host refuses every node not yet acked and peered (no provision,
+first ack, first peer set or invite redemption), because a head on a larger
+limit can hold an output no fanout can move (`src/ledger-params.ts`). It still
+boots, so nodes of heads already open on the file keep running. The payment
+service also refuses to Init a head on a node above 15,000.
 
 ## Drift
 

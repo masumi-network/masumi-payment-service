@@ -81,11 +81,14 @@ async function main(): Promise<void> {
 				'(a network needs a reviewed base file in packages/hydra-host/params/base first)',
 		);
 	}
-	// Logged and enforced at provision only: refusing the boot would also stop
-	// the nodes of heads already open on this file.
+	// Logged here and enforced on every node not yet acked and peered (see
+	// `ledger-params.ts`): refusing the boot would also stop the nodes of heads
+	// already open on this file.
 	const ledgerParamsRefusal = describeUnsettleableLedgerParams(config.ledgerProtocolParametersFile);
 	if (ledgerParamsRefusal !== null) {
-		logger.error(`[host] ${ledgerParamsRefusal}. Running nodes keep running; new nodes are refused`);
+		logger.error(
+			`[host] ${ledgerParamsRefusal}. Running nodes keep running; nodes not yet acked and peered are refused`,
+		);
 	}
 
 	// Same reasoning for the two executables every node needs. Neither is used
