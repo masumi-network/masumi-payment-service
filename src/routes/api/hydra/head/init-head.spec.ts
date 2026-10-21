@@ -152,11 +152,18 @@ describe('initHeadPost, on a node with unsafe L2 params', () => {
 
 	// A node that is down is not a failed Init, so it must not land on the head as an error.
 	it('answers 502 without a head error when the params cannot be read', async () => {
-		mockNodeGet.mockRejectedValue(new Error('connect ECONNREFUSED'));
+		// The shape fetch gives for localhost: the socket error sits two levels down, with only a code.
+		const refused = Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' });
+		mockNodeGet.mockRejectedValue(
+			new HydraTransportError('Hydra HTTP GET failed before a response was received', {
+				cause: Object.assign(new TypeError('fetch failed'), { cause: refused }),
+			}),
+		);
 
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 			statusCode: 502,
 			expose: true,
+			message: expect.stringContaining('failed before a response was received: ECONNREFUSED'),
 		});
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
 		expect(mockInit).not.toHaveBeenCalled();
@@ -177,13 +184,24 @@ describe('initHeadPost, when the node cannot be reached', () => {
 			statusCode: 502,
 			expose: true,
 			// A node still starting and a wrong URL can fail alike; the cause tells them apart.
-			message: expect.stringContaining('Connection closed unexpectedly (code 1006)'),
+			message: expect.stringContaining(
+				'closed before identity verification: Connection closed unexpectedly (code 1006)',
+			),
 		});
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
 		expect(mockInit).not.toHaveBeenCalled();
 	});
 
-	// Only a transport failure is mapped: a failure after the node answered is still a head error.
+	it('names a probe failure that wraps nothing', async () => {
+		mockConnect.mockRejectedValue(new HydraTransportError('Local Hydra node unreachable for head head-1'));
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 502,
+			message: expect.stringContaining('Local Hydra node unreachable for head head-1. Retry'),
+		});
+	});
+
+	// Only a transport failure is mapped: any other connect failure is still a head error.
 	it('still records any other connect failure', async () => {
 		mockConnect.mockRejectedValue(new Error('Hydra head head-1 transport was revoked while connecting'));
 

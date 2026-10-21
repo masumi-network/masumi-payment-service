@@ -281,23 +281,41 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
  * reached the node, so this is not a failed Init and the handler records no
  * head error. The cause goes into the text: a node still starting and a wrong
  * URL or token can fail the same way, and the cause often tells them apart.
- * A transport error that wraps another, such as a session closed before
- * Greetings, also gets the inner reason. Exposed errors skip the server-error
- * log, so the warn is the only record. Faults that ws itself rejects, such as
- * an oversized frame, and a log rotation before Greetings also arrive here as
- * a closed session.
+ * Exposed errors skip the server-error log, so the warn is the only record.
+ * Faults that ws itself rejects, such as an oversized frame, a log rotation
+ * before Greetings, and a local disconnect racing Init also arrive here as a
+ * closed session.
  */
 function nodeFailedBeforeInit(hydraHeadId: string, message: string, error: unknown): HttpError {
-	const cause =
-		error instanceof HydraTransportError && error.cause instanceof Error
-			? `${error.message}: ${error.cause.message}`
-			: getErrorMessage(error);
+	const cause = describeTransportFailure(error);
 	logger.warn(`[HydraAPI] ${message} before Init`, { hydraHeadId, error: cause });
 	return createHttpError(
 		502,
 		`${message}: ${cause}. Retry once the node is up, or check its URLs and token if this persists`,
 		{ cause: error, expose: true },
 	);
+}
+
+/** Fetch puts the socket error two levels under the transport error. */
+const MAX_TRANSPORT_CAUSE_DEPTH = 3;
+
+/**
+ * A transport error's message plus the deepest reason it wraps: the close code
+ * of a session closed before Greetings, or the ECONNREFUSED under "fetch
+ * failed". That reason can carry only a code. An abort repeats the timeout
+ * message, so it is skipped.
+ */
+function describeTransportFailure(error: unknown): string {
+	const message = getErrorMessage(error);
+	if (!(error instanceof HydraTransportError)) return message;
+	let reason: string | undefined;
+	let cause = error.cause;
+	for (let depth = 0; depth < MAX_TRANSPORT_CAUSE_DEPTH && cause instanceof Error; depth += 1) {
+		const code = 'code' in cause && typeof cause.code === 'string' ? cause.code : undefined;
+		if (cause.name !== 'AbortError') reason = cause.message || code || reason;
+		cause = 'cause' in cause ? cause.cause : undefined;
+	}
+	return reason ? `${message}: ${reason}` : message;
 }
 
 // --- Lifecycle: POST commit (local participant only) ---
