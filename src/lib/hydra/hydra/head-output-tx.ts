@@ -146,9 +146,9 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
  * `decommitTx` object AND no numeric version pair — an unrecognised shape)
  * clears the guard instead, logged: the opposite would jam every withdrawal
  * from the head forever rather than for one refused attempt, which is what
- * this guard's own refinement exists to avoid, and it would contradict
- * `fetchHydraPendingDecommitRefs`, which already fails open on a transport
- * error one layer up.
+ * this guard's own refinement exists to avoid. When the node cannot be reached
+ * or refuses the request, `fetchHydraPendingDecommitRefs` one layer up refuses
+ * instead.
  *
  * `[]` rather than throwing for every "cannot tell" case, exactly like
  * `extractHeadOutputTxId`: this feeds a pre-flight guard, and a head whose
@@ -187,10 +187,9 @@ export function extractPendingDecommitRefs(headState: unknown): string[] {
 	// means this combination can never satisfy the check above on its own: it
 	// always needs the version pair to be BOTH readable AND past. Left alone
 	// that is not a cautious guard, it is a permanent one — every withdrawal
-	// from this head refused forever. Fail open instead, the same way
-	// `fetchHydraPendingDecommitRefs` already fails open on a transport error
-	// one layer up: worst case one withdrawal is refused or left to retry,
-	// never funds actually leaving the head.
+	// from this head refused forever. Fail open instead: worst case one
+	// withdrawal is refused or left to retry, never funds actually leaving
+	// the head.
 	if (!decommitTxHeld && !versionReadable) {
 		logger.warn(
 			'[HydraNode] Pending-decommit state unreadable (no decommitTx object, no numeric version pair); treating as resolved rather than blocking withdrawals indefinitely',
@@ -223,4 +222,37 @@ export function extractDecommitInFlight(headState: unknown): boolean | undefined
 	// shape this code does not know, and reads as "cannot tell".
 	if (decommitTx !== null) return undefined;
 	return extractPendingDecommitRefs(headState).length > 0;
+}
+
+/**
+ * Whether the head's confirmed snapshot holds a deposit that the chain has not
+ * settled yet.
+ *
+ * This is hydra-node's own test (2.4.1 `HeadLogic`, `waitForDeposit`): while
+ * the confirmed snapshot carries `utxoToCommit` and the head's version still
+ * equals that snapshot's version, every node rejects a snapshot request that
+ * carries a different deposit (`ReqSnCommitNotSettled`). The version moves on
+ * when the node observes the increment on chain.
+ *
+ * False for any state that cannot show it, so a caller only refuses on
+ * positive evidence.
+ */
+export function extractCommitNotSettled(headState: unknown): boolean {
+	if (!isPlainObject(headState)) return false;
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	const coordinatedHeadState = getOwnPlainObject(state, 'coordinatedHeadState');
+	if (coordinatedHeadState === undefined) return false;
+	const confirmedSnapshot = getOwnPlainObject(coordinatedHeadState, 'confirmedSnapshot');
+	if (confirmedSnapshot === undefined) return false;
+	const snapshot = getOwnPlainObject(confirmedSnapshot, 'snapshot');
+	if (snapshot === undefined) return false;
+	const utxoToCommit = getOwnPlainObject(snapshot, 'utxoToCommit');
+	if (utxoToCommit === undefined) return false;
+	const version = getOwnValue(coordinatedHeadState, 'version');
+	const snapshotVersion = getOwnValue(snapshot, 'version');
+	if (typeof version !== 'number' || typeof snapshotVersion !== 'number') {
+		logger.warn('[HydraNode] Head state holds a commit but no numeric version pair; treating the commit as settled');
+		return false;
+	}
+	return version === snapshotVersion;
 }

@@ -7152,7 +7152,8 @@
                             "Unknown",
                             "Healthy",
                             "Low"
-                        ]
+                        ],
+                        "description": "Last evaluated state. A Low rule stays Low on a reading the history replay has not checked, so lastKnownAmount can be at or above the threshold while it is Low."
                     },
                     "lastKnownAmount": {
                         "type": "string",
@@ -35546,7 +35547,7 @@
         "/hydra/head/snapshot-round/reset": {
             "post": {
                 "summary": "Reset a stuck snapshot round. (admin access required)",
-                "description": "Side-loads the node's own latest confirmed snapshot, Hydra's documented recovery for a stuck head. That snapshot is already signed by every party, so nothing new enters the head: the stuck round and its unconfirmed transactions (`droppedTxIds`) are discarded. Refused unless the round in flight still matches `expectedSignature`, has been stuck for ten minutes, and the counterparty has not confirmed a later snapshot than this node nor is more than one behind it (`peerConfirmedSnapshotNumber`, which the counterparty's operator reads off their node: its API is not reachable from here, so this service cannot check it itself). If the head still does not move afterwards, the other party's node holds a stuck round too: at the same confirmed snapshot it must be reset on its side, and one snapshot behind it must side-load this node's confirmed snapshot instead (if Hydra refuses that, close the head: this node contests with its later snapshot).",
+                "description": "Side-loads the node's own latest confirmed snapshot, Hydra's documented recovery for a stuck head. That snapshot is already signed by every party, so nothing new enters the head: the stuck round and its unconfirmed transactions (`droppedTxIds`) are discarded. Refused unless the round in flight still matches `expectedSignature`, has been stuck for ten minutes, and the counterparty has not confirmed a later snapshot than this node nor is more than one behind it (`peerConfirmedSnapshotNumber`, which the counterparty's operator reads off their node: its API is not reachable from here, so this service cannot check it itself). Also refused while the confirmed snapshot holds a deposit that the chain has not settled, because a reset then can stall the head again. If the head still does not move afterwards, the other party's node holds a stuck round too: at the same confirmed snapshot it must be reset on its side, and one snapshot behind it must side-load this node's confirmed snapshot instead (if Hydra refuses that, close the head: this node contests with its later snapshot).",
                 "tags": [
                     "hydra"
                 ],
@@ -35684,10 +35685,10 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, the confirmed snapshot does not match the verified one, or the counterparty number is ahead of this node or more than one behind it"
+                        "description": "Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, the confirmed snapshot does not match the verified one or holds a deposit that the chain has not settled, or the counterparty number is ahead of this node or more than one behind it"
                     },
                     "502": {
-                        "description": "No live connection to the head, or the node refused the reset or is still stuck"
+                        "description": "No live connection to the head, the node could not be read, or the node refused the reset or is still stuck"
                     },
                     "504": {
                         "description": "The node did not answer the reset; read the round and ask for the counterparty's snapshot number again before retrying"
@@ -36355,6 +36356,18 @@
                                                     "type": "boolean",
                                                     "description": "True when any reported UTxO is unbacked, so the balance is optimistic"
                                                 },
+                                                "l2MintedUtxoCount": {
+                                                    "type": "number",
+                                                    "description": "In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout."
+                                                },
+                                                "l2MintedLovelace": {
+                                                    "type": "string",
+                                                    "description": "Lovelace held by those UTxOs. It is counted in balance, and the service does not spend it."
+                                                },
+                                                "l2MintChecked": {
+                                                    "type": "boolean",
+                                                    "description": "True when the history replay is current, so l2MintedUtxoCount counts every L2-minted UTxO the replay has verified; spendableBalance still counts token UTxOs from transactions it has not reached. False when not connected, right after a connect until the replay completes, and while the replay has failed. While connected and false, no UTxO counts as L2-minted and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading, and auto top-up waits."
+                                                },
                                                 "balance": {
                                                     "type": "array",
                                                     "items": {
@@ -36375,6 +36388,27 @@
                                                         ]
                                                     },
                                                     "description": "This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty."
+                                                },
+                                                "spendableBalance": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "unit": {
+                                                                "type": "string",
+                                                                "description": "Empty string for ADA/lovelace; otherwise policyId+assetName hex"
+                                                            },
+                                                            "quantity": {
+                                                                "type": "string",
+                                                                "description": "Aggregate quantity across the local address in-head UTxOs"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "unit",
+                                                            "quantity"
+                                                        ]
+                                                    },
+                                                    "description": "balance without the L2-minted UTxOs counted above. Low-balance rules compare against this. It still counts token UTxOs the replay has not checked yet and UTxOs of a deposit the head has not finished folding in; the service does not spend those until they are checked or folded in."
                                                 }
                                             },
                                             "required": [
@@ -36384,7 +36418,11 @@
                                                 "utxoCount",
                                                 "unbackedLovelace",
                                                 "hasUnbackedUtxos",
-                                                "balance"
+                                                "l2MintedUtxoCount",
+                                                "l2MintedLovelace",
+                                                "l2MintChecked",
+                                                "balance",
+                                                "spendableBalance"
                                             ]
                                         }
                                     },
@@ -36401,7 +36439,16 @@
                                             "utxoCount": 1,
                                             "unbackedLovelace": "0",
                                             "hasUnbackedUtxos": false,
+                                            "l2MintedUtxoCount": 0,
+                                            "l2MintedLovelace": "0",
+                                            "l2MintChecked": true,
                                             "balance": [
+                                                {
+                                                    "unit": "",
+                                                    "quantity": "10000000"
+                                                }
+                                            ],
+                                            "spendableBalance": [
                                                 {
                                                     "unit": "",
                                                     "quantity": "10000000"
@@ -37588,7 +37635,7 @@
             },
             "post": {
                 "summary": "Create or update a Hydra in-head low-balance rule. (admin access required)",
-                "description": "Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
+                "description": "Upserts a rule (keyed by participant + asset) that alerts when the participant's own spendable in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
                 "tags": [
                     "hydra"
                 ],
@@ -37605,7 +37652,7 @@
                                 "properties": {
                                     "hydraLocalParticipantId": {
                                         "type": "string",
-                                        "description": "Local participant whose in-head balance to monitor"
+                                        "description": "Local participant whose spendable in-head balance to monitor"
                                     },
                                     "assetUnit": {
                                         "type": "string",
@@ -37614,7 +37661,7 @@
                                     "thresholdAmount": {
                                         "type": "string",
                                         "pattern": "^\\d+$",
-                                        "description": "Alert when the in-head balance falls below this"
+                                        "description": "Alert when the spendable in-head balance falls below this"
                                     },
                                     "enabled": {
                                         "type": "boolean",
@@ -37623,7 +37670,7 @@
                                     "topupEnabled": {
                                         "type": "boolean",
                                         "default": false,
-                                        "description": "Auto top-up from the assigned funding wallet when low"
+                                        "description": "Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a nonzero net L2 mint in the head."
                                     },
                                     "topupAmount": {
                                         "type": "string",
@@ -47214,6 +47261,65 @@
                                                     }
                                                 }
                                             ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/security-status": {
+            "get": {
+                "summary": "Report insecure service configuration.",
+                "description": "Reports whether ENCRYPTION_KEY is the public value from .env.example. The service still starts with that key, but anyone with a copy of the database can then decrypt every stored secret. The service has no tool to re-encrypt secrets: a new key on an existing database makes the stored secrets unreadable and every API key invalid. For production, start a new database with a private key. Admin access is required.",
+                "tags": [
+                    "health"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Security status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "isEncryptionKeyPublic": {
+                                                    "type": "boolean",
+                                                    "description": "True when ENCRYPTION_KEY is the public .env.example value. A database copy then exposes every secret."
+                                                }
+                                            },
+                                            "required": [
+                                                "isEncryptionKeyPublic"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "isEncryptionKeyPublic": false
                                         }
                                     }
                                 }

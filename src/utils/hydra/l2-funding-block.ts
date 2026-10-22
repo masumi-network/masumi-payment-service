@@ -25,10 +25,12 @@ export type InHeadBalanceReading = {
 	connected: boolean;
 	/** In-head UTxOs held by the local participant's address. */
 	utxoCount: number;
+	/** Those of them carrying a unit with a nonzero net L2 mint in the head, which the service never spends. */
+	l2MintedUtxoCount: number;
 };
 
 export const L2_FUNDING_BLOCK_MESSAGE =
-	"This node's wallet holds no UTxOs inside the head, so it cannot build L2 transactions. " +
+	"This node's wallet holds no UTxOs inside the head that it can spend, so it cannot build L2 transactions. " +
 	'Every action from this side spends a script output and needs one of this wallet’s own in-head ' +
 	'outputs for collateral. Top the head up from this node; requests already made resume on their own.';
 
@@ -45,6 +47,6 @@ export const L2_FUNDING_BLOCK_MESSAGE =
 export function describeL2FundingBlock(status: HydraHeadStatus, balance: InHeadBalanceReading | null): string | null {
 	if (status !== HydraHeadStatus.Open) return null;
 	if (balance == null || !balance.connected) return null;
-	if (balance.utxoCount > 0) return null;
+	if (balance.utxoCount > balance.l2MintedUtxoCount) return null;
 	return L2_FUNDING_BLOCK_MESSAGE;
 }

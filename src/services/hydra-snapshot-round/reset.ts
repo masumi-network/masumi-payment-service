@@ -17,13 +17,16 @@
  * - the counterparty has not confirmed a later snapshot than this node, and is
  *   not more than one behind it (its operator reports that number);
  * - the body posted is the node's own `GET /snapshot`, never client input, and
- *   it is the pinned head's snapshot at the number this service verified.
+ *   it is the pinned head's snapshot at the number this service verified;
+ * - that snapshot holds no deposit the chain has not settled yet.
  */
 import createHttpError from 'http-errors';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTransportAmbiguousError } from '@/lib/hydra';
+import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
+import { extractCommitNotSettled } from '@/lib/hydra/hydra/head-output-tx';
 import { fetchHydraSnapshotRound, type HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
 import { hydraConfirmedSnapshotSchema } from '@/lib/hydra/hydra/schemas';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
@@ -96,11 +99,12 @@ async function loadOwnedHead(headId: string): Promise<{ head: HeadRow; node: Hyd
 	return { head, node };
 }
 
-async function readRound(node: HydraNode): Promise<HydraSnapshotRound> {
+async function readRound(node: HydraNode, hydraHeadId: string): Promise<HydraSnapshotRound> {
 	try {
 		return await fetchHydraSnapshotRound(node);
 	} catch (error) {
 		logger.warn('[HydraSnapshotRound] could not read the snapshot round', {
+			hydraHeadId,
 			error: error instanceof Error ? error.message : 'Unknown error',
 		});
 		throw createHttpError(502, 'Could not read the snapshot round from the Hydra node');
@@ -126,7 +130,7 @@ function toStatus(head: HeadRow, round: HydraSnapshotRound, now: Date): Snapshot
 }
 
 /**
- * The checks above awaited the node twice. Before the side-load, confirm this
+ * The checks above awaited the node three times. Before the side-load, confirm this
  * instance still holds the same session, the service still verifies the same
  * snapshot, and no other attachment or close started meanwhile.
  */
@@ -138,7 +142,7 @@ async function assertStillOwned(
 ): Promise<void> {
 	// The round can complete while the confirmed snapshot is read; a reset then
 	// would side-load a snapshot older than the one just confirmed.
-	const roundNow = await readRound(node);
+	const roundNow = await readRound(node, head.id);
 	const current = await prisma.hydraHead.findUnique({ where: { id: head.id }, select: headSelect });
 	if (
 		getHydraConnectionManager().getNode(head.id) !== node ||
@@ -155,9 +159,52 @@ async function assertStillOwned(
 	}
 }
 
+/**
+ * Refuse a reset while the confirmed snapshot holds a deposit that the chain
+ * has not settled.
+ *
+ * A side-load clears the node's record of the deposit in flight. While the
+ * confirmed snapshot holds a commit that the chain has not settled, this node,
+ * when it leads, can then request a snapshot with a different deposit, which
+ * every node rejects (hydra-node 2.4.1 `ReqSnCommitNotSettled`), so the head
+ * stalls again after a reset that reported success. Whether that happens
+ * depends on deposit state that the node's HTTP API does not report, so this
+ * refuses every case.
+ *
+ * `GET /head` carries the snapshot more than once, so a large head can outgrow
+ * the byte limit for good. An answer the client cannot use, such as one over
+ * the byte limit, lets the reset go ahead as it did before this check:
+ * refusing would block the only live recovery for that head.
+ */
+async function assertCommitSettled(node: HydraNode, hydraHeadId: string): Promise<void> {
+	let headState: unknown;
+	try {
+		headState = await node.get('/head');
+	} catch (error) {
+		if (!(error instanceof HydraProtocolError)) {
+			logger.warn('[HydraSnapshotRound] could not read the head state', {
+				hydraHeadId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+			throw createHttpError(502, 'Could not read the head state from the Hydra node');
+		}
+		logger.warn('[HydraSnapshotRound] could not use the head state; resetting without the deposit check', {
+			hydraHeadId,
+			error: error.message,
+		});
+		return;
+	}
+	if (extractCommitNotSettled(headState)) {
+		throw createHttpError(
+			409,
+			'The confirmed snapshot holds a deposit that the chain has not settled yet, and a reset now can stall the head again at the next deposit. Wait until the head absorbs the deposit, then retry. If the deposit passes its deadline first, close the head',
+		);
+	}
+}
+
 export async function getSnapshotRoundStatus(headId: string): Promise<SnapshotRoundStatus> {
 	const { head, node } = await loadOwnedHead(headId);
-	return toStatus(head, await readRound(node), new Date());
+	return toStatus(head, await readRound(node, head.id), new Date());
 }
 
 export async function resetSnapshotRound(params: {
@@ -175,7 +222,7 @@ export async function resetSnapshotRound(params: {
 		if (!head.isEnabled) throw createHttpError(409, 'Cannot reset a round in a disabled Hydra head');
 		if (head.isClosing) throw createHttpError(409, 'Cannot reset a round in a Hydra head that is closing');
 
-		const round = await readRound(node);
+		const round = await readRound(node, head.id);
 		if (!round.inFlight) throw createHttpError(409, 'No snapshot round is in flight; nothing to reset');
 		// An unknown tag counts as in flight for the watch, but without a number
 		// nothing shows the round is ahead of the confirmed snapshot.
@@ -246,6 +293,7 @@ export async function resetSnapshotRound(params: {
 			);
 		}
 
+		await assertCommitSettled(node, head.id);
 		await assertStillOwned(head, node, verifiedNumber, round.signature);
 
 		logger.warn('[HydraSnapshotRound] admin is resetting a stuck snapshot round', {

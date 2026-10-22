@@ -3,6 +3,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { webhookEventsService } from '@/services/webhooks/events.service';
+import { spendableAmountOf } from './spendable-amount';
 
 export type HydraLowBalanceAlert = {
 	ruleId: string;
@@ -31,15 +32,9 @@ export type HydraLowBalanceAlert = {
  */
 const LOW_BALANCE_REALERT_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-/** Rule `assetUnit` uses 'lovelace'; the balance snapshot keys ADA as ''. */
-function balanceKeyForAssetUnit(assetUnit: string): string {
-	const normalized = assetUnit.toLowerCase();
-	return normalized === 'lovelace' ? '' : normalized;
-}
-
 /**
  * Evaluate every enabled Hydra low-balance rule against its participant's OWN
- * in-head balance and advance each rule's status. Returns the rules that
+ * spendable in-head balance and advance each rule's status. Returns the rules that
  * transitioned Healthy/Unknown -> Low this cycle (the once-per-edge alerts);
  * callers emit the webhook. Rules whose head is not Open or has no live snapshot
  * are skipped (balance unknown, not treated as zero) so a disconnected head never
@@ -62,8 +57,9 @@ export async function evaluateHydraLowBalanceRules(): Promise<HydraLowBalanceAle
 			const balance = await getOwnInHeadBalance(head.id);
 			if (!balance || !balance.connected) continue;
 
-			const key = balanceKeyForAssetUnit(rule.assetUnit);
-			const currentAmount = BigInt(balance.balance.find((asset) => asset.unit.toLowerCase() === key)?.quantity ?? '0');
+			// Spendable funds only: ADA under an unburned L2-minted token is in the
+			// head but no use to us, and counting it kept a starved head from alerting.
+			const currentAmount = spendableAmountOf(balance, rule.assetUnit);
 			const checkedAt = new Date();
 
 			if (currentAmount < rule.thresholdAmount) {
@@ -107,6 +103,15 @@ export async function evaluateHydraLowBalanceRules(): Promise<HydraLowBalanceAle
 						data: { lastKnownAmount: currentAmount, lastCheckedAt: checkedAt },
 					});
 				}
+			} else if (!balance.l2MintChecked) {
+				// The replay has not checked this reading for L2-minted tokens, so it
+				// can count funds the service will not spend. It can show a rule is Low
+				// but not that it recovered: Healthy now and Low once the replay is
+				// current would alert again on every reconnect.
+				await prisma.hydraLowBalanceRule.update({
+					where: { id: rule.id },
+					data: { lastKnownAmount: currentAmount, lastCheckedAt: checkedAt },
+				});
 			} else {
 				// Healthy (incl. Unknown -> Healthy). Recovery re-arms the next alert.
 				await prisma.hydraLowBalanceRule.update({

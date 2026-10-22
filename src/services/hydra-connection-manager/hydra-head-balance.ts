@@ -14,6 +14,9 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getHydraConnectionManager } from './hydra-connection-manager.service';
+import { l2TokenRisk } from '@/lib/hydra/hydra/l2-mint-tally';
+import { inHeadUnit } from '@/utils/hydra/in-head-unit';
+import type { UTxO } from '@meshsdk/core';
 
 export interface HydraHeadBalanceAsset {
 	/** Empty string for lovelace/ADA; otherwise policyId+assetName hex. */
@@ -39,6 +42,34 @@ export interface HydraHeadOwnBalance {
 	unbackedLovelace: string;
 	/** Whether any UTxO here is unbacked, so the balance above is optimistic. */
 	hasUnbackedUtxos: boolean;
+	/**
+	 * Own UTxOs that carry a token minted or burned inside the head whose net is
+	 * not back at zero, as far as the history replay has checked: 0 until the
+	 * replay is current, and a token UTxO it has not reached is not counted.
+	 *
+	 * The service never spends them (see `l2-mint-tally`): an unburned L2-minted
+	 * token can never leave the head, and spending the UTxO would carry it into
+	 * our change.
+	 * Their ADA stays counted in `balance`, because the head does hold it.
+	 * A peer can create such an output at this address.
+	 */
+	l2MintedUtxoCount: number;
+	/** Lovelace held by those UTxOs. */
+	l2MintedLovelace: string;
+	/**
+	 * Whether the history replay is current, so the two fields above count every
+	 * L2-minted UTxO it has verified. False when not connected, right after a
+	 * connect until the replay completes, and while the replay has failed. While
+	 * connected and false, no UTxO counts as L2-minted and `spendableBalance` can
+	 * read high.
+	 */
+	l2MintChecked: boolean;
+	/**
+	 * `balance` without those UTxOs. Low-balance rules read this. It still counts
+	 * token UTxOs the replay has not checked and UTxOs of a deposit the head has
+	 * not finished folding in, which the service does not spend yet either.
+	 */
+	spendableBalance: HydraHeadBalanceAsset[];
 	hydraHeadId: string;
 	/** The local participant's wallet address whose in-head funds are reported. */
 	address: string;
@@ -49,9 +80,6 @@ export interface HydraHeadOwnBalance {
 	/** Per-asset aggregate; empty when disconnected or no funds. */
 	balance: HydraHeadBalanceAsset[];
 }
-
-const LOVELACE_UNITS = new Set(['', 'lovelace']);
-const normalizeUnit = (unit: string): string => (LOVELACE_UNITS.has(unit.toLowerCase()) ? '' : unit);
 
 /**
  * Aggregate a set of in-head UTxO amounts into a deterministic per-asset balance:
@@ -64,7 +92,7 @@ export function aggregateInHeadAmounts(
 	const totals = new Map<string, bigint>();
 	for (const amounts of utxoAmounts) {
 		for (const amount of amounts) {
-			const unit = normalizeUnit(amount.unit);
+			const unit = inHeadUnit(amount.unit);
 			let quantity: bigint;
 			try {
 				quantity = BigInt(amount.quantity);
@@ -119,6 +147,10 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 			balance: [],
 			unbackedLovelace: '0',
 			hasUnbackedUtxos: false,
+			l2MintedUtxoCount: 0,
+			l2MintedLovelace: '0',
+			l2MintChecked: false,
+			spendableBalance: [],
 		};
 	}
 
@@ -168,6 +200,18 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 	}
 
 	const balance = aggregateInHeadAmounts(utxos.map((utxo) => utxo.output.amount));
+	// Only a verified mint counts. A token UTxO the replay has not reached yet
+	// is usually our own fresh change, and leaving it out would make the
+	// spendable figure dip below a rule threshold for a moment and alert.
+	const l2MintCheck = provider.getL2MintCheck();
+	const isL2Minted = (utxo: UTxO) => l2TokenRisk(utxo, l2MintCheck) === 'minted';
+	const l2Minted = utxos.filter(isL2Minted);
+	const spendableBalance = aggregateInHeadAmounts(
+		utxos.filter((utxo) => !isL2Minted(utxo)).map((utxo) => utxo.output.amount),
+	);
+	const l2MintedLovelace =
+		aggregateInHeadAmounts(l2Minted.map((utxo) => utxo.output.amount)).find((asset) => asset.unit === '')?.quantity ??
+		'0';
 
 	return {
 		hydraHeadId,
@@ -177,5 +221,9 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 		balance,
 		unbackedLovelace: unbackedLovelace.toString(),
 		hasUnbackedUtxos: unbacked.length > 0,
+		l2MintedUtxoCount: l2Minted.length,
+		l2MintedLovelace,
+		l2MintChecked: l2MintCheck !== undefined,
+		spendableBalance,
 	};
 }

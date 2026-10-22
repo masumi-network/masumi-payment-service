@@ -179,14 +179,14 @@ const hydraHeadLowBalancePayloadSchema = createWebhookPayloadSchema(
 	z.literal('HYDRA_HEAD_LOW_BALANCE'),
 	z.object({
 		ruleId: z.string().describe('Low-balance rule id'),
-		hydraLocalParticipantId: z.string().describe('Local participant whose in-head balance is monitored'),
+		hydraLocalParticipantId: z.string().describe('Local participant whose spendable in-head balance is monitored'),
 		hydraHeadId: z.string().describe('The open head the balance was read from'),
 		assetUnit: z.string().describe('Monitored asset: "lovelace" or policyId+assetName hex'),
 		thresholdAmount: z.string().describe('Configured threshold in the asset base unit'),
-		currentAmount: z.string().describe('Observed own in-head balance in the asset base unit'),
+		currentAmount: z.string().describe('Observed own spendable in-head balance in the asset base unit'),
 		checkedAt: z.string().datetime().describe('Timestamp when the in-head balance was evaluated'),
 	}),
-	'Emitted when a local participant’s own in-head balance transitions into low balance',
+	'Emitted when a local participant’s own spendable in-head balance transitions into low balance',
 );
 
 const hydraHeadSnapshotRoundStuckPayloadSchema = createWebhookPayloadSchema(

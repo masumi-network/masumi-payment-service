@@ -306,7 +306,14 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// window gets a split that is TxValid but can never be snapshot-confirmed,
 		// so this must be refused before any split is attempted, not discovered
 		// after a 60s wait. Mirror of the deposit-side pendingIncrementRefs guard.
+		// A node that cannot be asked is not a node with nothing pending.
 		const pendingDecommits = await hydraHead.mainNode.fetchPendingDecommitRefs();
+		if (pendingDecommits === undefined) {
+			throw createHttpError(
+				502,
+				'Could not read the head state to check for a previous withdrawal still settling on L1; retry once the node answers',
+			);
+		}
 		if (pendingDecommits.length > 0) {
 			throw createHttpError(
 				409,
@@ -314,9 +321,11 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			);
 		}
 
+		const inHeadUtxos = await provider.fetchAddressUTxOs(address);
 		const selection = selectDecommittableUtxos({
-			utxos: await provider.fetchAddressUTxOs(address),
+			utxos: inHeadUtxos,
 			pendingIncrementRefs: hydraHead.mainNode.pendingIncrementUtxoRefs,
+			l2MintCheck: hydraHead.mainNode.l2MintCheck,
 			drain: params.drain === true,
 		});
 
@@ -345,9 +354,22 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			if (cover === null) {
 				const usable = selection.reserved === null ? selection.eligible : [...selection.eligible, selection.reserved];
 				const held = usable.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
+				// Say why the rest of the asset is held back; a bare "only 0" sent
+				// operators looking for funds the balance plainly showed. The reserve
+				// is counted in `held` above, so it is not held back here.
+				const reservedRef = selection.reserved === null ? null : utxoRef(selection.reserved);
+				const heldBack = new Set(
+					inHeadUtxos.flatMap((utxo) => {
+						const ref = utxoRef(utxo);
+						if (ref === reservedRef || amountOf(utxo, requestedAsset.unit) === 0n) return [];
+						const reason = selection.excluded.get(ref);
+						return reason === undefined ? [] : [reason];
+					}),
+				);
 				throw createHttpError(
 					400,
-					`Only ${held} of that asset is eligible to withdraw, which is less than the ${requestedAsset.amount} requested`,
+					`Only ${held} of that asset is eligible to withdraw, which is less than the ${requestedAsset.amount} requested` +
+						(heldBack.size > 0 ? `. Held back: ${[...heldBack].join('; ')}` : ''),
 				);
 			}
 			const covering = cover.inputs;

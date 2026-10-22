@@ -61,6 +61,7 @@ import {
 	validateHydraNodeLimits,
 } from './node-api';
 import { withHistorySetting } from './node-url';
+import type { L2MintCheck } from './l2-mint-tally';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { FinalizedFanoutState, type FinalizedFanoutBindingInput } from './node-finalized-fanout';
 import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
@@ -254,6 +255,7 @@ export class HydraNode extends EventEmitter {
 			emitTxConfirmed: (txId, transaction) => {
 				this.emit(HydraNodeEvent.TxConfirmed, txId, transaction);
 			},
+			reportL2MintOutstanding: (incident) => this.emit(HydraNodeEvent.L2MintOutstanding, incident),
 			onProtocolDrift: (description) => {
 				this.emit(HydraNodeEvent.ProtocolDriftDetected, description);
 			},
@@ -379,6 +381,11 @@ export class HydraNode extends EventEmitter {
 
 	get pendingIncrementUtxoRefs(): ReadonlySet<string> {
 		return this._live.pendingIncrementUtxoRefs;
+	}
+
+	/** Unburned L2 mints as of the replay's verified snapshot; undefined until replay completes. See `l2-mint-tally`. */
+	get l2MintCheck(): L2MintCheck | undefined {
+		return this._replay.l2MintCheck;
 	}
 
 	get headClock(): HydraHeadClock | undefined {
@@ -576,7 +583,7 @@ export class HydraNode extends EventEmitter {
 	}
 
 	/** See `fetchHydraPendingDecommitRefs`: output refs still awaiting L1 decommit. */
-	async fetchPendingDecommitRefs(): Promise<string[]> {
+	async fetchPendingDecommitRefs(): Promise<string[] | undefined> {
 		return await fetchHydraPendingDecommitRefs(this);
 	}
 

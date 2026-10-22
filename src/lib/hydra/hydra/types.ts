@@ -64,6 +64,15 @@ export enum HydraNodeEvent {
 	 */
 	ProtocolDriftDetected = 'ProtocolDriftDetected',
 	/**
+	 * The head's net L2 mint balance is not zero: a token minted inside it is
+	 * still unburned, which blocks its final fanout, or a committed token was
+	 * burned there. Carries the `L2MintIncident`. Raised for every verified
+	 * snapshot while the replay is current and the incident open, and at the end
+	 * of every replay pass that finds it open, so a listener has to deduplicate
+	 * by `txHash`.
+	 */
+	L2MintOutstanding = 'L2MintOutstanding',
+	/**
 	 * A deposit finished folding in, so its funds are spendable at last.
 	 *
 	 * Worth an event rather than a poll: work that was waiting on those funds
