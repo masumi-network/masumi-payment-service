@@ -34,3 +34,19 @@ export function isUnobservedLockTimeout(
 		request.hydraFanoutHandoffHeadId == null
 	);
 }
+
+/**
+ * The payment timeout writer also parks rows that already needed manual action.
+ * Restore the normal action only when the parked action was a plain wait for the buyer.
+ */
+export async function didTimeoutReplacePlainPaymentWait(
+	tx: Prisma.TransactionClient,
+	paymentRequestId: string,
+): Promise<boolean> {
+	const replacedAction = await tx.paymentActionData.findFirst({
+		where: { paymentRequestHistoryId: paymentRequestId },
+		orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+		select: { requestedAction: true, errorType: true },
+	});
+	return replacedAction?.requestedAction === PaymentAction.WaitingForExternalAction && replacedAction.errorType == null;
+}
