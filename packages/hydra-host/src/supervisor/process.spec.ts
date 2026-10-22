@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from '@jest/globals';
 import { spawn, type ChildProcess } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { isProcessAlive, isProcessRunningNode, NodeProcessManager } from './process.js';
 
 /**
@@ -162,5 +165,54 @@ describe('NodeProcessManager stop safety', () => {
 		// The process it refused to signal is untouched, which is the whole point.
 		expect(isProcessAlive(pid)).toBe(true);
 		expect(child.killed).toBe(false);
+	});
+});
+
+describe('NodeProcessManager child environment', () => {
+	// The Host holds both bearer tokens in its own environment. A node that
+	// inherits them can leak them through anything that logs its environment.
+	it('starts a node without the Host tokens but with PATH and etcd overrides', async () => {
+		const nodeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-env-'));
+		const injected = {
+			HYDRA_HOST_ADMIN_TOKEN: 'admin-token-that-must-not-leak',
+			HYDRA_HOST_USER_TOKEN: 'user-token-that-must-not-leak',
+			ETCD_INITIAL_CLUSTER_STATE: 'existing',
+			ETCD_VERSION: '3.5.34',
+		};
+		const previous = Object.fromEntries(Object.keys(injected).map((key) => [key, process.env[key]]));
+		Object.assign(process.env, injected);
+		try {
+			const manager = new NodeProcessManager();
+			let onExit: () => void = () => undefined;
+			const exited = new Promise<void>((resolve) => {
+				onExit = resolve;
+			});
+			await manager.start(
+				{
+					nodeId: 'node-1',
+					binary: process.execPath,
+					args: ['-e', 'process.stdout.write(JSON.stringify(process.env))'],
+					nodeDir,
+				},
+				() => onExit(),
+			);
+			await exited;
+
+			const childEnv = JSON.parse(await fs.readFile(path.join(nodeDir, 'logs', 'node.log'), 'utf8')) as Record<
+				string,
+				string
+			>;
+			expect(childEnv.HYDRA_HOST_ADMIN_TOKEN).toBeUndefined();
+			expect(childEnv.HYDRA_HOST_USER_TOKEN).toBeUndefined();
+			expect(childEnv.ETCD_VERSION).toBeUndefined();
+			expect(childEnv.ETCD_INITIAL_CLUSTER_STATE).toBe('existing');
+			expect(childEnv.PATH).toBe(process.env.PATH);
+		} finally {
+			for (const [key, value] of Object.entries(previous)) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			await fs.rm(nodeDir, { recursive: true, force: true });
+		}
 	});
 });
