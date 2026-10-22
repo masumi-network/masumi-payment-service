@@ -3,6 +3,7 @@ import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
+import { releaseHostNodeOfFinishedHead } from '@/services/hydra-host/release-node';
 import { Network, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import {
@@ -213,13 +214,32 @@ async function sweepRelationNodeFunds(heads: Array<{ LocalParticipant: { id: str
 export async function deleteHydraRelation(id: string): Promise<void> {
 	const deletionPlan = await prisma.hydraRelation.findUnique({
 		where: { id },
-		select: { Heads: { select: { id: true, LocalParticipant: { select: { id: true } } } } },
+		select: {
+			Heads: {
+				select: {
+					id: true,
+					LocalParticipant: {
+						select: {
+							id: true,
+							hostNodeId: true,
+							HydraHost: { select: { baseUrl: true, encryptedAdminToken: true, allowInsecureHttp: true } },
+						},
+					},
+				},
+			},
+		},
 	});
 	if (!deletionPlan) throw createHttpError(404, 'Hydra relation not found');
 	// Before quiesce, which disconnects the heads a recovery would need.
 	await assertNoUnrecoveredHydraDeposits(deletionPlan.Heads.map(({ id: headId }) => headId));
 	await sweepRelationNodeFunds(deletionPlan.Heads);
 	await quiesceHydraHeadsForDeletion(deletionPlan.Heads.map(({ id: headId }) => headId));
+	// Quiesce has proven every head is finished. Their nodes go back to the Host
+	// before the rows that name them, so a Host failure keeps them and the delete
+	// can be retried.
+	for (const { LocalParticipant } of deletionPlan.Heads) {
+		if (LocalParticipant) await releaseHostNodeOfFinishedHead(LocalParticipant);
+	}
 
 	await withSerializableSlotRetry(
 		() =>
