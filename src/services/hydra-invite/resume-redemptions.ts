@@ -72,6 +72,9 @@ async function failStaleUnconfirmed(now: number, outcome: ResumeOutcome): Promis
 			// record a moment ago may be posting it now, and its claim predates the
 			// one below, so only the idle window keeps this from failing it mid-post.
 			updatedAt: { lt: new Date(now - UNCONFIRMED_RETRY_IDLE_MS) },
+			// The pass below sends nothing for a paused Host, so its days paused are
+			// not days of retries, and they must not count toward giving up.
+			HydraHost: { pausedAt: null },
 		},
 		include,
 		orderBy: { expiresAt: 'asc' },
