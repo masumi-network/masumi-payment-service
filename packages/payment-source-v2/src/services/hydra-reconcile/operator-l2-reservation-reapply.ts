@@ -23,6 +23,7 @@
  */
 import createHttpError from 'http-errors';
 import { Prisma, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
@@ -68,10 +69,26 @@ const releasedRowSelect = {
 	l2ReleasedByOperatorAt: true,
 	l2ReservationPreviousTransactionId: true,
 	BlocksWallet: { select: { id: true } },
+	// The release moved the in-flight action into ActionHistory as its newest
+	// entry. Anything newer means the request was worked on after the release.
 	PaymentRequestHistory: {
-		select: { ...requestSelect, NextAction: { select: { requestedAction: true, resultHash: true } } },
+		select: {
+			...requestSelect,
+			NextAction: { select: { requestedAction: true, resultHash: true } },
+			ActionHistory: {
+				orderBy: { createdAt: 'desc' },
+				take: 1,
+				select: { requestedAction: true, resultHash: true },
+			},
+		},
 	},
-	PurchaseRequestHistory: { select: { ...requestSelect, NextAction: { select: { requestedAction: true } } } },
+	PurchaseRequestHistory: {
+		select: {
+			...requestSelect,
+			NextAction: { select: { requestedAction: true } },
+			ActionHistory: { orderBy: { createdAt: 'desc' }, take: 1, select: { requestedAction: true } },
+		},
+	},
 } as const;
 
 type ReleasedRow = Prisma.TransactionGetPayload<{ select: typeof releasedRowSelect }>;
@@ -137,13 +154,24 @@ function blockedReason(row: ReleasedRow, node: HydraNode | null): string | null 
 		);
 		if (!spendsEscrow) return `The confirmed body does not spend the escrow output request ${request.id} points at`;
 	}
+	// The restored action must be the one the release replaced, so the body's
+	// confirmation maps to the action (and result hash) it actually carried.
 	for (const payment of row.PaymentRequestHistory) {
-		if (paymentL2ActionInFlight(payment.NextAction.requestedAction) === undefined) {
+		const released = payment.ActionHistory[0];
+		if (
+			released == null ||
+			paymentL2ActionInFlight(payment.NextAction.requestedAction) !== released.requestedAction ||
+			payment.NextAction.resultHash !== released.resultHash
+		) {
 			return `Payment ${payment.id} is no longer in the retry action its release left it in`;
 		}
 	}
 	for (const purchase of row.PurchaseRequestHistory) {
-		if (purchaseL2ActionInFlight(purchase.NextAction.requestedAction) === undefined) {
+		const released = purchase.ActionHistory[0];
+		if (
+			released == null ||
+			purchaseL2ActionInFlight(purchase.NextAction.requestedAction) !== released.requestedAction
+		) {
 			return `Purchase ${purchase.id} is no longer in the retry action its release left it in`;
 		}
 	}
@@ -204,13 +232,6 @@ export async function reapplyReleasedL2Reservation(params: {
 	}
 	const previousTransactionId = row.l2ReservationPreviousTransactionId!;
 
-	logger.warn('[HydraReconcile] admin is re-applying a released L2 reservation whose body confirmed', {
-		hydraHeadId: head.id,
-		transactionId: row.id,
-		intendedTxHash: row.intendedTxHash,
-		releasedBy: stalled.releasedBy,
-		actorApiKeyId,
-	});
 	// The exact inverse of the action branch of `releaseRejectedL2Reservation`.
 	// Every write is guarded on the state the checks above read, so a request
 	// that moved in between aborts the whole transaction.
@@ -236,14 +257,14 @@ export async function reapplyReleasedL2Reservation(params: {
 					},
 				});
 				for (const payment of row.PaymentRequestHistory) {
-					const resultHash = payment.NextAction.resultHash;
+					const released = payment.ActionHistory[0];
 					await tx.paymentRequest.update({
 						where: requestGuard(payment),
 						data: {
 							...connectPreviousAction(payment.nextActionId),
 							...createNextPaymentAction(
-								paymentL2ActionInFlight(payment.NextAction.requestedAction)!,
-								resultHash == null ? undefined : { resultHash },
+								released.requestedAction,
+								released.resultHash == null ? undefined : { resultHash: released.resultHash },
 							),
 							...restoreCurrent,
 						},
@@ -254,13 +275,17 @@ export async function reapplyReleasedL2Reservation(params: {
 						where: requestGuard(purchase),
 						data: {
 							...connectPreviousAction(purchase.nextActionId),
-							...createNextPurchaseAction(purchaseL2ActionInFlight(purchase.NextAction.requestedAction)!),
+							...createNextPurchaseAction(purchase.ActionHistory[0].requestedAction),
 							...restoreCurrent,
 						},
 					});
 				}
 			},
-			{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+			{
+				isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+				timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+				maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+			},
 		);
 	} catch (error) {
 		// P2025: a guarded row moved. P2034/P2028: a concurrent writer aborted the
@@ -273,6 +298,13 @@ export async function reapplyReleasedL2Reservation(params: {
 		}
 		throw error;
 	}
+	logger.warn('[HydraReconcile] admin re-applied a released L2 reservation whose body confirmed', {
+		hydraHeadId: head.id,
+		transactionId: row.id,
+		intendedTxHash: row.intendedTxHash,
+		releasedBy: stalled.releasedBy,
+		actorApiKeyId,
+	});
 	return {
 		transactionId: row.id,
 		purchaseRequestIds: stalled.purchaseRequestIds,
