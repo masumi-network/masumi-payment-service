@@ -38,7 +38,7 @@ const HOST_FULL_STATUS = 507;
 const HOST_UNAVAILABLE_STATUS = 503;
 /** The peer firewall timer runs every 30 seconds, so one retry after that finds a slot. */
 const HOST_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
-/** The Host's answer when it refuses every new node, such as on unsafe L2 ledger params. */
+/** The Host's refusal: unsafe L2 ledger params, or an idempotency key reused with different parameters. */
 const HOST_REFUSED_STATUS = 409;
 
 export type HeadPeriods = {
