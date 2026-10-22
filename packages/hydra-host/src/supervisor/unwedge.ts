@@ -38,7 +38,8 @@ export type UnwedgeOutcome =
 	/** Stranded, side-load attempted, still stuck. Needs an operator. */
 	| { kind: 'Unrecovered'; tag: string | null; reason: string }
 	/**
-	 * Stranded, but a side-load now can stall the head again. Left for an
+	 * Stranded, but a side-load now can stall the head again, or the head state
+	 * could not be read to rule that out. Left for an
 	 * operator, with the node's API still open, so the head can be reset from the
 	 * payment service or closed.
 	 */
@@ -230,10 +231,14 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 	try {
 		headState = await fetchHead();
 	} catch (error) {
+		// Held, not Unrecovered: `Failed` closes the node's API, and a head state
+		// that cannot be read is no reason to block a reset or close. Like every
+		// Held round, nothing retries the side-load: the reason on the record
+		// tells the operator.
 		return {
-			kind: 'Unrecovered',
+			kind: 'Held',
 			tag,
-			reason: `could not read the head state before side-loading: ${(error as Error).message}`,
+			reason: `could not read the head state before side-loading, so the stranded round is left for an operator: ${(error as Error).message}`,
 		};
 	}
 	if (holdsUnsettledCommit(headState)) {
@@ -309,14 +314,8 @@ export async function unwedgeRecord(record: NodeRecord, reason: string, deps: Un
 		case 'Healthy':
 		case 'Progressing':
 		case 'Recovered':
-		case 'Held':
 			if (outcome.kind === 'Recovered') {
 				logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
-			}
-			// Not `Failed`: that closes the node's API, and the head could then be
-			// neither reset from the payment service nor closed from this side.
-			if (outcome.kind === 'Held') {
-				logger.warn(`[supervisor] ${record.nodeId} left a stranded round alone: ${outcome.reason}`);
 			}
 			await store.update(record.nodeId, (current) => ({
 				...current,
@@ -324,12 +323,18 @@ export async function unwedgeRecord(record: NodeRecord, reason: string, deps: Un
 				startAttempts: 0,
 			}));
 			return;
+		case 'Held':
 		case 'NeedsOperator':
-			// Kept running for the same reason as `Held`. The reason goes on the
-			// record so the API shows it. Nothing re-checks the round, and an admin
-			// may reset it from the payment service, so the reason carries when it
-			// was seen. The next start clears it.
-			logger.error(`[supervisor] ${record.nodeId} needs an operator: ${outcome.reason}`);
+			// Not `Failed`: that closes the node's API, and the head could then be
+			// neither reset from the payment service nor closed from this side. The
+			// reason goes on the record so the API shows it. Nothing re-checks the
+			// round, and an admin may reset it from the payment service, so the
+			// reason carries when it was seen. The next start clears it.
+			if (outcome.kind === 'Held') {
+				logger.warn(`[supervisor] ${record.nodeId} left a stranded round alone: ${outcome.reason}`);
+			} else {
+				logger.error(`[supervisor] ${record.nodeId} needs an operator: ${outcome.reason}`);
+			}
 			await store.update(record.nodeId, (current) => ({
 				...current,
 				lastStopUndrained: false,
