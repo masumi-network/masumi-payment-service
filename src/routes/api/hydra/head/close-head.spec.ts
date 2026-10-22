@@ -516,4 +516,49 @@ describe('fanoutHeadPost', () => {
 		});
 		expect(mockFanout).not.toHaveBeenCalled();
 	});
+
+	const fanout = () =>
+		(
+			fanoutHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler({ input: { headId: 'head-1' } });
+
+	// hydra-node's refusal of a second Fanout names no request, so it failed
+	// every waiting Fanout, the one that landed included (MAS-646).
+	it('refuses a second fanout while the first is in flight, without recording an error', async () => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible });
+		liveHeadStatus = HydraHeadStatus.FanoutPossible;
+		let landFirst!: () => void;
+		mockFanout.mockImplementationOnce(() => new Promise<void>((resolve) => (landFirst = resolve)));
+
+		const first = fanout();
+		await new Promise((resolve) => setImmediate(resolve));
+		await expect(fanout()).rejects.toMatchObject({ status: 409, message: 'Hydra head fanout is already in progress' });
+		landFirst();
+
+		await expect(first).resolves.toMatchObject({ headId: 'head-1' });
+		expect(mockFanout).toHaveBeenCalledTimes(1);
+		expect(mockCreateHeadError).not.toHaveBeenCalled();
+	});
+
+	it('accepts a fanout again once the one in flight has failed', async () => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible });
+		liveHeadStatus = HydraHeadStatus.FanoutPossible;
+		mockFanout.mockRejectedValueOnce(new Error('timed out')).mockResolvedValueOnce(undefined);
+
+		await expect(fanout()).rejects.toThrow('timed out');
+		await expect(fanout()).resolves.toMatchObject({ headId: 'head-1' });
+		expect(mockFanout).toHaveBeenCalledTimes(2);
+	});
+
+	// After finalization hydra-node 2.3/2.4.1 greets without a head, so the live
+	// status is Idle while the stored one can still read FanoutPossible.
+	it('refuses a fanout when the live head has moved past FanoutPossible', async () => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible });
+		liveHeadStatus = HydraHeadStatus.Idle;
+
+		await expect(fanout()).rejects.toMatchObject({ status: 409 });
+		expect(mockFanout).not.toHaveBeenCalled();
+	});
 });
