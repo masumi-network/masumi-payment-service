@@ -126,6 +126,17 @@ describe('provisionNode', () => {
 		expect(deps.ports.used).toBe(0);
 	});
 
+	it('frees the port of a failed provision at once when released ports wait for the firewall', async () => {
+		const ports = new PortAllocator(LAYOUT, [], { requirePeerFirewallRefresh: true });
+		ports.acknowledgePeerFirewall(ports.peerFirewallGeneration());
+		const store = new NodeRegistryStore(dataDir);
+		jest.spyOn(store, 'write').mockRejectedValueOnce(new Error('disk full'));
+
+		await expect(provisionNode(REQUEST, { ...deps, store, ports })).rejects.toThrow('disk full');
+		// The node never had peers, so the port must not wait for a refresh.
+		expect(ports.allocate().peerPort).toBe(LAYOUT.peerStart);
+	});
+
 	it('refuses once every slot is in use', async () => {
 		for (let i = 0; i < LAYOUT.capacity; i++) {
 			await provisionNode({ ...REQUEST, idempotencyKey: `idem-${i}` }, deps);

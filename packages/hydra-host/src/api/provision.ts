@@ -243,7 +243,8 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
 				}`,
 			);
 		});
-		deps.ports.release(triple.peerPort);
+		// The record never had peers, so no ruleset opened this port.
+		deps.ports.releaseUnpeered(triple.peerPort);
 		throw error;
 	}
 }

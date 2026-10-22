@@ -87,6 +87,14 @@ export type HostConfig = {
 	 */
 	allowPrivatePeers: boolean;
 	/**
+	 * Hold a released peer port until `hydra-peer-firewall refresh` acknowledges
+	 * a ruleset without its previous peers. See `PortAllocator`.
+	 *
+	 * Off by default, because a Host with no firewall script would never get a
+	 * port back. Turn it on wherever the peer range is public.
+	 */
+	requirePeerFirewallRefresh: boolean;
+	/**
 	 * Let the supervisor repair a stranded snapshot round on its own, by
 	 * side-loading the node's last confirmed snapshot.
 	 *
@@ -312,6 +320,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',
 		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
 		allowPrivatePeers: optional(env, 'HYDRA_HOST_ALLOW_PRIVATE_PEERS', 'false') === 'true',
+		requirePeerFirewallRefresh: optional(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', 'false') === 'true',
 		allowAutoSideLoad: optional(env, 'HYDRA_HOST_AUTO_SIDELOAD', 'false') === 'true',
 		release: readReleaseInfo(env),
 	};

@@ -109,6 +109,7 @@ async function main(): Promise<void> {
 	const allocator = new PortAllocator(
 		config.ports,
 		existing.map((record) => record.peerPort),
+		{ requirePeerFirewallRefresh: config.requirePeerFirewallRefresh },
 	);
 	for (const { peerPort, reason } of allocator.unclaimablePorts) {
 		// Loud, because the node holding it keeps running and keeps that port
@@ -120,6 +121,9 @@ async function main(): Promise<void> {
 		);
 	}
 	logger.info(`[host] ${allocator.used} of ${config.ports.capacity} node slots in use`);
+	if (config.requirePeerFirewallRefresh) {
+		logger.info('[host] provisioning waits for the first acknowledged hydra-peer-firewall refresh');
+	}
 
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
 	startup.supervisor = supervisor;

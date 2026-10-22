@@ -474,3 +474,89 @@ describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 		expect(((await response.json()) as { error: string }).error).toContain('depositActivationSeconds');
 	});
 });
+
+describe('control plane with HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH set', () => {
+	let gatedDir: string;
+	let gatedServer: Server;
+	let gatedStore: NodeRegistryStore;
+	let gatedPorts: PortAllocator;
+	let gatedUrl: string;
+	let nodes: number;
+
+	beforeEach(async () => {
+		gatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-gated-'));
+		nodes = 0;
+		const gatedEnv: EnvSource = {
+			get: (key) => (key === 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH' ? 'true' : env.get(key)),
+		};
+		const config = { ...loadHostConfig(gatedEnv), dataDir: gatedDir };
+		gatedStore = new NodeRegistryStore(gatedDir);
+		gatedPorts = new PortAllocator(config.ports, [], { requirePeerFirewallRefresh: config.requirePeerFirewallRefresh });
+		gatedServer = createControlPlane({
+			config,
+			store: gatedStore,
+			exchange: new ExchangeStore(gatedDir),
+			ports: gatedPorts,
+			supervisor: { tick: async () => undefined } as unknown as Supervisor,
+			provision: {
+				store: gatedStore,
+				ports: gatedPorts,
+				advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+				checkPeerTarget: async () => null,
+				newNodeId: () => `gated-${++nodes}`,
+				now: () => new Date('2026-07-28T12:00:00.000Z'),
+			},
+			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		});
+		await new Promise<void>((resolve) => gatedServer.listen(0, '127.0.0.1', resolve));
+		gatedUrl = `http://127.0.0.1:${(gatedServer.address() as AddressInfo).port}`;
+	});
+
+	afterEach(async () => {
+		await new Promise<void>((resolve) => gatedServer.close(() => resolve()));
+		await fs.rm(gatedDir, { recursive: true, force: true });
+	});
+
+	const gated = (method: string, url: string, body?: unknown, idempotencyKey?: string): Promise<Response> =>
+		fetch(`${gatedUrl}${url}`, {
+			method,
+			headers: {
+				authorization: `Bearer ${ADMIN}`,
+				'content-type': 'application/json',
+				...(idempotencyKey === undefined ? {} : { 'idempotency-key': idempotencyKey }),
+			},
+			body: body === undefined ? undefined : JSON.stringify(body),
+		});
+	const provision = async (key: string): Promise<Response> => await gated('POST', '/v1/nodes', undefined, key);
+	const generation = async (): Promise<string> =>
+		((await (await gated('GET', '/v1/peer-allowlist')).json()) as { generation: string }).generation;
+	const applied = async (value: unknown): Promise<Response> =>
+		await gated('POST', '/v1/peer-allowlist/applied', { generation: value });
+
+	// The firewall script's whole cycle, with the supervisor's removal done by
+	// hand: it deletes the record, then releases the port.
+	it('reuses a removed node peer port only after a later ruleset is acknowledged', async () => {
+		const waiting = await provision('idem-boot');
+		expect(waiting.status).toBe(503);
+		expect(((await waiting.json()) as { error: string }).error).toContain('hydra-peer-firewall refresh');
+
+		expect(await (await applied(await generation())).json()).toEqual({ released: [] });
+		const first = (await (await provision('idem-1')).json()) as { nodeId: string; peerPort: number };
+		expect(first.peerPort).toBe(5001);
+
+		const beforeRemoval = await generation();
+		await gatedStore.remove(first.nodeId);
+		gatedPorts.release(first.peerPort);
+		expect(((await (await provision('idem-2')).json()) as { peerPort: number }).peerPort).toBe(5002);
+
+		expect(await (await applied(beforeRemoval)).json()).toEqual({ released: [] });
+		expect(await (await applied(await generation())).json()).toEqual({ released: [5001] });
+		expect(((await (await provision('idem-3')).json()) as { peerPort: number }).peerPort).toBe(5001);
+	});
+
+	it('refuses an acknowledgement the running Host did not issue', async () => {
+		expect((await applied('0b6f3c1e-2d4a-4f5b-9c8d-7e6f5a4b3c2d.0')).status).toBe(409);
+		expect((await applied(7)).status).toBe(400);
+		expect((await provision('idem-refused')).status).toBe(503);
+	});
+});

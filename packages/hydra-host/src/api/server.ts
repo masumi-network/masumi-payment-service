@@ -15,7 +15,7 @@ import { readFile } from 'node:fs/promises';
 import type { Duplex } from 'node:stream';
 import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
-import { PortExhaustedError, type PortAllocator } from '../registry/ports.js';
+import { PeerFirewallPendingError, PortExhaustedError, type PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { ExchangeStore } from '../registry/exchange-store.js';
 import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRecord } from '../registry/types.js';
@@ -270,6 +270,13 @@ export function createControlPlane(deps: ServerDeps): Server {
 					send(response, 507, { error: error.message });
 					return;
 				}
+				// Free slots exist, but none is shut to its previous head's peers yet.
+				// Transient: the next firewall refresh frees them, so this is not 507.
+				if (error instanceof PeerFirewallPendingError) {
+					logger.warn(`[api] ${method} ${logPath} refused: ${error.message}`);
+					send(response, 503, { error: error.message });
+					return;
+				}
 				logger.error(`[api] ${method} ${logPath} failed: ${(error as Error).message}`);
 				send(response, 500, { error: 'internal error' });
 			}
@@ -393,8 +400,36 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			case 'peerAllowlist': {
 				const range = { start: config.ports.peerStart, count: config.ports.capacity };
+				// Taken before the registry is read, never after: see
+				// `PortAllocator.peerFirewallGeneration`.
+				const generation = ports.peerFirewallGeneration();
 				const allowlist = await resolvePeerAllowlist(buildPeerAllowlist(await store.list(), range));
-				send(response, 200, { ...allowlist, peerRange: range, nftables: renderNftables(allowlist, range) });
+				send(response, 200, {
+					...allowlist,
+					peerRange: range,
+					generation,
+					nftables: renderNftables(allowlist, range),
+				});
+				return;
+			}
+
+			case 'peerAllowlistApplied': {
+				const body = await readBody(request);
+				const generation = isPlainObject(body) ? getOwnString(body, 'generation') : undefined;
+				if (generation === undefined) {
+					throw new HostApiError('expected an object with a "generation" string', 400);
+				}
+				const released = ports.acknowledgePeerFirewall(generation);
+				if (released === null) {
+					throw new HostApiError(
+						'the running Host did not issue this generation; run hydra-peer-firewall refresh again',
+						409,
+					);
+				}
+				if (released.length > 0) {
+					logger.info(`[api] peer firewall applied; peer port(s) ${released.join(', ')} may be reused`);
+				}
+				send(response, 200, { released });
 				return;
 			}
 
