@@ -443,7 +443,7 @@ export async function reserveNodeForExchange(
 		// creation then refused the mismatch with the nonce already spent. Refuse
 		// before the ack, so this attempt leaves nothing behind.
 		if (existing.walletId !== localHotWalletId) {
-			throw createHttpError(409, 'this invite is already being redeemed with a different wallet');
+			throw createHttpError(409, 'the node reserved for this nonce belongs to a different wallet');
 		}
 		localParticipantId = existing.id;
 	} else if (provisioned.secrets === null) {
