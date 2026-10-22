@@ -162,8 +162,11 @@ The server refuses the re-apply unless all of these hold:
 - Our node shows the body confirmed, and the body spends the escrow output each
   request points at.
 - Each request is still where the release left it: `CurrentTransaction` is the
-  escrow the reservation replaced, and its next action is the retry action. A
-  retry in flight is refused; wait until it settles.
+  escrow the reservation replaced, its next action is the retry action, and the
+  newest entry in its action history is the in-flight action the release
+  replaced (same result hash). A retry in flight is refused; wait until it
+  settles. A request that went through an error or an error-state recovery
+  since the release is refused too.
 - The row is unchanged since `expectedUpdatedAt`.
 
 Two cases are always refused, and they are still invariant breaches that need
