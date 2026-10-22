@@ -78,7 +78,8 @@ async function readHeadOutputOnChain(headId: string): Promise<string> {
 		if (createHttpError.isHttpError(error)) throw error;
 		const message = error instanceof Error ? error.message : String(error);
 		if (error instanceof HydraHeadInitObservationError) throw createHttpError(503, message, { expose: true });
-		throw createHttpError(502, `Could not read the head state on chain: ${message}`, { expose: true });
+		// Not exposed: any other throw, a database error included, lands here.
+		throw createHttpError(502, `Could not read the head state on chain: ${message}`);
 	}
 	if (chain.state === 'gone') {
 		throw createHttpError(409, 'The head was fanned out on L1; reconciliation adopts it, nothing to retire');
