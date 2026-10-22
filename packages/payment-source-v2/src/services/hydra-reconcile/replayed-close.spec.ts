@@ -95,6 +95,22 @@ describe('recordReplayedCloseSnapshot', () => {
 		expect(mockWarn).toHaveBeenCalledTimes(1);
 	});
 
+	it('warns again after a close was seen and then lost', async () => {
+		await recordReplayedCloseSnapshot('head-lost-close', 0n, nodeWith(HydraHeadStatus.Closed, undefined));
+		await recordReplayedCloseSnapshot('head-lost-close', 5n, nodeWith(HydraHeadStatus.Closed, 5n));
+		await recordReplayedCloseSnapshot('head-lost-close', 5n, nodeWith(HydraHeadStatus.Closed, undefined));
+
+		expect(mockWarn).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not warn for an open head, which has no close to replay', async () => {
+		await expect(recordReplayedCloseSnapshot('head-open', 0n, nodeWith(HydraHeadStatus.Open, undefined))).resolves.toBe(
+			false,
+		);
+
+		expect(mockWarn).not.toHaveBeenCalled();
+	});
+
 	it('writes nothing when the live head is open again', async () => {
 		// A chain rollback undid the close, but this pass's history still holds it.
 		await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(HydraHeadStatus.Open, 5n))).resolves.toBe(false);

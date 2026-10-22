@@ -11,7 +11,10 @@ const CLOSED_HEAD_STATUSES: HydraHeadStatus[] = [
 	HydraHeadStatus.Final,
 ];
 
-/** Heads already warned about a closed status with no close in the replay, so the warning shows once. */
+/**
+ * Heads warned about a closed status with no close in the replay, so the warning
+ * shows once. A close seen later clears the entry, so a later gap warns again.
+ */
 const headsWithoutReplayedClose = new Set<string>();
 
 export type ReplayedCloseNode = Pick<HydraNode, 'status' | 'closedSnapshotNumber' | 'fetchClosedHeadFacts'>;
@@ -47,7 +50,8 @@ export async function recordReplayedCloseSnapshot(
 		// Nothing else records the closed snapshot, so a handoff that waits on it needs a clue.
 		if (CLOSED_HEAD_STATUSES.includes(node.status) && !headsWithoutReplayedClose.has(hydraHeadId)) {
 			headsWithoutReplayedClose.add(hydraHeadId);
-			logger.warn('[HydraReconcile] Closed head has no close or contest in its replayed history', {
+			// The live socket can report the close before the history socket reads it.
+			logger.warn('[HydraReconcile] Closed head has no close or contest in its replayed history yet', {
 				hydraHeadId,
 				status: node.status,
 				latestSnapshotNumber: latestSnapshotNumber.toString(),
@@ -55,6 +59,7 @@ export async function recordReplayedCloseSnapshot(
 		}
 		return false;
 	}
+	headsWithoutReplayedClose.delete(hydraHeadId);
 	if (closedSnapshotNumber <= latestSnapshotNumber) return false;
 	// A live status outside the closed family means a rollback undid the close.
 	if (!CLOSED_HEAD_STATUSES.includes(node.status)) return false;
