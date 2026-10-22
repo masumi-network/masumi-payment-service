@@ -240,14 +240,16 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
  * What a send attempt tells the caller about whether the nonce may be spent.
  *
  * - `accepted`: the Host took it (2xx), or recognised it as the same redemption.
- * - `answered`: the Host replied with a refusal, which it does before it spends
- *   the nonce, except where `code` says the nonce is spent by someone else.
+ * - `answered`: a status other than 2xx. `fromHost` says the body is the Host's
+ *   own JSON refusal, which it sends before it spends the nonce, except where
+ *   `code` says the nonce is spent by someone else. Without it the status may
+ *   come from a gateway in front of the Host.
  * - `not-sent`: nothing left this machine, or no connection was ever made.
  * - `unknown`: the request may have reached the Host and the answer was lost.
  */
 export type ExchangeAttempt =
 	| { kind: 'accepted' }
-	| { kind: 'answered'; status: number; code: string | null; detail: string }
+	| { kind: 'answered'; status: number; code: string | null; fromHost: boolean; detail: string }
 	| { kind: 'not-sent'; error: createHttpError.HttpError }
 	| { kind: 'unknown'; reason: string; host: string };
 
@@ -272,17 +274,23 @@ const NEVER_SENT_ERROR_CODES = new Set([
 	'ERR_TLS_CERT_ALTNAME_INVALID',
 ]);
 
-/** The `code` the Host adds to a refusal, or null for an older Host, a gateway or a body that is not JSON. */
-function readRefusalCode(detail: string): string | null {
+/**
+ * Read a refusal body. Every Host refusal is `{ error }`, and a newer Host adds
+ * `code`; a gateway's HTML or plain text is neither, so it reads as not the Host's.
+ */
+export function readRefusal(detail: string): { code: string | null; fromHost: boolean } {
 	try {
 		const parsed: unknown = JSON.parse(detail);
-		if (typeof parsed === 'object' && parsed !== null && 'code' in parsed && typeof parsed.code === 'string') {
-			return parsed.code;
+		if (typeof parsed === 'object' && parsed !== null) {
+			return {
+				code: 'code' in parsed && typeof parsed.code === 'string' ? parsed.code : null,
+				fromHost: 'error' in parsed && typeof parsed.error === 'string',
+			};
 		}
 	} catch {
 		// A gateway's HTML or plain text.
 	}
-	return null;
+	return { code: null, fromHost: false };
 }
 
 async function attempt(
@@ -309,6 +317,7 @@ async function attempt(
 		logger.warn(`hydra: sending ${what} to explicitly allowed private address for ${url.host}`);
 	}
 
+	let earlierMayHaveLanded = false;
 	try {
 		const send = deps.send ?? sendPinnedRequest;
 		const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -318,21 +327,22 @@ async function attempt(
 		// landed and spent the nonce, so it is never retried.
 		for (const delayMs of BUSY_RETRY_DELAYS_MS) {
 			if (result.status !== BUSY_STATUS) break;
+			// A 503 that is not the Host's own may follow a redemption it stored, and
+			// then whatever the resend hears says nothing about the first send.
+			if (!readRefusal(result.detail).fromHost) earlierMayHaveLanded = true;
 			await sleep(delayMs);
 			result = await send(url, target, payload);
 		}
 		if (result.status >= 200 && result.status < 300) return { kind: 'accepted' };
-		return {
-			kind: 'answered',
-			status: result.status,
-			code: readRefusalCode(result.detail),
-			detail: result.detail,
-		};
+		if (earlierMayHaveLanded) {
+			return { kind: 'unknown', reason: `a gateway answered ${BUSY_STATUS} before the Host did`, host: url.host };
+		}
+		return { kind: 'answered', status: result.status, ...readRefusal(result.detail), detail: result.detail };
 	} catch (error) {
 		const reason = (error as Error).message;
 		logger.warn(`hydra: ${what} to ${url.host} failed: ${reason}`);
 		const code = (error as NodeJS.ErrnoException).code;
-		if (code !== undefined && NEVER_SENT_ERROR_CODES.has(code)) {
+		if (!earlierMayHaveLanded && code !== undefined && NEVER_SENT_ERROR_CODES.has(code)) {
 			return {
 				kind: 'not-sent',
 				error: createHttpError(502, `could not reach the counterparty exchange at ${url.host}: ${reason}`),

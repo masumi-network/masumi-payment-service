@@ -308,9 +308,12 @@ async function loadPauseNodeIds(db: Prisma.TransactionClient, hostId: string): P
 					{ role: HydraInviteRole.Issuer, status: HydraInviteStatus.Issued },
 					// A redemption of someone else's invite keeps its node until the head
 					// exists, and the resume job would start it. See `resume-redemptions.ts`.
+					// Only once the issuer acknowledged it: before that the node was never
+					// configured or started, and Resume starts every node listed here.
 					{
 						role: HydraInviteRole.Redeemer,
 						status: { in: [HydraInviteStatus.Redeemed, HydraInviteStatus.Started] },
+						redeemedAt: { not: null },
 					},
 				],
 			},

@@ -17,13 +17,14 @@ export const LIVE_REDEEMER_STATUSES = [HydraInviteStatus.Redeemed, HydraInviteSt
 /**
  * Record the intent. `created: false` means a concurrent request recorded the
  * same nonce first, and the caller should resume that record instead.
+ * `updatedAt` is the version the creator owns: a retry's claim moves it on.
  */
 export async function createRedeemerRecord(
 	data: Prisma.HydraHeadInviteCreateInput,
-): Promise<{ created: true; id: string } | { created: false }> {
+): Promise<{ created: true; id: string; updatedAt: Date } | { created: false }> {
 	try {
-		const row = await prisma.hydraHeadInvite.create({ data, select: { id: true } });
-		return { created: true, id: row.id };
+		const row = await prisma.hydraHeadInvite.create({ data, select: { id: true, updatedAt: true } });
+		return { created: true, id: row.id, updatedAt: row.updatedAt };
 	} catch (error) {
 		if (isUniqueConstraintError(error)) return { created: false };
 		throw error;
@@ -31,27 +32,33 @@ export async function createRedeemerRecord(
 }
 
 /**
- * Note that the issuer's Host took the redemption. True also when a concurrent
- * caller already did, since the outcome the caller wants is the same.
+ * Note that the issuer's Host took the redemption, and say how far the record
+ * has got. A concurrent caller may have acknowledged it first and gone on to
+ * start the node or finish the head, which the caller must not repeat. Null
+ * when the record is gone or ended.
  */
-export async function markAcknowledged(id: string): Promise<boolean> {
+export async function markAcknowledged(id: string): Promise<AcknowledgedStatus | null> {
 	const stamped = await prisma.hydraHeadInvite.updateMany({
 		where: { id, role: HydraInviteRole.Redeemer, status: HydraInviteStatus.Redeemed, redeemedAt: null },
 		data: { redeemedAt: new Date() },
 	});
-	if (stamped.count === 1) return true;
+	if (stamped.count === 1) return HydraInviteStatus.Redeemed;
 	const current = await prisma.hydraHeadInvite.findUnique({
 		where: { id },
 		select: { status: true, redeemedAt: true },
 	});
-	return (
-		current !== null &&
-		current.redeemedAt !== null &&
-		(current.status === HydraInviteStatus.Redeemed ||
-			current.status === HydraInviteStatus.Started ||
-			current.status === HydraInviteStatus.Completed)
-	);
+	if (current === null || current.redeemedAt === null) return null;
+	return current.status === HydraInviteStatus.Redeemed ||
+		current.status === HydraInviteStatus.Started ||
+		current.status === HydraInviteStatus.Completed
+		? current.status
+		: null;
 }
+
+export type AcknowledgedStatus =
+	| typeof HydraInviteStatus.Redeemed
+	| typeof HydraInviteStatus.Started
+	| typeof HydraInviteStatus.Completed;
 
 /** Our node has its peers and was started. False means it had already moved on, which is fine. */
 export async function markStarted(id: string): Promise<boolean> {

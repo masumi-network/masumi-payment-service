@@ -285,13 +285,7 @@ async function finishRedemption(
 	options: { rowIsNew: boolean; transport: ExchangeTransportOptions },
 ): Promise<RedeemedInvite> {
 	const ports = buildRedemptionPorts({ record, transport: options.transport, createHead: createHeadFromExchange });
-	const result = await advanceRedemption(toRedemptionState(record), ports, {
-		rowIsNew: options.rowIsNew,
-		mayPost: true,
-	});
-	if (!result.done) {
-		throw createHttpError(500, 'hydra: a redemption that may post stopped before the issuer acknowledged it');
-	}
+	const result = await advanceRedemption(toRedemptionState(record), ports, { rowIsNew: options.rowIsNew });
 	logger.info(`hydra: redeemed invite ${nonceLogRef(record.nonce)} from ${record.issuerWalletAddress}`);
 	return { inviteId: record.id, hydraHeadId: result.hydraHeadId, issuerWalletAddress: record.issuerWalletAddress };
 }
@@ -502,7 +496,16 @@ export async function redeemHeadInvite(input: {
 	if (record === null) {
 		throw createHttpError(500, 'hydra: a redemption was recorded and then could not be read back');
 	}
-	return await finishRedemption(record, { rowIsNew: true, transport: exchangeTransport });
+	// A concurrent retry finished or ended it in between: answer as that retry would.
+	if (record.status !== HydraInviteStatus.Redeemed) {
+		return await resumeRedemption(record, context);
+	}
+	// The version written by the create, not the one read back: a retry that
+	// claimed the record in between must make this request's deletes find nothing.
+	return await finishRedemption(
+		{ ...record, updatedAt: recorded.updatedAt },
+		{ rowIsNew: true, transport: exchangeTransport },
+	);
 }
 
 /**
