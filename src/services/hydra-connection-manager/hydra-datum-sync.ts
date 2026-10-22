@@ -37,7 +37,7 @@ import {
 	type HydraOutputReference,
 } from './hydra-datum-guards';
 import { ensureObservedTransaction, releaseBlockedWallet } from './hydra-datum-observation';
-import { isUnobservedLockTimeout } from '@/utils/logic/unobserved-lock-timeout';
+import { didTimeoutReplacePlainPaymentWait, isUnobservedLockTimeout } from '@/utils/logic/unobserved-lock-timeout';
 
 // Re-exported so the split stays invisible to importers: this module was the
 // whole datum surface before it was broken up.
@@ -164,6 +164,8 @@ export async function applyDatumStateToLocalRequests(params: {
 				paymentRequest != null &&
 				isUnobservedLockTimeout(paymentRequest, newOnChainState) &&
 				isRecoverableTimeoutInvalidation({ request: paymentRequest, ...timeoutRecoveryEvidence });
+			const paymentClearsTimeoutAction =
+				paymentRecoversTimeout && (await didTimeoutReplacePlainPaymentWait(tx, paymentRequest.id));
 			const purchaseEffectiveForceLayer =
 				purchaseRequest == null
 					? null
@@ -646,7 +648,9 @@ export async function applyDatumStateToLocalRequests(params: {
 						newState: effectiveState,
 					});
 					const newAction = convertNewPaymentActionAndError(
-						paymentRecoversTimeout ? PaymentAction.WaitingForExternalAction : paymentRequest.NextAction.requestedAction,
+						paymentClearsTimeoutAction
+							? PaymentAction.WaitingForExternalAction
+							: paymentRequest.NextAction.requestedAction,
 						effectiveState,
 					);
 					await tx.paymentRequest.update({
