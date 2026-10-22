@@ -68,6 +68,10 @@ async function failStaleUnconfirmed(now: number, outcome: ResumeOutcome): Promis
 			status: HydraInviteStatus.Redeemed,
 			redeemedAt: null,
 			expiresAt: { lt: new Date(now - UNCONFIRMED_GIVE_UP_MS) },
+			// Idle, like every record the pass below takes: a retry that claimed the
+			// record a moment ago may be posting it now, and its claim predates the
+			// one below, so only the idle window keeps this from failing it mid-post.
+			updatedAt: { lt: new Date(now - UNCONFIRMED_RETRY_IDLE_MS) },
 		},
 		include,
 		orderBy: { expiresAt: 'asc' },
