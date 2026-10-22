@@ -43,6 +43,7 @@ import { HeadSession } from './head-session';
 import { persistHeadStatus, type HeadStatusPersistenceHost } from './head-status-persistence';
 import { continueAfterStatusPersistenceRecovery } from './head-auto-disable-recovery';
 import { applyConfirmedHydraTransaction, type TxConfirmedHost } from './head-tx-confirmed';
+import { recordReplayFailures } from './replay-failure-recorder';
 import {
 	HYDRA_PRE_INIT_STATUSES,
 	headConfigurationInclude,
@@ -522,26 +523,7 @@ export class HydraConnectionManager {
 
 		// Funds that were promised to a deposit have just become spendable. Anything
 		// that was waiting on them should run now rather than on the next tick.
-		// A rejected history is the most consequential failure this service has and
-		// used to be its quietest: the session never forms, so there is no head
-		// clock, so every L2 escrow operation fails closed — while the connection
-		// retries forever and the head goes on reporting itself as Open. Recorded
-		// as a head error so the reason is visible where an operator is already
-		// looking, instead of only in a log line they have no reason to read.
-		head.mainNode.on(HydraNodeEvent.HistoryReplayFailed, (error: unknown) => {
-			void recordHeadError(
-				hydraHeadId,
-				HydraHeadStatus.Connecting,
-				HydraErrorType.CommandFailed,
-				error,
-				'HistoryReplay',
-			).catch((recordError: unknown) => {
-				logger.error('[HydraConnectionManager] could not record a rejected history replay', {
-					hydraHeadId,
-					error: recordError instanceof Error ? recordError.message : recordError,
-				});
-			});
-		});
+		recordReplayFailures(head.mainNode, hydraHeadId);
 
 		// An L1 transaction the node could not post. A contest it posts on its own
 		// has no command waiting on it, so the webhook and this record are the only
