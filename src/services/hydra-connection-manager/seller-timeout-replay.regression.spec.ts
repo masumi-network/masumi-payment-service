@@ -22,6 +22,7 @@ const mockTransactionCreate = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHotWalletUpdate = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHydraHeadFindUnique = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHydraAdmissionQuery = jest.fn<(_args: unknown) => Promise<unknown>>();
+const mockPaymentActionFindFirst = jest.fn<(_args: unknown) => Promise<unknown>>();
 
 const transactionClient = {
 	$queryRaw: mockHydraAdmissionQuery,
@@ -38,6 +39,7 @@ const transactionClient = {
 		findFirst: mockTransactionFindFirst,
 		create: mockTransactionCreate,
 	},
+	paymentActionData: { findFirst: mockPaymentActionFindFirst },
 	hotWallet: { update: mockHotWalletUpdate },
 	hydraHead: { findUnique: mockHydraHeadFindUnique },
 };
@@ -187,6 +189,10 @@ describe('initial Hydra lock after an observation timeout', () => {
 		mockPurchaseFindUnique.mockResolvedValue(null);
 		mockPaymentUpdate.mockResolvedValue({});
 		mockTransactionFindFirst.mockResolvedValue(null);
+		mockPaymentActionFindFirst.mockResolvedValue({
+			requestedAction: PaymentAction.WaitingForExternalAction,
+			errorType: null,
+		});
 		mockTransactionCreate.mockResolvedValue({ id: 'observed-transaction-1' });
 		mockHydraHeadFindUnique.mockResolvedValue({
 			HydraRelation: {
@@ -249,6 +255,26 @@ describe('initial Hydra lock after an observation timeout', () => {
 							requestedAction: PaymentAction.WaitingForExternalAction,
 							errorType: null,
 						}),
+					},
+				}),
+			}),
+		);
+	});
+
+	it.each([
+		['a manual action', { requestedAction: PaymentAction.WaitingForManualAction, errorType: 'Unknown' }],
+		['a wait with an error', { requestedAction: PaymentAction.WaitingForExternalAction, errorType: 'Unknown' }],
+		['no recorded action', null],
+	])('keeps the timeout action when the timeout replaced %s', async (_reason, replacedAction) => {
+		mockPaymentActionFindFirst.mockResolvedValue(replacedAction);
+		mockPaymentFindUnique.mockResolvedValue(timedOutPayment());
+		expect(await applyDatumStateToLocalRequests(initialObservation())).toBe('applied');
+		expect(mockPaymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					onChainState: OnChainState.FundsLocked,
+					NextAction: {
+						create: expect.objectContaining({ requestedAction: PaymentAction.WaitingForManualAction }),
 					},
 				}),
 			}),
