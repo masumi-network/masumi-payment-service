@@ -382,7 +382,8 @@ describe('unwedgeRecord', () => {
 		});
 
 		expect(record).toMatchObject({ state: 'Running', lastStopUndrained: false, startAttempts: 0 });
-		expect(record.failureReason).toBeUndefined();
+		// Nothing checks the round again, so the API is the only place that shows it.
+		expect(record.failureReason).toMatch(/not settled.*\(seen \d{4}-/);
 		expect(client.sideLoadSnapshot).not.toHaveBeenCalled();
 		expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('left a stranded round alone'));
 	});
