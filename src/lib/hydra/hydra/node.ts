@@ -22,6 +22,7 @@ import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
 import { assertL2TxWithinMaxSize } from './l2-tx-size';
+import { awaitChainSyncedForInit } from './node-chain-sync';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
 import { isVerifiedPendingCommitOutput, readFinalSnapshot, readVerifiedCurrentOutput } from './node-current-output';
 import {
@@ -534,7 +535,12 @@ export class HydraNode extends EventEmitter {
 		// already-resolved promise still yields a microtask, and callers rely on
 		// Init reaching the socket in the same synchronous turn as the call.
 		if (this._live.chainSynced === false) {
-			await this.awaitChainSyncedForInit();
+			await awaitChainSyncedForInit({
+				isChainSynced: () => this._live.chainSynced,
+				headId: this._expectedHeadId,
+				waitMs: HydraNode.INIT_SYNC_WAIT_MS,
+				pollMs: HydraNode.INIT_SYNC_POLL_MS,
+			});
 		}
 
 		return await this.sendCommandAndWait({
@@ -618,26 +624,12 @@ export class HydraNode extends EventEmitter {
 	}
 
 	/**
-	 * Hold until a node that reported itself behind the chain reports synced.
-	 * Resolves at once when the state is synced or unknown. Rejects as a
-	 * transport error — the command was never sent, so there is nothing to
-	 * reconcile — if the node is still behind after `INIT_SYNC_WAIT_MS`.
+	 * Drop the history socket so a fresh pass replays the log and re-earns the
+	 * confirmed-transaction evidence. The replacement socket reconnects on the
+	 * normal transport schedule; already verified evidence is kept.
 	 */
-	private async awaitChainSyncedForInit(): Promise<void> {
-		logger.info('[HydraNode] Node reports it is catching up; holding Init until it is synced', {
-			headId: this._expectedHeadId,
-		});
-		const deadline = Date.now() + HydraNode.INIT_SYNC_WAIT_MS;
-		while (this._live.chainSynced === false) {
-			if (Date.now() >= deadline) {
-				throw new HydraTransportError(
-					`Init not sent: hydra-node still reports it is behind the chain after ${Math.round(
-						HydraNode.INIT_SYNC_WAIT_MS / 1000,
-					)}s; retry once it reports synced`,
-				);
-			}
-			await new Promise((resolve) => setTimeout(resolve, HydraNode.INIT_SYNC_POLL_MS));
-		}
+	restartHistoryReplay(reason: string): void {
+		this._historyConnection.invalidate(new HydraTransportError(reason));
 	}
 
 	isTxConfirmed(txHash: string): boolean {

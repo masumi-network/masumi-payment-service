@@ -1809,6 +1809,24 @@ describe('HydraNode', () => {
 			]);
 		});
 
+		// hydra-node subscribes the socket to live outputs before it streams the
+		// history, so an output persisted mid-replay is sent again after Greetings.
+		it('drops a live copy of a frame the history already delivered, and keeps recording', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const { frames, transactions } = signedHistoryChain();
+			historyConnection.emit('message', JSON.stringify(frames[0]));
+			historyConnection.emit('message', JSON.stringify(frames[1]));
+			finishHistoryReplay(historyConnection);
+			historyConnection.emit('message', JSON.stringify(frames[1]));
+
+			expect(node.confirmedTransactionHistoryError).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(true);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+
+			historyConnection.emit('message', JSON.stringify(frames[2]));
+			expect(node.getConfirmedTransaction(transactions[2].txId)).not.toBeNull();
+		});
+
 		it('rejects out-of-order durable cursor advancement', async () => {
 			const { node, historyConnection } = await startSignedNode();
 			const { frames, transactions } = signedHistoryChain();
