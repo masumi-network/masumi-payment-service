@@ -47,7 +47,8 @@ export async function recordReplayedCloseSnapshot(
 ): Promise<boolean> {
 	const closedSnapshotNumber = node.closedSnapshotNumber;
 	if (closedSnapshotNumber === undefined) {
-		// Nothing else records the closed snapshot, so a handoff that waits on it needs a clue.
+		// For a missed close nothing else records the closed snapshot, so a handoff that
+		// waits on it needs a clue.
 		if (CLOSED_HEAD_STATUSES.includes(node.status) && !headsWithoutReplayedClose.has(hydraHeadId)) {
 			headsWithoutReplayedClose.add(hydraHeadId);
 			// The live socket can report the close before the history socket reads it.
