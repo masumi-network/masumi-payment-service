@@ -51,6 +51,7 @@ import {
 } from './snapshot-verification';
 import { computeHydraAccumulatorHash } from './snapshot-accumulator';
 import { HistoryFrameQueue, type QueuedHistoryFrame } from './node-history-frame-queue';
+import { pageClosedBeforeHeadExisted } from './node-history-page';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { DecommitSettledData, DepositRecordedData, HydraConfirmedTransaction, HydraTransaction } from './types';
 
@@ -304,7 +305,7 @@ export class HydraHistoryReplay {
 		// that Greetings is asked to name a head that did not exist when it was
 		// written. Read it again instead, now that there is a head to read it
 		// against.
-		if (this.pageClosedBeforeHeadExisted(bufferedFrames)) {
+		if (pageClosedBeforeHeadExisted(bufferedFrames)) {
 			this._restartRequested = true;
 			this.connection.invalidate(
 				new HydraTransportError('Hydra history page closed before the head existed; restarting replay'),
@@ -316,38 +317,6 @@ export class HydraHistoryReplay {
 		// socket and starts a fresh pass — drops the rest instead of reading them
 		// as that fresh pass.
 		this._queue.pushFront(bufferedFrames.map((rawMessage) => ({ rawMessage, pass: this._pass })));
-	}
-
-	/**
-	 * Was this buffered page written by a node that had no head yet?
-	 *
-	 * Greetings closes a history page and states the node's status as it stood
-	 * then, so an Idle one carrying no head id is proof rather than a violation —
-	 * the same reading the live session already gives it, where returning to Idle
-	 * is a legitimate rollback through Init rather than a protocol breach.
-	 *
-	 * Scoped to the flush deliberately. Frames are only buffered while no head is
-	 * pinned, and nothing unpins one, so this cannot fire twice and the restart it
-	 * asks for cannot loop. A pinned pass that reaches Idle is a different
-	 * question — a head this service believes in that its node no longer sees —
-	 * and still fails closed.
-	 */
-	private pageClosedBeforeHeadExisted(frames: readonly string[]): boolean {
-		for (const frame of frames) {
-			let message: unknown;
-			try {
-				message = parseBoundedJsonFrame(frame);
-			} catch {
-				// Malformed: let the normal pass report it with its own message.
-				return false;
-			}
-			const envelope = messageSchema.safeParse(message);
-			if (!envelope.success || envelope.data.tag !== 'Greetings') continue;
-			if (envelope.data.headId != null || envelope.data.hydraHeadId != null) continue;
-			const status = hydraHeadStatusSchema.safeParse(envelope.data.headStatus);
-			if (status.success && status.data === HydraHeadStatus.Idle) return true;
-		}
-		return false;
 	}
 
 	/** Returns a promise only while the frame waits for its accumulator. */
