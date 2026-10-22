@@ -27,5 +27,9 @@
 		"dotenv": "^17.2.3",
 		"ethereum-cryptography": "^3.2.0",
 		"lucid-cardano": "^0.10.11"
+	},
+	"overrides": {
+		"ip-address": "10.7.4",
+		"undici": "6.28.1"
 	}
 }
