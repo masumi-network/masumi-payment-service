@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
-import type { AddressInfo, Socket } from 'node:net';
+import { connect, type AddressInfo, type Socket } from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -141,6 +141,48 @@ const call = (method: string, url: string, token?: string): Promise<Response> =>
 		method,
 		headers: token === undefined ? {} : { Authorization: `Bearer ${token}` },
 	});
+
+/**
+ * Holds the next `count` node record reads until the control plane has seen
+ * that many requests close: a read slow enough that the caller leaves first.
+ */
+function holdRecordReads(count: number): { allHeld: Promise<void>; allDone: Promise<void> } {
+	let release: () => void = () => undefined;
+	const released = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let closedRequests = 0;
+	host.on('request', (request) => {
+		request.once('close', () => {
+			closedRequests += 1;
+			if (closedRequests === count) release();
+		});
+	});
+	let markAllHeld: () => void = () => undefined;
+	const allHeld = new Promise<void>((resolve) => {
+		markAllHeld = resolve;
+	});
+	let markAllDone: () => void = () => undefined;
+	const allDone = new Promise<void>((resolve) => {
+		markAllDone = resolve;
+	});
+	const readRecord = store.read.bind(store);
+	let heldReads = 0;
+	let doneReads = 0;
+	store.read = async (nodeId) => {
+		heldReads += 1;
+		if (heldReads === count) {
+			store.read = readRecord;
+			markAllHeld();
+		}
+		await released;
+		const found = await readRecord(nodeId);
+		doneReads += 1;
+		if (doneReads === count) markAllDone();
+		return found;
+	};
+	return { allHeld, allDone };
+}
 
 describe('node api proxy', () => {
 	it('forwards an allowed read to the node', async () => {
@@ -310,6 +352,61 @@ describe('node api proxy', () => {
 			clearTimeout(waitTimer);
 			streaming.closeAllConnections();
 			await new Promise<void>((resolve) => streaming.close(() => resolve()));
+		}
+	});
+
+	// The response's 'close' fired before the proxy could listen for it, so the
+	// proxy opened a connection to the node and left it open. No request went
+	// out on it: piping a destroyed request never ends the node's request. A
+	// pipelined request's response waits without a socket, and on some Node
+	// versions a hang-up never destroys it, only its request.
+	it.each([
+		[
+			'a caller',
+			1,
+			(): (() => void) => {
+				const caller = new AbortController();
+				fetch(`${baseUrl}/v1/nodes/node-1/api/head`, {
+					headers: { Authorization: `Bearer ${USER}` },
+					signal: caller.signal,
+				}).catch(() => undefined);
+				return () => caller.abort();
+			},
+		],
+		[
+			'a caller with two pipelined requests',
+			2,
+			(): (() => void) => {
+				const socket = connect((host.address() as AddressInfo).port, '127.0.0.1');
+				socket.on('error', () => undefined);
+				const request = `GET /v1/nodes/node-1/api/head HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer ${USER}\r\n\r\n`;
+				socket.write(request.repeat(2));
+				return () => socket.destroy();
+			},
+		],
+	])('never contacts the node when %s hangs up while the record is read', async (_label, requestCount, send) => {
+		let nodeConnections = 0;
+		node.server.on('connection', () => {
+			nodeConnections += 1;
+		});
+		const reads = holdRecordReads(requestCount);
+		try {
+			const hangUp = send();
+			await reads.allHeld;
+			hangUp();
+			await reads.allDone;
+			// Lets the abandoned requests reach the proxy before the next one starts.
+			await new Promise((resolve) => setImmediate(resolve));
+
+			// The node accepts connections in the order they were opened, so any
+			// an abandoned request opened lands before this answer.
+			expect((await call('GET', '/v1/nodes/node-1/api/snapshot', USER)).status).toBe(200);
+			expect(nodeConnections).toBe(1);
+			expect(node.received.map((request) => request.url)).toEqual(['/snapshot']);
+		} finally {
+			// A failed run leaves an abandoned connection open, and afterEach's
+			// close() would wait on it until jest's own timeout hid the failure.
+			node.server.closeAllConnections();
 		}
 	});
 

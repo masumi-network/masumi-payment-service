@@ -76,6 +76,13 @@ export function proxyHttp(
 	query: string,
 	onError: (message: string) => void,
 ): void {
+	// The caller can hang up while the handler still reads the node's record.
+	// The response's 'close' has fired by then, so the listener below would
+	// never run. The node got a connection that stayed open with no request on
+	// it, since piping a destroyed request never ends the node's request. A
+	// pipelined request's response waits in a queue without a socket, and some
+	// Node versions never destroy it, so its destroyed request is the signal.
+	if (response.destroyed || request.destroyed) return;
 	const upstream = httpRequest(
 		{
 			host: LOOPBACK,
