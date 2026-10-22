@@ -18338,3 +18338,97 @@ export type GetSecurityStatusResponses = {
 };
 
 export type GetSecurityStatusResponse = GetSecurityStatusResponses[keyof GetSecurityStatusResponses];
+
+export type PostPaymentAcknowledgeManualActionData = {
+    /**
+     * Requests to acknowledge
+     */
+    body?: {
+        /**
+         * The network the requests were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Blockchain identifiers of the requests to acknowledge
+         */
+        blockchainIdentifiers: Array<string>;
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/acknowledge-manual-action';
+};
+
+export type PostPaymentAcknowledgeManualActionErrors = {
+    /**
+     * Bad Request (invalid input)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostPaymentAcknowledgeManualActionResponses = {
+    /**
+     * Acknowledged count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Requests that were in Needs Action and are now acknowledged. Others in the list are skipped.
+             */
+            acknowledgedCount: number;
+        };
+    };
+};
+
+export type PostPaymentAcknowledgeManualActionResponse = PostPaymentAcknowledgeManualActionResponses[keyof PostPaymentAcknowledgeManualActionResponses];
+
+export type PostPurchaseAcknowledgeManualActionData = {
+    /**
+     * Requests to acknowledge
+     */
+    body?: {
+        /**
+         * The network the requests were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Blockchain identifiers of the requests to acknowledge
+         */
+        blockchainIdentifiers: Array<string>;
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/acknowledge-manual-action';
+};
+
+export type PostPurchaseAcknowledgeManualActionErrors = {
+    /**
+     * Bad Request (invalid input)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostPurchaseAcknowledgeManualActionResponses = {
+    /**
+     * Acknowledged count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Requests that were in Needs Action and are now acknowledged. Others in the list are skipped.
+             */
+            acknowledgedCount: number;
+        };
+    };
+};
+
+export type PostPurchaseAcknowledgeManualActionResponse = PostPurchaseAcknowledgeManualActionResponses[keyof PostPurchaseAcknowledgeManualActionResponses];
