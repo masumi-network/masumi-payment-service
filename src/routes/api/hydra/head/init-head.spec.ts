@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
 import { HydraCommandRejectedError, HydraPostTxRejectedError } from '@/lib/hydra';
@@ -263,25 +263,34 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 describe('initHeadPost, with two requests at once', () => {
 	const init = (headId = 'head-1') => initHeadPost.handler({ input: { headId } });
 
+	// A test that fails early leaves its queued one-off init results behind.
+	afterEach(() => {
+		mockInit.mockReset();
+	});
+
 	it('refuses a second init while the first is in flight, without recording an error', async () => {
-		let startFirst!: () => void;
+		let startFirst: (() => void) | undefined;
 		mockInit.mockImplementationOnce(() => new Promise<void>((resolve) => (startFirst = resolve)));
 
 		const first = init();
-		await new Promise((resolve) => setImmediate(resolve));
-		await expect(init()).rejects.toMatchObject({
-			statusCode: 409,
-			message: 'Hydra head init is already in progress',
-		});
+		try {
+			await new Promise((resolve) => setImmediate(resolve));
+			await expect(init()).rejects.toMatchObject({
+				statusCode: 409,
+				message: 'Hydra head init is already in progress',
+			});
 
-		// A refusal is not a failed command, and the node was asked once.
-		expect(mockRecordHeadError).not.toHaveBeenCalled();
-		expect(mockInit).toHaveBeenCalledTimes(1);
-		startFirst();
-		await first.catch(() => undefined);
+			// A refusal is not a failed command, and the node was asked once.
+			expect(mockRecordHeadError).not.toHaveBeenCalled();
+			expect(mockInit).toHaveBeenCalledTimes(1);
+		} finally {
+			// Settled even when an assertion fails, so the slot never leaks into later tests.
+			startFirst?.();
+			await first.catch(() => undefined);
+		}
 	});
 
-	it('accepts an init again once the one in flight has failed', async () => {
+	it('accepts an init again after an earlier one failed', async () => {
 		mockInit
 			.mockRejectedValueOnce(
 				new HydraPostTxRejectedError('hydra-node refused to post the Init transaction: NoSeedInput'),
@@ -289,8 +298,9 @@ describe('initHeadPost, with two requests at once', () => {
 			.mockResolvedValueOnce(undefined);
 
 		await expect(init()).rejects.toMatchObject({ statusCode: 504 });
-		await init().catch(() => undefined);
+		const second = await init().catch((error: unknown) => error);
 
+		expect(second).not.toMatchObject({ message: 'Hydra head init is already in progress' });
 		expect(mockInit).toHaveBeenCalledTimes(2);
 	});
 
@@ -305,10 +315,12 @@ describe('initHeadPost, with two requests at once', () => {
 
 		const first = init('head-1');
 		const second = init('head-2');
-		await new Promise((resolve) => setImmediate(resolve));
-
-		expect(mockInit).toHaveBeenCalledTimes(2);
-		for (const resolve of finish) resolve();
-		await Promise.all([first.catch(() => undefined), second.catch(() => undefined)]);
+		try {
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(mockInit).toHaveBeenCalledTimes(2);
+		} finally {
+			for (const resolve of finish) resolve();
+			await Promise.all([first.catch(() => undefined), second.catch(() => undefined)]);
+		}
 	});
 });

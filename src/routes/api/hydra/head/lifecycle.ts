@@ -108,6 +108,10 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 
 		const cm = getHydraConnectionManager();
 
+		// hydra-node refuses a second Init with a CommandFailed that names no request, so it
+		// fails every waiting Init, the one that started the head too. No await between this
+		// check and the add, so two requests cannot both pass. Thrown before the try: a
+		// refusal is not a failed command.
 		if (initsInFlight.has(head.id)) {
 			throw createHttpError(409, 'Hydra head init is already in progress');
 		}
