@@ -239,6 +239,39 @@ describe('attemptRedemption outcomes', () => {
 		expect(send).toHaveBeenCalledTimes(4);
 	});
 
+	// Regression: a gateway 503 may follow a stored redemption, so a discardable
+	// answer to the resend must not stand for the first send.
+	it.each([
+		['the Host refuses as busy', { status: 503, detail: '{"error":"exchange is busy"}' }],
+		['the Host masks the nonce', { status: 404, detail: '{"error":"no such invite"}' }],
+		['the Host is over budget', { status: 429, detail: '{"error":"too many requests"}' }],
+	])('reports a gateway 503 then %s as unknown', async (_label, later) => {
+		const send = jest
+			.fn<NonNullable<ExchangeClientDeps['send']>>()
+			.mockResolvedValueOnce({ status: 503, detail: '<html>503</html>' })
+			.mockResolvedValue(later);
+
+		await expect(attempt(send)).resolves.toMatchObject({ kind: 'unknown' });
+	});
+
+	it('reports a gateway 503 then a refused connection as unknown', async () => {
+		const send = jest
+			.fn<NonNullable<ExchangeClientDeps['send']>>()
+			.mockResolvedValueOnce({ status: 503, detail: '<html>503</html>' })
+			.mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+
+		await expect(attempt(send)).resolves.toMatchObject({ kind: 'unknown' });
+	});
+
+	it('reports a gateway 503 then a replayed acknowledgement as accepted', async () => {
+		const send = jest
+			.fn<NonNullable<ExchangeClientDeps['send']>>()
+			.mockResolvedValueOnce({ status: 503, detail: '<html>503</html>' })
+			.mockResolvedValue({ status: 200, detail: '{"redeemed":true}' });
+
+		await expect(attempt(send)).resolves.toEqual({ kind: 'accepted' });
+	});
+
 	it('reports a refused transport opt-in as never sent', async () => {
 		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>();
 

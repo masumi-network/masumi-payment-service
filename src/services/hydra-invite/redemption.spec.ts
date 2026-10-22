@@ -7,7 +7,7 @@
  * redemption that landed burns the invite for both sides.
  */
 import { describe, expect, it, jest } from '@jest/globals';
-import type { ExchangeAttempt } from './exchange-client';
+import { readRefusal, type ExchangeAttempt } from './exchange-client';
 import { advanceRedemption, type RedemptionPorts, type RedemptionState } from './redemption';
 
 const issuerPeer = { advertise: 'issuer.example:5001', hydraVerificationKey: 'hvk', cardanoVerificationKey: 'cvk' };
@@ -36,11 +36,10 @@ function ports(attempt: ExchangeAttempt, overrides: Partial<RedemptionPorts> = {
 	return fakes as typeof fakes & RedemptionPorts;
 }
 
-const answered = (status: number, detail: string, code: string | null = null): ExchangeAttempt => ({
+const answered = (status: number, detail: string): ExchangeAttempt => ({
 	kind: 'answered',
 	status,
-	code,
-	fromHost: detail.startsWith('{'),
+	...readRefusal(detail),
 	detail,
 });
 const HOST_BUSY = answered(503, '{"error":"exchange is busy"}');
@@ -102,10 +101,7 @@ describe('a later attempt, by a retry or the resume job', () => {
 
 	it.each([
 		['the invite expired unredeemed', answered(410, '{"error":"invite expired"}')],
-		[
-			'someone else redeemed it',
-			answered(409, '{"error":"invite already redeemed","code":"redeemed-by-other"}', 'redeemed-by-other'),
-		],
+		['someone else redeemed it', answered(409, '{"error":"invite already redeemed","code":"redeemed-by-other"}')],
 	])('fails the record when %s', async (_label, attempt) => {
 		const fakes = ports(attempt);
 

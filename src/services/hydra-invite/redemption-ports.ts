@@ -213,6 +213,18 @@ export function buildRedemptionPorts(input: {
 
 		start: async () => {
 			const host = hostAccess(record);
+			// Read again here: a pause that landed after the record was read has
+			// already stopped this node, and starting it now would undo that.
+			const current = await prisma.hydraHost.findUnique({
+				where: { id: record.hydraHostId },
+				select: { pausedAt: true },
+			});
+			if (current?.pausedAt != null) {
+				throw createHttpError(
+					409,
+					'your Hydra Host was paused for maintenance; the redemption continues once it is resumed',
+				);
+			}
 			await startHostNode(host.baseUrl, host.adminToken, record.hostNodeId, host.transport);
 		},
 

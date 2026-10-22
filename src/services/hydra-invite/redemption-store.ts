@@ -17,13 +17,14 @@ export const LIVE_REDEEMER_STATUSES = [HydraInviteStatus.Redeemed, HydraInviteSt
 /**
  * Record the intent. `created: false` means a concurrent request recorded the
  * same nonce first, and the caller should resume that record instead.
+ * `updatedAt` is the version the creator owns: a retry's claim moves it on.
  */
 export async function createRedeemerRecord(
 	data: Prisma.HydraHeadInviteCreateInput,
-): Promise<{ created: true; id: string } | { created: false }> {
+): Promise<{ created: true; id: string; updatedAt: Date } | { created: false }> {
 	try {
-		const row = await prisma.hydraHeadInvite.create({ data, select: { id: true } });
-		return { created: true, id: row.id };
+		const row = await prisma.hydraHeadInvite.create({ data, select: { id: true, updatedAt: true } });
+		return { created: true, id: row.id, updatedAt: row.updatedAt };
 	} catch (error) {
 		if (isUniqueConstraintError(error)) return { created: false };
 		throw error;

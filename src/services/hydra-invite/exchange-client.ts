@@ -278,7 +278,7 @@ const NEVER_SENT_ERROR_CODES = new Set([
  * Read a refusal body. Every Host refusal is `{ error }`, and a newer Host adds
  * `code`; a gateway's HTML or plain text is neither, so it reads as not the Host's.
  */
-function readRefusal(detail: string): { code: string | null; fromHost: boolean } {
+export function readRefusal(detail: string): { code: string | null; fromHost: boolean } {
 	try {
 		const parsed: unknown = JSON.parse(detail);
 		if (typeof parsed === 'object' && parsed !== null) {
@@ -317,6 +317,7 @@ async function attempt(
 		logger.warn(`hydra: sending ${what} to explicitly allowed private address for ${url.host}`);
 	}
 
+	let earlierMayHaveLanded = false;
 	try {
 		const send = deps.send ?? sendPinnedRequest;
 		const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -326,16 +327,22 @@ async function attempt(
 		// landed and spent the nonce, so it is never retried.
 		for (const delayMs of BUSY_RETRY_DELAYS_MS) {
 			if (result.status !== BUSY_STATUS) break;
+			// A 503 that is not the Host's own may follow a redemption it stored, and
+			// then whatever the resend hears says nothing about the first send.
+			if (!readRefusal(result.detail).fromHost) earlierMayHaveLanded = true;
 			await sleep(delayMs);
 			result = await send(url, target, payload);
 		}
 		if (result.status >= 200 && result.status < 300) return { kind: 'accepted' };
+		if (earlierMayHaveLanded) {
+			return { kind: 'unknown', reason: `a gateway answered ${BUSY_STATUS} before the Host did`, host: url.host };
+		}
 		return { kind: 'answered', status: result.status, ...readRefusal(result.detail), detail: result.detail };
 	} catch (error) {
 		const reason = (error as Error).message;
 		logger.warn(`hydra: ${what} to ${url.host} failed: ${reason}`);
 		const code = (error as NodeJS.ErrnoException).code;
-		if (code !== undefined && NEVER_SENT_ERROR_CODES.has(code)) {
+		if (!earlierMayHaveLanded && code !== undefined && NEVER_SENT_ERROR_CODES.has(code)) {
 			return {
 				kind: 'not-sent',
 				error: createHttpError(502, `could not reach the counterparty exchange at ${url.host}: ${reason}`),
