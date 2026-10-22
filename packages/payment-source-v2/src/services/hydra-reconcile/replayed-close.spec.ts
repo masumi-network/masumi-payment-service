@@ -28,7 +28,7 @@ describe('recordReplayedCloseSnapshot', () => {
 		mockFetchClosedHeadFacts.mockResolvedValue({ contestationDeadline: CONTEST_DEADLINE, snapshotNumber: 5 });
 	});
 
-	it('raises a closed row to the contested snapshot and moves its deadline to a later time', async () => {
+	it('raises the row of a live Closed head and moves its deadline to a later time', async () => {
 		await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(HydraHeadStatus.Closed, 5n))).resolves.toBe(true);
 
 		// The deadline first: the raise ends the trigger, so a deadline written after it
@@ -37,6 +37,7 @@ describe('recordReplayedCloseSnapshot', () => {
 		expect(deadlineWrite).toMatchObject({
 			where: {
 				id: 'head-1',
+				isEnabled: true,
 				status: HydraHeadStatus.Closed,
 				OR: [{ contestationDeadline: null }, { contestationDeadline: { lt: new Date(CONTEST_DEADLINE) } }],
 			},
@@ -45,6 +46,7 @@ describe('recordReplayedCloseSnapshot', () => {
 		expect(raise).toMatchObject({
 			where: {
 				id: 'head-1',
+				isEnabled: true,
 				status: {
 					in: [
 						HydraHeadStatus.Closed,
@@ -61,7 +63,7 @@ describe('recordReplayedCloseSnapshot', () => {
 	});
 
 	it.each([HydraHeadStatus.FanoutPossible, HydraHeadStatus.FanningOut, HydraHeadStatus.Final])(
-		'raises a %s row without asking the node for a deadline',
+		'raises the row of a live %s head without asking the node for a deadline',
 		async (status) => {
 			await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(status, 5n))).resolves.toBe(true);
 
@@ -98,7 +100,7 @@ describe('recordReplayedCloseSnapshot', () => {
 		);
 	});
 
-	it('holds the raise of a closed row until the node returns its head state', async () => {
+	it('holds the raise of a live Closed head until the node returns its head state', async () => {
 		// The raise ends the trigger, so raising here would lose the contest's deadline.
 		mockFetchClosedHeadFacts.mockResolvedValue(undefined);
 
