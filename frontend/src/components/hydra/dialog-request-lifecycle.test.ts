@@ -173,6 +173,7 @@ function mount(kind: 'backup' | 'invite', requests: ReturnType<typeof deferred>[
       for (const slot of slots) slot?.cleanup?.();
     },
     has: (text: string) => JSON.stringify(tree).includes(text),
+    find: (predicate: (element: Element) => boolean) => find(predicate, tree),
     onOpenChange: (open: boolean) =>
       (
         find((element: any) => typeof element.props?.onOpenChange === 'function', tree) as any
@@ -264,6 +265,25 @@ test('backup: refuses to close while the one-time reveal is in flight', async ()
   await flush();
   dialog.render();
   assert.equal(dialog.has(keys.hydraSigningKey), true);
+});
+test('backup: refuses to close after reveal until the operator confirms the keys are saved', async () => {
+  const pending = deferred();
+  const dialog = mount('backup', [pending]);
+  dialog.start();
+  pending.resolve(keys);
+  await flush();
+  dialog.render();
+  dialog.onOpenChange(false);
+  dialog.render();
+  assert.equal(dialog.props.open, true);
+  assert.equal(dialog.has(keys.hydraSigningKey), true);
+  assert.equal(dialog.button('Done').props.disabled, true);
+  (
+    dialog.find((element: any) => typeof element.props?.onCheckedChange === 'function') as any
+  ).props.onCheckedChange(true);
+  dialog.render();
+  dialog.button('Done').props.onClick!();
+  assert.equal(dialog.props.open, false);
 });
 test('backup: participant change rejects pending keys but refreshes metadata', async () => {
   const pending = deferred();
