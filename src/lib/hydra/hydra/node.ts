@@ -623,6 +623,15 @@ export class HydraNode extends EventEmitter {
 		return this._live.chainSynced;
 	}
 
+	/**
+	 * Drop the history socket so a fresh pass replays the log and re-earns the
+	 * confirmed-transaction evidence. The replacement socket reconnects on the
+	 * normal transport schedule; already verified evidence is kept.
+	 */
+	restartHistoryReplay(reason: string): void {
+		this._historyConnection.invalidate(new HydraTransportError(reason));
+	}
+
 	isTxConfirmed(txHash: string): boolean {
 		return this._ledger.hasConfirmed(txHash);
 	}
