@@ -23,7 +23,8 @@ import { logger } from '@masumi/payment-core/logger';
 import { HydraInviteStatus } from '@/generated/prisma/client';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
 import { decrypt } from '@/utils/security/encryption';
-import { HydraHostRequestError, removeHostNode } from '@/services/hydra-host/client';
+import { removeHostNode } from '@/services/hydra-host/client';
+import { isHostNodeGone } from '@/services/hydra-host/node-gone';
 
 export type ReservationRelease = {
 	/** Participants deleted, along with their keys. */
@@ -203,7 +204,7 @@ async function removeReservedHostNode(hydraHostId: string, hostNodeId: string): 
 	} catch (error) {
 		// A node the Host no longer has is the outcome this asks for — the usual
 		// case, because revoke and the expiry sweep both remove it before calling.
-		if (error instanceof HydraHostRequestError && error.status === 404) return true;
+		if (isHostNodeGone(error)) return true;
 		logger.warn(`hydra: could not remove reserved node ${hostNodeId}: ${(error as Error).message}`);
 		return false;
 	}
