@@ -191,7 +191,7 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 			mockInit.mockClear();
 			await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 				statusCode: 409,
-				message: expect.stringMatching(/catch up/),
+				message: expect.stringMatching(/still behind the chain/),
 			});
 			expect(mockInit).not.toHaveBeenCalled();
 		} finally {

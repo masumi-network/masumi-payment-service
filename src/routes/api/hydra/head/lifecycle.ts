@@ -112,12 +112,17 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 
 		// An Init that timed out on a node behind the chain may still be parked there, to be
 		// posted once the node catches up. A second Init now is refused with a CommandFailed,
-		// recorded against a head that is fine. Only a node that says it is behind holds the
-		// retry: one that cannot be asked proceeds as before.
+		// recorded against a head that is fine. If the first was never sent (our client also
+		// waits for a node that is behind), a retry would only wait and time out again. Only a
+		// Host that says the node is behind holds the retry: one that cannot be asked proceeds.
 		if (initsAwaitingNode.has(head.id)) {
 			const nodeState = await readParticipantNodeState(head.LocalParticipant.id);
 			if (nodeState.chainSynced === false) {
-				throw createHttpError(409, "An earlier Init is still waiting for this head's node to catch up with the chain");
+				throw createHttpError(
+					409,
+					"An earlier Init is still waiting for this head's node: its Hydra Host reports the node is still " +
+						'behind the chain. Retry once the Host reports it caught up',
+				);
 			}
 			initsAwaitingNode.delete(head.id);
 		}
