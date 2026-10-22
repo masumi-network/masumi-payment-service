@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraCommandRefusedUnsyncedError } from '@/lib/hydra/hydra/errors';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -172,6 +173,20 @@ describe('partialFanoutHeadPost', () => {
 			expect(mockPartialFanout).not.toHaveBeenCalled();
 		},
 	);
+
+	it('answers an unsynced refusal as not posted, without a head error', async () => {
+		mockPartialFanout.mockRejectedValue(
+			new HydraCommandRefusedUnsyncedError(
+				'Command PartialFanout was refused: the node is not synced with the chain (drift 90s)',
+			),
+		);
+
+		await expect(handler({ input: { headId: 'head-1', outputRefs: [A] } })).rejects.toMatchObject({
+			statusCode: 503,
+			message: expect.stringMatching(/step was not posted/),
+		});
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
 
 	it('records a refused step on the head', async () => {
 		const refused = new Error('Command PartialFanout failed');

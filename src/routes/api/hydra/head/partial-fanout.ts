@@ -22,6 +22,7 @@ import {
 	type HydraFanoutHeadState,
 	type HydraFanoutRemainingUtxo,
 } from '@/lib/hydra/hydra/fanout-head-state';
+import { HydraCommandRefusedUnsyncedError } from '@/lib/hydra/hydra/errors';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from '@/lib/hydra/hydra/snapshot-limits';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
@@ -200,6 +201,14 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 			});
 			return { headId: head.id, status: persistedHead.status, selectedCount };
 		} catch (error) {
+			// Behind the chain, the node drops the step without posting anything.
+			// Self-resolving, so it gets an actionable answer and no head error.
+			if (error instanceof HydraCommandRefusedUnsyncedError) {
+				throw createHttpError(
+					503,
+					`${error.message}. The step was not posted; send it again once the node has caught up.`,
+				);
+			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'PartialFanout');
 			throw error;
 		}
