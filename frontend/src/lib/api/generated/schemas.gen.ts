@@ -7178,7 +7178,8 @@ export const HydraLowBalanceRuleSchema = {
                 'Unknown',
                 'Healthy',
                 'Low'
-            ]
+            ],
+            description: 'Last evaluated state. A Low rule stays Low on a reading the history replay has not checked, so lastKnownAmount can be at or above the threshold while it is Low.'
         },
         lastKnownAmount: {
             type: 'string',

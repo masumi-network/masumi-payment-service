@@ -20,10 +20,12 @@ import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
 import { pollHydraRedemptions, reapExpiredInvites } from '@/services/hydra-invite/adoption';
+import { resumeHydraRedemptions } from '@/services/hydra-invite/resume-redemptions';
 import { releaseAbandonedReservations } from '@/services/hydra-invite/release-reservation';
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
 import { runHydraSnapshotRoundWatch } from '@/services/hydra-snapshot-round/watch';
+import { runHydraContestWatch } from '@/services/hydra-contest-watch/watch';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { reconcileRecoveredHydraTopups } from '@/services/hydra-topup-reconciliation/recovered';
 import {
@@ -40,6 +42,8 @@ import { logger } from '@masumi/payment-core/logger';
 
 /** A stuck round alerts after ten minutes, so once a minute is plenty. */
 const HYDRA_SNAPSHOT_ROUND_WATCH_INTERVAL_MS = 60_000;
+/** A missing contest alerts after two minutes, so a check once a minute keeps the alert prompt. */
+const HYDRA_CONTEST_WATCH_INTERVAL_MS = 60_000;
 /**
  * A paused Host's nodes stop once its in-flight work is done. While the pause
  * waits, no new work starts on it, so checking twice a minute keeps the wait
@@ -201,6 +205,20 @@ export const scheduledJobs: JobDefinition[] = [
 		},
 	},
 	{
+		initialDelayMs: 11000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra redemption resume',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra redemption resume',
+		// The redeeming side's mirror of the poll above. Redeeming an invite spends
+		// its nonce on the issuer's Host before our node is configured, so a crash
+		// or a Host outage in between leaves a redemption the issuer is waiting on.
+		// A job of its own, so a redeemer Host that is down cannot delay adoption.
+		run: async () => {
+			await resumeHydraRedemptions();
+		},
+	},
+	{
 		initialDelayMs: 18000,
 		intervalMs: CONFIG.LOW_BALANCE_CHECK_INTERVAL * 1000,
 		startMessage: 'Starting Hydra in-head low-balance monitoring',
@@ -215,6 +233,14 @@ export const scheduledJobs: JobDefinition[] = [
 		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra snapshot round watch',
 		run: runHydraSnapshotRoundWatch,
+	},
+	{
+		initialDelayMs: 21500,
+		intervalMs: HYDRA_CONTEST_WATCH_INTERVAL_MS,
+		startMessage: 'Starting Hydra contest watch',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra contest watch',
+		run: runHydraContestWatch,
 	},
 	{
 		initialDelayMs: 22000,

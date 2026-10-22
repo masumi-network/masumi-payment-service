@@ -32,6 +32,24 @@ describe('describePostTxError', () => {
 		},
 	);
 
+	// The tag says what kind of failure; the node's own reason says which rule
+	// broke. Dropping it left a failed contest with nothing an operator could act on.
+	it("keeps the node's own reason next to the explanation", () => {
+		expect(describePostTxError({ tag: 'FailedToPostTx', failureReason: 'BadInputsUTxO' })).toBe(
+			'FailedToPostTx: the chain backend refused the transaction (BadInputsUTxO)',
+		);
+		expect(describePostTxError({ tag: 'InternalWalletError', reason: 'no change output' })).toContain(
+			'(no change output)',
+		);
+		expect(describePostTxError({ tag: 'FailedToPostTx', failureReason: 42 })).toBe(
+			'FailedToPostTx: the chain backend refused the transaction',
+		);
+	});
+
+	it('explains the fuel tag in the spelling hydra-node sends', () => {
+		expect(describePostTxError({ tag: 'NoFuelUTXOFound' })).toContain('Fund the node');
+	});
+
 	it('still reads a tag the node did put there', () => {
 		expect(postTxErrorTag({ tag: 'NoSeedInput' })).toBe('NoSeedInput');
 		expect(postTxErrorTag({})).toBeNull();

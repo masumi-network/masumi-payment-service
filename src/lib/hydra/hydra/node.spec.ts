@@ -1,10 +1,18 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { createPrivateKey, createPublicKey, sign as signEd25519, type KeyObject } from 'node:crypto';
 import { resolveTxHash } from '@meshsdk/core';
 import {
 	Address,
+	AssetName,
+	Assets,
 	BigNum,
+	Int,
+	Mint,
+	MintAssets,
+	MultiAsset,
+	ScriptHash,
 	Transaction,
 	TransactionBody,
 	TransactionHash,
@@ -17,6 +25,7 @@ import {
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
+import type { L2MintIncident } from './l2-mint-tally';
 import {
 	HydraProtocolError,
 	HydraTransactionRejectedError,
@@ -151,6 +160,49 @@ function makeSpendingHydraTransaction(inputTxHash: string, inputIndex: number, o
 		description: '',
 		txId: String(resolveTxHash(cborHex)).toLowerCase(),
 	};
+}
+
+const MINT_POLICY_ID = 'ab'.repeat(28);
+const MINT_ASSET_NAME = '6576696c';
+
+/** Spends output 0 of `inputTxHash` and mints (positive) or burns (negative) one asset. */
+function makeMintingHydraTransaction(inputTxHash: string, outputLovelace: number, mintQuantity: number) {
+	const inputs = TransactionInputs.new();
+	inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(inputTxHash, 'hex')), 0));
+	const value = Value.new(BigNum.from_str(String(outputLovelace)));
+	if (mintQuantity > 0) {
+		const assets = Assets.new();
+		assets.insert(AssetName.new(Buffer.from(MINT_ASSET_NAME, 'hex')), BigNum.from_str(String(mintQuantity)));
+		const multiAsset = MultiAsset.new();
+		multiAsset.insert(ScriptHash.from_hex(MINT_POLICY_ID), assets);
+		value.set_multiasset(multiAsset);
+	}
+	const outputs = TransactionOutputs.new();
+	outputs.add(TransactionOutput.new(Address.from_bech32(TEST_ADDRESS), value));
+	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+	const mintAssets = MintAssets.new();
+	mintAssets.insert(
+		AssetName.new(Buffer.from(MINT_ASSET_NAME, 'hex')),
+		mintQuantity < 0
+			? Int.new_negative(BigNum.from_str(String(-mintQuantity)))
+			: Int.new(BigNum.from_str(String(mintQuantity))),
+	);
+	body.set_mint(Mint.new_from_entry(ScriptHash.from_hex(MINT_POLICY_ID), mintAssets));
+	const cborHex = Buffer.from(Transaction.new(body, TransactionWitnessSet.new()).to_bytes()).toString('hex');
+	return {
+		type: HydraTransactionType.TxConwayEra,
+		cborHex,
+		description: '',
+		txId: String(resolveTxHash(cborHex)).toLowerCase(),
+	};
+}
+
+/** A snapshot output holding one unit of the test mint. */
+function mintedTokenOutput(lovelace: number): TestSnapshotOutput {
+	return {
+		...snapshotOutput(lovelace),
+		value: { lovelace, [MINT_POLICY_ID]: { [MINT_ASSET_NAME]: 1 } },
+	} as unknown as TestSnapshotOutput;
 }
 
 function signedSnapshotFrame(options: {
@@ -596,6 +648,191 @@ describe('HydraNode', () => {
 		});
 	});
 
+	// The node posts some L1 transactions on its own, a contest above all: when a
+	// peer closes on an old snapshot it answers with ContestTx without being
+	// asked. If that post fails, no command is waiting on it, so the frame used to
+	// be read and dropped and the failure left no trace. Frames below use the real
+	// hydra-node shape: no top-level head id, the head named inside postChainTx.
+	describe('PostTxOnChainFailed processing', () => {
+		function failureEvents(node: { on(event: string, listener: (data: unknown) => void): unknown }) {
+			const events: unknown[] = [];
+			node.on(HydraNodeEvent.PostTxFailed, (data) => events.push(data));
+			return events;
+		}
+
+		function postTxFailedFrame(
+			postChainTx: { tag: string; headId?: string },
+			postTxError: { tag: string; failureReason?: string },
+		) {
+			return JSON.stringify({ tag: 'PostTxOnChainFailed', postChainTx, postTxError });
+		}
+
+		async function pinnedNode() {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const connectPromise = node.connect();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Open', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+			return node;
+		}
+
+		it('reports a failed contest with the transaction and the node reason', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+
+			expect(events).toEqual([
+				{ postChainTxTag: 'ContestTx', reason: expect.stringContaining('NotEnoughFuel'), answersCommand: false },
+			]);
+		});
+
+		it.each(['DecrementTx', 'IncrementTx', 'RecoverTx', 'FanoutTx'])('reports a failed %s too', (tag) => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag }, { tag: 'FailedToPostTx' }));
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: tag })]);
+		});
+
+		// Reported, not dropped: a failure whose shape we cannot read is still a failure.
+		it('reports a failure it cannot read as an unknown transaction', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'PostTxOnChainFailed',
+					postChainTx: { tag: 42 },
+					postTxError: { tag: 'FailedToPostTx' },
+				}),
+			);
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+
+			expect(events).toEqual([
+				expect.objectContaining({ postChainTxTag: 'unknown' }),
+				expect.objectContaining({ postChainTxTag: 'unknown', reason: 'no reason given' }),
+			]);
+		});
+
+		it('reports only the failures that name the pinned head', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: 'b'.repeat(56) }, { tag: 'FailedToPostTx' }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A.toUpperCase() }, { tag: 'FailedToPostTx' }),
+			);
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+		});
+
+		// Held like a settlement outcome: a frame that arrives before the session
+		// proves its identity is emitted once it does, not dropped.
+		it('holds a failure seen before the session is authenticated until it is', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const events = failureEvents(node);
+			// The manager records the failure with the status it reads at this moment.
+			const statusAtFailure: HydraHeadStatus[] = [];
+			node.on(HydraNodeEvent.PostTxFailed, () => statusAtFailure.push(node.status));
+			const connectPromise = node.connect();
+
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag: 'ContestTx' }, { tag: 'NotEnoughFuel' }));
+			expect(events).toEqual([]);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Closed', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+			expect(statusAtFailure).toEqual([HydraHeadStatus.Closed]);
+		});
+
+		// The node said an L1 post failed but not which. Waiting out the full
+		// timeout for a Close that may be the one that failed helps no one.
+		it('fails a waiting Close at once on a failure that names no transaction', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The caller's row quotes the node's reason too.
+			await expect(closePromise).rejects.toThrow(/unnamed failed L1 transaction/);
+			// Not marked as the command's: the Init route can settle an ambiguous Init
+			// without a record, so the manager keeps the only sure one.
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'unknown', answersCommand: false })]);
+		});
+
+		// The live path ignores a failure for another head, so a waiting Close must
+		// too: otherwise the Close fails on a frame nothing else records.
+		it('keeps a waiting Close for a failure that names another head', async () => {
+			const node = await pinnedNode();
+			const closePromise = node.close();
+			let isSettled = false;
+			void closePromise.catch(() => undefined).finally(() => (isSettled = true));
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_B }, { tag: 'NotEnoughFuel' }),
+			);
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(isSettled).toBe(false);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			await expect(closePromise).rejects.toThrow(/NotEnoughFuel/);
+		});
+
+		// The waiting Close reports its own failure, so the event says so and the
+		// manager does not write the same failure twice.
+		it('marks a failure a waiting command answers, and only that one', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The caller's CommandFailed row is now the only record, so it keeps the reason.
+			await expect(closePromise).rejects.toThrow(/NotEnoughFuel/);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+
+			expect(events).toEqual([
+				expect.objectContaining({ postChainTxTag: 'ContestTx', answersCommand: false }),
+				expect.objectContaining({ postChainTxTag: 'CloseTx', answersCommand: true }),
+				expect.objectContaining({ postChainTxTag: 'CloseTx', answersCommand: false }),
+			]);
+		});
+	});
+
 	describe('unsigned SnapshotConfirmed processing', () => {
 		it('fails closed, invalidates the history socket, and retains no evidence', async () => {
 			const { node, historyConnection } = await startSignedNode();
@@ -652,6 +889,125 @@ describe('HydraNode', () => {
 			liveConnection.emit('message', JSON.stringify(liveGreetings()));
 			expect(node.status).toBe(HydraHeadStatus.Open);
 			expect(node.getVerifiedFanoutReference(hydraReference, 3)).toBeNull();
+		});
+
+		// A peer can mint through its own node, and Hydra cannot finalize a head
+		// that still holds the token. Replay has to name the unit so our own
+		// spending leaves it alone, name nothing before the whole history is in,
+		// and drop the unit once it is burned.
+		it('tracks units minted in the head and not burned', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
+			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
+			const frames = [
+				signedSnapshotFrame({
+					seq: 1,
+					number: 1,
+					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
+					confirmed: [],
+				}),
+				signedSnapshotFrame({
+					seq: 2,
+					number: 2,
+					utxo: { [`${mintTx.txId}#0`]: mintedTokenOutput(9_000_000) },
+					confirmed: [mintTx],
+				}),
+				signedSnapshotFrame({
+					seq: 3,
+					number: 3,
+					utxo: { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) },
+					confirmed: [burnTx],
+				}),
+			];
+			for (const frame of frames.slice(0, 2)) historyConnection.emit('message', JSON.stringify(frame));
+
+			expect(node.l2MintCheck).toBeUndefined();
+			finishHistoryReplay(historyConnection);
+			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set([`${MINT_POLICY_ID}${MINT_ASSET_NAME}`]));
+			expect(node.l2MintCheck?.verifiedOutputs.has(`${mintTx.txId}#0`)).toBe(true);
+
+			// A new history socket replays from the start. Counting the mint again
+			// on top of the old pass would leave the unit flagged after its burn.
+			historyConnection.emit('close');
+			expect(node.l2MintCheck).toBeUndefined();
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set());
+			expect(node.l2MintCheck?.verifiedOutputs.has(`${burnTx.txId}#0`)).toBe(true);
+		});
+
+		// The operator record is written from this event. It must not fire for
+		// history still being read, must fire again on a later pass so a restart
+		// cannot lose it, and must name the transaction that opened the incident.
+		it('reports an unburned mint once the replay is current', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const reported: string[] = [];
+			node.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => reported.push(incident.txHash));
+			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
+			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
+			const remintTx = makeMintingHydraTransaction(burnTx.txId, 7_000_000, 1);
+			const laterTx = makeMintingHydraTransaction(remintTx.txId, 6_000_000, 1);
+			const history = [
+				signedSnapshotFrame({
+					seq: 1,
+					number: 1,
+					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
+					confirmed: [],
+				}),
+				signedSnapshotFrame({
+					seq: 2,
+					number: 2,
+					utxo: { [`${mintTx.txId}#0`]: mintedTokenOutput(9_000_000) },
+					confirmed: [mintTx],
+				}),
+			];
+			for (const frame of history) historyConnection.emit('message', JSON.stringify(frame));
+			expect(reported).toEqual([]);
+			finishHistoryReplay(historyConnection);
+			expect(reported).toEqual([mintTx.txId]);
+
+			historyConnection.emit('close');
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			for (const frame of history) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			expect(reported).toEqual([mintTx.txId, mintTx.txId]);
+
+			// Live from here: the burn closes the incident, the next mint opens a
+			// new one, and each later snapshot reports it again while it is open.
+			const live = [
+				signedSnapshotFrame({
+					seq: 3,
+					number: 3,
+					utxo: { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) },
+					confirmed: [burnTx],
+				}),
+				signedSnapshotFrame({
+					seq: 4,
+					number: 4,
+					utxo: { [`${remintTx.txId}#0`]: mintedTokenOutput(7_000_000) },
+					confirmed: [remintTx],
+				}),
+				signedSnapshotFrame({
+					seq: 5,
+					number: 5,
+					utxo: { [`${laterTx.txId}#0`]: mintedTokenOutput(6_000_000) },
+					confirmed: [laterTx],
+				}),
+			];
+			for (const frame of live) historyConnection.emit('message', JSON.stringify(frame));
+			expect(reported).toEqual([mintTx.txId, mintTx.txId, remintTx.txId, remintTx.txId]);
+		});
+
+		// A head with no signed snapshot, or a node rebuilt from L1, states its
+		// ledger only in Greetings. No transaction behind it was tallied, so a
+		// token there must not pass as checked.
+		it('vouches for no output on the unsigned Greetings anchor', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const snapshotUtxo = { [`${'22'.repeat(32)}#0`]: mintedTokenOutput(9_000_000) };
+			historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), snapshotUtxo }));
+
+			expect(node.l2MintCheck).toEqual({ unburnedUnits: new Set(), verifiedOutputs: new Map() });
 		});
 
 		// Hydra 2.2.0 renamed HeadIsFinalized's `utxo` to `finalizedUTxO`, and 2.3.0
@@ -1533,6 +1889,19 @@ describe('HydraNode', () => {
 			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
 		});
 
+		// The backstop. Consolidate has no earlier check of its own; split,
+		// release nudge and decommit check before they record anything.
+		it('refuses a NewTx or Decommit above the shipped L2 maxTxSize before sending', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const oversized = { type: HydraTransactionType.TxConwayEra, description: '', cborHex: '00'.repeat(15_001) };
+
+			await expect(node.newTx(oversized)).rejects.toThrow('15001 bytes');
+			await expect(node.decommit(oversized)).rejects.toThrow('15001 bytes');
+			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
+			expect(mockFetch).not.toHaveBeenCalled();
+		});
+
 		it('correlates CommandFailed to only the matching concurrent transaction', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();
@@ -1553,6 +1922,24 @@ describe('HydraNode', () => {
 			);
 
 			await expect(secondSubmit).resolves.toBe(tx2.txId);
+		});
+
+		// An unnamed L1 failure is no answer to an L2 transaction. Failing it as
+		// ambiguous would fail an escrow step closed for nothing.
+		it('keeps waiting on a failed L1 post that names no transaction', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const transaction = makeHydraTransaction(19);
+			const submit = node.newTx(transaction);
+			await Promise.resolve();
+
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'TxValid', headId: HEAD_ID_A, transactionId: transaction.txId }),
+			);
+
+			await expect(submit).resolves.toBe(transaction.txId);
 		});
 
 		it('does not accept a matching TxValid that omits the pinned head id', async () => {
@@ -2193,6 +2580,19 @@ describe('HydraNode', () => {
 	});
 
 	describe('fetchProtocolParameters()', () => {
+		// Builders take maxTxSize from here. A head started before the L2 cap
+		// reports 16,384, which would let them build a tx whose output no fanout
+		// can move.
+		it('caps maxTxSize at the shipped L2 limit for a head on the older ledger', async () => {
+			const shipped = JSON.parse(
+				readFileSync(new URL('../../../../packages/hydra-host/params/preprod.json', import.meta.url), 'utf8'),
+			) as Record<string, unknown>;
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			mockFetch.mockResolvedValue({ json: async () => ({ ...shipped, maxTxSize: 16_384 }) } as unknown as Response);
+
+			await expect(node.fetchProtocolParameters()).resolves.toMatchObject({ maxTxSize: 15_000 });
+		});
+
 		it('rejects incomplete or non-finite protocol parameters at runtime', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			mockFetch.mockResolvedValue({ json: async () => ({ maxTxSize: Number.NaN }) } as unknown as Response);

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { connect, type AddressInfo, type Socket } from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,6 +15,12 @@ import type { ProvisionDeps } from './provision.js';
 
 const ADMIN = 'a'.repeat(40);
 const USER = 'u'.repeat(40);
+/** Long enough that only a hung response reaches it. */
+const CALLER_TIMEOUT_MS = 2_000;
+/** Long enough that only a node connection that is never released reaches it. */
+const NODE_RELEASE_WAIT_MS = 2_000;
+/** The proxy's own side of a hang-up can log after the node already saw its socket close. */
+const LATE_LOG_WAIT_MS = 100;
 
 const env: EnvSource = {
 	get: (key) =>
@@ -81,8 +87,10 @@ let baseUrl: string;
 let node: FakeNode;
 let tickCalls: number;
 let releaseTick: () => void;
+let loggedErrors: string[];
 
 beforeEach(async () => {
+	loggedErrors = [];
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-proxy-'));
 	node = await startFakeNode();
 	store = new NodeRegistryStore(dataDir);
@@ -115,7 +123,7 @@ beforeEach(async () => {
 			newNodeId: () => 'node-x',
 			now: () => new Date(),
 		} as ProvisionDeps,
-		logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		logger: { info: () => undefined, warn: () => undefined, error: (message) => loggedErrors.push(message) },
 	});
 	await new Promise<void>((resolve) => host.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(host.address() as AddressInfo).port}`;
@@ -133,6 +141,48 @@ const call = (method: string, url: string, token?: string): Promise<Response> =>
 		method,
 		headers: token === undefined ? {} : { Authorization: `Bearer ${token}` },
 	});
+
+/**
+ * Holds the next `count` node record reads until the control plane has seen
+ * that many requests close: a read slow enough that the caller leaves first.
+ */
+function holdRecordReads(count: number): { allHeld: Promise<void>; allDone: Promise<void> } {
+	let release: () => void = () => undefined;
+	const released = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let closedRequests = 0;
+	host.on('request', (request) => {
+		request.once('close', () => {
+			closedRequests += 1;
+			if (closedRequests === count) release();
+		});
+	});
+	let markAllHeld: () => void = () => undefined;
+	const allHeld = new Promise<void>((resolve) => {
+		markAllHeld = resolve;
+	});
+	let markAllDone: () => void = () => undefined;
+	const allDone = new Promise<void>((resolve) => {
+		markAllDone = resolve;
+	});
+	const readRecord = store.read.bind(store);
+	let heldReads = 0;
+	let doneReads = 0;
+	store.read = async (nodeId) => {
+		heldReads += 1;
+		if (heldReads === count) {
+			store.read = readRecord;
+			markAllHeld();
+		}
+		await released;
+		const found = await readRecord(nodeId);
+		doneReads += 1;
+		if (doneReads === count) markAllDone();
+		return found;
+	};
+	return { allHeld, allDone };
+}
 
 describe('node api proxy', () => {
 	it('forwards an allowed read to the node', async () => {
@@ -201,6 +251,163 @@ describe('node api proxy', () => {
 	it('502s when the node is recorded running but unreachable', async () => {
 		await store.update('node-1', (current) => ({ ...current, apiPort: 1 }));
 		expect((await call('GET', '/v1/nodes/node-1/api/head', USER)).status).toBe(502);
+	});
+
+	// A clean close fails only the node's response, which pipe() does not pass
+	// on, so the caller's 200 stayed open until its own timeout. A reset fails
+	// the request too, and its handler appended a JSON error body to the partial
+	// one, so the caller read a complete-looking 200.
+	it.each([
+		['closes', (socket: Socket) => socket.destroy()],
+		['resets', (socket: Socket) => socket.resetAndDestroy()],
+	])('cuts the caller off when the node %s the connection mid-body', async (_label, drop) => {
+		let nodeSocket: Socket | undefined;
+		const dropping = createServer((request, response) => {
+			nodeSocket = request.socket;
+			response.writeHead(200, { 'Content-Type': 'application/json' });
+			response.write('{"tag":"Open","contents":');
+		});
+		await new Promise<void>((resolve) => dropping.listen(0, '127.0.0.1', resolve));
+		try {
+			const apiPort = (dropping.address() as AddressInfo).port;
+			await store.update('node-1', (current) => ({ ...current, apiPort }));
+			const response = await fetch(`${baseUrl}/v1/nodes/node-1/api/head`, {
+				headers: { Authorization: `Bearer ${USER}` },
+				signal: AbortSignal.timeout(CALLER_TIMEOUT_MS),
+			});
+			// The headers came through the proxy, so the drop lands mid-body.
+			expect(nodeSocket).toBeDefined();
+			drop(nodeSocket as Socket);
+			const bodyError = await response.text().then(
+				() => null,
+				(error: unknown) => error,
+			);
+			// fetch's `TypeError: terminated`, not a body read that succeeds or
+			// the TimeoutError the hang ended in.
+			expect((bodyError as Error | null)?.name).toBe('TypeError');
+			// The clean close used to fail without a word in the log.
+			expect(loggedErrors).toEqual(expect.arrayContaining([expect.stringContaining(`port ${apiPort} failed`)]));
+		} finally {
+			// A failed run can leave the proxy's connection open, and close() would
+			// wait on it until jest's own timeout hid the real failure.
+			dropping.closeAllConnections();
+			await new Promise<void>((resolve) => dropping.close(() => resolve()));
+		}
+	});
+
+	// 'aborted' only covers a request still being read, so a caller that hung
+	// up after that left the node's connection open: for good mid-body, and
+	// until the node answered when the caller left first.
+	it.each([
+		['mid-body', true],
+		['before the node answers', false],
+	])('releases the node connection when the caller hangs up %s', async (_label, isNodeAnswering) => {
+		let markNodeReached: () => void = () => undefined;
+		const nodeReached = new Promise<void>((resolve) => {
+			markNodeReached = resolve;
+		});
+		let markNodeReleased: () => void = () => undefined;
+		const nodeReleased = new Promise<'released'>((resolve) => {
+			markNodeReleased = () => resolve('released');
+		});
+		const streaming = createServer((request, response) => {
+			request.socket.once('close', () => markNodeReleased());
+			markNodeReached();
+			if (isNodeAnswering) {
+				response.writeHead(200, { 'Content-Type': 'application/json' });
+				response.write('{"tag":"Open","contents":');
+			}
+		});
+		await new Promise<void>((resolve) => streaming.listen(0, '127.0.0.1', resolve));
+		let waitTimer: NodeJS.Timeout | undefined;
+		try {
+			const apiPort = (streaming.address() as AddressInfo).port;
+			await store.update('node-1', (current) => ({ ...current, apiPort }));
+			const caller = new AbortController();
+			const answer = fetch(`${baseUrl}/v1/nodes/node-1/api/head`, {
+				headers: { Authorization: `Bearer ${USER}` },
+				signal: caller.signal,
+			});
+			if (isNodeAnswering) {
+				// The headers came through the proxy, so the caller leaves mid-body.
+				const response = await answer;
+				caller.abort();
+				await response.text().catch(() => undefined);
+			} else {
+				await nodeReached;
+				caller.abort();
+				await answer.catch(() => undefined);
+			}
+			const outcome = await Promise.race([
+				nodeReleased,
+				new Promise<'held'>((resolve) => {
+					waitTimer = setTimeout(() => resolve('held'), NODE_RELEASE_WAIT_MS);
+				}),
+			]);
+			expect(outcome).toBe('released');
+			// The caller left; the node did nothing wrong.
+			await new Promise((resolve) => setTimeout(resolve, LATE_LOG_WAIT_MS));
+			expect(loggedErrors).toEqual([]);
+		} finally {
+			clearTimeout(waitTimer);
+			streaming.closeAllConnections();
+			await new Promise<void>((resolve) => streaming.close(() => resolve()));
+		}
+	});
+
+	// The response's 'close' fired before the proxy could listen for it, so the
+	// proxy opened a connection to the node and left it open. No request went
+	// out on it: piping a destroyed request never ends the node's request. A
+	// pipelined request's response waits without a socket, and on some Node
+	// versions a hang-up never destroys it, only its request.
+	it.each([
+		[
+			'a caller',
+			1,
+			(): (() => void) => {
+				const caller = new AbortController();
+				fetch(`${baseUrl}/v1/nodes/node-1/api/head`, {
+					headers: { Authorization: `Bearer ${USER}` },
+					signal: caller.signal,
+				}).catch(() => undefined);
+				return () => caller.abort();
+			},
+		],
+		[
+			'a caller with two pipelined requests',
+			2,
+			(): (() => void) => {
+				const socket = connect((host.address() as AddressInfo).port, '127.0.0.1');
+				socket.on('error', () => undefined);
+				const request = `GET /v1/nodes/node-1/api/head HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer ${USER}\r\n\r\n`;
+				socket.write(request.repeat(2));
+				return () => socket.destroy();
+			},
+		],
+	])('never contacts the node when %s hangs up while the record is read', async (_label, requestCount, send) => {
+		let nodeConnections = 0;
+		node.server.on('connection', () => {
+			nodeConnections += 1;
+		});
+		const reads = holdRecordReads(requestCount);
+		try {
+			const hangUp = send();
+			await reads.allHeld;
+			hangUp();
+			await reads.allDone;
+			// Lets the abandoned requests reach the proxy before the next one starts.
+			await new Promise((resolve) => setImmediate(resolve));
+
+			// The node accepts connections in the order they were opened, so any
+			// an abandoned request opened lands before this answer.
+			expect((await call('GET', '/v1/nodes/node-1/api/snapshot', USER)).status).toBe(200);
+			expect(nodeConnections).toBe(1);
+			expect(node.received.map((request) => request.url)).toEqual(['/snapshot']);
+		} finally {
+			// A failed run leaves an abandoned connection open, and afterEach's
+			// close() would wait on it until jest's own timeout hid the failure.
+			node.server.closeAllConnections();
+		}
 	});
 
 	it('does not shadow the control plane', async () => {

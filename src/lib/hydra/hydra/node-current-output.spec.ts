@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNode } from './node';
+import { readFinalSnapshot } from './node-current-output';
+import type { VerifiedHydraSnapshot } from './snapshot-verification';
 
 const reference = `${'ab'.repeat(32)}#0`;
 function readOutput(
@@ -107,5 +109,25 @@ describe('Hydra verified snapshot number accessor', () => {
 	});
 	it('is undefined before any snapshot is verified', () => {
 		expect(read(true, undefined)).toBeUndefined();
+	});
+});
+
+describe('Hydra final snapshot gate', () => {
+	const snapshot = { number: 3 } as VerifiedHydraSnapshot;
+
+	it('returns the verified snapshot a finalized head fanned out', () => {
+		expect(readFinalSnapshot(true, HydraHeadStatus.Final, snapshot, 3)).toBe(snapshot);
+	});
+	it.each([HydraHeadStatus.Open, HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible])(
+		'returns nothing while the head is %s',
+		(status) => {
+			expect(readFinalSnapshot(true, status, snapshot, 3)).toBeNull();
+		},
+	);
+	it('returns nothing from an unverified session', () => {
+		expect(readFinalSnapshot(false, HydraHeadStatus.Final, snapshot, 3)).toBeNull();
+	});
+	it('returns nothing for a different snapshot number', () => {
+		expect(readFinalSnapshot(true, HydraHeadStatus.Final, snapshot, 2)).toBeNull();
 	});
 });

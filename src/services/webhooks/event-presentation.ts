@@ -34,6 +34,10 @@ export function getWebhookEventPresentation(eventType: WebhookSendPayload['event
 			return { emoji: '🪫', title: 'Hydra in-head balance low' };
 		case WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK:
 			return { emoji: '🧊', title: 'Hydra snapshot round stuck' };
+		case WebhookEventType.HYDRA_HEAD_POST_TX_FAILED:
+			return { emoji: '🚨', title: 'Hydra L1 transaction failed' };
+		case WebhookEventType.HYDRA_HEAD_CONTEST_MISSING:
+			return { emoji: '🚨', title: 'Hydra head closed on an old snapshot' };
 		case WEBHOOK_TEST_EVENT_TYPE:
 			return { emoji: '🧪', title: 'Test webhook delivery' };
 		default:

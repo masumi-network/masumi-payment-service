@@ -15,12 +15,13 @@ import { readFile } from 'node:fs/promises';
 import type { Duplex } from 'node:stream';
 import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
-import { PortExhaustedError, type PortAllocator } from '../registry/ports.js';
+import { PeerFirewallPendingError, PortExhaustedError, type PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { ExchangeStore } from '../registry/exchange-store.js';
 import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRecord } from '../registry/types.js';
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
+import { parsePeerAdvertise } from '../peer-address.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate } from './auth.js';
 import { nonceLogRef } from './nonce-log-ref.js';
@@ -270,6 +271,13 @@ export function createControlPlane(deps: ServerDeps): Server {
 					send(response, 507, { error: error.message });
 					return;
 				}
+				// Free slots exist, but none is shut to its previous head's peers yet.
+				// Transient: the next firewall refresh frees them, so this is not 507.
+				if (error instanceof PeerFirewallPendingError) {
+					logger.warn(`[api] ${method} ${logPath} refused: ${error.message}`);
+					send(response, 503, { error: error.message });
+					return;
+				}
 				logger.error(`[api] ${method} ${logPath} failed: ${(error as Error).message}`);
 				send(response, 500, { error: 'internal error' });
 			}
@@ -384,17 +392,65 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'forgetInvite': {
-				if (!(await exchange.forgetInvite(nonce ?? '', store))) {
+				// Opt-in and exact: only `true` keeps a replay, so a caller that predates the
+				// flag, or mistypes it, gets the full delete it always got.
+				const keepReplay = new URL(request.url ?? '/', 'http://host.invalid').searchParams.get('keepReplay') === 'true';
+				if (!(await exchange.forgetInvite(nonce ?? '', store, { keepReplay }))) {
 					throw new HostApiError('redemption peer setup is still pending; retry after setup completes', 409);
 				}
 				send(response, 200, { forgotten: true });
 				return;
 			}
 
+			case 'checkPeer': {
+				const body = await readBody(request);
+				const advertise = isPlainObject(body) ? getOwnString(body, 'advertise') : undefined;
+				if (advertise === undefined) {
+					throw new ProvisionError('expected an object with an "advertise" string', 400);
+				}
+				// The grammar first and the policy second, the order setPeers uses, so a
+				// string that is not host:port never reaches a DNS lookup.
+				if (parsePeerAdvertise(advertise) === null) {
+					send(response, 200, { allowed: false, reason: 'the peer address must be host:port' });
+					return;
+				}
+				const rejection = await provision.checkPeerTarget(advertise);
+				send(response, 200, rejection === null ? { allowed: true } : { allowed: false, reason: rejection });
+				return;
+			}
+
 			case 'peerAllowlist': {
 				const range = { start: config.ports.peerStart, count: config.ports.capacity };
+				// Taken before the registry is read, never after: see
+				// `PortAllocator.peerFirewallGeneration`.
+				const generation = ports.peerFirewallGeneration();
 				const allowlist = await resolvePeerAllowlist(buildPeerAllowlist(await store.list(), range));
-				send(response, 200, { ...allowlist, peerRange: range, nftables: renderNftables(allowlist, range) });
+				send(response, 200, {
+					...allowlist,
+					peerRange: range,
+					generation,
+					nftables: renderNftables(allowlist, range),
+				});
+				return;
+			}
+
+			case 'peerAllowlistApplied': {
+				const body = await readBody(request);
+				const generation = isPlainObject(body) ? getOwnString(body, 'generation') : undefined;
+				if (generation === undefined) {
+					throw new HostApiError('expected an object with a "generation" string', 400);
+				}
+				const released = ports.acknowledgePeerFirewall(generation);
+				if (released === null) {
+					throw new HostApiError(
+						'the running Host did not issue this generation; run hydra-peer-firewall refresh again',
+						409,
+					);
+				}
+				if (released.length > 0) {
+					logger.info(`[api] peer firewall applied; peer port(s) ${released.join(', ')} may be reused`);
+				}
+				send(response, 200, { released });
 				return;
 			}
 

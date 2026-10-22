@@ -1,6 +1,7 @@
 /**
- * Deposit and withdrawal outcomes observed before the live session was
- * authenticated: held, bounded, and emitted exactly once when identity lands.
+ * Deposit and withdrawal outcomes, and failed L1 posts, observed before the
+ * live session was authenticated: held, bounded, and emitted exactly once when
+ * identity lands.
  *
  * A withdrawal settles on L1 minutes after it leaves the head, and a deposit
  * sits pending for a deposit period or more, so a service that reconnected in
@@ -11,7 +12,7 @@
  * never proven — so they wait here.
  */
 
-import { DecommitSettledData, DepositRecordedData } from './types';
+import { DecommitSettledData, DepositRecordedData, PostTxFailedData } from './types';
 
 /**
  * How many replayed outcomes are worth holding.
@@ -28,6 +29,8 @@ export class HeldBackEmissions {
 	 * replayed on every connection and re-emitting it costs a write each time.
 	 */
 	private readonly _deposits = new Map<string, DepositRecordedData>();
+	/** Only the live socket reports these, so a held one is never a replayed duplicate. */
+	private _postTxFailures: PostTxFailedData[] = [];
 
 	rememberDecommit(data: DecommitSettledData): void {
 		this._decommits.push(data);
@@ -40,6 +43,11 @@ export class HeldBackEmissions {
 			const oldest = this._deposits.keys().next();
 			if (!oldest.done) this._deposits.delete(oldest.value);
 		}
+	}
+
+	rememberPostTxFailure(data: PostTxFailedData): void {
+		this._postTxFailures.push(data);
+		if (this._postTxFailures.length > MAX_HELD_BACK_OUTCOMES) this._postTxFailures.shift();
 	}
 
 	/**
@@ -63,6 +71,13 @@ export class HeldBackEmissions {
 		for (const data of pending) emit(data);
 	}
 
+	flushPostTxFailures(emit: (data: PostTxFailedData) => void): void {
+		if (this._postTxFailures.length === 0) return;
+		const pending = this._postTxFailures;
+		this._postTxFailures = [];
+		for (const data of pending) emit(data);
+	}
+
 	/**
 	 * Forget everything. Whatever was held came over a socket whose identity
 	 * has just been rejected; keeping it would mean applying, on the next
@@ -71,5 +86,6 @@ export class HeldBackEmissions {
 	clear(): void {
 		this._decommits = [];
 		this._deposits.clear();
+		this._postTxFailures = [];
 	}
 }

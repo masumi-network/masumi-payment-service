@@ -22,10 +22,11 @@ import {
 	protocolErrorToString,
 	readDecommitSettled,
 	readDepositRecorded,
+	readPostTxFailed,
 } from './node-frames';
 import { HeldBackEmissions } from './node-held-back';
 import { hasFinalizedUtxoField, headClockMessageSchema, messageSchema } from './schemas';
-import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, StatusChangeData } from './types';
+import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, PostTxFailedData, StatusChangeData } from './types';
 
 export const LIVE_SESSION_READY_EVENT = 'hydraLiveSessionReady';
 export const LIVE_SESSION_REJECTED_EVENT = 'hydraLiveSessionRejected';
@@ -91,6 +92,8 @@ export interface LiveFrameHost {
 	/** The rotation latch was hit on the live socket: fail the replay with it. */
 	onRotationError(error: unknown): void;
 	invalidateLiveConnection(error: Error): void;
+	/** A command waiting on this node posts `postChainTxTag`, so its caller hears of a failure to post it. */
+	isAwaitingPostChainTx(postChainTxTag: string): boolean;
 }
 
 export class LiveFrameProcessor {
@@ -239,6 +242,7 @@ export class LiveFrameProcessor {
 		// finalization that followed it.
 		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
 		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
+		this._heldBack.flushPostTxFailures((data) => this.emitter.emit(HydraNodeEvent.PostTxFailed, data));
 	}
 
 	applyObservedHeadClock(chainTimeMs: number, chainSlot: number): void {
@@ -285,6 +289,7 @@ export class LiveFrameProcessor {
 		// the same proof of identity every other persisted transition does.
 		let decommitSettled: ReturnType<typeof readDecommitSettled>;
 		let depositRecorded: DepositRecordedData | undefined;
+		let postTxFailed: PostTxFailedData | undefined;
 		/** Acted on after the status change is emitted, never before — see below. */
 		let headWasAborted = false;
 		try {
@@ -399,6 +404,16 @@ export class LiveFrameProcessor {
 				depositRecorded = readDepositRecorded(message);
 			}
 			decommitSettled = readDecommitSettled(envelope.tag, message);
+			if (envelope.tag === 'PostTxOnChainFailed') {
+				const failure = readPostTxFailed(message, this.host.expectedHeadId, (headId) =>
+					logger.warn('[HydraNode] Ignoring a failed L1 transaction for another head', { headId }),
+				);
+				// Asked now, while the frame is current: the waiting command settles on
+				// this same frame and is gone by the time anything reads the event.
+				if (failure) {
+					postTxFailed = { ...failure, answersCommand: this.host.isAwaitingPostChainTx(failure.postChainTxTag) };
+				}
+			}
 			if (envelope.tag === 'CommitRecovered') {
 				// Deliberately does NOT decrement. Recovery is the path for a deposit
 				// the head did not take, so a recovered deposit was never
@@ -451,6 +466,7 @@ export class LiveFrameProcessor {
 			// reading as still paying out forever, with nothing to correct it.
 			if (decommitSettled) this._heldBack.rememberDecommit(decommitSettled);
 			if (depositRecorded) this._heldBack.rememberDeposit(depositRecorded);
+			if (postTxFailed) this._heldBack.rememberPostTxFailure(postTxFailed);
 			return;
 		}
 		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
@@ -468,6 +484,11 @@ export class LiveFrameProcessor {
 			this._status = changeData.status;
 			this.emitter.emit(HydraNodeEvent.StatusChange, changeData);
 		}
+		// After the status change: a listener records the failure with the node's
+		// status, and the frame that releases held failures is the authenticating
+		// Greetings, which is also what moves the status off its initial value.
+		this._heldBack.flushPostTxFailures((data) => this.emitter.emit(HydraNodeEvent.PostTxFailed, data));
+		if (postTxFailed) this.emitter.emit(HydraNodeEvent.PostTxFailed, postTxFailed);
 		if (headWasAborted) {
 			// The head is over before it ever opened, and nothing this session proved
 			// about it survives: there is no head left to clock, and a fanout map

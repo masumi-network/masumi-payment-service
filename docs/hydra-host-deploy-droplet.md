@@ -152,6 +152,7 @@ docker create --name hydra-host \
   -e HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
   -e HYDRA_HOST_PEER_PORT_START=5001 \
   -e HYDRA_HOST_PEER_PORT_COUNT=32 \
+  -e HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true \
   -e HYDRA_HOST_MONITORING_ENABLED=false \
   ghcr.io/example/hydra-host@sha256:...
 ```
@@ -330,11 +331,11 @@ Host reports and refuses a mismatch.
 
 It has three commands:
 
-| Command    | What it does                                                                                                                       |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `baseline` | Loads a ruleset that refuses the whole peer range. The `ExecStartPre` of the Host unit runs it.                                    |
-| `refresh`  | Fetches `GET /v1/peer-allowlist`, checks the file, applies it, and persists it to `/etc/nftables.d/hydra-peer.nft`.                |
-| `verify`   | Reads the loaded ruleset and exits 0 only if both the `input` and `forward` chains refuse the range. Prints `verified` on success. |
+| Command    | What it does                                                                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseline` | Loads a ruleset that refuses the whole peer range. The `ExecStartPre` of the Host unit runs it.                                                   |
+| `refresh`  | Fetches `GET /v1/peer-allowlist`, checks the file, applies it, persists it to `/etc/nftables.d/hydra-peer.nft`, then acknowledges it to the Host. |
+| `verify`   | Reads the loaded ruleset and exits 0 only if both the `input` and `forward` chains refuse the range. Prints `verified` on success.                |
 
 `baseline` and `refresh` both end with `verify`. A command that cannot prove the
 loaded state exits non-zero. A failed fetch leaves the loaded ruleset unchanged.
@@ -440,10 +441,26 @@ ruleset. Include that one file by name, not a glob over the directory. Run
 `hydra-peer-firewall baseline` once before you add the include: nft refuses the
 whole `nftables.conf` when an included file does not exist.
 
-With the gates and the include in place, one window stays open, for at most 30
-seconds. If a node is removed and a new node takes its port, the old
-counterparty's address can reach the new port until the next refresh. Run the
-refresh by hand after a removal to close it.
+`HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true` closes the last window. Without
+it, a new node can take the port of a removed node. The old counterparty's
+address then reaches the new node until the next successful refresh. With it,
+the Host keeps each released peer port out of use. `refresh` acknowledges each
+ruleset after it applies and verifies it, through
+`POST /v1/peer-allowlist/applied`. The Host frees a port only when it gets an
+acknowledgement for a ruleset rendered after the release.
+
+Expect these effects:
+
+- A provision that finds only held ports gets `503`. Retry after the next
+  refresh.
+- After each Host start, every provision gets `503` until the first refresh
+  succeeds. The Host cannot know which ports an earlier process released. With
+  the timer above, that takes at most about 30 seconds after the Host answers.
+- A refresh that keeps failing keeps released ports held. Alert on failures of
+  `hydra-peer-firewall.service`.
+
+Install the current script before you set the variable. An older script does
+not acknowledge, so the Host never frees a released port.
 
 ## 5. TLS and the load balancer
 

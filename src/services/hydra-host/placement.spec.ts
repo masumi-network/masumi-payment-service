@@ -1,4 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
+import type { Response } from 'express';
+import { sendEndpointError } from '@masumi/payment-core/endpoint-factory';
 import {
 	HostIncompatibleError,
 	HostPlacementError,
@@ -255,5 +257,43 @@ describe('listHostIncompatibilities', () => {
 
 	it('ignores free slots', () => {
 		expect(listHostIncompatibilities(capabilities({ nodeSlots: { used: 32, capacity: 32 } }), expected)).toEqual([]);
+	});
+});
+
+describe('a Host refusal at the API boundary', () => {
+	// As plain Errors these became 500s, and production replaces a 500's message
+	// with "Internal Server Error", so the operator never learned what to fix.
+	it.each([
+		new HostIncompatibleError('the hydra host has no free node slots; drain this host'),
+		new HostPlacementError('no hydra host on Preprod is accepting placements'),
+	])('keeps the reason of $name in production', (error) => {
+		const sent: { status?: number; body?: object } = {};
+		const response = {
+			status(code: number) {
+				sent.status = code;
+				return this;
+			},
+			set() {
+				return this;
+			},
+			json(body: object) {
+				sent.body = body;
+				return this;
+			},
+		};
+		const previous = process.env.NODE_ENV;
+		process.env.NODE_ENV = 'production';
+		try {
+			sendEndpointError({
+				error,
+				input: null,
+				request: { url: '/api/v1/hydra/invite' },
+				response: response as unknown as Response,
+				logger: { error: () => undefined },
+			});
+		} finally {
+			process.env.NODE_ENV = previous;
+		}
+		expect(sent).toEqual({ status: 409, body: { status: 'error', error: { message: error.message } } });
 	});
 });

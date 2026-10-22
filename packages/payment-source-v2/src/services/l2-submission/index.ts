@@ -12,6 +12,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { HydraTransactionRejectedError, HydraTransportError } from '@/lib/hydra/hydra/errors';
+import { assertL2TxWithinMaxSize } from '@/lib/hydra/hydra/l2-tx-size';
 import {
 	requireHydraInputRefs,
 	requireHydraValidityUpperSlot,
@@ -148,6 +149,7 @@ type ReservedL2SubmissionCallbacks<TReservation> = {
 export async function executeReservedL2Submission<TReservation>(
 	callbacks: ReservedL2SubmissionCallbacks<TReservation>,
 ): Promise<ReservedL2SubmissionOutcome> {
+	assertL2TxWithinMaxSize(callbacks.signedTx);
 	const intendedTxHash = (callbacks.resolveIntendedTxHash ?? ((tx) => String(resolveTxHash(tx))))(callbacks.signedTx);
 	const invalidHereafterSlot = (callbacks.resolveValidityUpperSlot ?? requireHydraValidityUpperSlot)(
 		callbacks.signedTx,
