@@ -28,10 +28,8 @@ describe('recordReplayedCloseSnapshot', () => {
 		mockFetchClosedHeadFacts.mockResolvedValue({ contestationDeadline: CONTEST_DEADLINE, snapshotNumber: 5 });
 	});
 
-	it('raises a closed row to the contested snapshot and moves its deadline only later', async () => {
-		await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(HydraHeadStatus.FanoutPossible, 5n))).resolves.toBe(
-			true,
-		);
+	it('raises a closed row to the contested snapshot and moves its deadline to a later time', async () => {
+		await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(HydraHeadStatus.Closed, 5n))).resolves.toBe(true);
 
 		// The deadline first, so a failed raise leaves the trigger for the next pass.
 		const [deadlineWrite, raise] = mockHydraHeadUpdateMany.mock.calls.map(([args]) => args);
@@ -45,15 +43,18 @@ describe('recordReplayedCloseSnapshot', () => {
 		});
 	});
 
-	it('raises a final row without asking the node for a deadline', async () => {
-		await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(HydraHeadStatus.Final, 5n))).resolves.toBe(true);
+	it.each([HydraHeadStatus.FanoutPossible, HydraHeadStatus.FanningOut, HydraHeadStatus.Final])(
+		'raises a %s row without asking the node for a deadline',
+		async (status) => {
+			await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(status, 5n))).resolves.toBe(true);
 
-		expect(mockFetchClosedHeadFacts).not.toHaveBeenCalled();
-		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(1);
-		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({ data: { latestSnapshotNumber: 5n } }),
-		);
-	});
+			expect(mockFetchClosedHeadFacts).not.toHaveBeenCalled();
+			expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(1);
+			expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({ data: { latestSnapshotNumber: 5n } }),
+			);
+		},
+	);
 
 	it('writes nothing when the row already holds the closed snapshot', async () => {
 		await expect(recordReplayedCloseSnapshot('head-1', 5n, nodeWith(HydraHeadStatus.Closed, 5n))).resolves.toBe(false);

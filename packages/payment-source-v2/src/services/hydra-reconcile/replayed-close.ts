@@ -10,8 +10,6 @@ const CLOSED_HEAD_STATUSES: HydraHeadStatus[] = [
 	HydraHeadStatus.FanningOut,
 	HydraHeadStatus.Final,
 ];
-/** Of those, the statuses in which the contestation deadline still matters. */
-const CONTESTABLE_HEAD_STATUSES: HydraHeadStatus[] = [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible];
 
 export type ReplayedCloseNode = Pick<HydraNode, 'status' | 'closedSnapshotNumber' | 'fetchClosedHeadFacts'>;
 
@@ -28,7 +26,9 @@ export type ReplayedCloseNode = Pick<HydraNode, 'status' | 'closedSnapshotNumber
  * The caller has checked that the history pass is complete and bound to this
  * head. The write changes no status, so it cannot look like a regression, and
  * it only raises the number on a row that is still closed and not handed off.
- * The deadline moves only later, because each contest extends it.
+ * While the head is Closed, its deadline moves too, only to a later time,
+ * because each contest extends it. Past Closed the deadline has passed, and
+ * nothing reads it any more.
  *
  * Returns true when it raised the row. The caller then ends this pass, so the
  * next pass reads the new number.
@@ -45,10 +45,9 @@ export async function recordReplayedCloseSnapshot(
 
 	// The deadline goes first, and a head state the node did not return holds the
 	// raise: once the snapshot is current, no later pass tries the deadline again.
-	// A Final head skips this, so its handoff never waits on the read.
-	if (CONTESTABLE_HEAD_STATUSES.includes(node.status) && !(await recordLaterDeadline(hydraHeadId, node))) {
-		return false;
-	}
+	// The hold ends with the Closed status, so a head past it, whose handoff needs
+	// the raise, never waits on the read.
+	if (node.status === HydraHeadStatus.Closed && !(await recordLaterDeadline(hydraHeadId, node))) return false;
 
 	const raised = await prisma.hydraHead.updateMany({
 		where: {
@@ -86,7 +85,7 @@ async function recordLaterDeadline(hydraHeadId: string, node: ReplayedCloseNode)
 		where: {
 			id: hydraHeadId,
 			isEnabled: true,
-			status: { in: CONTESTABLE_HEAD_STATUSES },
+			status: HydraHeadStatus.Closed,
 			OR: [{ contestationDeadline: null }, { contestationDeadline: { lt: deadline } }],
 		},
 		data: { contestationDeadline: deadline },
