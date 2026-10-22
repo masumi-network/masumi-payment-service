@@ -329,6 +329,9 @@ export type HydraHeadConnection = {
   nodeState: string;
   isReady: boolean;
   reason: string | null;
+  /** Whether this service verified the Open head's history. Null outside Open. */
+  syncReady?: boolean | null;
+  syncReason?: string | null;
   /**
    * Ways the head's own ledger no longer matches the chain it settles on.
    *

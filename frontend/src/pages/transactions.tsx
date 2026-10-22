@@ -110,7 +110,10 @@ export default function Transactions() {
   const { recoverErrors, isRecovering } = useBulkClearTransactionErrors();
   const [bulkRecoveryMode, setBulkRecoveryMode] = useState<'clear' | 'retry' | null>(null);
   const [bulkConfirmMode, setBulkConfirmMode] = useState<'clear' | 'retry' | null>(null);
-  const { acknowledge, isAcknowledging } = useAcknowledgeNeedsAction();
+  const { acknowledge } = useAcknowledgeNeedsAction();
+  // Covers the acknowledge call and the refetch after it, so acknowledged rows
+  // cannot be offered again before the list updates.
+  const [isAcknowledgeRunning, setIsAcknowledgeRunning] = useState(false);
   // Rows for the acknowledge confirm dialog. Kept after close so the text does
   // not change while the dialog fades out.
   const [acknowledgeTargets, setAcknowledgeTargets] = useState<Transaction[]>([]);
@@ -119,7 +122,7 @@ export default function Transactions() {
     setAcknowledgeTargets(targets);
     setIsAcknowledgeOpen(true);
   }, []);
-  const isBusy = isRecovering || isAcknowledging;
+  const isBusy = isRecovering || isAcknowledgeRunning;
   // Acknowledge is offered only here: every row in this view is unacknowledged,
   // because the backend filter leaves acknowledged rows out.
   // Placeholder rows belong to the previous view and may hold acknowledged rows.
@@ -247,13 +250,14 @@ export default function Transactions() {
       }
       if (skipped > 0) {
         toast.info(
-          `${skipped} transaction${skipped === 1 ? ' was' : 's were'} not acknowledged: already out of Needs Action, or created by another API key.`,
+          `${skipped} transaction${skipped === 1 ? ' was' : 's were'} not acknowledged: changed since this page loaded, already out of Needs Action, or created by another API key.`,
         );
       }
       clearSelection();
-      refreshTransactions();
+      void refetchTabCounts();
+      await refetchTransactions?.();
     },
-    [acknowledge, clearSelection, refreshTransactions],
+    [acknowledge, clearSelection, refetchTabCounts, refetchTransactions],
   );
 
   const handleBulkRecoverErrors = useCallback(
@@ -629,9 +633,13 @@ export default function Transactions() {
           description={`Hide ${acknowledgeTargets.length} transaction${acknowledgeTargets.length === 1 ? '' : 's'} from Needs Action? The error state, transactions and on-chain state do not change. A new error shows the row again.`}
           confirmLabel="Acknowledge"
           onConfirm={() => {
-            void handleAcknowledge(acknowledgeTargets).finally(() => setIsAcknowledgeOpen(false));
+            setIsAcknowledgeRunning(true);
+            void handleAcknowledge(acknowledgeTargets).finally(() => {
+              setIsAcknowledgeRunning(false);
+              setIsAcknowledgeOpen(false);
+            });
           }}
-          isLoading={isAcknowledging}
+          isLoading={isAcknowledgeRunning}
         />
       </AnimatedPage>
     </MainLayout>

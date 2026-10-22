@@ -129,7 +129,7 @@ describe('Hydra invite exchange transport security', () => {
 describe('redemption retry on a busy Host', () => {
 	const transport = { allowInsecureHttp: false, allowPrivateNetwork: false };
 	const sleep = jest.fn(async (_ms: number) => undefined);
-	const busy = { status: 503, detail: '{"error":"exchange is busy"}' };
+	const busy = { status: 503, detail: '{"error":"exchange is busy","code":"host-unavailable"}' };
 
 	it('retries a 503 and succeeds once the Host has room', async () => {
 		const send = jest
@@ -215,9 +215,10 @@ describe('attemptRedemption outcomes', () => {
 	});
 
 	it.each([
-		['the Host', '{"error":"exchange is busy"}', true],
+		['the Host', '{"error":"exchange is busy","code":"host-unavailable"}', true],
 		['a gateway page', '<html>503 Service Unavailable</html>', false],
 		['a JSON body with no error', '{"message":"unavailable"}', false],
+		['a gateway JSON error with no Host code', '{"error":"upstream timeout"}', false],
 	])('tells a refusal from %s apart', async (_label, detail, fromHost) => {
 		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue({ status: 502, detail });
 
@@ -233,7 +234,7 @@ describe('attemptRedemption outcomes', () => {
 	it('reports a 503 that outlasts the retries as answered', async () => {
 		const send = jest
 			.fn<NonNullable<ExchangeClientDeps['send']>>()
-			.mockResolvedValue({ status: 503, detail: '{"error":"exchange is busy"}' });
+			.mockResolvedValue({ status: 503, detail: '{"error":"exchange is busy","code":"host-unavailable"}' });
 
 		await expect(attempt(send)).resolves.toMatchObject({ kind: 'answered', status: 503 });
 		expect(send).toHaveBeenCalledTimes(4);
@@ -242,7 +243,7 @@ describe('attemptRedemption outcomes', () => {
 	// Regression: a gateway 503 may follow a stored redemption, so a discardable
 	// answer to the resend must not stand for the first send.
 	it.each([
-		['the Host refuses as busy', { status: 503, detail: '{"error":"exchange is busy"}' }],
+		['the Host refuses as busy', { status: 503, detail: '{"error":"exchange is busy","code":"host-unavailable"}' }],
 		['the Host masks the nonce', { status: 404, detail: '{"error":"no such invite"}' }],
 		['the Host is over budget', { status: 429, detail: '{"error":"too many requests"}' }],
 	])('reports a gateway 503 then %s as unknown', async (_label, later) => {

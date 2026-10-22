@@ -8,7 +8,7 @@ import { getErrorMessage } from './index';
  * reached the node, so this is not a failed Init and the handler records no
  * head error. The cause goes into the text: a node still starting and a wrong
  * URL or token can fail the same way, and the cause often tells them apart.
- * Exposed errors skip the server-error log, so the warn is the only record.
+ * The warn names the head; the endpoint's server-error log records the 502 too.
  * Some faults also arrive here as a closed session: a frame that ws rejects
  * (an oversized one), a log rotation before Greetings, and a local disconnect
  * racing Init.

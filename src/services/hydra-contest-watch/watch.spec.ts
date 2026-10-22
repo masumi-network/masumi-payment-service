@@ -6,21 +6,37 @@ type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindMany = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
-const mockTrigger = jest.fn() as AnyMock;
-const mockRecordHeadError = jest.fn() as AnyMock;
+const mockQueue = jest.fn() as AnyMock;
+const mockErrorCreate = jest.fn() as AnyMock;
 const mockGetNode = jest.fn() as AnyMock;
 
-jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hydraHead: { findMany: mockFindMany, updateMany: mockUpdateMany } },
-}));
+type StoredGap = { contestGapSignature: string | null; contestGapAlertedAt: Date | null };
+/** Head columns a test persists across ticks; a failed transaction restores them. */
+let stored: StoredGap | null = null;
+
+const database = {
+	hydraHead: { findMany: mockFindMany, updateMany: mockUpdateMany },
+	hydraHeadError: { create: mockErrorCreate },
+};
+const prisma = {
+	...database,
+	$transaction: async (callback: (tx: typeof database) => Promise<unknown>) => {
+		const before = structuredClone(stored);
+		try {
+			return await callback(database);
+		} catch (error) {
+			stored = before;
+			throw error;
+		}
+	},
+};
+
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({ prisma }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
-	webhookEventsService: { triggerHydraHeadContestMissing: mockTrigger },
-}));
-jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
-	recordHeadError: mockRecordHeadError,
+	webhookEventsService: { queueHydraHeadContestMissingInTransaction: mockQueue },
 }));
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({ getNode: mockGetNode }),
@@ -34,6 +50,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	stored = null;
 	mockUpdateMany.mockResolvedValue({ count: 1 } as never);
 });
 
@@ -108,14 +125,17 @@ describe('applyContestGapObservation', () => {
 			where: { id: 'head-1', contestGapSignature: '3<5', contestGapAlertedAt: null },
 			data: { contestGapAlertedAt: NOW },
 		});
-		expect(mockRecordHeadError).toHaveBeenCalledWith(
-			'head-1',
-			HydraHeadStatus.Closed,
-			HydraErrorType.ContestMissing,
-			expect.stringContaining('snapshot 3'),
-			'ContestWatch',
-		);
-		expect(mockTrigger).toHaveBeenCalledWith(
+		expect(mockErrorCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				hydraHeadId: 'head-1',
+				headStatus: HydraHeadStatus.Closed,
+				errorType: HydraErrorType.ContestMissing,
+				errorMessage: expect.stringContaining('snapshot 3'),
+				clientInput: 'ContestWatch',
+			}),
+		});
+		expect(mockQueue).toHaveBeenCalledWith(
+			database,
 			expect.objectContaining({ hydraHeadId: 'head-1', closedSnapshotNumber: 3, verifiedSnapshotNumber: 5 }),
 		);
 	});
@@ -129,14 +149,14 @@ describe('applyContestGapObservation', () => {
 			where: { id: 'head-1', contestGapSignature: null },
 			data: expect.objectContaining({ contestGapAlertedAt: NOW }),
 		});
-		expect(mockTrigger).toHaveBeenCalledWith(expect.objectContaining({ gapSince: NOW.toISOString() }));
+		expect(mockQueue).toHaveBeenCalledWith(database, expect.objectContaining({ gapSince: NOW.toISOString() }));
 	});
 
 	it('stays quiet when another instance recorded the gap first', async () => {
 		mockUpdateMany.mockResolvedValue({ count: 0 } as never);
 		const pastDeadline = { ...closedOnThree, status: HydraHeadStatus.FanoutPossible };
 		await watch.applyContestGapObservation({ id: 'head-1', ...empty }, pastDeadline, NOW);
-		expect(mockTrigger).not.toHaveBeenCalled();
+		expect(mockQueue).not.toHaveBeenCalled();
 	});
 
 	it('stays quiet when another instance claimed the alert first', async () => {
@@ -144,8 +164,34 @@ describe('applyContestGapObservation', () => {
 		await expect(watch.applyContestGapObservation({ id: 'head-1', ...recorded(5) }, closedOnThree, NOW)).resolves.toBe(
 			'unchanged',
 		);
-		expect(mockRecordHeadError).not.toHaveBeenCalled();
-		expect(mockTrigger).not.toHaveBeenCalled();
+		expect(mockErrorCreate).not.toHaveBeenCalled();
+		expect(mockQueue).not.toHaveBeenCalled();
+	});
+});
+
+// The claim used to commit on its own before the alert was sent, and the alert
+// swallowed its own errors. One failed write then lost the alert for good.
+describe('alert outbox', () => {
+	it('alerts on the next tick when the webhook enqueue fails', async () => {
+		stored = { contestGapSignature: '3<5', contestGapAlertedAt: null };
+		mockUpdateMany.mockImplementation((async ({ where, data }: { where: StoredGap; data: Partial<StoredGap> }) => {
+			const current = stored!;
+			if (where.contestGapSignature !== current.contestGapSignature) return { count: 0 };
+			if ('contestGapAlertedAt' in where && current.contestGapAlertedAt !== null) return { count: 0 };
+			stored = { ...current, ...data };
+			return { count: 1 };
+		}) as never);
+		mockQueue.mockRejectedValueOnce(new Error('outbox insert failed') as never);
+		const tick = () =>
+			watch.applyContestGapObservation({ id: 'head-1', ...recorded(5), ...stored! }, closedOnThree, NOW);
+
+		await expect(tick()).rejects.toThrow('outbox insert failed');
+		expect(stored).toEqual({ contestGapSignature: '3<5', contestGapAlertedAt: null });
+
+		await expect(tick()).resolves.toBe('alert');
+		expect(stored).toEqual({ contestGapSignature: '3<5', contestGapAlertedAt: NOW });
+		expect(mockQueue).toHaveBeenCalledTimes(2);
+		await expect(tick()).resolves.toBe('unchanged');
 	});
 });
 

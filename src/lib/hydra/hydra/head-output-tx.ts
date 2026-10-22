@@ -120,6 +120,41 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
 	return producers.size === 1 ? [...producers][0] : undefined;
 }
 
+/** The deadline of a close, as read from the node's head state. */
+export type ClosedHeadFacts = { contestationDeadline: string };
+
+/**
+ * The contestation deadline of a closed head, or undefined.
+ *
+ * A close this service was not there to see reaches it as Greetings, which carry
+ * no deadline. hydra-node 2.4.1 keeps it in `ClosedState` and, once the first
+ * partial fanout step lands, in `PartialFanoutState`, so unlike the close
+ * transaction it stays readable until the head is final. A contest replaces it.
+ *
+ * The head state gives no snapshot number for the close. Its `confirmedSnapshot`
+ * is the node's own latest one, which a contest does not replace. On a devnet,
+ * a node restored to snapshot 1 still reported 1 after a peer contested with 2.
+ * The closed snapshot comes from the replayed close and contest frames instead.
+ *
+ * Undefined for every "cannot tell" case: a missing fact has to stay missing so
+ * a later read can still fill it.
+ */
+export function extractClosedHeadFacts(headState: unknown, headIdentifier: string): ClosedHeadFacts | undefined {
+	if (!isPlainObject(headState)) return undefined;
+	if (!/^[0-9a-fA-F]{56}$/.test(headIdentifier)) return undefined;
+
+	// Nested under `contents` in the real reply; a flat state is accepted too.
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	// Refuse a state that names another head. A state that names none is accepted:
+	// the session is already pinned to this head.
+	const stateHeadId = getOwnValue(state, 'headId');
+	if (typeof stateHeadId === 'string' && stateHeadId.toLowerCase() !== headIdentifier.toLowerCase()) return undefined;
+
+	const contestationDeadline = getOwnValue(state, 'contestationDeadline');
+	if (typeof contestationDeadline !== 'string' || contestationDeadline.length === 0) return undefined;
+	return { contestationDeadline };
+}
+
 /**
  * Output references (`txid#ix`, lower-cased) the head's confirmed snapshot is
  * still waiting to decommit onto L1.

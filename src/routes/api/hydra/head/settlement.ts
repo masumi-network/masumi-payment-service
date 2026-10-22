@@ -18,12 +18,18 @@ import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-sem
 import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
 
-import { HydraCommandRejectedError, HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra';
+import {
+	HydraCommandRefusedUnsyncedError,
+	HydraCommandRejectedError,
+	HydraTransportAmbiguousError,
+	HydraTransportError,
+} from '@/lib/hydra';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
 import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
 
+import { fanoutsInFlight } from './fanout-in-flight';
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
 
 // --- Lifecycle: POST close ---
@@ -185,16 +191,6 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 
 // --- Lifecycle: POST fanout ---
 
-/**
- * Heads with a Fanout on the wire from this process.
- *
- * hydra-node refuses a second Fanout, and its refusal names only the command,
- * so with two in flight every waiting Fanout fails, including the one that landed. A
- * Fanout carries nothing but the head, so the second request adds nothing: it is
- * refused here, and the first one reports what happened.
- */
-const fanoutsInFlight = new Set<string>();
-
 export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: lifecycleInput,
@@ -252,6 +248,15 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 			logger.info(`[HydraAPI] Head ${head.id} fanout completed`, { status: persistedHead.status });
 			return { headId: head.id, status: persistedHead.status };
 		} catch (error) {
+			// Behind the chain, the node drops Fanout without posting anything.
+			// Self-resolving, so it gets an actionable answer and no head error.
+			if (error instanceof HydraCommandRefusedUnsyncedError) {
+				throw createHttpError(
+					503,
+					`${error.message}. Fanout was not posted; send it again once the node has caught up.`,
+					{ expose: true },
+				);
+			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Fanout');
 			throw error;
 		} finally {

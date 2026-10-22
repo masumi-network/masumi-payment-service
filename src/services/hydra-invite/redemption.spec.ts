@@ -42,7 +42,7 @@ const answered = (status: number, detail: string): ExchangeAttempt => ({
 	...readRefusal(detail),
 	detail,
 });
-const HOST_BUSY = answered(503, '{"error":"exchange is busy"}');
+const HOST_BUSY = answered(503, '{"error":"exchange is busy","code":"host-unavailable"}');
 const GATEWAY_503 = answered(503, '<html>503 Service Unavailable</html>');
 const LOST = { kind: 'unknown', reason: 'socket hang up', host: 'issuer.example' } as const;
 
@@ -65,6 +65,7 @@ describe('the first attempt, inside the request that recorded it', () => {
 	// which can follow a redemption the Host already stored.
 	it.each([
 		['a gateway answers 503', GATEWAY_503],
+		['a gateway answers 503 with its own JSON error', answered(503, '{"error":"upstream timeout"}')],
 		['the answer is lost', LOST],
 		['a gateway answers 502', answered(502, 'bad gateway')],
 	])('keeps the record when %s', async (_label, attempt) => {

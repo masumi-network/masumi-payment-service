@@ -679,7 +679,8 @@ export async function updateHydraHeadEnabledState(
  * history kept the request open through it, and the request then failed its
  * own response query behind the replay — reporting "still disabled" for a head
  * that was enabled and connecting. A connect that fails here is retried by the
- * connection manager's sweep of enabled heads.
+ * connection manager's sweep of enabled heads, unless the head's fanout handoff
+ * completed: such a head gets no session.
  */
 function reconcileEnabledHeadInBackground(id: string): void {
 	void getHydraConnectionManager()

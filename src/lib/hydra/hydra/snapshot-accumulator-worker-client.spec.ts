@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
+import { ModuleKind, ScriptTarget, transpileModule } from 'typescript';
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -11,6 +14,8 @@ const { computeHydraAccumulatorHash } = await import('./snapshot-accumulator');
 const { HydraProtocolError, HydraTransportError } = await import('./errors');
 
 const OUTPUTS = ['d8799f', 'd87a80'];
+const CHILD_EXIT_TIMEOUT_MS = 30_000;
+const CHILD_TEST_TIMEOUT_MS = 35_000;
 
 /** Stands in for a worker thread: records what is posted, and replies on demand. */
 class FakeWorker extends EventEmitter {
@@ -144,6 +149,44 @@ describe('createWorkerAccumulatorComputer', () => {
 		await assertion;
 		expect(workers[0].terminated).toBe(true);
 	});
+
+	// Run the actual factory body without importing application configuration
+	// into the child. Its completed worker must not keep that process alive.
+	it(
+		'lets a process exit naturally after its real worker becomes idle',
+		() => {
+			const source = readFileSync(new URL('./snapshot-accumulator-worker-client.ts', import.meta.url), 'utf8');
+			const factoryDeclaration = source.slice(source.indexOf('export function createWorkerAccumulatorComputer('));
+			const factoryBody = transpileModule(factoryDeclaration, {
+				compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.ESNext },
+			}).outputText.replace(/^export /, '');
+			const child = spawnSync(
+				process.execPath,
+				[
+					'-e',
+					`const { Worker } = require('node:worker_threads');
+				const ACCUMULATOR_WORKER_TIMEOUT_MS = 120_000;
+				const keepAlive = setTimeout(() => { throw new Error('worker did not answer'); }, ${CHILD_TEST_TIMEOUT_MS});
+				const compute = (${factoryBody})(() => new Worker(
+					\`const { parentPort } = require('node:worker_threads');
+					parentPort.postMessage({ ready: true });
+					parentPort.on('message', ({ id, outputs }) => parentPort.postMessage({ id, hash: outputs.join('') }));\`,
+					{ eval: true },
+				));
+				compute(['completed']).then((hash) => {
+					if (hash !== 'completed') throw new Error('worker returned an unexpected result');
+					process.stdout.write(hash);
+					clearTimeout(keepAlive);
+				});`,
+				],
+				{ encoding: 'utf8', timeout: CHILD_EXIT_TIMEOUT_MS, env: { ...process.env, NODE_OPTIONS: '' } },
+			);
+			expect(child.stdout).toBe('completed');
+			expect(child.error).toBeUndefined();
+			expect(child.status).toBe(0);
+		},
+		CHILD_TEST_TIMEOUT_MS,
+	);
 
 	// The real thread plumbing, with a stand-in worker body: the jest runtime
 	// cannot load the TypeScript entry itself.

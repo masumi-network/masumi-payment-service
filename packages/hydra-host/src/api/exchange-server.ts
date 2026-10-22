@@ -104,6 +104,13 @@ const MAX_TRACKED_SOURCES = 10_000;
 const MAX_DISCLOSED_REDEEM_FAILURES = 3;
 /** A maintenance pause lasts minutes, so a redeemer has no reason to retry sooner. */
 const STOPPED_NODE_RETRY_AFTER_SECONDS = 60;
+/**
+ * The code on every 503 this plane sends. Each one comes before the nonce is
+ * touched, and a gateway in front of the plane can send a 503 after a
+ * redemption landed, so the redeemer trusts a 503 only when it carries this
+ * code (`HOST_REFUSAL_CODES` in the payment service's exchange client).
+ */
+const HOST_UNAVAILABLE_CODE = 'host-unavailable';
 
 /** Not a possible `remoteAddress`, so it cannot collide with a real source. */
 export const OVERFLOW_SOURCE = '\u0000overflow';
@@ -394,7 +401,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		if (bodyReaders >= maxBodyReaders || sourceReaders >= maxBodyReadersPerSource) {
 			response.setHeader('Connection', 'close');
 			response.setHeader('Retry-After', '1');
-			send(response, 503, { error: 'exchange is busy' });
+			send(response, 503, { error: 'exchange is busy', code: HOST_UNAVAILABLE_CODE });
 			return;
 		}
 		bodyReaders += 1;
@@ -424,7 +431,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 
 		if (inFlight >= maxInFlight) {
 			response.setHeader('Retry-After', '1');
-			send(response, 503, { error: 'exchange is busy' });
+			send(response, 503, { error: 'exchange is busy', code: HOST_UNAVAILABLE_CODE });
 			return;
 		}
 		inFlight += 1;
@@ -458,13 +465,13 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 				if (pending.expiresAt > Date.now() && ledgerParamsRefusal) {
 					logger.warn(`[exchange] redemption refused (503 ${ledgerParamsRefusal})`);
 					response.setHeader('Retry-After', String(STOPPED_NODE_RETRY_AFTER_SECONDS));
-					send(response, 503, { error: 'this host is not taking new heads; retry later' });
+					send(response, 503, { error: 'this host is not taking new heads; retry later', code: HOST_UNAVAILABLE_CODE });
 					return;
 				}
 				if (pending.expiresAt > Date.now() && (await isNodeStopped(pending.hostNodeId))) {
 					logger.warn('[exchange] redemption refused (503 reserved node is stopped)');
 					response.setHeader('Retry-After', String(STOPPED_NODE_RETRY_AFTER_SECONDS));
-					send(response, 503, { error: 'the reserved node is stopped; retry later' });
+					send(response, 503, { error: 'the reserved node is stopped; retry later', code: HOST_UNAVAILABLE_CODE });
 					return;
 				}
 				const peerRejection = await checkPeerTarget(body.redeemer.advertise);

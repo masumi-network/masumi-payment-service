@@ -57,3 +57,37 @@ export function resolveNewlyDeclaredDecommitTransactions(
 	}
 	return resolved;
 }
+
+/**
+ * How many decommit transactions to keep for transition checking.
+ *
+ * Only one can be pending at a time, so this is generous by design: it exists
+ * so a long history cannot grow the map without bound.
+ */
+export const MAX_TRACKED_DECOMMIT_TRANSACTIONS = 64;
+
+/** Keep a requested decommit for the `lookup` above, keyed by its lower-case tx id. */
+export function rememberDecommitTransaction(
+	tracked: Map<string, HydraTransaction>,
+	transaction: HydraTransaction,
+): void {
+	const txId = transaction.txId?.toLowerCase();
+	if (!txId) return;
+	if (tracked.has(txId)) return;
+	// Narrowed to the modelled fields, not stored verbatim. `hydraTransactionSchema`
+	// is deliberately loose so a field a newer node adds cannot wedge replay, and
+	// this map's only bound is an entry count — 64 frames each just under the 4 MiB
+	// frame limit because of one unmodelled field retain ~256 MiB per node, four
+	// times the whole configured CBOR budget, and nothing clears the map on
+	// disconnect. Only `txId` and `cborHex` are ever read back off these entries.
+	tracked.set(txId, {
+		type: transaction.type,
+		cborHex: transaction.cborHex,
+		description: transaction.description,
+		txId: transaction.txId,
+	});
+	if (tracked.size > MAX_TRACKED_DECOMMIT_TRANSACTIONS) {
+		const oldest = tracked.keys().next().value;
+		if (oldest !== undefined) tracked.delete(oldest);
+	}
+}

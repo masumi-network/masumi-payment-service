@@ -10,7 +10,11 @@
  */
 
 import { describe, expect, it } from '@jest/globals';
-import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
+import {
+	MAX_TRACKED_DECOMMIT_TRANSACTIONS,
+	rememberDecommitTransaction,
+	resolveNewlyDeclaredDecommitTransactions,
+} from './decommit-resolution';
 import { HydraTransactionType, type HydraTransaction } from './types';
 
 const DECOMMIT_TX_ID = 'ab'.repeat(32);
@@ -84,5 +88,34 @@ describe('resolveNewlyDeclaredDecommitTransactions', () => {
 	it('ignores a malformed reference rather than treating it as a transaction id', () => {
 		const resolved = resolveNewlyDeclaredDecommitTransactions(['#0', '', DECOMMIT_TX_ID], outputs(), lookup);
 		expect(resolved).toEqual([]);
+	});
+});
+
+describe('rememberDecommitTransaction', () => {
+	// The map lives as long as the node client, so without the bound a long
+	// history grows it forever.
+	it('keeps only the newest decommits once past the bound', () => {
+		const tracked = new Map<string, HydraTransaction>();
+		const txIdAt = (index: number) => index.toString(16).padStart(64, '0');
+		for (let index = 0; index <= MAX_TRACKED_DECOMMIT_TRANSACTIONS; index += 1) {
+			rememberDecommitTransaction(tracked, { ...decommitTx, txId: txIdAt(index) });
+		}
+
+		expect(tracked.size).toBe(MAX_TRACKED_DECOMMIT_TRANSACTIONS);
+		expect(tracked.has(txIdAt(0))).toBe(false);
+		expect(tracked.has(txIdAt(MAX_TRACKED_DECOMMIT_TRANSACTIONS))).toBe(true);
+	});
+
+	// The resolver looks ids up in lower case, and a field a newer node adds must
+	// not be retained: frames near the size limit would pin megabytes each.
+	it('stores the modelled fields under the lower-case tx id', () => {
+		const tracked = new Map<string, HydraTransaction>();
+		const withExtraField = { ...decommitTx, txId: DECOMMIT_TX_ID.toUpperCase(), unmodelled: 'x'.repeat(1024) };
+
+		rememberDecommitTransaction(tracked, withExtraField);
+
+		const stored = tracked.get(DECOMMIT_TX_ID);
+		expect(stored).not.toHaveProperty('unmodelled');
+		expect(stored?.cborHex).toBe(decommitTx.cborHex);
 	});
 });

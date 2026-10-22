@@ -130,6 +130,18 @@ export const commandFailedMessageSchema = z.looseObject({
 });
 
 /**
+ * The node refused client input because its chain follower is behind by more
+ * than `--unsynced-period`. Same echoed `clientInput` as `CommandFailed`, plus
+ * the drift in seconds. The node did not act on the input.
+ */
+export const rejectedInputBecauseUnsyncedMessageSchema = commandFailedMessageSchema.extend({
+	tag: z.literal('RejectedInputBecauseUnsynced'),
+	// Only shown to the operator. Unchecked, so an odd encoding cannot turn a
+	// clear refusal into a protocol error for the waiting command.
+	drift: z.unknown().optional(),
+});
+
+/**
  * The head signed a snapshot that removes a withdrawal's outputs.
  *
  * The moment that matters: from here the value is out of the head, and the only
@@ -139,6 +151,8 @@ export const commandFailedMessageSchema = z.looseObject({
 export const decommitApprovedMessageSchema = z.looseObject({
 	tag: z.literal('DecommitApproved'),
 	decommitTxId: canonicalHydraTransactionIdSchema,
+	/** Optional metadata: a malformed date keeps the existing receipt-time fallback. */
+	timestamp: z.unknown().optional(),
 	headId: canonicalHydraHeadIdSchema,
 	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
 });

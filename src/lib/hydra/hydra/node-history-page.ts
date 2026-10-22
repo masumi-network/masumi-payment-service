@@ -14,7 +14,7 @@ import { hydraHeadStatusSchema, messageSchema } from './schemas';
  * pinned, and nothing unpins one, so this cannot fire twice and the restart it
  * asks for cannot loop. A pinned pass that reaches Idle is a different
  * question — a head this service believes in that its node no longer sees —
- * and still fails closed.
+ * and still fails closed, unless that same pass saw the head finalized.
  */
 export function pageClosedBeforeHeadExisted(frames: readonly string[]): boolean {
 	for (const frame of frames) {

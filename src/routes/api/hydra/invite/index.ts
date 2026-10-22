@@ -20,12 +20,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
 import { HydraInviteRole, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
-import {
-	fetchHostRedemptions,
-	forgetHostInvite,
-	HydraHostRequestError,
-	removeHostNode,
-} from '@/services/hydra-host/client';
+import { fetchHostRedemptions, forgetHostInvite, removeHostNode } from '@/services/hydra-host/client';
 import {
 	CONTESTATION_PERIOD_BOUNDS_SECONDS,
 	DEPOSIT_PERIOD_BOUNDS_SECONDS,
@@ -44,6 +39,7 @@ import {
 	resolveCounterpartyIdentity,
 	type CounterpartyIdentity,
 } from '@/services/hydra-invite/counterparty-identity';
+import { isHostNodeGone } from '@/services/hydra-host/node-gone';
 
 /**
  * Registry identity for the wallet that signed an invite.
@@ -472,6 +468,7 @@ async function abandonStuckRedemption(
 		throw createHttpError(
 			502,
 			`the redemption is abandoned here, but its host refused the cleanup; node ${invite.hostNodeId} must be removed by hand`,
+			{ expose: true },
 		);
 	}
 	logger.info(`hydra: abandoned redemption ${nonceLogRef(invite.nonce)}`);
@@ -555,6 +552,7 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(
 					502,
 					`the invite is revoked here, but its host refused the cleanup; node ${invite.hostNodeId} must be removed by hand`,
+					{ expose: true },
 				);
 			}
 			logger.info(`hydra: revoked redeemed invite ${nonceLogRef(invite.nonce)} and discarded its redemption`);
@@ -577,7 +575,7 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 			// second attempt 404s on a node the first one already took, the local
 			// invite is never marked Revoked, and its participant stays held until
 			// the invite expires on its own.
-			if (!(error instanceof HydraHostRequestError && error.status === 404)) throw error;
+			if (!isHostNodeGone(error)) throw error;
 		}
 
 		// Revoked first, released second. Releasing sweeps the node's fuel back to

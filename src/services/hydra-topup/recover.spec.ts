@@ -26,11 +26,11 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 }));
 
 let recoverHydraDeposit: typeof import('./recover').recoverHydraDeposit;
-let HydraHttpResponseError: typeof import('@/lib/hydra/hydra/node-frames').HydraHttpResponseError;
+let HydraHttpResponseError: typeof import('@/lib/hydra/hydra/node-http-response').HydraHttpResponseError;
 
 beforeAll(async () => {
 	({ recoverHydraDeposit } = await import('./recover'));
-	({ HydraHttpResponseError } = await import('@/lib/hydra/hydra/node-frames'));
+	({ HydraHttpResponseError } = await import('@/lib/hydra/hydra/node-http-response'));
 });
 
 beforeEach(() => {

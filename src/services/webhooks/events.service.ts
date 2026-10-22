@@ -412,20 +412,17 @@ class WebhookEventsService {
 		}
 	}
 
-	async triggerHydraHeadSnapshotRoundStuck(payload: HydraHeadSnapshotRoundStuckWebhookData): Promise<void> {
-		try {
-			await webhookQueueService.queueWebhook(
-				WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK,
-				payload,
-				payload.hydraHeadId,
-				undefined,
-			);
-		} catch (error) {
-			logger.error('Failed to trigger HYDRA_HEAD_SNAPSHOT_ROUND_STUCK webhook', {
-				hydraHeadId: payload.hydraHeadId,
-				error: error instanceof Error ? error.message : 'Unknown error',
-			});
-		}
+	async queueHydraHeadSnapshotRoundStuckInTransaction(
+		tx: Prisma.TransactionClient,
+		payload: HydraHeadSnapshotRoundStuckWebhookData,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK,
+			payload,
+			payload.hydraHeadId,
+			undefined,
+		);
 	}
 
 	async triggerHydraHeadPostTxFailed(payload: HydraHeadPostTxFailedWebhookData): Promise<void> {
@@ -444,20 +441,17 @@ class WebhookEventsService {
 		}
 	}
 
-	async triggerHydraHeadContestMissing(payload: HydraHeadContestMissingWebhookData): Promise<void> {
-		try {
-			await webhookQueueService.queueWebhook(
-				WebhookEventType.HYDRA_HEAD_CONTEST_MISSING,
-				payload,
-				payload.hydraHeadId,
-				undefined,
-			);
-		} catch (error) {
-			logger.error('Failed to trigger HYDRA_HEAD_CONTEST_MISSING webhook', {
-				hydraHeadId: payload.hydraHeadId,
-				error: error instanceof Error ? error.message : 'Unknown error',
-			});
-		}
+	async queueHydraHeadContestMissingInTransaction(
+		tx: Prisma.TransactionClient,
+		payload: HydraHeadContestMissingWebhookData,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.HYDRA_HEAD_CONTEST_MISSING,
+			payload,
+			payload.hydraHeadId,
+			undefined,
+		);
 	}
 }
 

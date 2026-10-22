@@ -12,6 +12,7 @@ import {
 } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
+import { KEY_RELEASE_MIN_CONFIRMATIONS } from '@/services/hydra-node-funding/key-release-depth';
 import { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
@@ -230,7 +231,19 @@ async function assertHydraHeadsCleanupEligible(
 	);
 }
 
+/**
+ * Deleting a local participant or a relation destroys the node and its keys,
+ * ours and the Host's copy, so the fanout is held to the key-release depth: a
+ * shallow one that a rollback evicts would leave nothing that can post it
+ * again. Remote-participant deletion shares the guard and is held to the same
+ * depth, which is stricter than it needs but keeps one finality rule.
+ */
+function fanoutDeletionConfirmations(): number {
+	return Math.max(CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD, KEY_RELEASE_MIN_CONFIRMATIONS);
+}
+
 async function assertHydraFanoutStillFinal(evidence: readonly HydraCleanupEvidence[]): Promise<void> {
+	const requiredConfirmations = fanoutDeletionConfirmations();
 	const results = await Promise.all(
 		evidence.map(async (head) => ({
 			headId: head.headId,
@@ -238,12 +251,20 @@ async function assertHydraFanoutStillFinal(evidence: readonly HydraCleanupEviden
 				network: head.network,
 				rpcProviderApiKey: head.rpcProviderApiKey,
 				txHash: head.fanoutTxHash,
-				requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+				requiredConfirmations,
 			}),
 		})),
 	);
 	if (results.some(({ result }) => result === 'transient-error')) {
 		throw createHttpError(503, 'Cannot independently re-confirm Hydra fanout finality');
+	}
+	// Shallow, not changed: the usual answer in the first minutes after a fanout.
+	const isOnlyShallow = results.every(({ result }) => result === 'confirmed-valid' || result === 'pending');
+	if (isOnlyShallow && results.some(({ result }) => result === 'pending')) {
+		throw createHttpError(
+			409,
+			`Cannot delete Hydra configuration yet: the fanout is not ${requiredConfirmations} confirmations deep; try again in a few minutes`,
+		);
 	}
 	if (results.some(({ result }) => result !== 'confirmed-valid')) {
 		throw createHttpError(409, 'Cannot delete Hydra configuration after fanout finality changed');

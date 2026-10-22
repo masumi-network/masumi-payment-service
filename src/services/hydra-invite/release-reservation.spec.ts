@@ -243,9 +243,24 @@ describe('the Host node behind a reservation', () => {
 
 	it('treats a node the Host no longer has as removed', async () => {
 		const { HydraHostRequestError } = await import('@/services/hydra-host/client');
-		mockRemoveHostNode.mockRejectedValue(new HydraHostRequestError('gone', 404));
+		mockRemoveHostNode.mockRejectedValue(
+			new HydraHostRequestError('DELETE /v1/nodes/node-1 on the hydra host failed (404): no such node: node-1', 404),
+		);
 
 		await expect(releaseReservedParticipants(RESERVATION)).resolves.toEqual({ released: 1, retained: 0 });
 		expect(mockParticipantDeleteMany).toHaveBeenCalled();
+	});
+
+	// A base URL missing a proxy prefix answers 404 for the route itself. Taking
+	// that as removed would delete the only rows that name the node.
+	it('keeps the reservation when the 404 is for an unknown route, not the node', async () => {
+		const { HydraHostRequestError } = await import('@/services/hydra-host/client');
+		mockRemoveHostNode.mockRejectedValue(
+			new HydraHostRequestError('DELETE /v1/nodes/node-1 on the hydra host failed (404): not found', 404),
+		);
+
+		await expect(releaseReservedParticipants(RESERVATION)).resolves.toMatchObject({ released: 0 });
+		expect(mockParticipantDeleteMany).not.toHaveBeenCalled();
+		expect(mockSecretDeleteMany).not.toHaveBeenCalled();
 	});
 });

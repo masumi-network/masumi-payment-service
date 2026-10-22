@@ -22,7 +22,8 @@ export {
 
 // The lifecycle endpoints live beside the route module rather than inside it;
 // importing them here keeps that module free of a cycle back to them.
-export { initHeadPost, commitHeadPost } from './head/lifecycle';
+export { initHeadPost } from './head/lifecycle';
+export { commitHeadPost } from './head/commit';
 export { closeHeadPost, fanoutHeadPost } from './head/settlement';
 export { fanoutRemainingGet, partialFanoutHeadPost } from './head/partial-fanout';
 export { retireHeadPost } from './head/retire';

@@ -6,8 +6,13 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
 }));
 
-const { extractCommitNotSettled, extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } =
-	await import('./head-output-tx');
+const {
+	extractClosedHeadFacts,
+	extractCommitNotSettled,
+	extractDecommitInFlight,
+	extractHeadOutputTxId,
+	extractPendingDecommitRefs,
+} = await import('./head-output-tx');
 
 const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
 const CLOSE_TX = 'f96e9b1375c44ac6865c19682df5043911f15682db436ba27948421d75ccc2f5';
@@ -359,5 +364,83 @@ describe('extractCommitNotSettled', () => {
 		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
 	])('reports nothing unsettled when %s', (_label, state) => {
 		expect(extractCommitNotSettled(state)).toBe(false);
+	});
+});
+
+/**
+ * A head closed while the service was off is first seen through Greetings, which
+ * carry no deadline. hydra-node 2.4.1 keeps it in `ClosedState` and, once partial
+ * fanout starts, in `PartialFanoutState`.
+ */
+describe('extractClosedHeadFacts', () => {
+	const DEADLINE = '2026-10-22T12:00:00Z';
+	const confirmed = (number: unknown) => ({
+		tag: 'ConfirmedSnapshot',
+		snapshot: { headId: HEAD_ID, version: 0, number },
+		signatures: {},
+	});
+	const closedState = (confirmedSnapshot: unknown, contents: Record<string, unknown> = {}) => ({
+		tag: 'Closed',
+		contents: {
+			headId: HEAD_ID,
+			contestationDeadline: DEADLINE,
+			confirmedSnapshot,
+			readyToFanoutSent: false,
+			...contents,
+		},
+	});
+
+	it('reads the deadline of a closed head and no snapshot number', () => {
+		// `confirmedSnapshot` is the node's own snapshot, not the one the close put on chain.
+		expect(extractClosedHeadFacts(closedState(confirmed(7)), HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
+	it.each([
+		['missing', undefined],
+		['of a kind it does not know', { tag: 'SomethingElse' }],
+	])('reads the deadline when the confirmed snapshot is %s', (_label, confirmedSnapshot) => {
+		expect(extractClosedHeadFacts(closedState(confirmedSnapshot), HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
+	it('reads it once the head fans out in steps', () => {
+		const state = { tag: 'FanoutProgress', contents: { ...closedState(confirmed(12)).contents, remainingOutputs: {} } };
+
+		expect(extractClosedHeadFacts(state, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
+	it('accepts a state that is not nested under contents', () => {
+		const flat = { tag: 'Closed', ...closedState(confirmed(3)).contents };
+
+		expect(extractClosedHeadFacts(flat, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
+	it('does not need the state to carry a head id', () => {
+		const { headId: _headId, ...withoutHeadId } = closedState(confirmed(4)).contents;
+
+		expect(extractClosedHeadFacts({ tag: 'Closed', contents: withoutHeadId }, HEAD_ID)).toEqual({
+			contestationDeadline: DEADLINE,
+		});
+	});
+
+	it('matches the head id whatever its case', () => {
+		expect(extractClosedHeadFacts(closedState(confirmed(1), { headId: HEAD_ID.toUpperCase() }), HEAD_ID)).toEqual({
+			contestationDeadline: DEADLINE,
+		});
+	});
+
+	// Unknown must never become a value: a missing fact stays missing, so a later read can still fill it.
+	it.each([
+		['the node reports no head', { tag: 'Idle', contents: { chainState: {} } }],
+		['it is not an object', 'Closed'],
+		['it is null', null],
+		['the deadline is missing', closedState(confirmed(7), { contestationDeadline: undefined })],
+		['the deadline is not a string', closedState(confirmed(7), { contestationDeadline: 1_761_134_400 })],
+		['the state belongs to another head', closedState(confirmed(7), { headId: 'f'.repeat(56) })],
+	])('says nothing when %s', (_label, state) => {
+		expect(extractClosedHeadFacts(state, HEAD_ID)).toBeUndefined();
+	});
+
+	it('says nothing without a well-formed head id to check against', () => {
+		expect(extractClosedHeadFacts(closedState(confirmed(7)), 'not-a-head-id')).toBeUndefined();
 	});
 });

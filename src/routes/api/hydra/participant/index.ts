@@ -2,6 +2,7 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
+import { releaseHostNodeOfFinishedHead } from '@/services/hydra-host/release-node';
 import { decrypt } from '@/utils/security/encryption';
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
@@ -154,6 +155,8 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 		select: {
 			hydraHeadId: true,
 			HydraHead: { select: { hydraRelationId: true } },
+			hostNodeId: true,
+			HydraHost: { select: { baseUrl: true, encryptedAdminToken: true, allowInsecureHttp: true } },
 		},
 	});
 	if (!deletionPlan) throw createHttpError(404, 'Local participant not found');
@@ -200,6 +203,11 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 				: `Cannot delete this participant: ${sweep.reason}.${held}`,
 		);
 	}
+
+	// Quiesce has proven the head is finished, so its node can go back to the Host
+	// now that the sweep has emptied it. Before the rows that name it, so a Host
+	// failure keeps them and the delete can be retried.
+	if (deletionPlan.hydraHeadId) await releaseHostNodeOfFinishedHead(deletionPlan);
 
 	await withSerializableSlotRetry(
 		() =>

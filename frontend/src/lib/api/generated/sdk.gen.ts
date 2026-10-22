@@ -2753,7 +2753,7 @@ export const getSecurityStatus = <ThrowOnError extends boolean = false>(options?
 /**
  * Acknowledge payment requests in Needs Action (PAY access required)
  *
- * Hides payment requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Identifiers that are not in Needs Action, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.
+ * Hides payment requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Each request names the nextActionLastChangedAt the caller read: a request that changed since then is skipped, so an error the caller has not seen is not hidden. Requests that are not in Needs Action, changed since they were read, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.
  */
 export const postPaymentAcknowledgeManualAction = <ThrowOnError extends boolean = false>(options?: Options<PostPaymentAcknowledgeManualActionData, ThrowOnError>): RequestResult<PostPaymentAcknowledgeManualActionResponses, PostPaymentAcknowledgeManualActionErrors, ThrowOnError> => (options?.client ?? client).post<PostPaymentAcknowledgeManualActionResponses, PostPaymentAcknowledgeManualActionErrors, ThrowOnError>({
     responseType: 'json',
@@ -2769,7 +2769,7 @@ export const postPaymentAcknowledgeManualAction = <ThrowOnError extends boolean 
 /**
  * Acknowledge purchase requests in Needs Action (PAY access required)
  *
- * Hides purchase requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Identifiers that are not in Needs Action, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.
+ * Hides purchase requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Each request names the nextActionLastChangedAt the caller read: a request that changed since then is skipped, so an error the caller has not seen is not hidden. Requests that are not in Needs Action, changed since they were read, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.
  */
 export const postPurchaseAcknowledgeManualAction = <ThrowOnError extends boolean = false>(options?: Options<PostPurchaseAcknowledgeManualActionData, ThrowOnError>): RequestResult<PostPurchaseAcknowledgeManualActionResponses, PostPurchaseAcknowledgeManualActionErrors, ThrowOnError> => (options?.client ?? client).post<PostPurchaseAcknowledgeManualActionResponses, PostPurchaseAcknowledgeManualActionErrors, ThrowOnError>({
     responseType: 'json',
