@@ -3,7 +3,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 
-/** Statuses whose snapshot a close or contest has fixed on chain. */
+/** Statuses whose snapshot a close or contest has put on chain. */
 const CLOSED_HEAD_STATUSES: HydraHeadStatus[] = [
 	HydraHeadStatus.Closed,
 	HydraHeadStatus.FanoutPossible,
@@ -17,18 +17,18 @@ export type ReplayedCloseNode = Pick<HydraNode, 'status' | 'closedSnapshotNumber
  * Persist the snapshot of the last close or contest in the replayed history.
  *
  * A contest moves the head to a newer snapshot, and the fanout pays out that
- * snapshot. The history holds every close and contest of the head, also the
- * ones that happened while the service was down or disconnected, so it is the
- * one source that cannot miss the contested number. A row without it keeps the
- * older close's number, and the fanout handoff, which expects the row's number,
- * never completes.
+ * snapshot. The history also holds the closes and contests that happened while
+ * the service was down or disconnected, which no live frame brings back. A row
+ * without the contested number keeps the older close's, and the fanout handoff,
+ * which expects the row's number, never completes. If the node compacted those
+ * frames away, the replay has no closed snapshot and nothing is written.
  *
  * The caller has checked that the history pass is complete and bound to this
  * head. The write changes no status, so it cannot look like a regression, and
  * it only raises the number on a row that is still closed and not handed off.
  * While the head is Closed, its deadline moves too, only to a later time,
  * because each contest extends it. Past Closed the deadline has passed, and
- * nothing reads it any more.
+ * nothing decides on it any more.
  *
  * Returns true when it raised the row. The caller then ends this pass, so the
  * next pass reads the new number.
