@@ -73,6 +73,14 @@ describe('convertSyncedPaymentAction', () => {
 		).toMatchObject({ action: PaymentAction.SubmitResultRequested, resultHash: RESULT_HASH });
 	});
 
+	// The buyer's refund request spent the output an in-flight submit was built
+	// on, so the table requeues the submit and it must keep the result to resend.
+	it('keeps the in-flight hash when a refund request lands first', () => {
+		expect(
+			convertSyncedPaymentAction(PaymentAction.SubmitResultInitiated, RESULT_HASH, OnChainState.RefundRequested, null),
+		).toMatchObject({ action: PaymentAction.SubmitResultRequested, resultHash: RESULT_HASH });
+	});
+
 	it('parks a request whose escrow was withdrawn, without a hash', () => {
 		expect(
 			convertSyncedPaymentAction(PaymentAction.SubmitResultRequested, RESULT_HASH, OnChainState.Withdrawn, null),
