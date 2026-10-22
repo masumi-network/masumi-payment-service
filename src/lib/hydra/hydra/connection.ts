@@ -15,6 +15,17 @@ const DISCONNECT_GRACE_TIMEOUT_MS = 1_000;
 const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const RECONNECT_JITTER_RATIO = 0.2;
+/**
+ * A socket whose peer vanished without a FIN (a dropped NAT entry, a dead
+ * host) stays OPEN forever: nothing is sent on a quiet head, and the
+ * hydra-host proxy disables idle timeouts on purpose. On the history socket
+ * that is silent: replay keeps counting as complete while no confirmation
+ * arrives. A ping every interval, answered by the peer's websocket stack,
+ * proves the path; `HEARTBEAT_MAX_SILENT_INTERVALS` intervals with no inbound
+ * frame at all fail the transport.
+ */
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_MAX_SILENT_INTERVALS = 2;
 
 /**
  * Anchored to the scheme, which a bare `replace('http', 'ws')` is not.
@@ -46,6 +57,9 @@ export class Connection extends EventEmitter {
 	private _disconnectPromise: Promise<void> | undefined;
 	private _socketGeneration = 0;
 	private _reconnectAttempt = 0;
+	private _heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+	/** A paused socket reads no pongs either, so the heartbeat waits it out. */
+	private _isReceivingPaused = false;
 	/**
 	 * Sent on every upgrade, including reconnects: a Hydra Host authenticates the
 	 * upgrade itself, so a socket that reconnects without the credential would be
@@ -76,12 +90,15 @@ export class Connection extends EventEmitter {
 			...(Object.keys(this._authHeaders).length === 0 ? {} : { headers: this._authHeaders }),
 		});
 		this._websocket = websocket;
+		// A replacement socket starts reading regardless of the old one's pause.
+		this._isReceivingPaused = false;
 		this._status = HydraHeadStatus.Connecting;
 
 		websocket.on('open', () => {
 			if (generation !== this._socketGeneration || this._isManuallyDisconnected) return;
 			this._reconnectAttempt = 0;
 			this._status = HydraHeadStatus.Connected;
+			this.startHeartbeat(websocket, generation);
 			this.safeEmit('open');
 		});
 
@@ -194,6 +211,7 @@ export class Connection extends EventEmitter {
 
 		// Invalidate this socket before closing it so its subsequent callbacks cannot
 		// race the replacement socket or schedule another reconnect.
+		this.stopHeartbeat();
 		this._socketGeneration += 1;
 		if (this._websocket === websocket) this._websocket = undefined;
 		if (this._status !== HydraHeadStatus.Disconnected) {
@@ -208,6 +226,8 @@ export class Connection extends EventEmitter {
 		websocket.on('error', () => undefined);
 		websocket.removeAllListeners('close');
 		websocket.removeAllListeners('message');
+		websocket.removeAllListeners('pong');
+		websocket.removeAllListeners('ping');
 		if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
 			try {
 				// A socket paused for backpressure never reads the peer's close frame,
@@ -263,6 +283,7 @@ export class Connection extends EventEmitter {
 		const generation = this._socketGeneration;
 		this._isManuallyDisconnected = true;
 		this._isDisconnecting = true;
+		this.stopHeartbeat();
 		if (this._reconnectTimer) {
 			clearTimeout(this._reconnectTimer);
 			this._reconnectTimer = undefined;
@@ -294,11 +315,57 @@ export class Connection extends EventEmitter {
 	 * starts reading regardless.
 	 */
 	pauseReceiving(): void {
+		this._isReceivingPaused = true;
 		this._websocket?.pause();
 	}
 
 	resumeReceiving(): void {
+		this._isReceivingPaused = false;
 		this._websocket?.resume();
+	}
+
+	private startHeartbeat(websocket: WebSocket, generation: number): void {
+		this.stopHeartbeat();
+		let silentIntervals = 0;
+		const markAlive = () => {
+			silentIntervals = 0;
+		};
+		// Any inbound frame proves the path. hydra-node also pings every 30s itself.
+		websocket.on('pong', markAlive);
+		websocket.on('ping', markAlive);
+		websocket.on('message', markAlive);
+		this._heartbeatTimer = setInterval(() => {
+			if (generation !== this._socketGeneration) return;
+			if (this._isReceivingPaused) {
+				silentIntervals = 0;
+				return;
+			}
+			// Two silent intervals, not one: a pong cannot overtake a maximum-size
+			// frame still arriving on a slow link, and a long event-loop stall can
+			// fire this timer before the pong already in the kernel buffer is read.
+			if (silentIntervals >= HEARTBEAT_MAX_SILENT_INTERVALS) {
+				this.handleTransportFailure(
+					new HydraTransportError(
+						`Hydra websocket answered no ping within ${HEARTBEAT_INTERVAL_MS * HEARTBEAT_MAX_SILENT_INTERVALS}ms`,
+					),
+					websocket,
+					generation,
+				);
+				return;
+			}
+			silentIntervals += 1;
+			try {
+				websocket.ping();
+			} catch {
+				// A socket that cannot ping is failing; the next ticks see no pong.
+			}
+		}, HEARTBEAT_INTERVAL_MS);
+		this._heartbeatTimer.unref?.();
+	}
+
+	private stopHeartbeat(): void {
+		clearInterval(this._heartbeatTimer);
+		this._heartbeatTimer = undefined;
 	}
 
 	invalidate(error: Error): void {
