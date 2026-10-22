@@ -255,3 +255,60 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 	// decision is made -- classifyInitObservation in init-observation.spec.ts --
 	// rather than by threading it through that unrelated path here.
 });
+
+/**
+ * hydra-node's refusal of a second Init names no request, so it failed every
+ * waiting Init, the one that started the head included (MAS-647).
+ */
+describe('initHeadPost, with two requests at once', () => {
+	const init = (headId = 'head-1') => initHeadPost.handler({ input: { headId } });
+
+	it('refuses a second init while the first is in flight, without recording an error', async () => {
+		let startFirst!: () => void;
+		mockInit.mockImplementationOnce(() => new Promise<void>((resolve) => (startFirst = resolve)));
+
+		const first = init();
+		await new Promise((resolve) => setImmediate(resolve));
+		await expect(init()).rejects.toMatchObject({
+			statusCode: 409,
+			message: 'Hydra head init is already in progress',
+		});
+
+		// A refusal is not a failed command, and the node was asked once.
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+		expect(mockInit).toHaveBeenCalledTimes(1);
+		startFirst();
+		await first.catch(() => undefined);
+	});
+
+	it('accepts an init again once the one in flight has failed', async () => {
+		mockInit
+			.mockRejectedValueOnce(
+				new HydraPostTxRejectedError('hydra-node refused to post the Init transaction: NoSeedInput'),
+			)
+			.mockResolvedValueOnce(undefined);
+
+		await expect(init()).rejects.toMatchObject({ statusCode: 504 });
+		await init().catch(() => undefined);
+
+		expect(mockInit).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not hold up the init of another head', async () => {
+		mockFindHead.mockImplementation(async (args: { where: { id: string }; select?: Record<string, unknown> }) =>
+			args.select && Object.keys(args.select).length === 1 && args.select.status
+				? { status: observedStatus }
+				: { ...idleHead, id: args.where.id },
+		);
+		const finish: Array<() => void> = [];
+		mockInit.mockImplementation(() => new Promise<void>((resolve) => finish.push(resolve)));
+
+		const first = init('head-1');
+		const second = init('head-2');
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(mockInit).toHaveBeenCalledTimes(2);
+		for (const resolve of finish) resolve();
+		await Promise.all([first.catch(() => undefined), second.catch(() => undefined)]);
+	});
+});

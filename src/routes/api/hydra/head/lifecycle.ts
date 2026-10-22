@@ -63,6 +63,8 @@ export const lifecycleOutput = z.object({
 	status: z.nativeEnum(HydraHeadStatus),
 });
 
+const initsInFlight = new Set<string>();
+
 export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: lifecycleInput,
@@ -105,6 +107,11 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		const cm = getHydraConnectionManager();
+
+		if (initsInFlight.has(head.id)) {
+			throw createHttpError(409, 'Hydra head init is already in progress');
+		}
+		initsInFlight.add(head.id);
 
 		try {
 			await cm.connect(head);
@@ -241,6 +248,8 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Init');
 			throw error;
+		} finally {
+			initsInFlight.delete(head.id);
 		}
 	},
 });
