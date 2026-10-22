@@ -41,7 +41,7 @@ import {
 	decommitRequestedMessageSchema,
 	hasFinalizedUtxoField,
 } from './schemas';
-import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
+import { rememberDecommitTransaction, resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
 import * as l2Mint from './l2-mint-tally';
 import {
 	completeHydraSnapshotVerification,
@@ -63,14 +63,6 @@ const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
 	HydraHeadStatus.FanningOut,
 	HydraHeadStatus.Final,
 ]);
-
-/**
- * How many decommit transactions to keep for transition checking.
- *
- * Only one can be pending at a time, so this is generous by design: it exists
- * so a long history cannot grow the map without bound.
- */
-const MAX_TRACKED_DECOMMIT_TRANSACTIONS = 64;
 
 const MAX_UNPINNED_HISTORY_BUFFER_BYTES = 8 * 1024 * 1024;
 
@@ -418,7 +410,10 @@ export class HydraHistoryReplay {
 			// request first, and the transaction it carries is what accounts for the
 			// value change that snapshot signs.
 			if (parsedEnvelope.tag === 'DecommitRequested') {
-				this.rememberDecommitTransaction(decommitRequestedMessageSchema.parse(message).decommitTx);
+				rememberDecommitTransaction(
+					this._decommitTransactions,
+					decommitRequestedMessageSchema.parse(message).decommitTx,
+				);
 			}
 
 			if (parsedEnvelope.tag === 'SnapshotConfirmed') {
@@ -555,28 +550,6 @@ export class HydraHistoryReplay {
 		const description = describeProtocolDrift(fresh);
 		logger.warn(`[HydraNode] ${description}`);
 		this.host.onProtocolDrift(description);
-	}
-
-	private rememberDecommitTransaction(transaction: HydraTransaction): void {
-		const txId = transaction.txId?.toLowerCase();
-		if (!txId) return;
-		if (this._decommitTransactions.has(txId)) return;
-		// Narrowed to the modelled fields, not stored verbatim. `hydraTransactionSchema`
-		// is deliberately loose so a field a newer node adds cannot wedge replay, and
-		// this map's only bound is an entry count — 64 frames each just under the 4 MiB
-		// frame limit because of one unmodelled field retain ~256 MiB per node, four
-		// times the whole configured CBOR budget, and nothing clears the map on
-		// disconnect. Only `txId` and `cborHex` are ever read back off these entries.
-		this._decommitTransactions.set(txId, {
-			type: transaction.type,
-			cborHex: transaction.cborHex,
-			description: transaction.description,
-			txId: transaction.txId,
-		});
-		if (this._decommitTransactions.size > MAX_TRACKED_DECOMMIT_TRANSACTIONS) {
-			const oldest = this._decommitTransactions.keys().next().value;
-			if (oldest !== undefined) this._decommitTransactions.delete(oldest);
-		}
 	}
 
 	/** Adopt a verified snapshot as the anchor and remember the exact signed payload behind it. */
