@@ -229,6 +229,10 @@ export async function advanceRedemption(
 	// After a fresh acknowledgement, from the record: a concurrent caller that got
 	// the same acknowledgement may already have started the node or finished.
 	const status = state.acknowledged ? state.status : await acknowledge(state, ports, options);
+	if (status === 'Completed') {
+		const current = await ports.reload();
+		if (current?.hydraHeadId != null) return { hydraHeadId: current.hydraHeadId };
+	}
 
 	// The issuer needed nothing from this Host to acknowledge, so that went ahead.
 	// Starting a node or creating a head here would undo the pause.

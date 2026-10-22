@@ -496,6 +496,10 @@ export async function redeemHeadInvite(input: {
 	if (record === null) {
 		throw createHttpError(500, 'hydra: a redemption was recorded and then could not be read back');
 	}
+	// A concurrent retry finished or ended it in between: answer as that retry would.
+	if (record.status !== HydraInviteStatus.Redeemed) {
+		return await resumeRedemption(record, context);
+	}
 	// The version written by the create, not the one read back: a retry that
 	// claimed the record in between must make this request's deletes find nothing.
 	return await finishRedemption(

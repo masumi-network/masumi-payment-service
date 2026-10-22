@@ -151,6 +151,21 @@ describe('after the issuer acknowledged', () => {
 		expect(fakes.start).not.toHaveBeenCalled();
 	});
 
+	it('reports the head a concurrent caller finished, even on a Host paused since', async () => {
+		const fakes = ports(
+			{ kind: 'accepted' },
+			{
+				markAcknowledged: jest.fn(async () => 'Completed' as const),
+				reload: jest.fn(async () => ({ status: 'Completed', hydraHeadId: 'head-2' })),
+			},
+		);
+
+		await expect(advanceRedemption(state({ hostPaused: true }), fakes, { rowIsNew: true })).resolves.toEqual({
+			hydraHeadId: 'head-2',
+		});
+		expect(fakes.createHead).not.toHaveBeenCalled();
+	});
+
 	it('touches nothing on a paused Host', async () => {
 		const fakes = ports({ kind: 'accepted' });
 
