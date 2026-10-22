@@ -32,8 +32,10 @@ import {
 	observationHasValidLineage,
 	parsePersistedHydraValue,
 	persistedHydraValue,
+	isUnboundEscrowCopy,
 	resolveInitialLockState,
 	type HydraDatumApplyOutcome,
+	type UnboundCopyRequest,
 	type HydraOutputReference,
 } from './hydra-datum-guards';
 import { ensureObservedTransaction, releaseBlockedWallet } from './hydra-datum-observation';
@@ -458,6 +460,15 @@ export async function applyDatumStateToLocalRequests(params: {
 				applyOutcome = hasPendingTarget ? 'retry' : 'irrelevant';
 				return;
 			}
+			const isUnboundCopy = (request: UnboundCopyRequest, isSame: boolean, recoversTimeout: boolean) =>
+				isUnboundEscrowCopy({
+					request,
+					isSameAcceptedOutput: isSame,
+					recoversTimeout,
+					observedState: newOnChainState,
+					transactionEvidence,
+					logContext: { hydraHeadId, txId, blockchainIdentifier },
+				});
 			const purchaseIsPermanentReject =
 				shouldApplyPurchase &&
 				purchaseRequest != null &&
@@ -470,7 +481,8 @@ export async function applyDatumStateToLocalRequests(params: {
 					(newOnChainState === OnChainState.FundsLocked &&
 						(purchaseRequest.onChainState == null || purchaseRecoversTimeout) &&
 						transactionEvidence != null &&
-						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)));
+						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)) ||
+					isUnboundCopy(purchaseRequest, purchaseIsSameAcceptedOutput, purchaseRecoversTimeout));
 			const paymentIsPermanentReject =
 				shouldApplyPayment &&
 				paymentRequest != null &&
@@ -483,7 +495,8 @@ export async function applyDatumStateToLocalRequests(params: {
 					(newOnChainState === OnChainState.FundsLocked &&
 						(paymentRequest.onChainState == null || paymentRecoversTimeout) &&
 						transactionEvidence != null &&
-						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)));
+						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)) ||
+					isUnboundCopy(paymentRequest, paymentIsSameAcceptedOutput, paymentRecoversTimeout));
 			// Per-side gating: only a TRANSIENTLY-unproven side (not yet trusted but not
 			// permanently rejected either) blocks the tx with 'retry'. A PERMANENTLY
 			// rejected side can never become trusted, so it is excluded from application
@@ -520,6 +533,7 @@ export async function applyDatumStateToLocalRequests(params: {
 							canonicalOutputAmounts,
 							confirmationTimeMs,
 							signedValidityUpperBoundTimeMs,
+							transactionEvidence.validityUpperSlot != null,
 							{ hydraHeadId, blockchainIdentifier, side: 'purchase' },
 						)
 					: null;
@@ -534,6 +548,7 @@ export async function applyDatumStateToLocalRequests(params: {
 							canonicalOutputAmounts,
 							confirmationTimeMs,
 							signedValidityUpperBoundTimeMs,
+							transactionEvidence.validityUpperSlot != null,
 							{ hydraHeadId, blockchainIdentifier, side: 'payment' },
 						)
 					: null;

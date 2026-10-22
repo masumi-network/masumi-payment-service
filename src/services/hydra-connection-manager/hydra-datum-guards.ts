@@ -26,7 +26,11 @@ import {
 	type HydraTransactionEvidence,
 } from './hydra-transaction-evidence';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
-import type { HydraOutputReference, HydraRequestLineage } from './hydra-request-lineage';
+import {
+	isTransactionBoundToHydraLineage,
+	type HydraOutputReference,
+	type HydraRequestLineage,
+} from './hydra-request-lineage';
 
 export type { HydraOutputReference } from './hydra-request-lineage';
 export type HydraDatumApplyOutcome = 'applied' | 'irrelevant' | 'retry';
@@ -531,6 +535,7 @@ export function resolveInitialLockState(
 	outputAmounts: Array<{ unit: string; quantity: string }>,
 	confirmationTimeMs: number | null,
 	signedValidityUpperBoundTimeMs: bigint | null,
+	hasSignedUpperSlot: boolean,
 	logContext: { hydraHeadId: string; blockchainIdentifier: string; side: 'payment' | 'purchase' },
 ): OnChainState | null {
 	if (newOnChainState !== OnChainState.FundsLocked) return newOnChainState;
@@ -539,6 +544,32 @@ export function resolveInitialLockState(
 	// carry historical confirmation time; revalidating would turn a valid lock
 	// into FundsOrDatumInvalid. Preserve both valid and previously-invalid results.
 	if (currentState != null && isSameAcceptedOutput) return currentState;
+	// SnapshotConfirmed timestamps are API metadata. A forged early timestamp
+	// cannot authorize a late/unbounded initial lock: the immutable signed body
+	// must independently end no later than the datum's payByTime. Check it before
+	// the API timestamp, so a missing or late timestamp cannot keep a lock the
+	// signed body already rules out in retry.
+	if (signedValidityUpperBoundTimeMs == null && hasSignedUpperSlot) {
+		// The body is bounded but the slot config cannot convert it: a local
+		// configuration fault, so retry instead of judging the lock.
+		logger.error('[HydraDatumSync] cannot convert the signed validity upper bound; check the L2 slot config', {
+			...logContext,
+			payByTime: decoded.payByTime.toString(),
+		});
+		return null;
+	}
+	if (signedValidityUpperBoundTimeMs == null || signedValidityUpperBoundTimeMs > BigInt(decoded.payByTime)) {
+		// The signed body is final evidence. A lock that is unbounded or may land
+		// after payByTime can never become valid, and a retry would hold every
+		// later transaction of the head behind it. The buyer can build such a
+		// lock at will, so the verdict is permanent.
+		logger.warn('[HydraDatumSync] initial lock lacks a safe signed validity upper bound -> FundsOrDatumInvalid', {
+			...logContext,
+			signedValidityUpperBoundTimeMs: signedValidityUpperBoundTimeMs?.toString() ?? null,
+			payByTime: decoded.payByTime.toString(),
+		});
+		return OnChainState.FundsOrDatumInvalid;
+	}
 	// Hydra's API timestamp is transport metadata rather than part of the signed
 	// transaction body. It may help accept a lock from an authenticated node, but
 	// it must never irreversibly poison a request as "late". Missing, malformed,
@@ -548,15 +579,9 @@ export function resolveInitialLockState(
 		!Number.isSafeInteger(confirmationTimeMs) ||
 		BigInt(confirmationTimeMs) > BigInt(decoded.payByTime)
 	) {
-		return null;
-	}
-	// SnapshotConfirmed timestamps are API metadata. A forged early timestamp
-	// cannot authorize a late/unbounded initial lock: the immutable signed body
-	// must independently end no later than the datum's payByTime.
-	if (signedValidityUpperBoundTimeMs == null || signedValidityUpperBoundTimeMs > BigInt(decoded.payByTime)) {
-		logger.warn('[HydraDatumSync] initial lock lacks a safe signed validity upper bound', {
+		logger.warn('[HydraDatumSync] initial lock has no usable confirmation time before payByTime; retrying', {
 			...logContext,
-			signedValidityUpperBoundTimeMs: signedValidityUpperBoundTimeMs?.toString() ?? null,
+			confirmationTimeMs,
 			payByTime: decoded.payByTime.toString(),
 		});
 		return null;
@@ -574,4 +599,50 @@ export function resolveInitialLockState(
 		payByTime: decoded.payByTime.toString(),
 	});
 	return OnChainState.FundsOrDatumInvalid;
+}
+
+export type UnboundCopyRequest = HydraRequestLineage & { onChainState: OnChainState | null };
+
+/**
+ * Whether an observed output can never continue a local escrow, so the datum
+ * sync must reject it for good instead of retrying. A retry would hold every
+ * later transaction of the head, and anyone can fund the script address with a
+ * copied identifier.
+ *
+ * - An escrow with state: the output's transaction was never recorded by the
+ *   escrow and leaves its accepted output unspent.
+ * - An escrow with no state and no accepted output (or one whose timeout the
+ *   datum sync recovers, which counts as having no state): the datum is not an
+ *   initial lock.
+ *
+ * A missed intermediate transaction (persistence loss, compacted history) has
+ * the same shape as a copy, so every skip is logged as an error for review.
+ */
+export function isUnboundEscrowCopy(params: {
+	request: UnboundCopyRequest;
+	isSameAcceptedOutput: boolean;
+	recoversTimeout: boolean;
+	observedState: OnChainState;
+	transactionEvidence: HydraTransactionEvidence | null;
+	logContext: { hydraHeadId: string; txId: string; blockchainIdentifier: string };
+}): boolean {
+	const { request, isSameAcceptedOutput, recoversTimeout, observedState, transactionEvidence, logContext } = params;
+	const isUnbound =
+		request.onChainState == null || recoversTimeout
+			? observedState !== OnChainState.FundsLocked && request.currentHydraUtxoTxHash == null
+			: !isSameAcceptedOutput &&
+				transactionEvidence != null &&
+				!isTransactionBoundToHydraLineage(request, {
+					hydraHeadId: logContext.hydraHeadId,
+					txId: logContext.txId,
+					consumedInputs: transactionEvidence.inputs,
+				});
+	if (isUnbound) {
+		logger.error('[HydraDatumSync] skipping an output that does not continue the escrow lineage', {
+			...logContext,
+			currentHydraUtxoTxHash: request.currentHydraUtxoTxHash,
+			currentHydraUtxoOutputIndex: request.currentHydraUtxoOutputIndex,
+		});
+	}
+	return isUnbound;
 }
