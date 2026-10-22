@@ -37,9 +37,10 @@ describe('buildNeedsManualActionFilter', () => {
 		expect(buildNeedsManualActionFilter(false)).toEqual({});
 	});
 
-	it('matches WaitingForManualAction or a recorded error on the next action', () => {
+	it('matches unacknowledged WaitingForManualAction or a recorded error on the next action', () => {
 		expect(buildNeedsManualActionFilter(true)).toEqual({
 			NextAction: {
+				manualActionAcknowledgedAt: null,
 				OR: [{ requestedAction: 'WaitingForManualAction' }, { errorType: { not: null } }],
 			},
 		});
