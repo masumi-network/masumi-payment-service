@@ -9,8 +9,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: { hydraHead: { updateMany: mockHydraHeadUpdateMany } },
 }));
 
+const mockWarn = jest.fn();
+
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: jest.fn(), warn: mockWarn, error: jest.fn(), debug: jest.fn() },
 }));
 
 const { recordReplayedCloseSnapshot } = await import('./replayed-close');
@@ -80,6 +82,17 @@ describe('recordReplayedCloseSnapshot', () => {
 
 		expect(mockFetchClosedHeadFacts).not.toHaveBeenCalled();
 		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('warns once when a closed head has no close in its replayed history', async () => {
+		// The row then keeps its number and the handoff waits, so the warning is the only clue.
+		const node = nodeWith(HydraHeadStatus.FanoutPossible, undefined);
+
+		await expect(recordReplayedCloseSnapshot('head-no-close', 0n, node)).resolves.toBe(false);
+		await expect(recordReplayedCloseSnapshot('head-no-close', 0n, node)).resolves.toBe(false);
+
+		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalled();
+		expect(mockWarn).toHaveBeenCalledTimes(1);
 	});
 
 	it('writes nothing when the live head is open again', async () => {

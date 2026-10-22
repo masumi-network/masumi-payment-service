@@ -395,6 +395,13 @@ describe('extractClosedHeadFacts', () => {
 		expect(extractClosedHeadFacts(closedState(confirmed(7)), HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
 	});
 
+	it.each([
+		['missing', undefined],
+		['of a kind it does not know', { tag: 'SomethingElse' }],
+	])('reads the deadline when the confirmed snapshot is %s', (_label, confirmedSnapshot) => {
+		expect(extractClosedHeadFacts(closedState(confirmedSnapshot), HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
 	it('reads it once the head fans out in steps', () => {
 		const state = { tag: 'FanoutProgress', contents: { ...closedState(confirmed(12)).contents, remainingOutputs: {} } };
 

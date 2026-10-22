@@ -322,7 +322,7 @@ describe('persistHeadStatus for a head closed while the service was off', () => 
 		mockUpdateMany.mock.calls.filter(([call]) => field in ((call as { data: Record<string, unknown> }).data ?? {}))
 			.length;
 
-	it('records the deadline, but not a snapshot, when the Closed status arrives without them', async () => {
+	it('records the deadline, but not a snapshot, when the Closed status arrives without a deadline', async () => {
 		const head = fakeHead();
 		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
 
