@@ -208,10 +208,19 @@ describe('retireHeadPost', () => {
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it('retires a Closed head past its contestation deadline', async () => {
+	it('retires a Closed head past its contestation deadline and checks the deadline again in the write', async () => {
 		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
 
-		await expect(handler({ input })).resolves.toMatchObject({ status: HydraHeadStatus.Closed });
+		const retired = await handler({ input });
+
+		expect(retired).toMatchObject({ status: HydraHeadStatus.Closed });
+		const update = mockUpdateMany.mock.calls[0]![0] as { where: unknown };
+		expect(update.where).toEqual({
+			id: 'head-1',
+			status: HydraHeadStatus.Closed,
+			retiredAt: null,
+			contestationDeadline: { lte: new Date(retired.retiredAt as string) },
+		});
 	});
 
 	it.each([

@@ -177,8 +177,16 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 		// (for example a fanout that landed) is not retired. The init anchors the
 		// head still has stay: a later recovery restarts the node from them. The
 		// epoch bump fences the old session, so it cannot write to the record.
+		// A Closed head is also guarded on its deadline. One written while the
+		// checks above ran can lie in the future again (a new close after a chain
+		// rollback passes the status guard), and the head may then need contesting.
 		const retired = await prisma.hydraHead.updateMany({
-			where: { id: head.id, status: head.status, retiredAt: null },
+			where: {
+				id: head.id,
+				status: head.status,
+				retiredAt: null,
+				...(head.status === HydraHeadStatus.Closed ? { contestationDeadline: { lte: retiredAt } } : {}),
+			},
 			data: {
 				isEnabled: false,
 				ownerEpoch: { increment: 1 },
