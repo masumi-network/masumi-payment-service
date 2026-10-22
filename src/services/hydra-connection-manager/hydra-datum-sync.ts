@@ -464,17 +464,32 @@ export async function applyDatumStateToLocalRequests(params: {
 			// output unspent, can never continue that escrow. Anyone can fund the
 			// script address this way, so waiting on it would let a peer hold every
 			// later transaction of the head. A row the timeout parked without an
-			// output counts as having no state, like everywhere else here.
+			// output counts as having no state, like everywhere else here. The same
+			// shape also follows a missed intermediate transaction (persistence
+			// loss, compacted history), so the skip is logged as an error for
+			// operator review.
 			const isUnboundCopy = (
 				request: HydraRequestLineage & { onChainState: OnChainState | null },
 				isSame: boolean,
 				recoversTimeout: boolean,
-			) =>
-				request.onChainState != null &&
-				!recoversTimeout &&
-				!isSame &&
-				transactionEvidence != null &&
-				!isTransactionBoundToHydraLineage(request, { hydraHeadId, txId, consumedInputs: transactionEvidence.inputs });
+			) => {
+				const isUnbound =
+					request.onChainState != null &&
+					!recoversTimeout &&
+					!isSame &&
+					transactionEvidence != null &&
+					!isTransactionBoundToHydraLineage(request, { hydraHeadId, txId, consumedInputs: transactionEvidence.inputs });
+				if (isUnbound) {
+					logger.error('[HydraDatumSync] skipping an output that does not continue the escrow lineage', {
+						hydraHeadId,
+						txId,
+						blockchainIdentifier,
+						currentHydraUtxoTxHash: request.currentHydraUtxoTxHash,
+						currentHydraUtxoOutputIndex: request.currentHydraUtxoOutputIndex,
+					});
+				}
+				return isUnbound;
+			};
 			const purchaseIsPermanentReject =
 				shouldApplyPurchase &&
 				purchaseRequest != null &&
