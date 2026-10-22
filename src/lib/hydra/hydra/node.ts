@@ -30,7 +30,7 @@ import {
 	assertTxConfirmationPolling,
 	awaitHydraTxConfirmation,
 	isAwaitingPostChainTx,
-	prepareNewTxCommand,
+	newTxCommand,
 	sendHydraCommandAndWait,
 } from './node-command-channel';
 import type { ClosedHeadFacts } from './head-output-tx';
@@ -609,15 +609,8 @@ export class HydraNode extends EventEmitter {
 	}
 
 	async newTx(transaction: HydraTransaction) {
-		const { txHash, commandTransaction } = prepareNewTxCommand(transaction);
-		await this.sendCommandAndWait({
-			command: 'NewTx',
-			payload: { tag: 'NewTx', transaction: commandTransaction },
-			timeoutMs: this._commandTimeoutMs,
-			transactionHash: txHash,
-			timeoutMessage: `Hydra did not report an outcome for transaction ${txHash} within ${this._commandTimeoutMs}ms`,
-			isComplete: (message) => message.tag === 'TxValid' && message.transactionId === txHash,
-		});
+		const { txHash, command } = newTxCommand(transaction, this._commandTimeoutMs);
+		await this.sendCommandAndWait(command);
 		return txHash;
 	}
 
