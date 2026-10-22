@@ -70,6 +70,7 @@ import { postInternalGenerateMonthlyInvoiceEndpoint } from './invoice/monthly/in
 import { getMissingInvoicePaymentsEndpoint as getMissingPaymentsEndpoint } from './invoice/monthly/missing';
 import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
+import { paymentAcknowledgeManualActionPost, purchaseAcknowledgeManualActionPost } from './acknowledge-manual-action';
 import { queryRegistryDiffGet } from './registry/diff';
 import { queryAgentByIdentifierGet } from './registry/agent-identifier';
 import { queryRegistryInboxDiffGet } from './registry-inbox/diff';
@@ -230,6 +231,9 @@ export const apiRouter: Routing = {
 			'error-state-recovery': {
 				post: purchaseErrorStateRecoveryPost,
 			},
+			'acknowledge-manual-action': {
+				post: purchaseAcknowledgeManualActionPost,
+			},
 			spending: {
 				post: postPurchaseSpending,
 			},
@@ -263,6 +267,9 @@ export const apiRouter: Routing = {
 			},
 			'error-state-recovery': {
 				post: paymentErrorStateRecoveryPost,
+			},
+			'acknowledge-manual-action': {
+				post: paymentAcknowledgeManualActionPost,
 			},
 			income: {
 				post: getPaymentIncome,

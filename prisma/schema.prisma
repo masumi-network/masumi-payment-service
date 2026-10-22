@@ -953,17 +953,19 @@ model PaymentRequest {
 }
 
 model PaymentActionData {
-  id                      String            @id @default(cuid())
-  createdAt               DateTime          @default(now())
-  updatedAt               DateTime          @updatedAt
-  requestedAction         PaymentAction
-  resultHash              String?
-  submittedTxHash         String?
-  errorType               PaymentErrorType?
-  errorNote               String?
-  PaymentRequestCurrent   PaymentRequest?   @relation("NextAction")
-  paymentRequestHistoryId String?
-  PaymentRequestHistory   PaymentRequest?   @relation("PaymentActionHistory", fields: [paymentRequestHistoryId], references: [id])
+  id                         String            @id @default(cuid())
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
+  requestedAction            PaymentAction
+  resultHash                 String?
+  submittedTxHash            String?
+  errorType                  PaymentErrorType?
+  errorNote                  String?
+  /// Operator hid this action from Needs Action. A DB trigger resets it when requestedAction, errorType or errorNote changes.
+  manualActionAcknowledgedAt DateTime?
+  PaymentRequestCurrent      PaymentRequest?   @relation("NextAction")
+  paymentRequestHistoryId    String?
+  PaymentRequestHistory      PaymentRequest?   @relation("PaymentActionHistory", fields: [paymentRequestHistoryId], references: [id])
 }
 
 model PurchaseRequest {
@@ -1073,16 +1075,18 @@ model PurchaseRequest {
 }
 
 model PurchaseActionData {
-  id                       String             @id @default(cuid())
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
-  requestedAction          PurchasingAction
-  submittedTxHash          String?
-  errorType                PurchaseErrorType?
-  errorNote                String?
-  PurchaseRequestCurrent   PurchaseRequest?   @relation("NextAction")
-  purchaseRequestHistoryId String?
-  PurchaseRequestHistory   PurchaseRequest?   @relation("PurchaseActionHistory", fields: [purchaseRequestHistoryId], references: [id])
+  id                         String             @id @default(cuid())
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+  requestedAction            PurchasingAction
+  submittedTxHash            String?
+  errorType                  PurchaseErrorType?
+  errorNote                  String?
+  /// Operator hid this action from Needs Action. A DB trigger resets it when requestedAction, errorType or errorNote changes.
+  manualActionAcknowledgedAt DateTime?
+  PurchaseRequestCurrent     PurchaseRequest?   @relation("NextAction")
+  purchaseRequestHistoryId   String?
+  PurchaseRequestHistory     PurchaseRequest?   @relation("PurchaseActionHistory", fields: [purchaseRequestHistoryId], references: [id])
 }
 
 model PaymentSourceIdentifiers {

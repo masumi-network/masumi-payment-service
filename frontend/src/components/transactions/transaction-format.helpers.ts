@@ -51,6 +51,18 @@ export function isTransactionErrorRecoverable(
   return recoveryNetwork === 'Preprod' || recoveryNetwork === 'Mainnet';
 }
 
+/**
+ * Whether a row is in Needs Action and can be acknowledged. Mirrors the backend
+ * buildNeedsManualActionFilter; acknowledged rows are already filtered out there.
+ */
+export function isTransactionNeedingAction(transaction: Transaction): boolean {
+  if (!transaction.id) return false;
+  return (
+    transaction.NextAction?.requestedAction === 'WaitingForManualAction' ||
+    !!transaction.NextAction?.errorType
+  );
+}
+
 /** Human-readable label for an on-chain state (e.g. `FundsLocked` -> `Funds Locked`). */
 export const formatOnChainState = (state: string | null | undefined): string => {
   switch (state?.toLowerCase()) {

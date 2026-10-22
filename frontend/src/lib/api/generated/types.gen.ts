@@ -5223,7 +5223,7 @@ export type GetPaymentData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -5789,7 +5789,7 @@ export type GetPaymentCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -5842,7 +5842,7 @@ export type GetPurchaseCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -8034,7 +8034,7 @@ export type GetPurchaseData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -18338,3 +18338,97 @@ export type GetSecurityStatusResponses = {
 };
 
 export type GetSecurityStatusResponse = GetSecurityStatusResponses[keyof GetSecurityStatusResponses];
+
+export type PostPaymentAcknowledgeManualActionData = {
+    /**
+     * Requests to acknowledge
+     */
+    body?: {
+        /**
+         * The network the requests were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Blockchain identifiers of the requests to acknowledge
+         */
+        blockchainIdentifiers: Array<string>;
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/acknowledge-manual-action';
+};
+
+export type PostPaymentAcknowledgeManualActionErrors = {
+    /**
+     * Bad Request (invalid input)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostPaymentAcknowledgeManualActionResponses = {
+    /**
+     * Acknowledged count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Requests that were in Needs Action and are now acknowledged. Others in the list are skipped.
+             */
+            acknowledgedCount: number;
+        };
+    };
+};
+
+export type PostPaymentAcknowledgeManualActionResponse = PostPaymentAcknowledgeManualActionResponses[keyof PostPaymentAcknowledgeManualActionResponses];
+
+export type PostPurchaseAcknowledgeManualActionData = {
+    /**
+     * Requests to acknowledge
+     */
+    body?: {
+        /**
+         * The network the requests were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Blockchain identifiers of the requests to acknowledge
+         */
+        blockchainIdentifiers: Array<string>;
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/acknowledge-manual-action';
+};
+
+export type PostPurchaseAcknowledgeManualActionErrors = {
+    /**
+     * Bad Request (invalid input)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostPurchaseAcknowledgeManualActionResponses = {
+    /**
+     * Acknowledged count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Requests that were in Needs Action and are now acknowledged. Others in the list are skipped.
+             */
+            acknowledgedCount: number;
+        };
+    };
+};
+
+export type PostPurchaseAcknowledgeManualActionResponse = PostPurchaseAcknowledgeManualActionResponses[keyof PostPurchaseAcknowledgeManualActionResponses];

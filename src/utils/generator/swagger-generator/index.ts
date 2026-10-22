@@ -23,6 +23,7 @@ import { registerRequestRepairPaths } from '@/routes/api/request-repair/docs';
 import { registerReportPaths } from '@/routes/api/reports/docs';
 import { registerReleaseStatusPaths } from '@/routes/api/release-status/docs';
 import { registerSecurityStatusPaths } from '@/routes/api/security-status/docs';
+import { registerAcknowledgeManualActionPaths } from '@/routes/api/acknowledge-manual-action/docs';
 
 extendZodWithOpenApi(z);
 
@@ -56,6 +57,7 @@ export function generateOpenAPI() {
 	registerReportPaths({ registry, apiKeyAuth });
 	registerReleaseStatusPaths({ registry, apiKeyAuth });
 	registerSecurityStatusPaths({ registry, apiKeyAuth });
+	registerAcknowledgeManualActionPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
 		openapi: '3.0.0',
