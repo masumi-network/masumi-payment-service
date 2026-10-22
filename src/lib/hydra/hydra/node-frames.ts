@@ -593,17 +593,18 @@ export function readDepositRecorded(message: unknown): DepositRecordedData | und
  * request that produced it.
  */
 export function readDecommitSettled(tag: string, message: unknown): DecommitSettledData | undefined {
-	if (tag === 'DecommitApproved') {
-		const approved = decommitApprovedMessageSchema.parse(message);
-		return { decommitTxId: approved.decommitTxId, outcome: 'approved' };
-	}
-	if (tag === 'DecommitFinalized') {
-		const finalized = decommitFinalizedMessageSchema.parse(message);
-		const producedAt = finalized.timestamp === undefined ? undefined : new Date(finalized.timestamp);
+	if (tag === 'DecommitApproved' || tag === 'DecommitFinalized') {
+		const settled =
+			tag === 'DecommitApproved'
+				? decommitApprovedMessageSchema.parse(message)
+				: decommitFinalizedMessageSchema.parse(message);
+		const producedAt = typeof settled.timestamp === 'string' ? new Date(settled.timestamp) : undefined;
 		return {
-			decommitTxId: finalized.decommitTxId,
-			outcome: 'finalized',
-			distributed: summarizeDistributedUtxo(finalized.distributedUTxO),
+			decommitTxId: settled.decommitTxId,
+			outcome: settled.tag === 'DecommitApproved' ? 'approved' : 'finalized',
+			...(settled.tag === 'DecommitFinalized'
+				? { distributed: summarizeDistributedUtxo(settled.distributedUTxO) }
+				: {}),
 			observedAt: producedAt !== undefined && Number.isFinite(producedAt.getTime()) ? producedAt : undefined,
 		};
 	}

@@ -172,6 +172,15 @@ export async function persistHeadStatus(
 			const updateData: HydraHeadUpdateInput = { status, latestActivityAt: now };
 			/** Set when this frame is the one that moves the head into Closed. */
 			let isClosingTransition = false;
+			/**
+			 * A close this process did not see: the frame brings no deadline (Greetings and
+			 * ReadyToFanout never do) and the row never got one. The node still knows it.
+			 */
+			const isMissingClosedHeadFacts =
+				HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed] &&
+				status !== HydraHeadStatus.Final &&
+				!contestationDeadline &&
+				current.contestationDeadline == null;
 			if (HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed]) {
 				// A peer can close the head without using this process's API. Persist the
 				// admission gate from the authenticated lifecycle frame as well.
@@ -231,6 +240,10 @@ export async function persistHeadStatus(
 				// the cost is a single bounded round trip in a head's lifetime, and
 				// awaiting keeps it ordered, testable and free of a floating promise.
 				if (isClosingTransition) await recordCloseTransaction(hydraHeadId, head.mainNode, ownerEpoch);
+				// Also after the CAS, for the same reason, and unlike the close transaction
+				// not only on the transition: it heals a row stored before this existed on
+				// the next reconnect, and the read stays valid until the head is final.
+				if (isMissingClosedHeadFacts) await recordClosedHeadFacts(hydraHeadId, head.mainNode, ownerEpoch);
 				return;
 			}
 		}
@@ -338,6 +351,54 @@ export async function recordCloseTransaction(hydraHeadId: string, node: HydraNod
 		});
 	} catch (error) {
 		logger.warn('[HydraConnectionManager] Could not record the close transaction', {
+			hydraHeadId,
+			error: error instanceof Error ? error.message : 'Non-error failure',
+		});
+	}
+}
+
+/**
+ * Record the deadline and snapshot number of a close this service did not see.
+ *
+ * A live `HeadIsClosed` carries both, but a head closed while the service was
+ * off reaches it as Greetings, which carry neither, so the row would stay at
+ * snapshot 0 with no deadline. The node's own head state still holds both until
+ * the head is final, unlike the close transaction, which a fanout step replaces.
+ *
+ * Each write is guarded: the deadline on still being null, the snapshot on being
+ * newer than the stored one, both on the owner epoch. A fact the node cannot say
+ * is not written as zero. Failures are swallowed, because a closed head whose
+ * facts cannot be read is still closed, and the next reconnect tries again.
+ */
+export async function recordClosedHeadFacts(hydraHeadId: string, node: HydraNode, ownerEpoch: bigint): Promise<void> {
+	try {
+		const facts = await node.fetchClosedHeadFacts();
+		if (!facts) return;
+		// The snapshot goes first. A null deadline is what makes the caller read again,
+		// so the deadline is written last: if the snapshot write fails, the next
+		// reconnect still retries both.
+		// 0 is what the row already holds, so there is nothing to record.
+		if (facts.snapshotNumber > 0) {
+			const snapshotNumber = BigInt(facts.snapshotNumber);
+			await prisma.hydraHead.updateMany({
+				where: { id: hydraHeadId, latestSnapshotNumber: { lt: snapshotNumber }, ownerEpoch },
+				data: { latestSnapshotNumber: snapshotNumber },
+			});
+		}
+		const deadline = new Date(facts.contestationDeadline);
+		if (Number.isFinite(deadline.getTime())) {
+			await prisma.hydraHead.updateMany({
+				where: { id: hydraHeadId, contestationDeadline: null, ownerEpoch },
+				data: { contestationDeadline: deadline },
+			});
+		} else {
+			logger.warn('[HydraConnectionManager] Ignoring unparseable contestationDeadline in the node head state', {
+				hydraHeadId,
+				contestationDeadline: facts.contestationDeadline,
+			});
+		}
+	} catch (error) {
+		logger.warn('[HydraConnectionManager] Could not record the deadline and snapshot of a closed head', {
 			hydraHeadId,
 			error: error instanceof Error ? error.message : 'Non-error failure',
 		});

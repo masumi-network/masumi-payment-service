@@ -143,7 +143,10 @@ export function useHydraHeadReadiness(
     },
     enabled: !!apiClient && headId !== null && enabled,
     staleTime: 5000,
-    refetchInterval: (query) => (poll && query.state.data?.isReady !== true ? 10_000 : false),
+    refetchInterval: (query) =>
+      poll && (query.state.data?.isReady !== true || query.state.data?.syncReady === false)
+        ? 10_000
+        : false,
   });
 
   return { connection: query.data ?? null, ...query };

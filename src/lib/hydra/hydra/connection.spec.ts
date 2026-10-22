@@ -41,6 +41,14 @@ const { Connection, toWebSocketUrl } = await import('./connection');
 const { sendHydraCommandAndWait } = await import('./node-command-channel');
 const { HydraTransportError, HydraTransportAmbiguousError } = await import('./errors');
 
+const connections = new Set<InstanceType<typeof Connection>>();
+
+function createConnection(url = 'ws://localhost:4001') {
+	const connection = new Connection(url);
+	connections.add(connection);
+	return connection;
+}
+
 describe('Connection', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -52,24 +60,27 @@ describe('Connection', () => {
 		jest.spyOn(Math, 'random').mockReturnValue(0.5);
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		jest.useRealTimers();
+		// Real heartbeat timers outlive the test VM unless their connection closes.
+		await Promise.all([...connections].map((connection) => connection.disconnect()));
+		connections.clear();
 		jest.restoreAllMocks();
 	});
 
 	it('starts disconnected', () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		expect(conn.isOpen()).toBe(false);
 	});
 
 	it('connect() creates a WebSocket converting http to ws', async () => {
-		const conn = new Connection('http://localhost:4001');
+		const conn = createConnection('http://localhost:4001');
 		await conn.connect();
 		expect(MockWebSocket.mock.calls[0]?.[0]).toBe('ws://localhost:4001');
 	});
 
 	it('passes a pre-allocation frame limit to transports that support maxPayload', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		expect(MockWebSocket.mock.calls[0]).toEqual([
 			'ws://localhost:4001',
@@ -78,19 +89,19 @@ describe('Connection', () => {
 	});
 
 	it('connect() passes ws:// URLs unchanged', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		expect(MockWebSocket.mock.calls[0]?.[0]).toBe('ws://localhost:4001');
 	});
 
 	it('isOpen() returns false before onopen fires', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		expect(conn.isOpen()).toBe(false);
 	});
 
 	it('pauses and resumes reading on the current socket', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		conn.pauseReceiving();
 		await conn.connect();
 		conn.pauseReceiving();
@@ -104,7 +115,7 @@ describe('Connection', () => {
 
 		async function openConnection() {
 			jest.useFakeTimers();
-			const conn = new Connection('ws://localhost:4001');
+			const conn = createConnection();
 			const closes: Error[] = [];
 			conn.on('close', (error: Error) => closes.push(error));
 			await conn.connect();
@@ -162,7 +173,7 @@ describe('Connection', () => {
 
 		it('does not start the heartbeat before the socket opens', async () => {
 			jest.useFakeTimers();
-			const conn = new Connection('ws://localhost:4001');
+			const conn = createConnection();
 			await conn.connect();
 			jest.advanceTimersByTime(HEARTBEAT_MS * 3);
 			expect(currentWsMock.ping).not.toHaveBeenCalled();
@@ -203,14 +214,14 @@ describe('Connection', () => {
 	});
 
 	it('isOpen() returns true after WebSocket fires onopen', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		expect(conn.isOpen()).toBe(true);
 	});
 
 	it('waitUntilOpen() resolves only after the socket opens', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		let didResolve = false;
 		const ready = conn.waitUntilOpen(1000).then(() => {
 			didResolve = true;
@@ -225,7 +236,7 @@ describe('Connection', () => {
 	});
 
 	it('waitUntilOpen() rejects a pre-open transport failure', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		const ready = conn.waitUntilOpen(1000);
 		const rejection = expect(ready).rejects.toThrow('closed unexpectedly');
 
@@ -236,7 +247,7 @@ describe('Connection', () => {
 
 	// Without the code, a node that refused the socket read as "WebSocket error: " and named nothing.
 	it('waitUntilOpen() names a refused connect that has only a code', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		const ready = conn.waitUntilOpen(1000);
 		const rejection = expect(ready).rejects.toThrow('WebSocket error: ECONNREFUSED');
 
@@ -247,7 +258,7 @@ describe('Connection', () => {
 
 	it('waitUntilOpen() has a bounded timeout', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		const ready = conn.waitUntilOpen(1000);
 		const rejection = expect(ready).rejects.toThrow('did not open within 1000ms');
 
@@ -257,7 +268,7 @@ describe('Connection', () => {
 	});
 
 	it('connect() is idempotent — second call does not create another WebSocket', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		const callsBefore = MockWebSocket.mock.calls.length;
@@ -266,7 +277,7 @@ describe('Connection', () => {
 	});
 
 	it('emits message event when WebSocket receives data', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		const listener = jest.fn<(data: string) => void>();
 		conn.on('message', listener);
@@ -275,7 +286,7 @@ describe('Connection', () => {
 	});
 
 	it('emits close event when WebSocket closes with code 1006', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		const closeListener = jest.fn<(err: unknown) => void>();
@@ -288,7 +299,7 @@ describe('Connection', () => {
 
 	it('schedules reconnect when WebSocket closes with code 1006 and status is Connected', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		const callsBefore = MockWebSocket.mock.calls.length;
@@ -300,7 +311,7 @@ describe('Connection', () => {
 
 	it('cancels an abnormal-close reconnect when manually disconnected', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		const callsBefore = MockWebSocket.mock.calls.length;
@@ -313,7 +324,7 @@ describe('Connection', () => {
 
 	it('emits close and schedules reconnect for non-manual server close codes', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		const closeListener = jest.fn<(err: unknown) => void>();
@@ -327,7 +338,7 @@ describe('Connection', () => {
 	});
 
 	it('disconnect() closes the WebSocket normally when socket is OPEN', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		currentWsMock.readyState = 1; // OPEN
@@ -337,7 +348,7 @@ describe('Connection', () => {
 	});
 
 	it('disconnect() drains current-generation text frames until the close handshake completes', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		currentWsMock.close.mockImplementationOnce(() => undefined);
@@ -365,7 +376,7 @@ describe('Connection', () => {
 
 	it('disconnect() terminates a socket that does not complete its close handshake', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		currentWsMock.close.mockImplementationOnce(() => undefined);
@@ -379,7 +390,7 @@ describe('Connection', () => {
 	});
 
 	it('rejects new commands while a graceful disconnect is draining', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		currentWsMock.close.mockImplementationOnce(() => undefined);
@@ -393,7 +404,7 @@ describe('Connection', () => {
 	});
 
 	it('disconnect() closes a CONNECTING socket and prevents a stale onopen', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		const staleSocket = currentWsMock;
 		currentWsMock.readyState = 0; // CONNECTING
@@ -405,7 +416,7 @@ describe('Connection', () => {
 
 	it('reconnects when the WebSocket error callback fires without onclose', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		const callsBefore = MockWebSocket.mock.calls.length;
@@ -416,7 +427,7 @@ describe('Connection', () => {
 
 	it('closes and invalidates a stale socket when onerror fires without onclose', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		const staleSocket = currentWsMock;
 		staleSocket.emit('open');
@@ -429,13 +440,13 @@ describe('Connection', () => {
 	});
 
 	it('disconnect() is a no-op when already disconnected', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.disconnect(); // status is already Disconnected
 		expect(currentWsMock.close).not.toHaveBeenCalled();
 	});
 
 	it('send() resolves after queuing on an OPEN socket', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		currentWsMock.readyState = 1; // OPEN
@@ -444,7 +455,7 @@ describe('Connection', () => {
 	});
 
 	it('send() queues immediately when the socket is already OPEN', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		currentWsMock.readyState = 1; // OPEN
@@ -455,7 +466,7 @@ describe('Connection', () => {
 
 	it('cancels a waiting send before a shorter command deadline releases its reservation', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.readyState = 0;
 		const command = sendHydraCommandAndWait(conn, undefined, {
@@ -477,7 +488,7 @@ describe('Connection', () => {
 
 	it('keeps a dispatched command ambiguous when its deadline expires before promise reactions', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		const command = sendHydraCommandAndWait(conn, undefined, {
 			command: 'NewTx',
@@ -494,7 +505,7 @@ describe('Connection', () => {
 	});
 
 	it('does not send when cancellation already happened', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		const controller = new AbortController();
 		controller.abort();
@@ -504,7 +515,7 @@ describe('Connection', () => {
 
 	it('send() rejects after 5 seconds if socket never reaches OPEN state', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.readyState = 0; // CONNECTING — not open
 		const sendPromise = conn.send({ tag: 'Init' });
@@ -515,7 +526,7 @@ describe('Connection', () => {
 
 	it('send() stops retrying after successful send', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.readyState = 0;
 		const sendPromise = conn.send({ tag: 'Init' });
@@ -529,7 +540,7 @@ describe('Connection', () => {
 	});
 
 	it('rejects a waiting send immediately when the transport closes', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.readyState = 0;
 		const sendPromise = conn.send({ tag: 'NewTx' });
@@ -539,7 +550,7 @@ describe('Connection', () => {
 
 	it('rejects oversized inbound frames without emitting their contents', async () => {
 		jest.useFakeTimers();
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		const listener = jest.fn<(data: string) => void>();
@@ -550,7 +561,7 @@ describe('Connection', () => {
 	});
 
 	it('rejects binary frames without exposing them as protocol messages', async () => {
-		const conn = new Connection('ws://localhost:4001');
+		const conn = createConnection();
 		await conn.connect();
 		currentWsMock.emit('open');
 		const listener = jest.fn<(data: string) => void>();
