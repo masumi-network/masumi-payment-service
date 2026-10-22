@@ -103,6 +103,14 @@ These behaviours are intended. Reviewers do not need to report them again.
    - Remove a public admin key: create a new admin key, then revoke the public one (`DELETE /api-key`). For a new deployment, set `ADMIN_KEY` before the first seed. Do not change `ENCRYPTION_KEY` in the environment only: it encrypts the stored secrets and derives the API key hash salt (`packages/payment-core/src/api-key-hash.ts`), so a change needs a migration
    - When to revisit: if the service runs on a public network, or if a deployment template runs the seed automatically. Then require a unique `ADMIN_KEY` on that path
 
+5. **All hydra-nodes on one Hydra Host run as the same user**
+   - Where: `provisionNode` in `packages/hydra-host/src/api/provision.ts` writes each head's `hydra.sk` and `cardano.sk` under `/data` with mode 0600. The image runs the Host and every hydra-node it starts as the one `hydra` user (`packages/hydra-host/Dockerfile`)
+   - Effect: code execution inside one hydra-node can read the signing keys of every other head on the same Host. File modes do not stop this, because all the files have the same owner
+   - Host tokens: the same code execution can also read `HYDRA_HOST_ADMIN_TOKEN` and `HYDRA_HOST_USER_TOKEN` from `/proc/<Host pid>/environ`, because the Host runs as the same user
+   - Why accepted: an attacker must first exploit a hydra-node, and nobody has shown such an exploit. One Host serves one operator, so the heads on it share one trust boundary. Per-head users need the Host to hold CAP_SETUID and CAP_SETGID, or to run as root. One container per head needs Docker or orchestrator access from the Host. Both cost more than the risk today
+   - Partial mitigation: hydra-nodes start with a minimal environment (`nodeEnvironment` in `packages/hydra-host/src/supervisor/process.ts`). They get `PATH`, `LANG`, `LC_ALL`, `TZ` and the `ETCD_*` overrides, and not the Host tokens. The `hydra-node --version` and `--hydra-script-catalogue` probes in `packages/hydra-host/src/capabilities.ts` use the same environment. This stops passive leaks, such as a node that logs or dumps its environment. It does not stop an attacker with code execution in a node
+   - When to revisit: if one Host serves more than one operator, or if a hydra-node exploit becomes known. Then run each head as its own user, or in its own container
+
 ### Maintenance
 
 1. **Updates**

@@ -67,6 +67,45 @@ export const lifecycleOutput = z.object({
 	status: z.nativeEnum(HydraHeadStatus),
 });
 
+const initsInFlight = new Set<string>();
+/** Heads whose last Init timed out on a node behind the chain, so that Init may still be parked there. */
+const initsAwaitingNode = new Set<string>();
+
+/**
+ * Refuses a retry while an earlier Init may still be parked on the node.
+ *
+ * An Init that timed out on a node behind the chain may still be parked there, to be
+ * posted once the node catches up. A second Init then is refused with a CommandFailed,
+ * recorded against a head that is fine. If the first was never sent (our client also
+ * waits for a node that is behind), a retry would only wait and time out again.
+ */
+async function assertNoParkedInit(hydraHeadId: string, localParticipantId: string): Promise<void> {
+	if (!initsAwaitingNode.has(hydraHeadId)) return;
+	const nodeState = await readParticipantNodeState(localParticipantId);
+	// Only a running node with a reported drift is behind. The Host reads "not synced" with
+	// no drift for a node it cannot ask. A node it is stopping or restarting drops an Init
+	// still parked on it, while its last drift reading can stay on the record until the next
+	// check. An InitTx it already posted is not dropped: init() returns early once the
+	// restarted node reports the head Initializing.
+	if (nodeState.state === 'Running' && nodeState.chainSynced === false && nodeState.driftSeconds !== null) {
+		throw createHttpError(
+			409,
+			"An earlier Init is still waiting for this head's node: its Hydra Host reports the node is still " +
+				'behind the chain. Retry once the Host reports it caught up',
+		);
+	}
+	// A node that just caught up may have posted the parked Init already. Drained first,
+	// so a head that moved is refused here rather than by a second Init on the node.
+	await getHydraConnectionManager()
+		.flushHeadStatus(hydraHeadId)
+		.catch(() => undefined);
+	const current = await prisma.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { status: true } });
+	if (current && current.status !== HydraHeadStatus.Idle) {
+		throw createHttpError(409, `Cannot init: head status is ${current.status}, expected Idle`);
+	}
+	initsAwaitingNode.delete(hydraHeadId);
+}
+
 export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: lifecycleInput,
@@ -109,6 +148,22 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		const cm = getHydraConnectionManager();
+
+		// hydra-node refuses a second Init with a CommandFailed that names no request, so it
+		// fails every waiting Init, the one that started the head too. No await between this
+		// check and the add, so two requests cannot both pass. Thrown before the try: a
+		// refusal is not a failed command.
+		if (initsInFlight.has(head.id)) {
+			throw createHttpError(409, 'Hydra head init is already in progress');
+		}
+		initsInFlight.add(head.id);
+		// Checked while holding the slot, so no other init can park a new Init meanwhile.
+		try {
+			await assertNoParkedInit(head.id, head.LocalParticipant.id);
+		} catch (error) {
+			initsInFlight.delete(head.id);
+			throw error;
+		}
 
 		try {
 			try {
@@ -220,6 +275,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 					// is exactly the self-resolving error that teaches operators to
 					// disregard the ones that matter. The message tells the operator not
 					// to re-post, since two Inits race for the same seed input.
+					initsAwaitingNode.add(head.id);
 					throw createHttpError(504, verdict.message);
 				}
 				if (verdict.kind === 'failed') {
@@ -277,6 +333,8 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Init');
 			throw error;
+		} finally {
+			initsInFlight.delete(head.id);
 		}
 	},
 });
