@@ -38,7 +38,8 @@ export type UnwedgeOutcome =
 	/** Stranded, side-load attempted, still stuck. Needs an operator. */
 	| { kind: 'Unrecovered'; tag: string | null; reason: string }
 	/**
-	 * Stranded, but a side-load now can stall the head again. Left for an
+	 * Stranded, but a side-load now can stall the head again, or the head state
+	 * could not be read to rule that out. Left for an
 	 * operator, with the node's API still open, so the head can be reset from the
 	 * payment service or closed.
 	 */
@@ -230,10 +231,14 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 	try {
 		headState = await fetchHead();
 	} catch (error) {
+		// Held, not Unrecovered: `Failed` closes the node's API, and a head state
+		// that cannot be read is no reason to block a reset or close. Like every
+		// Held round, nothing retries the side-load: the reason on the record
+		// tells the operator.
 		return {
-			kind: 'Unrecovered',
+			kind: 'Held',
 			tag,
-			reason: `could not read the head state before side-loading: ${(error as Error).message}`,
+			reason: `could not read the head state before side-loading, so the stranded round is left for an operator: ${(error as Error).message}`,
 		};
 	}
 	if (holdsUnsettledCommit(headState)) {

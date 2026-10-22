@@ -133,8 +133,9 @@ export type NodeRecord = {
 	/**
 	 * Populated when state is Failed, so an operator sees why without reading logs.
 	 * Also set on a node that stays Running but has a stranded round waiting for
-	 * an operator: automatic side-load is off, or the confirmed snapshot holds a
-	 * deposit the chain has not settled.
+	 * an operator: automatic side-load is off, or the round is held because the
+	 * confirmed snapshot holds a deposit the chain has not settled or the head
+	 * state could not be read.
 	 */
 	failureReason?: string;
 	/**

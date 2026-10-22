@@ -100,6 +100,37 @@ export enum HydraNodeEvent {
 	 * here.
 	 */
 	DepositRecorded = 'DepositRecorded',
+	/**
+	 * The node tried to post an L1 transaction and could not.
+	 *
+	 * Some of these the node posts on its own, a contest above all: when a peer
+	 * closes on an old snapshot it answers with `ContestTx` unasked. No command is
+	 * waiting on that, so nothing else would ever say it failed. A failure of the
+	 * transaction a waiting command posts is also reported here, marked
+	 * `answersCommand`; that caller sees it as well. A failure that names no
+	 * transaction is never marked, even when it also fails a waiting command.
+	 *
+	 * Proof that one post failed, not that the head is undefended: another party
+	 * may have contested with the same snapshot first. Whether a contest landed
+	 * is judged from chain state by the contest watch.
+	 */
+	PostTxFailed = 'PostTxFailed',
+}
+
+/** `postChainTxTag` when the frame did not say which transaction failed. */
+export const UNKNOWN_POST_CHAIN_TX_TAG = 'unknown';
+
+/** An L1 transaction the node could not post, and why. */
+export interface PostTxFailure {
+	/** Which transaction, such as `ContestTx`; `UNKNOWN_POST_CHAIN_TX_TAG` when the frame did not say. */
+	postChainTxTag: string;
+	/** The node's own reason, in words an operator can act on. */
+	reason: string;
+}
+
+export interface PostTxFailedData extends PostTxFailure {
+	/** A command waiting on this node posts this transaction, so its caller already hears of the failure. */
+	answersCommand: boolean;
 }
 
 /** A deposit the head has seen, and the deadline it will hold it to. */

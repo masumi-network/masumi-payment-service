@@ -43,8 +43,8 @@ export interface HydraHeadOwnBalance {
 	/** Whether any UTxO here is unbacked, so the balance above is optimistic. */
 	hasUnbackedUtxos: boolean;
 	/**
-	 * Own UTxOs that carry a token minted or burned inside the head whose net is
-	 * not back at zero, as far as the history replay has checked: 0 until the
+	 * Own UTxOs that carry a unit with a positive net L2 mint in the head, as
+	 * far as the history replay has checked: 0 until the
 	 * replay is current, and a token UTxO it has not reached is not counted.
 	 *
 	 * The service never spends them (see `l2-mint-tally`): an unburned L2-minted

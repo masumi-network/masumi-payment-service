@@ -22,11 +22,12 @@ import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
-import { isVerifiedPendingCommitOutput, readVerifiedCurrentOutput } from './node-current-output';
+import { isVerifiedPendingCommitOutput, readFinalSnapshot, readVerifiedCurrentOutput } from './node-current-output';
 import {
 	HydraCommandOptions,
 	assertTxConfirmationPolling,
 	awaitHydraTxConfirmation,
+	isAwaitingPostChainTx,
 	prepareNewTxCommand,
 	sendHydraCommandAndWait,
 } from './node-command-channel';
@@ -225,6 +226,7 @@ export class HydraNode extends EventEmitter {
 			},
 			onRotationError: (error) => this._replay.fail(error),
 			invalidateLiveConnection: (error) => this._connection.invalidate(error),
+			isAwaitingPostChainTx: (postChainTxTag) => isAwaitingPostChainTx(this._connection, postChainTxTag),
 		};
 	}
 
@@ -419,6 +421,12 @@ export class HydraNode extends EventEmitter {
 		return this.hasVerifiedPinnedSessions && snapshot ? BigInt(snapshot.number) : undefined;
 	}
 
+	/** Newest snapshot a close or contest put on chain, on the same trust as `verifiedSnapshotNumber`. */
+	get closedSnapshotNumber(): bigint | undefined {
+		const closed = this._replay.closedSnapshotNumber;
+		return this.hasVerifiedPinnedSessions && closed !== undefined ? BigInt(closed) : undefined;
+	}
+
 	/** Both evidence sockets have authenticated the same explicitly pinned head. */
 	get hasVerifiedPinnedSessions(): boolean {
 		return (
@@ -472,17 +480,8 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private finalSnapshot(expectedSnapshotNumber: number) {
-		const verifiedSnapshot = this._replay.verifiedSnapshot;
-		if (
-			!this.hasVerifiedPinnedSessions ||
-			this._live.status !== HydraHeadStatus.Final ||
-			!Number.isSafeInteger(expectedSnapshotNumber) ||
-			expectedSnapshotNumber < 0 ||
-			verifiedSnapshot?.number !== expectedSnapshotNumber
-		) {
-			return null;
-		}
-		return verifiedSnapshot;
+		// prettier-ignore
+		return readFinalSnapshot(this.hasVerifiedPinnedSessions, this._live.status, this._replay.verifiedSnapshot, expectedSnapshotNumber);
 	}
 
 	private fanoutResolutionContext(expectedSnapshotNumber: number) {

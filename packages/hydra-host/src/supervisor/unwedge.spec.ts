@@ -204,7 +204,7 @@ describe('unwedgeNode', () => {
 		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
 	});
 
-	it('reports unrecovered when the head state cannot be read', async () => {
+	it('holds the round when the head state cannot be read', async () => {
 		const opts = options({
 			fetchLastSeen: jest
 				.fn<() => Promise<LastSeenSnapshotResponse>>()
@@ -214,7 +214,7 @@ describe('unwedgeNode', () => {
 
 		const outcome = await unwedgeNode(opts);
 		expect(outcome).toMatchObject({
-			kind: 'Unrecovered',
+			kind: 'Held',
 			reason: expect.stringContaining('returned 503') as unknown as string,
 		});
 		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
@@ -382,8 +382,7 @@ describe('unwedgeRecord', () => {
 		});
 
 		expect(record).toMatchObject({ state: 'Running', lastStopUndrained: false, startAttempts: 0 });
-		// Nothing checks the round again, so the API is the only place that shows it.
-		expect(record.failureReason).toMatch(/not settled.*\(seen \d{4}-/);
+		expect(record.failureReason).toMatch(/has not settled.*\(seen \d{4}-/);
 		expect(client.sideLoadSnapshot).not.toHaveBeenCalled();
 		expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('left a stranded round alone'));
 	});

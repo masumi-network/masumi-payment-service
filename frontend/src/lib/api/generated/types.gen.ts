@@ -11604,7 +11604,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -11648,7 +11648,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11696,7 +11696,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -11728,7 +11728,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11776,7 +11776,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -15380,7 +15380,7 @@ export type GetHydraHeadBalanceResponses = {
              */
             hasUnbackedUtxos: boolean;
             /**
-             * In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
+             * In-head UTxOs at this address that carry a unit with a positive net L2 mint in the head, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
              */
             l2MintedUtxoCount: number;
             /**
@@ -15671,7 +15671,7 @@ export type GetHydraHeadErrorsResponses = {
             errors: Array<{
                 id: string;
                 createdAt: Date;
-                errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput';
+                errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput' | 'ContestMissing';
                 errorMessage: string;
                 headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
                 clientInput: string | null;
@@ -15966,7 +15966,7 @@ export type PostHydraLowBalanceData = {
         thresholdAmount: string;
         enabled?: boolean;
         /**
-         * Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a nonzero net L2 mint in the head.
+         * Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a positive net L2 mint in the head.
          */
         topupEnabled?: boolean;
         /**

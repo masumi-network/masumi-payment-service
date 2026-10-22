@@ -186,12 +186,12 @@ binds loopback), so neither repairs on its own. The counterparty's operator runs
   ahead of this node's confirmed snapshot or more than one behind it. The admin
   UI asks for the same number, and again after every attempt.
 
-The Host also puts the reason, with the time it was seen, in the node's
-`failureReason` (`GET /v1/nodes`). This covers a round left alone because the
-side-load is off, and a round held because the confirmed snapshot holds a
-deposit the chain has not settled. The node stays `Running`, and the next start
-clears the reason. The payment service's round watch alerts on the same stuck
-round on its own.
+With the side-load off, the Host also puts the reason, with the time it was
+seen, in the node's `failureReason` (`GET /v1/nodes`). A round the Host holds
+with the side-load on (an unsettled deposit, or a head state it could not read)
+gets the same record. The node stays `Running`, nothing retries the side-load,
+and the next start clears the reason. The payment service's round watch alerts
+on the same stuck round on its own.
 
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.

@@ -647,6 +647,191 @@ describe('HydraNode', () => {
 		});
 	});
 
+	// The node posts some L1 transactions on its own, a contest above all: when a
+	// peer closes on an old snapshot it answers with ContestTx without being
+	// asked. If that post fails, no command is waiting on it, so the frame used to
+	// be read and dropped and the failure left no trace. Frames below use the real
+	// hydra-node shape: no top-level head id, the head named inside postChainTx.
+	describe('PostTxOnChainFailed processing', () => {
+		function failureEvents(node: { on(event: string, listener: (data: unknown) => void): unknown }) {
+			const events: unknown[] = [];
+			node.on(HydraNodeEvent.PostTxFailed, (data) => events.push(data));
+			return events;
+		}
+
+		function postTxFailedFrame(
+			postChainTx: { tag: string; headId?: string },
+			postTxError: { tag: string; failureReason?: string },
+		) {
+			return JSON.stringify({ tag: 'PostTxOnChainFailed', postChainTx, postTxError });
+		}
+
+		async function pinnedNode() {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const connectPromise = node.connect();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Open', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+			return node;
+		}
+
+		it('reports a failed contest with the transaction and the node reason', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+
+			expect(events).toEqual([
+				{ postChainTxTag: 'ContestTx', reason: expect.stringContaining('NotEnoughFuel'), answersCommand: false },
+			]);
+		});
+
+		it.each(['DecrementTx', 'IncrementTx', 'RecoverTx', 'FanoutTx'])('reports a failed %s too', (tag) => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag }, { tag: 'FailedToPostTx' }));
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: tag })]);
+		});
+
+		// Reported, not dropped: a failure whose shape we cannot read is still a failure.
+		it('reports a failure it cannot read as an unknown transaction', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'PostTxOnChainFailed',
+					postChainTx: { tag: 42 },
+					postTxError: { tag: 'FailedToPostTx' },
+				}),
+			);
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+
+			expect(events).toEqual([
+				expect.objectContaining({ postChainTxTag: 'unknown' }),
+				expect.objectContaining({ postChainTxTag: 'unknown', reason: 'no reason given' }),
+			]);
+		});
+
+		it('reports only the failures that name the pinned head', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: 'b'.repeat(56) }, { tag: 'FailedToPostTx' }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A.toUpperCase() }, { tag: 'FailedToPostTx' }),
+			);
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+		});
+
+		// Held like a settlement outcome: a frame that arrives before the session
+		// proves its identity is emitted once it does, not dropped.
+		it('holds a failure seen before the session is authenticated until it is', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const events = failureEvents(node);
+			// The manager records the failure with the status it reads at this moment.
+			const statusAtFailure: HydraHeadStatus[] = [];
+			node.on(HydraNodeEvent.PostTxFailed, () => statusAtFailure.push(node.status));
+			const connectPromise = node.connect();
+
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag: 'ContestTx' }, { tag: 'NotEnoughFuel' }));
+			expect(events).toEqual([]);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Closed', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+			expect(statusAtFailure).toEqual([HydraHeadStatus.Closed]);
+		});
+
+		// The node said an L1 post failed but not which. Waiting out the full
+		// timeout for a Close that may be the one that failed helps no one.
+		it('fails a waiting Close at once on a failure that names no transaction', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The caller's row quotes the node's reason too.
+			await expect(closePromise).rejects.toThrow(/unnamed failed L1 transaction/);
+			// Not marked as the command's: the Init route can settle an ambiguous Init
+			// without a record, so the manager keeps the only sure one.
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'unknown', answersCommand: false })]);
+		});
+
+		// The live path ignores a failure for another head, so a waiting Close must
+		// too: otherwise the Close fails on a frame nothing else records.
+		it('keeps a waiting Close for a failure that names another head', async () => {
+			const node = await pinnedNode();
+			const closePromise = node.close();
+			let isSettled = false;
+			void closePromise.catch(() => undefined).finally(() => (isSettled = true));
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_B }, { tag: 'NotEnoughFuel' }),
+			);
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(isSettled).toBe(false);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			await expect(closePromise).rejects.toThrow(/NotEnoughFuel/);
+		});
+
+		// The waiting Close reports its own failure, so the event says so and the
+		// manager does not write the same failure twice.
+		it('marks a failure a waiting command answers, and only that one', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The caller's CommandFailed row is now the only record, so it keeps the reason.
+			await expect(closePromise).rejects.toThrow(/NotEnoughFuel/);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+
+			expect(events).toEqual([
+				expect.objectContaining({ postChainTxTag: 'ContestTx', answersCommand: false }),
+				expect.objectContaining({ postChainTxTag: 'CloseTx', answersCommand: true }),
+				expect.objectContaining({ postChainTxTag: 'CloseTx', answersCommand: false }),
+			]);
+		});
+	});
+
 	describe('unsigned SnapshotConfirmed processing', () => {
 		it('fails closed, invalidates the history socket, and retains no evidence', async () => {
 			const { node, historyConnection } = await startSignedNode();
@@ -1723,6 +1908,24 @@ describe('HydraNode', () => {
 			);
 
 			await expect(secondSubmit).resolves.toBe(tx2.txId);
+		});
+
+		// An unnamed L1 failure is no answer to an L2 transaction. Failing it as
+		// ambiguous would fail an escrow step closed for nothing.
+		it('keeps waiting on a failed L1 post that names no transaction', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const transaction = makeHydraTransaction(19);
+			const submit = node.newTx(transaction);
+			await Promise.resolve();
+
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'TxValid', headId: HEAD_ID_A, transactionId: transaction.txId }),
+			);
+
+			await expect(submit).resolves.toBe(transaction.txId);
 		});
 
 		it('does not accept a matching TxValid that omits the pinned head id', async () => {
