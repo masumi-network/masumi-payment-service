@@ -62,7 +62,9 @@ export async function readFanoutHeadState(node: FanoutHeadStateSource): Promise<
 	try {
 		state = parseFanoutHeadState(await node.get('/head'));
 	} catch (error) {
-		if (error instanceof HydraFanoutHeadStateError) throw createHttpError(502, error.message);
+		if (error instanceof HydraFanoutHeadStateError) {
+			throw createHttpError(502, error.message, { contestationDeadline: error.contestationDeadline });
+		}
 		throw error;
 	}
 	if (!state) throw createHttpError(409, 'The Hydra node does not hold this head as closed');
