@@ -86,7 +86,10 @@ function purchase(didTimeout: boolean) {
 let storedPurchase = purchase(false);
 const update = jest.fn<(_args: Prisma.PaymentRequestUpdateArgs) => Promise<object>>(async () => ({}));
 const updatePurchase = jest.fn<(_args: Prisma.PurchaseRequestUpdateArgs) => Promise<object>>(async () => ({}));
+/** The action the timeout writer replaced: a plain wait unless a test says otherwise. */
+let replacedAction: { requestedAction: PaymentAction; errorType: string | null } | null = null;
 const database = {
+	paymentActionData: { findFirst: async () => replacedAction },
 	purchaseRequest: { findUnique: async () => storedPurchase, update: updatePurchase },
 	paymentRequest: {
 		findUnique: jest.fn(async (args: Prisma.PaymentRequestFindUniqueArgs) => {
@@ -144,6 +147,7 @@ async function observe(overrides: Partial<DecodedV1ContractDatum> = {}, isPurcha
 describe('L1 initial lock observed after seller timeout', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		replacedAction = { requestedAction: PaymentAction.WaitingForExternalAction, errorType: null };
 	});
 
 	it.each([false, true])('accepts an on-time lock when observer timed out = %s', async (didTimeout) => {
@@ -160,6 +164,15 @@ describe('L1 initial lock observed after seller timeout', () => {
 		expect(update).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ onChainState: OnChainState.FundsOrDatumInvalid }) }),
 		);
+	});
+
+	// The timeout writer also parks rows that already showed an error. A late
+	// lock must not restore those to a plain wait and hide the error.
+	it('keeps a timed-out row parked when the timeout replaced a manual error', async () => {
+		stored = request(true);
+		replacedAction = { requestedAction: PaymentAction.WaitingForManualAction, errorType: 'Unknown' };
+		await observe();
+		expect(update).not.toHaveBeenCalled();
 	});
 
 	it('keeps an observed invalid lock rejected', async () => {
