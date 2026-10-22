@@ -52,11 +52,13 @@ const stored = (utxo: Record<string, typeof OUTPUT>) =>
 	Object.fromEntries(
 		Object.entries(utxo).map(([reference, output]) => [reference, { ...output, value: { lovelace: '2000000' } }]),
 	);
+const PASSED_DEADLINE = new Date(Date.now() - 60_000).toISOString();
 /** `GET /head` for a closed head, before any fanout step. */
-const closedNodeState = (utxo: Record<string, unknown>) => ({
+const closedNodeState = (utxo: Record<string, unknown>, contestationDeadline: string | null = PASSED_DEADLINE) => ({
 	tag: 'Closed',
 	contents: {
 		version: 0,
+		contestationDeadline,
 		confirmedSnapshot: {
 			tag: 'ConfirmedSnapshot',
 			snapshot: { version: 0, utxo, utxoToCommit: null, utxoToDecommit: null },
@@ -208,10 +210,100 @@ describe('retireHeadPost', () => {
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it('retires a Closed head past its contestation deadline', async () => {
+	it('retires a Closed head past its contestation deadline and checks the deadline again in the write', async () => {
 		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
 
-		await expect(handler({ input })).resolves.toMatchObject({ status: HydraHeadStatus.Closed });
+		const retired = await handler({ input });
+
+		expect(retired).toMatchObject({ status: HydraHeadStatus.Closed });
+		const update = mockUpdateMany.mock.calls[0]![0] as { where: unknown };
+		expect(update.where).toEqual({
+			id: 'head-1',
+			status: HydraHeadStatus.Closed,
+			retiredAt: null,
+			contestationDeadline: { lte: new Date(retired.retiredAt as string) },
+		});
+	});
+
+	// The stored deadline is the close's; a contest moved only the node's.
+	it.each([false, true])(
+		'refuses a Closed head before the node deadline has passed (acknowledgeRemainingUtxoUnknown=%s)',
+		async (acknowledged) => {
+			mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
+			const extended = new Date(Date.now() + 60_000).toISOString();
+			mockGetNode.mockReturnValue({ get: async () => closedNodeState(REMAINING, extended) });
+
+			await expect(
+				handler({ input: { ...input, acknowledgeRemainingUtxoUnknown: acknowledged } }),
+			).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining(extended) });
+			expect(mockUpdateMany).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([false, true])(
+		'refuses a Closed head whose node does not report its deadline (acknowledgeRemainingUtxoUnknown=%s)',
+		async (acknowledged) => {
+			mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
+			mockGetNode.mockReturnValue({ get: async () => closedNodeState(REMAINING, null) });
+
+			await expect(
+				handler({ input: { ...input, acknowledgeRemainingUtxoUnknown: acknowledged } }),
+			).rejects.toMatchObject({
+				statusCode: 502,
+				expose: true,
+				message: expect.stringMatching(/contestation deadline.*FanoutPossible/),
+			});
+			expect(mockUpdateMany).not.toHaveBeenCalled();
+		},
+	);
+
+	// A rollback can take the node back to Closed after the row stored FanoutPossible.
+	it('refuses a FanoutPossible head whose node is Closed again with a later deadline', async () => {
+		const extended = new Date(Date.now() + 60_000).toISOString();
+		mockGetNode.mockReturnValue({ get: async () => closedNodeState(REMAINING, extended) });
+
+		await expect(handler({ input })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining(extended),
+		});
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('checks the node deadline of a state it cannot otherwise read, even when acknowledged', async () => {
+		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
+		const extended = new Date(Date.now() + 60_000).toISOString();
+		const unreadable = {
+			tag: 'Closed',
+			contents: { contestationDeadline: extended, confirmedSnapshot: { tag: 'Unknown' } },
+		};
+		mockGetNode.mockReturnValue({ get: async () => unreadable });
+
+		await expect(handler({ input: { ...input, acknowledgeRemainingUtxoUnknown: true } })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining(extended),
+		});
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('retires an acknowledged head whose unreadable state carries a passed deadline', async () => {
+		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
+		const unreadable = { tag: 'Closed', contents: { contestationDeadline: PASSED_DEADLINE, confirmedSnapshot: {} } };
+		mockGetNode.mockReturnValue({ get: async () => unreadable });
+
+		await expect(handler({ input: { ...input, acknowledgeRemainingUtxoUnknown: true } })).resolves.toMatchObject({
+			remainingUtxoCount: null,
+		});
+	});
+
+	// Without the node only the stored deadline is left, as ADR 0013 records.
+	it('retires a Closed head on its stored deadline when the node is skipped', async () => {
+		mockFindHead.mockResolvedValue({ ...fanoutPossible, status: HydraHeadStatus.Closed });
+		mockGetNode.mockReturnValue(undefined);
+
+		await expect(handler({ input: { ...input, acknowledgeRemainingUtxoUnknown: true } })).resolves.toMatchObject({
+			status: HydraHeadStatus.Closed,
+			remainingUtxoCount: null,
+		});
 	});
 
 	it.each([

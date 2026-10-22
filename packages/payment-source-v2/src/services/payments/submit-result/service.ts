@@ -20,6 +20,7 @@ import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
+import { isRequestedResultOnChain } from '@/utils/logic/result-on-chain';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
@@ -591,6 +592,28 @@ async function processL2SubmitResult(
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 contract UTXO not found in head`);
 	}
 	const { utxo, decodedContract } = matchResult;
+
+	if (isRequestedResultOnChain(decodedContract, request.NextAction.resultHash)) {
+		await prisma.paymentRequest.update({
+			where: { id: request.id, nextActionId: request.nextActionId },
+			data: {
+				...connectPreviousAction(request.nextActionId),
+				...createNextPaymentAction(PaymentAction.WaitingForExternalAction, {
+					resultHash: request.NextAction.resultHash,
+				}),
+			},
+		});
+		await unlockHotWalletIfNoPendingTransaction(
+			request.SmartContractWallet!.id,
+			'submit-result-l2-already-on-chain',
+			request.SmartContractWallet!.lockedAt!,
+		);
+		logger.info('L2 submit-result skipped; the escrow already holds the requested result', {
+			requestId: request.id,
+			txHash,
+		});
+		return true;
+	}
 
 	// L2 (in-head) txs are checked against the HEAD's slot timeline AND the
 	// head's own (lagging) clock. Anchor the window to the head: env devnet

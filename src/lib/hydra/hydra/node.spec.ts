@@ -53,6 +53,14 @@ class MockConnection extends EventEmitter {
 	isOpen = jest.fn<() => boolean>().mockReturnValue(false);
 	invalidate = jest.fn<(error: Error) => void>();
 	restart = jest.fn<(error: Error) => void>();
+	openCount = 0;
+
+	constructor() {
+		super();
+		this.on('open', () => {
+			this.openCount += 1;
+		});
+	}
 }
 
 let mockConnectionInstance: MockConnection;
@@ -358,6 +366,34 @@ async function startSignedNode(overrides: Partial<ConstructorParameters<typeof H
 
 function finishHistoryReplay(historyConnection: MockConnection): void {
 	historyConnection.emit('message', JSON.stringify(liveGreetings()));
+}
+
+/** What hydra-node greets with once it is Idle, after a fanout or a rollback through Init. */
+function headlessIdleGreetings() {
+	return { ...liveGreetings(), headStatus: 'Idle', hydraHeadId: undefined };
+}
+
+/** The whole history a node serves after it fanned out the signed chain. */
+function finalizedHistory() {
+	const chain = signedHistoryChain();
+	const fanoutTxHash = '55'.repeat(32);
+	return {
+		finalReference: `${chain.transactions[2].txId}#0`,
+		fanoutTxHash,
+		frames: [
+			headIsOpen(),
+			...chain.frames,
+			// Closed on an older snapshot, then contested with the final one.
+			{ tag: 'HeadIsClosed', headId: HEAD_ID_A, snapshotNumber: 2, contestationDeadline: '2026-07-22T11:30:00Z' },
+			{ tag: 'HeadIsContested', headId: HEAD_ID_A, snapshotNumber: 3, contestationDeadline: '2026-07-22T11:30:00Z' },
+			{
+				tag: 'HeadIsFinalized',
+				headId: HEAD_ID_A,
+				finalizedUTxO: { [`${fanoutTxHash}#0`]: snapshotOutput(7_000_000) },
+			},
+			headlessIdleGreetings(),
+		],
+	};
 }
 
 describe('HydraNode', () => {
@@ -2140,19 +2176,360 @@ describe('HydraNode', () => {
 		});
 
 		it('accepts only a party-authenticated headless Idle Greetings as a live rollback', async () => {
-			const { node, liveConnection } = await startSignedNode();
+			const { node, historyConnection, liveConnection } = await startSignedNode();
+			const chain = signedHistoryChain();
+			for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
 			const statuses: HydraHeadStatus[] = [];
 			node.on(HydraNodeEvent.StatusChange, (data) => statuses.push((data as { status: HydraHeadStatus }).status));
 
-			liveConnection.emit(
-				'message',
-				JSON.stringify({ ...liveGreetings(), headStatus: 'Idle', hydraHeadId: undefined }),
-			);
+			liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+			// A closed pass cannot tell a fanout still in its queue from a rollback,
+			// so the history is read again first.
+			expect(statuses).toEqual([]);
+			expect(historyConnection.restart).toHaveBeenCalledWith(expect.any(HydraTransportError));
+			historyConnection.emit('close');
+			historyConnection.emit('open');
+			for (const frame of [headIsOpen(), ...chain.frames, headlessIdleGreetings()]) {
+				historyConnection.emit('message', JSON.stringify(frame));
+			}
 
 			expect(node.status).toBe(HydraHeadStatus.Idle);
 			expect(statuses).toContain(HydraHeadStatus.Idle);
 			expect(node.hasVerifiedPinnedSessions).toBe(false);
 			expect(liveConnection.invalidate).not.toHaveBeenCalled();
+		});
+
+		describe('a node that is Idle after the pinned head', () => {
+			const signedConfig = {
+				httpUrl: 'http://localhost:4001',
+				expectedHeadId: HEAD_ID_A,
+				snapshotVerificationKeys: TEST_PARTIES.map(({ cborVerificationKey }) => cborVerificationKey),
+				expectedNodeVerificationKey: TEST_PARTIES[0].cborVerificationKey,
+				trustLocalNodeSnapshotMetadata: true,
+				connectTimeoutMs: 100,
+			};
+
+			function restartedNode(overrides: Partial<ConstructorParameters<typeof HydraNode>[0]> = {}) {
+				const node = new HydraNode({ ...signedConfig, ...overrides });
+				const statuses: unknown[] = [];
+				node.on(HydraNodeEvent.StatusChange, (data) => statuses.push(data));
+				const connectPromise = node.connect();
+				const [historyConnection, liveConnection] = mockConnectionInstances;
+				return { node, statuses, connectPromise, historyConnection, liveConnection };
+			}
+
+			/**
+			 * The live Greetings is headless Idle and no closed pass proves why. The
+			 * pass streaming now may have read the log before the fanout, so it is
+			 * dropped and the history is read again from the start, on a new socket.
+			 */
+			async function holdHeadlessIdle({
+				connectPromise,
+				historyConnection,
+				liveConnection,
+			}: ReturnType<typeof restartedNode>) {
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+				expect(historyConnection.invalidate).not.toHaveBeenCalled();
+				historyConnection.emit('close', new Error('replaying the history again'));
+				historyConnection.emit('open');
+			}
+
+			const finalized = { status: HydraHeadStatus.Final, headId: HEAD_ID_A };
+
+			it('binds a restarted session to the finalized head its replay proves', async () => {
+				const started = restartedNode();
+				const { node, statuses, historyConnection } = started;
+				const history = finalizedHistory();
+				const signedFrames = history.frames.slice(0, -2);
+
+				// The live Greetings comes first; the history takes longer than the connect timeout.
+				await holdHeadlessIdle(started);
+				expect(statuses).toEqual([]);
+				expect(node.hasVerifiedPinnedSessions).toBe(false);
+
+				// Signed confirmations are not handed out until the verdict: a rollback
+				// verdict must close the admission gate before any of them applies.
+				for (const frame of signedFrames) historyConnection.emit('message', JSON.stringify(frame));
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+				expect(node.isTxConfirmed(history.finalReference.split('#')[0])).toBe(false);
+				expect(statuses).toEqual([]);
+
+				for (const frame of history.frames.slice(-2)) historyConnection.emit('message', JSON.stringify(frame));
+				expect(node.getConfirmedTransactionsForReconciliation()).toHaveLength(3);
+
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+				expect(node.confirmedTransactionHistoryError).toBeUndefined();
+				expect(node.confirmedTransactionHistoryReady).toBe(true);
+				expect(node.status).toBe(HydraHeadStatus.Final);
+				// The contest's snapshot, which the handoff checks the fanout against.
+				expect(statuses).toEqual([expect.objectContaining({ ...finalized, snapshotNumber: 3 })]);
+				expect(node.hasVerifiedPinnedSessions).toBe(true);
+				expect(node.getVerifiedFanoutReference(history.finalReference, 3)).toEqual(
+					expect.objectContaining({ txHash: history.fanoutTxHash, outputIndex: 0, snapshotNumber: 3 }),
+				);
+			});
+
+			// A pass that started after the hold read the log while the node was Idle.
+			// Restarting it on every live re-greet could keep any pass from closing.
+			it('keeps the reread pass across a live re-greet', async () => {
+				const started = restartedNode();
+				const { statuses, historyConnection, liveConnection } = started;
+				const history = finalizedHistory();
+				await holdHeadlessIdle(started);
+				for (const frame of history.frames.slice(0, -2)) historyConnection.emit('message', JSON.stringify(frame));
+
+				liveConnection.emit('close', new Error('live socket dropped'));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				for (const frame of history.frames.slice(-2)) historyConnection.emit('message', JSON.stringify(frame));
+
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+			});
+
+			// A pass that closes while the live socket is down gives no verdict, and
+			// it may be a rollback. Evidence applied meanwhile would land before it.
+			it('keeps replayed evidence held across a live socket close', async () => {
+				const started = restartedNode();
+				const { node, statuses, historyConnection, liveConnection } = started;
+				const history = finalizedHistory();
+				const confirmedTxHash = history.finalReference.split('#')[0];
+				await holdHeadlessIdle(started);
+				for (const frame of history.frames.slice(0, -2)) historyConnection.emit('message', JSON.stringify(frame));
+
+				liveConnection.emit('close', new Error('live socket dropped'));
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+				expect(node.isTxConfirmed(confirmedTxHash)).toBe(false);
+
+				for (const frame of history.frames.slice(-2)) historyConnection.emit('message', JSON.stringify(frame));
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+				expect(statuses).toEqual([]);
+
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+				expect(node.getConfirmedTransactionsForReconciliation()).toHaveLength(3);
+				expect(node.isTxConfirmed(confirmedTxHash)).toBe(true);
+			});
+
+			// A misrouted endpoint can name the head with another party's key.
+			it('keeps replayed evidence held across a live Greetings that fails party identity', async () => {
+				const started = restartedNode();
+				const { node, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+				for (const frame of [headIsOpen(), ...signedHistoryChain().frames]) {
+					historyConnection.emit('message', JSON.stringify(frame));
+				}
+
+				liveConnection.emit('close', new Error('live socket dropped'));
+				const foreignGreetings = { ...liveGreetings(), me: { vkey: TEST_PARTIES[1].rawVerificationKey } };
+				liveConnection.emit('message', JSON.stringify(foreignGreetings));
+
+				expect(liveConnection.invalidate).toHaveBeenCalled();
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+			});
+
+			it('binds at once when the replay proved the finalization before the live Greetings', async () => {
+				const { node, statuses, connectPromise, historyConnection, liveConnection } = restartedNode();
+				const history = finalizedHistory();
+
+				for (const frame of history.frames) historyConnection.emit('message', JSON.stringify(frame));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+				expect(node.hasVerifiedPinnedSessions).toBe(true);
+				expect(node.getVerifiedFanoutReference(history.finalReference, 3)).not.toBeNull();
+			});
+
+			// A truncated page restarts only once it is drained, and the hold blocks
+			// the drain. So the verdict must come from the page itself.
+			it('settles a held Idle from a truncated replay page', async () => {
+				const started = restartedNode({ maxUnreconciledTransactions: 1 });
+				const { node, statuses, historyConnection } = started;
+				const history = finalizedHistory();
+				await holdHeadlessIdle(started);
+
+				for (const frame of history.frames) historyConnection.emit('message', JSON.stringify(frame));
+
+				expect(node.confirmedTransactionHistoryReady).toBe(false);
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+				const [firstPage] = node.getConfirmedTransactionsForReconciliation();
+				expect(firstPage).toBeDefined();
+				node.markConfirmedTransactionReconciled(firstPage.txId);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
+			});
+
+			it('binds at once when a truncated replay page proved the finalization first', async () => {
+				const { statuses, connectPromise, historyConnection, liveConnection } = restartedNode({
+					maxUnreconciledTransactions: 1,
+				});
+
+				for (const frame of finalizedHistory().frames) historyConnection.emit('message', JSON.stringify(frame));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+			});
+
+			it('keeps a finalized head and its fanout map across a live Greetings that is Idle', async () => {
+				const { node, historyConnection, liveConnection } = await startSignedNode();
+				const history = finalizedHistory();
+				for (const frame of signedHistoryChain().frames) historyConnection.emit('message', JSON.stringify(frame));
+				finishHistoryReplay(historyConnection);
+				liveConnection.emit('message', JSON.stringify(history.frames[history.frames.length - 2]));
+				const statuses: unknown[] = [];
+				node.on(HydraNodeEvent.StatusChange, (data) => statuses.push(data));
+
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				expect(statuses).toEqual([]);
+				expect(node.status).toBe(HydraHeadStatus.Final);
+				expect(node.hasVerifiedPinnedSessions).toBe(true);
+				expect(node.getVerifiedFanoutReference(history.finalReference, 3)).not.toBeNull();
+			});
+
+			it('ignores a held Idle once a live frame names the head again', async () => {
+				const started = restartedNode();
+				const { statuses, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				liveConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				// The history pass was opened while the node was still Idle.
+				historyConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				historyConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				expect(statuses).toEqual([expect.objectContaining({ status: HydraHeadStatus.Initializing })]);
+			});
+
+			// The pass reread for the first hold started before any later Idle.
+			it('reads the history again for a hold after the live socket named the head', async () => {
+				const started = restartedNode();
+				const { historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				liveConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				liveConnection.emit('close', new Error('live socket dropped'));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
+			});
+
+			it('greets again when the history names the head the held Idle did not', async () => {
+				const started = restartedNode();
+				const { node, statuses, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				for (const frame of [headIsOpen(), ...signedHistoryChain().frames]) {
+					historyConnection.emit('message', JSON.stringify(frame));
+				}
+				finishHistoryReplay(historyConnection);
+
+				expect(liveConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+				expect(statuses).toEqual([]);
+				expect(node.hasVerifiedPinnedSessions).toBe(false);
+
+				// That pass closed, so the next held Idle reads the history again.
+				liveConnection.emit('close', new Error('greeting again'));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
+			});
+
+			// hydra-node reports no undo of a finalization. A head status after it
+			// means an L1 rollback of the fanout, so the history disagrees.
+			it('greets again when the history names a head status after its finalization', async () => {
+				const started = restartedNode();
+				const { statuses, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				for (const frame of finalizedHistory().frames.slice(0, -1)) {
+					historyConnection.emit('message', JSON.stringify(frame));
+				}
+				historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), headStatus: 'Closed' }));
+
+				expect(liveConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+				expect(statuses).toEqual([]);
+			});
+
+			// The note that a reread is on its way ends with the transports.
+			it('reads the history again for a hold after a disconnect', async () => {
+				const started = restartedNode();
+				const { node, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				await node.disconnect();
+				const reconnected = node.connect();
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await reconnected;
+
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
+			});
+
+			it('does not settle connect on a held Idle after the event log rotated', async () => {
+				const { connectPromise, historyConnection, liveConnection } = restartedNode();
+
+				historyConnection.emit('message', JSON.stringify({ tag: 'EventLogRotated' }));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				await expect(connectPromise).rejects.toThrow(/did not provide a matching identity-bearing Greetings/);
+			});
+
+			it('does not bind on a finalization from a pass whose Greetings failed party identity', async () => {
+				const started = restartedNode();
+				const { node, statuses, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				const frames = finalizedHistory().frames;
+				const foreignGreetings = { ...headlessIdleGreetings(), me: { vkey: TEST_PARTIES[1].rawVerificationKey } };
+				for (const frame of [...frames.slice(0, -1), foreignGreetings]) {
+					historyConnection.emit('message', JSON.stringify(frame));
+				}
+
+				expect(node.confirmedTransactionHistoryError).toBeInstanceOf(HydraProtocolError);
+				expect(statuses).toEqual([]);
+				expect(node.hasVerifiedPinnedSessions).toBe(false);
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(statuses).toEqual([]);
+			});
+
+			it('reports a rollback only once a replay that never finalized the head closes Idle', async () => {
+				const started = restartedNode();
+				const { statuses, historyConnection } = started;
+
+				await holdHeadlessIdle(started);
+				expect(statuses).toEqual([]);
+
+				historyConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				historyConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				expect(statuses).toEqual([{ status: HydraHeadStatus.Idle, headId: undefined }]);
+				expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+			});
+
+			// A disconnecting socket ignores the reread and keeps streaming the pass it
+			// began before the hold. That pass can close Idle before it reaches a
+			// HeadIsFinalized written after it read the log.
+			it('takes no verdict from a pass whose socket ignored the reread', async () => {
+				const { statuses, connectPromise, historyConnection, liveConnection } = restartedNode();
+				historyConnection.emit('open');
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+
+				historyConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				historyConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(statuses).toEqual([]);
+
+				// Every path that drops the history socket drops the live one too.
+				liveConnection.emit('close', new Error('disconnected'));
+				historyConnection.emit('close', new Error('disconnected'));
+				historyConnection.emit('open');
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				for (const frame of finalizedHistory().frames) historyConnection.emit('message', JSON.stringify(frame));
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+			});
 		});
 
 		it('invalidates an authenticated session after a conflicting identity frame', async () => {

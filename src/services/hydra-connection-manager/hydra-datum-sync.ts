@@ -14,7 +14,8 @@ import {
 } from '@/generated/prisma/client';
 import { type DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { datumMatchesRequest } from '@/utils/logic/l2-datum-validation';
-import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
+import { convertSyncedPaymentAction } from '@/utils/logic/result-on-chain';
+import { convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import {
 	canonicalizeHydraAmounts,
 	hydraAmountListsEqual,
@@ -647,11 +648,13 @@ export async function applyDatumStateToLocalRequests(params: {
 						previousState: paymentRecoversTimeout ? null : paymentRequest.onChainState,
 						newState: effectiveState,
 					});
-					const newAction = convertNewPaymentActionAndError(
+					const newAction = convertSyncedPaymentAction(
 						paymentClearsTimeoutAction
 							? PaymentAction.WaitingForExternalAction
 							: paymentRequest.NextAction.requestedAction,
+						paymentRequest.NextAction.resultHash,
 						effectiveState,
+						decoded.resultHash,
 					);
 					await tx.paymentRequest.update({
 						where: { id: paymentRequest.id },
@@ -675,6 +678,7 @@ export async function applyDatumStateToLocalRequests(params: {
 									requestedAction: newAction.action,
 									errorNote: newAction.errorNote,
 									errorType: newAction.errorType,
+									resultHash: newAction.resultHash,
 								},
 							},
 							BuyerWallet: {

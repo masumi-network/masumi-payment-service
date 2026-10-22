@@ -37,6 +37,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
 import { fetchHostNodeHealth, HydraHostRequestError, startHostNode, stopHostNode } from './client';
+import { isHostNodeGone } from './node-gone';
 import { PREPARING_STALE_AFTER_MS as TOPUP_PREPARING_STALE_AFTER_MS } from '@/services/hydra-topup/stale';
 import {
 	PENDING_STALE_AFTER_MS as DECOMMIT_PENDING_STALE_AFTER_MS,
@@ -64,15 +65,12 @@ export type HydraHostPauseState = {
 	nodes: Array<{ nodeId: string; state: string | null; error: string | null }>;
 };
 
-const HTTP_NOT_FOUND = 404;
 /**
  * How long a pause lease lasts if its holder dies. Covers 60 sequential Host
  * requests at the client's 15 s timeout; a default Host has 32 node ports. A
  * longer action can overlap the next holder, but its release cannot end theirs.
  */
 const PAUSE_LEASE_MS = 15 * 60_000;
-/** The Host's answer for a node it does not have, as opposed to a wrong URL. */
-const NODE_GONE_DETAIL = 'no such node';
 const BUSY_MESSAGE = 'another pause action is running on this hydra host; retry shortly';
 /**
  * Pauses whose every stop this instance saw succeed, by Host and stop request,
@@ -193,17 +191,6 @@ function hasInFlightWork(inFlight: HydraHostPauseInFlight): boolean {
 	return inFlight.l2Transactions + inFlight.topups + inFlight.withdrawals + inFlight.closingHeads > 0;
 }
 
-/** The Host no longer has this node, for example one removed by hand after its head went Final. */
-function isNodeGone(error: unknown): boolean {
-	// The status alone is not enough: a base URL missing a proxy prefix also
-	// answers 404, and would then report every running node as stopped.
-	return (
-		error instanceof HydraHostRequestError &&
-		error.status === HTTP_NOT_FOUND &&
-		error.message.includes(NODE_GONE_DETAIL)
-	);
-}
-
 /**
  * Advance and Resume each act on the Host over the network and then write.
  * Only one runs per Host at a time, across every service instance:
@@ -277,7 +264,7 @@ export async function getHydraHostPauseState(hostId: string): Promise<HydraHostP
 				return { nodeId, state: health.state, error: null };
 			} catch (error) {
 				// A node the Host no longer has cannot be running.
-				if (isNodeGone(error)) return { nodeId, state: 'Stopped', error: 'not found on the host' };
+				if (isHostNodeGone(error)) return { nodeId, state: 'Stopped', error: 'not found on the host' };
 				return { nodeId, state: null, error: errorMessage(error) };
 			}
 		}),
@@ -402,7 +389,7 @@ async function stopPausedNodes(hostId: string, options: { force: boolean }): Pro
 			try {
 				await stopHostNode(host.baseUrl, adminToken, nodeId, { allowInsecureHttp: host.allowInsecureHttp });
 			} catch (error) {
-				if (isNodeGone(error)) continue;
+				if (isHostNodeGone(error)) continue;
 				failures.push(`${nodeId}: ${errorMessage(error)}`);
 				// No answer at all, as while the Host redeploys: the next node would
 				// wait out the same timeout, and the lease would keep Resume out for
@@ -454,7 +441,7 @@ export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseSta
 			} catch (error) {
 				// Skipped, not failed: a node the Host no longer has would otherwise
 				// keep the Host paused forever.
-				if (isNodeGone(error)) {
+				if (isHostNodeGone(error)) {
 					logger.warn('[HydraHostPause] paused node no longer exists on the host; skipped', { hostId, nodeId });
 					continue;
 				}

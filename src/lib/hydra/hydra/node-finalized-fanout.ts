@@ -45,7 +45,13 @@ function sameValueMultiset(left: Iterable<string>, right: Iterable<string>): boo
 export class FinalizedFanoutState {
 	/** Shared between live and replay sightings; they must never disagree. */
 	private reported: Map<string, string> | undefined;
+	private reportedHeadId: string | undefined;
 	private l1Bound: Map<string, string> | undefined;
+
+	/** The head the reported map belongs to. A map recorded before the pin was never checked against it. */
+	get headId(): string | undefined {
+		return this.reportedHeadId;
+	}
 
 	/**
 	 * Record the map from a live frame or a replayed one. Both sockets can report
@@ -63,10 +69,12 @@ export class FinalizedFanoutState {
 			throw new HydraProtocolError('Hydra history equivocated on the finalized L1 fanout output map');
 		}
 		this.reported = fanoutOutputs;
+		this.reportedHeadId = parsedMessage.headId;
 	}
 
 	clear(): void {
 		this.reported = undefined;
+		this.reportedHeadId = undefined;
 		this.l1Bound = undefined;
 	}
 

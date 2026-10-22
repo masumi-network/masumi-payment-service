@@ -16338,7 +16338,7 @@ export type PostHydraHeadRetireErrors = {
      */
     409: unknown;
     /**
-     * The head state could not be read on chain, or the node returned an unreadable head state
+     * The head state could not be read on chain, the node returned an unreadable head state, or the node reported no readable contestation deadline for a Closed head
      */
     502: unknown;
     /**
