@@ -2298,6 +2298,29 @@ describe('HydraNode', () => {
 				);
 			});
 
+			// The manager records a failure with the status it reads when the event
+			// fires, so a failure held through the hold must come after Final.
+			it('emits a failure held through the hold after the Final status', async () => {
+				const started = restartedNode();
+				const { node, historyConnection, liveConnection } = started;
+				const statusAtFailure: HydraHeadStatus[] = [];
+				node.on(HydraNodeEvent.PostTxFailed, () => statusAtFailure.push(node.status));
+				await holdHeadlessIdle(started);
+				liveConnection.emit(
+					'message',
+					JSON.stringify({
+						tag: 'PostTxOnChainFailed',
+						postChainTx: { tag: 'FanoutTx', headId: HEAD_ID_A },
+						postTxError: { tag: 'NotEnoughFuel' },
+					}),
+				);
+				expect(statusAtFailure).toEqual([]);
+
+				for (const frame of finalizedHistory().frames) historyConnection.emit('message', JSON.stringify(frame));
+
+				expect(statusAtFailure).toEqual([HydraHeadStatus.Final]);
+			});
+
 			// A pass that started after the hold read the log while the node was Idle.
 			// Restarting it on every live re-greet could keep any pass from closing.
 			it('keeps the reread pass across a live re-greet', async () => {

@@ -247,10 +247,13 @@ export class LiveFrameProcessor {
 	private bindFinalizedHead(): void {
 		this._evidenceHeld = false;
 		this._liveSessionHeadId = this.host.expectedHeadId;
-		this.flushHeldBackWhenLive();
+		this.flushHeldBackWhenLive({ isPostTxFailureHeld: true });
 		// The close's snapshot is the tip the handoff checks the fanout against.
 		// A service that was down from Open to here never heard HeadIsClosed.
 		this.emitStatusChange(HydraHeadStatus.Final, this.host.expectedHeadId, this.host.finalizedSnapshotNumber());
+		// After the status change, as in processStatus: a listener records the
+		// failure with the node's status.
+		this.flushHeldBackWhenLive();
 		this.emitter.emit(LIVE_SESSION_READY_EVENT);
 	}
 
@@ -359,13 +362,14 @@ export class LiveFrameProcessor {
 	 * settlement met only in history was parked here with nothing left to release
 	 * it — the deposit's deadline never written, the withdrawal never finalized.
 	 */
-	private flushHeldBackWhenLive(): void {
+	private flushHeldBackWhenLive({ isPostTxFailureHeld = false } = {}): void {
 		if (!this.isLiveSessionReady()) return;
 		// Withdrawals before deposits, and each oldest-first, exactly as the live
 		// path drains them: an approval must not be applied after the
 		// finalization that followed it.
 		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
 		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
+		if (isPostTxFailureHeld) return;
 		this._heldBack.flushPostTxFailures((data) => this.emitter.emit(HydraNodeEvent.PostTxFailed, data));
 	}
 
