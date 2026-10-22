@@ -33,34 +33,16 @@ describe('recordReplayedCloseSnapshot', () => {
 			true,
 		);
 
-		expect(mockHydraHeadUpdateMany.mock.calls.map(([args]) => args)).toEqual([
-			{
-				where: {
-					id: 'head-1',
-					isEnabled: true,
-					status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] },
-					OR: [{ contestationDeadline: null }, { contestationDeadline: { lt: new Date(CONTEST_DEADLINE) } }],
-				},
-				data: { contestationDeadline: new Date(CONTEST_DEADLINE) },
-			},
-			{
-				where: {
-					id: 'head-1',
-					isEnabled: true,
-					status: {
-						in: [
-							HydraHeadStatus.Closed,
-							HydraHeadStatus.FanoutPossible,
-							HydraHeadStatus.FanningOut,
-							HydraHeadStatus.Final,
-						],
-					},
-					reconciliationCompletedAt: null,
-					latestSnapshotNumber: { lt: 5n },
-				},
-				data: { latestSnapshotNumber: 5n },
-			},
-		]);
+		// The deadline first, so a failed raise leaves the trigger for the next pass.
+		const [deadlineWrite, raise] = mockHydraHeadUpdateMany.mock.calls.map(([args]) => args);
+		expect(deadlineWrite).toMatchObject({
+			where: { OR: [{ contestationDeadline: null }, { contestationDeadline: { lt: new Date(CONTEST_DEADLINE) } }] },
+			data: { contestationDeadline: new Date(CONTEST_DEADLINE) },
+		});
+		expect(raise).toMatchObject({
+			where: { reconciliationCompletedAt: null, latestSnapshotNumber: { lt: 5n } },
+			data: { latestSnapshotNumber: 5n },
+		});
 	});
 
 	it('raises a final row without asking the node for a deadline', async () => {

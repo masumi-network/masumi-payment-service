@@ -612,7 +612,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});
 
-	it('records a contest seen only in the history before the fanout handoff reads the row', async () => {
+	it('completes the fanout handoff at a contest snapshot seen only in the history', async () => {
 		// The row kept the close's snapshot 3; the history also holds a contest at 5.
 		mockNode.closedSnapshotNumber = 5n;
 
@@ -628,6 +628,40 @@ describe('Hydra live-snapshot reconciliation', () => {
 		// The handoff waits for the next pass, which reads snapshot 5 from the row.
 		expect(mockHeadLockQuery).not.toHaveBeenCalled();
 		expect(mockDisconnect).not.toHaveBeenCalled();
+
+		const [head] = (await mockHydraHeadFindMany({})) as Array<Record<string, unknown>>;
+		mockHydraHeadFindMany.mockResolvedValue([{ ...head, latestSnapshotNumber: 5n }]);
+		mockHeadLockQuery.mockImplementation(async () =>
+			mockHeadLockQuery.mock.calls.length % 2 === 1
+				? [{ id: 'relation-1' }]
+				: [
+						{
+							status: HydraHeadStatus.Final,
+							isEnabled: true,
+							initTxHash: 'c'.repeat(64),
+							finalizedAt: new Date('2026-07-22T12:00:00Z'),
+							reconciliationCompletedAt: null,
+							headIdentifier: HEAD_IDENTIFIER,
+							latestSnapshotNumber: 5n,
+							fanoutTxHash: null,
+						},
+					],
+		);
+		const contestedReference = { ...FANOUT_REFERENCE, snapshotNumber: 5 };
+		mockGetVerifiedFanoutReferences.mockReturnValue([contestedReference]);
+		mockGetVerifiedFanoutReference.mockReturnValue(contestedReference);
+		mockHydraHeadUpdateMany.mockClear();
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockGetVerifiedFanoutReferences).toHaveBeenCalledWith(5);
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ latestSnapshotNumber: 5n }),
+				data: expect.objectContaining({ reconciliationCompletedAt: expect.any(Date) }),
+			}),
+		);
+		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});
 
 	it('fails the live pass of an open head whose snapshot read fails instead of recording it as done', async () => {
