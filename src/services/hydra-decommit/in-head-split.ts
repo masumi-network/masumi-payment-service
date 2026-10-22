@@ -48,7 +48,7 @@ export function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * Carve the exact amount into its own in-head UTxO.

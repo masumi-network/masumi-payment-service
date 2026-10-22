@@ -23,7 +23,7 @@ import { HydraDecommitStatus, HydraErrorType, HydraHeadStatus, Prisma } from '@/
 import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
-import { HydraTransactionType, HydraTransportAmbiguousError } from '@/lib/hydra';
+import { HydraProvider, HydraTransactionType, HydraTransportAmbiguousError } from '@/lib/hydra';
 import { fetchHydraDecommitInFlight } from '@/lib/hydra/hydra/node-control-queries';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
@@ -51,6 +51,7 @@ import { countLiveInHeadEscrows } from './live-escrows';
 import {
 	assertSendableInHead,
 	errorMessage,
+	sleep,
 	SPLIT_MAY_STILL_CONFIRM,
 	splitExactAmountInHead,
 	TOKEN_OUTPUT_LOVELACE,
@@ -103,6 +104,37 @@ const WALLET_BUSY = Symbol.for('masumi.hydra.decommit.walletBusy');
 
 function isMarked(error: unknown, mark: symbol): boolean {
 	return typeof error === 'object' && error !== null && mark in error;
+}
+
+/**
+ * How long a taken withdrawal waits for the head to drop its inputs.
+ *
+ * The node takes the request before the head agrees on it, and until the next
+ * snapshot the leaving inputs still read as spendable. A payment that reserves
+ * one of them is refused by the head, and its reservation then stays held until
+ * an operator releases it. So the wallet goes back only once the inputs are
+ * gone. A snapshot takes about a second; past this the stale-lock reaper frees
+ * the wallet instead.
+ */
+const INPUTS_LEFT_TIMEOUT_MS = 10_000;
+const INPUTS_LEFT_POLL_MS = 500;
+
+/** Whether the head no longer lists any of these inputs at the address. */
+async function haveInputsLeftHead(provider: HydraProvider, address: string, inputs: UTxO[]): Promise<boolean> {
+	const leaving = new Set(inputs.map(utxoRef));
+	const deadline = Date.now() + INPUTS_LEFT_TIMEOUT_MS;
+	for (;;) {
+		try {
+			const current = await provider.fetchAddressUTxOs(address);
+			if (!current.some((utxo) => leaving.has(utxoRef(utxo)))) return true;
+		} catch (error) {
+			logger.warn('[HydraDecommit] could not read the head to see the withdrawal inputs leave', {
+				error: errorMessage(error),
+			});
+		}
+		if (Date.now() >= deadline) return false;
+		await sleep(INPUTS_LEFT_POLL_MS);
+	}
 }
 
 /**
@@ -638,6 +670,15 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			throw createHttpError(502, `Hydra node rejected the withdrawal: ${errorMessage(error)}`);
 		}
 
+		// Kept, not thrown: the withdrawal itself has been requested either way.
+		keepWalletLock = !(await haveInputsLeftHead(provider, address, decommitInputs));
+		if (keepWalletLock) {
+			logger.warn('[HydraDecommit] the withdrawal inputs are still in the head; leaving the wallet to the reaper', {
+				decommitId: claim.id,
+				decommitTxId,
+			});
+		}
+
 		await prisma.hydraHead.update({ where: { id: head.id }, data: { latestActivityAt: new Date() } });
 		logger.info(`[HydraDecommit] requested withdrawal of ${withdrawnLovelace} lovelace from head ${head.id}`, {
 			decommitTxId,
@@ -671,8 +712,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// still apply the request or its split, because the inputs of that body stay
 		// spoken for; the stale-lock reaper frees it after WALLET_LOCK_TIMEOUT_INTERVAL,
 		// as it does for a consolidation that may still confirm. A request the node
-		// took also releases it: a payment that then picks the leaving inputs before
-		// the head drops them is refused by the head, so neither side loses funds.
+		// took is handled above: released once its inputs have left the head.
 		keepWalletLock =
 			isAcceptedButUnconfirmed(error) ||
 			isMarked(error, SPLIT_MAY_STILL_CONFIRM) ||

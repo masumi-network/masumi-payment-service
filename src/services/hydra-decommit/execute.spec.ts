@@ -17,6 +17,8 @@ const mockFetchPendingDecommitRefs = jest.fn() as AnyMock;
 /** The node's raw `GET /head`, which decides whether a stale withdrawal may expire. */
 const mockNodeGet = jest.fn() as AnyMock;
 const mockFetchAddressUTxOs = jest.fn() as AnyMock;
+/** What the head lists at the address once the node has taken the withdrawal request. */
+const mockUTxOsAfterRequest = jest.fn() as AnyMock;
 /** Tracks which inputs the in-head transaction builder was given. */
 const mockTxIn = jest.fn() as AnyMock;
 /**
@@ -110,7 +112,8 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 			},
 		}),
 		getProvider: () => ({
-			fetchAddressUTxOs: mockFetchAddressUTxOs,
+			fetchAddressUTxOs: (...args: unknown[]) =>
+				mockDecommitCall.mock.calls.length > 0 ? mockUTxOsAfterRequest(...args) : mockFetchAddressUTxOs(...args),
 			fetchProtocolParameters: mockFetchProtocolParameters,
 			fetchUTxOs: mockFetchUTxOs,
 		}),
@@ -216,6 +219,7 @@ beforeEach(() => {
 	mockTransactionCount.mockResolvedValue(0);
 	mockWalletClaim.mockResolvedValue({ count: 1 });
 	mockWalletRelease.mockResolvedValue({ count: 1 });
+	mockUTxOsAfterRequest.mockResolvedValue([]);
 });
 
 describe('executeHydraDecommit request outcomes', () => {
@@ -892,6 +896,45 @@ describe('executeHydraDecommit and the wallet lock', () => {
 			jest.useRealTimers();
 			mockIsTxConfirmed.mockReturnValue(true);
 		}
+	});
+
+	// Until the next snapshot the leaving inputs still read as spendable. A payment
+	// that reserved one would be refused by the head and held until an operator
+	// releases it, so the wallet stays with the reaper instead.
+	it('keeps the wallet while the head still lists the inputs the node took', async () => {
+		jest.useFakeTimers();
+		try {
+			mockUTxOsAfterRequest.mockResolvedValue([
+				{
+					input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '20000000' }] },
+				},
+			]);
+
+			const outcome = executeHydraDecommit({ headId: 'head-1' });
+			await jest.advanceTimersByTimeAsync(11_000);
+			await expect(outcome).resolves.toMatchObject({ decommitId: 'decommit-1' });
+
+			expect(mockWalletRelease).not.toHaveBeenCalled();
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
+	it('releases the wallet once the head has dropped the inputs the node took', async () => {
+		mockUTxOsAfterRequest
+			.mockResolvedValueOnce([
+				{
+					input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '20000000' }] },
+				},
+			])
+			.mockResolvedValue([]);
+
+		await executeHydraDecommit({ headId: 'head-1' });
+
+		expect(mockUTxOsAfterRequest).toHaveBeenCalledTimes(2);
+		expect(mockWalletRelease).toHaveBeenCalledTimes(1);
 	});
 
 	it('does not let a failed release replace the outcome of the withdrawal', async () => {
