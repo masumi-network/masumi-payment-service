@@ -22,6 +22,11 @@ describe('pageClosedBeforeHeadExisted', () => {
 		expect(pageClosedBeforeHeadExisted([frame({ tag: 'Greetings', headStatus: 'Open' })])).toBe(false);
 	});
 
+	// Only Greetings closes a page, so only its status says what the node was.
+	it('ignores an Idle status on any frame other than Greetings', () => {
+		expect(pageClosedBeforeHeadExisted([frame({ tag: 'HeadIsInitializing', headStatus: 'Idle' })])).toBe(false);
+	});
+
 	// The normal pass then rejects the frame with its own message.
 	it('leaves a malformed page to the normal pass', () => {
 		expect(pageClosedBeforeHeadExisted(['{not json', frame({ tag: 'Greetings', headStatus: 'Idle' })])).toBe(false);
