@@ -1,11 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
 import {
 	fetchHydraAcknowledgedDeposits,
+	fetchHydraClosedHeadFacts,
 	fetchHydraPendingDecommitRefs,
 	fetchHydraSnapshotRound,
 } from './node-control-queries';
 import { HydraProtocolError, HydraTransportError } from './errors';
-import { HydraHttpResponseError } from './node-frames';
+import { HydraHttpResponseError } from './node-http-response';
 
 const TX_ID = 'DC3EDEE5C3EB0B5B50809EC9FA41FB590818412383DA4F03CBF645FB0C1728E7';
 
@@ -47,6 +48,37 @@ describe('fetchHydraPendingDecommitRefs', () => {
 		const transport = transportThrowing(new HydraProtocolError('Hydra HTTP response exceeded its byte limit'));
 
 		await expect(fetchHydraPendingDecommitRefs(transport)).resolves.toEqual([]);
+	});
+});
+
+describe('fetchHydraClosedHeadFacts', () => {
+	const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
+	const closedHead = {
+		tag: 'Closed',
+		contents: {
+			headId: HEAD_ID,
+			contestationDeadline: '2026-10-22T12:00:00Z',
+			confirmedSnapshot: { tag: 'ConfirmedSnapshot', snapshot: { number: 7 } },
+		},
+	};
+
+	it('reads the deadline from one read of the head state', async () => {
+		const transport = transportReturning(closedHead);
+
+		await expect(fetchHydraClosedHeadFacts(transport, HEAD_ID)).resolves.toEqual({
+			contestationDeadline: '2026-10-22T12:00:00Z',
+		});
+		expect(transport.paths).toEqual(['/head']);
+	});
+
+	// A head that cannot be read is not a head with no deadline: the
+	// caller writes nothing, and a later read can still fill the row in.
+	it.each([
+		['the connection fails', new HydraTransportError('Hydra HTTP GET failed before a response was received')],
+		['the proxy answers 502', new HydraHttpResponseError('Hydra HTTP request failed with 502 Bad Gateway', 502)],
+		['the answer is over the byte limit', new HydraProtocolError('Hydra HTTP response exceeded its byte limit')],
+	])('says nothing when %s', async (_label, error) => {
+		await expect(fetchHydraClosedHeadFacts(transportThrowing(error), HEAD_ID)).resolves.toBeUndefined();
 	});
 });
 

@@ -107,19 +107,40 @@ async function applyDecommitOutcomeInOrder(params: DecommitOutcomeParams): Promi
 	}
 
 	if (outcome === 'approved') {
+		// Receipt time can follow the historical finalization replayed next.
+		// Preserve the node's event time, including when repairing a missing
+		// or replay-time stamp on this exact withdrawal's Approved row.
+		const approvedAt = observedAt ?? now;
 		let { count } = await prisma.hydraDecommit.updateMany({
-			where: { hydraHeadId, decommitTxId, ...undecidedStatus },
-			data: { status: HydraDecommitStatus.Approved, approvedAt: now },
+			where: {
+				hydraHeadId,
+				decommitTxId,
+				OR: [
+					undecidedStatus,
+					...(observedAt === undefined
+						? []
+						: [
+								{
+									status: HydraDecommitStatus.Approved,
+									OR: [{ approvedAt: null }, { approvedAt: { gt: observedAt } }],
+								},
+							]),
+				],
+			},
+			data: { status: HydraDecommitStatus.Approved, approvedAt },
 		});
 		if (count === 0) {
-			// An expired row hears of its approval only through a replay, which
-			// carries no approval time. Stamping the replay time would put the
-			// approval after the replayed finalization that follows it, and
-			// finalizeDecommit would never match the row. Left null, the row is
-			// matched on its creation time instead.
+			// An expired row hears of its approval through replay. If that frame
+			// omits its time, leave the approval null rather than stamp receipt
+			// time after the historical finalization. The age guard then uses
+			// the row's creation time instead.
 			({ count } = await prisma.hydraDecommit.updateMany({
 				where: { hydraHeadId, decommitTxId, ...EXPIRED },
-				data: { status: HydraDecommitStatus.Approved, failureReason: null },
+				data: {
+					status: HydraDecommitStatus.Approved,
+					failureReason: null,
+					...(observedAt === undefined ? {} : { approvedAt: observedAt }),
+				},
 			}));
 		}
 		if (count > 0) {

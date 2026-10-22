@@ -592,11 +592,25 @@ the node already reports the head past its stored status, or when the head
 output moves on L1 during the request. It cannot see a fanout that is posted
 but not yet on L1. Wait for a failed fanout to fail before you retire.
 
-The endpoint refuses a head inside its contestation period. It also refuses a
-`Closed` head with no stored contestation deadline: wait until the head is
-`FanoutPossible`, then retire it. If the node is
-down, it refuses too, because it cannot read the remaining UTxO set. Add
-`"acknowledgeRemainingUtxoUnknown": true` to retire without that set.
+The endpoint refuses a head inside its contestation period. It checks the
+stored deadline of a `Closed` head and the deadline the node reports for any
+head, because a contest moves the node's deadline and the stored one can miss
+it. It refuses a `Closed` head with no stored deadline (409), a node deadline
+still in the future (409) and a `Closed` head whose node reports no readable
+deadline (502). In each case, wait until the head is `FanoutPossible`, then
+retire it. That is also the safe choice when a deadline just passed: the node
+can lag the chain, and a contest it has not processed yet still moves the
+deadline. The check also uses this service's clock, which can run ahead of
+the chain.
+
+If the node is down, it refuses too, because it cannot read the remaining UTxO
+set. Add `"acknowledgeRemainingUtxoUnknown": true` to retire without that set.
+The flag also covers a head with no node connection (a disabled head, for
+example), a node that reports the head neither closed nor fanning out, and a
+head state this service cannot read. When the node gives no readable deadline
+in these cases, retire checks only the stored deadline of a `Closed` head and
+cannot see a contest that is still running. The flag never skips a node
+deadline that this service can read.
 
 ### "Transaction is invalid" on a head
 

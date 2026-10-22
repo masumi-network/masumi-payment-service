@@ -62,7 +62,7 @@ export function decideSnapshotRound(
 }
 
 /**
- * Apply one observation. Every write is conditioned on the signature it read,
+ * Apply one observation. Every write is conditioned on the signature and clock it read,
  * so two instances (or a reset racing this job) can never overwrite a newer
  * observation or alert twice for one round.
  */
@@ -70,10 +70,14 @@ export async function applySnapshotRoundObservation(
 	head: { id: string } & StoredSnapshotRound,
 	round: HydraSnapshotRound,
 	now: Date,
-	database: Pick<typeof prisma, 'hydraHead'> = prisma,
+	database: Pick<typeof prisma, 'hydraHead' | '$transaction'> = prisma,
 ): Promise<SnapshotRoundDecision['action']> {
 	const decision = decideSnapshotRound(head, round, now);
-	const readState = { id: head.id, snapshotRoundSignature: head.snapshotRoundSignature };
+	const readState = {
+		id: head.id,
+		snapshotRoundSignature: head.snapshotRoundSignature,
+		snapshotRoundSince: head.snapshotRoundSince,
+	};
 	switch (decision.action) {
 		case 'clear':
 			await database.hydraHead.updateMany({
@@ -88,20 +92,8 @@ export async function applySnapshotRoundObservation(
 			});
 			break;
 		case 'alert': {
-			const claimed = await database.hydraHead.updateMany({
-				where: { ...readState, snapshotRoundAlertedAt: null },
-				data: { snapshotRoundAlertedAt: now },
-			});
-			if (claimed.count !== 1 || head.snapshotRoundSince === null) return 'unchanged';
-			logger.warn('[HydraSnapshotRound] snapshot round has not moved; the head confirms nothing until reset', {
-				hydraHeadId: head.id,
-				roundTag: round.tag,
-				snapshotNumber: round.number,
-				signatoryCount: round.signatoryCount,
-				txIds: round.txIds,
-				stuckSince: head.snapshotRoundSince.toISOString(),
-			});
-			await webhookEventsService.triggerHydraHeadSnapshotRoundStuck({
+			if (head.snapshotRoundSince === null) return 'unchanged';
+			const payload = {
 				hydraHeadId: head.id,
 				roundTag: round.tag,
 				snapshotNumber: round.number,
@@ -109,7 +101,20 @@ export async function applySnapshotRoundObservation(
 				txIds: round.txIds,
 				stuckSince: head.snapshotRoundSince.toISOString(),
 				checkedAt: now.toISOString(),
+			};
+			// The alert marker and outbox rows commit together. A failed enqueue
+			// must leave the round eligible for the next scheduler tick.
+			const queued = await database.$transaction(async (tx) => {
+				const claimed = await tx.hydraHead.updateMany({
+					where: { ...readState, snapshotRoundAlertedAt: null },
+					data: { snapshotRoundAlertedAt: now },
+				});
+				if (claimed.count !== 1) return false;
+				await webhookEventsService.queueHydraHeadSnapshotRoundStuckInTransaction(tx, payload);
+				return true;
 			});
+			if (!queued) return 'unchanged';
+			logger.warn('[HydraSnapshotRound] snapshot round has not moved; the head confirms nothing until reset', payload);
 			break;
 		}
 		case 'unchanged':

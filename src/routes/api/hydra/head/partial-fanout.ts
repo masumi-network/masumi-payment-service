@@ -22,10 +22,12 @@ import {
 	type HydraFanoutHeadState,
 	type HydraFanoutRemainingUtxo,
 } from '@/lib/hydra/hydra/fanout-head-state';
+import { HydraCommandRefusedUnsyncedError } from '@/lib/hydra/hydra/errors';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from '@/lib/hydra/hydra/snapshot-limits';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 
+import { fanoutsInFlight } from './fanout-in-flight';
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
 
 const PARTIAL_FANOUT_STATUSES: ReadonlySet<HydraHeadStatus> = new Set([
@@ -60,7 +62,12 @@ export async function readFanoutHeadState(node: FanoutHeadStateSource): Promise<
 	try {
 		state = parseFanoutHeadState(await node.get('/head'));
 	} catch (error) {
-		if (error instanceof HydraFanoutHeadStateError) throw createHttpError(502, error.message);
+		if (error instanceof HydraFanoutHeadStateError) {
+			throw createHttpError(502, error.message, {
+				contestationDeadline: error.contestationDeadline,
+				expose: true,
+			});
+		}
 		throw error;
 	}
 	if (!state) throw createHttpError(409, 'The Hydra node does not hold this head as closed');
@@ -184,6 +191,13 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		const selection = selectFanoutOutputs(remaining, input.outputRefs);
 		const selectedCount = Object.keys(selection).length;
 
+		// No await between this check and the add. Thrown before the try: a
+		// refusal is not a failed command.
+		if (fanoutsInFlight.has(head.id)) {
+			throw createHttpError(409, 'Hydra head fanout is already in progress');
+		}
+		fanoutsInFlight.add(head.id);
+
 		try {
 			await hydraHead.partialFanout(selection);
 			await cm.flushHeadStatus(head.id);
@@ -200,8 +214,19 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 			});
 			return { headId: head.id, status: persistedHead.status, selectedCount };
 		} catch (error) {
+			// Behind the chain, the node drops the step without posting anything.
+			// Self-resolving, so it gets an actionable answer and no head error.
+			if (error instanceof HydraCommandRefusedUnsyncedError) {
+				throw createHttpError(
+					503,
+					`${error.message}. The step was not posted; send it again once the node has caught up.`,
+					{ expose: true },
+				);
+			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'PartialFanout');
 			throw error;
+		} finally {
+			fanoutsInFlight.delete(head.id);
 		}
 	},
 });

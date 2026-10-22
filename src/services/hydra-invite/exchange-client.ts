@@ -240,10 +240,10 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
  * What a send attempt tells the caller about whether the nonce may be spent.
  *
  * - `accepted`: the Host took it (2xx), or recognised it as the same redemption.
- * - `answered`: a status other than 2xx. `fromHost` says the body is the Host's
- *   own JSON refusal, which it sends before it spends the nonce, except where
- *   `code` says the nonce is spent by someone else. Without it the status may
- *   come from a gateway in front of the Host.
+ * - `answered`: a status other than 2xx. `fromHost` says the body is a Host
+ *   refusal that carries one of the Host's codes. Every Host 503 carries one and
+ *   comes before the nonce is spent. Without a code the status may come from a
+ *   gateway in front of the Host, which can answer after a redemption landed.
  * - `not-sent`: nothing left this machine, or no connection was ever made.
  * - `unknown`: the request may have reached the Host and the answer was lost.
  */
@@ -275,16 +275,26 @@ const NEVER_SENT_ERROR_CODES = new Set([
 ]);
 
 /**
- * Read a refusal body. Every Host refusal is `{ error }`, and a newer Host adds
- * `code`; a gateway's HTML or plain text is neither, so it reads as not the Host's.
+ * The codes the Host puts on a refusal: `redeemed-by-other` on a 409 and
+ * `host-unavailable` on every 503 (`HOST_UNAVAILABLE_CODE` in the Host's
+ * exchange server). Kept as a copy because `src/` does not depend on the Host.
+ */
+const HOST_REFUSAL_CODES: ReadonlySet<string> = new Set(['redeemed-by-other', 'host-unavailable']);
+
+/**
+ * Read a refusal body. Every Host refusal is `{ error }`, and the ones a
+ * redeemer acts on add a `code`. A gateway's HTML, plain text or its own
+ * `{ error }` JSON carries none of the Host's codes, so it reads as not the Host's.
  */
 export function readRefusal(detail: string): { code: string | null; fromHost: boolean } {
 	try {
 		const parsed: unknown = JSON.parse(detail);
 		if (typeof parsed === 'object' && parsed !== null) {
+			const code = 'code' in parsed && typeof parsed.code === 'string' ? parsed.code : null;
 			return {
-				code: 'code' in parsed && typeof parsed.code === 'string' ? parsed.code : null,
-				fromHost: 'error' in parsed && typeof parsed.error === 'string',
+				code,
+				fromHost:
+					'error' in parsed && typeof parsed.error === 'string' && code !== null && HOST_REFUSAL_CODES.has(code),
 			};
 		}
 	} catch {

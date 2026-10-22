@@ -308,325 +308,340 @@ export function HydraNodeDetailsDialog({
     }
   }
 
-  if (!host) return null;
+  // Kept mounted when the host drops out of the list (a refetch, a network
+  // switch): unmounting it mid-backup would drop the one-time keys.
+  const backUpDialog = (
+    <BackUpNodeKeysDialog
+      open={backUpId !== null}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setBackUpId(null);
+      }}
+      participantId={backUpId}
+      onDone={() => void refetchParticipants()}
+    />
+  );
+
+  // Same root shape on both paths: a different root element would remount the
+  // backup dialog and drop revealed keys just the same.
+  if (!host)
+    return (
+      <>
+        {null}
+        {backUpDialog}
+      </>
+    );
 
   const neverProbed = host.lastHealthAt === null;
   const healthProblems = hydraHostHealthProblems(host.lastHealthError);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex flex-wrap items-center gap-2">
-            <Server className="h-4 w-4" />
-            {host.name}
-            <Badge variant="outline">{host.status}</Badge>
-            <Badge variant="outline">{host.network}</Badge>
-          </DialogTitle>
-          <DialogDescription className="break-all">{host.baseUrl}</DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              <Server className="h-4 w-4" />
+              {host.name}
+              <Badge variant="outline">{host.status}</Badge>
+              <Badge variant="outline">{host.network}</Badge>
+            </DialogTitle>
+            <DialogDescription className="break-all">{host.baseUrl}</DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-5">
-          <div className="grid gap-2 sm:grid-cols-3">
-            <Stat label="Heads" value={String(host.participantCount)} />
-            <Stat label="hydra-node" value={host.hydraVersion?.split('-')[0] ?? 'not probed'} />
-            <Stat
-              label="Last checked"
-              value={neverProbed ? 'never' : formatDateTime(host.lastHealthAt ?? '')}
-            />
-          </div>
+          <div className="space-y-5">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Stat label="Heads" value={String(host.participantCount)} />
+              <Stat label="hydra-node" value={host.hydraVersion?.split('-')[0] ?? 'not probed'} />
+              <Stat
+                label="Last checked"
+                value={neverProbed ? 'never' : formatDateTime(host.lastHealthAt ?? '')}
+              />
+            </div>
 
-          {/* Check sits directly under the reading it refreshes, and next to
+            {/* Check sits directly under the reading it refreshes, and next to
               the error it most often clears. */}
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isNodeBusy}
-              onClick={() => void handleCheck()}
-            >
-              {isNodeBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              Check now
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={isNodeBusy}
-                  aria-label={`More actions for ${host.name}`}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              {/* Both items carry a line of consequence. "Stop taking new
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isNodeBusy}
+                onClick={() => void handleCheck()}
+              >
+                {isNodeBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Check now
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={isNodeBusy}
+                    aria-label={`More actions for ${host.name}`}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                {/* Both items carry a line of consequence. "Stop taking new
                   heads" is the one nobody guesses right: it sounds like it
                   stops the node, and it does not touch a single running head. */}
-              <DropdownMenuContent align="start" className="max-w-80">
-                <DropdownMenuItem
-                  className="items-start gap-2"
-                  onClick={() => {
-                    onOpenChange(false);
-                    onEdit(host);
-                  }}
-                >
-                  <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span className="space-y-0.5">
-                    <span className="block">Edit connection</span>
-                    <span className="block text-xs font-normal text-muted-foreground">
-                      Rename it, or replace a key. Running heads are untouched.
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="items-start gap-2"
-                  onClick={() => setIsTogglingDraining(true)}
-                >
-                  {isDraining ? (
-                    <PlayCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  ) : (
-                    <PauseCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  )}
-                  <span className="space-y-0.5">
-                    <span className="block">
-                      {isDraining ? 'Take new heads again' : 'Stop taking new heads'}
-                    </span>
-                    <span className="block text-xs font-normal text-muted-foreground">
-                      {isDraining
-                        ? 'Let new heads open here again.'
-                        : 'New heads go to another node. Heads already running here are untouched.'}
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="items-start gap-2 text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
-                  onClick={() => setIsDisconnecting(true)}
-                >
-                  <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span className="space-y-0.5">
-                    <span className="block">Disconnect</span>
-                    <span className="block text-xs font-normal text-muted-foreground">
-                      This service forgets the node. The node itself keeps running.
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {healthProblems.length > 0 && (
-            <HydraNotice tone="error">
-              {healthProblems.length === 1 ? (
-                <p>{healthProblems[0]}</p>
-              ) : (
-                <>
-                  <p>{healthProblems.length} checks failed:</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-4">
-                    {healthProblems.map((problem, index) => (
-                      <li key={index}>{problem}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              <p className="mt-1">
-                Fixed the cause? Press <span className="text-foreground">Check now</span> — this
-                reading is from the last probe, not live.
-              </p>
-            </HydraNotice>
-          )}
-
-          {!host.hasAdminToken && (
-            <HydraNotice tone="warn">
-              <p>
-                No admin key stored. This node keeps its heads running but cannot start a new one.
-                Add the key from Edit connection to open heads here again.
-              </p>
-            </HydraNotice>
-          )}
-
-          <HydraHostMaintenance host={host} />
-
-          <section className="space-y-2">
-            <div className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Head processes</h3>
-              <NodeFundsHint />
-            </div>
-            {participants.length === 0 ? (
-              <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                No heads on this node yet.
-              </p>
-            ) : (
-              <ul className="divide-y rounded-md border">
-                {participants.map((participant) => (
-                  <li
-                    key={participant.id}
-                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
+                <DropdownMenuContent align="start" className="max-w-80">
+                  <DropdownMenuItem
+                    className="items-start gap-2"
+                    onClick={() => {
+                      onOpenChange(false);
+                      onEdit(host);
+                    }}
                   >
-                    {/* Led by the wallet and the head state, because that is
+                    <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span className="space-y-0.5">
+                      <span className="block">Edit connection</span>
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        Rename it, or replace a key. Running heads are untouched.
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="items-start gap-2"
+                    onClick={() => setIsTogglingDraining(true)}
+                  >
+                    {isDraining ? (
+                      <PlayCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    ) : (
+                      <PauseCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    )}
+                    <span className="space-y-0.5">
+                      <span className="block">
+                        {isDraining ? 'Take new heads again' : 'Stop taking new heads'}
+                      </span>
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        {isDraining
+                          ? 'Let new heads open here again.'
+                          : 'New heads go to another node. Heads already running here are untouched.'}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="items-start gap-2 text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                    onClick={() => setIsDisconnecting(true)}
+                  >
+                    <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span className="space-y-0.5">
+                      <span className="block">Disconnect</span>
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        This service forgets the node. The node itself keeps running.
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {healthProblems.length > 0 && (
+              <HydraNotice tone="error">
+                {healthProblems.length === 1 ? (
+                  <p>{healthProblems[0]}</p>
+                ) : (
+                  <>
+                    <p>{healthProblems.length} checks failed:</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-4">
+                      {healthProblems.map((problem, index) => (
+                        <li key={index}>{problem}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                <p className="mt-1">
+                  Fixed the cause? Press <span className="text-foreground">Check now</span> — this
+                  reading is from the last probe, not live.
+                </p>
+              </HydraNotice>
+            )}
+
+            {!host.hasAdminToken && (
+              <HydraNotice tone="warn">
+                <p>
+                  No admin key stored. This node keeps its heads running but cannot start a new one.
+                  Add the key from Edit connection to open heads here again.
+                </p>
+              </HydraNotice>
+            )}
+
+            <HydraHostMaintenance host={host} />
+
+            <section className="space-y-2">
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Head processes</h3>
+                <NodeFundsHint />
+              </div>
+              {participants.length === 0 ? (
+                <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                  No heads on this node yet.
+                </p>
+              ) : (
+                <ul className="divide-y rounded-md border">
+                  {participants.map((participant) => (
+                    <li
+                      key={participant.id}
+                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
+                    >
+                      {/* Led by the wallet and the head state, because that is
                         what an operator is looking for. The node's own id is a
                         UUID that means something only to the Host. */}
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <HydraWalletLink
-                          address={participant.Wallet?.walletAddress}
-                          network={host.network}
-                          shorten={10}
-                        />
-                        <Badge variant="outline">
-                          {participant.HydraHead?.status ?? 'No head yet'}
-                        </Badge>
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <HydraWalletLink
+                            address={participant.Wallet?.walletAddress}
+                            network={host.network}
+                            shorten={10}
+                          />
+                          <Badge variant="outline">
+                            {participant.HydraHead?.status ?? 'No head yet'}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {participant.keysDisclosedAt
+                            ? `Keys taken ${formatDateTime(participant.keysDisclosedAt)}`
+                            : 'Keys have never been backed up'}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {participant.keysDisclosedAt
-                          ? `Keys taken ${formatDateTime(participant.keysDisclosedAt)}`
-                          : 'Keys have never been backed up'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {busyId === participant.id && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {/* Backing up is the one an operator comes here to do, and
+                      <div className="flex items-center gap-1">
+                        {busyId === participant.id && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {/* Backing up is the one an operator comes here to do, and
                           it can only be done once, so it stays a button while
                           the money actions sit behind the menu. */}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={Boolean(participant.keysDisclosedAt)}
-                        onClick={() => setBackUpId(participant.id)}
-                      >
-                        {participant.keysDisclosedAt ? 'Keys taken' : 'Back up keys'}
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={busyId === participant.id}
-                            aria-label="More actions for this head process"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setFundingSettingsId(participant.id)}>
-                            Automatic funding
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void handleFund(participant.id)}>
-                            Top up its funds now
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void handleWithdraw(participant.id)}>
-                            Send leftovers back
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={Boolean(participant.keysDisclosedAt)}
+                          onClick={() => setBackUpId(participant.id)}
+                        >
+                          {participant.keysDisclosedAt ? 'Keys taken' : 'Back up keys'}
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={busyId === participant.id}
+                              aria-label="More actions for this head process"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setFundingSettingsId(participant.id)}>
+                              Automatic funding
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => void handleFund(participant.id)}>
+                              Top up its funds now
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => void handleWithdraw(participant.id)}>
+                              Send leftovers back
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-          {/* Read when a head will not open and never otherwise: two nodes whose
+            {/* Read when a head will not open and never otherwise: two nodes whose
               scripts or ledger parameters differ cannot share a head, and that
               only shows up as a failure much later. */}
-          <HydraDetailSection
-            title="Version and hashes"
-            summary={neverProbed ? 'Not probed yet' : (host.hydraVersion?.split('-')[0] ?? '—')}
-          >
-            {neverProbed ? (
-              <p className="text-xs text-muted-foreground">
-                Nothing yet. Press Check on the node to read this.
-              </p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {/* Copyable in full: pinning a reviewed node means pasting these
+            <HydraDetailSection
+              title="Version and hashes"
+              summary={neverProbed ? 'Not probed yet' : (host.hydraVersion?.split('-')[0] ?? '—')}
+            >
+              {neverProbed ? (
+                <p className="text-xs text-muted-foreground">
+                  Nothing yet. Press Check on the node to read this.
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {/* Copyable in full: pinning a reviewed node means pasting these
                     into HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH and the params
                     hash, and there is no other way to read the value. */}
-                <Field
-                  label="Scripts"
-                  value={shortHash(host.scriptCatalogueHash)}
-                  copyValue={host.scriptCatalogueHash}
-                  copyable
-                  hint="Both sides must match, or the head cannot be opened at all."
-                />
-                <Field
-                  label="Ledger parameters"
-                  value={shortHash(host.ledgerParamsHash)}
-                  copyValue={host.ledgerParamsHash}
-                  copyable
-                  hint="A mismatch shows up at the first spend inside the head, not here."
-                />
-                <Field label="Control URL" value={host.baseUrl} copyable />
-                <Field
-                  label="Peers dial"
-                  value={host.publicPeerHost}
-                  hint="Ports are handed out per head; the invite carries the full address."
-                />
-              </div>
-            )}
-          </HydraDetailSection>
-        </div>
-      </DialogContent>
+                  <Field
+                    label="Scripts"
+                    value={shortHash(host.scriptCatalogueHash)}
+                    copyValue={host.scriptCatalogueHash}
+                    copyable
+                    hint="Both sides must match, or the head cannot be opened at all."
+                  />
+                  <Field
+                    label="Ledger parameters"
+                    value={shortHash(host.ledgerParamsHash)}
+                    copyValue={host.ledgerParamsHash}
+                    copyable
+                    hint="A mismatch shows up at the first spend inside the head, not here."
+                  />
+                  <Field label="Control URL" value={host.baseUrl} copyable />
+                  <Field
+                    label="Peers dial"
+                    value={host.publicPeerHost}
+                    hint="Ports are handed out per head; the invite carries the full address."
+                  />
+                </div>
+              )}
+            </HydraDetailSection>
+          </div>
+        </DialogContent>
 
-      {fundingSettingsId !== null ? (
-        <AutomaticFundingDialog
-          key={fundingSettingsId}
-          participantId={fundingSettingsId}
-          onClose={() => setFundingSettingsId(null)}
-        />
-      ) : null}
+        {fundingSettingsId !== null ? (
+          <AutomaticFundingDialog
+            key={fundingSettingsId}
+            participantId={fundingSettingsId}
+            onClose={() => setFundingSettingsId(null)}
+          />
+        ) : null}
 
-      <BackUpNodeKeysDialog
-        open={backUpId !== null}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) setBackUpId(null);
-        }}
-        participantId={backUpId}
-        onDone={() => void refetchParticipants()}
-      />
-
-      {/* Draining reads as "stop the node" and is nothing of the kind, so the
+        {/* Draining reads as "stop the node" and is nothing of the kind, so the
           confirmation spends its words on what does not happen. It is also the
           first half of decommissioning, which is why it names the next step. */}
-      <ConfirmDialog
-        elevatedChildStack
-        open={isTogglingDraining}
-        onClose={() => setIsTogglingDraining(false)}
-        title={isDraining ? `Take new heads on ${host.name} again?` : `Stop taking new heads?`}
-        confirmLabel={isDraining ? 'Take new heads' : 'Stop taking new heads'}
-        isLoading={isNodeBusy}
-        description={drainingDescription(host, isDraining)}
-        onConfirm={() => void handleToggleDraining()}
-      />
+        <ConfirmDialog
+          elevatedChildStack
+          open={isTogglingDraining}
+          onClose={() => setIsTogglingDraining(false)}
+          title={isDraining ? `Take new heads on ${host.name} again?` : `Stop taking new heads?`}
+          confirmLabel={isDraining ? 'Take new heads' : 'Stop taking new heads'}
+          isLoading={isNodeBusy}
+          description={drainingDescription(host, isDraining)}
+          onConfirm={() => void handleToggleDraining()}
+        />
 
-      {/* Says what is removed, what is not, and what the operator is left
+        {/* Says what is removed, what is not, and what the operator is left
           holding. Disconnecting is a local forget, not a teardown: the Host
           keeps running every node it has, and once this service has forgotten
           it there is nothing here that can clean them up. */}
-      <ConfirmDialog
-        elevatedChildStack
-        open={isDisconnecting}
-        onClose={() => setIsDisconnecting(false)}
-        title={`Disconnect ${host.name}?`}
-        confirmLabel="Disconnect"
-        isLoading={isNodeBusy}
-        description={
-          host.participantCount > 0
-            ? `${host.participantCount} head(s) still run here. A head cannot be moved to another node, so disconnecting would put them out of reach — settle them first, and the removal will be refused until you have.\n\nStop taking new heads while you work through them.`
-            : `This removes the node from this payment service only: its address, its stored tokens and its keys. Nothing is sent to the node.\n\nThe Hydra Host at ${host.baseUrl} keeps running, along with any hydra-node processes still provisioned on it. This service will no longer see or manage them, so if you are decommissioning the machine, check the Host's own node list and remove what is left there — afterwards there is nothing here that can reach it.\n\nYou can connect it again later with the same address and tokens.`
-        }
-        onConfirm={() => void handleDisconnect()}
-      />
-    </Dialog>
+        <ConfirmDialog
+          elevatedChildStack
+          open={isDisconnecting}
+          onClose={() => setIsDisconnecting(false)}
+          title={`Disconnect ${host.name}?`}
+          confirmLabel="Disconnect"
+          isLoading={isNodeBusy}
+          description={
+            host.participantCount > 0
+              ? `${host.participantCount} head(s) still run here. A head cannot be moved to another node, so disconnecting would put them out of reach — settle them first, and the removal will be refused until you have.\n\nStop taking new heads while you work through them.`
+              : `This removes the node from this payment service only: its address, its stored tokens and its keys. Nothing is sent to the node.\n\nThe Hydra Host at ${host.baseUrl} keeps running, along with any hydra-node processes still provisioned on it. This service will no longer see or manage them, so if you are decommissioning the machine, check the Host's own node list and remove what is left there — afterwards there is nothing here that can reach it.\n\nYou can connect it again later with the same address and tokens.`
+          }
+          onConfirm={() => void handleDisconnect()}
+        />
+      </Dialog>
+      {backUpDialog}
+    </>
   );
 }

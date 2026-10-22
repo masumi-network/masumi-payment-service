@@ -53,15 +53,31 @@ describe('parseFanoutHeadState', () => {
 			tag: 'Closed',
 			contents: { version: 0, confirmedSnapshot: { tag: 'InitialSnapshot', headId: 'ab'.repeat(14) } },
 		});
-		expect(state).toEqual({ mode: null, selectable: {} });
+		expect(state).toEqual({ mode: null, selectable: {}, contestationDeadline: null });
+	});
+
+	// Retire reads it. A value it cannot read must not fail the fanout routes.
+	it('reads the node deadline, and leaves out one it cannot read', () => {
+		const head = closedHead(3, 3);
+		const withDeadline = (contestationDeadline: unknown) =>
+			parseFanoutHeadState({ ...head, contents: { ...head.contents, contestationDeadline } });
+
+		expect(withDeadline('2026-10-22T12:30:00.123456Z')?.contestationDeadline).toBe('2026-10-22T12:30:00.123456Z');
+		expect(withDeadline(42)).toMatchObject({ mode: null, contestationDeadline: null });
+		expect(withDeadline('x'.repeat(129))?.contestationDeadline).toBeNull();
 	});
 
 	it('reads the remaining outputs and mode while fanning out', () => {
 		const state = parseFanoutHeadState({
 			tag: 'FanoutProgress',
-			contents: { remainingOutputs: { [COMMIT]: OUTPUT }, mode: { tag: 'AutoDrain' } },
+			contents: {
+				remainingOutputs: { [COMMIT]: OUTPUT },
+				mode: { tag: 'AutoDrain' },
+				contestationDeadline: '2026-10-22T12:30:00Z',
+			},
 		});
 		expect(state?.mode).toBe('AutoDrain');
+		expect(state?.contestationDeadline).toBe('2026-10-22T12:30:00Z');
 		expect(Object.keys(state!.selectable)).toEqual([COMMIT]);
 		expect(state!.selectable[COMMIT]!.value.lovelace).toBe(2_000_000n);
 	});

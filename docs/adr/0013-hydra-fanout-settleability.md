@@ -152,16 +152,40 @@ Document all four limits. Build against none of them.
    status than the database, and it reads L1 a second time and requires the
    same head output tx. A fanout that is posted but not yet on L1 stays
    invisible to both checks, so an operator must not retire a head while a
-   fanout is in flight. The contestation guard reads the stored
-   `contestationDeadline`, which is written once at close and does not move
-   when a contest extends the deadline. The L1 observer reads Close and
-   Contest both as `closed`. So retire can pass while a contest is still
-   running. The hydra-node process contests on its own and retire does not
-   stop it, so we accept this. The one-live-head index
+   fanout is in flight. The write of a Closed head also requires the stored
+   deadline to be at or before the retire time. A new close after a chain
+   rollback can write a later deadline while retire runs its checks, and the
+   write then refuses the head. The stored `contestationDeadline` can be
+   earlier than the deadline a later contest set: this service does not
+   always store the new deadline, and the L1 observer reads Close and Contest
+   both as `closed`. So retire also needs the node's own deadline from
+   `GET /head` to have passed: hydra-node moves it on each contest it
+   observes. This holds for every stored status, because a chain rollback can
+   take a `FanoutPossible` head back to Closed with a later deadline. A Closed
+   head whose node reports no readable deadline is refused. The node can lag
+   the chain: a contest in a block at or before the deadline that the node
+   has not processed yet leaves the old deadline, and retire can pass. The
+   same holds when this service's clock runs ahead of the chain. A
+   `FanoutPossible` head has no such gap, because the node reports it only
+   after it processed a block past the deadline. When the operator passes
+   `acknowledgeRemainingUtxoUnknown` and the node gives no readable deadline
+   (no node connection, an unreachable node, a node that reports the head
+   neither closed nor fanning out, or a state this service cannot read), only
+   the stored deadline of a Closed head is checked, and retire can pass while
+   a contest is still running. The flag never skips a node deadline this
+   service can read. The hydra-node process contests on its own and retire
+   does not stop it, so we accept both cases. The one-live-head index
    (`HydraHead_one_live_per_relation_key`) leaves retired heads out. A retired
-   head still blocks deletion of its relation, participants and host, and the
-   requests bound to it stay unsettled: their funds are on L1 behind the head
-   script, and nothing here can prove where they go next.
+   head still blocks deletion of its relation, participants and host, and
+   the requests bound to it stay unsettled: their funds are on L1 behind the
+   head script, and nothing here can prove where they go next.
+
+   _Corrected 2026-10-22:_ the stored `contestationDeadline` no longer stays
+   at the close's value. When the live socket sees a `HeadIsContested`, status
+   persistence moves the deadline to the later one the contest names, so the
+   contestation guard follows a contest this service saw. A contest it missed,
+   while the live socket was down or the service was restarting, still leaves
+   the close's deadline. That gap stays accepted, for the reason above.
 
    Before retiring, an operator can move every output that fits out of the
    head with `POST /hydra/head/partial-fanout` (`head/partial-fanout.ts`). It

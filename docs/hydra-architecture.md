@@ -156,6 +156,7 @@ stateDiagram-v2
   | `HeadIsInitializing`               | Initializing                                |
   | `HeadIsOpen`                       | Open                                        |
   | `HeadIsClosed`                     | Closed                                      |
+  | `HeadIsContested`                  | Closed (snapshot raised, deadline later)    |
   | `ReadyToFanout`                    | FanoutPossible                              |
   | `HeadIsFinalized`                  | Final                                       |
   | `HeadIsAborted`                    | Idle (the manager quarantines the head)     |
@@ -246,7 +247,7 @@ admission because the original close transaction may still land.
 
 ## Implementation Map
 
-- `src/routes/api/hydra/head/index.ts`: Hydra head reads and updates. The lifecycle actions live beside it — `init` and `commit` in `head/lifecycle.ts`, `close` and `fanout` in `head/settlement.ts`, and head creation in `head/create-head.ts`.
+- `src/routes/api/hydra/head/index.ts`: Hydra head reads and updates. The lifecycle actions live beside it — `init` in `head/lifecycle.ts`, `commit` in `head/commit.ts`, `close` and `fanout` in `head/settlement.ts`, and head creation in `head/create-head.ts`.
 - `src/services/hydra-connection-manager/hydra-connection-manager.service.ts`: keeps enabled heads connected, creates `HydraProvider`, and records head status events.
 - `src/lib/hydra/hydra/connection.ts`: the WebSocket connection + auto-reconnect state machine (`Disconnected → Connecting → Connected`).
 - `src/lib/hydra/hydra/node.ts`: one hydra-node client — sends commands (`Init`, `newTx`, `/cardano-transaction`), maps WS events to head status, and bounds `init()`.

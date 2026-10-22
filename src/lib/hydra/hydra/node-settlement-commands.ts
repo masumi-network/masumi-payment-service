@@ -7,6 +7,8 @@
 
 import type { HydraCommandOptions } from './node-command-channel';
 import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
+import { isPostTxFailureOf } from './node-frames';
+import { canonicalOutputContent } from './output-content';
 
 export function closeCommand(timeoutMs: number): HydraCommandOptions {
 	return {
@@ -45,6 +47,13 @@ export function fanoutCommand(timeoutMs: number): HydraCommandOptions {
  * reference or an output content with the selection. A step already in
  * flight that moves an identical output can still settle the command early;
  * the node checks the selection again either way.
+ *
+ * A failed step is ours only when it tried to distribute exactly this
+ * selection. hydra-node 2.4.1 (`emitPartialFanoutStep` in `HeadLogic.hs`)
+ * posts the selection itself as `utxoToDistribute`, or the remaining set when
+ * the selection is all of it, while its own auto-drain step posts the whole
+ * remaining set. A frame without `utxoToDistribute` (a `FanoutTx`, which a
+ * whole-head selection becomes) cannot be told apart, so the tag decides.
  */
 export function partialFanoutCommand(utxoToFanout: HydraFanoutRemainingUtxo, timeoutMs: number): HydraCommandOptions {
 	const selectedReferences = new Set(Object.keys(utxoToFanout).map((reference) => reference.toLowerCase()));
@@ -54,6 +63,17 @@ export function partialFanoutCommand(utxoToFanout: HydraFanoutRemainingUtxo, tim
 		payload: { tag: 'PartialFanout', utxoToFanout },
 		timeoutMs,
 		timeoutMessage: 'Hydra PartialFanout outcome was not observed before the lifecycle deadline',
+		ownsPostTxFailure: (failure) => {
+			if (!isPostTxFailureOf('PartialFanout', failure)) return false;
+			const distributed = failure.utxoToDistribute;
+			if (distributed === undefined) return true;
+			return (
+				distributed.length === selectedReferences.size &&
+				distributed.every(
+					({ reference, content }) => selectedReferences.has(reference) || selectedContents.has(content),
+				)
+			);
+		},
 		isComplete: (message) => {
 			if (message.tag === 'HeadIsFinalized') return true;
 			if (message.tag !== 'HeadPartiallyFannedOut') return false;
@@ -65,25 +85,4 @@ export function partialFanoutCommand(utxoToFanout: HydraFanoutRemainingUtxo, tim
 			);
 		},
 	};
-}
-
-/**
- * One string per output content. The selection holds schema-parsed outputs
- * (BigInt quantities, absent optional fields) and a frame holds raw JSON
- * (numbers, explicit nulls), so both are reduced to sorted keys, quantities
- * as decimal strings and no null fields.
- */
-export function canonicalOutputContent(output: unknown): string {
-	const canonical = (value: unknown): unknown => {
-		if (typeof value === 'bigint' || typeof value === 'number') return value.toString();
-		if (Array.isArray(value)) return value.map(canonical);
-		if (typeof value !== 'object' || value == null) return value;
-		return Object.fromEntries(
-			Object.entries(value)
-				.filter(([, entry]) => entry != null)
-				.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-				.map(([key, entry]) => [key, canonical(entry)]),
-		);
-	};
-	return JSON.stringify(canonical(output));
 }

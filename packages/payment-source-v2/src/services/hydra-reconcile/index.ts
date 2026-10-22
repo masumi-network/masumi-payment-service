@@ -56,6 +56,7 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
 import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
+import { recordReplayedCloseSnapshot } from './replayed-close';
 import {
 	findIdentifiersWithNothingToApply,
 	isLivePassDue,
@@ -66,6 +67,7 @@ import {
 	retainLiveEscrowMemoHeads,
 } from './live-escrow-memo';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
+import { noteLiveEvidenceGaps, retainEvidenceGapHeads } from './evidence-gap-watchdog';
 
 const MAX_REPLAY_TRANSACTIONS_PER_HEAD_PER_RUN = 250;
 
@@ -92,6 +94,7 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	});
 	// A completed head never runs a live pass again, so its memo is dropped too.
 	retainLiveEscrowMemoHeads(heads.filter((head) => head.reconciliationCompletedAt == null).map((head) => head.id));
+	retainEvidenceGapHeads(new Set(heads.map((head) => head.id)));
 	if (heads.length === 0) {
 		return;
 	}
@@ -226,6 +229,9 @@ async function reconcileHead(
 	// history absence cannot prove that a locally accepted transaction is absent
 	// while it remains outside a signed snapshot.
 	if (!(node?.hasVerifiedPinnedSessions && node.confirmedTransactionHistoryReady)) return;
+	// The handoff below expects the row's snapshot number, so the snapshot of the
+	// last close or contest in the history is recorded first.
+	if (await recordReplayedCloseSnapshot(hydraHeadId, latestSnapshotNumber, node)) return;
 	await reportExpiredL2Reservations({ hydraHeadId, network: source.network, node });
 
 	// The live snapshot is a safety net behind the TxConfirmed handler, so it is
@@ -281,6 +287,7 @@ async function reconcileHead(
 
 	const identifierCounts = new Map<string, number>();
 	let hasRetryableLiveObservation = false;
+	const outputsMissingEvidence: string[] = [];
 	for (const observation of observations) {
 		identifierCounts.set(
 			observation.decoded.blockchainIdentifier,
@@ -327,6 +334,9 @@ async function reconcileHead(
 			}
 			continue;
 		}
+		if (!node.getConfirmedTransaction(observation.utxo.input.txHash)) {
+			outputsMissingEvidence.push(`${observation.utxo.input.txHash}#${observation.utxo.input.outputIndex}`);
+		}
 		const outcome = await reconcileEscrowUtxo(
 			hydraHeadId,
 			source,
@@ -339,6 +349,9 @@ async function reconcileHead(
 	}
 	// A pass with retryable outputs stays due, so it reruns on the next tick.
 	recordLivePass(hydraHeadId, !hasRetryableLiveObservation);
+	// Not for a finalized head: its live pass reads no outputs. A closed head keeps
+	// the watchdog, because a replay still re-reads the frames a stalled stream withheld.
+	if (!isFinalized) noteLiveEvidenceGaps(hydraHeadId, outputsMissingEvidence, node);
 
 	// A finalized head can be disconnected only after the history socket's
 	// Greetings marker proves replay completion and every queued tx was resolved.

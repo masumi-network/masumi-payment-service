@@ -11,10 +11,11 @@ import { HydraInviteRole, HydraInviteStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
-import { HydraHostRequestError, removeHostNode } from '@/services/hydra-host/client';
+import { removeHostNode } from '@/services/hydra-host/client';
 import { nonceLogRef } from './nonce-log-ref';
 import { canRemoveReservedHostNode, releaseReservedParticipants } from './release-reservation';
 import { LIVE_REDEEMER_STATUSES } from './redemption-store';
+import { isHostNodeGone } from '@/services/hydra-host/node-gone';
 
 /**
  * `raced`: the redemption finished or failed first, so nothing was abandoned.
@@ -78,7 +79,7 @@ export async function abandonRedemption(invite: {
 				);
 			} catch (error) {
 				// A node the Host no longer has is the outcome this asks for.
-				if (!(error instanceof HydraHostRequestError && error.status === 404)) throw error;
+				if (!isHostNodeGone(error)) throw error;
 			}
 		}
 	} catch (error) {

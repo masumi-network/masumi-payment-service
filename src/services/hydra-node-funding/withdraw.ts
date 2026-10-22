@@ -30,6 +30,7 @@ import { recentlySentTo } from './service';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getChainErrorStatus, lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { CONFIG } from '@masumi/payment-core/config';
+import { KEY_RELEASE_MIN_CONFIRMATIONS } from './key-release-depth';
 
 /**
  * Below this, sweeping costs more than it returns.
@@ -39,16 +40,8 @@ import { CONFIG } from '@masumi/payment-core/config';
  */
 export const MINIMUM_WITHDRAWABLE_LOVELACE = 2_000_000n;
 
-/**
- * Depth the latest node address transaction needs before `dust` lets a caller
- * delete the node's key.
- *
- * Key deletion cannot be undone, so it does not follow the payment-sync
- * threshold down: that one defaults to 1 and accepts 0. A shallow sweep that a
- * rollback evicts would leave the funds at an address nothing here can sign
- * for. A higher configured threshold still wins.
- */
-export const KEY_RELEASE_MIN_CONFIRMATIONS = 20;
+/** Depth the latest node address transaction needs before `dust` lets a caller delete the node's key. */
+export { KEY_RELEASE_MIN_CONFIRMATIONS } from './key-release-depth';
 
 /**
  * What happened, in a form a caller can branch on.

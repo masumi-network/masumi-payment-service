@@ -19,6 +19,7 @@ import { reportInitialLockWithoutPurchaseRow } from './missing-purchase-row';
 import { canL1ObservationOwnPurchaseRequest } from '@/utils/logic/force-layer';
 import type { UpdateTransactionInput } from './types';
 import { nullableStringEquals } from './datum-verification';
+import { isUnobservedLockTimeout } from '@/utils/logic/unobserved-lock-timeout';
 
 export async function updateInitialPurchaseTransaction(
 	paymentContract: { id: string; network: Network; paymentSourceType: PaymentSourceType; smartContractAddress: string },
@@ -48,6 +49,7 @@ export async function updateInitialPurchaseTransaction(
 							SmartContractWallet: { where: { deletedAt: null } },
 							SellerWallet: true,
 							NextAction: true,
+							TransactionHistory: { select: { txHash: true } },
 							CurrentTransaction: {
 								include: { BlocksWallet: true },
 							},
@@ -76,7 +78,8 @@ export async function updateInitialPurchaseTransaction(
 					}
 					const isInitialFundsLockAction =
 						dbEntry.NextAction.requestedAction === PurchasingAction.FundsLockingInitiated ||
-						dbEntry.NextAction.requestedAction === PurchasingAction.FundsLockingRequested;
+						dbEntry.NextAction.requestedAction === PurchasingAction.FundsLockingRequested ||
+						isUnobservedLockTimeout(dbEntry, OnChainState.FundsLocked);
 					if (!isInitialFundsLockAction) {
 						logger.info('tx-sync: initial purchase output already handled or not awaiting funds lock', {
 							txHash: tx.tx.tx_hash,

@@ -14446,6 +14446,14 @@ export type PostHydraHeadInitErrors = {
      * The Hydra node could not be reached, or the InitTx could not be verified
      */
     502: unknown;
+    /**
+     * The node is behind the chain and did not post Init, or independent L1 evidence is not available yet
+     */
+    503: unknown;
+    /**
+     * The node failed to post the InitTx, Init did not confirm in time, or its outcome waits on the node catching up
+     */
+    504: unknown;
 };
 
 export type PostHydraHeadInitResponses = {
@@ -14488,6 +14496,10 @@ export type PostHydraHeadFanoutErrors = {
      * Head is not in a state that permits fanout
      */
     409: unknown;
+    /**
+     * The node is behind the chain and did not post the fanout
+     */
+    503: unknown;
 };
 
 export type PostHydraHeadFanoutResponses = {
@@ -15584,6 +15596,11 @@ export type GetHydraHeadConnectionResponses = {
             nodeState: string;
             isReady: boolean;
             /**
+             * Whether both sessions and history are verified. Null outside Open.
+             */
+            syncReady: boolean | null;
+            syncReason: string | null;
+            /**
              * Whether this node is in its Hydra cluster, which for a two-party head means the counterparty's node is up and reachable. Null until the node reports either way. Not a statement about their chain sync.
              */
             peerConnected: boolean | null;
@@ -16341,7 +16358,7 @@ export type PostHydraHeadRetireErrors = {
      */
     409: unknown;
     /**
-     * The head state could not be read on chain, or the node returned an unreadable head state
+     * The head state could not be read on chain, the node returned an unreadable head state, or the node reported no readable contestation deadline for a Closed head
      */
     502: unknown;
     /**
@@ -16457,13 +16474,17 @@ export type PostHydraHeadPartialFanoutErrors = {
      */
     404: unknown;
     /**
-     * Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set
+     * Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set, or a fanout command for the head is already in progress
      */
     409: unknown;
     /**
      * No connection to the head, or the node returned an unreadable head state
      */
     502: unknown;
+    /**
+     * The node is behind the chain and did not post the step
+     */
+    503: unknown;
 };
 
 export type PostHydraHeadPartialFanoutResponses = {
@@ -18357,9 +18378,18 @@ export type PostPaymentAcknowledgeManualActionData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Blockchain identifiers of the requests to acknowledge
+         * The requests to acknowledge
          */
-        blockchainIdentifiers: Array<string>;
+        requests: Array<{
+            /**
+             * The blockchain identifier of the request
+             */
+            blockchainIdentifier: string;
+            /**
+             * nextActionLastChangedAt as the caller last read it. A request whose action or error changed since then is skipped, so an error the caller has not seen stays in Needs Action.
+             */
+            nextActionLastChangedAt: Date | Date;
+        }>;
     };
     path?: never;
     query?: never;
@@ -18404,9 +18434,18 @@ export type PostPurchaseAcknowledgeManualActionData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Blockchain identifiers of the requests to acknowledge
+         * The requests to acknowledge
          */
-        blockchainIdentifiers: Array<string>;
+        requests: Array<{
+            /**
+             * The blockchain identifier of the request
+             */
+            blockchainIdentifier: string;
+            /**
+             * nextActionLastChangedAt as the caller last read it. A request whose action or error changed since then is skipped, so an error the caller has not seen stays in Needs Action.
+             */
+            nextActionLastChangedAt: Date | Date;
+        }>;
     };
     path?: never;
     query?: never;

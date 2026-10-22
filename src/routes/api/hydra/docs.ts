@@ -19,7 +19,8 @@ import {
 	clearHeadErrorsSchemaInput,
 	clearHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
-import { lifecycleInput, lifecycleOutput, commitInput, commitOutput } from '@/routes/api/hydra/head/lifecycle';
+import { lifecycleInput, lifecycleOutput } from '@/routes/api/hydra/head/lifecycle';
+import { commitInput, commitOutput } from '@/routes/api/hydra/head/commit';
 import { closeHeadInput } from '@/routes/api/hydra/head/settlement';
 import {
 	topupInput,
@@ -371,8 +372,19 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 							},
 							400: { description: 'Invalid input, or the head has no local participant' },
 							502: { description: 'The Hydra node could not be reached, or the InitTx could not be verified' },
+							503: {
+								description:
+									'The node is behind the chain and did not post Init, or independent L1 evidence is not available yet',
+							},
+							504: {
+								description:
+									'The node failed to post the InitTx, Init did not confirm in time, or its outcome waits on the node catching up',
+							},
 						}
-					: { 409: { description: `Head is not in a state that permits ${action}` } }),
+					: {
+							409: { description: `Head is not in a state that permits ${action}` },
+							503: { description: 'The node is behind the chain and did not post the fanout' },
+						}),
 			},
 		});
 	}

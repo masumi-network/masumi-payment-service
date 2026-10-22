@@ -23,6 +23,7 @@ import { TxSyncBeforeWrite } from '../quarantine/fenced-write';
 import { canL1ObservationOwnPaymentRequest } from '@/utils/logic/force-layer';
 import type { UpdateTransactionInput } from './types';
 import { nullableStringEquals } from './datum-verification';
+import { didTimeoutReplacePlainPaymentWait, isUnobservedLockTimeout } from '@/utils/logic/unobserved-lock-timeout';
 
 export async function updateInitialPaymentTransaction(
 	decodedNewContract: DecodedV1ContractDatum,
@@ -48,13 +49,12 @@ export async function updateInitialPaymentTransaction(
 							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
 							paymentSourceId: paymentContract.id,
 							BuyerWallet: null,
-							NextAction: {
-								requestedAction: PaymentAction.WaitingForExternalAction,
-							},
 						},
 						include: {
 							RequestedFunds: true,
 							BuyerWallet: true,
+							NextAction: true,
+							TransactionHistory: { select: { txHash: true } },
 							SmartContractWallet: { where: { deletedAt: null } },
 							CurrentTransaction: {
 								include: { BlocksWallet: true },
@@ -63,6 +63,18 @@ export async function updateInitialPaymentTransaction(
 					});
 					if (dbEntry == null) {
 						//transaction is not registered with us or duplicated (therefore invalid)
+						return;
+					}
+					// A timeout recovers only when it replaced a plain wait for the buyer:
+					// the timeout writer also parks rows that already needed manual action,
+					// and restoring those would hide their error. Same rule as the Hydra sync.
+					if (
+						dbEntry.NextAction.requestedAction !== PaymentAction.WaitingForExternalAction &&
+						!(
+							isUnobservedLockTimeout(dbEntry, OnChainState.FundsLocked) &&
+							(await didTimeoutReplacePlainPaymentWait(prisma, dbEntry.id))
+						)
+					) {
 						return;
 					}
 					if (!canL1ObservationOwnPaymentRequest(dbEntry)) {

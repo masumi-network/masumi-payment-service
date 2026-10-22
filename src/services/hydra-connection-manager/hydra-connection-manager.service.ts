@@ -43,6 +43,7 @@ import { HeadSession } from './head-session';
 import { persistHeadStatus, type HeadStatusPersistenceHost } from './head-status-persistence';
 import { continueAfterStatusPersistenceRecovery } from './head-auto-disable-recovery';
 import { applyConfirmedHydraTransaction, type TxConfirmedHost } from './head-tx-confirmed';
+import { forgetReplayFailures, recordReplayFailures } from './replay-failure-recorder';
 import {
 	HYDRA_PRE_INIT_STATUSES,
 	headConfigurationInclude,
@@ -54,6 +55,15 @@ import {
  * accumulator, and on the event loop that starves the whole process.
  */
 const snapshotAccumulator = createWorkerAccumulatorComputer();
+
+/**
+ * Heads this process keeps a session for. A head whose fanout handoff
+ * completed gets none: its node is Idle again and answers no head query, and
+ * a session would read that Idle as a rollback. So an L1 rollback of the
+ * fanout after the handoff is not observed here; the handoff's confirmation
+ * depth is the only guard against it.
+ */
+const SESSION_HEAD_WHERE = { isEnabled: true, reconciliationCompletedAt: null } as const;
 
 export class HydraConnectionManager {
 	/**
@@ -85,7 +95,7 @@ export class HydraConnectionManager {
 
 	async initialize(): Promise<void> {
 		const enabledHeads = await prisma.hydraHead.findMany({
-			where: { isEnabled: true },
+			where: SESSION_HEAD_WHERE,
 			include: headConfigurationInclude,
 		});
 
@@ -105,6 +115,7 @@ export class HydraConnectionManager {
 
 	/**
 	 * Give every enabled head a session, not just the ones that existed at boot.
+	 * A head whose fanout handoff completed is left out (`SESSION_HEAD_WHERE`).
 	 *
 	 * `initialize` runs once. A head created afterwards — which is every head
 	 * created from an invite — was never connected, so the issuing side sat with
@@ -117,7 +128,7 @@ export class HydraConnectionManager {
 	 */
 	async reconcileMissingSessions(): Promise<number> {
 		const enabledHeads = await prisma.hydraHead.findMany({
-			where: { isEnabled: true, LocalParticipant: { isNot: null } },
+			where: { ...SESSION_HEAD_WHERE, LocalParticipant: { isNot: null } },
 			select: { id: true },
 		});
 
@@ -136,7 +147,7 @@ export class HydraConnectionManager {
 		return reconnected;
 	}
 
-	/** Converge the in-memory transport to the latest durable enable flag. */
+	/** Converge the in-memory transport to the latest durable enable flag; a completed head is released. */
 	async reconcileEnabledState(hydraHeadId: string): Promise<boolean> {
 		return await this.sessionFor(hydraHeadId).runControl(
 			async () => await this.reconcileEnabledStateInner(hydraHeadId),
@@ -146,9 +157,9 @@ export class HydraConnectionManager {
 	private async reconcileEnabledStateInner(hydraHeadId: string): Promise<boolean> {
 		const durable = await prisma.hydraHead.findUnique({
 			where: { id: hydraHeadId },
-			select: { isEnabled: true, status: true, initTxHash: true },
+			select: { isEnabled: true, status: true, initTxHash: true, reconciliationCompletedAt: true },
 		});
-		if (!durable?.isEnabled) {
+		if (!durable?.isEnabled || durable.reconciliationCompletedAt != null) {
 			await this.disconnect(hydraHeadId);
 			this.getSession(hydraHeadId)?.clearQuarantine();
 			return false;
@@ -287,10 +298,10 @@ export class HydraConnectionManager {
 				}
 			}
 		} catch (error) {
-			// A failed pinned-session handshake can still emit an authenticated
-			// headless Idle Greetings that rolls durable Open state back. Keep the
-			// attachment/listeners alive until that queued regression and any frame
-			// received during socket shutdown have both been persisted.
+			// A failed pinned-session handshake can still have queued an authenticated
+			// status that rolls durable state back. Keep the attachment/listeners alive
+			// until that queued regression and any frame received during socket
+			// shutdown have both been persisted.
 			await this.flushHeadStatus(head.id);
 			try {
 				await hydraHead.mainNode.disconnect();
@@ -368,6 +379,8 @@ export class HydraConnectionManager {
 		session.stopClockRefresh();
 		const attachment = session.attachment;
 		if (!attachment) {
+			// A connect that failed detached without forgetting the head's replay window.
+			forgetReplayFailures(hydraHeadId);
 			return;
 		}
 		// Revoke captured command/provider references before waiting for status
@@ -376,9 +389,10 @@ export class HydraConnectionManager {
 		session.revokeCommands(attachment.head);
 
 		// Keep lifecycle listeners attached until both sockets are closed. A live
-		// rollback Greetings can arrive while websocket shutdown is in flight; if
-		// listeners are removed first, DB can retain false Final/completion state
-		// forever after the transport disappears.
+		// rollback can arrive while websocket shutdown is in flight; if listeners
+		// are removed first, DB can retain false Final/completion state forever
+		// after the transport disappears. A headless Idle Greetings is held for the
+		// replay instead, and a hold still open at shutdown is dropped.
 		await this.flushHeadStatus(hydraHeadId);
 		try {
 			await attachment.head.mainNode.disconnect();
@@ -387,6 +401,7 @@ export class HydraConnectionManager {
 			attachment.head.removeAllListeners();
 			attachment.head.mainNode.removeAllListeners();
 			dropUnburnedL2MintReports(hydraHeadId);
+			forgetReplayFailures(hydraHeadId);
 			// The revocation fence is instance-based and only meaningful while the
 			// attachment still holds this instance; `detachIfCurrent` drops both so
 			// a newer attachment is unaffected.
@@ -506,6 +521,16 @@ export class HydraConnectionManager {
 			quarantine: (failedHead) => session.quarantine(failedHead),
 			clearQuarantineAfterReobservation: (observingHead) => session.clearQuarantineAfterReobservation(observingHead),
 			scheduleRecovery: () => this.scheduleStatusPersistenceRecovery(hydraHeadId),
+			reconcileSibling: (siblingId) => {
+				// Only a transport this process holds; reconciling any other head could connect it.
+				if (!this.getSession(siblingId)?.attachment) return;
+				void this.reconcileEnabledState(siblingId).catch((error: unknown) => {
+					logger.warn('[HydraConnectionManager] Could not release a quarantined sibling head', {
+						hydraHeadId: siblingId,
+						error,
+					});
+				});
+			},
 			onStaleOwner: () => {
 				// A newer session owns this head durably. Tear down without touching
 				// the durable row, then re-read durable enablement through the control
@@ -520,28 +545,7 @@ export class HydraConnectionManager {
 			session.enqueueStatus(async () => await persistHeadStatus(persistenceHost, hydraHeadId, head, ownerEpoch, data));
 		});
 
-		// Funds that were promised to a deposit have just become spendable. Anything
-		// that was waiting on them should run now rather than on the next tick.
-		// A rejected history is the most consequential failure this service has and
-		// used to be its quietest: the session never forms, so there is no head
-		// clock, so every L2 escrow operation fails closed — while the connection
-		// retries forever and the head goes on reporting itself as Open. Recorded
-		// as a head error so the reason is visible where an operator is already
-		// looking, instead of only in a log line they have no reason to read.
-		head.mainNode.on(HydraNodeEvent.HistoryReplayFailed, (error: unknown) => {
-			void recordHeadError(
-				hydraHeadId,
-				HydraHeadStatus.Connecting,
-				HydraErrorType.CommandFailed,
-				error,
-				'HistoryReplay',
-			).catch((recordError: unknown) => {
-				logger.error('[HydraConnectionManager] could not record a rejected history replay', {
-					hydraHeadId,
-					error: recordError instanceof Error ? recordError.message : recordError,
-				});
-			});
-		});
+		recordReplayFailures(head.mainNode, hydraHeadId);
 
 		// An L1 transaction the node could not post. A contest it posts on its own
 		// has no command waiting on it, so the webhook and this record are the only
@@ -587,6 +591,8 @@ export class HydraConnectionManager {
 			);
 		});
 
+		// Funds that were promised to a deposit have just become spendable. Anything
+		// that was waiting on them should run now rather than on the next tick.
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {
 			this.runL2PassesNow(hydraHeadId);
 		});
