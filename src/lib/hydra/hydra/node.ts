@@ -156,11 +156,10 @@ export class HydraNode extends EventEmitter {
 		super();
 		this._httpUrl = config.httpUrl;
 		this._wsUrl = config.wsUrl ?? config.httpUrl.replace('http://', 'ws://').replace('https://', 'wss://');
-		// Dedicated evidence-only history socket: replay never feeds lifecycle
-		// status or command listeners, which could regress head state or stampede
-		// handlers out of order, except its verdict on a held headless Idle. Build
-		// the live socket last so test harnesses that capture the latest
-		// Connection still exercise live events.
+		// Evidence-only history socket: replay never feeds lifecycle status or command
+		// listeners (they could regress head state or run handlers out of order), except
+		// its verdict on a held headless Idle. Build the live socket last so test
+		// harnesses that capture the latest Connection still exercise live events.
 		this._historyConnection = new Connection(withHistorySetting(this._wsUrl, true), config.authToken);
 		this._connection = new Connection(withHistorySetting(this._wsUrl, false), config.authToken);
 		this._connectTimeoutMs = config.connectTimeoutMs ?? HydraNode.CONNECTION_TIMEOUT_MS;
@@ -231,6 +230,7 @@ export class HydraNode extends EventEmitter {
 				if (this._replay.isFailed) return;
 				this._historyConnection.invalidate(new HydraTransportError('Live Greetings is Idle; replaying the history'));
 			},
+			historyOpenCount: () => this._historyConnection.openCount,
 			setNetworkConnected: (connected) => {
 				this._liveNetworkConnected = connected;
 			},

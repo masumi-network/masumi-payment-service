@@ -30,6 +30,7 @@ function makeProcessor(): { processor: LiveFrameProcessor; increments: number[] 
 		finalizedHeadProven: () => false,
 		finalizedSnapshotNumber: () => undefined,
 		rereadHistory: () => {},
+		historyOpenCount: () => 0,
 		setNetworkConnected: () => {},
 		onRotationError: () => {},
 		invalidateLiveConnection: () => {},

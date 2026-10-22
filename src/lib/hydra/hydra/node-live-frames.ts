@@ -97,6 +97,8 @@ export interface LiveFrameHost {
 	finalizedSnapshotNumber(): number | undefined;
 	/** Replay the history again from the start: only a pass that starts now can give a verdict. */
 	rereadHistory(): void;
+	/** History sockets that opened. hydra-node streams the log again from each open. */
+	historyOpenCount(): number;
 	setNetworkConnected(connected: boolean): void;
 	/** The rotation latch was hit on the live socket: fail the replay with it. */
 	onRotationError(error: unknown): void;
@@ -127,9 +129,16 @@ export class LiveFrameProcessor {
 	/**
 	 * A history pass this session restarted for a held Idle has not closed yet.
 	 * It read the log after the node was Idle, so a live re-greet keeps it.
-	 * Survives a live socket close: it belongs to the history socket.
+	 * Survives a live socket close: it belongs to the history socket. A pass on
+	 * a socket no later than `_historyOpensAtReread` leaves it set.
 	 */
 	private _historyRereadPending = false;
+	/**
+	 * History sockets opened when that reread was asked for. Only a pass on a
+	 * later socket gives the verdict: a disconnecting socket ignores the reread
+	 * and keeps streaming the pass it began before the hold.
+	 */
+	private _historyOpensAtReread = 0;
 	private _headClock: HydraHeadClock | undefined;
 	/**
 	 * Whether the node says it is caught up with its chain, from
@@ -215,7 +224,9 @@ export class LiveFrameProcessor {
 	 * socket greets again instead of either side being guessed.
 	 */
 	settleHeadlessIdle(verdict: 'finalized' | 'rolled-back' | 'disagrees'): void {
-		// Every closed pass reports here, held or not: the next hold reads again.
+		// A pass on a socket that opened before the reread read the log too early.
+		if (this._historyRereadPending && this.host.historyOpenCount() <= this._historyOpensAtReread) return;
+		// Every other closed pass reports here, held or not: the next hold reads again.
 		this._historyRereadPending = false;
 		if (!this._awaitingReplayVerdict) return;
 		this._awaitingReplayVerdict = false;
@@ -498,6 +509,7 @@ export class LiveFrameProcessor {
 						if (this.isConnectSettled()) this.emitter.emit(LIVE_SESSION_READY_EVENT);
 						if (!this._historyRereadPending) {
 							this._historyRereadPending = true;
+							this._historyOpensAtReread = this.host.historyOpenCount();
 							this.host.rereadHistory();
 						}
 					}

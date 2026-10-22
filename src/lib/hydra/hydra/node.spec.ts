@@ -51,6 +51,14 @@ class MockConnection extends EventEmitter {
 		.mockResolvedValue(undefined);
 	isOpen = jest.fn<() => boolean>().mockReturnValue(false);
 	invalidate = jest.fn<(error: Error) => void>();
+	openCount = 0;
+
+	constructor() {
+		super();
+		this.on('open', () => {
+			this.openCount += 1;
+		});
+	}
 }
 
 let mockConnectionInstance: MockConnection;
@@ -2131,6 +2139,7 @@ describe('HydraNode', () => {
 			expect(statuses).toEqual([]);
 			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
 			historyConnection.emit('close');
+			historyConnection.emit('open');
 			for (const frame of [headIsOpen(), ...chain.frames, headlessIdleGreetings()]) {
 				historyConnection.emit('message', JSON.stringify(frame));
 			}
@@ -2163,7 +2172,7 @@ describe('HydraNode', () => {
 			/**
 			 * The live Greetings is headless Idle and no closed pass proves why. The
 			 * pass streaming now may have read the log before the fanout, so it is
-			 * dropped and the history is read again from the start.
+			 * dropped and the history is read again from the start, on a new socket.
 			 */
 			async function holdHeadlessIdle({
 				connectPromise,
@@ -2174,6 +2183,7 @@ describe('HydraNode', () => {
 				await connectPromise;
 				expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
 				historyConnection.emit('close', new Error('replaying the history again'));
+				historyConnection.emit('open');
 			}
 
 			const finalized = { status: HydraHeadStatus.Final, headId: HEAD_ID_A };
@@ -2444,6 +2454,29 @@ describe('HydraNode', () => {
 
 				expect(statuses).toEqual([{ status: HydraHeadStatus.Idle, headId: undefined }]);
 				expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+			});
+
+			// A disconnecting socket ignores the reread and keeps streaming the pass it
+			// began before the hold. That pass can close Idle before it reaches a
+			// HeadIsFinalized written after it read the log.
+			it('takes no verdict from a pass whose socket ignored the reread', async () => {
+				const { statuses, connectPromise, historyConnection, liveConnection } = restartedNode();
+				historyConnection.emit('open');
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+				expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
+
+				historyConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				historyConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(statuses).toEqual([]);
+
+				// Every path that drops the history socket drops the live one too.
+				liveConnection.emit('close', new Error('disconnected'));
+				historyConnection.emit('close', new Error('disconnected'));
+				historyConnection.emit('open');
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				for (const frame of finalizedHistory().frames) historyConnection.emit('message', JSON.stringify(frame));
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
 			});
 		});
 
