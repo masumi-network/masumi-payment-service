@@ -34,6 +34,9 @@ export const RETIRABLE_HEAD_STATUSES: ReadonlySet<HydraHeadStatus> = new Set([
 ]);
 
 const MAX_RETIRE_REASON_LENGTH = 1000;
+// The node reports FanoutPossible only after it read a block past the deadline,
+// so no contest it has not seen yet can move that deadline any more.
+const WAIT_FOR_FANOUT_POSSIBLE = 'wait until the head is FanoutPossible, then retire it';
 
 export const retireHeadInput = lifecycleInput.extend({
 	reason: z
@@ -47,7 +50,12 @@ export const retireHeadInput = lifecycleInput.extend({
 	 * L1 behind the head script, and this service stops tracking it.
 	 */
 	acknowledgeStrandedFunds: z.literal(true),
-	/** Retire even though the node cannot report the remaining UTxO set. */
+	/**
+	 * Retire even though the node cannot report the remaining UTxO set: no node
+	 * connection, an unreachable node, a node that does not hold the head as
+	 * closed, or a state this service cannot read. A node deadline that can
+	 * still be read is checked all the same.
+	 */
 	acknowledgeRemainingUtxoUnknown: z.boolean().optional(),
 	/**
 	 * Retire although the node is still in a fanout mode that posts steps on its
@@ -91,13 +99,43 @@ function assertNodeNotPastStatus(headId: string, status: HydraHeadStatus): void 
 }
 
 /**
+ * The stored deadline can miss a contest (ADR 0013), and the node moves its own
+ * on each contest it observes, so retire also waits for the node's deadline.
+ * Whatever the stored status: a chain rollback can take a FanoutPossible head
+ * back to Closed with a later deadline. With `isDeadlineRequired`, a missing or
+ * unreadable deadline is refused, because the contest the node may be running
+ * cannot be seen.
+ */
+function assertNodeContestationPeriodOver(contestationDeadline: string | null, isDeadlineRequired: boolean): void {
+	const deadlineMs = contestationDeadline == null ? Number.NaN : Date.parse(contestationDeadline);
+	if (!Number.isFinite(deadlineMs)) {
+		if (!isDeadlineRequired) return;
+		throw createHttpError(
+			502,
+			`The Hydra node did not report a readable contestation deadline for the Closed head; ${WAIT_FOR_FANOUT_POSSIBLE}`,
+			// A 5xx is otherwise replaced by its default message in production.
+			{ expose: true },
+		);
+	}
+	if (deadlineMs > Date.now()) {
+		throw createHttpError(
+			409,
+			`Cannot retire the head before the node's contestation deadline (${contestationDeadline}) has passed; ` +
+				WAIT_FOR_FANOUT_POSSIBLE,
+		);
+	}
+}
+
+/**
  * The node's report of what the head still holds, keyed by in-head reference.
  * A node still fanning out on its own is refused unless the stall is
  * acknowledged. Acknowledging an unknown set does not cover it: the set is
- * known, and the head may be settling.
+ * known, and the head may be settling. Neither does it skip a node deadline
+ * this code can read, even from a state it cannot read otherwise.
  */
 async function readRemainingUtxo(
 	headId: string,
+	headStatus: HydraHeadStatus,
 	acknowledge: { remainingUnknown: boolean; fanoutStalled: boolean },
 ): Promise<Prisma.InputJsonObject | null> {
 	const node = getHydraConnectionManager().getNode(headId);
@@ -108,6 +146,9 @@ async function readRemainingUtxo(
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (acknowledge.remainingUnknown) {
+			if (createHttpError.isHttpError(error) && typeof error.contestationDeadline === 'string') {
+				assertNodeContestationPeriodOver(error.contestationDeadline, false);
+			}
 			logger.warn(`[HydraAPI] Retiring head ${headId} without its remaining UTxO set: ${message}`);
 			return null;
 		}
@@ -123,6 +164,7 @@ async function readRemainingUtxo(
 		);
 	}
 	assertNodeAwaitsFanoutSelection(state, { allowed: acknowledge.fanoutStalled, flag: 'acknowledgeFanoutStalled' });
+	assertNodeContestationPeriodOver(state.contestationDeadline, headStatus === HydraHeadStatus.Closed);
 	// Prisma JSON cannot hold BigInt quantities; strings keep them exact.
 	return JSON.parse(
 		JSON.stringify(state.selectable, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value)),
@@ -159,7 +201,7 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 		// is not stuck, and retiring it would strand a settleable head.
 		assertNodeNotPastStatus(head.id, head.status);
 		const retiredHeadOutputTxHash = await readHeadOutputOnChain(head.id);
-		const remainingUtxo = await readRemainingUtxo(head.id, {
+		const remainingUtxo = await readRemainingUtxo(head.id, head.status, {
 			remainingUnknown: input.acknowledgeRemainingUtxoUnknown === true,
 			fanoutStalled: input.acknowledgeFanoutStalled === true,
 		});
