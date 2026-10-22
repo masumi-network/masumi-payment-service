@@ -255,6 +255,49 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 		}
 	});
 
+	// A drift restart stops the node, which drops what it held, while the Host can
+	// still show the last drift reading until its next check.
+	it('lets a held retry through when the node is not running', async () => {
+		try {
+			await holdHead();
+			mockReadNodeState.mockResolvedValue({
+				state: 'Draining',
+				isReady: false,
+				reason: 'The node is not running. It has to be up before it can post a transaction.',
+				chainSynced: false,
+				driftSeconds: 14_571,
+			});
+			await initHeadPost.handler({ input: { headId: 'head-1' } }).catch(() => undefined);
+			expect(mockInit).toHaveBeenCalledTimes(1);
+		} finally {
+			await freeHead();
+		}
+	});
+
+	// The check awaits the Host. Run outside the in-flight slot, a second request
+	// could slip past it and send an Init of its own meanwhile.
+	it('refuses another init while a held retry is being checked', async () => {
+		let answerHost: ((state: unknown) => void) | undefined;
+		let first: Promise<unknown> | undefined;
+		try {
+			await holdHead();
+			mockReadNodeState.mockImplementationOnce(() => new Promise((resolve) => (answerHost = resolve)));
+			first = initHeadPost.handler({ input: { headId: 'head-1' } });
+			await new Promise((resolve) => setImmediate(resolve));
+			await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+				statusCode: 409,
+				message: 'Hydra head init is already in progress',
+			});
+			answerHost?.({ state: 'Running', isReady: true, reason: null, chainSynced: true, driftSeconds: 0 });
+			await first.catch(() => undefined);
+			expect(mockInit).toHaveBeenCalledTimes(1);
+		} finally {
+			answerHost?.({ state: 'Running', isReady: true, reason: null, chainSynced: true, driftSeconds: 0 });
+			await first?.catch(() => undefined);
+			await freeHead();
+		}
+	});
+
 	it('refuses a held retry once the parked Init has moved the head', async () => {
 		try {
 			await holdHead();
