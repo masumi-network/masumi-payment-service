@@ -132,6 +132,10 @@ export type ClosedHeadFacts = { contestationDeadline: string; snapshotNumber: nu
  * partial fanout step lands, in `PartialFanoutState`, so unlike the close
  * transaction they stay readable until the head is final.
  *
+ * The snapshot number is the node's own latest confirmed snapshot. After a peer
+ * closes on an older one, it is higher than the number on chain until the
+ * node's contest lands.
+ *
  * Undefined, never zero, for every "cannot tell" case: a missing fact has to stay
  * missing so a later read can still fill it. A head that closed on its initial
  * snapshot is the one case that is really 0.
