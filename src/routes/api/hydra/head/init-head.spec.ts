@@ -179,13 +179,34 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 			driftSeconds: 14_571,
 		});
 
-		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
-			statusCode: 504,
-			// The Init was posted; re-posting would race the first one for the seed.
-			message: expect.stringMatching(/race the first one/),
-		});
+		try {
+			await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+				statusCode: 504,
+				// The Init was posted; re-posting would race the first one for the seed.
+				message: expect.stringMatching(/race the first one/),
+			});
+			expect(mockRecordHeadError).not.toHaveBeenCalled();
 
-		expect(mockRecordHeadError).not.toHaveBeenCalled();
+			// That Init may still be parked on the node, so a retry is held rather than sent.
+			mockInit.mockClear();
+			await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+				statusCode: 409,
+				message: expect.stringMatching(/catch up/),
+			});
+			expect(mockInit).not.toHaveBeenCalled();
+		} finally {
+			// Once the node has caught up a retry is sent again, which also frees the head for later tests.
+			mockReadNodeState.mockResolvedValue({
+				state: 'Running',
+				isReady: true,
+				reason: null,
+				chainSynced: true,
+				driftSeconds: 0,
+			});
+			mockInit.mockResolvedValue(undefined);
+			await initHeadPost.handler({ input: { headId: 'head-1' } }).catch(() => undefined);
+		}
+		expect(mockInit).toHaveBeenCalledTimes(1);
 	});
 
 	// The node refused the InitTx outright. Nothing is parked, so a node that is

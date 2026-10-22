@@ -64,6 +64,8 @@ export const lifecycleOutput = z.object({
 });
 
 const initsInFlight = new Set<string>();
+/** Heads whose last Init timed out on a node behind the chain, so that Init may still be parked there. */
+const initsAwaitingNode = new Set<string>();
 
 export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -107,6 +109,18 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		const cm = getHydraConnectionManager();
+
+		// An Init that timed out on a node behind the chain may still be parked there, to be
+		// posted once the node catches up. A second Init now is refused with a CommandFailed,
+		// recorded against a head that is fine. Only a node that says it is behind holds the
+		// retry: one that cannot be asked proceeds as before.
+		if (initsAwaitingNode.has(head.id)) {
+			const nodeState = await readParticipantNodeState(head.LocalParticipant.id);
+			if (nodeState.chainSynced === false) {
+				throw createHttpError(409, "An earlier Init is still waiting for this head's node to catch up with the chain");
+			}
+			initsAwaitingNode.delete(head.id);
+		}
 
 		// hydra-node refuses a second Init with a CommandFailed that names no request, so it
 		// fails every waiting Init, the one that started the head too. No await between this
@@ -195,6 +209,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 					// is exactly the self-resolving error that teaches operators to
 					// disregard the ones that matter. The message tells the operator not
 					// to re-post, since two Inits race for the same seed input.
+					initsAwaitingNode.add(head.id);
 					throw createHttpError(504, verdict.message);
 				}
 				if (verdict.kind === 'failed') {
