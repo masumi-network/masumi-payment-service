@@ -31,14 +31,31 @@ describe('recordReplayedCloseSnapshot', () => {
 	it('raises a closed row to the contested snapshot and moves its deadline to a later time', async () => {
 		await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(HydraHeadStatus.Closed, 5n))).resolves.toBe(true);
 
-		// The deadline first, so a failed raise leaves the trigger for the next pass.
+		// The deadline first: the raise ends the trigger, so a deadline written after it
+		// would never be tried again.
 		const [deadlineWrite, raise] = mockHydraHeadUpdateMany.mock.calls.map(([args]) => args);
 		expect(deadlineWrite).toMatchObject({
-			where: { OR: [{ contestationDeadline: null }, { contestationDeadline: { lt: new Date(CONTEST_DEADLINE) } }] },
+			where: {
+				id: 'head-1',
+				status: HydraHeadStatus.Closed,
+				OR: [{ contestationDeadline: null }, { contestationDeadline: { lt: new Date(CONTEST_DEADLINE) } }],
+			},
 			data: { contestationDeadline: new Date(CONTEST_DEADLINE) },
 		});
 		expect(raise).toMatchObject({
-			where: { reconciliationCompletedAt: null, latestSnapshotNumber: { lt: 5n } },
+			where: {
+				id: 'head-1',
+				status: {
+					in: [
+						HydraHeadStatus.Closed,
+						HydraHeadStatus.FanoutPossible,
+						HydraHeadStatus.FanningOut,
+						HydraHeadStatus.Final,
+					],
+				},
+				reconciliationCompletedAt: null,
+				latestSnapshotNumber: { lt: 5n },
+			},
 			data: { latestSnapshotNumber: 5n },
 		});
 	});
