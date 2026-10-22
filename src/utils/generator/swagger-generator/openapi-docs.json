@@ -47348,6 +47348,212 @@
                     }
                 }
             }
+        },
+        "/payment/acknowledge-manual-action": {
+            "post": {
+                "description": "Hides payment requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Identifiers that are not in Needs Action, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.",
+                "summary": "Acknowledge payment requests in Needs Action (PAY access required)",
+                "tags": [
+                    "error-state-recovery"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Requests to acknowledge",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the requests were made on"
+                                    },
+                                    "blockchainIdentifiers": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 8000
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 100,
+                                        "description": "Blockchain identifiers of the requests to acknowledge"
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "blockchainIdentifiers"
+                                ],
+                                "example": {
+                                    "network": "Preprod",
+                                    "blockchainIdentifiers": [
+                                        "blockchain_identifier"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Acknowledged count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "acknowledgedCount": {
+                                                    "type": "number",
+                                                    "description": "Requests that were in Needs Action and are now acknowledged. Others in the list are skipped."
+                                                }
+                                            },
+                                            "required": [
+                                                "acknowledgedCount"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "acknowledgedCount": 1
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid input)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/purchase/acknowledge-manual-action": {
+            "post": {
+                "description": "Hides purchase requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Identifiers that are not in Needs Action, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.",
+                "summary": "Acknowledge purchase requests in Needs Action (PAY access required)",
+                "tags": [
+                    "error-state-recovery"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Requests to acknowledge",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the requests were made on"
+                                    },
+                                    "blockchainIdentifiers": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 8000
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 100,
+                                        "description": "Blockchain identifiers of the requests to acknowledge"
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "blockchainIdentifiers"
+                                ],
+                                "example": {
+                                    "network": "Preprod",
+                                    "blockchainIdentifiers": [
+                                        "blockchain_identifier"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Acknowledged count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "acknowledgedCount": {
+                                                    "type": "number",
+                                                    "description": "Requests that were in Needs Action and are now acknowledged. Others in the list are skipped."
+                                                }
+                                            },
+                                            "required": [
+                                                "acknowledgedCount"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "acknowledgedCount": 1
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid input)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
         }
     }
 }
