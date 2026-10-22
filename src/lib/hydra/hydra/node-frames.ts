@@ -454,8 +454,8 @@ export function extractStatusChangeData(rawMessage: string, expectedHeadId?: str
 				newStatus = HydraHeadStatus.Idle;
 				break;
 			default:
-				newStatus = hydraHeadStatusSchema.safeParse(parsedMessage.headStatus).data ?? null;
-				break;
+				// Only lifecycle tags and Greetings may change head status.
+				return null;
 		}
 
 		if (!newStatus) return null;
