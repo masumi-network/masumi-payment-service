@@ -43,7 +43,7 @@ import { HeadSession } from './head-session';
 import { persistHeadStatus, type HeadStatusPersistenceHost } from './head-status-persistence';
 import { continueAfterStatusPersistenceRecovery } from './head-auto-disable-recovery';
 import { applyConfirmedHydraTransaction, type TxConfirmedHost } from './head-tx-confirmed';
-import { recordReplayFailures } from './replay-failure-recorder';
+import { forgetReplayFailures, recordReplayFailures } from './replay-failure-recorder';
 import {
 	HYDRA_PRE_INIT_STATUSES,
 	headConfigurationInclude,
@@ -388,6 +388,7 @@ export class HydraConnectionManager {
 			attachment.head.removeAllListeners();
 			attachment.head.mainNode.removeAllListeners();
 			dropUnburnedL2MintReports(hydraHeadId);
+			forgetReplayFailures(hydraHeadId);
 			// The revocation fence is instance-based and only meaningful while the
 			// attachment still holds this instance; `detachIfCurrent` drops both so
 			// a newer attachment is unaffected.

@@ -18,6 +18,18 @@ export const REPLAY_FAILURE_REPEAT_WINDOW_MS = 10 * 60 * 1000;
 export const REPLAY_FAILURE_RETRY_MS = 30 * 1000;
 
 /**
+ * Kept per head, not per attachment: a connect that fails tears its attachment
+ * down, and the reconnect up to every 30 s would start a new window each time.
+ * `nextRecordAt` is monotonic time, so a wall clock stepped back cannot stretch it.
+ */
+const lastRecordedByHead = new Map<string, { message: string; nextRecordAt: number }>();
+
+/** A deliberate disconnect ends the head's run: its next session records its first failure. */
+export function forgetReplayFailures(hydraHeadId: string): void {
+	lastRecordedByHead.delete(hydraHeadId);
+}
+
+/**
  * A rejected history is the most consequential failure this service has and
  * used to be its quietest: the session never forms, so there is no head
  * clock, so every L2 escrow operation fails closed, while the connection
@@ -33,14 +45,13 @@ export const REPLAY_FAILURE_RETRY_MS = 30 * 1000;
  * window gets no new row until the window ends.
  */
 export function recordReplayFailures(node: EventEmitter, hydraHeadId: string): void {
-	/** Monotonic time: a wall clock stepped back would stretch the wait. */
-	let lastRecorded: { message: string; nextRecordAt: number } | undefined;
 	node.on(HydraNodeEvent.HistoryReplayFailed, (error: unknown) => {
 		const message = error instanceof Error ? error.message : String(error);
 		const now = performance.now();
+		const lastRecorded = lastRecordedByHead.get(hydraHeadId);
 		if (lastRecorded?.message === message && now < lastRecorded.nextRecordAt) return;
 		const recording = { message, nextRecordAt: now + REPLAY_FAILURE_REPEAT_WINDOW_MS };
-		lastRecorded = recording;
+		lastRecordedByHead.set(hydraHeadId, recording);
 		void recordHeadError(hydraHeadId, HydraHeadStatus.Connecting, HydraErrorType.CommandFailed, error, 'HistoryReplay')
 			.then((isRecorded) => {
 				// No row was written, so a later pass tries again. A newer recording is
