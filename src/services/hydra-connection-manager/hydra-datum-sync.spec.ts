@@ -73,7 +73,7 @@ const { logger: diagnosticLogger } = await import('@masumi/payment-core/logger')
 // The terminal spend moved to its own module when this one passed the line
 // limit; the datum flow it ends is still the same one exercised here.
 const { applyTerminalHydraSpends } = await import('./hydra-datum-terminal');
-const { resolveInitialLockState } = await import('./hydra-datum-guards');
+const { isUnboundEscrowCopy, resolveInitialLockState } = await import('./hydra-datum-guards');
 const applyDatumStateToLocalRequests = (
 	params: Omit<Parameters<typeof applyDatumStateToLocalRequestsRaw>[0], 'network'>,
 ) => applyDatumStateToLocalRequestsRaw({ ...params, network: Network.Preprod });
@@ -1449,6 +1449,49 @@ describe('applyDatumStateToLocalRequests', () => {
 				}),
 			}),
 		);
+	});
+
+	it('does not treat the lock of a row the timeout parked as a copy', () => {
+		const parkedRow = {
+			onChainState: OnChainState.FundsOrDatumInvalid,
+			currentHydraUtxoTxHash: null,
+			currentHydraUtxoOutputIndex: null,
+			CurrentTransaction: null,
+			TransactionHistory: [],
+		};
+		const observe = (recoversTimeout: boolean) =>
+			isUnboundEscrowCopy({
+				request: parkedRow,
+				isSameAcceptedOutput: false,
+				recoversTimeout,
+				observedState: OnChainState.FundsLocked,
+				transactionEvidence: makeEvidence({ txHash: 'late-seen-lock-tx', signerVkeys: ['buyer-vkey'] }),
+				logContext: { hydraHeadId: 'head-1', txId: 'late-seen-lock-tx', blockchainIdentifier: 'id' },
+			});
+
+		expect(observe(true)).toBe(false);
+		expect(observe(false)).toBe(true);
+	});
+
+	it('skips, not waits on, a non-lock datum for an escrow that has no lock yet', async () => {
+		mockPaymentFindUnique.mockResolvedValue({ ...makePaymentRequest(), layer: TransactionLayer.L2 });
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'crafted-refund-output',
+			paymentSourceId: 'source-1',
+			decoded: { ...decodedInitialLock, state: SmartContractState.RefundRequested },
+			newOnChainState: OnChainState.RefundRequested,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'crafted-refund-output', outputIndex: 0 },
+			transactionEvidence: makeEvidence({ txHash: 'crafted-refund-output', signerVkeys: ['buyer-vkey'] }),
+			confirmationTimeMs: 49,
+			targetSide: 'payment',
+		});
+
+		// A retry here would hold every later transaction of the head.
+		expect(outcome).toBe('irrelevant');
+		expect(mockPaymentUpdate).not.toHaveBeenCalled();
 	});
 
 	it('skips, not waits on, an output that copies a live identifier and leaves its output unspent', async () => {

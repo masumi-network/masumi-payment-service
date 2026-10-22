@@ -26,7 +26,11 @@ import {
 	type HydraTransactionEvidence,
 } from './hydra-transaction-evidence';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
-import type { HydraOutputReference, HydraRequestLineage } from './hydra-request-lineage';
+import {
+	isTransactionBoundToHydraLineage,
+	type HydraOutputReference,
+	type HydraRequestLineage,
+} from './hydra-request-lineage';
 
 export type { HydraOutputReference } from './hydra-request-lineage';
 export type HydraDatumApplyOutcome = 'applied' | 'irrelevant' | 'retry';
@@ -593,4 +597,49 @@ export function resolveInitialLockState(
 		payByTime: decoded.payByTime.toString(),
 	});
 	return OnChainState.FundsOrDatumInvalid;
+}
+
+export type UnboundCopyRequest = HydraRequestLineage & { onChainState: OnChainState | null };
+
+/**
+ * Whether an observed output can never continue a local escrow, so the datum
+ * sync must reject it for good instead of retrying. A retry would hold every
+ * later transaction of the head, and anyone can fund the script address with a
+ * copied identifier.
+ *
+ * - An escrow with state: the output's transaction was never recorded by the
+ *   escrow and leaves its accepted output unspent.
+ * - An escrow with no state and no accepted output (or one the timeout parked,
+ *   which counts as having no state): the datum is not an initial lock.
+ *
+ * A missed intermediate transaction (persistence loss, compacted history) has
+ * the same shape as a copy, so every skip is logged as an error for review.
+ */
+export function isUnboundEscrowCopy(params: {
+	request: UnboundCopyRequest;
+	isSameAcceptedOutput: boolean;
+	recoversTimeout: boolean;
+	observedState: OnChainState;
+	transactionEvidence: HydraTransactionEvidence | null;
+	logContext: { hydraHeadId: string; txId: string; blockchainIdentifier: string };
+}): boolean {
+	const { request, isSameAcceptedOutput, recoversTimeout, observedState, transactionEvidence, logContext } = params;
+	const isUnbound =
+		request.onChainState == null || recoversTimeout
+			? observedState !== OnChainState.FundsLocked && request.currentHydraUtxoTxHash == null
+			: !isSameAcceptedOutput &&
+				transactionEvidence != null &&
+				!isTransactionBoundToHydraLineage(request, {
+					hydraHeadId: logContext.hydraHeadId,
+					txId: logContext.txId,
+					consumedInputs: transactionEvidence.inputs,
+				});
+	if (isUnbound) {
+		logger.error('[HydraDatumSync] skipping an output that does not continue the escrow lineage', {
+			...logContext,
+			currentHydraUtxoTxHash: request.currentHydraUtxoTxHash,
+			currentHydraUtxoOutputIndex: request.currentHydraUtxoOutputIndex,
+		});
+	}
+	return isUnbound;
 }

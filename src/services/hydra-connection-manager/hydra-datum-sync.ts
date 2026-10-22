@@ -32,13 +32,14 @@ import {
 	observationHasValidLineage,
 	parsePersistedHydraValue,
 	persistedHydraValue,
+	isUnboundEscrowCopy,
 	resolveInitialLockState,
 	type HydraDatumApplyOutcome,
+	type UnboundCopyRequest,
 	type HydraOutputReference,
 } from './hydra-datum-guards';
 import { ensureObservedTransaction, releaseBlockedWallet } from './hydra-datum-observation';
 import { didTimeoutReplacePlainPaymentWait, isUnobservedLockTimeout } from '@/utils/logic/unobserved-lock-timeout';
-import { isTransactionBoundToHydraLineage, type HydraRequestLineage } from './hydra-request-lineage';
 
 // Re-exported so the split stays invisible to importers: this module was the
 // whole datum surface before it was broken up.
@@ -459,37 +460,15 @@ export async function applyDatumStateToLocalRequests(params: {
 				applyOutcome = hasPendingTarget ? 'retry' : 'irrelevant';
 				return;
 			}
-			// An output that copies the identifier of a live escrow, made by a
-			// transaction the escrow never recorded and that leaves its accepted
-			// output unspent, can never continue that escrow. Anyone can fund the
-			// script address this way, so waiting on it would let a peer hold every
-			// later transaction of the head. A row the timeout parked without an
-			// output counts as having no state, like everywhere else here. The same
-			// shape also follows a missed intermediate transaction (persistence
-			// loss, compacted history), so the skip is logged as an error for
-			// operator review.
-			const isUnboundCopy = (
-				request: HydraRequestLineage & { onChainState: OnChainState | null },
-				isSame: boolean,
-				recoversTimeout: boolean,
-			) => {
-				const isUnbound =
-					request.onChainState != null &&
-					!recoversTimeout &&
-					!isSame &&
-					transactionEvidence != null &&
-					!isTransactionBoundToHydraLineage(request, { hydraHeadId, txId, consumedInputs: transactionEvidence.inputs });
-				if (isUnbound) {
-					logger.error('[HydraDatumSync] skipping an output that does not continue the escrow lineage', {
-						hydraHeadId,
-						txId,
-						blockchainIdentifier,
-						currentHydraUtxoTxHash: request.currentHydraUtxoTxHash,
-						currentHydraUtxoOutputIndex: request.currentHydraUtxoOutputIndex,
-					});
-				}
-				return isUnbound;
-			};
+			const isUnboundCopy = (request: UnboundCopyRequest, isSame: boolean, recoversTimeout: boolean) =>
+				isUnboundEscrowCopy({
+					request,
+					isSameAcceptedOutput: isSame,
+					recoversTimeout,
+					observedState: newOnChainState,
+					transactionEvidence,
+					logContext: { hydraHeadId, txId, blockchainIdentifier },
+				});
 			const purchaseIsPermanentReject =
 				shouldApplyPurchase &&
 				purchaseRequest != null &&
