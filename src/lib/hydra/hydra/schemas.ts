@@ -130,6 +130,16 @@ export const commandFailedMessageSchema = z.looseObject({
 });
 
 /**
+ * The node refused client input because its chain follower is behind by more
+ * than `--unsynced-period`. Same echoed `clientInput` as `CommandFailed`, plus
+ * the drift in seconds. The node did not act on the input.
+ */
+export const rejectedInputBecauseUnsyncedMessageSchema = commandFailedMessageSchema.extend({
+	tag: z.literal('RejectedInputBecauseUnsynced'),
+	drift: z.number().optional(),
+});
+
+/**
  * The head signed a snapshot that removes a withdrawal's outputs.
  *
  * The moment that matters: from here the value is out of the head, and the only

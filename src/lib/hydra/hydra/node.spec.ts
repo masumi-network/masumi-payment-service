@@ -27,6 +27,7 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
 import type { L2MintIncident } from './l2-mint-tally';
 import {
+	HydraCommandRejectedError,
 	HydraProtocolError,
 	HydraTransactionRejectedError,
 	HydraTransportAmbiguousError,
@@ -1942,6 +1943,36 @@ describe('HydraNode', () => {
 			await expect(submit).resolves.toBe(transaction.txId);
 		});
 
+		it('rejects only the transaction a sync refusal echoes, instead of timing out ambiguously', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const tx1 = makeHydraTransaction(41);
+			const tx2 = makeHydraTransaction(42);
+			const firstSubmit = node.newTx(tx1);
+			const secondSubmit = node.newTx(tx2);
+			const firstRejection = expect(firstSubmit).rejects.toThrow(
+				new HydraTransactionRejectedError(
+					`Transaction ${tx1.txId} was refused: the node is not synced with the chain (drift 312.5s)`,
+				),
+			);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'RejectedInputBecauseUnsynced',
+					clientInput: { tag: 'NewTx', transaction: tx1 },
+					drift: 312.5,
+				}),
+			);
+			await firstRejection;
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'TxValid', headId: HEAD_ID_A, transactionId: tx2.txId }),
+			);
+
+			await expect(secondSubmit).resolves.toBe(tx2.txId);
+		});
+
 		it('does not accept a matching TxValid that omits the pinned head id', async () => {
 			const { node, liveConnection } = await startSignedNode();
 			const transaction = makeHydraTransaction(40);
@@ -2306,6 +2337,22 @@ describe('HydraNode', () => {
 
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsClosed', headId: HEAD_ID_A }));
 			await expect(closePromise).resolves.toBeUndefined();
+		});
+
+		it('rejects a lifecycle command the node refused while unsynced', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			void node.connect();
+
+			const fanoutPromise = node.fanout();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'RejectedInputBecauseUnsynced', clientInput: { tag: 'Fanout' }, drift: 90 }),
+			);
+
+			await expect(fanoutPromise).rejects.toThrow(
+				new HydraCommandRejectedError('Command Fanout was refused: the node is not synced with the chain (drift 90s)'),
+			);
 		});
 
 		it('treats a post-dispatch Close rejection as ambiguous', async () => {

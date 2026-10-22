@@ -33,6 +33,7 @@ import {
 	hydraHeadStatusSchema,
 	messageSchema,
 	postTxOnChainFailedMessageSchema,
+	rejectedInputBecauseUnsyncedMessageSchema,
 	txInvalidMessageSchema,
 	txValidMessageSchema,
 } from './schemas';
@@ -328,9 +329,16 @@ export function handleWsResponse(
 			}
 			return { kind: 'message', message };
 		}
-		if (envelope.tag === 'CommandFailed') {
-			const message = commandFailedMessageSchema.parse(raw);
+		if (envelope.tag === 'CommandFailed' || envelope.tag === 'RejectedInputBecauseUnsynced') {
+			// A node whose chain follower fell behind refuses input with its own tag
+			// rather than CommandFailed. Left as a plain message, the caller waited
+			// out its deadline and reported an ambiguous timeout for input the node
+			// never acted on.
+			const isUnsynced = envelope.tag === 'RejectedInputBecauseUnsynced';
+			const unsynced = isUnsynced ? rejectedInputBecauseUnsyncedMessageSchema.parse(raw) : undefined;
+			const message = unsynced ?? commandFailedMessageSchema.parse(raw);
 			assertExpectedFrameHeadId(message, expectedHeadId);
+			const unsyncedReason = `the node is not synced with the chain (drift ${unsynced?.drift ?? 'unknown'}s)`;
 			if (command === 'NewTx') {
 				if (message.clientInput?.tag !== 'NewTx' || !message.clientInput.transaction || !transactionHash) {
 					return { kind: 'ignore' };
@@ -339,11 +347,20 @@ export function handleWsResponse(
 				if (rejectedTxHash !== transactionHash) return { kind: 'ignore' };
 				return {
 					kind: 'reject',
-					error: new HydraTransactionRejectedError(`Error posting transaction with hash ${transactionHash}`),
+					error: new HydraTransactionRejectedError(
+						isUnsynced
+							? `Transaction ${transactionHash} was refused: ${unsyncedReason}`
+							: `Error posting transaction with hash ${transactionHash}`,
+					),
 				};
 			}
 			if (message.clientInput?.tag === command) {
-				return { kind: 'reject', error: new HydraCommandRejectedError(`Command ${command} failed`) };
+				return {
+					kind: 'reject',
+					error: new HydraCommandRejectedError(
+						isUnsynced ? `Command ${command} was refused: ${unsyncedReason}` : `Command ${command} failed`,
+					),
+				};
 			}
 			return { kind: 'message', message };
 		}
