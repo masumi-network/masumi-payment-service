@@ -32,7 +32,12 @@ export { topupHeadPost, listTopupsGet, recoverTopupPost } from './head/topup';
 export { withdrawHeadPost, listWithdrawalsGet } from './head/withdraw';
 export { consolidateHeadPost } from './head/consolidate';
 export { getSnapshotRoundGet, resetSnapshotRoundPost } from './head/snapshot-round';
-export { listL2ReservationsGet, releaseL2ReservationPost } from './head/l2-reservations';
+export {
+	listL2ReservationsGet,
+	reapplyL2ReservationPost,
+	releaseL2ReservationPost,
+	stalledReleaseGet,
+} from './head/l2-reservations';
 export { listHeadTransactionsGet } from './head/transactions';
 export { checkHeadOnChainPost } from './head/chain-check';
 
