@@ -442,7 +442,11 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				utxoCount: 1,
 				unbackedLovelace: '0',
 				hasUnbackedUtxos: false,
+				l2MintedUtxoCount: 0,
+				l2MintedLovelace: '0',
+				l2MintChecked: true,
 				balance: [{ unit: '', quantity: '10000000' }],
+				spendableBalance: [{ unit: '', quantity: '10000000' }],
 			}),
 			...unauthorized,
 			404: { description: 'Hydra head or its local participant wallet not found' },
@@ -567,7 +571,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/low-balance',
 		summary: 'Create or update a Hydra in-head low-balance rule. (admin access required)',
 		description:
-			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
+			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own spendable in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
 		tags: TAG,
 		security: secured,
 		request: {

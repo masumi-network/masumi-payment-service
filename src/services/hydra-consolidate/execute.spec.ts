@@ -55,6 +55,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 		getProvider: () => ({
 			fetchAddressUTxOs: mockFetchAddressUTxOs,
 			fetchProtocolParameters: mockFetchProtocolParameters,
+			spendableUTxOs: <T>(utxos: T[]) => utxos,
 		}),
 	}),
 }));
@@ -183,6 +184,17 @@ describe('executeHydraConsolidation', () => {
 
 		await expect(executeHydraConsolidation('head-1')).rejects.toMatchObject({ status: 409 });
 		expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('refuses when the node cannot say whether a withdrawal is settling, before taking the lock', async () => {
+		mockFetchPendingDecommitRefs.mockResolvedValue(undefined);
+
+		await expect(executeHydraConsolidation('head-1')).rejects.toMatchObject({
+			status: 502,
+			message: expect.stringContaining('Could not read the head state'),
+		});
+		expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+		expect(mockNewTx).not.toHaveBeenCalled();
 	});
 
 	// A withdrawal's split output is about to be decommitted; spending it here

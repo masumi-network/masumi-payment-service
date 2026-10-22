@@ -4,7 +4,14 @@ import { createPrivateKey, createPublicKey, sign as signEd25519, type KeyObject 
 import { resolveTxHash } from '@meshsdk/core';
 import {
 	Address,
+	AssetName,
+	Assets,
 	BigNum,
+	Int,
+	Mint,
+	MintAssets,
+	MultiAsset,
+	ScriptHash,
 	Transaction,
 	TransactionBody,
 	TransactionHash,
@@ -17,6 +24,7 @@ import {
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
+import type { L2MintIncident } from './l2-mint-tally';
 import {
 	HydraProtocolError,
 	HydraTransactionRejectedError,
@@ -151,6 +159,49 @@ function makeSpendingHydraTransaction(inputTxHash: string, inputIndex: number, o
 		description: '',
 		txId: String(resolveTxHash(cborHex)).toLowerCase(),
 	};
+}
+
+const MINT_POLICY_ID = 'ab'.repeat(28);
+const MINT_ASSET_NAME = '6576696c';
+
+/** Spends output 0 of `inputTxHash` and mints (positive) or burns (negative) one asset. */
+function makeMintingHydraTransaction(inputTxHash: string, outputLovelace: number, mintQuantity: number) {
+	const inputs = TransactionInputs.new();
+	inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(inputTxHash, 'hex')), 0));
+	const value = Value.new(BigNum.from_str(String(outputLovelace)));
+	if (mintQuantity > 0) {
+		const assets = Assets.new();
+		assets.insert(AssetName.new(Buffer.from(MINT_ASSET_NAME, 'hex')), BigNum.from_str(String(mintQuantity)));
+		const multiAsset = MultiAsset.new();
+		multiAsset.insert(ScriptHash.from_hex(MINT_POLICY_ID), assets);
+		value.set_multiasset(multiAsset);
+	}
+	const outputs = TransactionOutputs.new();
+	outputs.add(TransactionOutput.new(Address.from_bech32(TEST_ADDRESS), value));
+	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+	const mintAssets = MintAssets.new();
+	mintAssets.insert(
+		AssetName.new(Buffer.from(MINT_ASSET_NAME, 'hex')),
+		mintQuantity < 0
+			? Int.new_negative(BigNum.from_str(String(-mintQuantity)))
+			: Int.new(BigNum.from_str(String(mintQuantity))),
+	);
+	body.set_mint(Mint.new_from_entry(ScriptHash.from_hex(MINT_POLICY_ID), mintAssets));
+	const cborHex = Buffer.from(Transaction.new(body, TransactionWitnessSet.new()).to_bytes()).toString('hex');
+	return {
+		type: HydraTransactionType.TxConwayEra,
+		cborHex,
+		description: '',
+		txId: String(resolveTxHash(cborHex)).toLowerCase(),
+	};
+}
+
+/** A snapshot output holding one unit of the test mint. */
+function mintedTokenOutput(lovelace: number): TestSnapshotOutput {
+	return {
+		...snapshotOutput(lovelace),
+		value: { lovelace, [MINT_POLICY_ID]: { [MINT_ASSET_NAME]: 1 } },
+	} as unknown as TestSnapshotOutput;
 }
 
 function signedSnapshotFrame(options: {
@@ -837,6 +888,125 @@ describe('HydraNode', () => {
 			liveConnection.emit('message', JSON.stringify(liveGreetings()));
 			expect(node.status).toBe(HydraHeadStatus.Open);
 			expect(node.getVerifiedFanoutReference(hydraReference, 3)).toBeNull();
+		});
+
+		// A peer can mint through its own node, and Hydra cannot finalize a head
+		// that still holds the token. Replay has to name the unit so our own
+		// spending leaves it alone, name nothing before the whole history is in,
+		// and drop the unit once it is burned.
+		it('tracks units minted in the head and not burned', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
+			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
+			const frames = [
+				signedSnapshotFrame({
+					seq: 1,
+					number: 1,
+					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
+					confirmed: [],
+				}),
+				signedSnapshotFrame({
+					seq: 2,
+					number: 2,
+					utxo: { [`${mintTx.txId}#0`]: mintedTokenOutput(9_000_000) },
+					confirmed: [mintTx],
+				}),
+				signedSnapshotFrame({
+					seq: 3,
+					number: 3,
+					utxo: { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) },
+					confirmed: [burnTx],
+				}),
+			];
+			for (const frame of frames.slice(0, 2)) historyConnection.emit('message', JSON.stringify(frame));
+
+			expect(node.l2MintCheck).toBeUndefined();
+			finishHistoryReplay(historyConnection);
+			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set([`${MINT_POLICY_ID}${MINT_ASSET_NAME}`]));
+			expect(node.l2MintCheck?.verifiedOutputs.has(`${mintTx.txId}#0`)).toBe(true);
+
+			// A new history socket replays from the start. Counting the mint again
+			// on top of the old pass would leave the unit flagged after its burn.
+			historyConnection.emit('close');
+			expect(node.l2MintCheck).toBeUndefined();
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set());
+			expect(node.l2MintCheck?.verifiedOutputs.has(`${burnTx.txId}#0`)).toBe(true);
+		});
+
+		// The operator record is written from this event. It must not fire for
+		// history still being read, must fire again on a later pass so a restart
+		// cannot lose it, and must name the transaction that opened the incident.
+		it('reports an unburned mint once the replay is current', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const reported: string[] = [];
+			node.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => reported.push(incident.txHash));
+			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
+			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
+			const remintTx = makeMintingHydraTransaction(burnTx.txId, 7_000_000, 1);
+			const laterTx = makeMintingHydraTransaction(remintTx.txId, 6_000_000, 1);
+			const history = [
+				signedSnapshotFrame({
+					seq: 1,
+					number: 1,
+					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
+					confirmed: [],
+				}),
+				signedSnapshotFrame({
+					seq: 2,
+					number: 2,
+					utxo: { [`${mintTx.txId}#0`]: mintedTokenOutput(9_000_000) },
+					confirmed: [mintTx],
+				}),
+			];
+			for (const frame of history) historyConnection.emit('message', JSON.stringify(frame));
+			expect(reported).toEqual([]);
+			finishHistoryReplay(historyConnection);
+			expect(reported).toEqual([mintTx.txId]);
+
+			historyConnection.emit('close');
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			for (const frame of history) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			expect(reported).toEqual([mintTx.txId, mintTx.txId]);
+
+			// Live from here: the burn closes the incident, the next mint opens a
+			// new one, and each later snapshot reports it again while it is open.
+			const live = [
+				signedSnapshotFrame({
+					seq: 3,
+					number: 3,
+					utxo: { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) },
+					confirmed: [burnTx],
+				}),
+				signedSnapshotFrame({
+					seq: 4,
+					number: 4,
+					utxo: { [`${remintTx.txId}#0`]: mintedTokenOutput(7_000_000) },
+					confirmed: [remintTx],
+				}),
+				signedSnapshotFrame({
+					seq: 5,
+					number: 5,
+					utxo: { [`${laterTx.txId}#0`]: mintedTokenOutput(6_000_000) },
+					confirmed: [laterTx],
+				}),
+			];
+			for (const frame of live) historyConnection.emit('message', JSON.stringify(frame));
+			expect(reported).toEqual([mintTx.txId, mintTx.txId, remintTx.txId, remintTx.txId]);
+		});
+
+		// A head with no signed snapshot, or a node rebuilt from L1, states its
+		// ledger only in Greetings. No transaction behind it was tallied, so a
+		// token there must not pass as checked.
+		it('vouches for no output on the unsigned Greetings anchor', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const snapshotUtxo = { [`${'22'.repeat(32)}#0`]: mintedTokenOutput(9_000_000) };
+			historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), snapshotUtxo }));
+
+			expect(node.l2MintCheck).toEqual({ unburnedUnits: new Set(), verifiedOutputs: new Map() });
 		});
 
 		// Hydra 2.2.0 renamed HeadIsFinalized's `utxo` to `finalizedUTxO`, and 2.3.0

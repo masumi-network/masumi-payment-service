@@ -111,7 +111,7 @@ export function buildCompactSummary(payload: WebhookSendPayload): string {
 		appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
 		appendDetailLine(lines, '🪙', 'Asset', payload.data.assetUnit);
 		appendDetailLine(lines, '🎯', 'Threshold', payload.data.thresholdAmount);
-		appendDetailLine(lines, '💰', 'In-head balance', payload.data.currentAmount);
+		appendDetailLine(lines, '💰', 'Spendable in-head balance', payload.data.currentAmount);
 		appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
 		appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 		return lines.join('\n');

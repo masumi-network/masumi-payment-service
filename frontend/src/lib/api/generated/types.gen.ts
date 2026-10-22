@@ -3515,6 +3515,9 @@ export type HydraLowBalanceRule = {
     enabled: boolean;
     topupEnabled: boolean;
     topupAmount: string | null;
+    /**
+     * Last evaluated state. A Low rule stays Low on a reading the history replay has not checked, so lastKnownAmount can be at or above the threshold while it is Low.
+     */
     status: 'Unknown' | 'Healthy' | 'Low';
     lastKnownAmount: string | null;
     lastCheckedAt: string | null;
@@ -15373,9 +15376,34 @@ export type GetHydraHeadBalanceResponses = {
              */
             hasUnbackedUtxos: boolean;
             /**
+             * In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
+             */
+            l2MintedUtxoCount: number;
+            /**
+             * Lovelace held by those UTxOs. It is counted in balance, and the service does not spend it.
+             */
+            l2MintedLovelace: string;
+            /**
+             * True when the history replay is current, so l2MintedUtxoCount counts every L2-minted UTxO the replay has verified; spendableBalance still counts token UTxOs from transactions it has not reached. False when not connected, right after a connect until the replay completes, and while the replay has failed. While connected and false, no UTxO counts as L2-minted and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading, and auto top-up waits.
+             */
+            l2MintChecked: boolean;
+            /**
              * This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty.
              */
             balance: Array<{
+                /**
+                 * Empty string for ADA/lovelace; otherwise policyId+assetName hex
+                 */
+                unit: string;
+                /**
+                 * Aggregate quantity across the local address in-head UTxOs
+                 */
+                quantity: string;
+            }>;
+            /**
+             * balance without the L2-minted UTxOs counted above. Low-balance rules compare against this. It still counts token UTxOs the replay has not checked yet and UTxOs of a deposit the head has not finished folding in; the service does not spend those until they are checked or folded in.
+             */
+            spendableBalance: Array<{
                 /**
                  * Empty string for ADA/lovelace; otherwise policyId+assetName hex
                  */
@@ -15921,7 +15949,7 @@ export type GetHydraLowBalanceResponse = GetHydraLowBalanceResponses[keyof GetHy
 export type PostHydraLowBalanceData = {
     body?: {
         /**
-         * Local participant whose in-head balance to monitor
+         * Local participant whose spendable in-head balance to monitor
          */
         hydraLocalParticipantId: string;
         /**
@@ -15929,12 +15957,12 @@ export type PostHydraLowBalanceData = {
          */
         assetUnit: string;
         /**
-         * Alert when the in-head balance falls below this
+         * Alert when the spendable in-head balance falls below this
          */
         thresholdAmount: string;
         enabled?: boolean;
         /**
-         * Auto top-up from the assigned funding wallet when low
+         * Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a nonzero net L2 mint in the head.
          */
         topupEnabled?: boolean;
         /**
@@ -18267,3 +18295,34 @@ export type GetReleaseStatusResponses = {
 };
 
 export type GetReleaseStatusResponse = GetReleaseStatusResponses[keyof GetReleaseStatusResponses];
+
+export type GetSecurityStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/security-status';
+};
+
+export type GetSecurityStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetSecurityStatusResponses = {
+    /**
+     * Security status
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * True when ENCRYPTION_KEY is the public .env.example value. A database copy then exposes every secret.
+             */
+            isEncryptionKeyPublic: boolean;
+        };
+    };
+};
+
+export type GetSecurityStatusResponse = GetSecurityStatusResponses[keyof GetSecurityStatusResponses];

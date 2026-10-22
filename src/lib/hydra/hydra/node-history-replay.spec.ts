@@ -38,6 +38,7 @@ function createReplay() {
 		rememberReplayedDeposit: () => undefined,
 		rememberReplayedDecommit: () => undefined,
 		emitTxConfirmed: () => undefined,
+		reportL2MintOutstanding: () => undefined,
 		onProtocolDrift: () => undefined,
 		onRotationReplayFailure: () => undefined,
 		onReplayFailed: () => undefined,

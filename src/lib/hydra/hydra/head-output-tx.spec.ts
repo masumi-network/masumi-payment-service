@@ -275,10 +275,9 @@ describe('extractPendingDecommitRefs', () => {
 	 * The deadlock this guards against: with no decommitTx held AND no readable
 	 * version pair, the old formula defaulted `chainNotPastSnapshot` to `true`
 	 * (fail-closed), so `!decommitTxHeld && !chainNotPastSnapshot` was always
-	 * false and the withdrawal stayed refused forever — even though the same
-	 * "cannot tell" outcome fails OPEN one layer up, in
-	 * `fetchHydraPendingDecommitRefs`'s transport-error catch. Both signals
-	 * unreadable must resolve the same way: no pending refs, logged.
+	 * false and the withdrawal stayed refused forever. Unlike a transport error,
+	 * an unrecognised shape does not pass on retry, so both signals unreadable
+	 * resolve to no pending refs, logged.
 	 */
 	it('returns no pending refs, and logs, when neither decommitTx nor the version pair can be read', () => {
 		mockWarn.mockClear();
