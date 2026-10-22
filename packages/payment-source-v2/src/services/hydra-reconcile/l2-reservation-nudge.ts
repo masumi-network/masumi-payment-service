@@ -203,6 +203,11 @@ export async function nudgeIdleHeadForRelease(params: {
  * dropped the request. So it stops blocking only when the node answers that it
  * holds no withdrawal. An unread node blocks. The row itself is left for the
  * claim to fail.
+ *
+ * For a Preparing row the node can only rule out a decommit the crashed
+ * process already requested. Whether its in-head split is still running rests
+ * on the age limit alone, the same assumption the claim makes. A split that
+ * did run in time makes the head refuse the nudge, so the cost is liveness.
  */
 async function withdrawalMayBeInFlight(
 	hydraHeadId: string,
@@ -215,9 +220,19 @@ async function withdrawalMayBeInFlight(
 		select: { status: true, createdAt: true, updatedAt: true },
 	});
 	if (active.length === 0) return false;
-	// `true` only reads the age rules: whether the node agrees is asked below.
-	if (active.some((row) => staleWithdrawal(row, nowMs, true) === null)) return true;
-	return (await fetchHydraDecommitInFlight(node)) !== false;
+	// Null is a row still inside its age limit. Whether the node agrees is asked below.
+	if (active.some((row) => staleWithdrawal(row, nowMs, false) === null)) return true;
+	const inFlight = await fetchHydraDecommitInFlight(node);
+	if (inFlight === false) return false;
+	logger.warn(
+		'[HydraReconcile] an abandoned withdrawal row holds the release nudge; the node did not confirm it holds none',
+		{
+			hydraHeadId,
+			abandonedRows: active.length,
+			nodeAnswer: inFlight === undefined ? 'unreadable' : 'withdrawal in flight',
+		},
+	);
+	return true;
 }
 
 /** Sign and record a nudge over `inputs`. Null when there is nothing safe to send. */

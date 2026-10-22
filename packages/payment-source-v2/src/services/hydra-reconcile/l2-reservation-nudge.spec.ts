@@ -136,6 +136,8 @@ describe('nudgeIdleHeadForRelease', () => {
 			decommit?: boolean;
 			/** A withdrawal row this old, in ms, with this status. */
 			staleDecommit?: { status: 'Preparing' | 'Pending'; ageMs: number };
+			/** Also a fresh Preparing row next to the stale one. */
+			alsoFresh?: boolean;
 			/** The node's `GET /head` reply, or an Error it throws. */
 			headState?: unknown;
 			/** Null: the node could not be asked. */
@@ -161,7 +163,11 @@ describe('nudgeIdleHeadForRelease', () => {
 				findMany: jest.fn(async () => {
 					if (options.staleDecommit) {
 						const at = new Date(nowMs - options.staleDecommit.ageMs);
-						return [{ status: options.staleDecommit.status, createdAt: at, updatedAt: at }];
+						const fresh = { status: 'Preparing', createdAt: new Date(nowMs), updatedAt: new Date(nowMs) };
+						return [
+							{ status: options.staleDecommit.status, createdAt: at, updatedAt: at },
+							...(options.alsoFresh ? [fresh] : []),
+						];
 					}
 					return options.decommit
 						? [{ status: 'Preparing', createdAt: new Date(nowMs), updatedAt: new Date(nowMs) }]
@@ -290,11 +296,16 @@ describe('nudgeIdleHeadForRelease', () => {
 			expect(h.head.newTx).not.toHaveBeenCalled();
 		});
 
-		it('still blocks a Pending row younger than the age limit, without asking the node', async () => {
-			const h = harness({
-				staleDecommit: { status: 'Pending', ageMs: PENDING_STALE_AFTER_MS - 1 },
-				headState: nodeHoldsNoWithdrawal,
-			});
+		it.each([
+			['a Pending row is younger than its age limit', { status: 'Pending', ageMs: PENDING_STALE_AFTER_MS - 1 }, false],
+			[
+				'a Preparing row is younger than its age limit',
+				{ status: 'Preparing', ageMs: PREPARING_STALE_AFTER_MS - 1 },
+				false,
+			],
+			['a fresh row sits next to the abandoned one', { status: 'Pending', ageMs: staleAgeMs }, true],
+		] as const)('still blocks, without asking the node, when %s', async (_label, staleDecommit, alsoFresh) => {
+			const h = harness({ staleDecommit, alsoFresh, headState: nodeHoldsNoWithdrawal });
 			await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(false);
 			expect(h.node.get).not.toHaveBeenCalled();
 		});
