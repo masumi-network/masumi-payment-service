@@ -61,10 +61,6 @@ export function purchaseL2ActionRetry(action: PurchasingAction | undefined): Pur
 	return action === undefined ? undefined : PURCHASE_L2_ACTION_RETRY[action];
 }
 
-/** The in-flight actions a release turns into a retry action. */
-export const PAYMENT_L2_IN_FLIGHT_ACTIONS = Object.keys(PAYMENT_L2_ACTION_RETRY) as PaymentAction[];
-export const PURCHASE_L2_IN_FLIGHT_ACTIONS = Object.keys(PURCHASE_L2_ACTION_RETRY) as PurchasingAction[];
-
 /**
  * Undo one reservation: mark the dead transaction rolled back, give the wallet
  * back, and return each request to where the reservation found it. An initial

@@ -392,6 +392,8 @@ describePostgres('re-applying a released L2 reservation whose body confirmed (Po
 	/** Push actions onto the payment the way the error and recovery paths do. */
 	async function moveOn(paymentId: string, actions: Array<{ requestedAction: PaymentAction; resultHash?: string }>) {
 		for (const action of actions) {
+			// History is ordered by createdAt, at millisecond precision.
+			await new Promise((resolve) => setTimeout(resolve, 5));
 			const current = await prisma.paymentRequest.findUniqueOrThrow({ where: { id: paymentId } });
 			await prisma.paymentRequest.update({
 				where: { id: paymentId },
@@ -423,14 +425,17 @@ describePostgres('re-applying a released L2 reservation whose body confirmed (Po
 		confirmedBodies = new Map([[body.txId, body]]);
 		const { reservation, payment } = await seedReleasedWithdrawal(body);
 		// An error, then an operator's error-state recovery to a different action.
+		// Then that action failed against the spent escrow output and parked
+		// again: the current action alone looks like a plain parking.
 		await moveOn(payment.id, [
 			{ requestedAction: PaymentAction.WaitingForManualAction },
 			{ requestedAction: PaymentAction.AuthorizeRefundRequested },
+			{ requestedAction: PaymentAction.WaitingForManualAction },
 		]);
 		await stallHeadOn(body.txId);
 
 		const shown = await findStalledReleasedL2Reservation(ids.head);
-		expect(shown.reservation?.blockedReason).toContain('no longer in the action its release left it in');
+		expect(shown.reservation?.blockedReason).toContain('was moved on since its release');
 		await expect(reapply(reservation.id)).rejects.toMatchObject({ status: 409 });
 	});
 
