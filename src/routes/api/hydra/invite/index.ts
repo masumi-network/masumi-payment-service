@@ -444,7 +444,7 @@ export const deleteInviteSchemaOutput = z.object({ id: z.string(), status: z.nat
  * abandoning leaves them a head whose peer never joins.
  */
 async function abandonStuckRedemption(
-	invite: Parameters<typeof abandonRedemption>[0] & { status: HydraInviteStatus },
+	invite: Parameters<typeof abandonRedemption>[0] & { status: HydraInviteStatus; redeemedAt: Date | null },
 	discard: boolean,
 ): Promise<{ id: string; status: HydraInviteStatus }> {
 	if (!LIVE_REDEEMER_STATUSES.some((status) => status === invite.status)) {
@@ -453,8 +453,11 @@ async function abandonStuckRedemption(
 	if (!discard) {
 		throw createHttpError(
 			409,
-			'this redemption was already sent to the issuer. It finishes on its own once what blocks it clears, or retry the same invite code. ' +
-				'To give up on it, revoke it again with discardRedemption set: your node is removed and the issuer is left with a head whose peer never joins',
+			invite.redeemedAt !== null
+				? 'the issuer accepted this redemption. It finishes on its own once what blocks it clears, or retry the same invite code. ' +
+						'To give up on it, revoke it again with discardRedemption set: your node is removed and the issuer is left with a head whose peer never joins'
+				: 'this redemption may have reached the issuer, which has not confirmed it yet. It is retried on its own, or retry the same invite code. ' +
+						'To give up on it, revoke it again with discardRedemption set: your node is removed, and if the issuer did take it they are left with a head whose peer never joins',
 		);
 	}
 	const outcome = await abandonRedemption(invite);

@@ -240,14 +240,16 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
  * What a send attempt tells the caller about whether the nonce may be spent.
  *
  * - `accepted`: the Host took it (2xx), or recognised it as the same redemption.
- * - `answered`: the Host replied with a refusal, which it does before it spends
- *   the nonce, except where `code` says the nonce is spent by someone else.
+ * - `answered`: a status other than 2xx. `fromHost` says the body is the Host's
+ *   own JSON refusal, which it sends before it spends the nonce, except where
+ *   `code` says the nonce is spent by someone else. Without it the status may
+ *   come from a gateway in front of the Host.
  * - `not-sent`: nothing left this machine, or no connection was ever made.
  * - `unknown`: the request may have reached the Host and the answer was lost.
  */
 export type ExchangeAttempt =
 	| { kind: 'accepted' }
-	| { kind: 'answered'; status: number; code: string | null; detail: string }
+	| { kind: 'answered'; status: number; code: string | null; fromHost: boolean; detail: string }
 	| { kind: 'not-sent'; error: createHttpError.HttpError }
 	| { kind: 'unknown'; reason: string; host: string };
 
@@ -272,17 +274,23 @@ const NEVER_SENT_ERROR_CODES = new Set([
 	'ERR_TLS_CERT_ALTNAME_INVALID',
 ]);
 
-/** The `code` the Host adds to a refusal, or null for an older Host, a gateway or a body that is not JSON. */
-function readRefusalCode(detail: string): string | null {
+/**
+ * Read a refusal body. Every Host refusal is `{ error }`, and a newer Host adds
+ * `code`; a gateway's HTML or plain text is neither, so it reads as not the Host's.
+ */
+function readRefusal(detail: string): { code: string | null; fromHost: boolean } {
 	try {
 		const parsed: unknown = JSON.parse(detail);
-		if (typeof parsed === 'object' && parsed !== null && 'code' in parsed && typeof parsed.code === 'string') {
-			return parsed.code;
+		if (typeof parsed === 'object' && parsed !== null) {
+			return {
+				code: 'code' in parsed && typeof parsed.code === 'string' ? parsed.code : null,
+				fromHost: 'error' in parsed && typeof parsed.error === 'string',
+			};
 		}
 	} catch {
 		// A gateway's HTML or plain text.
 	}
-	return null;
+	return { code: null, fromHost: false };
 }
 
 async function attempt(
@@ -322,12 +330,7 @@ async function attempt(
 			result = await send(url, target, payload);
 		}
 		if (result.status >= 200 && result.status < 300) return { kind: 'accepted' };
-		return {
-			kind: 'answered',
-			status: result.status,
-			code: readRefusalCode(result.detail),
-			detail: result.detail,
-		};
+		return { kind: 'answered', status: result.status, ...readRefusal(result.detail), detail: result.detail };
 	} catch (error) {
 		const reason = (error as Error).message;
 		logger.warn(`hydra: ${what} to ${url.host} failed: ${reason}`);

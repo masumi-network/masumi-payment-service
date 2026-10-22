@@ -12,7 +12,6 @@ import {
 	type Prisma,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
 import {
 	checkHostPeerTarget,
@@ -22,7 +21,6 @@ import {
 	type HostPeer,
 } from '@/services/hydra-host/client';
 import { attemptRedemption, type ExchangeTransportOptions } from './exchange-client';
-import { releaseReservedParticipants } from './release-reservation';
 import type { createHeadFromExchange } from './orchestrator';
 import type { RedemptionPorts, RedemptionState } from './redemption';
 import {
@@ -100,7 +98,7 @@ export function toRedemptionState(record: RedeemerRecord): RedemptionState {
 	// Only a live redemption has anything left to do. A finished or failed one
 	// would otherwise read as one waiting for its node, and have it started.
 	if (!LIVE_REDEEMER_STATUSES.some((status) => status === record.status)) {
-		throw new Error(`redemption ${record.id} is ${record.status}, not one that can be carried on`);
+		throw createHttpError(409, `redemption ${record.id} is ${record.status}, not one that can be carried on`);
 	}
 	return {
 		status: record.status === HydraInviteStatus.Started ? 'Started' : 'Redeemed',
@@ -128,8 +126,8 @@ function hostAccess(record: RedeemerRecord) {
 
 export function buildRedemptionPorts(input: {
 	record: RedeemerRecord;
-	/** The operator's opt-ins. Only a request has them; the resume job does not, and so cannot post. */
-	transport: ExchangeTransportOptions | undefined;
+	/** The operator's opt-ins on a request. The resume job, which has none stored, sends with neither. */
+	transport: ExchangeTransportOptions;
 	createHead: typeof createHeadFromExchange;
 }): RedemptionPorts {
 	const { record, transport, createHead } = input;
@@ -162,9 +160,6 @@ export function buildRedemptionPorts(input: {
 		},
 
 		post: async () => {
-			if (transport === undefined) {
-				throw createHttpError(500, 'posting a redemption needs the operator’s transport opt-ins');
-			}
 			const { redeemerWalletAddress, redeemerHydraVerificationKey, redeemerCardanoVerificationKey } = record;
 			const { redeemerAdvertise, redeemerExchangeUrl, redeemerSignature, redeemerSignerKey } = record;
 			if (
@@ -201,16 +196,10 @@ export function buildRedemptionPorts(input: {
 		// abandoned-reservation sweep returns it after an hour if nobody retries.
 		discard: async () => await discardUnlanded(record.id, version),
 
-		fail: async () => {
-			if (!(await failUnconfirmed(record.id, version))) return false;
-			try {
-				await releaseReservedParticipants({ hydraHostId: record.hydraHostId, hostNodeId: record.hostNodeId });
-			} catch (error) {
-				// The record is already failed, so the sweep takes this up later.
-				logger.warn(`hydra: could not release the node of failed redemption ${record.id}: ${(error as Error).message}`);
-			}
-			return true;
-		},
+		// The node is left to the abandoned-reservation sweep, which takes a failed
+		// record's node and settles its fuel on chain first. Doing that here would
+		// hold a request, or a whole resume pass, on chain queries.
+		fail: async () => await failUnconfirmed(record.id, version),
 
 		currentPeers: async () => {
 			const host = hostAccess(record);

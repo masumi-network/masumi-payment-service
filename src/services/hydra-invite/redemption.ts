@@ -41,7 +41,15 @@ type RedemptionDecision =
  * is not ours. A gateway's 5xx is absent on purpose: it can follow a request the
  * Host fully processed.
  */
-const ANSWERED_BEFORE_THE_NONCE_IS_SPENT = new Set([400, 401, 404, 409, 410, 413, 429, 503]);
+const ANSWERED_BEFORE_THE_NONCE_IS_SPENT = new Set([400, 401, 404, 409, 410, 413, 429]);
+
+/**
+ * The Host sends 503 while busy or while the reserved node is stopped, both
+ * before the nonce. A load balancer sends the same status when its upstream
+ * fails mid-request, which can follow a redemption that landed, so a 503 counts
+ * only when its body is the Host's own.
+ */
+const HOST_BUSY_STATUS = 503;
 
 /**
  * `rowIsNew` is true only inside the request that created the record, where
@@ -56,7 +64,9 @@ function classifyRedemptionAttempt(attempt: ExchangeAttempt, context: { rowIsNew
 	if (context.rowIsNew) {
 		const nothingLanded =
 			attempt.kind === 'not-sent' ||
-			(attempt.kind === 'answered' && ANSWERED_BEFORE_THE_NONCE_IS_SPENT.has(attempt.status));
+			(attempt.kind === 'answered' &&
+				(ANSWERED_BEFORE_THE_NONCE_IS_SPENT.has(attempt.status) ||
+					(attempt.status === HOST_BUSY_STATUS && attempt.fromHost)));
 		return { action: nothingLanded ? 'discard' : 'keep', error };
 	}
 
@@ -98,7 +108,10 @@ export type RedemptionPorts = {
 	markAcknowledged(): Promise<boolean>;
 	/** Delete a record that never landed. */
 	discard(): Promise<void>;
-	/** End a redemption that can never complete, and release what it reserved. False when it was not in a state to end. */
+	/**
+	 * End a redemption that can never complete. False when it was not in a state to end. Its node is
+	 * released later by the abandoned-reservation sweep, once the record no longer shields it.
+	 */
 	fail(): Promise<boolean>;
 	currentPeers(): Promise<HostPeer[]>;
 	setPeers(peers: HostPeer[]): Promise<void>;
@@ -114,11 +127,7 @@ export type RedemptionPorts = {
 export type AdvanceOptions = {
 	/** True only inside the request that created the record: no earlier attempt can have landed. */
 	rowIsNew: boolean;
-	/** Whether this caller may post. The resume job may not: the transport opt-ins are not stored. */
-	mayPost: boolean;
 };
-
-export type AdvanceResult = { done: true; hydraHeadId: string } | { done: false; reason: 'unconfirmed' };
 
 function samePeers(current: HostPeer[], wanted: HostPeer): boolean {
 	return (
@@ -207,9 +216,8 @@ export async function advanceRedemption(
 	state: RedemptionState,
 	ports: RedemptionPorts,
 	options: AdvanceOptions,
-): Promise<AdvanceResult> {
+): Promise<{ hydraHeadId: string }> {
 	if (!state.acknowledged) {
-		if (!options.mayPost) return { done: false, reason: 'unconfirmed' };
 		await acknowledge(state, ports, options);
 	}
 
@@ -238,12 +246,12 @@ export async function advanceRedemption(
 	}
 
 	try {
-		return { done: true, hydraHeadId: (await ports.createHead()).hydraHeadId };
+		return { hydraHeadId: (await ports.createHead()).hydraHeadId };
 	} catch (error) {
 		// A concurrent finisher wins the link. Its head is this redemption's head.
 		const current = await ports.reload().catch(() => null);
 		if (current?.status === 'Completed' && current.hydraHeadId !== null) {
-			return { done: true, hydraHeadId: current.hydraHeadId };
+			return { hydraHeadId: current.hydraHeadId };
 		}
 		throw createHttpError.isHttpError(error) ? error : unfinished(error);
 	}

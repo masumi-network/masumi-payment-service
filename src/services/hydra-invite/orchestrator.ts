@@ -285,13 +285,7 @@ async function finishRedemption(
 	options: { rowIsNew: boolean; transport: ExchangeTransportOptions },
 ): Promise<RedeemedInvite> {
 	const ports = buildRedemptionPorts({ record, transport: options.transport, createHead: createHeadFromExchange });
-	const result = await advanceRedemption(toRedemptionState(record), ports, {
-		rowIsNew: options.rowIsNew,
-		mayPost: true,
-	});
-	if (!result.done) {
-		throw createHttpError(500, 'hydra: a redemption that may post stopped before the issuer acknowledged it');
-	}
+	const result = await advanceRedemption(toRedemptionState(record), ports, { rowIsNew: options.rowIsNew });
 	logger.info(`hydra: redeemed invite ${nonceLogRef(record.nonce)} from ${record.issuerWalletAddress}`);
 	return { inviteId: record.id, hydraHeadId: result.hydraHeadId, issuerWalletAddress: record.issuerWalletAddress };
 }

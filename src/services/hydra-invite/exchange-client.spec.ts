@@ -194,7 +194,13 @@ describe('attemptRedemption outcomes', () => {
 		const detail = JSON.stringify({ error: 'invite already redeemed', code: 'redeemed-by-other' });
 		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue({ status: 409, detail });
 
-		await expect(attempt(send)).resolves.toEqual({ kind: 'answered', status: 409, code: 'redeemed-by-other', detail });
+		await expect(attempt(send)).resolves.toEqual({
+			kind: 'answered',
+			status: 409,
+			code: 'redeemed-by-other',
+			fromHost: true,
+			detail,
+		});
 	});
 
 	it.each([
@@ -206,6 +212,16 @@ describe('attemptRedemption outcomes', () => {
 		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue({ status: 409, detail });
 
 		await expect(attempt(send)).resolves.toMatchObject({ kind: 'answered', status: 409, code: null });
+	});
+
+	it.each([
+		['the Host', '{"error":"exchange is busy"}', true],
+		['a gateway page', '<html>503 Service Unavailable</html>', false],
+		['a JSON body with no error', '{"message":"unavailable"}', false],
+	])('tells a refusal from %s apart', async (_label, detail, fromHost) => {
+		const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue({ status: 502, detail });
+
+		await expect(attempt(send)).resolves.toMatchObject({ kind: 'answered', status: 502, fromHost });
 	});
 
 	it.each([400, 401, 404, 410, 413, 429, 500, 502, 504])('reports a %s as answered', async (status) => {
