@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { SmartContractState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@masumi/payment-core';
 import { OnChainState, PaymentAction } from '@/generated/prisma/client';
 import { convertSyncedPaymentAction, isRequestedResultOnChain } from './result-on-chain';
 

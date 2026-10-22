@@ -1,5 +1,5 @@
 import { OnChainState, PaymentAction } from '@/generated/prisma/client';
-import { SmartContractState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@masumi/payment-core';
 import type { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { convertNewPaymentActionAndError } from '@/utils/logic/state-transitions';
 
