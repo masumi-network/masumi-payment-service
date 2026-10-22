@@ -53,10 +53,19 @@ The shipped L2 ledger (`packages/hydra-host/params/base/preprod.json`) uses
   bytes more change output, INFERRED);
 - extra fee inputs when the node wallet is fragmented.
 
-15,000 also stays above what this service builds in a head. The V2 escrow
-validator is 9,892 bytes and goes inline into every escrow spend, and the V2
-builders cap an unsigned tx at 14,000 bytes (`MAX_SAFE_TX_BYTES` in
-`packages/payment-source-v2/src/builders/batch-helpers.ts`).
+15,000 should also stay above what this service builds in a head (INFERRED,
+not measured). The V2 escrow validator is 9,892 bytes and goes inline into
+every escrow spend; the datum, inputs, outputs and witnesses around it were not
+measured. A spend that did come out above 15,000 bytes is now refused.
+
+Correction, 2026-10-21: this section first said the V2 builders cap an unsigned
+tx at 14,000 bytes (`MAX_SAFE_TX_BYTES`). That cap applies only to L1 batch
+builds. The L2 limit is now enforced on its own: `assertL2TxWithinMaxSize`
+refuses any L2 tx above 15,000 bytes before it is sent, and leaves no
+reservation for it held. A release nudge that comes out too large is not
+sent, so the reservation it would release stays held. A Host on params above
+15,000 refuses every node not yet acked and peered. The payment service
+refuses to Init a head on a node above 15,000.
 
 `packages/hydra-host/src/ledger-params.spec.ts` fails if the shipped value
 plus the measured 917-byte envelope reaches L1's limit.

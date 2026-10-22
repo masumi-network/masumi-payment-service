@@ -40,6 +40,13 @@ export const resetSnapshotRoundInput = z.object({
 		.min(1)
 		.max(200)
 		.describe('The round signature from GET /hydra/head/snapshot-round. The reset is refused if the round changed.'),
+	peerConfirmedSnapshotNumber: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'The confirmed snapshot number shown by the counterparty node (GET /snapshot on it, 0 if it shows InitialSnapshot), as its operator reports it. The reset is refused if it is ahead of this node (this node is then behind and resetting does not help) or more than one behind it (within the protocol no counterparty can be).',
+		),
 });
 
 export const resetSnapshotRoundOutput = z.object({
@@ -63,6 +70,7 @@ export const resetSnapshotRoundPost = adminAuthenticatedEndpointFactory.build({
 		await resetSnapshotRound({
 			headId: input.headId,
 			expectedSignature: input.expectedSignature,
+			peerConfirmedSnapshotNumber: input.peerConfirmedSnapshotNumber,
 			actorApiKeyId: ctx.id,
 		}),
 });

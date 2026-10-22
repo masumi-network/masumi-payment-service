@@ -1,6 +1,13 @@
 import { Network, WebhookEventType, WebhookFormat } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 
+/**
+ * A webhook may subscribe to every event there is. A fixed cap fell behind the
+ * enum: the create dialog selects all of a rail's events by default, and once
+ * the Cardano rail had more than ten, the default request was refused.
+ */
+const MAX_WEBHOOK_EVENTS = Object.values(WebhookEventType).length;
+
 export const registerWebhookSchemaInput = z
 	.object({
 		url: z
@@ -19,7 +26,11 @@ export const registerWebhookSchemaInput = z
 			.nativeEnum(WebhookFormat)
 			.default(WebhookFormat.EXTENDED)
 			.describe('Webhook delivery format. Defaults to EXTENDED'),
-		Events: z.array(z.nativeEnum(WebhookEventType)).min(1).max(10).describe('Array of event types to subscribe to'),
+		Events: z
+			.array(z.nativeEnum(WebhookEventType))
+			.min(1)
+			.max(MAX_WEBHOOK_EVENTS)
+			.describe('Array of event types to subscribe to'),
 		name: z.string().max(100).optional().describe('Human-readable name for the webhook'),
 		paymentSourceId: z.string().optional().nullable().describe('Optional: link webhook to specific payment source'),
 	})
@@ -50,7 +61,11 @@ export const patchWebhookSchemaInput = z.object({
 			'Authentication token for extended webhook requests. Omit to keep the stored token; required when changing a webhook to EXTENDED',
 		),
 	format: z.nativeEnum(WebhookFormat).describe('Webhook delivery format'),
-	Events: z.array(z.nativeEnum(WebhookEventType)).min(1).max(10).describe('Array of event types to subscribe to'),
+	Events: z
+		.array(z.nativeEnum(WebhookEventType))
+		.min(1)
+		.max(MAX_WEBHOOK_EVENTS)
+		.describe('Array of event types to subscribe to'),
 	name: z.string().max(100).optional().nullable().describe('Human-readable name for the webhook'),
 });
 

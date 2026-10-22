@@ -1,4 +1,4 @@
-import { Eraser, ExternalLink, Info, MoreHorizontal, RotateCcw } from 'lucide-react';
+import { CheckCheck, Eraser, ExternalLink, Info, MoreHorizontal, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -17,6 +17,8 @@ type TransactionRowActionsMenuProps = {
   onViewDetails: () => void;
   onClearError: () => void;
   onRetryFailedAction: () => void;
+  /** Set only in the Needs Action view, where every row is unacknowledged. */
+  onAcknowledge?: () => void;
 };
 
 export function TransactionRowActionsMenu({
@@ -26,6 +28,7 @@ export function TransactionRowActionsMenu({
   onViewDetails,
   onClearError,
   onRetryFailedAction,
+  onAcknowledge,
 }: TransactionRowActionsMenuProps) {
   const txHash = getLatestTxHash(transaction);
   const txNetwork = transaction.PaymentSource?.network;
@@ -76,6 +79,19 @@ export function TransactionRowActionsMenu({
             >
               <RotateCcw className="h-4 w-4" />
               Retry failed action
+            </DropdownMenuItem>
+          </>
+        )}
+        {onAcknowledge && canRecover && (
+          <>
+            {!hasError && <DropdownMenuSeparator />}
+            <DropdownMenuItem
+              className="cursor-pointer gap-2"
+              disabled={isRecovering}
+              onSelect={() => onAcknowledge()}
+            >
+              <CheckCheck className="h-4 w-4" />
+              Acknowledge
             </DropdownMenuItem>
           </>
         )}

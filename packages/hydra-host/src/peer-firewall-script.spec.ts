@@ -11,6 +11,7 @@ import { renderNftables, type ResolvedPeerAllowlist } from './api/peer-allowlist
 // blank lines.
 const SCRIPT = resolve('packages/hydra-host/scripts/hydra-peer-firewall');
 const RANGE = { start: 5001, count: 4 };
+const GENERATION = '0b6f3c1e-2d4a-4f5b-9c8d-7e6f5a4b3c2d.3';
 
 const NFT_STUB = `#!/bin/bash
 set -euo pipefail
@@ -25,8 +26,15 @@ list)
 	;;
 esac
 `;
+// A POST is the acknowledgement: its arguments are recorded, and
+// CURL_ACK_FAIL makes the Host refuse it the way `curl -f` reports a 4xx.
 const CURL_STUB = `#!/bin/bash
 cat > "$CURL_HEADERS"
+if [[ " $* " == *" --data-binary "* ]]; then
+	printf '%s\\n' "$@" >> "$CURL_ACKS"
+	[[ -z "\${CURL_ACK_FAIL:-}" ]] || exit 22
+	exit 0
+fi
 [[ -f "$CURL_BODY" ]] && cat "$CURL_BODY"
 `;
 const FLOCK_STUB = '#!/bin/bash\nexit 0\n';
@@ -46,11 +54,21 @@ function allowlist(): ResolvedPeerAllowlist {
 			},
 		],
 		unusedPorts: [5002, 5003, 5004],
+		outOfRange: [],
 	};
 }
 
 function writeResponse(body: object) {
-	writeFileSync(join(dir, 'response.json'), JSON.stringify(body));
+	writeFileSync(join(dir, 'response.json'), JSON.stringify({ generation: GENERATION, ...body }));
+}
+
+function acks(): string[] {
+	const path = join(dir, 'acks');
+	return existsSync(path)
+		? readFileSync(path, 'utf8')
+				.split('\n')
+				.filter((line) => line.startsWith('{'))
+		: [];
 }
 
 function run(command: string, extraEnv: Record<string, string> = {}) {
@@ -67,6 +85,7 @@ function run(command: string, extraEnv: Record<string, string> = {}) {
 			NFT_STATE: join(dir, 'loaded.nft'),
 			CURL_HEADERS: join(dir, 'headers'),
 			CURL_BODY: join(dir, 'response.json'),
+			CURL_ACKS: join(dir, 'acks'),
 			...extraEnv,
 		},
 	});
@@ -210,6 +229,53 @@ describe('hydra-peer-firewall refresh', () => {
 		expect(loaded()).toContain('tcp dport 5001 ip saddr { 203.0.113.7 } accept');
 		expect(readFileSync(join(dir, 'headers'), 'utf8')).toBe('Authorization: Bearer admin-token\n');
 		expect(readFileSync(join(dir, 'nftables.d', 'hydra-peer.nft'), 'utf8')).toBe(loaded());
+		expect(acks()).toEqual([`{"generation":"${GENERATION}"}`]);
+		expect(readFileSync(join(dir, 'acks'), 'utf8')).toContain('/v1/peer-allowlist/applied');
+	});
+
+	// An acknowledgement frees released peer ports, so it must never describe a
+	// ruleset that is not the one loaded.
+	it('does not acknowledge a ruleset that nft failed to apply', () => {
+		writeResponse({ peerRange: RANGE, rules: [], nftables: renderNftables(allowlist(), RANGE) });
+		const result = run('refresh', { NFT_APPLY_FAIL: '1' });
+		expect(result.status).toBe(1);
+		expect(acks()).toEqual([]);
+	});
+
+	it('fails when the Host does not record the acknowledgement', () => {
+		writeResponse({ peerRange: RANGE, rules: [], nftables: renderNftables(allowlist(), RANGE) });
+		const result = run('refresh', { CURL_ACK_FAIL: '1' });
+		expect(result.status).toBe(1);
+		expect(result.stdout).toBe('');
+		expect(result.stderr).toContain('the Host did not record it; released peer ports stay blocked');
+		expect(loaded()).toContain('tcp dport 5001 ip saddr { 203.0.113.7 } accept');
+	});
+
+	// The script may be upgraded before the Host it serves.
+	it('applies the ruleset of a Host that sends no generation, without acknowledging', () => {
+		writeFileSync(
+			join(dir, 'response.json'),
+			JSON.stringify({ peerRange: RANGE, rules: [], nftables: renderNftables(allowlist(), RANGE) }),
+		);
+		const result = run('refresh');
+		expect(result.status).toBe(0);
+		expect(result.stdout).toBe('verified\n');
+		expect(result.stderr).toContain('nothing to acknowledge');
+		expect(loaded()).toContain('tcp dport 5001 ip saddr { 203.0.113.7 } accept');
+		expect(acks()).toEqual([]);
+	});
+
+	it('refuses to put a malformed generation into the acknowledgement', () => {
+		writeResponse({
+			peerRange: RANGE,
+			rules: [],
+			nftables: renderNftables(allowlist(), RANGE),
+			generation: 'x", "generation": "y.1',
+		});
+		const result = run('refresh');
+		expect(result.status).toBe(1);
+		expect(result.stderr).toContain('generation is malformed');
+		expect(acks()).toEqual([]);
 	});
 
 	it('keeps the loaded ruleset when the fetch fails', () => {

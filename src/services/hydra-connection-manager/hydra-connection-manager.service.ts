@@ -20,10 +20,15 @@ import {
 	StatusChangeData,
 	type DecommitSettledData,
 	type DepositRecordedData,
+	type PostTxFailedData,
 	buildHydraHttpEndpoint,
+	HydraTransportError,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { recordHeadError } from '@/services/hydra-head-error/record';
+import { webhookEventsService } from '@/services/webhooks/events.service';
+import { dropUnburnedL2MintReports, recordUnburnedL2Mint } from '@/services/hydra-head-error/unburned-l2-mint';
+import type { L2MintIncident } from '@/lib/hydra/hydra/l2-mint-tally';
 import { HydraErrorType, HydraHeadStatus, Network } from '@/generated/prisma/client';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
@@ -217,10 +222,7 @@ export class HydraConnectionManager {
 			reconciledHistoryCursor,
 		} = await loadValidatedHeadConfiguration(head.id);
 		const relation = configuredHead.HydraRelation;
-		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
-		if (!isReachable) {
-			throw new Error(`Local Hydra node unreachable for head ${head.id}`);
-		}
+		await this.probeNode(head.id, nodeUrls.httpUrl, nodeAuthToken);
 		if (session.transportGeneration !== transportGeneration) {
 			throw new Error(`Hydra head ${head.id} transport was revoked while connecting`);
 		}
@@ -301,6 +303,7 @@ export class HydraConnectionManager {
 				await this.flushHeadStatus(head.id);
 				hydraHead.removeAllListeners();
 				hydraHead.mainNode.removeAllListeners();
+				dropUnburnedL2MintReports(head.id);
 				session.detachIfCurrent(hydraHead);
 			}
 			throw error;
@@ -321,6 +324,7 @@ export class HydraConnectionManager {
 	}
 
 	private static readonly HEAD_CLOCK_REFRESH_INTERVAL_MS = 25_000;
+	private static readonly PROBE_TIMEOUT_MS = 5_000;
 
 	/**
 	 * Periodically refresh a connected head's clock from a fresh Greetings
@@ -382,6 +386,7 @@ export class HydraConnectionManager {
 			await this.flushHeadStatus(hydraHeadId);
 			attachment.head.removeAllListeners();
 			attachment.head.mainNode.removeAllListeners();
+			dropUnburnedL2MintReports(hydraHeadId);
 			// The revocation fence is instance-based and only meaningful while the
 			// attachment still holds this instance; `detachIfCurrent` drops both so
 			// a newer attachment is unaffected.
@@ -450,23 +455,48 @@ export class HydraConnectionManager {
 		}
 	}
 
-	private async probeNode(httpUrl: string, authToken?: string, timeoutMs = 5000): Promise<boolean> {
+	/**
+	 * Throws a HydraTransportError that says why the probe failed. No command
+	 * was sent to the node, so a caller may retry and need not treat it as a
+	 * failed command. The status or the fetch error is the only thing that tells
+	 * a node still starting from a wrong URL or token. A blank token, or one with
+	 * CR, LF or NUL, throws a HydraProtocolError instead: a retry cannot fix it.
+	 */
+	private async probeNode(
+		hydraHeadId: string,
+		httpUrl: string,
+		authToken?: string,
+		timeoutMs = HydraConnectionManager.PROBE_TIMEOUT_MS,
+	): Promise<void> {
+		// A Host rejects an unauthenticated probe, so the probe sends the token.
+		// The token check runs before the try, so its config fault is not read as
+		// an unreachable node.
+		const headers = { 'Content-Type': 'application/json', ...hydraAuthHeaders(authToken) };
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), timeoutMs);
+		let response: Response;
 		try {
-			const response = await fetch(buildHydraHttpEndpoint(httpUrl, 'protocol-parameters'), {
+			response = await fetch(buildHydraHttpEndpoint(httpUrl, 'protocol-parameters'), {
 				signal: controller.signal,
-				// A Host rejects an unauthenticated probe, which would otherwise look
-				// exactly like an unreachable node and disable a healthy head.
-				headers: { 'Content-Type': 'application/json', ...hydraAuthHeaders(authToken) },
-				redirect: 'error',
+				headers,
+				// Not followed, so the token never goes to another host, and a redirect reads as the status it answered.
+				redirect: 'manual',
 			});
-			await response.body?.cancel().catch(() => undefined);
-			return response.ok;
-		} catch {
-			return false;
+		} catch (error) {
+			throw new HydraTransportError(
+				controller.signal.aborted
+					? `Local Hydra node for head ${hydraHeadId} did not answer within ${timeoutMs}ms`
+					: `Local Hydra node unreachable for head ${hydraHeadId}`,
+				{ cause: error },
+			);
 		} finally {
 			clearTimeout(timeout);
+		}
+		await response.body?.cancel().catch(() => undefined);
+		if (!response.ok) {
+			throw new HydraTransportError(
+				`Local Hydra node for head ${hydraHeadId} answered the probe with HTTP ${response.status}`,
+			);
 		}
 	}
 
@@ -511,6 +541,50 @@ export class HydraConnectionManager {
 					error: recordError instanceof Error ? recordError.message : recordError,
 				});
 			});
+		});
+
+		// An L1 transaction the node could not post. A contest it posts on its own
+		// has no command waiting on it, so the webhook and this record are the only
+		// places the failure shows up. Every failure is announced; a failed command
+		// already has its CommandFailed row from the caller, so it gets no second
+		// one. A failure that names no transaction is always recorded here, even
+		// when it also fails a waiting command: not every caller records an
+		// ambiguous outcome. Whether the head ended up undefended is the contest watch's call,
+		// made from chain state. Both calls log their own failures, so nothing here
+		// needs catching.
+		head.mainNode.on(HydraNodeEvent.PostTxFailed, (data: PostTxFailedData) => {
+			const headStatus = head.mainNode.status;
+			void webhookEventsService.triggerHydraHeadPostTxFailed({
+				hydraHeadId,
+				headStatus,
+				postChainTxTag: data.postChainTxTag,
+				reason: data.reason,
+				reportedToCaller: data.answersCommand,
+				failedAt: new Date().toISOString(),
+			});
+			if (data.answersCommand) return;
+			void recordHeadError(
+				hydraHeadId,
+				headStatus,
+				HydraErrorType.PostTxOnChainFailed,
+				`${data.postChainTxTag} failed: ${data.reason}`,
+				`PostTx:${data.postChainTxTag}`,
+			);
+		});
+
+		// The head's net L2 mint balance left zero. The head keeps one row for it,
+		// updated to the latest incident. The report can come from replay before
+		// any live status, as a rejected history can, so an unknown status is
+		// recorded as Connecting.
+		head.mainNode.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => {
+			recordUnburnedL2Mint(hydraHeadId, head.status ?? HydraHeadStatus.Connecting, incident).catch(
+				(recordError: unknown) => {
+					logger.error('[HydraConnectionManager] could not record an unburned L2 mint', {
+						hydraHeadId,
+						error: recordError instanceof Error ? recordError.message : recordError,
+					});
+				},
+			);
 		});
 
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {

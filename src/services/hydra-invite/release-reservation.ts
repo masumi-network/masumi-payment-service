@@ -127,6 +127,28 @@ export async function releaseReservedParticipants(input: {
 		return { released: 0, retained };
 	}
 
+	// Asked again now, not only when the sweep began. Settling a node's funds
+	// takes chain reads, and a redemption retried in that time records a live
+	// invite for this very node; removing it then would strand a redemption the
+	// issuer has already accepted. This narrows the window, it does not close it:
+	// a record created after this query but before the node is gone is still
+	// removed. That needs a retry of a reservation more than an hour old to land
+	// during a sweep of that very node, and closing it would mean holding a lock
+	// across the Host call. The participant it would strand is the only cost; the
+	// issuer's side is untouched.
+	const claimedMeanwhile = await prisma.hydraHeadInvite.findMany({
+		where: {
+			hydraHostId: input.hydraHostId,
+			hostNodeId: input.hostNodeId,
+			status: { in: [HydraInviteStatus.Issued, HydraInviteStatus.Redeemed, HydraInviteStatus.Started] },
+		},
+		select: { id: true },
+		take: 1,
+	});
+	if (claimedMeanwhile.length > 0) {
+		return { released: 0, retained: retained + settled.length };
+	}
+
 	// The Host's node goes before the rows that name it.
 	//
 	// `hostNodeId` is recorded nowhere else, so deleting the participant while

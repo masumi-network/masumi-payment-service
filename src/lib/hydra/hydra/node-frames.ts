@@ -14,7 +14,12 @@
 import { resolveTxHash } from '@meshsdk/core';
 
 import { logger } from '@masumi/payment-core/logger';
-import { HydraCommandRejectedError, HydraProtocolError, HydraTransactionRejectedError } from './errors';
+import {
+	HydraCommandRejectedError,
+	HydraPostTxRejectedError,
+	HydraProtocolError,
+	HydraTransactionRejectedError,
+} from './errors';
 import { parseHydraJson, stringifyHydraJson } from './json';
 import {
 	MAX_HYDRA_WS_FRAME_BYTES,
@@ -33,7 +38,14 @@ import {
 } from './schemas';
 import { describeDecommitInvalidReason, describePostTxError, postTxErrorTag } from './post-tx-error';
 import { HydraHeadStatus } from '@/generated/prisma/client';
-import type { DecommitDistributedValue, DecommitSettledData, DepositRecordedData, StatusChangeData } from './types';
+import {
+	UNKNOWN_POST_CHAIN_TX_TAG,
+	type DecommitDistributedValue,
+	type DecommitSettledData,
+	type DepositRecordedData,
+	type PostTxFailure,
+	type StatusChangeData,
+} from './types';
 
 const MAX_HYDRA_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024;
 
@@ -350,7 +362,12 @@ export function resolveCommandTransactionHash(transaction: { txId?: string; cbor
  */
 const FANOUT_POST_CHAIN_TX_TAGS: ReadonlySet<string> = new Set(['FanoutTx', 'PartialFanoutTx', 'FinalPartialFanoutTx']);
 
-function postChainTxTagsFor(command: string): ReadonlySet<string> {
+/** Whether a command posts an L1 transaction. NewTx only touches the head. */
+export function postsOnL1(command: string): boolean {
+	return command !== 'NewTx';
+}
+
+export function postChainTxTagsFor(command: string): ReadonlySet<string> {
 	if (command === 'Fanout' || command === 'PartialFanout') return FANOUT_POST_CHAIN_TX_TAGS;
 	return new Set([`${command}Tx`]);
 }
@@ -411,20 +428,28 @@ export function handleWsResponse(
 			return { kind: 'message', message };
 		}
 		if (envelope.tag === 'PostTxOnChainFailed') {
-			const message = postTxOnChainFailedMessageSchema.parse(raw);
-			assertExpectedFrameHeadId(message, expectedHeadId);
-			if (postChainTxTagsFor(command).has(message.postChainTx?.tag ?? '')) {
-				// Name the node's own reason. Without it every L1 refusal reads the
-				// same, and the operator has no way to tell "the node's key holds
-				// nothing" (NoSeedInput) from a genuine protocol rejection — the two
-				// have completely different fixes.
-				const reason = describePostTxError(message.postTxError);
+			// Read exactly as the live path reads it, so the failure a waiting
+			// command answers is the one the connection manager leaves to it.
+			const failure = readPostTxFailed(raw, expectedHeadId);
+			// The node says an L1 post failed but not which one, and it may be this
+			// command's. Failing now as ambiguous beats waiting out the whole
+			// timeout for an answer that already came. NewTx posts nothing on L1.
+			if (failure?.postChainTxTag === UNKNOWN_POST_CHAIN_TX_TAG && postsOnL1(command)) {
+				throw new HydraProtocolError(`hydra-node reported an unnamed failed L1 transaction: ${failure.reason}`);
+			}
+			if (failure && postChainTxTagsFor(command).has(failure.postChainTxTag)) {
+				// The reason names the node's own words. Without them every L1 refusal
+				// reads the same, and the operator has no way to tell "the node's key
+				// holds nothing" (NoSeedInput) from a genuine protocol rejection, and the
+				// two have completely different fixes.
 				return {
 					kind: 'reject',
-					error: new HydraCommandRejectedError(`hydra-node refused to post the ${command} transaction: ${reason}`),
+					error: new HydraPostTxRejectedError(
+						`hydra-node refused to post the ${command} transaction: ${failure.reason}`,
+					),
 				};
 			}
-			return { kind: 'message', message };
+			return { kind: 'ignore' };
 		}
 
 		return { kind: 'message', message: envelope };
@@ -662,4 +687,52 @@ export function readDecommitSettled(tag: string, message: unknown): DecommitSett
 		};
 	}
 	return undefined;
+}
+
+/**
+ * What a `PostTxOnChainFailed` frame says went wrong, or undefined when it is
+ * about another head.
+ *
+ * hydra-node puts no head id on the frame itself; the transactions that name a
+ * head (`CloseTx`, `ContestTx`, `FanoutTx`, ...) carry it inside `postChainTx`.
+ * That one is checked against the pinned head. A frame this service cannot read
+ * is still a failure, so it is reported as an unknown transaction instead of
+ * being dropped: dropping it is how a failed contest went unnoticed.
+ *
+ * `onOtherHead` hears of a frame for another head. Both the live path and a
+ * waiting command read every frame, so only one of them should report it.
+ */
+export function readPostTxFailed(
+	message: unknown,
+	expectedHeadId: string | undefined,
+	onOtherHead?: (headId: string) => void,
+): PostTxFailure | undefined {
+	const frame = postTxOnChainFailedMessageSchema.safeParse(message);
+	if (!frame.success) {
+		return {
+			postChainTxTag: UNKNOWN_POST_CHAIN_TX_TAG,
+			reason: 'the node reported a failed transaction this service could not read',
+		};
+	}
+	const namedHeadId = canonicalHydraHeadIdSchema.safeParse(frame.data.postChainTx?.headId).data;
+	if (expectedHeadId && namedHeadId && namedHeadId !== expectedHeadId) {
+		onOtherHead?.(namedHeadId);
+		return undefined;
+	}
+	return {
+		postChainTxTag: frame.data.postChainTx?.tag ?? UNKNOWN_POST_CHAIN_TX_TAG,
+		reason: describePostTxError(frame.data.postTxError),
+	};
+}
+
+/**
+ * The snapshot a close or contest put on chain, when this frame reports one.
+ *
+ * hydra-node contests whenever its own confirmed snapshot is newer than the
+ * one on chain, so this is what the contest watch holds the verified snapshot
+ * against. Both frames are in the node's persisted history, so a restarted
+ * service still learns them.
+ */
+export function readClosedSnapshotNumber(envelope: { tag: string; snapshotNumber?: number }): number | undefined {
+	return envelope.tag === 'HeadIsClosed' || envelope.tag === 'HeadIsContested' ? envelope.snapshotNumber : undefined;
 }
