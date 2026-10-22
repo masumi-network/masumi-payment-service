@@ -38885,7 +38885,7 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set"
+                        "description": "Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set, or a fanout command for the head is already in progress"
                     },
                     "502": {
                         "description": "No connection to the head, or the node returned an unreadable head state"
@@ -47351,7 +47351,7 @@
         },
         "/payment/acknowledge-manual-action": {
             "post": {
-                "description": "Hides payment requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Identifiers that are not in Needs Action, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.",
+                "description": "Hides payment requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Each request names the nextActionLastChangedAt the caller read: a request that changed since then is skipped, so an error the caller has not seen is not hidden. Requests that are not in Needs Action, changed since they were read, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.",
                 "summary": "Acknowledge payment requests in Needs Action (PAY access required)",
                 "tags": [
                     "error-state-recovery"
@@ -47376,26 +47376,56 @@
                                         ],
                                         "description": "The network the requests were made on"
                                     },
-                                    "blockchainIdentifiers": {
+                                    "requests": {
                                         "type": "array",
                                         "items": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 8000
+                                            "type": "object",
+                                            "properties": {
+                                                "blockchainIdentifier": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 8000,
+                                                    "description": "The blockchain identifier of the request"
+                                                },
+                                                "nextActionLastChangedAt": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "string",
+                                                            "format": "date"
+                                                        },
+                                                        {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        },
+                                                        {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        }
+                                                    ],
+                                                    "description": "nextActionLastChangedAt as the caller last read it. A request whose action or error changed since then is skipped, so an error the caller has not seen stays in Needs Action."
+                                                }
+                                            },
+                                            "required": [
+                                                "blockchainIdentifier",
+                                                "nextActionLastChangedAt"
+                                            ]
                                         },
                                         "minItems": 1,
                                         "maxItems": 100,
-                                        "description": "Blockchain identifiers of the requests to acknowledge"
+                                        "description": "The requests to acknowledge"
                                     }
                                 },
                                 "required": [
                                     "network",
-                                    "blockchainIdentifiers"
+                                    "requests"
                                 ],
                                 "example": {
                                     "network": "Preprod",
-                                    "blockchainIdentifiers": [
-                                        "blockchain_identifier"
+                                    "requests": [
+                                        {
+                                            "blockchainIdentifier": "blockchain_identifier",
+                                            "nextActionLastChangedAt": "2024-04-20T18:04:20.000Z"
+                                        }
                                     ]
                                 }
                             }
@@ -47454,7 +47484,7 @@
         },
         "/purchase/acknowledge-manual-action": {
             "post": {
-                "description": "Hides purchase requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Identifiers that are not in Needs Action, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.",
+                "description": "Hides purchase requests from Needs Action (filterNeedsManualAction). Only the acknowledgement is stored: NextAction, error fields, transactions and on-chain state do not change. The acknowledgement is cleared when the requested action or the error changes, so a new error shows up again. Each request names the nextActionLastChangedAt the caller read: a request that changed since then is skipped, so an error the caller has not seen is not hidden. Requests that are not in Needs Action, changed since they were read, not found, or outside the caller's scope are skipped. Only the creating key or an admin key can acknowledge a request.",
                 "summary": "Acknowledge purchase requests in Needs Action (PAY access required)",
                 "tags": [
                     "error-state-recovery"
@@ -47479,26 +47509,56 @@
                                         ],
                                         "description": "The network the requests were made on"
                                     },
-                                    "blockchainIdentifiers": {
+                                    "requests": {
                                         "type": "array",
                                         "items": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 8000
+                                            "type": "object",
+                                            "properties": {
+                                                "blockchainIdentifier": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 8000,
+                                                    "description": "The blockchain identifier of the request"
+                                                },
+                                                "nextActionLastChangedAt": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "string",
+                                                            "format": "date"
+                                                        },
+                                                        {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        },
+                                                        {
+                                                            "type": "string",
+                                                            "format": "date-time"
+                                                        }
+                                                    ],
+                                                    "description": "nextActionLastChangedAt as the caller last read it. A request whose action or error changed since then is skipped, so an error the caller has not seen stays in Needs Action."
+                                                }
+                                            },
+                                            "required": [
+                                                "blockchainIdentifier",
+                                                "nextActionLastChangedAt"
+                                            ]
                                         },
                                         "minItems": 1,
                                         "maxItems": 100,
-                                        "description": "Blockchain identifiers of the requests to acknowledge"
+                                        "description": "The requests to acknowledge"
                                     }
                                 },
                                 "required": [
                                     "network",
-                                    "blockchainIdentifiers"
+                                    "requests"
                                 ],
                                 "example": {
                                     "network": "Preprod",
-                                    "blockchainIdentifiers": [
-                                        "blockchain_identifier"
+                                    "requests": [
+                                        {
+                                            "blockchainIdentifier": "blockchain_identifier",
+                                            "nextActionLastChangedAt": "2024-04-20T18:04:20.000Z"
+                                        }
                                     ]
                                 }
                             }

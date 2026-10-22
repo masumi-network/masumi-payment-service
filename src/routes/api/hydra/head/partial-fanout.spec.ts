@@ -201,4 +201,24 @@ describe('partialFanoutHeadPost', () => {
 			'PartialFanout',
 		);
 	});
+
+	// A refusal of either step would fail both waiters, the one that landed included.
+	it('refuses a second step while the first is in flight, without recording an error', async () => {
+		mockFindHead.mockReset();
+		mockFindHead.mockResolvedValue(closedHead);
+		let landFirst!: () => void;
+		mockPartialFanout.mockImplementationOnce(() => new Promise<void>((resolve) => (landFirst = resolve)));
+
+		const first = handler({ input: { headId: 'head-1', outputRefs: [A] } });
+		await new Promise((resolve) => setImmediate(resolve));
+		await expect(handler({ input: { headId: 'head-1', outputRefs: [B] } })).rejects.toMatchObject({
+			status: 409,
+			message: 'Hydra head fanout is already in progress',
+		});
+		landFirst();
+
+		await expect(first).resolves.toMatchObject({ headId: 'head-1', selectedCount: 1 });
+		expect(mockPartialFanout).toHaveBeenCalledTimes(1);
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
 });

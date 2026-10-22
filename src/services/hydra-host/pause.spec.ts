@@ -516,7 +516,8 @@ describe('resumeHydraHost', () => {
 		expect(mockStartHostNode).toHaveBeenCalledTimes(2);
 		expect(mockHostUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'host-1', pausedAt: PAUSED_AT },
-			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null },
+			// The redemption give-up counts from resumedAt, so a pause is not days of retries.
+			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: expect.any(Date) },
 		});
 	});
 
