@@ -108,6 +108,47 @@ function isAcceptedButUnconfirmed(error: unknown): boolean {
 	return typeof error === 'object' && error !== null && ACCEPTED_BUT_UNCONFIRMED in error;
 }
 
+/**
+ * Marks the refusal for a wallet that is busy.
+ *
+ * A payment pending on the wallet is routine, not a failure of the head, and a
+ * head error that routinely means nothing teaches an operator to ignore the
+ * ones that matter.
+ */
+const WALLET_BUSY = Symbol.for('masumi.hydra.decommit.walletBusy');
+
+/**
+ * Marks the failure of an in-head split that was sent and not seen confirmed.
+ *
+ * The head may still apply it, so its inputs stay spoken for.
+ */
+const SPLIT_MAY_STILL_CONFIRM = Symbol.for('masumi.hydra.decommit.splitMayStillConfirm');
+
+function isMarked(error: unknown, mark: symbol): boolean {
+	return typeof error === 'object' && error !== null && mark in error;
+}
+
+/**
+ * Give the hot wallet back.
+ *
+ * Scoped to the claim this withdrawal made, so a late release cannot free a lock
+ * another holder took. Never allowed to replace the outcome of the withdrawal: a
+ * failed release costs one stale lock, which the stale-lock reaper frees.
+ */
+async function releaseWallet(walletId: string, lockedAt: Date): Promise<void> {
+	try {
+		await prisma.hotWallet.updateMany({
+			where: { id: walletId, lockedAt, pendingTransactionId: null },
+			data: { lockedAt: null },
+		});
+	} catch (error) {
+		logger.error('[HydraDecommit] could not release the hot wallet after a withdrawal', {
+			walletId,
+			error: errorMessage(error),
+		});
+	}
+}
+
 export type ExecuteHydraDecommitParams = {
 	headId: string;
 	/**
@@ -175,6 +216,9 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 	await assertNodeReadyForDeposit(localParticipant.id);
 
 	let preparingId: string | null = null;
+	let walletLockedAt: Date | null = null;
+	/** Set when the head may still apply something this withdrawal sent, so the wallet stays held. */
+	let keepWalletLock = false;
 
 	try {
 		// Independently verify the head on chain before signing anything that moves
@@ -232,6 +276,38 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 							await tx.$queryRaw`SELECT 1 FROM "HydraHead" WHERE "id" = ${head.id} FOR UPDATE`;
 							const liveEscrows = await countLiveInHeadEscrows(tx, head.id);
 							if (liveEscrows > 0) return { claimed: false as const, liveEscrows };
+						}
+
+						// The wallet every L2 action claims before it reserves funds. A payment
+						// reservation takes it in the transaction that records the reservation
+						// and its inputs, so a wallet that is claimed already has funds spoken
+						// for, and a withdrawal that read them anyway would spend what that
+						// payment was promised. A payment that starts while this runs misses its
+						// own claim and retries. Thrown, not returned: a return commits this
+						// transaction, the claim with it, and a throw rolls back everything it
+						// wrote.
+						const claimedAt = new Date();
+						const walletClaim = await tx.hotWallet.updateMany({
+							where: {
+								id: localParticipant.walletId,
+								deletedAt: null,
+								lockedAt: null,
+								pendingTransactionId: null,
+								lockPurpose: null,
+							},
+							data: { lockedAt: claimedAt },
+						});
+						if (walletClaim.count !== 1) {
+							throw Object.assign(
+								createHttpError(
+									409,
+									'This wallet is busy with another transaction, such as a payment that is pending in this head; retry in a few seconds',
+								),
+								{ [WALLET_BUSY]: true },
+							);
+						}
+
+						if (params.drain === true) {
 							await tx.hydraHead.update({ where: { id: head.id }, data: { collateralDrainedAt: new Date() } });
 						}
 
@@ -248,7 +324,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 							},
 							select: { id: true },
 						});
-						return { claimed: true as const, id: created.id };
+						return { claimed: true as const, id: created.id, walletLockedAt: claimedAt };
 					},
 					{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
 				),
@@ -287,6 +363,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			);
 		}
 		preparingId = claim.id;
+		walletLockedAt = claim.walletLockedAt;
 
 		const network = localParticipant.Wallet.PaymentSource.network;
 		const address = localParticipant.Wallet.walletAddress;
@@ -618,10 +695,21 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					logger.error(`[HydraDecommit] could not fail the preparing withdrawal ${preparingId}`, { error: markError });
 				});
 		}
-		if (!isAcceptedButUnconfirmed(error)) {
+		// Released once the outcome is known: the request never reached the head, or
+		// the head answered. Held while the head may still apply something this
+		// withdrawal sent, the request or its split, because the inputs of that
+		// body stay spoken for; the stale-lock reaper frees it, as it does for a
+		// consolidation that may still confirm.
+		keepWalletLock =
+			isAcceptedButUnconfirmed(error) ||
+			isMarked(error, SPLIT_MAY_STILL_CONFIRM) ||
+			error instanceof HydraTransportAmbiguousError;
+		if (!isAcceptedButUnconfirmed(error) && !isMarked(error, WALLET_BUSY)) {
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Decommit');
 		}
 		throw error;
+	} finally {
+		if (walletLockedAt !== null && !keepWalletLock) await releaseWallet(localParticipant.walletId, walletLockedAt);
 	}
 }
 
@@ -706,9 +794,12 @@ async function splitExactAmountInHead(params: {
 		await sleep(SPLIT_POLL_MS);
 	}
 	if (!hydraHead.mainNode.isTxConfirmed(splitTxId)) {
-		throw createHttpError(
-			504,
-			`The in-head split ${splitTxId} was not confirmed within ${SPLIT_CONFIRM_TIMEOUT_MS / 1000}s; nothing has left the head`,
+		throw Object.assign(
+			createHttpError(
+				504,
+				`The in-head split ${splitTxId} was not confirmed within ${SPLIT_CONFIRM_TIMEOUT_MS / 1000}s; nothing has left the head`,
+			),
+			{ [SPLIT_MAY_STILL_CONFIRM]: true },
 		);
 	}
 
