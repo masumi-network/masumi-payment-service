@@ -20,15 +20,16 @@ export type ReplayedCloseNode = Pick<HydraNode, 'status' | 'closedSnapshotNumber
  * snapshot. The history also holds the closes and contests that happened while
  * the service was down or disconnected, which no live frame brings back. A row
  * without the contested number keeps the older close's, and the fanout handoff,
- * which expects the row's number, never completes. If the node compacted those
- * frames away, the replay has no closed snapshot and nothing is written.
+ * which expects the row's number, never completes. If the node compacted the
+ * close and contest frames away, the replay has no closed snapshot and nothing
+ * is written.
  *
  * The caller has checked that the history pass is complete and bound to this
  * head. The write changes no status, so it cannot look like a regression, and
- * it only raises the number on a row that is still closed and not handed off.
- * While the head is Closed, its deadline moves too, only to a later time,
- * because each contest extends it. Past Closed the deadline has passed, and
- * nothing decides on it any more.
+ * it only raises the number on a row that is still enabled, closed and not
+ * handed off. While the head is Closed, its deadline moves too, only to a
+ * later time, because each contest extends it. Past Closed the deadline has
+ * passed, and nothing compares against its time any more.
  *
  * Returns true when it raised the row. The caller then ends this pass, so the
  * next pass reads the new number.
