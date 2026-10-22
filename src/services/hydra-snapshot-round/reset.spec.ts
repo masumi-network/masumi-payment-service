@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import type { HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
+import { HydraProtocolError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -81,6 +82,17 @@ const confirmedSnapshot = (overrides: { headId?: string; number?: number } = {})
 	snapshot: { headId: HEAD_IDENTIFIER, number: 313, version: 52, accumulator: '12e9', utxo: {}, ...overrides },
 });
 
+/** `GET /head` while Open, with the confirmed snapshot holding `utxoToCommit`. */
+const headHolding = (utxoToCommit: unknown, version: number) => ({
+	tag: 'Open',
+	contents: {
+		coordinatedHeadState: {
+			version,
+			confirmedSnapshot: { ...confirmedSnapshot(), snapshot: { ...confirmedSnapshot().snapshot, utxoToCommit } },
+		},
+	},
+});
+
 let node: { get: AnyMock; post: AnyMock; verifiedSnapshotNumber: bigint | undefined; expectedHeadId: string };
 
 beforeEach(() => {
@@ -103,7 +115,14 @@ beforeEach(() => {
 		.mockResolvedValueOnce(idle as never);
 });
 
-const reset = () => resetSnapshotRound({ headId: 'head-1', expectedSignature: SIGNATURE, actorApiKeyId: 'admin-key' });
+// Our node confirmed 313; by default the counterparty reports the same.
+const reset = (peerConfirmedSnapshotNumber = 313) =>
+	resetSnapshotRound({
+		headId: 'head-1',
+		expectedSignature: SIGNATURE,
+		peerConfirmedSnapshotNumber,
+		actorApiKeyId: 'admin-key',
+	});
 
 async function expectRefused(status: number) {
 	await expect(reset()).rejects.toMatchObject({ status });
@@ -129,7 +148,7 @@ describe('resetSnapshotRound', () => {
 		});
 		expect(mockWarn).toHaveBeenCalledWith(
 			'[HydraSnapshotRound] admin is resetting a stuck snapshot round',
-			expect.objectContaining({ actorApiKeyId: 'admin-key', droppedTxIds: [TX_ID] }),
+			expect.objectContaining({ actorApiKeyId: 'admin-key', droppedTxIds: [TX_ID], peerConfirmedSnapshotNumber: 313 }),
 		);
 	});
 
@@ -149,7 +168,12 @@ describe('resetSnapshotRound', () => {
 			.mockResolvedValue(round({ tag: 'SomeFutureTag', number: null, signature: 'SomeFutureTag|-|0' }) as never);
 		mockFindUnique.mockResolvedValue(headRow({ snapshotRoundSignature: 'SomeFutureTag|-|0' }) as never);
 		await expect(
-			resetSnapshotRound({ headId: 'head-1', expectedSignature: 'SomeFutureTag|-|0', actorApiKeyId: 'admin-key' }),
+			resetSnapshotRound({
+				headId: 'head-1',
+				expectedSignature: 'SomeFutureTag|-|0',
+				peerConfirmedSnapshotNumber: 313,
+				actorApiKeyId: 'admin-key',
+			}),
 		).rejects.toMatchObject({ status: 409, message: expect.stringContaining('names no snapshot') });
 		expect(node.post).not.toHaveBeenCalled();
 	});
@@ -217,7 +241,12 @@ describe('resetSnapshotRound', () => {
 
 	it('refuses a stuck round other than the one the admin approved', async () => {
 		await expect(
-			resetSnapshotRound({ headId: 'head-1', expectedSignature: 'SeenSnapshot|313|1', actorApiKeyId: 'admin-key' }),
+			resetSnapshotRound({
+				headId: 'head-1',
+				expectedSignature: 'SeenSnapshot|313|1',
+				peerConfirmedSnapshotNumber: 313,
+				actorApiKeyId: 'admin-key',
+			}),
 		).rejects.toMatchObject({ status: 409 });
 		expect(node.post).not.toHaveBeenCalled();
 	});
@@ -256,9 +285,72 @@ describe('resetSnapshotRound', () => {
 		mockFetchRound.mockReset().mockResolvedValue(round({ number: 313, signature: 'SeenSnapshot|313|1' }) as never);
 		mockFindUnique.mockResolvedValue(headRow({ snapshotRoundSignature: 'SeenSnapshot|313|1' }) as never);
 		await expect(
-			resetSnapshotRound({ headId: 'head-1', expectedSignature: 'SeenSnapshot|313|1', actorApiKeyId: 'admin-key' }),
+			resetSnapshotRound({
+				headId: 'head-1',
+				expectedSignature: 'SeenSnapshot|313|1',
+				peerConfirmedSnapshotNumber: 313,
+				actorApiKeyId: 'admin-key',
+			}),
 		).rejects.toMatchObject({ status: 409 });
 		expect(node.post).not.toHaveBeenCalled();
+	});
+
+	// The side-load discards the round, and a peer that already confirmed it is
+	// then a snapshot ahead of our node. The peer's API is not reachable from
+	// here, so its operator reports the number.
+	describe("the counterparty's confirmed snapshot", () => {
+		it('refuses to reset, and names both numbers', async () => {
+			await expect(reset(314)).rejects.toMatchObject({
+				status: 409,
+				message: expect.stringMatching(/314.*313/),
+			});
+			expect(node.post).not.toHaveBeenCalled();
+			expect(mockUpdateMany).not.toHaveBeenCalled();
+		});
+
+		it('resets when the counterparty is behind', async () => {
+			await expect(reset(312)).resolves.toMatchObject({ confirmedSnapshotNumber: 313 });
+			expect(node.post).toHaveBeenCalled();
+		});
+
+		// Within the protocol two parties' confirmed numbers are never more than one
+		// apart, and resetting this node cannot help a counterparty further behind.
+		it('refuses a number more than one behind, which within the protocol no counterparty can be at', async () => {
+			await expect(reset(311)).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/311.*313/) });
+			expect(node.post).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('reading the head state first', () => {
+		const answeringHead = (head: () => Promise<unknown>) =>
+			node.get.mockImplementation(async (path: string) => (path === '/head' ? head() : confirmedSnapshot()));
+
+		// A side-load clears the node's record of the deposit in flight, and the
+		// next deposit can then stall the head again (hydra-node 2.4.1
+		// `ReqSnCommitNotSettled`).
+		it('refuses while the confirmed snapshot holds a deposit the chain has not settled', async () => {
+			const deposit = { [`${'dd'.repeat(32)}#0`]: { address: 'addr_test1vz', value: { lovelace: 5_000_000 } } };
+			answeringHead(async () => headHolding(deposit, 52));
+			await expect(reset()).rejects.toMatchObject({ status: 409, message: expect.stringContaining('not settled') });
+			expect(node.post).not.toHaveBeenCalled();
+		});
+
+		it('refuses when the node cannot answer for its head state', async () => {
+			answeringHead(async () => {
+				throw new HydraTransportError('Hydra HTTP GET failed before a response was received');
+			});
+			await expectRefused(502);
+		});
+
+		// A large head's answer can outgrow the byte limit for good, and refusing
+		// on it would block the only live recovery for that head.
+		it('resets when the head state is too large to read', async () => {
+			answeringHead(async () => {
+				throw new HydraProtocolError('Hydra HTTP response exceeded its byte limit');
+			});
+			await expect(reset()).resolves.toMatchObject({ confirmedSnapshotNumber: 313 });
+			expect(node.post).toHaveBeenCalledWith('/snapshot', confirmedSnapshot());
+		});
 	});
 
 	it('reports an unanswered reset as unknown and keeps the recorded round', async () => {

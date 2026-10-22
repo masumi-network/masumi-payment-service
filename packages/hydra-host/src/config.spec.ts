@@ -27,6 +27,8 @@ describe('loadHostConfig', () => {
 		expect(config.hydraScriptsTxIds).toEqual([]);
 		expect(config.allowPrivatePeers).toBe(false);
 		expect(loadHostConfig(env({ HYDRA_HOST_ALLOW_PRIVATE_PEERS: 'true' })).allowPrivatePeers).toBe(true);
+		expect(config.allowAutoSideLoad).toBe(false);
+		expect(loadHostConfig(env({ HYDRA_HOST_AUTO_SIDELOAD: 'true' })).allowAutoSideLoad).toBe(true);
 	});
 
 	it('parses HYDRA_HOST_SCRIPTS_TX_IDS as a trimmed, lowercased list', () => {

@@ -94,6 +94,18 @@ export type HostConfig = {
 	 * port back. Turn it on wherever the peer range is public.
 	 */
 	requirePeerFirewallRefresh: boolean;
+	/**
+	 * Let the supervisor repair a stranded snapshot round on its own, by
+	 * side-loading the node's last confirmed snapshot.
+	 *
+	 * Off by default. The side-load discards the round in flight, and if the
+	 * counterparty already confirmed that round, this node ends up a snapshot
+	 * behind it and must adopt the counterparty's snapshot or close the head. The
+	 * counterparty's node binds loopback, so the Host cannot look. With this off the node is left
+	 * running (it can still contest a close) and logged for an operator, who follows
+	 * "Stranded snapshot rounds" in docs/hydra-operations.md.
+	 */
+	allowAutoSideLoad: boolean;
 	/** The project release this image was built from. See release.ts. */
 	release: ReleaseInfo;
 };
@@ -309,6 +321,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
 		allowPrivatePeers: optional(env, 'HYDRA_HOST_ALLOW_PRIVATE_PEERS', 'false') === 'true',
 		requirePeerFirewallRefresh: optional(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', 'false') === 'true',
+		allowAutoSideLoad: optional(env, 'HYDRA_HOST_AUTO_SIDELOAD', 'false') === 'true',
 		release: readReleaseInfo(env),
 	};
 }

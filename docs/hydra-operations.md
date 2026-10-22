@@ -136,6 +136,62 @@ it again on every reconnect, so a counterparty that controls its DNS can rebind
 it later. Block egress from the Host to private, link-local and metadata
 addresses as well.
 
+### Stranded snapshot rounds
+
+A node that is killed mid-round (an out-of-memory kill, a host failure) can come
+back with a snapshot round that never completes, so the head confirms nothing.
+The recovery is to side-load the node's own last confirmed snapshot. That
+discards the round in flight, so it is only safe if the counterparty has not
+already confirmed that round.
+
+If the counterparty has confirmed it, this node is one snapshot behind. Hydra
+refuses a side-load below a node's confirmed number, so the counterparty cannot
+go back. This node has to adopt the counterparty's confirmed snapshot instead.
+Hydra accepts that side-load because every party signed the snapshot, as long as
+its version, pending commit, deposit and decommit match this node's confirmed
+snapshot. Neither the Host nor the payment service does this step. If Hydra
+refuses it, close the head: the counterparty's node contests the close with its
+later snapshot.
+
+Within the protocol, two confirmed numbers are never more than one apart: a node
+signs snapshot n only after it confirmed n - 1, and n confirms only with every
+party's signature. A counterparty one behind is still waiting for this node's
+signature on the snapshot this node confirmed: after this node is reset, its
+operator side-loads this node's confirmed snapshot (resetting it to its own does
+not help). If Hydra refuses that, close the head: this node contests the close
+with its later snapshot. A counterparty further behind has lost or restored its
+node state. It has to adopt this node's confirmed snapshot too, and if Hydra
+refuses that, close the head. Once it reports this node's confirmed number, reset
+this node: it still holds that round and refuses a new request for the same
+number.
+
+To adopt a snapshot, the operator of the node that is ahead sends the full JSON
+from `GET /snapshot` on their node (the snapshot and its signatures, not only the
+number). The other operator posts that JSON to `POST /snapshot` on their own
+node.
+
+Neither the Host nor the payment service can see the counterparty's node (its API
+binds loopback), so neither repairs on its own. The counterparty's operator runs
+`GET /snapshot` on their node and sends you `snapshot.number` (0 if it shows
+`InitialSnapshot`):
+
+- **Host:** `HYDRA_HOST_AUTO_SIDELOAD` is off by default. A stranded node is left
+  running, so it can still contest a close, and the Host logs
+  `needs an operator`. Set it to `true` only if you accept that risk for every
+  node on the Host.
+- **Payment service:** `POST /hydra/head/snapshot-round/reset` requires
+  `peerConfirmedSnapshotNumber`, the number the counterparty's operator sent. Ask
+  for it again just before the reset: the counterparty can still confirm the
+  round if this node's signature reaches it late. The reset is refused if it is
+  ahead of this node's confirmed snapshot or more than one behind it. The admin
+  UI asks for the same number, and again after every attempt.
+
+With the side-load off, the Host also puts the reason, with the time it was
+seen, in the node's `failureReason` (`GET /v1/nodes`). The node stays `Running`,
+and the next start clears the reason. A round the Host holds because of an
+unsettled deposit (side-load on) is only logged. The payment service's round watch alerts on the same stuck
+round on its own.
+
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.
 
