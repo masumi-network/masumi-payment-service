@@ -27,7 +27,8 @@ export type RouteKind =
 	| 'peerAllowlistApplied'
 	| 'registerInvite'
 	| 'listInvites'
-	| 'forgetInvite';
+	| 'forgetInvite'
+	| 'checkPeer';
 
 export type RouteMatch = {
 	kind: RouteKind;
@@ -65,6 +66,12 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 	// Admin: it frees released peer ports for reuse.
 	if (segments.length === 3 && segments[1] === 'peer-allowlist' && segments[2] === 'applied' && method === 'POST') {
 		return { kind: 'peerAllowlistApplied', tier: 'admin' };
+	}
+
+	// Read-only: asks whether a peer address would be accepted, without writing
+	// anything. Admin, because it resolves names the caller chooses.
+	if (segments.length === 3 && segments[1] === 'peers' && segments[2] === 'check' && method === 'POST') {
+		return { kind: 'checkPeer', tier: 'admin' };
 	}
 
 	// Exchange administration. The Exchange Plane itself is a separate listener

@@ -69,6 +69,13 @@ export type InviteRecord = {
 	redeemerSignature: ExchangeSignature | null;
 	/** Set when the Host could not start the node after redemption. */
 	startError: string | null;
+	/**
+	 * Set when the owning service forgot the redemption but asked the Host to keep
+	 * answering an identical replay. Such a record keeps only the redeemer's public
+	 * material, is never listed, and is pruned seven days after this moment.
+	 * Absent on every record written before this existed.
+	 */
+	forgottenAt?: number;
 };
 
 export function isExchangeMaterial(value: unknown): value is ExchangeMaterial {

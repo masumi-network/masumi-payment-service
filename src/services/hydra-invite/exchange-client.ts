@@ -236,15 +236,71 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
 	});
 }
 
-async function post(
+/**
+ * What a send attempt tells the caller about whether the nonce may be spent.
+ *
+ * - `accepted`: the Host took it (2xx), or recognised it as the same redemption.
+ * - `answered`: the Host replied with a refusal, which it does before it spends
+ *   the nonce, except where `code` says the nonce is spent by someone else.
+ * - `not-sent`: nothing left this machine, or no connection was ever made.
+ * - `unknown`: the request may have reached the Host and the answer was lost.
+ */
+export type ExchangeAttempt =
+	| { kind: 'accepted' }
+	| { kind: 'answered'; status: number; code: string | null; detail: string }
+	| { kind: 'not-sent'; error: createHttpError.HttpError }
+	| { kind: 'unknown'; reason: string; host: string };
+
+/**
+ * Errors raised before any request bytes could have reached the Host: no
+ * connection, or a TLS handshake that failed verification. A reset, a timeout
+ * or a broken pipe are deliberately absent, because those can follow a
+ * request the Host already processed.
+ */
+const NEVER_SENT_ERROR_CODES = new Set([
+	'ECONNREFUSED',
+	'ENOTFOUND',
+	'EHOSTUNREACH',
+	'ENETUNREACH',
+	'EAI_AGAIN',
+	'CERT_HAS_EXPIRED',
+	'CERT_NOT_YET_VALID',
+	'DEPTH_ZERO_SELF_SIGNED_CERT',
+	'SELF_SIGNED_CERT_IN_CHAIN',
+	'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+	'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+	'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
+/** The `code` the Host adds to a refusal, or null for an older Host, a gateway or a body that is not JSON. */
+function readRefusalCode(detail: string): string | null {
+	try {
+		const parsed: unknown = JSON.parse(detail);
+		if (typeof parsed === 'object' && parsed !== null && 'code' in parsed && typeof parsed.code === 'string') {
+			return parsed.code;
+		}
+	} catch {
+		// A gateway's HTML or plain text.
+	}
+	return null;
+}
+
+async function attempt(
 	rawUrl: string,
 	pathname: string,
 	body: unknown,
 	what: string,
 	transport: ExchangeTransportOptions,
 	deps: ExchangeClientDeps = {},
-): Promise<void> {
-	const { url, target } = await resolveExchangeTarget(rawUrl, transport, deps.resolve);
+): Promise<ExchangeAttempt> {
+	let url: URL;
+	let target: ResolvedExchangeTarget;
+	try {
+		({ url, target } = await resolveExchangeTarget(rawUrl, transport, deps.resolve));
+	} catch (error) {
+		if (createHttpError.isHttpError(error)) return { kind: 'not-sent', error };
+		throw error;
+	}
 	url.pathname = `${url.pathname.replace(/\/+$/, '')}${pathname}`;
 	if (url.protocol === 'http:') {
 		logger.warn(`hydra: sending ${what} over explicitly allowed HTTP to ${url.host}`);
@@ -265,32 +321,53 @@ async function post(
 			await sleep(delayMs);
 			result = await send(url, target, payload);
 		}
-		if (result.status < 200 || result.status >= 300) {
-			// 401 is the Host refusing our signature before it spent the nonce, so
-			// the invite is still open and the operator can retry. So is 503, which
-			// a paused Host also answers.
-			const detail = [401, 409, 410, 503].includes(result.status) ? result.detail.slice(0, 200) : '';
-			throw createHttpError(
-				502,
-				`the counterparty refused the ${what} (${result.status})${detail ? `: ${detail}` : ''}`,
-			);
-		}
+		if (result.status >= 200 && result.status < 300) return { kind: 'accepted' };
+		return {
+			kind: 'answered',
+			status: result.status,
+			code: readRefusalCode(result.detail),
+			detail: result.detail,
+		};
 	} catch (error) {
-		if (createHttpError.isHttpError(error)) {
-			throw error;
-		}
 		const reason = (error as Error).message;
 		logger.warn(`hydra: ${what} to ${url.host} failed: ${reason}`);
-		throw createHttpError(502, `could not reach the counterparty exchange at ${url.host}: ${reason}`);
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code !== undefined && NEVER_SENT_ERROR_CODES.has(code)) {
+			return {
+				kind: 'not-sent',
+				error: createHttpError(502, `could not reach the counterparty exchange at ${url.host}: ${reason}`),
+			};
+		}
+		return { kind: 'unknown', reason, host: url.host };
 	}
 }
 
-/** Send our material to the issuer, which is what lets their reserved node boot. */
-export async function postRedemption(
+/** The error that describes an attempt which did not work, in the words the operator has always seen. */
+export function attemptFailure(
+	outcome: Exclude<ExchangeAttempt, { kind: 'accepted' }>,
+	what = 'redemption',
+): createHttpError.HttpError {
+	if (outcome.kind === 'not-sent') return outcome.error;
+	if (outcome.kind === 'unknown') {
+		return createHttpError(502, `could not reach the counterparty exchange at ${outcome.host}: ${outcome.reason}`);
+	}
+	// 401 is the Host refusing our signature before it spent the nonce, so
+	// the invite is still open and the operator can retry. So is 503, which
+	// a paused Host also answers.
+	const detail = [401, 409, 410, 503].includes(outcome.status) ? outcome.detail.slice(0, 200) : '';
+	return createHttpError(502, `the counterparty refused the ${what} (${outcome.status})${detail ? `: ${detail}` : ''}`);
+}
+
+/**
+ * Send our material to the issuer, which is what lets their reserved node boot,
+ * and say what happened rather than throwing: the caller decides what an
+ * answered refusal, a lost answer and an unsent request each mean for its record.
+ */
+export async function attemptRedemption(
 	exchangeUrl: string,
 	body: RedemptionBody,
 	transport: ExchangeTransportOptions,
 	deps: ExchangeClientDeps = {},
-): Promise<void> {
-	await post(exchangeUrl, '/redeem', body, 'redemption', transport, deps);
+): Promise<ExchangeAttempt> {
+	return await attempt(exchangeUrl, '/redeem', body, 'redemption', transport, deps);
 }

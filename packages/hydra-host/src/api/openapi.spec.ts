@@ -24,6 +24,7 @@ const EVERY_ROUTE_KIND: Record<RouteKind, true> = {
 	registerInvite: true,
 	listInvites: true,
 	forgetInvite: true,
+	checkPeer: true,
 };
 
 function concretePath(template: string): string {

@@ -74,6 +74,17 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 		kind: 'forgetInvite',
 		tier: 'admin',
 		summary: 'Withdraw an invite',
+		description:
+			'With ?keepReplay=true, a redeemed invite is reduced to the redeemer’s public material for seven days, so an identical, validly signed replay is still answered with 200. Without it the record is removed.',
+	},
+	{
+		path: '/v1/peers/check',
+		method: 'post',
+		kind: 'checkPeer',
+		tier: 'admin',
+		summary: 'Ask whether a peer address would be accepted',
+		description:
+			'Body: { "advertise": "host:port" }. Answers { "allowed": true } or { "allowed": false, "reason": "..." } using the same checks as setting a node’s peers, and writes nothing.',
 	},
 	{ path: '/v1/nodes', method: 'get', kind: 'listNodes', tier: 'admin', summary: 'List supervised hydra-nodes' },
 	{

@@ -307,6 +307,70 @@ export async function setHostNodePeers(
 	await request(baseUrl, `/v1/nodes/${nodeId}`, adminToken, transport, { method: 'PATCH', body: { peers } });
 }
 
+/** The peers a node is configured with, from the Host's own record of it. */
+export async function fetchHostNodePeers(
+	baseUrl: string,
+	adminToken: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): Promise<HostPeer[]> {
+	const body = await request(baseUrl, `/v1/nodes/${nodeId}`, adminToken, transport);
+	const peers = isPlainObject(body) ? getOwnValue(body, 'peers') : undefined;
+	if (!Array.isArray(peers)) {
+		throw new HydraProtocolError('hydra host returned a malformed node record');
+	}
+	return peers.map((peer) => {
+		const advertise = isPlainObject(peer) ? getOwnString(peer, 'advertise') : undefined;
+		const hydraVerificationKey = isPlainObject(peer) ? getOwnString(peer, 'hydraVerificationKey') : undefined;
+		const cardanoVerificationKey = isPlainObject(peer) ? getOwnString(peer, 'cardanoVerificationKey') : undefined;
+		if (advertise === undefined || hydraVerificationKey === undefined || cardanoVerificationKey === undefined) {
+			throw new HydraProtocolError('hydra host returned a malformed node record');
+		}
+		return { advertise, hydraVerificationKey, cardanoVerificationKey };
+	});
+}
+
+export type HostPeerCheck = {
+	/** False when the Host predates the check, so nothing was actually asked. */
+	supported: boolean;
+	allowed: boolean;
+	reason: string | null;
+};
+
+/**
+ * Ask a Host whether it would accept `advertise` as a node's peer, without
+ * changing anything. Setting a node's peers is what refuses a private or
+ * unresolvable address, and that happens after a redemption has spent the
+ * invite's nonce; this asks the same question before.
+ *
+ * A Host with no such route answers 404. That is "cannot check", not a refusal,
+ * so the caller proceeds as it always did.
+ */
+export async function checkHostPeerTarget(
+	baseUrl: string,
+	adminToken: string,
+	advertise: string,
+	transport: HostTransportOptions,
+): Promise<HostPeerCheck> {
+	let body: unknown;
+	try {
+		body = await request(baseUrl, '/v1/peers/check', adminToken, transport, {
+			method: 'POST',
+			body: { advertise },
+		});
+	} catch (error) {
+		if (error instanceof HydraHostRequestError && error.status === 404) {
+			return { supported: false, allowed: true, reason: null };
+		}
+		throw error;
+	}
+	if (!isPlainObject(body) || typeof getOwnValue(body, 'allowed') !== 'boolean') {
+		throw new HydraProtocolError('hydra host returned a malformed peer check');
+	}
+	const allowed = getOwnValue(body, 'allowed') === true;
+	return { supported: true, allowed, reason: allowed ? null : (getOwnString(body, 'reason') ?? null) };
+}
+
 export type HostNodeHealth = {
 	state: string;
 	/** The state an operator asked for. A stop request leaves `state` Running until the node drains. */
@@ -461,15 +525,31 @@ export async function fetchHostRedemptions(
 	};
 }
 
+/**
+ * Forget an invite on the Host.
+ *
+ * `keepReplay` is for a redemption this service adopted: the Host keeps the
+ * redeemer's public material for seven days so an identical replay is still
+ * answered, which is how a redeemer whose answer was lost learns it succeeded.
+ * Anything else being forgotten, a cancelled redemption above all, must not set
+ * it. An older Host ignores the flag and forgets everything.
+ */
 export async function forgetHostInvite(
 	baseUrl: string,
 	adminToken: string,
 	nonce: string,
 	transport: HostTransportOptions,
+	options: { keepReplay?: boolean } = {},
 ): Promise<void> {
 	// The error message ends up in logs while the nonce may still be redeemable.
-	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, transport, {
-		method: 'DELETE',
-		logPath: `/v1/invites/${nonceLogRef(nonce)}`,
-	});
+	await request(
+		baseUrl,
+		`/v1/invites/${nonce}${options.keepReplay === true ? '?keepReplay=true' : ''}`,
+		adminToken,
+		transport,
+		{
+			method: 'DELETE',
+			logPath: `/v1/invites/${nonceLogRef(nonce)}`,
+		},
+	);
 }
