@@ -48,6 +48,21 @@ describePostgres('manual-action acknowledgement trigger (PostgreSQL)', () => {
 	);
 
 	it.each(['PaymentActionData', 'PurchaseActionData'] as const)(
+		'%s: a requested-action change clears the acknowledgement',
+		async (table) => {
+			await insertAcknowledged(table, `${table}-action`);
+			await client.query(
+				`UPDATE "${table}" SET "requestedAction" = 'None', "errorType" = NULL, "errorNote" = NULL WHERE "id" = $1`,
+				[`${table}-action`],
+			);
+			await client.query(`UPDATE "${table}" SET "requestedAction" = 'WaitingForManualAction' WHERE "id" = $1`, [
+				`${table}-action`,
+			]);
+			expect(await readAck(table, `${table}-action`)).toBeNull();
+		},
+	);
+
+	it.each(['PaymentActionData', 'PurchaseActionData'] as const)(
 		'%s: an unrelated column update keeps the acknowledgement',
 		async (table) => {
 			await insertAcknowledged(table, `${table}-keep`);
