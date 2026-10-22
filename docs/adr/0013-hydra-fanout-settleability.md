@@ -180,6 +180,13 @@ Document all four limits. Build against none of them.
    the requests bound to it stay unsettled: their funds are on L1 behind the
    head script, and nothing here can prove where they go next.
 
+   _Corrected 2026-10-22:_ the stored `contestationDeadline` no longer stays
+   at the close's value. When the live socket sees a `HeadIsContested`, status
+   persistence moves the deadline to the later one the contest names, so the
+   contestation guard follows a contest this service saw. A contest it missed,
+   while the live socket was down or the service was restarting, still leaves
+   the close's deadline. That gap stays accepted, for the reason above.
+
    Before retiring, an operator can move every output that fits out of the
    head with `POST /hydra/head/partial-fanout` (`head/partial-fanout.ts`). It
    sends hydra-node 2.4.1 a `PartialFanout` with the chosen in-head

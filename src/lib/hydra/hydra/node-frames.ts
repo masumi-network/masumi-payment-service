@@ -420,6 +420,8 @@ export function extractStatusChangeData(rawMessage: string, expectedHeadId?: str
 				newStatus = HydraHeadStatus.Open;
 				break;
 			case 'HeadIsClosed':
+			case 'HeadIsContested':
+				// A contest keeps the head Closed. Its snapshot is now the latest accepted one.
 				newStatus = HydraHeadStatus.Closed;
 				break;
 			case 'ReadyToFanout':

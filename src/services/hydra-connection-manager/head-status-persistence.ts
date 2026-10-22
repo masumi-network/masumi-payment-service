@@ -209,20 +209,25 @@ export async function persistHeadStatus(
 				updateData.isClosing = true;
 			}
 			if (headId) updateData.headIdentifier = headId;
-			if (contestationDeadline && current.contestationDeadline == null) {
+			if (contestationDeadline) {
 				// Field-level parse guard (like the head-id regex above): the schema only
 				// bounds the string's length, so `new Date(garbage)` yields Invalid Date,
 				// the Prisma write throws, and the catch below would fail-closed the WHOLE
-				// head (durably disabled + InitTx attestation wiped) over one cosmetic
-				// field from a buggy node build. Skip the field instead of nuking the head.
+				// head (durably disabled + InitTx attestation wiped) over one field from a
+				// buggy node build. Skip the field instead of nuking the head. Retire reads
+				// it, so a skipped contest deadline leaves the earlier one in place.
 				const parsedDeadline = new Date(contestationDeadline);
-				if (Number.isFinite(parsedDeadline.getTime())) {
-					updateData.contestationDeadline = parsedDeadline;
-				} else {
+				if (!Number.isFinite(parsedDeadline.getTime())) {
 					logger.warn('[HydraConnectionManager] Ignoring unparseable contestationDeadline in status frame', {
 						hydraHeadId,
 						contestationDeadline,
 					});
+				} else if (
+					current.contestationDeadline == null ||
+					parsedDeadline.getTime() > current.contestationDeadline.getTime()
+				) {
+					// A contest extends the contestation period: the deadline only moves later.
+					updateData.contestationDeadline = parsedDeadline;
 				}
 			}
 			if (snapshotNumber != null && BigInt(snapshotNumber) > current.latestSnapshotNumber) {
