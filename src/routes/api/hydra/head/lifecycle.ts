@@ -133,6 +133,8 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
 			} catch (error) {
+				// A non-JSON answer or a rotation latch needs a fix, not a retry, so the head error records it.
+				if (error instanceof HydraProtocolError) throw error;
 				throw nodeFailedBeforeInit(head.id, "Could not read the L2 maxTxSize from this head's node", error);
 			}
 			if (typeof maxTxSize !== 'number') {

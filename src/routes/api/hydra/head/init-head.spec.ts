@@ -168,6 +168,21 @@ describe('initHeadPost, on a node with unsafe L2 params', () => {
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
 		expect(mockInit).not.toHaveBeenCalled();
 	});
+
+	it('records a protocol fault from the params read instead of asking for a retry', async () => {
+		const protocolFault = new HydraProtocolError('Hydra HTTP response was not valid JSON');
+		mockNodeGet.mockRejectedValue(protocolFault);
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toBe(protocolFault);
+		expect(mockRecordHeadError).toHaveBeenCalledWith(
+			'head-1',
+			expect.anything(),
+			expect.anything(),
+			protocolFault,
+			'Init',
+		);
+		expect(mockInit).not.toHaveBeenCalled();
+	});
 });
 
 // A transport failure in connect happens before anything is sent, so it is not a failed Init.
