@@ -22,14 +22,27 @@ export type PlaceableHost = {
 	isPaused: boolean;
 };
 
-export class HostPlacementError extends Error {
+/**
+ * A refusal the operator fixes on the Host side, so the caller must see why.
+ *
+ * Shaped for `http-errors`' `isHttpError`, which the endpoint result handler
+ * uses. As a plain Error it became a 500, and production replaces a 500's
+ * message with "Internal Server Error", so "drain this host" never arrived.
+ */
+class HostRefusalError extends Error {
+	readonly status = 409;
+	readonly statusCode = 409;
+	readonly expose = true;
+}
+
+export class HostPlacementError extends HostRefusalError {
 	constructor(message: string) {
 		super(message);
 		this.name = 'HostPlacementError';
 	}
 }
 
-export class HostIncompatibleError extends Error {
+export class HostIncompatibleError extends HostRefusalError {
 	constructor(message: string) {
 		super(message);
 		this.name = 'HostIncompatibleError';

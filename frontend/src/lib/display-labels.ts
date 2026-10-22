@@ -55,6 +55,7 @@ const HYDRA_ERROR_TYPE_LABELS: Record<string, string> = {
   PostTxOnChainFailed: 'On-chain submission failed',
   TxInvalid: 'Invalid transaction',
   InvalidInput: 'Invalid input',
+  ContestMissing: 'No contest on chain',
 };
 
 export function formatHydraErrorType(errorType: string): string {

@@ -41,6 +41,14 @@ export type PeerAllowlist = {
 	rules: PeerAllowRule[];
 	/** Ports in the configured peer range with no node on them. */
 	unusedPorts: number[];
+	/**
+	 * Nodes whose peer port lies outside the configured range, for example after
+	 * an operator narrowed it. They get no rule: the ruleset refuses only the
+	 * range, so it cannot express them, and `index.ts` reports them at boot.
+	 * Skipped rather than thrown, because a throw fails every refresh and leaves
+	 * the loaded ruleset stale for every other node.
+	 */
+	outOfRange: Array<{ nodeId: string; peerPort: number }>;
 };
 
 export type ResolvedPeerAllowRule = PeerAllowRule & {
@@ -71,7 +79,16 @@ export function hostOfAdvertise(advertise: string): string {
 }
 
 export function buildPeerAllowlist(records: NodeRecord[], peerRange: { start: number; count: number }): PeerAllowlist {
+	const isInRange = (record: NodeRecord): boolean =>
+		Number.isSafeInteger(record.peerPort) &&
+		record.peerPort >= peerRange.start &&
+		record.peerPort < peerRange.start + peerRange.count;
+	const outOfRange = records
+		.filter((record) => !isInRange(record))
+		.map((record) => ({ nodeId: record.nodeId, peerPort: record.peerPort }));
+
 	const rules = records
+		.filter(isInRange)
 		.map((record) => {
 			const allowedHosts = [...new Set(record.peers.map((peer) => hostOfAdvertise(peer.advertise)))].sort();
 			return {
@@ -91,7 +108,7 @@ export function buildPeerAllowlist(records: NodeRecord[], peerRange: { start: nu
 		}
 	}
 
-	return { rules, unusedPorts };
+	return { rules, unusedPorts, outOfRange };
 }
 
 /** Resolve configured peer names without ever passing those names to nftables. */
@@ -137,7 +154,7 @@ export async function resolvePeerAllowlist(
 			};
 		}),
 	);
-	return { rules, unusedPorts: allowlist.unusedPorts };
+	return { ...allowlist, rules };
 }
 
 /**

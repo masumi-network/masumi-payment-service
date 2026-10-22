@@ -130,6 +130,17 @@ describe('Connection', () => {
 		await rejection;
 	});
 
+	// Without the code, a node that refused the socket read as "WebSocket error: " and named nothing.
+	it('waitUntilOpen() names a refused connect that has only a code', async () => {
+		const conn = new Connection('ws://localhost:4001');
+		const ready = conn.waitUntilOpen(1000);
+		const rejection = expect(ready).rejects.toThrow('WebSocket error: ECONNREFUSED');
+
+		currentWsMock.emit('error', Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' }));
+
+		await rejection;
+	});
+
 	it('waitUntilOpen() has a bounded timeout', async () => {
 		jest.useFakeTimers();
 		const conn = new Connection('ws://localhost:4001');

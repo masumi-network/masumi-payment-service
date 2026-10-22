@@ -127,9 +127,19 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 				// its public-plane copy or its larger key/signature payload. A
 				// finished invite replayed here means an earlier acknowledgement
 				// did not reach the Host, which keeps the record until one does.
-				await forgetHostInvite(host.baseUrl, decrypt(host.encryptedAdminToken), record.nonce, {
-					allowInsecureHttp: host.allowInsecureHttp,
-				}).catch((error: unknown) =>
+				//
+				// `keepReplay`: the Host keeps the redeemer's public material for a
+				// week. A redeemer whose answer was lost, or that crashed before it
+				// recorded one, repeats its redemption and can only learn it landed
+				// if the Host still recognises it. Only an adopted redemption may
+				// ask for this; a discarded one must be forgotten completely.
+				await forgetHostInvite(
+					host.baseUrl,
+					decrypt(host.encryptedAdminToken),
+					record.nonce,
+					{ allowInsecureHttp: host.allowInsecureHttp },
+					{ keepReplay: true },
+				).catch((error: unknown) =>
 					logger.warn(
 						`hydra: could not prune adopted invite ${nonceLogRef(record.nonce)}: ${(error as Error).message}`,
 					),

@@ -59,7 +59,7 @@ const DEFAULT_REQUESTS_PER_MINUTE = 120;
  * bounds what the whole plane admits per minute, whatever the address count.
  *
  * Sized from what legitimate traffic can be. A redemption is one POST, retried
- * at most three times and only on 503 (`postRedemption` in the payment
+ * at most three times and only on 503 (`attemptRedemption` in the payment
  * service), and every invite reserves one node slot, 32 by default
  * (`HYDRA_HOST_PEER_PORT_COUNT`). So even every outstanding invite redeemed in
  * the same minute is 128 requests at most.
@@ -209,6 +209,12 @@ export type ExchangeDeps = {
 	 * stays open for a retry after the node is started again.
 	 */
 	isNodeStopped: (hostNodeId: string) => Promise<boolean>;
+	/**
+	 * Why this Host takes no new heads, or null (`../ledger-params.ts`). A
+	 * redemption always configures a node that has no head yet, so it is refused
+	 * as busy before the nonce is spent, and the invite stays open.
+	 */
+	ledgerParamsRefusal?: string | null;
 	/** Read X-Forwarded-For only when a trusted HTTP proxy is the sole caller. */
 	trustProxy?: boolean;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
@@ -270,7 +276,7 @@ function readRedeemBody(body: unknown): RedeemBody | null {
 }
 
 export function createExchangePlane(deps: ExchangeDeps): Server {
-	const { store, logger, onRedeemed, verifyRedemption, checkPeerTarget, isNodeStopped } = deps;
+	const { store, logger, onRedeemed, verifyRedemption, checkPeerTarget, isNodeStopped, ledgerParamsRefusal } = deps;
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
 	const totalRequestsPerMinute = deps.limits?.totalRequestsPerMinute ?? DEFAULT_TOTAL_REQUESTS_PER_MINUTE;
@@ -448,6 +454,13 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 				// An expired invite is left to the store, which answers 410. A stop
 				// that lands after this check still holds: peer setup never changes
 				// the desired state, so the node stays down until started.
+				// The reason stays in the log: it names a file path on this Host.
+				if (pending.expiresAt > Date.now() && ledgerParamsRefusal) {
+					logger.warn(`[exchange] redemption refused (503 ${ledgerParamsRefusal})`);
+					response.setHeader('Retry-After', String(STOPPED_NODE_RETRY_AFTER_SECONDS));
+					send(response, 503, { error: 'this host is not taking new heads; retry later' });
+					return;
+				}
 				if (pending.expiresAt > Date.now() && (await isNodeStopped(pending.hostNodeId))) {
 					logger.warn('[exchange] redemption refused (503 reserved node is stopped)');
 					response.setHeader('Retry-After', String(STOPPED_NODE_RETRY_AFTER_SECONDS));
@@ -472,7 +485,12 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 					send(response, 404, { error: 'no such invite' });
 					return;
 				}
-				send(response, result.status, { error: result.reason });
+				// The code rides next to the reason, never alone: past the budget above both
+				// are withheld together, so a masked answer still reads as an unknown nonce.
+				send(response, result.status, {
+					error: result.reason,
+					...(result.code === undefined ? {} : { code: result.code }),
+				});
 				return;
 			}
 

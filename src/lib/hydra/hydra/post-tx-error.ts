@@ -19,7 +19,8 @@ const EXPLANATIONS: Record<string, string> = {
 	NoSeedInput:
 		"NoSeedInput: the node's own Cardano key holds no UTxO to seed the head with. Fund the node and try again",
 	NotEnoughFuel: "NotEnoughFuel: the node's own Cardano key cannot cover the fee. Fund the node and try again",
-	NoFuelUTxOFound: "NoFuelUTxOFound: the node's own Cardano key holds no usable UTxO. Fund the node and try again",
+	// hydra-node spells this one with a capital XO (`api.yaml`, 2.4.1).
+	NoFuelUTXOFound: "NoFuelUTXOFound: the node's own Cardano key holds no usable UTxO. Fund the node and try again",
 	InternalWalletError: 'InternalWalletError: the node could not build the transaction from the UTxOs it can see',
 	ScriptFailedInWallet: 'ScriptFailedInWallet: the transaction failed phase-2 validation before it was submitted',
 	FailedToPostTx: 'FailedToPostTx: the chain backend refused the transaction',
@@ -53,12 +54,33 @@ export function postTxErrorTag(postTxError: unknown): string | null {
 	return typeof tag === 'string' && tag.length > 0 && tag.length <= 64 ? tag : null;
 }
 
+/** Longest node-supplied detail kept, as for a withdrawal's refusal reason. */
+const MAX_POST_TX_DETAIL_LENGTH = 2000;
+
+/**
+ * The node's own words about a refusal, when it sent any.
+ *
+ * `FailedToPostTx`, `ScriptFailedInWallet` and the `FailedToConstruct*Tx` tags
+ * carry a `failureReason`, `InternalWalletError` a `reason`. The tag alone says
+ * which kind of failure it was; this says which rule broke, and without it a
+ * failed contest reads the same whatever went wrong.
+ */
+function postTxErrorDetail(postTxError: unknown): string | null {
+	if (!isPlainObject(postTxError)) return null;
+	for (const field of ['failureReason', 'reason']) {
+		const detail = getOwnValue(postTxError, field);
+		if (typeof detail === 'string' && detail.length > 0) return detail.slice(0, MAX_POST_TX_DETAIL_LENGTH);
+	}
+	return null;
+}
+
 export function describePostTxError(postTxError: unknown): string {
 	const tag = postTxErrorTag(postTxError);
 	if (tag === null) {
 		return 'no reason given';
 	}
-	return explain(tag);
+	const detail = postTxErrorDetail(postTxError);
+	return detail === null ? explain(tag) : `${explain(tag)} (${detail})`;
 }
 
 /**
@@ -88,5 +110,5 @@ export function describeDecommitInvalidReason(reason: unknown): string {
 /** Whether this refusal is fixed by putting ADA on the node's key. */
 export function isNodeUnfundedError(postTxError: unknown): boolean {
 	const tag = postTxErrorTag(postTxError);
-	return tag === 'NoSeedInput' || tag === 'NotEnoughFuel' || tag === 'NoFuelUTxOFound';
+	return tag === 'NoSeedInput' || tag === 'NotEnoughFuel' || tag === 'NoFuelUTXOFound';
 }

@@ -21,12 +21,14 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
+import { assertL2TxWithinMaxSize } from './l2-tx-size';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
-import { isVerifiedPendingCommitOutput, readVerifiedCurrentOutput } from './node-current-output';
+import { isVerifiedPendingCommitOutput, readFinalSnapshot, readVerifiedCurrentOutput } from './node-current-output';
 import {
 	HydraCommandOptions,
 	assertTxConfirmationPolling,
 	awaitHydraTxConfirmation,
+	isAwaitingPostChainTx,
 	prepareNewTxCommand,
 	sendHydraCommandAndWait,
 } from './node-command-channel';
@@ -61,6 +63,7 @@ import {
 	validateHydraNodeLimits,
 } from './node-api';
 import { withHistorySetting } from './node-url';
+import type { L2MintCheck } from './l2-mint-tally';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { FinalizedFanoutState, type FinalizedFanoutBindingInput } from './node-finalized-fanout';
 import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
@@ -224,6 +227,7 @@ export class HydraNode extends EventEmitter {
 			},
 			onRotationError: (error) => this._replay.fail(error),
 			invalidateLiveConnection: (error) => this._connection.invalidate(error),
+			isAwaitingPostChainTx: (postChainTxTag) => isAwaitingPostChainTx(this._connection, postChainTxTag),
 		};
 	}
 
@@ -254,6 +258,7 @@ export class HydraNode extends EventEmitter {
 			emitTxConfirmed: (txId, transaction) => {
 				this.emit(HydraNodeEvent.TxConfirmed, txId, transaction);
 			},
+			reportL2MintOutstanding: (incident) => this.emit(HydraNodeEvent.L2MintOutstanding, incident),
 			onProtocolDrift: (description) => {
 				this.emit(HydraNodeEvent.ProtocolDriftDetected, description);
 			},
@@ -381,6 +386,11 @@ export class HydraNode extends EventEmitter {
 		return this._live.pendingIncrementUtxoRefs;
 	}
 
+	/** Unburned L2 mints as of the replay's verified snapshot; undefined until replay completes. See `l2-mint-tally`. */
+	get l2MintCheck(): L2MintCheck | undefined {
+		return this._replay.l2MintCheck;
+	}
+
 	get headClock(): HydraHeadClock | undefined {
 		return this._live.headClock;
 	}
@@ -410,6 +420,12 @@ export class HydraNode extends EventEmitter {
 	get verifiedSnapshotNumber(): bigint | undefined {
 		const snapshot = this._replay.verifiedSnapshot;
 		return this.hasVerifiedPinnedSessions && snapshot ? BigInt(snapshot.number) : undefined;
+	}
+
+	/** Newest snapshot a close or contest put on chain, on the same trust as `verifiedSnapshotNumber`. */
+	get closedSnapshotNumber(): bigint | undefined {
+		const closed = this._replay.closedSnapshotNumber;
+		return this.hasVerifiedPinnedSessions && closed !== undefined ? BigInt(closed) : undefined;
 	}
 
 	/** Both evidence sockets have authenticated the same explicitly pinned head. */
@@ -465,17 +481,8 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private finalSnapshot(expectedSnapshotNumber: number) {
-		const verifiedSnapshot = this._replay.verifiedSnapshot;
-		if (
-			!this.hasVerifiedPinnedSessions ||
-			this._live.status !== HydraHeadStatus.Final ||
-			!Number.isSafeInteger(expectedSnapshotNumber) ||
-			expectedSnapshotNumber < 0 ||
-			verifiedSnapshot?.number !== expectedSnapshotNumber
-		) {
-			return null;
-		}
-		return verifiedSnapshot;
+		// prettier-ignore
+		return readFinalSnapshot(this.hasVerifiedPinnedSessions, this._live.status, this._replay.verifiedSnapshot, expectedSnapshotNumber);
 	}
 
 	private fanoutResolutionContext(expectedSnapshotNumber: number) {
@@ -561,6 +568,7 @@ export class HydraNode extends EventEmitter {
 	 * later as DecommitApproved, or does not, as DecommitInvalid.
 	 */
 	async decommit(transaction: HydraTransaction) {
+		assertL2TxWithinMaxSize(transaction.cborHex);
 		return await this.post('/decommit', transaction);
 	}
 

@@ -38,6 +38,7 @@ function createReplay() {
 		rememberReplayedDeposit: () => undefined,
 		rememberReplayedDecommit: () => undefined,
 		emitTxConfirmed: () => undefined,
+		reportL2MintOutstanding: () => undefined,
 		onProtocolDrift: () => undefined,
 		onRotationReplayFailure: () => undefined,
 		onReplayFailed: () => undefined,
@@ -144,5 +145,36 @@ describe('HydraHistoryReplay slow-work reporting', () => {
 		replay.processMessage(NETWORK_CONNECTED_FRAME);
 		restore();
 		expect(warnSpy).not.toHaveBeenCalled();
+	});
+});
+
+// The contest watch compares this with the verified snapshot. A contest that is
+// missed here reads as a gap that never closes; one kept across passes reads a
+// stale chain state as current.
+describe('HydraHistoryReplay closed snapshot number', () => {
+	it('follows the newest close or contest, and starts over with each pass', () => {
+		const { replay, host } = createReplay();
+		host.expectedHeadId = PINNED_HEAD_ID;
+		const deadline = '2026-10-22T12:00:00Z';
+		replay.processMessage(
+			JSON.stringify({
+				tag: 'HeadIsClosed',
+				headId: PINNED_HEAD_ID,
+				snapshotNumber: 3,
+				contestationDeadline: deadline,
+			}),
+		);
+		expect(replay.closedSnapshotNumber).toBe(3);
+		replay.processMessage(
+			JSON.stringify({
+				tag: 'HeadIsContested',
+				headId: PINNED_HEAD_ID,
+				snapshotNumber: 5,
+				contestationDeadline: deadline,
+			}),
+		);
+		expect(replay.closedSnapshotNumber).toBe(5);
+		replay.resetPass();
+		expect(replay.closedSnapshotNumber).toBeUndefined();
 	});
 });

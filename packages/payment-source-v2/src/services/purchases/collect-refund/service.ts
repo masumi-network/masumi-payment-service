@@ -1005,7 +1005,7 @@ async function processL2CollectRefund(
 	});
 	const { wallet, address } = walletSession;
 
-	const headWalletUtxos = await hydraProvider.fetchAddressUTxOs(address);
+	const headWalletUtxos = hydraProvider.spendableUTxOs(await hydraProvider.fetchAddressUTxOs(address));
 	if (headWalletUtxos.length === 0) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no UTxOs in head ${headId}; retry next tick`);
 	}

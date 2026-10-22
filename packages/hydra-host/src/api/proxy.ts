@@ -76,6 +76,13 @@ export function proxyHttp(
 	query: string,
 	onError: (message: string) => void,
 ): void {
+	// The caller can hang up while the handler still reads the node's record.
+	// The response's 'close' has fired by then, so the listener below would
+	// never run. The node got a connection that stayed open with no request on
+	// it, since piping a destroyed request never ends the node's request. A
+	// pipelined request's response waits in a queue without a socket, and some
+	// Node versions never destroy it, so its destroyed request is the signal.
+	if (response.destroyed || request.destroyed) return;
 	const upstream = httpRequest(
 		{
 			host: LOOPBACK,
@@ -89,20 +96,43 @@ export function proxyHttp(
 			// writeHead's merge, so strip it to keep the noindex stamp authoritative.
 			const { 'x-robots-tag': _upstreamRobots, ...headers } = upstreamResponse.headers;
 			response.writeHead(upstreamResponse.statusCode ?? 502, headers);
+			// A node that closes the connection mid-body fails only this response,
+			// and pipe() does not pass that on: the caller's response stayed open,
+			// unlogged, until the caller's own timeout. Cut it instead. A reset
+			// fails the request first, and its handler has already logged and cut
+			// the response. A caller that hung up lands here too, and that is no
+			// node failure. Either way there is nothing left to report.
+			upstreamResponse.on('error', (error: Error) => {
+				if (response.destroyed) return;
+				onError(`proxy to node api port ${apiPort} failed mid-response: ${error.message}`);
+				response.destroy();
+			});
 			// Streamed, never collected.
 			upstreamResponse.pipe(response);
 		},
 	);
 
 	upstream.on('error', (error: Error) => {
+		// A caller that hung up is not a node failure.
+		if (response.destroyed) return;
 		onError(`proxy to node api port ${apiPort} failed: ${error.message}`);
-		if (!response.headersSent) {
-			response.writeHead(502, { 'Content-Type': 'application/json' });
+		// Once writeHead has run, the node's status is committed, so a body
+		// appended here would read as the node's own complete answer.
+		if (response.headersSent) {
+			response.destroy();
+			return;
 		}
+		response.writeHead(502, { 'Content-Type': 'application/json' });
 		response.end(JSON.stringify({ error: 'node is not reachable' }));
 	});
 
 	request.on('aborted', () => upstream.destroy());
+	// 'aborted' only covers a request still being read. A caller that hung up
+	// after that left the node's connection open: until the node answered, or
+	// for good mid-body, where pipe() pauses on the dead response.
+	response.on('close', () => {
+		if (!response.writableFinished) upstream.destroy();
+	});
 	request.pipe(upstream);
 }
 

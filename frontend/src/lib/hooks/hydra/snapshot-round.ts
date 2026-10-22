@@ -78,7 +78,7 @@ export function useHydraSnapshotRound(headId: string | null, isOpen: boolean) {
 
 export async function resetHydraSnapshotRound(
   apiClient: Client,
-  payload: { headId: string; expectedSignature: string },
+  payload: { headId: string; expectedSignature: string; peerConfirmedSnapshotNumber: number },
 ) {
   const response = await handleApiCall(
     () =>
