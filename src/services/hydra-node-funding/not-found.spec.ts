@@ -25,6 +25,17 @@ describe('isNotFound', () => {
 		expect(isNotFound(new Error('Request failed with status 404'))).toBe(true);
 	});
 
+	it.each([429, 500])('keeps structured status %s authoritative when the message mentions 404', (status) => {
+		const error = Object.assign(new Error('Upstream request failed while handling a 404 response'), {
+			status_code: status,
+		});
+		expect(isNotFound(error)).toBe(false);
+	});
+
+	it.each(['404', null, undefined])('does not infer an empty address from an invalid supplied status %p', (status) => {
+		expect(isNotFound({ status_code: status, message: 'Request failed with status 404' })).toBe(false);
+	});
+
 	it.each([
 		['a rate limit', Object.assign(new Error('too many requests'), { status_code: 429 })],
 		['a server fault', Object.assign(new Error('bad gateway'), { status_code: 502 })],
