@@ -441,20 +441,17 @@ class WebhookEventsService {
 		}
 	}
 
-	async triggerHydraHeadContestMissing(payload: HydraHeadContestMissingWebhookData): Promise<void> {
-		try {
-			await webhookQueueService.queueWebhook(
-				WebhookEventType.HYDRA_HEAD_CONTEST_MISSING,
-				payload,
-				payload.hydraHeadId,
-				undefined,
-			);
-		} catch (error) {
-			logger.error('Failed to trigger HYDRA_HEAD_CONTEST_MISSING webhook', {
-				hydraHeadId: payload.hydraHeadId,
-				error: error instanceof Error ? error.message : 'Unknown error',
-			});
-		}
+	async queueHydraHeadContestMissingInTransaction(
+		tx: Prisma.TransactionClient,
+		payload: HydraHeadContestMissingWebhookData,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.HYDRA_HEAD_CONTEST_MISSING,
+			payload,
+			payload.hydraHeadId,
+			undefined,
+		);
 	}
 }
 
