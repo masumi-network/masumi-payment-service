@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
+import { handleWsResponse } from './node-frames';
 import { partialFanoutCommand } from './node-settlement-commands';
 
 const OURS = `${'aa'.repeat(32)}#0`;
@@ -42,5 +43,47 @@ describe('partialFanoutCommand', () => {
 
 	it('settles on the final step', () => {
 		expect(isComplete({ tag: 'HeadIsFinalized' })).toBe(true);
+	});
+});
+
+/**
+ * hydra-node 2.4.1 posts an operator's selection as `utxoToDistribute`, and
+ * its own auto-drain step posts the whole remaining set under the same tag.
+ */
+describe('partialFanoutCommand failed posts', () => {
+	const ours = { address: 'addr_test1ours', value: { lovelace: 2_000_000n } };
+	const theirs = { address: 'addr_test1theirs', value: { lovelace: 3_000_000 } };
+	const command = partialFanoutCommand({ [OURS]: ours as never }, 1_000);
+	const outcome = (postChainTx: object) =>
+		handleWsResponse(
+			JSON.stringify({ tag: 'PostTxOnChainFailed', postChainTx, postTxError: { tag: 'ScriptFailedInWallet' } }),
+			command.command,
+			undefined,
+			undefined,
+			command.ownsPostTxFailure,
+		).kind;
+
+	// Regression: the node's own drain step failing while an operator's
+	// selection waited told the operator their post was refused.
+	it('ignores a failed auto-drain step that distributes more than the selection', () => {
+		expect(
+			outcome({
+				tag: 'PartialFanoutTx',
+				utxoToDistribute: { [OURS]: { address: 'addr_test1ours', value: { lovelace: 2_000_000 } }, [THEIRS]: theirs },
+			}),
+		).toBe('ignore');
+	});
+
+	it('fails on a failed step that distributes exactly the selection', () => {
+		expect(
+			outcome({
+				tag: 'PartialFanoutTx',
+				utxoToDistribute: { [OURS]: { address: 'addr_test1ours', value: { lovelace: 2_000_000 } } },
+			}),
+		).toBe('reject');
+	});
+
+	it('fails on a failed FanoutTx, which a whole-head selection becomes', () => {
+		expect(outcome({ tag: 'FanoutTx' })).toBe('reject');
 	});
 });

@@ -34379,6 +34379,12 @@
                     },
                     "502": {
                         "description": "The Hydra node could not be reached, or the InitTx could not be verified"
+                    },
+                    "503": {
+                        "description": "The node is behind the chain and did not post Init, or independent L1 evidence is not available yet"
+                    },
+                    "504": {
+                        "description": "The node failed to post the InitTx, Init did not confirm in time, or its outcome waits on the node catching up"
                     }
                 }
             }
@@ -34482,6 +34488,9 @@
                     },
                     "409": {
                         "description": "Head is not in a state that permits fanout"
+                    },
+                    "503": {
+                        "description": "The node is behind the chain and did not post the fanout"
                     }
                 }
             }
@@ -38900,6 +38909,9 @@
                     },
                     "502": {
                         "description": "No connection to the head, or the node returned an unreadable head state"
+                    },
+                    "503": {
+                        "description": "The node is behind the chain and did not post the step"
                     }
                 }
             }

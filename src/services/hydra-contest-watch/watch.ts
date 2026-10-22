@@ -12,11 +12,10 @@
  * newest one this node verified. A gap that outlives `CONTEST_GRACE_MS`, or that
  * is still open when fanout becomes possible, is alerted once per gap.
  */
-import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraErrorType, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
-import { recordHeadError } from '@/services/hydra-head-error/record';
 import { webhookEventsService } from '@/services/webhooks/events.service';
 
 /** A contest is posted and seen on chain within a few blocks. Two minutes without one is not a slow chain. */
@@ -66,29 +65,55 @@ export function decideContestGap(
 	return isGraceOver || isFanoutPossible ? { action: 'alert' } : { action: 'unchanged' };
 }
 
-async function announceContestGap(
+type ContestWatchDatabase = Pick<typeof prisma, 'hydraHead' | '$transaction'>;
+
+/**
+ * Claim the alert, record the error and queue the webhook in one transaction.
+ * A failed write rolls the claim back, so the next tick alerts again instead of
+ * losing the alert for good.
+ */
+async function claimAndAnnounceContestGap(
+	database: ContestWatchDatabase,
+	claim: (tx: Prisma.TransactionClient) => Promise<{ count: number }>,
 	hydraHeadId: string,
 	observed: ContestObservation,
 	gapSince: Date,
 	now: Date,
-): Promise<void> {
+): Promise<boolean> {
 	const message = `The head is closed on snapshot ${observed.closedSnapshotNumber} and no contest put snapshot ${observed.verifiedSnapshotNumber} on chain. A fanout pays out the older snapshot.`;
-	logger.warn('[HydraContestWatch] no contest landed for a newer snapshot', {
-		hydraHeadId,
-		headStatus: observed.status,
-		closedSnapshotNumber: observed.closedSnapshotNumber.toString(),
-		verifiedSnapshotNumber: observed.verifiedSnapshotNumber.toString(),
-		gapSince: gapSince.toISOString(),
+	const isAnnounced = await database.$transaction(async (tx) => {
+		const claimed = await claim(tx);
+		if (claimed.count !== 1) return false;
+		await tx.hydraHeadError.create({
+			data: {
+				hydraHeadId,
+				errorType: HydraErrorType.ContestMissing,
+				errorMessage: message,
+				headStatus: observed.status,
+				clientInput: 'ContestWatch',
+				errorAt: now,
+			},
+		});
+		await webhookEventsService.queueHydraHeadContestMissingInTransaction(tx, {
+			hydraHeadId,
+			headStatus: observed.status,
+			closedSnapshotNumber: Number(observed.closedSnapshotNumber),
+			verifiedSnapshotNumber: Number(observed.verifiedSnapshotNumber),
+			gapSince: gapSince.toISOString(),
+			checkedAt: now.toISOString(),
+		});
+		return true;
 	});
-	await recordHeadError(hydraHeadId, observed.status, HydraErrorType.ContestMissing, message, 'ContestWatch');
-	await webhookEventsService.triggerHydraHeadContestMissing({
-		hydraHeadId,
-		headStatus: observed.status,
-		closedSnapshotNumber: Number(observed.closedSnapshotNumber),
-		verifiedSnapshotNumber: Number(observed.verifiedSnapshotNumber),
-		gapSince: gapSince.toISOString(),
-		checkedAt: now.toISOString(),
-	});
+	if (isAnnounced) {
+		logger.warn('[HydraContestWatch] no contest landed for a newer snapshot', {
+			hydraHeadId,
+			headStatus: observed.status,
+			closedSnapshotNumber: observed.closedSnapshotNumber.toString(),
+			verifiedSnapshotNumber: observed.verifiedSnapshotNumber.toString(),
+			gapSince: gapSince.toISOString(),
+		});
+	}
+	return isAnnounced;
 }
 
 /**
@@ -100,7 +125,7 @@ export async function applyContestGapObservation(
 	head: { id: string } & StoredContestGap,
 	observed: ContestObservation,
 	now: Date,
-	database: Pick<typeof prisma, 'hydraHead'> = prisma,
+	database: ContestWatchDatabase = prisma,
 ): Promise<ContestGapDecision['action']> {
 	const decision = decideContestGap(head, observed, now);
 	const readState = { id: head.id, contestGapSignature: head.contestGapSignature };
@@ -112,24 +137,40 @@ export async function applyContestGapObservation(
 			});
 			break;
 		case 'record': {
-			const recorded = await database.hydraHead.updateMany({
-				where: readState,
-				data: {
-					contestGapSignature: decision.signature,
-					contestGapSince: now,
-					contestGapAlertedAt: decision.isAlerting ? now : null,
-				},
-			});
-			if (decision.isAlerting && recorded.count === 1) await announceContestGap(head.id, observed, now, now);
+			const data = {
+				contestGapSignature: decision.signature,
+				contestGapSince: now,
+				contestGapAlertedAt: decision.isAlerting ? now : null,
+			};
+			if (!decision.isAlerting) {
+				await database.hydraHead.updateMany({ where: readState, data });
+				break;
+			}
+			await claimAndAnnounceContestGap(
+				database,
+				(tx) => tx.hydraHead.updateMany({ where: readState, data }),
+				head.id,
+				observed,
+				now,
+				now,
+			);
 			break;
 		}
 		case 'alert': {
-			const claimed = await database.hydraHead.updateMany({
-				where: { ...readState, contestGapAlertedAt: null },
-				data: { contestGapAlertedAt: now },
-			});
-			if (claimed.count !== 1 || head.contestGapSince === null) return 'unchanged';
-			await announceContestGap(head.id, observed, head.contestGapSince, now);
+			if (head.contestGapSince === null) return 'unchanged';
+			const isAnnounced = await claimAndAnnounceContestGap(
+				database,
+				(tx) =>
+					tx.hydraHead.updateMany({
+						where: { ...readState, contestGapAlertedAt: null },
+						data: { contestGapAlertedAt: now },
+					}),
+				head.id,
+				observed,
+				head.contestGapSince,
+				now,
+			);
+			if (!isAnnounced) return 'unchanged';
 			break;
 		}
 		case 'unchanged':

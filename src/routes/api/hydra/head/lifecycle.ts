@@ -25,6 +25,7 @@ import {
 	HydraPostTxRejectedError,
 	HydraHeadInitObservationError,
 	HydraProtocolError,
+	HydraTransportAmbiguousError,
 	HydraTransportError,
 } from '@/lib/hydra';
 import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
@@ -165,6 +166,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 					throw createHttpError(
 						503,
 						`${initError.message}. Init was not posted; send it again once the node has caught up.`,
+						{ expose: true },
 					);
 				}
 				// A failed InitTx post is not a timeout: the node answered, so no Init
@@ -175,7 +177,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				// has already initialized, which is no failure.
 				if (initError instanceof HydraPostTxRejectedError) {
 					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
-					throw createHttpError(504, initError.message);
+					throw createHttpError(504, initError.message, { expose: true });
 				}
 				// A bounded init that never observed HeadIsInitializing has two very
 				// different causes, and the timeout alone cannot tell them apart: the
@@ -233,16 +235,20 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 					// disregard the ones that matter. The message tells the operator not
 					// to re-post, since two Inits race for the same seed input.
 					initsAwaitingNode.add(head.id);
-					throw createHttpError(504, verdict.message);
+					throw createHttpError(504, verdict.message, { expose: true });
 				}
 				if (verdict.kind === 'failed') {
 					// Leave the head Idle (no state regression) and return an actionable
 					// 504 so the operator retries rather than seeing a generic hang/500.
+					// Only the node's answer and the outcome timeouts are fixed text; a
+					// transport error can name an internal host, so it stays in the head
+					// error row and the caller gets the generic message.
 					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
-					throw createHttpError(
-						504,
-						initError instanceof Error ? initError.message : 'Init did not confirm on-chain in time',
-					);
+					const isCallerSafe =
+						initError instanceof HydraCommandRejectedError || initError instanceof HydraTransportAmbiguousError;
+					throw createHttpError(504, isCallerSafe ? initError.message : 'Init did not confirm on-chain in time', {
+						expose: true,
+					});
 				}
 				// observed: fall through to the normal post-init flow, already drained.
 				needsPostInitFlush = false;

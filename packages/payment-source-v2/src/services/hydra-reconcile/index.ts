@@ -349,7 +349,8 @@ async function reconcileHead(
 	}
 	// A pass with retryable outputs stays due, so it reruns on the next tick.
 	recordLivePass(hydraHeadId, !hasRetryableLiveObservation);
-	// An open head only: a finalized head's history receives no new confirmations.
+	// Not for a finalized head: its live pass reads no outputs. A closed head keeps
+	// the watchdog, because a replay still re-reads the frames a stalled stream withheld.
 	if (!isFinalized) noteLiveEvidenceGaps(hydraHeadId, outputsMissingEvidence, node);
 
 	// A finalized head can be disconnected only after the history socket's

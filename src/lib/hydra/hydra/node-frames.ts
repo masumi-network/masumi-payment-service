@@ -38,6 +38,7 @@ import {
 	txInvalidMessageSchema,
 	txValidMessageSchema,
 } from './schemas';
+import { canonicalOutputContent } from './output-content';
 import { describeDecommitInvalidReason, describePostTxError } from './post-tx-error';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import {
@@ -294,11 +295,17 @@ export function postChainTxTagsFor(command: string): ReadonlySet<string> {
 	return new Set([`${command}Tx`]);
 }
 
+/** Whether `failure` is the L1 post of `command`, judged by the transaction it names. */
+export function isPostTxFailureOf(command: string, failure: PostTxFailure): boolean {
+	return postChainTxTagsFor(command).has(failure.postChainTxTag);
+}
+
 export function handleWsResponse(
 	rawMessage: string,
 	command: string,
 	transactionHash?: string,
 	expectedHeadId?: string,
+	ownsPostTxFailure: (failure: PostTxFailure) => boolean = (failure) => isPostTxFailureOf(command, failure),
 ): WsResponseOutcome {
 	try {
 		const raw = parseBoundedJsonFrame(rawMessage);
@@ -376,7 +383,7 @@ export function handleWsResponse(
 			if (failure?.postChainTxTag === UNKNOWN_POST_CHAIN_TX_TAG && postsOnL1(command)) {
 				throw new HydraProtocolError(`hydra-node reported an unnamed failed L1 transaction: ${failure.reason}`);
 			}
-			if (failure && postChainTxTagsFor(command).has(failure.postChainTxTag)) {
+			if (failure && ownsPostTxFailure(failure)) {
 				// The reason names the node's own words. Without them every L1 refusal
 				// reads the same, and the operator has no way to tell "the node's key
 				// holds nothing" (NoSeedInput) from a genuine protocol rejection, and the
@@ -661,9 +668,18 @@ export function readPostTxFailed(
 		onOtherHead?.(namedHeadId);
 		return undefined;
 	}
+	const utxoToDistribute = frame.data.postChainTx?.utxoToDistribute;
 	return {
 		postChainTxTag: frame.data.postChainTx?.tag ?? UNKNOWN_POST_CHAIN_TX_TAG,
 		reason: describePostTxError(frame.data.postTxError),
+		...(typeof utxoToDistribute === 'object' && utxoToDistribute !== null
+			? {
+					utxoToDistribute: Object.entries(utxoToDistribute).map(([reference, output]) => ({
+						reference: reference.toLowerCase(),
+						content: canonicalOutputContent(output),
+					})),
+				}
+			: {}),
 	};
 }
 

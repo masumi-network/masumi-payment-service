@@ -77,7 +77,8 @@ async function readHeadOutputOnChain(headId: string): Promise<string> {
 	} catch (error) {
 		if (createHttpError.isHttpError(error)) throw error;
 		const message = error instanceof Error ? error.message : String(error);
-		if (error instanceof HydraHeadInitObservationError) throw createHttpError(503, message);
+		if (error instanceof HydraHeadInitObservationError) throw createHttpError(503, message, { expose: true });
+		// Not exposed: any other throw, a database error included, lands here.
 		throw createHttpError(502, `Could not read the head state on chain: ${message}`);
 	}
 	if (chain.state === 'gone') {
@@ -155,12 +156,15 @@ async function readRemainingUtxo(
 		// The node answered, but with a state that cannot be retired from (not
 		// closed, or unreadable): keep that status rather than calling it down.
 		if (createHttpError.isHttpError(error)) {
-			throw createHttpError(error.status, `${message}; pass acknowledgeRemainingUtxoUnknown to retire without it`);
+			throw createHttpError(error.status, `${message}; pass acknowledgeRemainingUtxoUnknown to retire without it`, {
+				expose: true,
+			});
 		}
 		throw createHttpError(
 			503,
 			`Could not read the remaining UTxO set from the node (${message}); ` +
 				'retry, or pass acknowledgeRemainingUtxoUnknown to retire without it',
+			{ expose: true },
 		);
 	}
 	assertNodeAwaitsFanoutSelection(state, { allowed: acknowledge.fanoutStalled, flag: 'acknowledgeFanoutStalled' });

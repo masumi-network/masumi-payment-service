@@ -37,6 +37,12 @@ export interface HeadStatusPersistenceHost {
 	/** Tear down and re-read durable enablement (fire-and-forget). */
 	scheduleRecovery(): void;
 	/**
+	 * Re-read another head's durable enablement when this process holds its
+	 * transport (fire-and-forget). A relation quarantine disables the siblings
+	 * too, and nothing else tears down a disabled head.
+	 */
+	reconcileSibling(hydraHeadId: string): void;
+	/**
 	 * A newer session owns this head durably. Tear down this transport without
 	 * disabling the head, then reconcile against durable enablement — never
 	 * quarantine or fail closed, because the head itself is healthy.
@@ -150,7 +156,12 @@ export async function persistHeadStatus(
 							where: { hydraRelationId: current.hydraRelationId },
 							select: { id: true },
 						});
-						for (const relationHead of relationHeads) forgetHeadFailedClosed(relationHead.id);
+						for (const relationHead of relationHeads) {
+							forgetHeadFailedClosed(relationHead.id);
+							if (relationHead.id !== hydraHeadId && rollbackResult.startsWith('quarantined')) {
+								host.reconcileSibling(relationHead.id);
+							}
+						}
 					} catch (error) {
 						// The quarantine is durable already; only a sibling's mark may remain.
 						logger.warn('[HydraConnectionManager] Could not clear auto-recovery marks of quarantined heads', {

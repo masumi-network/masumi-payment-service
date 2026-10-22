@@ -126,6 +126,12 @@ export interface PostTxFailure {
 	postChainTxTag: string;
 	/** The node's own reason, in words an operator can act on. */
 	reason: string;
+	/**
+	 * What a fanout step tried to distribute (`utxoToDistribute` on
+	 * `PartialFanoutTx` and `FinalPartialFanoutTx` in hydra-node 2.4.1), as each
+	 * output's reference and canonical content. Absent when the frame has none.
+	 */
+	utxoToDistribute?: Array<{ reference: string; content: string }>;
 }
 
 export interface PostTxFailedData extends PostTxFailure {

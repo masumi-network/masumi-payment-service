@@ -521,6 +521,16 @@ export class HydraConnectionManager {
 			quarantine: (failedHead) => session.quarantine(failedHead),
 			clearQuarantineAfterReobservation: (observingHead) => session.clearQuarantineAfterReobservation(observingHead),
 			scheduleRecovery: () => this.scheduleStatusPersistenceRecovery(hydraHeadId),
+			reconcileSibling: (siblingId) => {
+				// Only a transport this process holds; reconciling any other head could connect it.
+				if (!this.getSession(siblingId)?.attachment) return;
+				void this.reconcileEnabledState(siblingId).catch((error: unknown) => {
+					logger.warn('[HydraConnectionManager] Could not release a quarantined sibling head', {
+						hydraHeadId: siblingId,
+						error,
+					});
+				});
+			},
 			onStaleOwner: () => {
 				// A newer session owns this head durably. Tear down without touching
 				// the durable row, then re-read durable enablement through the control

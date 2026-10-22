@@ -74,6 +74,7 @@ export function HydraHeadSnapshotRoundNotice({
   const peerSnapshot = peerInput?.value.trim() ?? '';
   // Whole numbers only, and short enough to stay a safe integer.
   const peerNumber = /^\d{1,15}$/.test(peerSnapshot) ? Number(peerSnapshot) : null;
+  const isPeerInputInvalid = peerSnapshot !== '' && peerNumber === null;
 
   // A choice made for one round never carries to a later one, even one that
   // comes back with the same signature. Set during render, not in an effect,
@@ -162,12 +163,19 @@ export function HydraHeadSnapshotRoundNotice({
             inputMode="numeric"
             placeholder="Ask the other party's operator"
             disabled={isResetting}
+            aria-invalid={isPeerInputInvalid || undefined}
+            aria-describedby={`peer-snapshot-help-${headId}`}
             value={peerInput?.value ?? ''}
             onChange={(event) =>
               setPeerInput({ instance: roundInstance(round), value: event.target.value })
             }
           />
-          <p className="text-xs">
+          {isPeerInputInvalid && (
+            <p className="text-xs text-destructive" role="alert">
+              Enter the snapshot number in digits only (up to 15), for example 12.
+            </p>
+          )}
+          <p id={`peer-snapshot-help-${headId}`} className="text-xs">
             Required. The other party&apos;s operator reads it from GET /snapshot on their node (0
             if it shows InitialSnapshot).{' '}
             {ourConfirmed !== null &&

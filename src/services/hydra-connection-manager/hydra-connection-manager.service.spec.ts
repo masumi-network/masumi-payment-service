@@ -1255,6 +1255,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 				quarantine: jest.fn(),
 				clearQuarantineAfterReobservation: jest.fn(),
 				scheduleRecovery,
+				reconcileSibling: jest.fn(),
 				onStaleOwner: jest.fn(),
 			},
 			'head-1',

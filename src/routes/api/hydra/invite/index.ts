@@ -468,6 +468,7 @@ async function abandonStuckRedemption(
 		throw createHttpError(
 			502,
 			`the redemption is abandoned here, but its host refused the cleanup; node ${invite.hostNodeId} must be removed by hand`,
+			{ expose: true },
 		);
 	}
 	logger.info(`hydra: abandoned redemption ${nonceLogRef(invite.nonce)}`);
@@ -551,6 +552,7 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(
 					502,
 					`the invite is revoked here, but its host refused the cleanup; node ${invite.hostNodeId} must be removed by hand`,
+					{ expose: true },
 				);
 			}
 			logger.info(`hydra: revoked redeemed invite ${nonceLogRef(invite.nonce)} and discarded its redemption`);

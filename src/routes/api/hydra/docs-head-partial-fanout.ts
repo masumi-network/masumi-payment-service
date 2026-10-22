@@ -58,6 +58,7 @@ export function registerHydraHeadPartialFanoutPath({ registry, apiKeyAuth }: Swa
 					'Head disabled, status not FanoutPossible or FanningOut, an output is not in the head, or the node is still fanning out on its own and replaceInProgressSelection is not set, or a fanout command for the head is already in progress',
 			},
 			502: { description: 'No connection to the head, or the node returned an unreadable head state' },
+			503: { description: 'The node is behind the chain and did not post the step' },
 		},
 	});
 }

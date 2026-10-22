@@ -349,7 +349,10 @@ describe('redeeming an invite', () => {
 			signature: SIGNATURE,
 		});
 
-		expect(result).toEqual({ status: 503, body: { error: 'this host is not taking new heads; retry later' } });
+		expect(result).toEqual({
+			status: 503,
+			body: { error: 'this host is not taking new heads; retry later', code: 'host-unavailable' },
+		});
 		expect(onRedeemed).not.toHaveBeenCalled();
 		expect((await store.listInvites())[0].redeemedAt).toBeNull();
 	});
