@@ -1,6 +1,7 @@
 import createHttpError from 'http-errors';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraHostRequestError, removeHostNode } from '@/services/hydra-host/client';
+import { isHostNodeGone } from '@/services/hydra-host/node-gone';
 import { decrypt } from '@/utils/security/encryption';
 
 /**
@@ -34,11 +35,25 @@ export async function releaseHostNodeOfFinishedHead(participant: {
 		});
 	} catch (error) {
 		// A node the Host no longer has is the outcome this asks for, and what a
-		// retry finds after an earlier attempt removed it.
-		if (error instanceof HydraHostRequestError && error.status === 404) return;
+		// retry finds after an earlier attempt removed it. Only the Host's own
+		// answer counts: a wrong base URL also answers 404, and taking that as
+		// released would delete the only record naming the node.
+		if (isHostNodeGone(error)) return;
+		const detail = (error as Error).message;
+		logger.warn(`hydra: could not remove node ${hostNodeId} of a finished head from its host: ${detail}`);
+		// Only for a Host that did not answer: clearing the token also stops
+		// provisioning there and can cut other heads' node access, so it is no
+		// advice for a live Host that refused.
+		const isUnreachable = error instanceof HydraHostRequestError && error.status === null;
+		const escape = isUnreachable
+			? ' If the host is gone for good, clear its admin token (this stops provisioning on it) and remove the node by hand'
+			: '';
+		// Exposed: the operator needs the node id and the way out, and a 5xx
+		// message is otherwise replaced by the bare status text in production.
 		throw createHttpError(
 			502,
-			`the hydra host refused to remove node ${hostNodeId}: ${(error as Error).message}; nothing was deleted, try again`,
+			`could not remove node ${hostNodeId} from its hydra host: ${detail}; nothing was deleted, try again.${escape}`,
+			{ expose: true },
 		);
 	}
 }
