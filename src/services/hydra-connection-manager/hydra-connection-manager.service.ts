@@ -20,10 +20,12 @@ import {
 	StatusChangeData,
 	type DecommitSettledData,
 	type DepositRecordedData,
+	type PostTxFailedData,
 	buildHydraHttpEndpoint,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { recordHeadError } from '@/services/hydra-head-error/record';
+import { webhookEventsService } from '@/services/webhooks/events.service';
 import { dropUnburnedL2MintReports, recordUnburnedL2Mint } from '@/services/hydra-head-error/unburned-l2-mint';
 import type { L2MintIncident } from '@/lib/hydra/hydra/l2-mint-tally';
 import { HydraErrorType, HydraHeadStatus, Network } from '@/generated/prisma/client';
@@ -515,6 +517,35 @@ export class HydraConnectionManager {
 					error: recordError instanceof Error ? recordError.message : recordError,
 				});
 			});
+		});
+
+		// An L1 transaction the node could not post. A contest it posts on its own
+		// has no command waiting on it, so the webhook and this record are the only
+		// places the failure shows up. Every failure is announced; a failed command
+		// already has its CommandFailed row from the caller, so it gets no second
+		// one. A failure that names no transaction is always recorded here, even
+		// when it also fails a waiting command: not every caller records an
+		// ambiguous outcome. Whether the head ended up undefended is the contest watch's call,
+		// made from chain state. Both calls log their own failures, so nothing here
+		// needs catching.
+		head.mainNode.on(HydraNodeEvent.PostTxFailed, (data: PostTxFailedData) => {
+			const headStatus = head.mainNode.status;
+			void webhookEventsService.triggerHydraHeadPostTxFailed({
+				hydraHeadId,
+				headStatus,
+				postChainTxTag: data.postChainTxTag,
+				reason: data.reason,
+				reportedToCaller: data.answersCommand,
+				failedAt: new Date().toISOString(),
+			});
+			if (data.answersCommand) return;
+			void recordHeadError(
+				hydraHeadId,
+				headStatus,
+				HydraErrorType.PostTxOnChainFailed,
+				`${data.postChainTxTag} failed: ${data.reason}`,
+				`PostTx:${data.postChainTxTag}`,
+			);
 		});
 
 		// The head's net L2 mint balance left zero. The head keeps one row for it,

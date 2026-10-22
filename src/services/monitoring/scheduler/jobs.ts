@@ -24,6 +24,7 @@ import { releaseAbandonedReservations } from '@/services/hydra-invite/release-re
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
 import { runHydraSnapshotRoundWatch } from '@/services/hydra-snapshot-round/watch';
+import { runHydraContestWatch } from '@/services/hydra-contest-watch/watch';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { reconcileRecoveredHydraTopups } from '@/services/hydra-topup-reconciliation/recovered';
 import {
@@ -40,6 +41,8 @@ import { logger } from '@masumi/payment-core/logger';
 
 /** A stuck round alerts after ten minutes, so once a minute is plenty. */
 const HYDRA_SNAPSHOT_ROUND_WATCH_INTERVAL_MS = 60_000;
+/** A missing contest alerts after two minutes, so a check once a minute keeps the alert prompt. */
+const HYDRA_CONTEST_WATCH_INTERVAL_MS = 60_000;
 /**
  * A paused Host's nodes stop once its in-flight work is done. While the pause
  * waits, no new work starts on it, so checking twice a minute keeps the wait
@@ -215,6 +218,14 @@ export const scheduledJobs: JobDefinition[] = [
 		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra snapshot round watch',
 		run: runHydraSnapshotRoundWatch,
+	},
+	{
+		initialDelayMs: 21500,
+		intervalMs: HYDRA_CONTEST_WATCH_INTERVAL_MS,
+		startMessage: 'Starting Hydra contest watch',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra contest watch',
+		run: runHydraContestWatch,
 	},
 	{
 		initialDelayMs: 22000,

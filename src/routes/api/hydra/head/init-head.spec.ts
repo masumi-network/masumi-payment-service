@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
+import { HydraCommandRejectedError, HydraPostTxRejectedError } from '@/lib/hydra';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -8,6 +9,7 @@ const mockFindHead = jest.fn() as AnyMock;
 const mockConnect = jest.fn() as AnyMock;
 const mockInit = jest.fn() as AnyMock;
 const mockFlush = jest.fn() as AnyMock;
+const mockWarn = jest.fn() as AnyMock;
 const mockReadNodeState = jest.fn() as AnyMock;
 const mockRecordHeadError = jest.fn() as AnyMock;
 
@@ -34,7 +36,7 @@ jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: jest.fn(), warn: mockWarn, error: jest.fn(), debug: jest.fn() },
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/node-state', () => ({
@@ -184,6 +186,55 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 		});
 
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
+
+	// The node refused the InitTx outright. Nothing is parked, so a node that is
+	// behind must not turn this into "wait, do not re-post": that verdict wrote no
+	// row, and the waiting Init is the only place this refusal is recorded.
+	it('records an outright refusal without diagnosing it as a wait', async () => {
+		mockInit.mockRejectedValue(
+			new HydraPostTxRejectedError('hydra-node refused to post the Init transaction: NoSeedInput'),
+		);
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: false,
+			reason: 'catching up',
+			chainSynced: false,
+			driftSeconds: 14_571,
+		});
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 504,
+			message: expect.stringContaining('NoSeedInput'),
+		});
+
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+		expect(mockReadNodeState).not.toHaveBeenCalled();
+	});
+
+	// The node also answers CommandFailed when the head initialized while Init
+	// waited for the node to catch up, and only the diagnosis can see the head
+	// moved. Short of that it is a refusal: nothing was posted, so a node that is
+	// behind must not turn it into "wait, do not re-post".
+	it('records a CommandFailed from a node that is behind, without saying to wait', async () => {
+		mockInit.mockRejectedValue(new HydraCommandRejectedError('Command Init failed'));
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: false,
+			reason: 'catching up',
+			chainSynced: false,
+			driftSeconds: 14_571,
+		});
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 504,
+			message: 'Command Init failed',
+		});
+
+		expect(mockFlush).toHaveBeenCalled();
+		expect(mockReadNodeState).toHaveBeenCalled();
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+		expect(mockWarn).not.toHaveBeenCalledWith(expect.stringMatching(/race/), expect.anything());
 	});
 
 	it('falls back to a failure when the diagnosis itself cannot run', async () => {

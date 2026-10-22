@@ -4,7 +4,7 @@ import type { StoredWebhookPayload, WebhookSendPayload, WebhookTestPayload } fro
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
-import { getWebhookEventPresentation } from './event-presentation';
+import { buildCompactSummary } from './compact-summary';
 import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';
 import {
 	assertWebhookDestinationAllowed,
@@ -26,14 +26,7 @@ interface WebhookDeliveryResult {
 class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
-	private static readonly MAX_SUMMARY_TX_IDS = 5;
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
-	private static readonly LOVELACE_DECIMALS = 1_000_000n;
-	private static readonly MAINNET_USDCX_UNIT = '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378';
-	private static readonly MAINNET_USDM_UNIT =
-		'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
-	private static readonly PREPROD_USDM_UNIT =
-		'16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
 
 	/**
 	 * Send a webhook to a specific URL
@@ -440,7 +433,7 @@ class WebhookSenderService {
 						'User-Agent': WebhookSenderService.USER_AGENT,
 					},
 					body: JSON.stringify({
-						text: this.buildCompactSummary(payload),
+						text: buildCompactSummary(payload),
 					}),
 				};
 			case WebhookFormat.GOOGLE_CHAT:
@@ -450,7 +443,7 @@ class WebhookSenderService {
 						'User-Agent': WebhookSenderService.USER_AGENT,
 					},
 					body: JSON.stringify({
-						text: this.buildCompactSummary(payload),
+						text: buildCompactSummary(payload),
 					}),
 				};
 			case WebhookFormat.DISCORD:
@@ -460,7 +453,7 @@ class WebhookSenderService {
 						'User-Agent': WebhookSenderService.USER_AGENT,
 					},
 					body: JSON.stringify({
-						content: this.buildCompactSummary(payload),
+						content: buildCompactSummary(payload),
 					}),
 				};
 			case WebhookFormat.EXTENDED:
@@ -483,212 +476,6 @@ class WebhookSenderService {
 				throw new Error(`Unsupported webhook format: ${String(unknownFormat)}`);
 			}
 		}
-	}
-
-	private buildCompactSummary(payload: WebhookSendPayload): string {
-		const eventPresentation = getWebhookEventPresentation(payload.event_type);
-		const lines = [`${eventPresentation.emoji} ${eventPresentation.title}`];
-		if (payload.service_name) {
-			lines.push(`🛰️ Service: ${payload.service_name}`);
-		}
-
-		if (payload.event_type === WEBHOOK_TEST_EVENT_TYPE) {
-			lines.push('');
-			this.appendDetailLine(lines, '💬', 'Message', payload.data.message);
-			this.appendDetailLine(lines, '🔔', 'Webhook', payload.data.webhookName);
-			this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.paymentSourceId);
-			this.appendDetailLine(lines, '🕒', 'Sent at', payload.timestamp);
-			return lines.join('\n');
-		}
-
-		if (payload.event_type === WebhookEventType.WALLET_LOW_BALANCE) {
-			lines.push('');
-			this.appendDetailLine(lines, '👛', 'Wallet ID', payload.data.walletId);
-			this.appendDetailLine(lines, '📬', 'Wallet address', payload.data.walletAddress);
-			this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.paymentSourceId);
-			this.appendDetailLine(lines, '🌐', 'Network', payload.data.network);
-			this.appendDetailLine(
-				lines,
-				'🎯',
-				'Threshold',
-				this.formatBalanceForDisplay(payload.data.thresholdAmount, payload.data.assetUnit),
-			);
-			this.appendDetailLine(
-				lines,
-				'💰',
-				'New balance',
-				this.formatBalanceForDisplay(payload.data.currentAmount, payload.data.assetUnit),
-			);
-			this.appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
-			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
-			return lines.join('\n');
-		}
-
-		if (
-			payload.event_type === WebhookEventType.FUND_DISTRIBUTION_SENT ||
-			payload.event_type === WebhookEventType.FUND_DISTRIBUTION_CONFIRMED ||
-			payload.event_type === WebhookEventType.FUND_DISTRIBUTION_FAILED
-		) {
-			lines.push('');
-			this.appendDetailLine(lines, '🏦', 'Fund Wallet ID', payload.data.fundWalletId);
-			this.appendDetailLine(lines, '📬', 'Fund Wallet address', payload.data.fundWalletAddress);
-			this.appendDetailLine(lines, '🔗', 'Tx hash', payload.data.txHash ?? 'not submitted');
-			this.appendDetailLine(lines, '🌐', 'Network', payload.data.network);
-			this.appendDetailLine(lines, '📦', 'Recipients', String(payload.data.distributions.length));
-			if (payload.event_type === WebhookEventType.FUND_DISTRIBUTION_FAILED) {
-				this.appendDetailLine(lines, '❌', 'Error', payload.data.error);
-			}
-			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
-			return lines.join('\n');
-		}
-
-		if (
-			payload.event_type === WebhookEventType.X402_PAYMENT_SETTLED ||
-			payload.event_type === WebhookEventType.X402_PAYMENT_FAILED
-		) {
-			lines.push('');
-			this.appendDetailLine(lines, '🏷️', 'Attempt ID', payload.data.attemptId);
-			this.appendDetailLine(lines, '🌐', 'Network', payload.data.caip2Network);
-			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.asset);
-			this.appendDetailLine(lines, '💰', 'Amount', payload.data.amount);
-			this.appendDetailLine(lines, '📬', 'Pay to', payload.data.payTo);
-			this.appendDetailLine(lines, '👛', 'Payer', payload.data.payer);
-			this.appendDetailLine(lines, '🔗', 'Tx hash', payload.data.txHash);
-			this.appendDetailLine(lines, '⚠️', 'Error', payload.data.errorMessage);
-			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
-			return lines.join('\n');
-		}
-
-		if (payload.event_type === WebhookEventType.X402_WALLET_LOW_BALANCE) {
-			lines.push('');
-			this.appendDetailLine(lines, '👛', 'Wallet ID', payload.data.evmWalletId);
-			this.appendDetailLine(lines, '📬', 'Wallet address', payload.data.walletAddress);
-			this.appendDetailLine(lines, '🧭', 'Direction', payload.data.walletType);
-			this.appendDetailLine(lines, '🌐', 'Network', payload.data.caip2Network);
-			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.asset);
-			this.appendDetailLine(lines, '🎯', 'Threshold', payload.data.thresholdAmount);
-			this.appendDetailLine(lines, '💰', 'New balance', payload.data.currentAmount);
-			this.appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
-			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
-			return lines.join('\n');
-		}
-
-		if (payload.event_type === WebhookEventType.HYDRA_HEAD_LOW_BALANCE) {
-			lines.push('');
-			this.appendDetailLine(lines, '🧑‍🤝‍🧑', 'Participant', payload.data.hydraLocalParticipantId);
-			this.appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
-			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.assetUnit);
-			this.appendDetailLine(lines, '🎯', 'Threshold', payload.data.thresholdAmount);
-			this.appendDetailLine(lines, '💰', 'Spendable in-head balance', payload.data.currentAmount);
-			this.appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
-			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
-			return lines.join('\n');
-		}
-
-		if (payload.event_type === WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK) {
-			lines.push('');
-			this.appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
-			this.appendDetailLine(lines, '🏷️', 'Round', payload.data.roundTag);
-			this.appendDetailLine(lines, '🔢', 'Snapshot', payload.data.snapshotNumber?.toString());
-			this.appendDetailLine(lines, '✍️', 'Signatures', payload.data.signatoryCount.toString());
-			this.appendDetailLine(lines, '🧾', 'Transactions', this.summarizeTxIds(payload.data.txIds));
-			this.appendDetailLine(lines, '🕒', 'Stuck since', payload.data.stuckSince);
-			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
-			return lines.join('\n');
-		}
-
-		lines.push('');
-		this.appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
-		this.appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);
-		this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.PaymentSource.id);
-		this.appendDetailLine(lines, '🌐', 'Network', payload.data.PaymentSource.network);
-		this.appendDetailLine(lines, '📍', 'On-chain state', payload.data.onChainState);
-		this.appendDetailLine(lines, '➡️', 'Next action', payload.data.NextAction.requestedAction);
-		this.appendDetailLine(lines, '⚠️', 'Error type', payload.data.NextAction.errorType);
-		this.appendDetailLine(lines, '📝', 'Error note', payload.data.NextAction.errorNote);
-		this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
-
-		return lines.join('\n');
-	}
-
-	/** A round can name thousands of transactions; the summary line shows a few and a count. */
-	private summarizeTxIds(txIds: string[]): string | null {
-		if (txIds.length === 0) return null;
-		const shown = txIds.slice(0, WebhookSenderService.MAX_SUMMARY_TX_IDS).join(', ');
-		const hidden = txIds.length - WebhookSenderService.MAX_SUMMARY_TX_IDS;
-		return hidden > 0 ? `${shown} (+${hidden} more)` : shown;
-	}
-
-	private appendDetailLine(lines: string[], emoji: string, label: string, value: string | null | undefined): void {
-		if (value == null || value === '') {
-			return;
-		}
-
-		lines.push(`${emoji} ${label}: ${value}`);
-	}
-
-	private formatBalanceForDisplay(rawAmount: string, assetUnit: string): string {
-		const assetLabel = this.getAssetLabel(assetUnit);
-		if (!this.usesSixDecimals(assetUnit)) {
-			return `${rawAmount} ${assetLabel}`;
-		}
-
-		return `${this.formatSixDecimalAmount(rawAmount)} ${assetLabel}`;
-	}
-
-	private usesSixDecimals(assetUnit: string): boolean {
-		return (
-			assetUnit === 'lovelace' ||
-			assetUnit === WebhookSenderService.MAINNET_USDCX_UNIT ||
-			assetUnit === WebhookSenderService.MAINNET_USDM_UNIT ||
-			assetUnit === WebhookSenderService.PREPROD_USDM_UNIT
-		);
-	}
-
-	private getAssetLabel(assetUnit: string): string {
-		switch (assetUnit) {
-			case '':
-			case 'lovelace':
-				return 'ADA';
-			case WebhookSenderService.MAINNET_USDCX_UNIT:
-				return 'USDCx';
-			case WebhookSenderService.MAINNET_USDM_UNIT:
-				return 'USDM';
-			case WebhookSenderService.PREPROD_USDM_UNIT:
-				return 'tUSDM';
-			default:
-				return this.decodeAssetName(assetUnit) ?? assetUnit;
-		}
-	}
-
-	private decodeAssetName(assetUnit: string): string | null {
-		if (assetUnit.length <= 56) {
-			return null;
-		}
-
-		const assetNameHex = assetUnit.slice(56);
-		if (assetNameHex.length === 0 || assetNameHex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(assetNameHex)) {
-			return null;
-		}
-
-		try {
-			const decoded = Buffer.from(assetNameHex, 'hex').toString('utf8').replace(/\0/g, '').trim();
-			if (decoded.length === 0) {
-				return null;
-			}
-
-			return /^[\x20-\x7E]+$/.test(decoded) ? decoded : null;
-		} catch {
-			return null;
-		}
-	}
-
-	private formatSixDecimalAmount(rawAmount: string): string {
-		const amount = BigInt(rawAmount);
-		const whole = amount / WebhookSenderService.LOVELACE_DECIMALS;
-		const fraction = (amount % WebhookSenderService.LOVELACE_DECIMALS).toString().padStart(6, '0').replace(/0+$/, '');
-
-		return fraction.length > 0 ? `${whole}.${fraction}` : whole.toString();
 	}
 
 	/**

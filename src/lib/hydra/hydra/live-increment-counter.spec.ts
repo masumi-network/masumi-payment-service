@@ -30,6 +30,7 @@ function makeProcessor(): { processor: LiveFrameProcessor; increments: number[] 
 		setNetworkConnected: () => {},
 		onRotationError: () => {},
 		invalidateLiveConnection: () => {},
+		isAwaitingPostChainTx: () => false,
 	};
 	const emitter = new EventEmitter();
 	const increments: number[] = [];

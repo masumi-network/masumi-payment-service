@@ -203,6 +203,36 @@ const hydraHeadSnapshotRoundStuckPayloadSchema = createWebhookPayloadSchema(
 	'Emitted once per round when a Hydra head snapshot round has not moved for the stuck threshold. The head confirms nothing until an admin resets the round.',
 );
 
+const hydraHeadPostTxFailedPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_POST_TX_FAILED'),
+	z.object({
+		hydraHeadId: z.string().describe('The head the node tried to post an L1 transaction for'),
+		headStatus: z.string().describe('The head status this service held when the failure arrived'),
+		postChainTxTag: z.string().describe('Which L1 transaction failed, for example ContestTx; "unknown" if unnamed'),
+		reason: z.string().describe("The node's reason, with remedy advice where one is known"),
+		reportedToCaller: z
+			.boolean()
+			.describe(
+				'True when the failed transaction is the one a waiting API call (Init, Close, Fanout) posts; that call fails with it and records it. False otherwise, also for a failure that names no transaction, even when it fails a waiting call too',
+			),
+		failedAt: z.string().datetime().describe('When this service received the failure'),
+	}),
+	'Emitted for every L1 transaction the Hydra node could not post. A failed ContestTx is a warning: another party may still have contested. HYDRA_HEAD_CONTEST_MISSING says when no contest landed.',
+);
+
+const hydraHeadContestMissingPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_CONTEST_MISSING'),
+	z.object({
+		hydraHeadId: z.string().describe('The closed head that holds an older snapshot on chain than this node'),
+		headStatus: z.string().describe('Closed, or FanoutPossible once the contestation deadline has passed'),
+		closedSnapshotNumber: z.number().int().describe('The newest snapshot a close or contest put on chain'),
+		verifiedSnapshotNumber: z.number().int().describe('The newest snapshot every party signed, as this node holds it'),
+		gapSince: z.string().datetime().describe('When this service first saw the gap'),
+		checkedAt: z.string().datetime().describe('Timestamp when the gap was evaluated'),
+	}),
+	'Emitted once per gap when a closed Hydra head holds an older snapshot on chain than one every party signed, and no contest closed the gap within the grace period. A fanout from that state pays out the older snapshot.',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -218,6 +248,8 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	x402WalletLowBalancePayloadSchema,
 	hydraHeadLowBalancePayloadSchema,
 	hydraHeadSnapshotRoundStuckPayloadSchema,
+	hydraHeadPostTxFailedPayloadSchema,
+	hydraHeadContestMissingPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;
