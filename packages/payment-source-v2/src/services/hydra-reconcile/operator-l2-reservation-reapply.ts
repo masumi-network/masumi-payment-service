@@ -22,7 +22,13 @@
  * means the proof failed. Both need a person, not a button.
  */
 import createHttpError from 'http-errors';
-import { Prisma, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import {
+	PaymentAction,
+	Prisma,
+	PurchasingAction,
+	TransactionLayer,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
@@ -30,7 +36,12 @@ import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { parseHydraTransactionEvidence } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { connectPreviousAction, createNextPaymentAction, createNextPurchaseAction } from '@/services/shared';
-import { paymentL2ActionInFlight, purchaseL2ActionInFlight } from './l2-reservation-release';
+import {
+	PAYMENT_L2_IN_FLIGHT_ACTIONS,
+	paymentL2ActionRetry,
+	PURCHASE_L2_IN_FLIGHT_ACTIONS,
+	purchaseL2ActionRetry,
+} from './l2-reservation-release';
 import { REPLAY_APPLY_RETRY_REASON } from './replay-stall-reason';
 
 export type StalledReleasedL2Reservation = {
@@ -69,13 +80,15 @@ const releasedRowSelect = {
 	l2ReleasedByOperatorAt: true,
 	l2ReservationPreviousTransactionId: true,
 	BlocksWallet: { select: { id: true } },
-	// The release moved the in-flight action into ActionHistory as its newest
-	// entry. Anything newer means the request was worked on after the release.
+	// The release moved the in-flight action into ActionHistory. Later passes
+	// may park the request (WaitingForManualAction) on top of the retry it
+	// left, so read the newest in-flight action, not the newest entry.
 	PaymentRequestHistory: {
 		select: {
 			...requestSelect,
 			NextAction: { select: { requestedAction: true, resultHash: true } },
 			ActionHistory: {
+				where: { requestedAction: { in: PAYMENT_L2_IN_FLIGHT_ACTIONS } },
 				orderBy: { createdAt: 'desc' },
 				take: 1,
 				select: { requestedAction: true, resultHash: true },
@@ -86,7 +99,12 @@ const releasedRowSelect = {
 		select: {
 			...requestSelect,
 			NextAction: { select: { requestedAction: true } },
-			ActionHistory: { orderBy: { createdAt: 'desc' }, take: 1, select: { requestedAction: true } },
+			ActionHistory: {
+				where: { requestedAction: { in: PURCHASE_L2_IN_FLIGHT_ACTIONS } },
+				orderBy: { createdAt: 'desc' },
+				take: 1,
+				select: { requestedAction: true },
+			},
 		},
 	},
 } as const;
@@ -155,25 +173,27 @@ function blockedReason(row: ReleasedRow, node: HydraNode | null): string | null 
 		if (!spendsEscrow) return `The confirmed body does not spend the escrow output request ${request.id} points at`;
 	}
 	// The restored action must be the one the release replaced, so the body's
-	// confirmation maps to the action (and result hash) it actually carried.
+	// confirmation maps to the action (and result hash) it carried. The request
+	// may still hold the retry the release left, or a parking the failed
+	// retries of that spent escrow output ended in. Any other action, or a
+	// retry for another result hash, means someone moved it on: refuse.
 	for (const payment of row.PaymentRequestHistory) {
-		const released = payment.ActionHistory[0];
-		if (
-			released == null ||
-			paymentL2ActionInFlight(payment.NextAction.requestedAction) !== released.requestedAction ||
-			payment.NextAction.resultHash !== released.resultHash
-		) {
-			return `Payment ${payment.id} is no longer in the retry action its release left it in`;
-		}
+		const released = payment.ActionHistory.length > 0 ? payment.ActionHistory[0] : null;
+		const next = payment.NextAction;
+		const isLeftAsReleased =
+			released != null &&
+			(next.requestedAction === PaymentAction.WaitingForManualAction ||
+				(paymentL2ActionRetry(released.requestedAction) === next.requestedAction &&
+					next.resultHash === released.resultHash));
+		if (!isLeftAsReleased) return `Payment ${payment.id} is no longer in the action its release left it in`;
 	}
 	for (const purchase of row.PurchaseRequestHistory) {
-		const released = purchase.ActionHistory[0];
-		if (
-			released == null ||
-			purchaseL2ActionInFlight(purchase.NextAction.requestedAction) !== released.requestedAction
-		) {
-			return `Purchase ${purchase.id} is no longer in the retry action its release left it in`;
-		}
+		const released = purchase.ActionHistory.length > 0 ? purchase.ActionHistory[0] : null;
+		const next = purchase.NextAction.requestedAction;
+		const isLeftAsReleased =
+			released != null &&
+			(next === PurchasingAction.WaitingForManualAction || purchaseL2ActionRetry(released.requestedAction) === next);
+		if (!isLeftAsReleased) return `Purchase ${purchase.id} is no longer in the action its release left it in`;
 	}
 	return null;
 }

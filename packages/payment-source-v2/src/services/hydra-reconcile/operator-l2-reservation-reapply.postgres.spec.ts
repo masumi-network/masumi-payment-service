@@ -389,25 +389,48 @@ describePostgres('re-applying a released L2 reservation whose body confirmed (Po
 		expect(untouched.status).toBe(TransactionStatus.RolledBack);
 	});
 
-	it('refuses when the request was worked on after the release', async () => {
-		const body = signedWithdrawal();
-		confirmedBodies = new Map([[body.txId, body]]);
-		const { reservation, payment } = await seedReleasedWithdrawal(body);
-		// An error, then an operator's error-state recovery back to the retry action.
-		for (const requestedAction of [PaymentAction.WaitingForManualAction, PaymentAction.WithdrawRequested]) {
-			const current = await prisma.paymentRequest.findUniqueOrThrow({ where: { id: payment.id } });
+	/** Push actions onto the payment the way the error and recovery paths do. */
+	async function moveOn(paymentId: string, actions: Array<{ requestedAction: PaymentAction; resultHash?: string }>) {
+		for (const action of actions) {
+			const current = await prisma.paymentRequest.findUniqueOrThrow({ where: { id: paymentId } });
 			await prisma.paymentRequest.update({
-				where: { id: payment.id },
+				where: { id: paymentId },
 				data: {
 					ActionHistory: { connect: { id: current.nextActionId } },
-					NextAction: { create: { id: nextId('action'), requestedAction } },
+					NextAction: { create: { id: nextId('action'), ...action } },
 				},
 			});
 		}
+	}
+
+	it('re-applies a request its failed retries parked, and replay still applies the body', async () => {
+		const body = signedWithdrawal();
+		confirmedBodies = new Map([[body.txId, body]]);
+		const { reservation, payment } = await seedReleasedWithdrawal(body);
+		// The batcher retries WithdrawRequested against the spent escrow output
+		// until it gives up and parks the request.
+		await moveOn(payment.id, [{ requestedAction: PaymentAction.WaitingForManualAction }]);
+		await stallHeadOn(body.txId);
+
+		await reapply(reservation.id);
+		await expect(applyConfirmedHydraTransaction(host, ids.head, body.txId, body)).resolves.toBe('applied');
+		const settled = await prisma.paymentRequest.findUniqueOrThrow({ where: { id: payment.id } });
+		expect(settled.onChainState).toBe(OnChainState.Withdrawn);
+	});
+
+	it('refuses when the request was moved on to another action after the release', async () => {
+		const body = signedWithdrawal();
+		confirmedBodies = new Map([[body.txId, body]]);
+		const { reservation, payment } = await seedReleasedWithdrawal(body);
+		// An error, then an operator's error-state recovery to a different action.
+		await moveOn(payment.id, [
+			{ requestedAction: PaymentAction.WaitingForManualAction },
+			{ requestedAction: PaymentAction.AuthorizeRefundRequested },
+		]);
 		await stallHeadOn(body.txId);
 
 		const shown = await findStalledReleasedL2Reservation(ids.head);
-		expect(shown.reservation?.blockedReason).toContain('no longer in the retry action its release left it in');
+		expect(shown.reservation?.blockedReason).toContain('no longer in the action its release left it in');
 		await expect(reapply(reservation.id)).rejects.toMatchObject({ status: 409 });
 	});
 
