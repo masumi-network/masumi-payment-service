@@ -29,5 +29,7 @@ declare module 'ws' {
 		/** Stop reading from the socket; a no-op while connecting or closed. */
 		pause(): void;
 		resume(): void;
+		/** Send a ping control frame; the peer's websocket stack answers with a pong. */
+		ping(): void;
 	}
 }

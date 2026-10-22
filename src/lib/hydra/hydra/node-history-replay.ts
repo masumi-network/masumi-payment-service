@@ -93,6 +93,9 @@ export class HydraHistoryReplay {
 	private _unpinnedFrames: string[] = [];
 	private _unpinnedBytes = 0;
 	private _lastSequence: number | undefined;
+	/** Highest `seq` of any frame this pass, and whether its Greetings arrived. */
+	private _maxFrameSequence: number | undefined;
+	private _pastGreetings = false;
 	private _partyIdentityVerified = false;
 	private _verifiedSnapshot: VerifiedHydraSnapshot | undefined;
 	/** Newest snapshot a close or contest put on chain this pass. Only history has it after a restart. */
@@ -239,6 +242,8 @@ export class HydraHistoryReplay {
 		this._unpinnedFrames = [];
 		this._unpinnedBytes = 0;
 		this._lastSequence = undefined;
+		this._maxFrameSequence = undefined;
+		this._pastGreetings = false;
 		this._partyIdentityVerified = false;
 		this._verifiedSnapshot = undefined;
 		this._lastVerifiedFrame = undefined;
@@ -332,6 +337,20 @@ export class HydraHistoryReplay {
 			this.host.assertPersistenceReplayIsSupported(message);
 			const parsedEnvelope = messageSchema.parse(message);
 			assertExpectedFrameHeadId(parsedEnvelope, this.host.expectedHeadId);
+			// hydra-node subscribes a socket to live outputs BEFORE it streams the
+			// history (WSServer.wsApp: dupTChan, then forwardHistory), so an output
+			// persisted during a long replay arrives twice: in the history, then
+			// again after Greetings with the same seq. Rejecting the copy failed
+			// the pass, and the next pass on a busy head met the same race. A seq
+			// at or below one this pass already holds is that copy, and only after
+			// Greetings: inside the history itself a repeat is still an error.
+			const frameSequence = (message as { seq?: unknown }).seq;
+			if (typeof frameSequence === 'number') {
+				if (this._pastGreetings && this._maxFrameSequence != null && frameSequence <= this._maxFrameSequence) {
+					return undefined;
+				}
+				this._maxFrameSequence = Math.max(this._maxFrameSequence ?? frameSequence, frameSequence);
+			}
 			// Learn the peer link from replay as well as from live frames.
 			//
 			// hydra-node reports it on connection EVENTS, and the live socket is
@@ -452,6 +471,7 @@ export class HydraHistoryReplay {
 				}
 				if (sessionHeadId) this._sessionHeadId = sessionHeadId;
 				this._partyIdentityVerified = true;
+				this._pastGreetings = true;
 				// Greetings authenticates the end marker, not the preceding transaction
 				// metadata. A truncated page remains fail-closed until every retained
 				// item has a durable cursor and a later full pass reaches this marker.

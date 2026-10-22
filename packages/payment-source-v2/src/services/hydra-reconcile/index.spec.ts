@@ -33,6 +33,8 @@ const mockDisconnect = jest.fn<(_hydraHeadId: string) => Promise<void>>();
 const mockGetReconciliationQueue = jest.fn<() => unknown[]>();
 const mockMarkReconciled = jest.fn<(_txId: string) => void>();
 const mockGetConfirmedTransaction = jest.fn<(_txId: string) => unknown>();
+const mockRestartHistoryReplay = jest.fn<(_reason: string) => void>();
+const mockRecordHeadError = jest.fn<(...args: unknown[]) => Promise<void>>(async () => undefined);
 const mockApplyDatum = jest.fn<(_args: unknown) => Promise<ApplyOutcome>>();
 const mockFindRequestLineages =
 	jest.fn<(_paymentSourceId: string, _identifiers: Iterable<string>) => Promise<Map<string, unknown[]>>>();
@@ -99,6 +101,7 @@ const mockNode = {
 	getConfirmedTransactionsForReconciliation: mockGetReconciliationQueue,
 	markConfirmedTransactionReconciled: mockMarkReconciled,
 	getConfirmedTransaction: mockGetConfirmedTransaction,
+	restartHistoryReplay: mockRestartHistoryReplay,
 	getVerifiedFanoutReferences: mockGetVerifiedFanoutReferences,
 	getVerifiedFanoutReference: mockGetVerifiedFanoutReference,
 	getFinalizedFanoutBindingInput: mockGetFanoutBindingInput,
@@ -116,6 +119,10 @@ const mockConnectionManager = {
 	queueDisconnect: mockDisconnect,
 	flushHeadStatus: mockFlushHeadStatus,
 };
+
+jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
+	recordHeadError: mockRecordHeadError,
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -493,6 +500,28 @@ describe('Hydra live-snapshot reconciliation', () => {
 
 		expect(mockApplyDatum).not.toHaveBeenCalled();
 		expect(mockRecordLivePass).toHaveBeenCalledWith('head-1', false);
+	});
+
+	// Regression: on 2026-10-22 a seller head's history stream stopped delivering
+	// confirmations while replay still counted as complete. Every L2 lock on it
+	// stayed in this retry loop until the payments timed out.
+	it('restarts the history replay when a live output lacks evidence past the gap threshold', async () => {
+		await useOpenHead();
+		mockFetchAddressUtxos.mockResolvedValue([liveUtxo('tx-unproven-lock')]);
+		mockGetConfirmedTransaction.mockReturnValue(null);
+		const startMs = Date.parse('2026-10-22T07:54:48Z');
+		const now = jest.spyOn(Date, 'now');
+		try {
+			now.mockReturnValue(startMs);
+			await reconcileHydraHeadEscrowStates();
+			expect(mockRestartHistoryReplay).not.toHaveBeenCalled();
+
+			now.mockReturnValue(startMs + 60_000);
+			await reconcileHydraHeadEscrowStates();
+			expect(mockRestartHistoryReplay).toHaveBeenCalledTimes(1);
+		} finally {
+			now.mockRestore();
+		}
 	});
 
 	it('throttles the live snapshot of an open head but still drains replay and reports reservations', async () => {

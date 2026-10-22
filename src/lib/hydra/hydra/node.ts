@@ -22,6 +22,7 @@ import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
 import { assertL2TxWithinMaxSize } from './l2-tx-size';
+import { awaitChainSyncedForInit, initCommand } from './node-chain-sync';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
 import { isVerifiedPendingCommitOutput, readFinalSnapshot, readVerifiedCurrentOutput } from './node-current-output';
 import {
@@ -31,7 +32,6 @@ import {
 	isAwaitingPostChainTx,
 	prepareNewTxCommand,
 	sendHydraCommandAndWait,
-	waitUntilNodeSyncedForInit,
 } from './node-command-channel';
 import {
 	buildHydraCommitRequest,
@@ -91,6 +91,7 @@ export class HydraNode extends EventEmitter {
 	 * spending that budget here would leave Init itself no time to be observed.
 	 */
 	static readonly INIT_SYNC_WAIT_MS = 180_000;
+	private static readonly INIT_SYNC_POLL_MS = 250;
 	static readonly COMMAND_RESPONSE_TIMEOUT_MS = 30_000;
 	/**
 	 * How long a submission waits for the HEAD to confirm a body this node has
@@ -227,8 +228,7 @@ export class HydraNode extends EventEmitter {
 			finalizedSnapshotNumber: () => this._replay.finalizedSnapshotNumber,
 			rereadHistory: () => {
 				// Still failed only under the rotation latch, which ends the session.
-				if (this._replay.isFailed) return;
-				this._historyConnection.invalidate(new HydraTransportError('Live Greetings is Idle; replaying the history'));
+				if (!this._replay.isFailed) this.restartHistoryReplay('Live Greetings is Idle; replaying the history');
 			},
 			historyOpenCount: () => this._historyConnection.openCount,
 			setNetworkConnected: (connected) => {
@@ -538,35 +538,20 @@ export class HydraNode extends EventEmitter {
 			return;
 		}
 
-		// A node that is behind the chain does not refuse Init — it parks it
-		// (`WaitOnNodeInSync`), to be released on `NodeSynced`. Observed live
-		// 2026-09-07 on preprod: Init handed to a node whose Greetings said
-		// `CatchingUp`, `NodeSynced` 49s later, then nothing at all — no InitTx
-		// posted, no `PostTxOnChainFailed`, no frame — until the observe timeout
-		// raised an ambiguous error for a transaction that had never existed.
-		// So a node that has positively said it is behind is waited out first.
-		// Unknown sync state (no Greetings yet) sends as before: only a reported
-		// "behind" holds, and holding on silence would stall every fresh socket.
-		//
+		// A node that said it is behind is waited out first; see `awaitChainSyncedForInit`.
 		// Guarded rather than awaited unconditionally: an `await` on an
 		// already-resolved promise still yields a microtask, and callers rely on
 		// Init reaching the socket in the same synchronous turn as the call.
 		if (this._live.chainSynced === false) {
-			await waitUntilNodeSyncedForInit(() => this._live.chainSynced, this._expectedHeadId, HydraNode.INIT_SYNC_WAIT_MS);
+			await awaitChainSyncedForInit({
+				isChainSynced: () => this._live.chainSynced,
+				headId: this._expectedHeadId,
+				waitMs: HydraNode.INIT_SYNC_WAIT_MS,
+				pollMs: HydraNode.INIT_SYNC_POLL_MS,
+			});
 		}
 
-		return await this.sendCommandAndWait({
-			command: 'Init',
-			payload: { tag: 'Init' },
-			timeoutMs,
-			timeoutMessage: `Head did not reach Initializing within ${Math.round(
-				timeoutMs / 1000,
-			)}s of Init; reconcile the possibly submitted InitTx before retrying`,
-			isComplete: (message) =>
-				message.tag === 'HeadIsInitializing' ||
-				message.tag === 'HeadIsOpen' ||
-				(message.tag === 'Greetings' && (message.headStatus === 'Initializing' || message.headStatus === 'Open')),
-		});
+		return await this.sendCommandAndWait(initCommand(timeoutMs));
 	}
 
 	async commit(utxos: UTxO[] = [], blueprintTx?: string | null) {
@@ -633,6 +618,15 @@ export class HydraNode extends EventEmitter {
 	 */
 	isChainSynced(): boolean | undefined {
 		return this._live.chainSynced;
+	}
+
+	/**
+	 * Drop the history socket so a fresh pass replays the log and re-earns the
+	 * confirmed-transaction evidence. The replacement socket reconnects on the
+	 * normal transport schedule; already verified evidence is kept.
+	 */
+	restartHistoryReplay(reason: string): void {
+		this._historyConnection.invalidate(new HydraTransportError(reason));
 	}
 
 	isTxConfirmed(txHash: string): boolean {

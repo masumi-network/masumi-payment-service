@@ -11,7 +11,6 @@
  */
 
 import { resolveTxHash } from '@meshsdk/core';
-import { logger } from '@masumi/payment-core/logger';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportAmbiguousError, HydraTransportError } from './errors';
 import { assertL2TxWithinMaxSize } from './l2-tx-size';
@@ -254,31 +253,4 @@ export function awaitHydraTxConfirmation(options: {
 		}, timeoutMs);
 		for (const connection of connections) connection.on('close', handleClose);
 	});
-}
-
-const NODE_SYNC_POLL_MS = 250;
-
-/**
- * Hold until a node that reported itself behind the chain reports synced.
- * Resolves at once when the state is synced or unknown. Rejects as a
- * transport error if the node is still behind after `waitMs`: the command
- * was never sent, so there is nothing to reconcile.
- */
-export async function waitUntilNodeSyncedForInit(
-	isChainSynced: () => boolean | undefined,
-	headId: string | undefined,
-	waitMs: number,
-): Promise<void> {
-	logger.info('[HydraNode] Node reports it is catching up; holding Init until it is synced', { headId });
-	const deadline = Date.now() + waitMs;
-	while (isChainSynced() === false) {
-		if (Date.now() >= deadline) {
-			throw new HydraTransportError(
-				`Init not sent: hydra-node still reports it is behind the chain after ${Math.round(
-					waitMs / 1000,
-				)}s; retry once it reports synced`,
-			);
-		}
-		await new Promise((resolve) => setTimeout(resolve, NODE_SYNC_POLL_MS));
-	}
 }
