@@ -208,11 +208,13 @@ describe('initHeadPost, when the node cannot be reached', () => {
 	});
 
 	it('names a probe failure that wraps nothing', async () => {
-		mockConnect.mockRejectedValue(new HydraTransportError('Local Hydra node unreachable for head head-1'));
+		mockConnect.mockRejectedValue(
+			new HydraTransportError('Local Hydra node for head head-1 answered the probe with HTTP 401'),
+		);
 
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 			statusCode: 502,
-			message: expect.stringContaining('Local Hydra node unreachable for head head-1. Retry'),
+			message: expect.stringContaining('answered the probe with HTTP 401. Retry'),
 		});
 	});
 
