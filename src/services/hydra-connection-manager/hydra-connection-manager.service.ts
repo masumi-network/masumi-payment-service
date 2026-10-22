@@ -521,8 +521,6 @@ export class HydraConnectionManager {
 			session.enqueueStatus(async () => await persistHeadStatus(persistenceHost, hydraHeadId, head, ownerEpoch, data));
 		});
 
-		// Funds that were promised to a deposit have just become spendable. Anything
-		// that was waiting on them should run now rather than on the next tick.
 		recordReplayFailures(head.mainNode, hydraHeadId);
 
 		// An L1 transaction the node could not post. A contest it posts on its own
@@ -569,6 +567,8 @@ export class HydraConnectionManager {
 			);
 		});
 
+		// Funds that were promised to a deposit have just become spendable. Anything
+		// that was waiting on them should run now rather than on the next tick.
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {
 			this.runL2PassesNow(hydraHeadId);
 		});

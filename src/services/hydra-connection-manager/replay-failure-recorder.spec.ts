@@ -15,14 +15,16 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 const { recordReplayFailures, REPLAY_FAILURE_REPEAT_WINDOW_MS } = await import('./replay-failure-recorder');
 
 const PASS_INTERVAL_MS = 1000;
+const HEAD_ID_MISMATCH = 'Hydra frame head id did not match the pinned head';
+const GREETINGS_WITHOUT_HEAD = 'Pinned Hydra history Greetings omitted its head identifier';
 
 function recordedMessages(): string[] {
 	return mockCreate.mock.calls.map(([args]) => (args as { data: { errorMessage: string } }).data.errorMessage);
 }
 
-function failPass(node: EventEmitter, message: string): void {
+async function failPass(node: EventEmitter, message: string): Promise<void> {
 	node.emit(HydraNodeEvent.HistoryReplayFailed, new Error(message));
-	jest.advanceTimersByTime(PASS_INTERVAL_MS);
+	await jest.advanceTimersByTimeAsync(PASS_INTERVAL_MS);
 }
 
 beforeEach(() => {
@@ -38,28 +40,39 @@ afterEach(() => {
 describe('recordReplayFailures', () => {
 	// A frame that breaks the history fails every pass the same way, and the
 	// socket reopens about once a second: one row per pass filled the table.
-	it('records a repeated replay error once per window', () => {
+	it('records a repeated replay error once per window', async () => {
 		const node = new EventEmitter();
 		recordReplayFailures(node, 'head-1');
 
-		for (let pass = 0; pass < 5; pass += 1) failPass(node, 'Hydra frame head id did not match the pinned head');
-		expect(recordedMessages()).toEqual(['Hydra frame head id did not match the pinned head']);
+		for (let pass = 0; pass < 5; pass += 1) await failPass(node, HEAD_ID_MISMATCH);
+		expect(recordedMessages()).toEqual([HEAD_ID_MISMATCH]);
 
-		jest.advanceTimersByTime(REPLAY_FAILURE_REPEAT_WINDOW_MS);
-		failPass(node, 'Hydra frame head id did not match the pinned head');
+		await jest.advanceTimersByTimeAsync(REPLAY_FAILURE_REPEAT_WINDOW_MS);
+		await failPass(node, HEAD_ID_MISMATCH);
+		await failPass(node, HEAD_ID_MISMATCH);
 		expect(recordedMessages()).toHaveLength(2);
 	});
 
-	it('records a changed replay error at once', () => {
+	it('records a changed replay error at once', async () => {
 		const node = new EventEmitter();
 		recordReplayFailures(node, 'head-1');
 
-		failPass(node, 'Hydra frame head id did not match the pinned head');
-		failPass(node, 'Pinned Hydra history Greetings omitted its head identifier');
+		await failPass(node, HEAD_ID_MISMATCH);
+		await failPass(node, GREETINGS_WITHOUT_HEAD);
 
-		expect(recordedMessages()).toEqual([
-			'Hydra frame head id did not match the pinned head',
-			'Pinned Hydra history Greetings omitted its head identifier',
-		]);
+		expect(recordedMessages()).toEqual([HEAD_ID_MISMATCH, GREETINGS_WITHOUT_HEAD]);
+	});
+
+	// A write that failed left no row, so waiting out the window would hide the
+	// stuck head for that long.
+	it('tries again on the next pass when the write failed', async () => {
+		mockCreate.mockRejectedValueOnce(new Error('database unavailable'));
+		const node = new EventEmitter();
+		recordReplayFailures(node, 'head-1');
+
+		await failPass(node, HEAD_ID_MISMATCH);
+		await failPass(node, HEAD_ID_MISMATCH);
+
+		expect(mockCreate).toHaveBeenCalledTimes(2);
 	});
 });
