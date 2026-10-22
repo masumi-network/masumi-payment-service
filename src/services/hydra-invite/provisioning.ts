@@ -432,11 +432,19 @@ export async function reserveNodeForExchange(
 	// node on a previous attempt, and its participant row already exists.
 	const existing = await prisma.hydraLocalParticipant.findFirst({
 		where: { hydraHostId: host.id, hostNodeId: provisioned.nodeId },
-		select: { id: true },
+		select: { id: true, walletId: true },
 	});
 
 	let localParticipantId: string;
 	if (existing !== null) {
+		// Two redemptions of one invite share its nonce, so the second replays the
+		// node the first reserved. When they name different wallets, accepting the
+		// row recorded a redemption for a node bound to the other wallet; head
+		// creation then refused the mismatch with the nonce already spent. Refuse
+		// before the ack, so this attempt leaves nothing behind.
+		if (existing.walletId !== localHotWalletId) {
+			throw createHttpError(409, 'the node reserved for this nonce belongs to a different wallet');
+		}
 		localParticipantId = existing.id;
 	} else if (provisioned.secrets === null) {
 		// No secrets and no prior row: the material exists only on the Host, and
