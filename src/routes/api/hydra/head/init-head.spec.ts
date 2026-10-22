@@ -287,6 +287,17 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
 	});
 
+	it('answers a transport failure with the generic message, never the host it names', async () => {
+		mockInit.mockRejectedValue(new HydraTransportError('WebSocket error: connect ECONNREFUSED 10.0.0.5:4001'));
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 504,
+			expose: true,
+			message: 'Init did not confirm on-chain in time',
+		});
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+	});
+
 	it('does not record a head error when the node is only behind', async () => {
 		mockReadNodeState.mockResolvedValue({
 			state: 'Running',
