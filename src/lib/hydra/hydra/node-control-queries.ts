@@ -9,7 +9,8 @@ import { logger } from '@masumi/payment-core/logger';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { HydraProtocolError } from './errors';
 import { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
-import { HydraHttpResponseError, protocolErrorToString } from './node-frames';
+import { protocolErrorToString } from './node-frames';
+import { HydraHttpResponseError } from './node-http-response';
 import { type HydraRawCostModels } from './node-api';
 import { EXPECTED_MAX_TX_SIZE, reportParamsDrift } from './params-drift';
 import {

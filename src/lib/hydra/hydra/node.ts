@@ -521,9 +521,9 @@ export class HydraNode extends EventEmitter {
 			return;
 		}
 
-		// A node that is behind the chain does not refuse Init — it parks it
-		// (`WaitOnNodeInSync`), to be released on `NodeSynced`. Observed live
-		// 2026-09-07 on preprod: Init handed to a node whose Greetings said
+		// A node behind the chain may refuse Init (`RejectedInputBecauseUnsynced`)
+		// or park it (`WaitOnNodeInSync`) until `NodeSynced`. Parking, live on
+		// preprod 2026-09-07: Init handed to a node whose Greetings said
 		// `CatchingUp`, `NodeSynced` 49s later, then nothing at all — no InitTx
 		// posted, no `PostTxOnChainFailed`, no frame — until the observe timeout
 		// raised an ambiguous error for a transaction that had never existed.

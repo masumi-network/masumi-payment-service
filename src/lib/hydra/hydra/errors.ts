@@ -37,6 +37,18 @@ export class HydraPostTxRejectedError extends HydraCommandRejectedError {
 }
 
 /**
+ * hydra-node refused the command with `RejectedInputBecauseUnsynced`: its chain
+ * follower is behind, and it dropped the input without acting on it. Nothing
+ * was posted, so the command is safe to send again once the node has synced.
+ */
+export class HydraCommandRefusedUnsyncedError extends HydraCommandRejectedError {
+	constructor(message: string) {
+		super(message);
+		this.name = 'HydraCommandRefusedUnsyncedError';
+	}
+}
+
+/**
  * A transport failure which happened before a command could be queued on the
  * websocket. Retrying is safe because no bytes were handed to the transport.
  */

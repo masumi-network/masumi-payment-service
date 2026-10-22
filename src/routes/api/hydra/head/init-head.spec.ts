@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@j
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
 import {
+	HydraCommandRefusedUnsyncedError,
 	HydraCommandRejectedError,
 	HydraPostTxRejectedError,
 	HydraProtocolError,
@@ -570,5 +571,58 @@ describe('initHeadPost, with two requests at once', () => {
 			for (const resolve of finish) resolve();
 			await Promise.all([first.catch(() => undefined), second.catch(() => undefined)]);
 		}
+	});
+});
+
+describe('initHeadPost, when the node refuses Init because it is behind', () => {
+	it('says Init was not posted instead of telling the operator to wait for it', async () => {
+		mockInit.mockRejectedValue(
+			new HydraCommandRefusedUnsyncedError(
+				'Command Init was refused: the node is not synced with the chain (drift 90s)',
+			),
+		);
+		// The diagnosis would read this as "posted, still catching up".
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: false,
+			reason: 'catching up',
+			chainSynced: false,
+			driftSeconds: 90,
+		});
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 503,
+			message: expect.stringMatching(/Init was not posted/),
+		});
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
+
+	it('keeps the hold of an earlier Init that may still be parked', async () => {
+		const behind = { state: 'Running', isReady: false, reason: 'catching up', chainSynced: false, driftSeconds: 90 };
+		// An Init that timed out while the node was behind is held as possibly parked.
+		mockInit.mockRejectedValueOnce(new Error('Head did not reach Initializing within 300s'));
+		mockReadNodeState.mockResolvedValue(behind);
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({ statusCode: 504 });
+
+		// The Host cannot read the drift, so the hold check lets a retry through,
+		// and the node refuses that retry.
+		mockReadNodeState.mockResolvedValue({ ...behind, driftSeconds: null });
+		mockInit.mockRejectedValueOnce(
+			new HydraCommandRefusedUnsyncedError('Command Init was refused: the node is not synced with the chain'),
+		);
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({ statusCode: 503 });
+
+		// Drift is readable again: the earlier Init is still held.
+		mockReadNodeState.mockResolvedValue(behind);
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringMatching(/earlier Init is still waiting/),
+		});
+		expect(mockInit).toHaveBeenCalledTimes(2);
+
+		// Caught up: the hold clears, so no later test starts behind it.
+		mockReadNodeState.mockResolvedValue({ ...behind, chainSynced: true, driftSeconds: 0 });
+		await initHeadPost.handler({ input: { headId: 'head-1' } }).catch(() => undefined);
+		expect(mockInit).toHaveBeenCalledTimes(3);
 	});
 });

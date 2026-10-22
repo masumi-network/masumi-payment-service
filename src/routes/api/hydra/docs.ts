@@ -19,7 +19,8 @@ import {
 	clearHeadErrorsSchemaInput,
 	clearHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
-import { lifecycleInput, lifecycleOutput, commitInput, commitOutput } from '@/routes/api/hydra/head/lifecycle';
+import { lifecycleInput, lifecycleOutput } from '@/routes/api/hydra/head/lifecycle';
+import { commitInput, commitOutput } from '@/routes/api/hydra/head/commit';
 import { closeHeadInput } from '@/routes/api/hydra/head/settlement';
 import {
 	topupInput,
