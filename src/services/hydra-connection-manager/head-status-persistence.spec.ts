@@ -31,7 +31,7 @@ jest.unstable_mockModule('./head-auto-disable-recovery', () => ({
 	forgetHeadFailedClosed: mockForgetHeadFailedClosed,
 }));
 
-const { persistHeadStatus, failClosedAfterStatusPersistenceFailure, recordCloseTransaction } =
+const { persistHeadStatus, failClosedAfterStatusPersistenceFailure, recordCloseTransaction, recordClosedHeadFacts } =
 	await import('./head-status-persistence');
 const { logger } = await import('@masumi/payment-core/logger');
 
@@ -45,7 +45,9 @@ function host(): { [K in keyof HeadStatusPersistenceHost]: jest.Mock } {
 }
 
 function fakeHead(): CustomHydraHead {
-	return { mainNode: { pinExpectedHeadId: jest.fn(), fetchHeadOutputTxId: jest.fn() } } as unknown as CustomHydraHead;
+	return {
+		mainNode: { pinExpectedHeadId: jest.fn(), fetchHeadOutputTxId: jest.fn(), fetchClosedHeadFacts: jest.fn() },
+	} as unknown as CustomHydraHead;
 }
 
 /** A durable head row at Open, owned by epoch 1 unless a test says otherwise. */
@@ -253,5 +255,192 @@ describe('recordCloseTransaction under the ownership fence', () => {
 
 		await expect(recordCloseTransaction('head-1', head.mainNode, 2n)).resolves.toBeUndefined();
 		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * A head closed while the service was off is first seen through Greetings, which
+ * carry neither the snapshot number nor the deadline, so the row would stay at
+ * snapshot 0 with no deadline. The node still knows both.
+ */
+describe('recordClosedHeadFacts under the ownership fence', () => {
+	const FACTS = { contestationDeadline: '2026-10-22T12:00:00Z', snapshotNumber: 7 };
+	const factsOf = (head: CustomHydraHead) => head.mainNode.fetchClosedHeadFacts as unknown as jest.Mock;
+
+	it('guards the deadline on null-ness and the snapshot on being newer, both on the owner epoch', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
+
+		await recordClosedHeadFacts('head-1', head.mainNode, 2n);
+
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', contestationDeadline: null, ownerEpoch: 2n },
+			data: { contestationDeadline: new Date('2026-10-22T12:00:00Z') },
+		});
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', latestSnapshotNumber: { lt: 7n }, ownerEpoch: 2n },
+			data: { latestSnapshotNumber: 7n },
+		});
+	});
+
+	it('writes no snapshot for snapshot 0, which the row already holds', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve({ ...FACTS, snapshotNumber: 0 }));
+
+		await recordClosedHeadFacts('head-1', head.mainNode, 2n);
+
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: { contestationDeadline: expect.any(Date) as unknown as Date } }),
+		);
+	});
+
+	it('skips an unparseable deadline and still records the snapshot', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve({ ...FACTS, contestationDeadline: 'not a date' }));
+
+		await recordClosedHeadFacts('head-1', head.mainNode, 2n);
+
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { latestSnapshotNumber: 7n } }));
+	});
+
+	it('writes nothing when the node cannot say', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(undefined));
+
+		await expect(recordClosedHeadFacts('head-1', head.mainNode, 2n)).resolves.toBeUndefined();
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('swallows a failed read: a closed head whose facts cannot be read is still closed', async () => {
+		const head = fakeHead();
+		factsOf(head).mockImplementation(() => Promise.reject(new Error('node is gone')));
+
+		await expect(recordClosedHeadFacts('head-1', head.mainNode, 2n)).resolves.toBeUndefined();
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('leaves the deadline unset when the snapshot write fails, so the next reconnect reads again', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
+		const isSnapshotWrite = (args: unknown) =>
+			typeof args === 'object' &&
+			args !== null &&
+			'data' in args &&
+			typeof args.data === 'object' &&
+			args.data !== null &&
+			'latestSnapshotNumber' in args.data;
+		mockUpdateMany.mockImplementation((args) =>
+			isSnapshotWrite(args) ? Promise.reject(new Error('database blip')) : Promise.resolve({ count: 1 }),
+		);
+
+		await expect(recordClosedHeadFacts('head-1', head.mainNode, 2n)).resolves.toBeUndefined();
+		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: { contestationDeadline: expect.any(Date) as unknown as Date } }),
+		);
+	});
+
+	it('swallows a failed write', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
+		mockUpdateMany.mockRejectedValue(new Error('database is gone'));
+
+		await expect(recordClosedHeadFacts('head-1', head.mainNode, 2n)).resolves.toBeUndefined();
+	});
+});
+
+describe('persistHeadStatus for a head closed while the service was off', () => {
+	const FACTS = { contestationDeadline: '2026-10-22T12:00:00Z', snapshotNumber: 7 };
+	const HEAD_ID = 'a'.repeat(56);
+	const factsOf = (head: CustomHydraHead) => head.mainNode.fetchClosedHeadFacts as unknown as jest.Mock;
+	const writesOf = (field: string) =>
+		mockUpdateMany.mock.calls.filter(([call]) => field in ((call as { data: Record<string, unknown> }).data ?? {}))
+			.length;
+
+	it('records the deadline and snapshot when the Closed status arrives without them', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
+
+		await persistHeadStatus(host(), 'head-1', head, 1n, { status: HydraHeadStatus.Closed, headId: HEAD_ID });
+
+		expect(writesOf('contestationDeadline')).toBe(1);
+		expect(writesOf('latestSnapshotNumber')).toBe(1);
+	});
+
+	// The deadline can have passed while the service was off, so the first thing it sees is ReadyToFanout.
+	it('records them for a head first seen at FanoutPossible', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
+
+		await persistHeadStatus(host(), 'head-1', head, 1n, { status: HydraHeadStatus.FanoutPossible, headId: HEAD_ID });
+
+		expect(writesOf('contestationDeadline')).toBe(1);
+	});
+
+	it('records them for a head first seen fanning out in steps', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
+
+		await persistHeadStatus(host(), 'head-1', head, 1n, { status: HydraHeadStatus.FanningOut, headId: HEAD_ID });
+
+		expect(writesOf('contestationDeadline')).toBe(1);
+	});
+
+	it('fills in a row that was already stored without them, when the head is seen again', async () => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Closed, closedAt: new Date() }));
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
+
+		await persistHeadStatus(host(), 'head-1', head, 1n, { status: HydraHeadStatus.Closed, headId: HEAD_ID });
+
+		expect(writesOf('contestationDeadline')).toBe(1);
+	});
+
+	it('does not ask the node when the frame carried the deadline', async () => {
+		const head = fakeHead();
+
+		await persistHeadStatus(host(), 'head-1', head, 1n, {
+			status: HydraHeadStatus.Closed,
+			headId: HEAD_ID,
+			snapshotNumber: 7,
+			contestationDeadline: '2026-10-22T12:00:00Z',
+		});
+
+		expect(factsOf(head)).not.toHaveBeenCalled();
+	});
+
+	it('does not ask the node when the row already holds a deadline', async () => {
+		mockFindUnique.mockResolvedValue(
+			durableRow({ status: HydraHeadStatus.Closed, contestationDeadline: new Date('2026-10-22T12:00:00Z') }),
+		);
+		const head = fakeHead();
+
+		await persistHeadStatus(host(), 'head-1', head, 1n, { status: HydraHeadStatus.FanoutPossible, headId: HEAD_ID });
+
+		expect(factsOf(head)).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['an Open head', HydraHeadStatus.Initializing, HydraHeadStatus.Open],
+		['a Final head, which the node no longer holds', HydraHeadStatus.FanningOut, HydraHeadStatus.Final],
+	])('does not ask the node for %s', async (_label, stored, observed) => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: stored }));
+		const head = fakeHead();
+
+		await persistHeadStatus(host(), 'head-1', head, 1n, { status: observed, headId: HEAD_ID });
+
+		expect(factsOf(head)).not.toHaveBeenCalled();
+	});
+
+	it('keeps the status it stored when the node cannot be read', async () => {
+		const head = fakeHead();
+		factsOf(head).mockImplementation(() => Promise.reject(new Error('node is gone')));
+		const persistenceHost = host();
+
+		await persistHeadStatus(persistenceHost, 'head-1', head, 1n, { status: HydraHeadStatus.Closed, headId: HEAD_ID });
+
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		expect(persistenceHost.quarantine).not.toHaveBeenCalled();
 	});
 });
