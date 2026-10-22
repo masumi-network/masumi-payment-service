@@ -195,6 +195,16 @@ async function seedReleasedWithdrawal(body: HydraConfirmedTransaction) {
 			newOnChainState: OnChainState.WithdrawAuthorized,
 		},
 	});
+	// The Requested action the reservation replaced, and the in-flight action of
+	// an earlier attempt the head rejected. The rollback of that attempt kept the
+	// same Requested row, so both sit in history older than the reservation.
+	const requested = await prisma.paymentActionData.create({
+		data: { id: nextId('action'), requestedAction: PaymentAction.WithdrawRequested },
+	});
+	const earlierAttempt = await prisma.paymentActionData.create({
+		data: { id: nextId('action'), requestedAction: PaymentAction.WithdrawInitiated },
+	});
+	await new Promise((resolve) => setTimeout(resolve, 5));
 	const reservation = await prisma.transaction.create({
 		data: {
 			id: nextId('reservation'),
@@ -202,6 +212,7 @@ async function seedReleasedWithdrawal(body: HydraConfirmedTransaction) {
 			status: TransactionStatus.Pending,
 			layer: TransactionLayer.L2,
 			hydraHeadId: ids.head,
+			l2ReservationPreviousActionId: requested.id,
 			l2ReservationPreviousTransactionId: escrow.id,
 		},
 	});
@@ -245,7 +256,10 @@ async function seedReleasedWithdrawal(body: HydraConfirmedTransaction) {
 	});
 	await prisma.paymentRequest.update({
 		where: { id: payment.id },
-		data: { TransactionHistory: { connect: { id: escrow.id } } },
+		data: {
+			TransactionHistory: { connect: { id: escrow.id } },
+			ActionHistory: { connect: [{ id: requested.id }, { id: earlierAttempt.id }] },
+		},
 	});
 	const released = await releaseRejectedL2Reservation(
 		{
@@ -431,6 +445,26 @@ describePostgres('re-applying a released L2 reservation whose body confirmed (Po
 			{ requestedAction: PaymentAction.WaitingForManualAction },
 			{ requestedAction: PaymentAction.AuthorizeRefundRequested },
 			{ requestedAction: PaymentAction.WaitingForManualAction },
+		]);
+		await stallHeadOn(body.txId);
+
+		const shown = await findStalledReleasedL2Reservation(ids.head);
+		expect(shown.reservation?.blockedReason).toContain('was moved on since its release');
+		await expect(reapply(reservation.id)).rejects.toMatchObject({ status: 409 });
+	});
+
+	it('refuses when a later action got as far as in flight and was rolled back', async () => {
+		const body = signedWithdrawal();
+		confirmedBodies = new Map([[body.txId, body]]);
+		const { reservation, payment } = await seedReleasedWithdrawal(body);
+		// Parked, recovered to another action, and that action's reservation was
+		// rejected by the head: its in-flight entry stays in history and the
+		// rollback restores the same Requested action.
+		await moveOn(payment.id, [
+			{ requestedAction: PaymentAction.WaitingForManualAction },
+			{ requestedAction: PaymentAction.AuthorizeRefundRequested },
+			{ requestedAction: PaymentAction.AuthorizeRefundInitiated },
+			{ requestedAction: PaymentAction.AuthorizeRefundRequested },
 		]);
 		await stallHeadOn(body.txId);
 

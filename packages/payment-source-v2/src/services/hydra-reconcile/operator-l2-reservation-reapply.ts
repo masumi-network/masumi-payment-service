@@ -63,8 +63,16 @@ const requestSelect = {
 	currentHydraUtxoOutputIndex: true,
 } as const;
 
+const actionSelect = { id: true, createdAt: true, requestedAction: true } as const;
+// `id` breaks createdAt ties so the order is fixed.
+const historyOrder: Array<{ createdAt?: Prisma.SortOrder; id?: Prisma.SortOrder }> = [
+	{ createdAt: 'asc' },
+	{ id: 'asc' },
+];
+
 const releasedRowSelect = {
 	id: true,
+	createdAt: true,
 	updatedAt: true,
 	status: true,
 	txHash: true,
@@ -73,22 +81,23 @@ const releasedRowSelect = {
 	newOnChainState: true,
 	l2ReleasedByInputProofAt: true,
 	l2ReleasedByOperatorAt: true,
+	l2ReservationPreviousActionId: true,
 	l2ReservationPreviousTransactionId: true,
 	BlocksWallet: { select: { id: true } },
-	// Newest first: the release moved the in-flight action into ActionHistory,
-	// and everything after it shows what happened to the request since.
+	// Oldest first: the release moved the in-flight action into ActionHistory,
+	// and everything created after it shows what happened to the request since.
 	PaymentRequestHistory: {
 		select: {
 			...requestSelect,
 			NextAction: { select: { requestedAction: true, resultHash: true } },
-			ActionHistory: { orderBy: { createdAt: 'desc' }, select: { requestedAction: true, resultHash: true } },
+			ActionHistory: { orderBy: historyOrder, select: { ...actionSelect, resultHash: true } },
 		},
 	},
 	PurchaseRequestHistory: {
 		select: {
 			...requestSelect,
 			NextAction: { select: { requestedAction: true } },
-			ActionHistory: { orderBy: { createdAt: 'desc' }, select: { requestedAction: true } },
+			ActionHistory: { orderBy: historyOrder, select: actionSelect },
 		},
 	},
 } as const;
@@ -124,42 +133,56 @@ async function findHeldRow(head: Awaited<ReturnType<typeof loadHead>>): Promise<
 }
 
 type ActionEntry<Action> = { requestedAction: Action; resultHash?: string | null };
+type HistoryEntry<Action> = ActionEntry<Action> & { id: string; createdAt: Date };
 
 /**
  * The in-flight action the release replaced, or null when the request was
  * moved on since. The restored action must be that one, so the body's
  * confirmation maps to the action and result hash it carried.
  *
- * Every action after it, and the current one, must be its retry with the same
- * result hash, or the parking that failed retries against the spent escrow
- * output end in. Anything else means someone moved the request on.
+ * The reservation created that action in the same transaction as the row, so
+ * it is the oldest in-flight action not older than the row. Earlier attempts
+ * are older; anything later was created after the release. It must be the
+ * in-flight form of the action the reservation recorded as the one it
+ * replaced.
+ *
+ * Every action created after it, and the current one, must be its retry with
+ * the same result hash, or the parking that failed retries against the spent
+ * escrow output end in. Anything else means someone moved the request on.
  */
 function releasedInFlightAction<Action extends string>(
-	historyNewestFirst: Array<ActionEntry<Action>>,
+	row: { createdAt: Date; l2ReservationPreviousActionId: string | null },
+	historyOldestFirst: Array<HistoryEntry<Action>>,
 	next: ActionEntry<Action>,
 	retryOf: (action: Action) => Action | undefined,
 	parked: Action,
 ): ActionEntry<Action> | null {
-	const index = historyNewestFirst.findIndex((entry) => retryOf(entry.requestedAction) !== undefined);
-	if (index < 0) return null;
-	const released = historyNewestFirst[index];
+	const replaced = historyOldestFirst.find((entry) => entry.id === row.l2ReservationPreviousActionId);
+	const index = historyOldestFirst.findIndex(
+		(entry) => entry.createdAt >= row.createdAt && retryOf(entry.requestedAction) !== undefined,
+	);
+	if (replaced === undefined || index < 0) return null;
+	const released = historyOldestFirst[index];
+	const retry = retryOf(released.requestedAction);
+	if (retry !== replaced.requestedAction) return null;
 	const isLeftAsReleased = (entry: ActionEntry<Action>) =>
 		entry.requestedAction === parked ||
-		(entry.requestedAction === retryOf(released.requestedAction) &&
-			(entry.resultHash ?? null) === (released.resultHash ?? null));
-	return [...historyNewestFirst.slice(0, index), next].every(isLeftAsReleased) ? released : null;
+		(entry.requestedAction === retry && (entry.resultHash ?? null) === (released.resultHash ?? null));
+	return [...historyOldestFirst.slice(index + 1), next].every(isLeftAsReleased) ? released : null;
 }
 
-const releasedPaymentAction = (payment: ReleasedRow['PaymentRequestHistory'][number]) =>
+const releasedPaymentAction = (row: ReleasedRow, payment: ReleasedRow['PaymentRequestHistory'][number]) =>
 	releasedInFlightAction(
+		row,
 		payment.ActionHistory,
 		payment.NextAction,
 		paymentL2ActionRetry,
 		PaymentAction.WaitingForManualAction,
 	);
 
-const releasedPurchaseAction = (purchase: ReleasedRow['PurchaseRequestHistory'][number]) =>
+const releasedPurchaseAction = (row: ReleasedRow, purchase: ReleasedRow['PurchaseRequestHistory'][number]) =>
 	releasedInFlightAction(
+		row,
 		purchase.ActionHistory,
 		purchase.NextAction,
 		purchaseL2ActionRetry,
@@ -200,10 +223,10 @@ function blockedReason(row: ReleasedRow, node: HydraNode | null): string | null 
 		if (!spendsEscrow) return `The confirmed body does not spend the escrow output request ${request.id} points at`;
 	}
 	for (const payment of row.PaymentRequestHistory) {
-		if (!releasedPaymentAction(payment)) return `Payment ${payment.id} was moved on since its release`;
+		if (!releasedPaymentAction(row, payment)) return `Payment ${payment.id} was moved on since its release`;
 	}
 	for (const purchase of row.PurchaseRequestHistory) {
-		if (!releasedPurchaseAction(purchase)) return `Purchase ${purchase.id} was moved on since its release`;
+		if (!releasedPurchaseAction(row, purchase)) return `Purchase ${purchase.id} was moved on since its release`;
 	}
 	return null;
 }
@@ -263,8 +286,8 @@ export async function reapplyReleasedL2Reservation(params: {
 	const previousTransactionId = row.l2ReservationPreviousTransactionId!;
 
 	// The exact inverse of the action branch of `releaseRejectedL2Reservation`.
-	// Every write is guarded on the state the checks above read, so a request
-	// that moved in between aborts the whole transaction.
+	// The checks run again on a read inside the transaction, and every write is
+	// guarded on that read, so a request that moved in between aborts it.
 	const restoreCurrent = {
 		CurrentTransaction: { connect: { id: row.id } },
 		TransactionHistory: { disconnect: { id: row.id }, connect: { id: previousTransactionId } },
@@ -278,6 +301,10 @@ export async function reapplyReleasedL2Reservation(params: {
 	try {
 		await prisma.$transaction(
 			async (tx) => {
+				const fresh = await tx.transaction.findUnique({ where: { id: row.id }, select: releasedRowSelect });
+				if (fresh?.updatedAt.getTime() !== row.updatedAt.getTime() || blockedReason(fresh, node) !== null) {
+					throw createHttpError(409, 'The reservation or a request on it changed concurrently; reload and retry');
+				}
 				await tx.transaction.update({
 					where: { id: row.id, updatedAt: row.updatedAt, status: TransactionStatus.RolledBack, txHash: null },
 					data: {
@@ -286,8 +313,8 @@ export async function reapplyReleasedL2Reservation(params: {
 						l2ReleasedByOperatorAt: null,
 					},
 				});
-				for (const payment of row.PaymentRequestHistory) {
-					const released = releasedPaymentAction(payment)!;
+				for (const payment of fresh.PaymentRequestHistory) {
+					const released = releasedPaymentAction(fresh, payment)!;
 					await tx.paymentRequest.update({
 						where: requestGuard(payment),
 						data: {
@@ -300,12 +327,12 @@ export async function reapplyReleasedL2Reservation(params: {
 						},
 					});
 				}
-				for (const purchase of row.PurchaseRequestHistory) {
+				for (const purchase of fresh.PurchaseRequestHistory) {
 					await tx.purchaseRequest.update({
 						where: requestGuard(purchase),
 						data: {
 							...connectPreviousAction(purchase.nextActionId),
-							...createNextPurchaseAction(releasedPurchaseAction(purchase)!.requestedAction),
+							...createNextPurchaseAction(releasedPurchaseAction(fresh, purchase)!.requestedAction),
 							...restoreCurrent,
 						},
 					});
