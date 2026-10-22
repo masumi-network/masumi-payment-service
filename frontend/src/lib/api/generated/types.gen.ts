@@ -5223,7 +5223,7 @@ export type GetPaymentData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -5789,7 +5789,7 @@ export type GetPaymentCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -5842,7 +5842,7 @@ export type GetPurchaseCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -8034,7 +8034,7 @@ export type GetPurchaseData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
