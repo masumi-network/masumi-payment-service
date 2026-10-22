@@ -89,6 +89,14 @@ export function proxyHttp(
 			// writeHead's merge, so strip it to keep the noindex stamp authoritative.
 			const { 'x-robots-tag': _upstreamRobots, ...headers } = upstreamResponse.headers;
 			response.writeHead(upstreamResponse.statusCode ?? 502, headers);
+			// A node that closes the connection mid-body fails only this response,
+			// and pipe() does not pass that on: the caller's response stayed open,
+			// unlogged, until the caller's own timeout. Cut it instead. A reset
+			// fails the request as well; destroying twice is harmless.
+			upstreamResponse.on('error', (error: Error) => {
+				onError(`proxy to node api port ${apiPort} failed mid-response: ${error.message}`);
+				response.destroy();
+			});
 			// Streamed, never collected.
 			upstreamResponse.pipe(response);
 		},
@@ -96,9 +104,13 @@ export function proxyHttp(
 
 	upstream.on('error', (error: Error) => {
 		onError(`proxy to node api port ${apiPort} failed: ${error.message}`);
-		if (!response.headersSent) {
-			response.writeHead(502, { 'Content-Type': 'application/json' });
+		// Once writeHead has run, the node's status is committed, so a body
+		// appended here would read as the node's own complete answer.
+		if (response.headersSent) {
+			response.destroy();
+			return;
 		}
+		response.writeHead(502, { 'Content-Type': 'application/json' });
 		response.end(JSON.stringify({ error: 'node is not reachable' }));
 	});
 
