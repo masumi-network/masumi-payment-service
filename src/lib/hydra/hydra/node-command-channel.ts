@@ -200,6 +200,25 @@ export function prepareNewTxCommand(transaction: HydraTransaction): {
 	};
 }
 
+/** The NewTx command for a transaction `prepareNewTxCommand` accepts. It completes on the node's TxValid. */
+export function newTxCommand(
+	transaction: HydraTransaction,
+	timeoutMs: number,
+): { txHash: string; command: HydraCommandOptions } {
+	const { txHash, commandTransaction } = prepareNewTxCommand(transaction);
+	return {
+		txHash,
+		command: {
+			command: 'NewTx',
+			payload: { tag: 'NewTx', transaction: commandTransaction },
+			timeoutMs,
+			transactionHash: txHash,
+			timeoutMessage: `Hydra did not report an outcome for transaction ${txHash} within ${timeoutMs}ms`,
+			isComplete: (message) => message.tag === 'TxValid' && message.transactionId === txHash,
+		},
+	};
+}
+
 /** Refuse polling options that would never settle or spin. */
 export function assertTxConfirmationPolling(checkIntervalMs: number, timeoutMs: number): void {
 	if (!Number.isSafeInteger(checkIntervalMs) || checkIntervalMs <= 0) {

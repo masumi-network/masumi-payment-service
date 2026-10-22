@@ -57,6 +57,8 @@ export class Connection extends EventEmitter {
 	private _disconnectPromise: Promise<void> | undefined;
 	private _socketGeneration = 0;
 	private _reconnectAttempt = 0;
+	/** Sockets that opened. With history=yes, Hydra streams its log again from each open. */
+	private _openCount = 0;
 	private _heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 	/** A paused socket reads no pongs either, so the heartbeat waits it out. */
 	private _isReceivingPaused = false;
@@ -98,6 +100,7 @@ export class Connection extends EventEmitter {
 			if (generation !== this._socketGeneration || this._isManuallyDisconnected) return;
 			this._reconnectAttempt = 0;
 			this._status = HydraHeadStatus.Connected;
+			this._openCount += 1;
 			this.startHeartbeat(websocket, generation);
 			this.safeEmit('open');
 		});
@@ -307,6 +310,10 @@ export class Connection extends EventEmitter {
 
 	isOpen(): boolean {
 		return this._status === HydraHeadStatus.Connected;
+	}
+
+	get openCount(): number {
+		return this._openCount;
 	}
 
 	/**

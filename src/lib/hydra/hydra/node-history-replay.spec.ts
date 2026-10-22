@@ -25,6 +25,7 @@ const OTHER_HEAD_ID = 'b'.repeat(56);
 
 function createReplay() {
 	const verifyGreetingsPartyIdentity = jest.fn();
+	const onIdleWithoutFinalization = jest.fn();
 	const host = {
 		expectedHeadId: undefined as string | undefined,
 		trustLocalNodeSnapshotMetadata: true,
@@ -35,6 +36,8 @@ function createReplay() {
 		verifyGreetingsPartyIdentity,
 		setNetworkConnected: (_connected: boolean): void => undefined,
 		recordFinalizedFanout: () => undefined,
+		onIdleWithoutFinalization,
+		onPassClosed: jest.fn(),
 		rememberReplayedDeposit: () => undefined,
 		rememberReplayedDecommit: () => undefined,
 		emitTxConfirmed: () => undefined,
@@ -55,7 +58,7 @@ function createReplay() {
 	const connection = { invalidate } as unknown as Connection;
 
 	replay = new HydraHistoryReplay(connection, ledger, host);
-	return { replay, host, invalidate, verifyGreetingsPartyIdentity };
+	return { replay, host, invalidate, verifyGreetingsPartyIdentity, onIdleWithoutFinalization };
 }
 
 describe('HydraHistoryReplay buffered flush', () => {
@@ -176,5 +179,59 @@ describe('HydraHistoryReplay closed snapshot number', () => {
 		expect(replay.closedSnapshotNumber).toBe(5);
 		replay.resetPass();
 		expect(replay.closedSnapshotNumber).toBeUndefined();
+	});
+});
+
+/**
+ * hydra-node is Idle again once a head is finalized, so the history of a
+ * finalized head closes with a Greetings that names no head. After a restart,
+ * that history is the only proof the service can finish the fanout handoff on.
+ */
+describe('HydraHistoryReplay after a finalized head', () => {
+	const FINALIZED_FRAME = JSON.stringify({ tag: 'HeadIsFinalized', headId: PINNED_HEAD_ID, finalizedUTxO: {} });
+	const HEADLESS_IDLE_GREETINGS = JSON.stringify({ tag: 'Greetings', headStatus: 'Idle' });
+
+	it('completes a pinned pass that closes Idle after finalizing the pinned head', () => {
+		const { replay, host, invalidate, onIdleWithoutFinalization } = createReplay();
+		host.expectedHeadId = PINNED_HEAD_ID;
+
+		replay.processMessage(FINALIZED_FRAME);
+		// Not proof yet: the pass has not accepted its Greetings.
+		expect(replay.finalizedHeadId).toBeUndefined();
+		replay.processMessage(HEADLESS_IDLE_GREETINGS);
+
+		expect(invalidate).not.toHaveBeenCalled();
+		expect(onIdleWithoutFinalization).not.toHaveBeenCalled();
+		expect(host.onPassClosed).toHaveBeenCalledTimes(1);
+		expect(replay.isComplete).toBe(true);
+		expect(replay.sessionHeadId).toBe(PINNED_HEAD_ID);
+		expect(replay.finalizedHeadId).toBe(PINNED_HEAD_ID);
+	});
+
+	it('fails a pinned pass that closes Idle without finalizing, and reports it', () => {
+		const { replay, host, invalidate, onIdleWithoutFinalization } = createReplay();
+		host.expectedHeadId = PINNED_HEAD_ID;
+
+		replay.processMessage(JSON.stringify({ tag: 'HeadIsInitializing', headId: PINNED_HEAD_ID, parties: [] }));
+		replay.processMessage(HEADLESS_IDLE_GREETINGS);
+
+		expect(invalidate).toHaveBeenCalledTimes(1);
+		expect(onIdleWithoutFinalization).toHaveBeenCalledTimes(1);
+		expect(host.onPassClosed).not.toHaveBeenCalled();
+		expect(replay.isComplete).toBe(false);
+		expect(replay.sessionHeadId).toBeUndefined();
+	});
+
+	it('does not carry a finalization into the next pass', () => {
+		const { replay, host, invalidate, onIdleWithoutFinalization } = createReplay();
+		host.expectedHeadId = PINNED_HEAD_ID;
+
+		replay.processMessage(FINALIZED_FRAME);
+		replay.resetPass();
+		replay.processMessage(HEADLESS_IDLE_GREETINGS);
+
+		expect(invalidate).toHaveBeenCalledTimes(1);
+		expect(onIdleWithoutFinalization).toHaveBeenCalledTimes(1);
+		expect(replay.isComplete).toBe(false);
 	});
 });
