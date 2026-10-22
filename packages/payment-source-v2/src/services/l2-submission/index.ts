@@ -12,6 +12,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { HydraTransactionRejectedError, HydraTransportError } from '@/lib/hydra/hydra/errors';
+import { assertL2TxWithinMaxSize } from '@/lib/hydra/hydra/l2-tx-size';
 import {
 	requireHydraInputRefs,
 	requireHydraValidityUpperSlot,
@@ -148,6 +149,7 @@ type ReservedL2SubmissionCallbacks<TReservation> = {
 export async function executeReservedL2Submission<TReservation>(
 	callbacks: ReservedL2SubmissionCallbacks<TReservation>,
 ): Promise<ReservedL2SubmissionOutcome> {
+	assertL2TxWithinMaxSize(callbacks.signedTx);
 	const intendedTxHash = (callbacks.resolveIntendedTxHash ?? ((tx) => String(resolveTxHash(tx))))(callbacks.signedTx);
 	const invalidHereafterSlot = (callbacks.resolveValidityUpperSlot ?? requireHydraValidityUpperSlot)(
 		callbacks.signedTx,
@@ -462,6 +464,10 @@ async function rollbackL2Action(
 						data: { status: TransactionStatus.RolledBack },
 					});
 
+					// A completed rollback returns to the exact Requested action this
+					// caller read. A fresh action id would make its exhaustion marker
+					// stale immediately. Keep the attempted Initiated action in history;
+					// every later reservation still gets its own distinct Initiated id.
 					if (params.requestKind === 'payment') {
 						await tx.paymentRequest.update({
 							where: {
@@ -471,8 +477,13 @@ async function rollbackL2Action(
 								layer: TransactionLayer.L2,
 							},
 							data: {
-								...connectPreviousAction(reservation.initiatedActionId),
-								...createNextPaymentAction(params.retryAction, params.retryActionData),
+								ActionHistory: {
+									disconnect: { id: params.nextActionId },
+									connect: { id: reservation.initiatedActionId },
+								},
+								NextAction: {
+									connect: { id: params.nextActionId, requestedAction: params.retryAction, ...params.retryActionData },
+								},
 								CurrentTransaction: { connect: { id: params.previousTransactionId } },
 								TransactionHistory: {
 									disconnect: { id: params.previousTransactionId },
@@ -489,8 +500,13 @@ async function rollbackL2Action(
 								layer: TransactionLayer.L2,
 							},
 							data: {
-								...connectPreviousAction(reservation.initiatedActionId),
-								...createNextPurchaseAction(params.retryAction, params.retryActionData),
+								ActionHistory: {
+									disconnect: { id: params.nextActionId },
+									connect: { id: reservation.initiatedActionId },
+								},
+								NextAction: {
+									connect: { id: params.nextActionId, requestedAction: params.retryAction, ...params.retryActionData },
+								},
 								CurrentTransaction: { connect: { id: params.previousTransactionId } },
 								TransactionHistory: {
 									disconnect: { id: params.previousTransactionId },

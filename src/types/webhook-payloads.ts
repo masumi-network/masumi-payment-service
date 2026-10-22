@@ -179,14 +179,14 @@ const hydraHeadLowBalancePayloadSchema = createWebhookPayloadSchema(
 	z.literal('HYDRA_HEAD_LOW_BALANCE'),
 	z.object({
 		ruleId: z.string().describe('Low-balance rule id'),
-		hydraLocalParticipantId: z.string().describe('Local participant whose in-head balance is monitored'),
+		hydraLocalParticipantId: z.string().describe('Local participant whose spendable in-head balance is monitored'),
 		hydraHeadId: z.string().describe('The open head the balance was read from'),
 		assetUnit: z.string().describe('Monitored asset: "lovelace" or policyId+assetName hex'),
 		thresholdAmount: z.string().describe('Configured threshold in the asset base unit'),
-		currentAmount: z.string().describe('Observed own in-head balance in the asset base unit'),
+		currentAmount: z.string().describe('Observed own spendable in-head balance in the asset base unit'),
 		checkedAt: z.string().datetime().describe('Timestamp when the in-head balance was evaluated'),
 	}),
-	'Emitted when a local participant’s own in-head balance transitions into low balance',
+	'Emitted when a local participant’s own spendable in-head balance transitions into low balance',
 );
 
 const hydraHeadSnapshotRoundStuckPayloadSchema = createWebhookPayloadSchema(
@@ -201,6 +201,36 @@ const hydraHeadSnapshotRoundStuckPayloadSchema = createWebhookPayloadSchema(
 		checkedAt: z.string().datetime().describe('Timestamp when the round was evaluated'),
 	}),
 	'Emitted once per round when a Hydra head snapshot round has not moved for the stuck threshold. The head confirms nothing until an admin resets the round.',
+);
+
+const hydraHeadPostTxFailedPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_POST_TX_FAILED'),
+	z.object({
+		hydraHeadId: z.string().describe('The head the node tried to post an L1 transaction for'),
+		headStatus: z.string().describe('The head status this service held when the failure arrived'),
+		postChainTxTag: z.string().describe('Which L1 transaction failed, for example ContestTx; "unknown" if unnamed'),
+		reason: z.string().describe("The node's reason, with remedy advice where one is known"),
+		reportedToCaller: z
+			.boolean()
+			.describe(
+				'True when the failed transaction is the one a waiting API call (Init, Close, Fanout) posts; that call fails with it and records it. False otherwise, also for a failure that names no transaction, even when it fails a waiting call too',
+			),
+		failedAt: z.string().datetime().describe('When this service received the failure'),
+	}),
+	'Emitted for every L1 transaction the Hydra node could not post. A failed ContestTx is a warning: another party may still have contested. HYDRA_HEAD_CONTEST_MISSING says when no contest landed.',
+);
+
+const hydraHeadContestMissingPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_CONTEST_MISSING'),
+	z.object({
+		hydraHeadId: z.string().describe('The closed head that holds an older snapshot on chain than this node'),
+		headStatus: z.string().describe('Closed, or FanoutPossible once the contestation deadline has passed'),
+		closedSnapshotNumber: z.number().int().describe('The newest snapshot a close or contest put on chain'),
+		verifiedSnapshotNumber: z.number().int().describe('The newest snapshot every party signed, as this node holds it'),
+		gapSince: z.string().datetime().describe('When this service first saw the gap'),
+		checkedAt: z.string().datetime().describe('Timestamp when the gap was evaluated'),
+	}),
+	'Emitted once per gap when a closed Hydra head holds an older snapshot on chain than one every party signed, and no contest closed the gap within the grace period. A fanout from that state pays out the older snapshot.',
 );
 
 // Union schema for all webhook payloads
@@ -218,6 +248,8 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	x402WalletLowBalancePayloadSchema,
 	hydraHeadLowBalancePayloadSchema,
 	hydraHeadSnapshotRoundStuckPayloadSchema,
+	hydraHeadPostTxFailedPayloadSchema,
+	hydraHeadContestMissingPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;

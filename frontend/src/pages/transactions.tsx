@@ -2,50 +2,36 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
 import { MASUMI_PAYMENTS_DOCS_URL } from '@/lib/masumi-links';
-import { cn, formatAssetAmount } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-date';
+import { cn } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
 import { HorizontalScrollArea } from '@/components/ui/horizontal-scroll-area';
-import {
-  tableActionsCellCompactClass,
-  tableActionsCellCompactDestructiveClass,
-  tableActionsCellCompactSelectedClass,
-  tableActionsHeadCompactClass,
-  tableActionsInnerClass,
-} from '@/components/ui/table-actions-column';
-import { FlaskConical } from 'lucide-react';
+import { tableActionsHeadCompactClass } from '@/components/ui/table-actions-column';
+import { CheckCheck, FlaskConical } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
-import { CopyButton } from '@/components/ui/copy-button';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
-import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
+import { useTransactions, OnChainStateFilter } from '@/lib/hooks/useTransactions';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Badge } from '@/components/ui/badge';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { filterTransactionsClientSide } from '@/lib/client-search/transaction-search';
 import Link from 'next/link';
-import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
-import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
 import {
-  getLatestTxHash,
-  isPaymentNeverReceived,
   isTransactionErrorRecoverable,
-  NO_PAYMENT_RECEIVED_LABEL,
+  isTransactionNeedingAction,
 } from '@/components/transactions/transaction-format.helpers';
+import { TransactionTableRow } from '@/components/transactions/TransactionTableRow';
+import { useAcknowledgeNeedsAction } from '@/lib/hooks/useAcknowledgeNeedsAction';
 import { BulkActionBar } from '@/components/ui/bulk-action-bar';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  TableSelectAllCheckbox,
-  TableSelectRowCheckbox,
-} from '@/components/ui/table-select-checkbox';
+import { TableSelectAllCheckbox } from '@/components/ui/table-select-checkbox';
 import {
   TransactionFilters,
   EMPTY_FILTERS,
@@ -53,33 +39,12 @@ import {
 } from '@/components/transactions/TransactionFilters';
 import { buildTransactionReportViewDefaults } from '@/components/transactions/download-details.helpers';
 import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
-import { TransactionRowActionsMenu } from '@/components/transactions/TransactionRowActionsMenu';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
 import { useTransactionTabCounts } from '@/lib/hooks/useTransactionTabCounts';
 import { useTableSelection } from '@/lib/hooks/useTableSelection';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
-
-const formatStatus = (status: string | null) => {
-  if (!status) return '—';
-  return status.replace(/([A-Z])/g, ' $1').trim();
-};
-
-const isHydraTransaction = (transaction: Transaction) =>
-  transaction.CurrentTransaction?.layer === 'L2';
-
-// The layer (L1 vs Hydra L2) is only known once the request has been picked up
-// and locked (i.e. a CurrentTransaction exists). Before that, show neither.
-const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' | null => {
-  const layer = transaction.CurrentTransaction?.layer;
-  if (layer === 'L2') return 'Hydra L2';
-  if (layer === 'L1') return 'L1';
-  return null;
-};
-
-const getHydraHeadId = (transaction: Transaction) =>
-  transaction.CurrentTransaction?.hydraHeadId ?? null;
 
 export default function Transactions() {
   const { apiClient, selectedPaymentSourceId, network, capabilities } = useAppContext();
@@ -145,6 +110,24 @@ export default function Transactions() {
   const { recoverErrors, isRecovering } = useBulkClearTransactionErrors();
   const [bulkRecoveryMode, setBulkRecoveryMode] = useState<'clear' | 'retry' | null>(null);
   const [bulkConfirmMode, setBulkConfirmMode] = useState<'clear' | 'retry' | null>(null);
+  const { acknowledge } = useAcknowledgeNeedsAction();
+  // Covers the acknowledge call and the refetch after it, so acknowledged rows
+  // cannot be offered again before the list updates.
+  const [isAcknowledgeRunning, setIsAcknowledgeRunning] = useState(false);
+  // Rows for the acknowledge confirm dialog. Kept after close so the text does
+  // not change while the dialog fades out.
+  const [acknowledgeTargets, setAcknowledgeTargets] = useState<Transaction[]>([]);
+  const [isAcknowledgeOpen, setIsAcknowledgeOpen] = useState(false);
+  const openAcknowledge = useCallback((targets: Transaction[]) => {
+    setAcknowledgeTargets(targets);
+    setIsAcknowledgeOpen(true);
+  }, []);
+  const isBusy = isRecovering || isAcknowledgeRunning;
+  // Acknowledge is offered only here: every row in this view is unacknowledged,
+  // because the backend filter leaves acknowledged rows out.
+  // Placeholder rows belong to the previous view and may hold acknowledged rows.
+  const isNeedsActionView =
+    (activeTab === 'Needs Action' || filters.needsAction) && !isPlaceholderData;
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
@@ -243,6 +226,40 @@ export default function Transactions() {
   );
   const recoverableSelectedCount = recoverableSelectedTransactions.length;
 
+  const acknowledgeableVisibleTransactions = useMemo(
+    () => (isNeedsActionView ? visibleTransactions.filter(isTransactionNeedingAction) : []),
+    [isNeedsActionView, visibleTransactions],
+  );
+  const acknowledgeableSelectedTransactions = useMemo(
+    () => acknowledgeableVisibleTransactions.filter((tx) => tx.id && selectedIds.has(tx.id)),
+    [acknowledgeableVisibleTransactions, selectedIds],
+  );
+  const acknowledgeableSelectedCount = acknowledgeableSelectedTransactions.length;
+
+  const handleAcknowledge = useCallback(
+    async (targets: Transaction[]) => {
+      const { acknowledged, failed } = await acknowledge(targets);
+      const skipped = targets.length - acknowledged - failed;
+      if (acknowledged > 0) {
+        toast.success(
+          `Acknowledged ${acknowledged} transaction${acknowledged === 1 ? '' : 's'}. They no longer show in Needs Action.`,
+        );
+      }
+      if (failed > 0) {
+        toast.error(`Failed to acknowledge ${failed} transaction${failed === 1 ? '' : 's'}`);
+      }
+      if (skipped > 0) {
+        toast.info(
+          `${skipped} transaction${skipped === 1 ? ' was' : 's were'} not acknowledged: changed since this page loaded, already out of Needs Action, or created by another API key.`,
+        );
+      }
+      clearSelection();
+      void refetchTabCounts();
+      await refetchTransactions?.();
+    },
+    [acknowledge, clearSelection, refetchTabCounts, refetchTransactions],
+  );
+
   const handleBulkRecoverErrors = useCallback(
     async (retryPreviousAction: boolean) => {
       if (recoverableSelectedTransactions.length === 0) return;
@@ -327,28 +344,6 @@ export default function Transactions() {
     }
   }, [hasMore, isLoadingMore, loadMore]);
 
-  const getStatusColor = (status: string | null, hasError?: boolean) => {
-    if (hasError) return 'text-destructive';
-    switch (status?.toLowerCase()) {
-      case 'fundslocked':
-        return 'text-yellow-500';
-      case 'withdrawn':
-      case 'resultsubmitted':
-        return 'text-green-500';
-      case 'refundrequested':
-      case 'withdrawauthorized':
-      case 'refundauthorized':
-        return 'text-orange-500';
-      case 'refundwithdrawn':
-        return 'text-blue-500';
-      case 'disputed':
-      case 'disputedwithdrawn':
-        return 'text-destructive';
-      default:
-        return 'text-muted-foreground';
-    }
-  };
-
   return (
     <MainLayout>
       <Head>
@@ -427,18 +422,26 @@ export default function Transactions() {
                 clearSelection();
               }}
             />
+            {canRecoverErrors && acknowledgeableVisibleTransactions.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={() => openAcknowledge(acknowledgeableVisibleTransactions)}
+                disabled={isBusy}
+              >
+                <CheckCheck className="h-4 w-4" />
+                {`Acknowledge all visible (${acknowledgeableVisibleTransactions.length})`}
+              </Button>
+            )}
           </div>
 
-          <BulkActionBar
-            selectedCount={selectedCount}
-            onClear={clearSelection}
-            disabled={isRecovering}
-          >
+          <BulkActionBar selectedCount={selectedCount} onClear={clearSelection} disabled={isBusy}>
             {!canRecoverErrors ? (
               <span className="max-w-md text-right text-sm text-muted-foreground">
                 Bulk recovery requires an API key with pay access.
               </span>
-            ) : recoverableSelectedCount === 0 ? (
+            ) : recoverableSelectedCount === 0 && acknowledgeableSelectedCount === 0 ? (
               <span className="max-w-md text-right text-sm text-muted-foreground">
                 {
                   'No bulk actions for this selection. Pick rows with an error, or open the Needs Action tab.'
@@ -446,31 +449,42 @@ export default function Transactions() {
               </span>
             ) : (
               <>
-                {recoverableSelectedCount < selectedCount ? (
+                {recoverableSelectedCount > 0 && recoverableSelectedCount < selectedCount ? (
                   <span className="text-xs text-muted-foreground">
                     {recoverableSelectedCount} of {selectedCount} can be recovered
                   </span>
                 ) : null}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-border bg-background shadow-xs hover:bg-background"
-                  onClick={() => setBulkConfirmMode('clear')}
-                  disabled={isRecovering}
-                >
-                  {bulkRecoveryMode === 'clear'
-                    ? 'Clearing error states...'
-                    : `Clear error state (${recoverableSelectedCount})`}
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setBulkConfirmMode('retry')}
-                  disabled={isRecovering}
-                >
-                  {bulkRecoveryMode === 'retry'
-                    ? 'Queueing retries...'
-                    : `Retry failed action (${recoverableSelectedCount})`}
-                </Button>
+                {acknowledgeableSelectedCount > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-border bg-background shadow-xs hover:bg-background"
+                    onClick={() => openAcknowledge(acknowledgeableSelectedTransactions)}
+                    disabled={isBusy}
+                  >
+                    {`Acknowledge (${acknowledgeableSelectedCount})`}
+                  </Button>
+                )}
+                {recoverableSelectedCount > 0 && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-border bg-background shadow-xs hover:bg-background"
+                      onClick={() => setBulkConfirmMode('clear')}
+                      disabled={isBusy}
+                    >
+                      {bulkRecoveryMode === 'clear'
+                        ? 'Clearing error states...'
+                        : `Clear error state (${recoverableSelectedCount})`}
+                    </Button>
+                    <Button size="sm" onClick={() => setBulkConfirmMode('retry')} disabled={isBusy}>
+                      {bulkRecoveryMode === 'retry'
+                        ? 'Queueing retries...'
+                        : `Retry failed action (${recoverableSelectedCount})`}
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </BulkActionBar>
@@ -547,155 +561,24 @@ export default function Transactions() {
                     </td>
                   </tr>
                 ) : (
-                  visibleTransactions.map((transaction, index) => {
-                    const hasTxError = !!transaction.NextAction?.errorType;
-                    const isTxSelected = Boolean(transaction.id && isSelected(transaction.id));
-
-                    return (
-                      <tr
-                        key={transaction.id}
-                        className={cn(
-                          'group border-b last:border-b-0 animate-fade-in opacity-0',
-                          'cursor-pointer',
-                          hasTxError ? 'transaction-row-error' : 'hover:bg-row-hover',
-                          isTxSelected &&
-                            (hasTxError
-                              ? 'transaction-row-selected'
-                              : 'transaction-row-selected bg-row-hover'),
-                        )}
-                        style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                        onClick={() => setSelectedTransaction(transaction)}
-                      >
-                        <td className="w-10 p-4 pl-6" onClick={(e) => e.stopPropagation()}>
-                          <TableSelectRowCheckbox
-                            checked={transaction.id ? isSelected(transaction.id) : false}
-                            onToggle={() => transaction.id && toggleRow(transaction.id)}
-                            aria-label="Select transaction"
-                          />
-                        </td>
-                        <td className="p-4">
-                          <span className="capitalize">{transaction.type}</span>
-                        </td>
-                        <td className="p-4">
-                          {(() => {
-                            const displayTxHash = getLatestTxHash(transaction);
-                            return (
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm text-muted-foreground">
-                                  {displayTxHash
-                                    ? `${displayTxHash.slice(0, 8)}...${displayTxHash.slice(-8)}`
-                                    : '—'}
-                                </span>
-                                {displayTxHash && <CopyButton value={displayTxHash} />}
-                              </div>
-                            );
-                          })()}
-                        </td>
-                        <td className="p-4">
-                          <TransactionAgentIdentifierCell
-                            agentIdentifier={transaction.agentIdentifier}
-                            agentName={transaction.agentName}
-                            smartContractAddress={
-                              transaction.PaymentSource?.smartContractAddress ?? null
-                            }
-                            network={transaction.PaymentSource?.network}
-                          />
-                        </td>
-                        <td className="p-4">
-                          {transaction.type === 'payment' && transaction.RequestedFunds?.length
-                            ? transaction.RequestedFunds.map((fund, index) => (
-                                <div key={index} className="text-sm">
-                                  {formatAssetAmount(fund.amount, fund.unit, network)}
-                                </div>
-                              ))
-                            : transaction.type === 'purchase' && transaction.PaidFunds?.length
-                              ? transaction.PaidFunds.map((fund, index) => (
-                                  <div key={index} className="text-sm">
-                                    {formatAssetAmount(fund.amount, fund.unit, network)}
-                                  </div>
-                                ))
-                              : '—'}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex flex-col gap-1">
-                            <span>{transaction.PaymentSource.network}</span>
-                            <PaymentSourceTypeBadge
-                              paymentSourceType={transaction.PaymentSource.paymentSourceType}
-                              showDefault
-                            />
-                            <div className="flex items-center gap-1.5">
-                              {getTransactionLayerLabel(transaction) ? (
-                                <Badge
-                                  variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
-                                  className="w-fit"
-                                >
-                                  {getTransactionLayerLabel(transaction)}
-                                </Badge>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
-                              )}
-                              {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
-                                <span
-                                  className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"
-                                  title={getHydraHeadId(transaction) ?? undefined}
-                                >
-                                  {getHydraHeadId(transaction)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <span
-                            className={getStatusColor(
-                              transaction.onChainState,
-                              !!transaction.NextAction?.errorType,
-                            )}
-                          >
-                            {transaction.onChainState === 'Disputed' ? (
-                              <span className="flex items-center gap-1">
-                                <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
-                                {formatStatus(transaction.onChainState)}
-                              </span>
-                            ) : isPaymentNeverReceived(transaction) ? (
-                              NO_PAYMENT_RECEIVED_LABEL
-                            ) : (
-                              formatStatus(transaction.onChainState)
-                            )}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          {transaction.onChainState === 'ResultSubmitted'
-                            ? formatDateTime(transaction.unlockTime)
-                            : '—'}
-                        </td>
-                        <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
-                        <td
-                          className={
-                            isTxSelected
-                              ? tableActionsCellCompactSelectedClass
-                              : hasTxError
-                                ? tableActionsCellCompactDestructiveClass
-                                : tableActionsCellCompactClass
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className={tableActionsInnerClass}>
-                            <TransactionRowActionsMenu
-                              transaction={transaction}
-                              canRecover={canRecoverErrors}
-                              isRecovering={isRecovering}
-                              onViewDetails={() => setSelectedTransaction(transaction)}
-                              onClearError={() => void handleRowRecoverErrors(transaction, false)}
-                              onRetryFailedAction={() =>
-                                void handleRowRecoverErrors(transaction, true)
-                              }
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+                  visibleTransactions.map((transaction, index) => (
+                    <TransactionTableRow
+                      key={transaction.id}
+                      transaction={transaction}
+                      index={index}
+                      network={network}
+                      isSelected={Boolean(transaction.id && isSelected(transaction.id))}
+                      canRecover={canRecoverErrors}
+                      isRecovering={isBusy}
+                      onToggleSelected={() => transaction.id && toggleRow(transaction.id)}
+                      onOpen={() => setSelectedTransaction(transaction)}
+                      onClearError={() => void handleRowRecoverErrors(transaction, false)}
+                      onRetryFailedAction={() => void handleRowRecoverErrors(transaction, true)}
+                      onAcknowledge={
+                        isNeedsActionView ? () => openAcknowledge([transaction]) : undefined
+                      }
+                    />
+                  ))
                 )}
               </tbody>
             </table>
@@ -741,6 +624,22 @@ export default function Transactions() {
             );
           }}
           isLoading={isRecovering}
+        />
+
+        <ConfirmDialog
+          open={isAcknowledgeOpen}
+          onClose={() => setIsAcknowledgeOpen(false)}
+          title="Acknowledge transactions"
+          description={`Hide ${acknowledgeTargets.length} transaction${acknowledgeTargets.length === 1 ? '' : 's'} from Needs Action? The error state, transactions and on-chain state do not change. A new error shows the row again.`}
+          confirmLabel="Acknowledge"
+          onConfirm={() => {
+            setIsAcknowledgeRunning(true);
+            void handleAcknowledge(acknowledgeTargets).finally(() => {
+              setIsAcknowledgeRunning(false);
+              setIsAcknowledgeOpen(false);
+            });
+          }}
+          isLoading={isAcknowledgeRunning}
         />
       </AnimatedPage>
     </MainLayout>

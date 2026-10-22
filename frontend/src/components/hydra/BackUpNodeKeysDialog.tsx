@@ -119,8 +119,11 @@ export function BackUpNodeKeysDialog({
 
   function handleClose(nextOpen: boolean) {
     // The service seals the keys when the reveal starts, so closing now would
-    // drop the only copy it will ever hand out.
-    if (!nextOpen && pendingRequest.current) return;
+    // drop the only copy it will ever hand out. That holds after the reveal too:
+    // escape, an outside click or the corner cross would clear the shown keys
+    // before the operator confirmed they saved them.
+    const isUnsavedReveal = keys !== null && !saved;
+    if (!nextOpen && (pendingRequest.current || isUnsavedReveal)) return;
     if (!nextOpen) {
       requestGeneration.current += 1;
       pendingRequest.current = false;
@@ -133,7 +136,7 @@ export function BackUpNodeKeysDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg" hideClose={keys !== null && !saved}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="h-4 w-4" />

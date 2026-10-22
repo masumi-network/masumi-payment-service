@@ -14,8 +14,14 @@
 import { resolveTxHash } from '@meshsdk/core';
 
 import { logger } from '@masumi/payment-core/logger';
-import { HydraCommandRejectedError, HydraProtocolError, HydraTransactionRejectedError } from './errors';
-import { parseHydraJson, stringifyHydraJson } from './json';
+import {
+	HydraCommandRefusedUnsyncedError,
+	HydraCommandRejectedError,
+	HydraPostTxRejectedError,
+	HydraProtocolError,
+	HydraTransactionRejectedError,
+} from './errors';
+import { parseHydraJson } from './json';
 import {
 	MAX_HYDRA_WS_FRAME_BYTES,
 	canonicalHydraHeadIdSchema,
@@ -28,14 +34,21 @@ import {
 	hydraHeadStatusSchema,
 	messageSchema,
 	postTxOnChainFailedMessageSchema,
+	rejectedInputBecauseUnsyncedMessageSchema,
 	txInvalidMessageSchema,
 	txValidMessageSchema,
 } from './schemas';
-import { describeDecommitInvalidReason, describePostTxError, postTxErrorTag } from './post-tx-error';
+import { canonicalOutputContent } from './output-content';
+import { describeDecommitInvalidReason, describePostTxError } from './post-tx-error';
 import { HydraHeadStatus } from '@/generated/prisma/client';
-import type { DecommitDistributedValue, DecommitSettledData, DepositRecordedData, StatusChangeData } from './types';
-
-const MAX_HYDRA_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024;
+import {
+	UNKNOWN_POST_CHAIN_TX_TAG,
+	type DecommitDistributedValue,
+	type DecommitSettledData,
+	type DepositRecordedData,
+	type PostTxFailure,
+	type StatusChangeData,
+} from './types';
 
 /**
  * How many distinct assets a decommit summary will describe.
@@ -68,6 +81,7 @@ const HEAD_SCOPED_SERVER_OUTPUT_TAGS = new Set([
 	'HeadIsClosed',
 	'HeadIsContested',
 	'ReadyToFanout',
+	'HeadPartiallyFannedOut',
 	'HeadIsAborted',
 	'HeadIsFinalized',
 	'TxValid',
@@ -129,84 +143,6 @@ export class CircularBuffer<T> {
 		this.buffer = new Array(this.length);
 		this.pointer = 0;
 	}
-}
-
-export class HydraHttpResponseError extends Error {
-	override readonly name = 'HydraHttpResponseError';
-
-	constructor(
-		message: string,
-		readonly status: number,
-	) {
-		super(message);
-	}
-}
-
-export async function handleHttpResponse(response: Response): Promise<unknown> {
-	const responseText = await readBoundedHttpResponse(response);
-	let responseBody: unknown;
-	try {
-		responseBody = parseHydraJson(responseText);
-	} catch (error) {
-		if (response.ok === false) throw createHttpResponseError(response);
-		throw new HydraProtocolError('Hydra HTTP response was not valid JSON', { cause: error });
-	}
-	if (response.ok === false) throw createHttpResponseError(response, responseBody);
-	return responseBody;
-}
-
-export async function readBoundedHttpResponse(response: Response): Promise<string> {
-	if (response.body && typeof response.body.getReader === 'function') {
-		const reader = response.body.getReader();
-		const chunks: Uint8Array[] = [];
-		let totalBytes = 0;
-		while (true) {
-			const chunk = await reader.read();
-			if (chunk.done) break;
-			totalBytes += chunk.value.byteLength;
-			if (totalBytes > MAX_HYDRA_HTTP_RESPONSE_BYTES) {
-				await reader.cancel();
-				throw new HydraProtocolError('Hydra HTTP response exceeded its byte limit');
-			}
-			chunks.push(chunk.value);
-		}
-		return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8');
-	}
-
-	let responseText: string;
-	if (typeof response.text === 'function') {
-		responseText = await response.text();
-	} else if (typeof response.json === 'function') {
-		try {
-			responseText = stringifyHydraJson(await response.json());
-		} catch (error) {
-			throw new HydraProtocolError('Hydra HTTP response contained an inexact JSON number', { cause: error });
-		}
-	} else {
-		throw new HydraProtocolError('Hydra HTTP response body was unavailable');
-	}
-	if (Buffer.byteLength(responseText, 'utf8') > MAX_HYDRA_HTTP_RESPONSE_BYTES) {
-		throw new HydraProtocolError('Hydra HTTP response exceeded its byte limit');
-	}
-	return responseText;
-}
-
-/**
- * `body` is the already-parsed JSON response, when there was one to parse (the
- * malformed-body call site has none). A hydra-node HTTP refusal — 2.4.1's
- * `POST /commit` DepositTooLarge included — carries its reason as `{tag: ...}`,
- * the same shape `postTxError` uses over the websocket. Reusing `postTxErrorTag`
- * here means a caller's `.message` names that reason instead of just the HTTP
- * status: without it every 4xx read as identically "Hydra HTTP request failed
- * with 400 Bad Request", and that generic text is what ends up recorded against
- * a failed top-up.
- */
-export function createHttpResponseError(response: Response, body?: unknown): Error {
-	const status = [response.status, response.statusText].filter(Boolean).join(' ');
-	const statusSuffix = status ? ` with ${status}` : '';
-	const reasonTag = postTxErrorTag(body);
-	const reasonSuffix = reasonTag !== null ? ` (${reasonTag})` : '';
-	return new HydraHttpResponseError(`Hydra HTTP request failed${statusSuffix}${reasonSuffix}`, response.status);
 }
 
 type WsResponseOutcome =
@@ -330,15 +266,38 @@ export function resolveCommandTransactionHash(transaction: { txId?: string; cbor
 	try {
 		computedTxId = String(resolveTxHash(transaction.cborHex)).toLowerCase();
 	} catch (error) {
-		throw new HydraProtocolError('CommandFailed echoed invalid transaction CBOR', { cause: error });
+		throw new HydraProtocolError('Rejected command echoed invalid transaction CBOR', { cause: error });
 	}
 	if (transaction.txId != null) {
 		const parsedTxId = canonicalHydraTransactionIdSchema.safeParse(transaction.txId);
 		if (!parsedTxId.success || parsedTxId.data !== computedTxId) {
-			throw new HydraProtocolError('CommandFailed echoed inconsistent transaction identity');
+			throw new HydraProtocolError('Rejected command echoed inconsistent transaction identity');
 		}
 	}
 	return computedTxId;
+}
+
+/**
+ * The L1 transactions a command can make the node post. In hydra-node 2.4.1 a
+ * fanout can be one transaction or several partial steps, and a selection can
+ * end in the final step (`Hydra/Chain.hs`: `FanoutTx`, `PartialFanoutTx`,
+ * `FinalPartialFanoutTx`). A failure of any of them is the command's failure.
+ */
+const FANOUT_POST_CHAIN_TX_TAGS: ReadonlySet<string> = new Set(['FanoutTx', 'PartialFanoutTx', 'FinalPartialFanoutTx']);
+
+/** Whether a command posts an L1 transaction. NewTx only touches the head. */
+export function postsOnL1(command: string): boolean {
+	return command !== 'NewTx';
+}
+
+export function postChainTxTagsFor(command: string): ReadonlySet<string> {
+	if (command === 'Fanout' || command === 'PartialFanout') return FANOUT_POST_CHAIN_TX_TAGS;
+	return new Set([`${command}Tx`]);
+}
+
+/** Whether `failure` is the L1 post of `command`, judged by the transaction it names. */
+export function isPostTxFailureOf(command: string, failure: PostTxFailure): boolean {
+	return postChainTxTagsFor(command).has(failure.postChainTxTag);
 }
 
 export function handleWsResponse(
@@ -346,6 +305,7 @@ export function handleWsResponse(
 	command: string,
 	transactionHash?: string,
 	expectedHeadId?: string,
+	ownsPostTxFailure: (failure: PostTxFailure) => boolean = (failure) => isPostTxFailureOf(command, failure),
 ): WsResponseOutcome {
 	try {
 		const raw = parseBoundedJsonFrame(rawMessage);
@@ -377,9 +337,17 @@ export function handleWsResponse(
 			}
 			return { kind: 'message', message };
 		}
-		if (envelope.tag === 'CommandFailed') {
-			const message = commandFailedMessageSchema.parse(raw);
+		if (envelope.tag === 'CommandFailed' || envelope.tag === 'RejectedInputBecauseUnsynced') {
+			// A node whose chain follower fell behind refuses input with its own tag
+			// rather than CommandFailed. Left as a plain message, the caller waited
+			// out its deadline and reported an ambiguous timeout for input the node
+			// never acted on.
+			const isUnsynced = envelope.tag === 'RejectedInputBecauseUnsynced';
+			const unsynced = isUnsynced ? rejectedInputBecauseUnsyncedMessageSchema.parse(raw) : undefined;
+			const message = unsynced ?? commandFailedMessageSchema.parse(raw);
 			assertExpectedFrameHeadId(message, expectedHeadId);
+			const drift = typeof unsynced?.drift === 'number' ? `${Math.round(unsynced.drift)}s` : 'unknown';
+			const unsyncedReason = `the node is not synced with the chain (drift ${drift})`;
 			if (command === 'NewTx') {
 				if (message.clientInput?.tag !== 'NewTx' || !message.clientInput.transaction || !transactionHash) {
 					return { kind: 'ignore' };
@@ -388,29 +356,46 @@ export function handleWsResponse(
 				if (rejectedTxHash !== transactionHash) return { kind: 'ignore' };
 				return {
 					kind: 'reject',
-					error: new HydraTransactionRejectedError(`Error posting transaction with hash ${transactionHash}`),
+					error: new HydraTransactionRejectedError(
+						isUnsynced
+							? `Transaction ${transactionHash} was refused: ${unsyncedReason}`
+							: `Error posting transaction with hash ${transactionHash}`,
+					),
 				};
 			}
 			if (message.clientInput?.tag === command) {
-				return { kind: 'reject', error: new HydraCommandRejectedError(`Command ${command} failed`) };
+				return {
+					kind: 'reject',
+					error: isUnsynced
+						? new HydraCommandRefusedUnsyncedError(`Command ${command} was refused: ${unsyncedReason}`)
+						: new HydraCommandRejectedError(`Command ${command} failed`),
+				};
 			}
 			return { kind: 'message', message };
 		}
 		if (envelope.tag === 'PostTxOnChainFailed') {
-			const message = postTxOnChainFailedMessageSchema.parse(raw);
-			assertExpectedFrameHeadId(message, expectedHeadId);
-			if (message.postChainTx?.tag === `${command}Tx`) {
-				// Name the node's own reason. Without it every L1 refusal reads the
-				// same, and the operator has no way to tell "the node's key holds
-				// nothing" (NoSeedInput) from a genuine protocol rejection — the two
-				// have completely different fixes.
-				const reason = describePostTxError(message.postTxError);
+			// Read exactly as the live path reads it, so the failure a waiting
+			// command answers is the one the connection manager leaves to it.
+			const failure = readPostTxFailed(raw, expectedHeadId);
+			// The node says an L1 post failed but not which one, and it may be this
+			// command's. Failing now as ambiguous beats waiting out the whole
+			// timeout for an answer that already came. NewTx posts nothing on L1.
+			if (failure?.postChainTxTag === UNKNOWN_POST_CHAIN_TX_TAG && postsOnL1(command)) {
+				throw new HydraProtocolError(`hydra-node reported an unnamed failed L1 transaction: ${failure.reason}`);
+			}
+			if (failure && ownsPostTxFailure(failure)) {
+				// The reason names the node's own words. Without them every L1 refusal
+				// reads the same, and the operator has no way to tell "the node's key
+				// holds nothing" (NoSeedInput) from a genuine protocol rejection, and the
+				// two have completely different fixes.
 				return {
 					kind: 'reject',
-					error: new HydraCommandRejectedError(`hydra-node refused to post the ${command} transaction: ${reason}`),
+					error: new HydraPostTxRejectedError(
+						`hydra-node refused to post the ${command} transaction: ${failure.reason}`,
+					),
 				};
 			}
-			return { kind: 'message', message };
+			return { kind: 'ignore' };
 		}
 
 		return { kind: 'message', message: envelope };
@@ -442,10 +427,15 @@ export function extractStatusChangeData(rawMessage: string, expectedHeadId?: str
 				newStatus = HydraHeadStatus.Open;
 				break;
 			case 'HeadIsClosed':
+			case 'HeadIsContested':
+				// A contest keeps the head Closed. Its snapshot is now the latest accepted one.
 				newStatus = HydraHeadStatus.Closed;
 				break;
 			case 'ReadyToFanout':
 				newStatus = HydraHeadStatus.FanoutPossible;
+				break;
+			case 'HeadPartiallyFannedOut':
+				newStatus = HydraHeadStatus.FanningOut;
 				break;
 			case 'HeadIsFinalized':
 				newStatus = HydraHeadStatus.Final;
@@ -610,17 +600,18 @@ export function readDepositRecorded(message: unknown): DepositRecordedData | und
  * request that produced it.
  */
 export function readDecommitSettled(tag: string, message: unknown): DecommitSettledData | undefined {
-	if (tag === 'DecommitApproved') {
-		const approved = decommitApprovedMessageSchema.parse(message);
-		return { decommitTxId: approved.decommitTxId, outcome: 'approved' };
-	}
-	if (tag === 'DecommitFinalized') {
-		const finalized = decommitFinalizedMessageSchema.parse(message);
-		const producedAt = finalized.timestamp === undefined ? undefined : new Date(finalized.timestamp);
+	if (tag === 'DecommitApproved' || tag === 'DecommitFinalized') {
+		const settled =
+			tag === 'DecommitApproved'
+				? decommitApprovedMessageSchema.parse(message)
+				: decommitFinalizedMessageSchema.parse(message);
+		const producedAt = typeof settled.timestamp === 'string' ? new Date(settled.timestamp) : undefined;
 		return {
-			decommitTxId: finalized.decommitTxId,
-			outcome: 'finalized',
-			distributed: summarizeDistributedUtxo(finalized.distributedUTxO),
+			decommitTxId: settled.decommitTxId,
+			outcome: settled.tag === 'DecommitApproved' ? 'approved' : 'finalized',
+			...(settled.tag === 'DecommitFinalized'
+				? { distributed: summarizeDistributedUtxo(settled.distributedUTxO) }
+				: {}),
 			observedAt: producedAt !== undefined && Number.isFinite(producedAt.getTime()) ? producedAt : undefined,
 		};
 	}
@@ -645,4 +636,61 @@ export function readDecommitSettled(tag: string, message: unknown): DecommitSett
 		};
 	}
 	return undefined;
+}
+
+/**
+ * What a `PostTxOnChainFailed` frame says went wrong, or undefined when it is
+ * about another head.
+ *
+ * hydra-node puts no head id on the frame itself; the transactions that name a
+ * head (`CloseTx`, `ContestTx`, `FanoutTx`, ...) carry it inside `postChainTx`.
+ * That one is checked against the pinned head. A frame this service cannot read
+ * is still a failure, so it is reported as an unknown transaction instead of
+ * being dropped: dropping it is how a failed contest went unnoticed.
+ *
+ * `onOtherHead` hears of a frame for another head. Both the live path and a
+ * waiting command read every frame, so only one of them should report it.
+ */
+export function readPostTxFailed(
+	message: unknown,
+	expectedHeadId: string | undefined,
+	onOtherHead?: (headId: string) => void,
+): PostTxFailure | undefined {
+	const frame = postTxOnChainFailedMessageSchema.safeParse(message);
+	if (!frame.success) {
+		return {
+			postChainTxTag: UNKNOWN_POST_CHAIN_TX_TAG,
+			reason: 'the node reported a failed transaction this service could not read',
+		};
+	}
+	const namedHeadId = canonicalHydraHeadIdSchema.safeParse(frame.data.postChainTx?.headId).data;
+	if (expectedHeadId && namedHeadId && namedHeadId !== expectedHeadId) {
+		onOtherHead?.(namedHeadId);
+		return undefined;
+	}
+	const utxoToDistribute = frame.data.postChainTx?.utxoToDistribute;
+	return {
+		postChainTxTag: frame.data.postChainTx?.tag ?? UNKNOWN_POST_CHAIN_TX_TAG,
+		reason: describePostTxError(frame.data.postTxError),
+		...(typeof utxoToDistribute === 'object' && utxoToDistribute !== null
+			? {
+					utxoToDistribute: Object.entries(utxoToDistribute).map(([reference, output]) => ({
+						reference: reference.toLowerCase(),
+						content: canonicalOutputContent(output),
+					})),
+				}
+			: {}),
+	};
+}
+
+/**
+ * The snapshot a close or contest put on chain, when this frame reports one.
+ *
+ * hydra-node contests whenever its own confirmed snapshot is newer than the
+ * one on chain, so this is what the contest watch holds the verified snapshot
+ * against. Both frames are in the node's persisted history, so a restarted
+ * service still learns them.
+ */
+export function readClosedSnapshotNumber(envelope: { tag: string; snapshotNumber?: number }): number | undefined {
+	return envelope.tag === 'HeadIsClosed' || envelope.tag === 'HeadIsContested' ? envelope.snapshotNumber : undefined;
 }

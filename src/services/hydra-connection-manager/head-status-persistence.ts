@@ -37,6 +37,12 @@ export interface HeadStatusPersistenceHost {
 	/** Tear down and re-read durable enablement (fire-and-forget). */
 	scheduleRecovery(): void;
 	/**
+	 * Re-read another head's durable enablement when this process holds its
+	 * transport (fire-and-forget). A relation quarantine disables the siblings
+	 * too, and nothing else tears down a disabled head.
+	 */
+	reconcileSibling(hydraHeadId: string): void;
+	/**
 	 * A newer session owns this head durably. Tear down this transport without
 	 * disabling the head, then reconcile against durable enablement — never
 	 * quarantine or fail closed, because the head itself is healthy.
@@ -99,6 +105,25 @@ export async function persistHeadStatus(
 				});
 				return;
 			}
+			// A session of a finalized head reports Final once its replay proves the
+			// fanout, so an Idle naming no head here means the node's history does not
+			// show the finalization this row records: a node that lost its state. A
+			// rollback written from that would undo a fanout the handoff proves on L1
+			// before it moves anything, and could disable the whole relation. Leave the
+			// row and any fence as they are, for an operator. The transport stays up,
+			// and its history replay keeps failing, each pass recorded as a head error.
+			// If the node's log comes back, only a fresh live session binds the head.
+			if (
+				status === HydraHeadStatus.Idle &&
+				!headId &&
+				current.status === HydraHeadStatus.Final &&
+				current.finalizedAt != null
+			) {
+				logger.error('[HydraConnectionManager] Node is Idle without the finalization this head recorded', {
+					hydraHeadId,
+				});
+				return;
+			}
 			if (HYDRA_HEAD_STATUS_RANK[status] < HYDRA_HEAD_STATUS_RANK[current.status]) {
 				const rollbackResult = await persistRegressiveHeadStatus(
 					hydraHeadId,
@@ -120,6 +145,9 @@ export async function persistHeadStatus(
 					rollbackResult === 'persisted' &&
 					HYDRA_HEAD_STATUS_RANK[status] < HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Open];
 				if (rollbackResult.startsWith('quarantined') || rolledBackPastOpen) {
+					// The head is disabled now. Release its transport, as a failed connect
+					// would have: nothing else reconnects or tears down a disabled head.
+					host.scheduleRecovery();
 					// The head (or every head of the relation) is now held for explicit
 					// operator recovery; an earlier fail-closed mark must not undo that.
 					forgetHeadFailedClosed(hydraHeadId);
@@ -128,7 +156,12 @@ export async function persistHeadStatus(
 							where: { hydraRelationId: current.hydraRelationId },
 							select: { id: true },
 						});
-						for (const relationHead of relationHeads) forgetHeadFailedClosed(relationHead.id);
+						for (const relationHead of relationHeads) {
+							forgetHeadFailedClosed(relationHead.id);
+							if (relationHead.id !== hydraHeadId && rollbackResult.startsWith('quarantined')) {
+								host.reconcileSibling(relationHead.id);
+							}
+						}
 					} catch (error) {
 						// The quarantine is durable already; only a sibling's mark may remain.
 						logger.warn('[HydraConnectionManager] Could not clear auto-recovery marks of quarantined heads', {
@@ -172,26 +205,40 @@ export async function persistHeadStatus(
 			const updateData: HydraHeadUpdateInput = { status, latestActivityAt: now };
 			/** Set when this frame is the one that moves the head into Closed. */
 			let isClosingTransition = false;
+			/**
+			 * A close this process did not see: the frame brings no deadline (Greetings and
+			 * ReadyToFanout never do) and the row never got one. The node still knows it.
+			 */
+			const isMissingClosedHeadFacts =
+				HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed] &&
+				status !== HydraHeadStatus.Final &&
+				!contestationDeadline &&
+				current.contestationDeadline == null;
 			if (HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed]) {
 				// A peer can close the head without using this process's API. Persist the
 				// admission gate from the authenticated lifecycle frame as well.
 				updateData.isClosing = true;
 			}
 			if (headId) updateData.headIdentifier = headId;
-			if (contestationDeadline && current.contestationDeadline == null) {
+			if (contestationDeadline) {
 				// Field-level parse guard (like the head-id regex above): the schema only
 				// bounds the string's length, so `new Date(garbage)` yields Invalid Date,
 				// the Prisma write throws, and the catch below would fail-closed the WHOLE
-				// head (durably disabled + InitTx attestation wiped) over one cosmetic
-				// field from a buggy node build. Skip the field instead of nuking the head.
+				// head (durably disabled + InitTx attestation wiped) over one field from a
+				// buggy node build. Skip the field instead of nuking the head. Retire reads
+				// it, so a skipped contest deadline leaves the earlier one in place.
 				const parsedDeadline = new Date(contestationDeadline);
-				if (Number.isFinite(parsedDeadline.getTime())) {
-					updateData.contestationDeadline = parsedDeadline;
-				} else {
+				if (!Number.isFinite(parsedDeadline.getTime())) {
 					logger.warn('[HydraConnectionManager] Ignoring unparseable contestationDeadline in status frame', {
 						hydraHeadId,
 						contestationDeadline,
 					});
+				} else if (
+					current.contestationDeadline == null ||
+					parsedDeadline.getTime() > current.contestationDeadline.getTime()
+				) {
+					// A contest extends the contestation period: the deadline only moves later.
+					updateData.contestationDeadline = parsedDeadline;
 				}
 			}
 			if (snapshotNumber != null && BigInt(snapshotNumber) > current.latestSnapshotNumber) {
@@ -226,6 +273,10 @@ export async function persistHeadStatus(
 				// the cost is a single bounded round trip in a head's lifetime, and
 				// awaiting keeps it ordered, testable and free of a floating promise.
 				if (isClosingTransition) await recordCloseTransaction(hydraHeadId, head.mainNode, ownerEpoch);
+				// Also after the CAS, for the same reason, and unlike the close transaction
+				// not only on the transition: it heals a row stored before this existed on
+				// the next reconnect, and the read stays valid until the head is final.
+				if (isMissingClosedHeadFacts) await recordClosedHeadFacts(hydraHeadId, head.mainNode, ownerEpoch);
 				return;
 			}
 		}
@@ -273,7 +324,8 @@ export async function failClosedAfterStatusPersistenceFailure(
 					await prisma.hydraHead.updateMany({
 						// Fenced: a stale session must never durably disable a head a newer
 						// session owns. Its local quarantine and teardown are enough.
-						where: { id: hydraHeadId, ownerEpoch, ...(onlyIfEnabled ? { isEnabled: true } : {}) },
+						// A retired head keeps its init anchors: its recovery starts from them.
+						where: { id: hydraHeadId, ownerEpoch, retiredAt: null, ...(onlyIfEnabled ? { isEnabled: true } : {}) },
 						data: {
 							isEnabled: false,
 							initTxHash: null,
@@ -332,6 +384,46 @@ export async function recordCloseTransaction(hydraHeadId: string, node: HydraNod
 		});
 	} catch (error) {
 		logger.warn('[HydraConnectionManager] Could not record the close transaction', {
+			hydraHeadId,
+			error: error instanceof Error ? error.message : 'Non-error failure',
+		});
+	}
+}
+
+/**
+ * Record the deadline of a close this service did not see.
+ *
+ * A live `HeadIsClosed` carries it, but a head closed while the service was off
+ * reaches it as Greetings, which do not, so the row would have no deadline. The
+ * node's own head state still holds it until the head is final, unlike the
+ * close transaction, which a fanout step replaces.
+ *
+ * The snapshot number is not taken from there: the head state holds the node's
+ * own latest snapshot, not the one the close or a contest put on chain. The
+ * reconciler records that one from the replayed history.
+ *
+ * The write is guarded on the deadline still being null and on the owner epoch.
+ * Failures are swallowed, because a closed head whose deadline cannot be read is
+ * still closed, and the next reconnect tries again.
+ */
+export async function recordClosedHeadFacts(hydraHeadId: string, node: HydraNode, ownerEpoch: bigint): Promise<void> {
+	try {
+		const facts = await node.fetchClosedHeadFacts();
+		if (!facts) return;
+		const deadline = new Date(facts.contestationDeadline);
+		if (Number.isFinite(deadline.getTime())) {
+			await prisma.hydraHead.updateMany({
+				where: { id: hydraHeadId, contestationDeadline: null, ownerEpoch },
+				data: { contestationDeadline: deadline },
+			});
+		} else {
+			logger.warn('[HydraConnectionManager] Ignoring unparseable contestationDeadline in the node head state', {
+				hydraHeadId,
+				contestationDeadline: facts.contestationDeadline,
+			});
+		}
+	} catch (error) {
+		logger.warn('[HydraConnectionManager] Could not record the deadline of a closed head', {
 			hydraHeadId,
 			error: error instanceof Error ? error.message : 'Non-error failure',
 		});

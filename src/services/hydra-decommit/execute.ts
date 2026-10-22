@@ -19,11 +19,11 @@
 
 import createHttpError from 'http-errors';
 import { MeshTxBuilder, MeshWallet, resolveTxHash, type UTxO } from '@meshsdk/core';
-import { HydraDecommitStatus, HydraErrorType, HydraHeadStatus, Network, Prisma } from '@/generated/prisma/client';
+import { HydraDecommitStatus, HydraErrorType, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
-import { CustomHydraHead, HydraProvider, HydraTransactionType, HydraTransportAmbiguousError } from '@/lib/hydra';
+import { HydraProvider, HydraTransactionType, HydraTransportAmbiguousError } from '@/lib/hydra';
 import { fetchHydraDecommitInFlight } from '@/lib/hydra/hydra/node-control-queries';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
@@ -31,7 +31,6 @@ import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import {
 	amountOf,
-	countNativeAssets,
 	coverAssetForCarve,
 	planLovelaceWithdrawal,
 	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
@@ -42,7 +41,6 @@ import {
 	selectDecommittableUtxos,
 	utxoRef,
 } from './select';
-import { assertDecommitOutputMinimum } from './min-output';
 import {
 	assertHydraHeadHostNotPaused,
 	HYDRA_HOST_PAUSED_MESSAGE,
@@ -50,17 +48,14 @@ import {
 } from '@/services/hydra-host/pause';
 import { staleWithdrawal } from './stale';
 import { countLiveInHeadEscrows } from './live-escrows';
-
-/**
- * How long the in-head split gets to confirm before the withdrawal gives up.
- *
- * An in-head transaction is a signature exchange between the parties, so this is
- * generous by two orders of magnitude. It exists for the case where the
- * counterparty has gone quiet mid-split, which would otherwise hold the
- * participant's only withdrawal slot open indefinitely.
- */
-const SPLIT_CONFIRM_TIMEOUT_MS = 60_000;
-const SPLIT_POLL_MS = 500;
+import {
+	assertSendableInHead,
+	errorMessage,
+	sleep,
+	SPLIT_MAY_STILL_CONFIRM,
+	splitExactAmountInHead,
+	TOKEN_OUTPUT_LOVELACE,
+} from './in-head-split';
 
 /**
  * The least a split may leave behind.
@@ -85,15 +80,6 @@ const MIN_SPLIT_REMAINDER_LOVELACE = 2_000_000n;
 const PER_ASSET_CHANGE_LOVELACE = 500_000n;
 
 /**
- * Lovelace carried by a carved token output.
- *
- * A Cardano output cannot hold a token without enough ADA to exist, so an exact
- * token withdrawal takes this along and returns it to the wallet with the
- * asset. Comfortably above the minimum for a single-asset output.
- */
-const TOKEN_OUTPUT_LOVELACE = 2_000_000n;
-
-/**
  * Marks a refusal that is not a failure.
  *
  * The head accepted the withdrawal but the request could not confirm it, so it
@@ -105,6 +91,71 @@ const ACCEPTED_BUT_UNCONFIRMED = Symbol.for('masumi.hydra.decommit.acceptedButUn
 
 function isAcceptedButUnconfirmed(error: unknown): boolean {
 	return typeof error === 'object' && error !== null && ACCEPTED_BUT_UNCONFIRMED in error;
+}
+
+/**
+ * Marks the refusal for a wallet that is busy.
+ *
+ * A payment pending on the wallet is routine, not a failure of the head, and a
+ * head error that routinely means nothing teaches an operator to ignore the
+ * ones that matter.
+ */
+const WALLET_BUSY = Symbol.for('masumi.hydra.decommit.walletBusy');
+
+function isMarked(error: unknown, mark: symbol): boolean {
+	return typeof error === 'object' && error !== null && mark in error;
+}
+
+/**
+ * How long a taken withdrawal waits for the head to drop its inputs.
+ *
+ * The node takes the request before the head agrees on it, and until the next
+ * snapshot the leaving inputs still read as spendable. A payment that reserves
+ * one of them is refused by the head, and its reservation then stays held until
+ * an operator releases it. So the wallet goes back only once the inputs are
+ * gone. A snapshot takes about a second; past this the stale-lock reaper frees
+ * the wallet instead.
+ */
+const INPUTS_LEFT_TIMEOUT_MS = 10_000;
+const INPUTS_LEFT_POLL_MS = 500;
+
+/** Whether the head no longer lists any of these inputs at the address. */
+async function haveInputsLeftHead(provider: HydraProvider, address: string, inputs: UTxO[]): Promise<boolean> {
+	const leaving = new Set(inputs.map(utxoRef));
+	const deadline = Date.now() + INPUTS_LEFT_TIMEOUT_MS;
+	for (;;) {
+		try {
+			const current = await provider.fetchAddressUTxOs(address);
+			if (!current.some((utxo) => leaving.has(utxoRef(utxo)))) return true;
+		} catch (error) {
+			logger.warn('[HydraDecommit] could not read the head to see the withdrawal inputs leave', {
+				error: errorMessage(error),
+			});
+		}
+		if (Date.now() >= deadline) return false;
+		await sleep(INPUTS_LEFT_POLL_MS);
+	}
+}
+
+/**
+ * Give the hot wallet back.
+ *
+ * Scoped to the claim this withdrawal made, so a late release cannot free a lock
+ * another holder took. Never allowed to replace the outcome of the withdrawal: a
+ * failed release costs one stale lock, which the stale-lock reaper frees.
+ */
+async function releaseWallet(walletId: string, lockedAt: Date): Promise<void> {
+	try {
+		await prisma.hotWallet.updateMany({
+			where: { id: walletId, lockedAt, pendingTransactionId: null },
+			data: { lockedAt: null },
+		});
+	} catch (error) {
+		logger.error('[HydraDecommit] could not release the hot wallet after a withdrawal', {
+			walletId,
+			error: errorMessage(error),
+		});
+	}
 }
 
 export type ExecuteHydraDecommitParams = {
@@ -138,12 +189,6 @@ export type ExecuteHydraDecommitResult = {
 	destinationAddress: string;
 };
 
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): Promise<ExecuteHydraDecommitResult> {
 	const head = await prisma.hydraHead.findUnique({
 		where: { id: params.headId },
@@ -174,6 +219,9 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 	await assertNodeReadyForDeposit(localParticipant.id);
 
 	let preparingId: string | null = null;
+	let walletLockedAt: Date | null = null;
+	/** Set when the head may still apply something this withdrawal sent, so the wallet stays held. */
+	let keepWalletLock = false;
 
 	try {
 		// Independently verify the head on chain before signing anything that moves
@@ -231,6 +279,38 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 							await tx.$queryRaw`SELECT 1 FROM "HydraHead" WHERE "id" = ${head.id} FOR UPDATE`;
 							const liveEscrows = await countLiveInHeadEscrows(tx, head.id);
 							if (liveEscrows > 0) return { claimed: false as const, liveEscrows };
+						}
+
+						// The wallet every L2 action claims before it reserves funds. A payment
+						// reservation takes it in the transaction that records the reservation
+						// and its inputs, so a wallet that is claimed already has funds spoken
+						// for, and a withdrawal that read them anyway would spend what that
+						// payment was promised. A payment that starts while this runs misses its
+						// own claim and retries. Thrown, not returned: a return commits this
+						// transaction, the claim with it, and a throw rolls back everything it
+						// wrote.
+						const claimedAt = new Date();
+						const walletClaim = await tx.hotWallet.updateMany({
+							where: {
+								id: localParticipant.walletId,
+								deletedAt: null,
+								lockedAt: null,
+								pendingTransactionId: null,
+								lockPurpose: null,
+							},
+							data: { lockedAt: claimedAt },
+						});
+						if (walletClaim.count !== 1) {
+							throw Object.assign(
+								createHttpError(
+									409,
+									'This wallet is busy with another transaction, such as a pending payment or an earlier withdrawal; retry once it has settled',
+								),
+								{ [WALLET_BUSY]: true },
+							);
+						}
+
+						if (params.drain === true) {
 							await tx.hydraHead.update({ where: { id: head.id }, data: { collateralDrainedAt: new Date() } });
 						}
 
@@ -247,7 +327,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 							},
 							select: { id: true },
 						});
-						return { claimed: true as const, id: created.id };
+						return { claimed: true as const, id: created.id, walletLockedAt: claimedAt };
 					},
 					{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
 				),
@@ -286,6 +366,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			);
 		}
 		preparingId = claim.id;
+		walletLockedAt = claim.walletLockedAt;
 
 		const network = localParticipant.Wallet.PaymentSource.network;
 		const address = localParticipant.Wallet.walletAddress;
@@ -306,7 +387,14 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// window gets a split that is TxValid but can never be snapshot-confirmed,
 		// so this must be refused before any split is attempted, not discovered
 		// after a 60s wait. Mirror of the deposit-side pendingIncrementRefs guard.
+		// A node that cannot be asked is not a node with nothing pending.
 		const pendingDecommits = await hydraHead.mainNode.fetchPendingDecommitRefs();
+		if (pendingDecommits === undefined) {
+			throw createHttpError(
+				502,
+				'Could not read the head state to check for a previous withdrawal still settling on L1; retry once the node answers',
+			);
+		}
 		if (pendingDecommits.length > 0) {
 			throw createHttpError(
 				409,
@@ -314,9 +402,11 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			);
 		}
 
+		const inHeadUtxos = await provider.fetchAddressUTxOs(address);
 		const selection = selectDecommittableUtxos({
-			utxos: await provider.fetchAddressUTxOs(address),
+			utxos: inHeadUtxos,
 			pendingIncrementRefs: hydraHead.mainNode.pendingIncrementUtxoRefs,
+			l2MintCheck: hydraHead.mainNode.l2MintCheck,
 			drain: params.drain === true,
 		});
 
@@ -345,9 +435,22 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			if (cover === null) {
 				const usable = selection.reserved === null ? selection.eligible : [...selection.eligible, selection.reserved];
 				const held = usable.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
+				// Say why the rest of the asset is held back; a bare "only 0" sent
+				// operators looking for funds the balance plainly showed. The reserve
+				// is counted in `held` above, so it is not held back here.
+				const reservedRef = selection.reserved === null ? null : utxoRef(selection.reserved);
+				const heldBack = new Set(
+					inHeadUtxos.flatMap((utxo) => {
+						const ref = utxoRef(utxo);
+						if (ref === reservedRef || amountOf(utxo, requestedAsset.unit) === 0n) return [];
+						const reason = selection.excluded.get(ref);
+						return reason === undefined ? [] : [reason];
+					}),
+				);
 				throw createHttpError(
 					400,
-					`Only ${held} of that asset is eligible to withdraw, which is less than the ${requestedAsset.amount} requested`,
+					`Only ${held} of that asset is eligible to withdraw, which is less than the ${requestedAsset.amount} requested` +
+						(heldBack.size > 0 ? `. Held back: ${[...heldBack].join('; ')}` : ''),
 				);
 			}
 			const covering = cover.inputs;
@@ -499,6 +602,8 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		}
 		const unsignedTx = await builder.changeAddress(address).setNetwork(convertNetwork(network)).complete();
 		const signedTx = await wallet.signTx(unsignedTx, true);
+		// Before the row is Pending, where a refusal would read as the node's.
+		assertSendableInHead(signedTx, headParameters.maxTxSize);
 		const decommitTxId = resolveTxHash(signedTx) as string;
 
 		// Recorded BEFORE the request. The head answers over its socket, and an
@@ -565,6 +670,15 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			throw createHttpError(502, `Hydra node rejected the withdrawal: ${errorMessage(error)}`);
 		}
 
+		// Kept, not thrown: the withdrawal itself has been requested either way.
+		keepWalletLock = !(await haveInputsLeftHead(provider, address, decommitInputs));
+		if (keepWalletLock) {
+			logger.warn('[HydraDecommit] the withdrawal inputs are still in the head; leaving the wallet to the reaper', {
+				decommitId: claim.id,
+				decommitTxId,
+			});
+		}
+
 		await prisma.hydraHead.update({ where: { id: head.id }, data: { latestActivityAt: new Date() } });
 		logger.info(`[HydraDecommit] requested withdrawal of ${withdrawnLovelace} lovelace from head ${head.id}`, {
 			decommitTxId,
@@ -593,117 +707,23 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					logger.error(`[HydraDecommit] could not fail the preparing withdrawal ${preparingId}`, { error: markError });
 				});
 		}
-		if (!isAcceptedButUnconfirmed(error)) {
+		// Released when nothing this withdrawal sent can still apply: the request
+		// never reached the head, or the node refused it. Held while the head may
+		// still apply the request or its split, because the inputs of that body stay
+		// spoken for; the stale-lock reaper frees it after WALLET_LOCK_TIMEOUT_INTERVAL,
+		// as it does for a consolidation that may still confirm. A request the node
+		// took is handled above: released once its inputs have left the head.
+		// Or-ed, never reset: a failure after the request keeps a hold already decided.
+		keepWalletLock =
+			keepWalletLock ||
+			isAcceptedButUnconfirmed(error) ||
+			isMarked(error, SPLIT_MAY_STILL_CONFIRM) ||
+			error instanceof HydraTransportAmbiguousError;
+		if (!isAcceptedButUnconfirmed(error) && !isMarked(error, WALLET_BUSY)) {
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Decommit');
 		}
 		throw error;
+	} finally {
+		if (walletLockedAt !== null && !keepWalletLock) await releaseWallet(localParticipant.walletId, walletLockedAt);
 	}
-}
-
-/**
- * Carve the exact amount into its own in-head UTxO.
- *
- * Ordinary in-head transaction: inputs from the wallet, one output of exactly
- * the requested lovelace, the remainder as change back to the same address.
- * Both outputs stay in the head — only the decommit that follows removes
- * anything.
- */
-async function splitExactAmountInHead(params: {
-	wallet: MeshWallet;
-	provider: HydraProvider;
-	hydraHead: CustomHydraHead;
-	address: string;
-	network: Network;
-	inputs: UTxO[];
-	/** Empty unit means lovelace. */
-	unit: string;
-	amount: bigint;
-	decommitId: string;
-}): Promise<{ txId: string; exact: UTxO }> {
-	const { wallet, provider, hydraHead, address, network, inputs, unit, amount, decommitId } = params;
-	const isLovelace = unit === '' || unit.toLowerCase() === 'lovelace';
-
-	// The head's OWN ledger parameters, fetched from the head, never assumed.
-	//
-	// An in-head transaction is validated by the head's ledger, not L1's, and
-	// this head charges no fee at all (txFeeFixed 0, txFeePerByte 0, execution
-	// prices 0) while still enforcing a real minimum-UTxO and 150% collateral.
-	// Built without them, Mesh applied mainnet fee parameters to a transaction
-	// that never leaves the head: the fee was simply burned, and burning it
-	// changed the head's ADA overhead. `headAdaOverhead` is an invariant the
-	// head validator checks on every transition — mustPreserveHeadAdaOverhead,
-	// error H65 — so each fee-paying withdrawal moved the head one step further
-	// from ever being closeable.
-	//
-	// Fetched rather than flagged. MeshTxBuilder's `isHydra` shortcut zeroes the
-	// fee knobs but also sets collateralPercent to 0, which this head does not
-	// agree with, and it would silently diverge from any head configured
-	// differently.
-	const headParameters = await provider.fetchProtocolParameters();
-	const builder = new MeshTxBuilder({
-		fetcher: provider,
-		submitter: provider,
-		params: headParameters,
-		verbose: false,
-	});
-	for (const utxo of inputs) {
-		builder.txIn(utxo.input.txHash, utxo.input.outputIndex, utxo.output.amount, utxo.output.address);
-	}
-	// A token cannot travel on its own: every output needs enough lovelace to
-	// exist, so the carved UTxO carries the asked-for amount plus that floor, and
-	// the floor comes back with it when the withdrawal lands.
-	const carvedValue = isLovelace
-		? [{ unit: 'lovelace', quantity: amount.toString() }]
-		: [
-				{ unit: 'lovelace', quantity: TOKEN_OUTPUT_LOVELACE.toString() },
-				{ unit, quantity: amount.toString() },
-			];
-	assertDecommitOutputMinimum(address, carvedValue, headParameters.coinsPerUtxoSize);
-	const unsignedTx = await builder
-		.txOut(address, carvedValue)
-		.changeAddress(address)
-		.setNetwork(convertNetwork(network))
-		.complete();
-	const signedTx = await wallet.signTx(unsignedTx, true);
-	const splitTxId = resolveTxHash(signedTx) as string;
-
-	await prisma.hydraDecommit.update({ where: { id: decommitId }, data: { splitTxId } });
-
-	await hydraHead.newTx({ type: HydraTransactionType.TxConwayEra, description: '', cborHex: signedTx });
-
-	// Wait for the head to confirm it before spending its output. The head's own
-	// confirmation is the only evidence that the split exists; building the
-	// decommit against an unconfirmed output would be refused as an unknown input.
-	const deadline = Date.now() + SPLIT_CONFIRM_TIMEOUT_MS;
-	while (Date.now() < deadline) {
-		if (hydraHead.mainNode.isTxConfirmed(splitTxId)) break;
-		await sleep(SPLIT_POLL_MS);
-	}
-	if (!hydraHead.mainNode.isTxConfirmed(splitTxId)) {
-		throw createHttpError(
-			504,
-			`The in-head split ${splitTxId} was not confirmed within ${SPLIT_CONFIRM_TIMEOUT_MS / 1000}s; nothing has left the head`,
-		);
-	}
-
-	// Find the carved output by value. The builder places the explicit output
-	// before the change, but reading the index off that convention would break
-	// silently if it ever changed; matching on the amount cannot.
-	const produced = await provider.fetchUTxOs(splitTxId);
-	const exact = produced.find(
-		(utxo) =>
-			utxo.output.address === address &&
-			amountOf(utxo, isLovelace ? '' : unit) === amount &&
-			// A lovelace carve's change can hold the same lovelace plus the
-			// tokens it kept. Only the pure output may leave the head.
-			(isLovelace ? countNativeAssets(utxo) === 0 : lovelaceOf(utxo) === TOKEN_OUTPUT_LOVELACE),
-	);
-	if (!exact) {
-		throw createHttpError(
-			502,
-			`The in-head split ${splitTxId} confirmed but produced no output of exactly ${amount} ${isLovelace ? 'lovelace' : unit}`,
-		);
-	}
-	logger.info(`[HydraDecommit] split ${amount} ${isLovelace ? 'lovelace' : unit} into ${utxoRef(exact)} in head`);
-	return { txId: splitTxId, exact };
 }

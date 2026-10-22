@@ -27,6 +27,7 @@ const mockTransactionCreate = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHotWalletUpdate = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHydraHeadFindUnique = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHydraAdmissionQuery = jest.fn<(_args: unknown) => Promise<unknown>>();
+const mockPaymentActionFindFirst = jest.fn<(_args: unknown) => Promise<unknown>>();
 
 const transactionClient = {
 	$queryRaw: mockHydraAdmissionQuery,
@@ -45,6 +46,7 @@ const transactionClient = {
 		findFirst: mockTransactionFindFirst,
 		create: mockTransactionCreate,
 	},
+	paymentActionData: { findFirst: mockPaymentActionFindFirst },
 	hotWallet: { update: mockHotWalletUpdate },
 	hydraHead: { findUnique: mockHydraHeadFindUnique },
 };
@@ -272,6 +274,10 @@ describe('applyDatumStateToLocalRequests', () => {
 		mockPurchaseFindUnique.mockResolvedValue(null);
 		mockPurchaseFindMany.mockResolvedValue([]);
 		mockPaymentFindMany.mockResolvedValue([]);
+		mockPaymentActionFindFirst.mockResolvedValue({
+			requestedAction: PaymentAction.WaitingForExternalAction,
+			errorType: null,
+		});
 		mockPaymentUpdate.mockResolvedValue({});
 		mockTransactionFindFirst.mockResolvedValue(null);
 		mockTransactionCreate.mockResolvedValue({ id: 'observed-transaction-1' });
@@ -828,6 +834,100 @@ describe('applyDatumStateToLocalRequests', () => {
 		expect(mockTransactionCreate).not.toHaveBeenCalled();
 	});
 
+	function makeTimedOutPaymentRequest() {
+		return {
+			...makePaymentRequest(),
+			onChainState: OnChainState.FundsOrDatumInvalid,
+			NextAction: { requestedAction: PaymentAction.WaitingForManualAction },
+		};
+	}
+
+	it('recovers a timely signed lock observed after the payByTime timeout invalidated the row', async () => {
+		mockPaymentFindUnique.mockResolvedValue(makeTimedOutPaymentRequest());
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'late-seen-lock-tx',
+			paymentSourceId: 'source-1',
+			decoded: { ...decodedInitialLock, buyerReturnAddress: 'addr-buyer-return' },
+			newOnChainState: OnChainState.FundsLocked,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'late-seen-lock-tx', outputIndex: 0 },
+			transactionEvidence: makeEvidence({ txHash: 'late-seen-lock-tx', signerVkeys: ['buyer-vkey'] }),
+			confirmationTimeMs: 49,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('applied');
+		expect(mockPaymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'payment-1' },
+				data: expect.objectContaining({
+					layer: TransactionLayer.L2,
+					onChainState: OnChainState.FundsLocked,
+					currentHydraUtxoTxHash: 'late-seen-lock-tx',
+					currentHydraUtxoOutputIndex: 0,
+					buyerReturnAddress: 'addr-buyer-return',
+				}),
+			}),
+		);
+		expect(mockTransactionCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					txHash: 'late-seen-lock-tx',
+					previousOnChainState: null,
+					newOnChainState: OnChainState.FundsLocked,
+				}),
+			}),
+		);
+	});
+
+	it('keeps a timed-out row permanently rejected, not retryable, when a timely lock lacks the buyer witness', async () => {
+		mockPaymentFindUnique.mockResolvedValue(makeTimedOutPaymentRequest());
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'unwitnessed-late-seen-lock-tx',
+			paymentSourceId: 'source-1',
+			decoded: decodedInitialLock,
+			newOnChainState: OnChainState.FundsLocked,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'unwitnessed-late-seen-lock-tx', outputIndex: 0 },
+			transactionEvidence: makeEvidence({ txHash: 'unwitnessed-late-seen-lock-tx', signerVkeys: ['seller-vkey'] }),
+			confirmationTimeMs: 49,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('irrelevant');
+		expect(mockPaymentUpdate).not.toHaveBeenCalled();
+		expect(mockTransactionCreate).not.toHaveBeenCalled();
+	});
+
+	it('keeps a timed-out row rejected without wedging replay when the signed bound is past payByTime', async () => {
+		mockPaymentFindUnique.mockResolvedValue(makeTimedOutPaymentRequest());
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'really-late-lock-tx',
+			paymentSourceId: 'source-1',
+			decoded: decodedInitialLock,
+			newOnChainState: OnChainState.FundsLocked,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'really-late-lock-tx', outputIndex: 0 },
+			transactionEvidence: makeEvidence({
+				txHash: 'really-late-lock-tx',
+				signerVkeys: ['buyer-vkey'],
+				validityUpperSlot: 86_800n,
+			}),
+			confirmationTimeMs: 49,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('irrelevant');
+		expect(mockPaymentUpdate).not.toHaveBeenCalled();
+		expect(mockTransactionCreate).not.toHaveBeenCalled();
+	});
+
 	it('confirms both sides of a buyer-local shared lock in one transaction', async () => {
 		const sharedTransaction = {
 			id: 'shared-transaction-1',
@@ -1320,6 +1420,72 @@ describe('applyDatumStateToLocalRequests', () => {
 					currentHydraUtxoTxHash: 'result-tx',
 					currentHydraUtxoOutputIndex: 1,
 					onChainState: OnChainState.ResultSubmitted,
+				}),
+			}),
+		);
+	});
+
+	// The head refused the result, the request rolled back to SubmitResultRequested,
+	// and then a body confirmed. The submit pass selects only requests that still
+	// carry a hash, so a confirmed result must leave SubmitResultRequested and a
+	// rotation to a different result must keep its hash.
+	it.each([
+		['the requested result confirms', 'result-hash', { requestedAction: PaymentAction.WaitingForExternalAction }],
+		[
+			'a different result confirms',
+			'other-hash',
+			{ requestedAction: PaymentAction.SubmitResultRequested, resultHash: 'other-hash' },
+		],
+	])('settles a rolled-back submit-result request when %s', async (_label, requestedHash, expectedAction) => {
+		mockPaymentFindUnique.mockResolvedValue({
+			...makePaymentRequest(),
+			onChainState: OnChainState.FundsLocked,
+			layer: TransactionLayer.L2,
+			currentHydraUtxoTxHash: 'lock-tx',
+			currentHydraUtxoOutputIndex: 0,
+			currentHydraUtxoValue: [{ unit: 'lovelace', quantity: '10000000' }],
+			currentTransactionId: 'lock-transaction',
+			CurrentTransaction: {
+				id: 'lock-transaction',
+				txHash: 'lock-tx',
+				status: TransactionStatus.Confirmed,
+				layer: TransactionLayer.L2,
+				hydraHeadId: 'head-1',
+				BlocksWallet: null,
+			},
+			BuyerWallet: { walletVkey: 'buyer-vkey', walletAddress: 'addr-buyer' },
+			NextAction: { requestedAction: PaymentAction.SubmitResultRequested, resultHash: requestedHash },
+		});
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'result-tx',
+			paymentSourceId: 'source-1',
+			decoded: {
+				...decodedInitialLock,
+				state: SmartContractState.ResultSubmitted,
+				resultHash: 'result-hash',
+				sellerCooldownTime: 1_655_769_702_000n,
+			},
+			newOnChainState: OnChainState.ResultSubmitted,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'result-tx', outputIndex: 1 },
+			transactionEvidence: makeEvidence({
+				txHash: 'result-tx',
+				outputIndex: 1,
+				inputs: [{ txHash: 'lock-tx', outputIndex: 0, bodyIndex: 0 }],
+				signerVkeys: ['seller-vkey'],
+			}),
+			confirmationTimeMs: 60,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('applied');
+		expect(mockPaymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					onChainState: OnChainState.ResultSubmitted,
+					NextAction: { create: expect.objectContaining(expectedAction) },
 				}),
 			}),
 		);

@@ -20,24 +20,18 @@ import { PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
-import { drainReader, waitForDrain } from './drain.js';
-import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
-import { muteFields } from './mute.js';
-import { earnsStartBudgetRefund } from './start-budget.js';
-import {
-	mayStillBeRunning,
-	planNodeAction,
-	shouldAdoptAsRunning,
-	type NodeObservation,
-	type PlanLimits,
-} from './plan.js';
-import { findProcessRunningNode, isProcessAlive, isProcessRunningNode, NodeProcessManager } from './process.js';
-import { unwedgeNode } from './unwedge.js';
+import { mapWithConcurrency, sleep } from './concurrency.js';
+import type { SlotConfig } from './drift.js';
+import { observeNode, recordObservation } from './observe.js';
+import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
+import { findProcessRunningNode, NodeProcessManager } from './process.js';
+import { drainRunningNodes } from './shutdown-drain.js';
+import { removeNode, stopNode } from './teardown.js';
+import { unwedgeRecord } from './unwedge.js';
 
 /** One initial start plus four retries before a node is declared Failed. */
 const MAX_START_ATTEMPTS = 5;
 const STRANDED_SETTLE_WAIT_MS = 30_000;
-const SIGKILL_GRACE_MS = 30_000;
 /**
  * Nodes are reconciled concurrently because a single stop can block for the
  * whole drain timeout plus the SIGKILL grace. Serialising would let one
@@ -51,26 +45,6 @@ export type SupervisorLogger = {
 	warn: (message: string) => void;
 	error: (message: string) => void;
 };
-
-const sleep = (ms: number): Promise<void> =>
-	new Promise((resolve) => {
-		const timer = setTimeout(resolve, ms);
-		timer.unref?.();
-	});
-
-async function mapWithConcurrency<T>(items: T[], limit: number, run: (item: T) => Promise<void>): Promise<void> {
-	let cursor = 0;
-	const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-		for (;;) {
-			const index = cursor++;
-			if (index >= items.length) {
-				return;
-			}
-			await run(items[index]);
-		}
-	});
-	await Promise.all(workers);
-}
 
 export class Supervisor {
 	private readonly processes = new NodeProcessManager();
@@ -336,152 +310,17 @@ export class Supervisor {
 	}
 
 	private async observe(record: NodeRecord): Promise<NodeObservation> {
-		const client = this.client(record);
-		if (!this.processes.isRunning(record.nodeId)) {
-			// Not a child of THIS host does not mean not running. A host restart
-			// leaves its nodes serving but loses the handles to them, so judging by
-			// the child table alone would mark a live node dead one tick after boot
-			// adopted it — and keep doing so on every tick after that.
-			if (!(await client.isResponsive())) {
-				// One slow probe is not evidence that the process is gone, and the
-				// action taken on that evidence is a spawn: a second hydra-node over
-				// the first one's persistence directory, api port and etcd data dir.
-				// A recorded pid that is still running hydra-node settles it — the
-				// node is up and merely busy, which is exactly how an owned child is
-				// already treated one branch below.
-				const alive =
-					record.pid !== undefined &&
-					(await isProcessRunningNode(record.pid, this.config.hydraNodeBin, this.store.nodeDir(record.nodeId)));
-				return {
-					processRunning: alive,
-					drift: null,
-					driftSeconds: null,
-					responsive: false,
-					chainSynced: false,
-					nowMs: Date.now(),
-				};
-			}
-		} else if (!(await client.isResponsive())) {
-			return {
-				processRunning: true,
-				drift: null,
-				driftSeconds: null,
-				responsive: false,
-				chainSynced: false,
-				nowMs: Date.now(),
-			};
-		}
-
-		const chain = await client.probeChain();
-		// Measured whenever the node reports a slot, in sync or not. Drift on a
-		// synced node is a warning; drift on a catching-up node is the whole
-		// diagnosis, and computing it only for the former left operators staring
-		// at "still catching up" with no way to tell minutes from days.
-		const slot = chain.slot;
-		let drift: NodeObservation['drift'] = null;
-		let driftSeconds: number | null = null;
-		if (slot !== null) {
-			// Validate against THIS node's unsynced period, not the host default: a
-			// node provisioned with a shorter period needs a guard that still fires
-			// before the node starts refusing input.
-			const thresholds = resolveDriftThresholds(record.unsyncedPeriodSeconds * 1000, this.config.drift);
-			const sample = measureDrift(slot, this.slotConfig, Date.now());
-			driftSeconds = Math.round(sample.driftMs / 1000);
-			// Judged whether or not the node says it is in sync.
-			//
-			// It used to be judged only when the node reported InSync, to avoid
-			// restarting one that was legitimately catching up. That reasoning
-			// assumed catching up always ends. With the Blockfrost backend it does
-			// not: the delay-free catch-up loop runs once at startup, and the poll
-			// loop it then enters sleeps a whole average block time before every
-			// block, so a node that falls behind reports `CatchingUp` forever and
-			// was never judged, never restarted, and never recovered.
-			//
-			// Telling "catching up" from "stuck" is not this verdict's job — both
-			// look identical in one sample. The plan decides, on whether the gap is
-			// closing across ticks.
-			drift = classifyDrift(sample, thresholds);
-		}
-
-		return {
-			processRunning: true,
-			drift,
-			driftSeconds,
-			responsive: true,
-			chainSynced: chain.synced,
-			nowMs: Date.now(),
-		};
+		return observeNode(record, {
+			client: this.client(record),
+			processes: this.processes,
+			store: this.store,
+			config: this.config,
+			slotConfig: this.slotConfig,
+		});
 	}
 
-	/**
-	 * Persist what the probe saw, and promote a node that has come up.
-	 *
-	 * Three things depend on this being durable rather than in-memory:
-	 *
-	 *  - the health endpoint, which is the payment service's only way to ask
-	 *    whether a node is usable, and which otherwise reports a record that
-	 *    says `Running` for a node whose API is dead;
-	 *  - `Starting` → `Running`, so `Running` means "answering" rather than
-	 *    "spawned" — with two participants a node legitimately sits in
-	 *    `Starting` for minutes, since etcd has no quorum until both are up;
-	 *  - the restart budget, which must be refunded once a node proves it can
-	 *    stay up, or routine drift restarts accumulate until a healthy node is
-	 *    marked Failed.
-	 *
-	 * Written every tick, including when only the timestamp changed: a stale
-	 * `checkedAt` is itself the signal that the supervisor has stopped ticking,
-	 * and that is worth more than the write it saves.
-	 */
 	private async recordObservation(record: NodeRecord, observation: NodeObservation): Promise<NodeRecord> {
-		const earnedBudget = earnsStartBudgetRefund(observation);
-		const promote = shouldAdoptAsRunning(record, observation);
-		// A node this host did not spawn has no exit handler, so its death is not
-		// reported by anything — it simply stops being in `processes`. Left at
-		// that, the next tick starts it again with `lastStopUndrained` false and
-		// the unwedge check is skipped for exactly the nodes that survived a host
-		// restart, which are the ones most likely to be carrying a stranded round.
-		// This is the same conclusion `onExit` draws for an owned child.
-		const diedUnobserved =
-			!observation.processRunning &&
-			!observation.responsive &&
-			(record.state === 'Running' || record.state === 'Starting');
-
-		const updated = await this.store.update(record.nodeId, (current) => ({
-			...current,
-			lastObservation: {
-				checkedAt: new Date(observation.nowMs).toISOString(),
-				responsive: observation.responsive,
-				chainSynced: observation.chainSynced,
-				drift: observation.drift,
-				driftSeconds: observation.driftSeconds,
-			},
-			...driftBreachFields(current, observation),
-			...muteFields(current, observation),
-			// The reason goes with the state. It is written by six paths and was cleared
-			// by none, so a node that failed its start budget, was fixed and came back
-			// reported `state: Running, usable: true` alongside the failure it recovered
-			// from — for good, and the next incident is read through it.
-			...(promote && shouldAdoptAsRunning(current, observation)
-				? { state: 'Running' as const, failureReason: undefined }
-				: {}),
-			...(earnedBudget && current.startAttempts !== 0 ? { startAttempts: 0 } : {}),
-			...(diedUnobserved && (current.state === 'Running' || current.state === 'Starting')
-				? { state: 'Stopped' as const, lastStopUndrained: true, pid: undefined }
-				: {}),
-		}));
-
-		if (diedUnobserved && updated?.state === 'Stopped') {
-			this.logger.warn(
-				`[supervisor] ${record.nodeId} is gone and nothing recorded its exit; treating as an undrained stop`,
-			);
-		}
-
-		if (promote && updated?.state === 'Running' && record.state !== 'Running') {
-			this.logger.info(
-				`[supervisor] ${record.nodeId} is answering its API${record.state === 'Stopped' ? ' despite being recorded as stopped; adopting it' : ''}`,
-			);
-		}
-		return updated ?? record;
+		return recordObservation(record, observation, { store: this.store, logger: this.logger });
 	}
 
 	private async reconcile(record: NodeRecord): Promise<void> {
@@ -670,223 +509,38 @@ export class Supervisor {
 		});
 	}
 
-	/**
-	 * Take a node down.
-	 *
-	 * Returns whether it is actually down afterwards. A stop can fail — a node
-	 * that answers but that this host cannot signal is recorded `Failed` and left
-	 * running — and a caller that goes on to start it spawns a second hydra-node
-	 * over the first one's persistence directory, api port and etcd data dir.
-	 */
 	private async stop(record: NodeRecord, reason: string): Promise<boolean> {
-		if (!this.processes.isRunning(record.nodeId)) {
-			// A node this host restarted away from is still stoppable by pid.
-			await this.adoptProcess(record);
-		}
-		if (!this.processes.isRunning(record.nodeId)) {
-			// Nothing to signal. This used to return as though the stop had
-			// succeeded, which left `desired: Stopped` permanently unreachable: the
-			// plan asked for a stop every tick, the stop did nothing, and the record
-			// went on saying Running while the payment service kept routing work to
-			// a node the operator had asked to take down.
-			if (await this.client(record).isResponsive()) {
-				const failureReason =
-					'the node is answering but this host holds no way to signal it, so it cannot be stopped or restarted here; ' +
-					'stop the process on the machine, then start or remove the node again';
-				this.logger.error(`[supervisor] cannot stop ${record.nodeId} (${reason}): ${failureReason}`);
-				await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Failed', failureReason }));
-				return false;
-			}
-			// Genuinely down, and nothing drained it.
-			await this.store.update(record.nodeId, (current) => ({
-				...current,
-				state: 'Stopped',
-				lastStopUndrained: true,
-				pid: undefined,
-			}));
-			return true;
-		}
-		this.logger.info(`[supervisor] draining ${record.nodeId} before stop: ${reason}`);
-		await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Draining' }));
-
-		const client = this.client(record);
-		const outcome = await waitForDrain({
-			fetchLastSeen: drainReader(client),
-			timeoutMs: this.config.drainTimeoutMs,
-			pollIntervalMs: 2_000,
-			sleep,
-			now: () => Date.now(),
+		return stopNode(record, reason, {
+			client: this.client(record),
+			processes: this.processes,
+			store: this.store,
+			config: this.config,
+			logger: this.logger,
+			adoptProcess: (target) => this.adoptProcess(target),
 		});
-
-		// The drain is only reached with a live process — checked above — so an
-		// unreachable node here is not a node that has exited, it is a node that
-		// has stopped answering while still running: a wedged event loop, a hung
-		// etcd client, a round left in flight. That is the exact case the unwedge
-		// check exists for, and taking `drained` at face value recorded it as a
-		// clean stop and skipped the check on the way back up.
-		const wedged = outcome.reason === 'unreachable';
-		if (wedged) {
-			this.logger.warn(
-				`[supervisor] ${record.nodeId} stopped answering while its process was still running; ` +
-					'stopping it as an undrained stop and will check for a stranded round on restart',
-			);
-		} else if (!outcome.drained) {
-			this.logger.warn(
-				`[supervisor] ${record.nodeId} did not drain within ${this.config.drainTimeoutMs}ms ` +
-					`(last tag ${String(outcome.lastTag)}); stopping anyway and will check for a stranded round on restart`,
-			);
-		}
-
-		const stopResult = await this.processes.stop(record.nodeId, SIGKILL_GRACE_MS);
-		if (!stopResult.graceful) {
-			this.logger.warn(`[supervisor] ${record.nodeId} required SIGKILL`);
-		}
-
-		// A process that outlived SIGKILL is still holding this node's persistence
-		// directory, its api port and its peer port. Reporting it stopped is what
-		// let `remove` delete those files and hand the port to the next provision
-		// while the orphan kept writing to both. The pid is kept for the same
-		// reason: it is the only handle anything has on it.
-		if (!stopResult.stopped) {
-			const failureReason = `the process (pid ${String(record.pid ?? 'unknown')}) did not exit on SIGKILL, so its files and ports are still in use`;
-			this.logger.error(`[supervisor] ${record.nodeId} could not be stopped: ${failureReason}`);
-			await this.store.update(record.nodeId, (current) => ({
-				...current,
-				state: 'Failed',
-				lastStopUndrained: true,
-				failureReason,
-			}));
-			return false;
-		}
-
-		const undrained = !outcome.drained || wedged || !stopResult.graceful;
-		await this.store.update(record.nodeId, (current) => ({
-			...current,
-			state: 'Stopped',
-			lastStopUndrained: undrained,
-			pid: undefined,
-		}));
-		return true;
 	}
 
 	private async unwedge(record: NodeRecord, reason: string): Promise<void> {
-		this.logger.info(`[supervisor] checking ${record.nodeId} for a stranded round: ${reason}`);
-		const client = this.client(record);
-
-		const outcome = await unwedgeNode({
-			fetchLastSeen: () => client.fetchLastSeen(),
-			fetchConfirmedSnapshot: () => client.fetchConfirmedSnapshot(),
-			sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
+		await unwedgeRecord(record, reason, {
+			client: this.client(record),
+			store: this.store,
+			logger: this.logger,
+			allowAutoSideLoad: this.config.allowAutoSideLoad,
 			settleWaitMs: STRANDED_SETTLE_WAIT_MS,
 			sleep,
 			isAborted: () => this.stopped,
 		});
-
-		switch (outcome.kind) {
-			case 'Deferred':
-				this.logger.info(
-					`[supervisor] deferring the stranded-round check for ${record.nodeId}: a shutdown began. ` +
-						'The undrained stop stays recorded, so the check runs on the way back up',
-				);
-				return;
-			case 'Healthy':
-			case 'Progressing':
-			case 'Recovered':
-				if (outcome.kind === 'Recovered') {
-					this.logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
-				}
-				await this.store.update(record.nodeId, (current) => ({
-					...current,
-					lastStopUndrained: false,
-					startAttempts: 0,
-				}));
-				return;
-			case 'Unrecovered':
-				this.logger.error(`[supervisor] ${record.nodeId} could not be unwedged: ${outcome.reason}`);
-				await this.store.update(record.nodeId, (current) => ({
-					...current,
-					state: 'Failed',
-					failureReason: outcome.reason,
-				}));
-				return;
-		}
 	}
 
 	private async remove(record: NodeRecord, reason: string): Promise<void> {
-		this.logger.info(`[supervisor] removing ${record.nodeId}: ${reason}`);
-		// The intent is written down BEFORE anything destroys the state it was
-		// derived from. `stop` writes `Draining` and then `Stopped` over whatever
-		// the record said, and the planner reads the state to decide what to do
-		// next — so a host killed between the stop and `store.remove` resumed a
-		// node it was in the middle of deleting.
-		//
-		// `requestRemoval` sets this on the API path for exactly that reason. The
-		// planner-initiated removals did not, and the escrow one is the case that
-		// bites: an expired `PendingEscrow` node whose state is overwritten by the
-		// stop can never match the `PendingEscrow` reaper again, so it settles into
-		// `Idle` forever holding its peer port, its persistence directory and the
-		// signing keys of a node the payment service never acknowledged — the exact
-		// orphan the escrow design exists to prevent.
-		const doomed =
-			record.removalRequested === true
-				? record
-				: ((await this.store.update(record.nodeId, (current) => ({ ...current, removalRequested: true }))) ?? record);
-		// Unconditionally, because "not a child of this host" is not the same as
-		// "not running": `stop` takes the process back by pid when it can, and says
-		// so when it cannot.
-		const stopped = await this.stop(doomed, reason);
-
-		// A node that still answers is one the stop could not reach. Deleting its
-		// persistence directory out from under it and handing its peer port to the
-		// next node turns one stuck node into two: the orphan keeps writing and
-		// keeps the port bound, and the node that inherits the port cannot start.
-		//
-		// The stop's own answer is checked alongside the probe, because the case
-		// this guard exists for is precisely a node that has stopped answering
-		// while its process runs on: a wedged node fails `isResponsive` and would
-		// have passed straight through.
-		if (!stopped || (await this.client(record).isResponsive())) {
-			const failureReason = stopped
-				? 'the node is still answering after a stop attempt, so its files and peer port are still in use; ' +
-					'stop the process on the machine, then remove the node again'
-				: 'the process did not exit on SIGKILL, so its files and peer port are still in use; ' +
-					'stop the process on the machine, then remove the node again';
-			this.logger.error(`[supervisor] refusing to remove ${record.nodeId}: ${failureReason}`);
-			// The intent is cleared with the failure. Left set, the plan asks for the
-			// same removal on every tick, it is refused for the same reason every
-			// time, and the log fills with a failure nobody is being asked to act on.
-			await this.store.update(record.nodeId, (current) => ({
-				...current,
-				state: 'Failed',
-				removalRequested: false,
-				failureReason,
-			}));
-			return;
-		}
-
-		try {
-			await this.store.remove(record.nodeId);
-		} catch (error) {
-			// The record is still on disk, and it still carries this peer port. So
-			// the port is NOT free: releasing it hands the same number to the next
-			// provision, and the next boot — which rebuilds the allocator from the
-			// records on disk — claims it twice and throws `PortLayoutError` out of
-			// `main()`, crash-looping a host that supervises nothing until someone
-			// deletes the directory by hand.
-			const failureReason =
-				`the node directory could not be deleted (${(error as Error).message}), so its port and files are still in use; ` +
-				'remove the node again once the volume is writable';
-			this.logger.error(`[supervisor] removing ${record.nodeId} failed: ${failureReason}`);
-			await this.store.update(record.nodeId, (current) => ({
-				...current,
-				state: 'Failed',
-				removalRequested: false,
-				failureReason,
-			}));
-			return;
-		}
-		this.ports.release(record.peerPort);
-		this.clients.delete(record.nodeId);
+		await removeNode(record, reason, {
+			client: this.client(record),
+			clients: this.clients,
+			store: this.store,
+			ports: this.ports,
+			logger: this.logger,
+			stop: (target, why) => this.stop(target, why),
+		});
 	}
 
 	/** Drain and stop every node. Called on SIGTERM. */
@@ -918,114 +572,13 @@ export class Supervisor {
 		await this.drainRunningNodes(attempted);
 	}
 
-	/**
-	 * The records a shutdown has to work through, however damaged the store is.
-	 *
-	 * `list()` fails wholesale: one unparseable `node.json`, or one I/O error off
-	 * the data volume, and it throws for every node. Catching that stopped SIGTERM
-	 * from becoming a hard kill — `shutdown` no longer rejected — but it drained
-	 * nothing either, on both passes, and then `index.ts` logged "all nodes
-	 * drained" and exited 0 while the runtime SIGKILLed a fleet mid-round. A clean
-	 * log for the exact outcome the drain machinery exists to prevent.
-	 *
-	 * So the fall-back asks the one source that cannot be corrupted by a file: the
-	 * live child handles this host is holding. Each record is then read on its
-	 * own, which skips only the node that is actually damaged.
-	 */
-	private async listRecordsToDrain(): Promise<NodeRecord[]> {
-		try {
-			return await this.store.list();
-		} catch (error) {
-			this.logger.error(
-				`[supervisor] could not list nodes to drain: ${(error as Error).message}; falling back to the running processes`,
-			);
-		}
-		const recovered: NodeRecord[] = [];
-		for (const running of this.processes.list()) {
-			try {
-				const record = await this.store.read(running.nodeId);
-				if (record !== null) recovered.push(record);
-				else
-					this.logger.error(
-						`[supervisor] ${running.nodeId} is running with no readable record; leaving it to the runtime`,
-					);
-			} catch (error) {
-				this.logger.error(
-					`[supervisor] could not read ${running.nodeId} to drain it: ${(error as Error).message}; leaving it to the runtime`,
-				);
-			}
-		}
-		this.logger.info(`[supervisor] recovered ${recovered.length} running node record(s) to drain`);
-		return recovered;
-	}
-
-	/**
-	 * Every node drains at once, not RECONCILE_CONCURRENCY at a time.
-	 *
-	 * Shutdown is one round of waiting, not work: a node costs drainTimeoutMs
-	 * (120s) plus SIGKILL_GRACE_MS (30s) plus SIGKILL_WAIT_MS (5s) = 155s worst
-	 * case, almost all of it idle. Batching them at 8 made the worst case
-	 * `ceil(nodes / 8) x 155s`, so a host at its default capacity of 32 needed
-	 * 620s — and `SHUTDOWN_GRACE_MS` hard-exits the process at 240s. Past the
-	 * first batch SIGTERM never finished: the runtime killed the remaining
-	 * hydra-nodes mid-round and every one of them came back `lastStopUndrained`,
-	 * each carrying an unwedge check and a possibly stranded round.
-	 *
-	 * Raising the compose grace does not help while the host kills itself first,
-	 * so the fan-out is what has to change. The reconcile path keeps its limit:
-	 * that one really is work, and it runs every 15s.
-	 */
 	private async drainRunningNodes(attempted: Set<string>): Promise<void> {
-		const records = await this.listRecordsToDrain();
-		await mapWithConcurrency(records, Math.max(1, records.length), async (record) => {
-			if (attempted.has(record.nodeId)) {
-				// Already stopped, or tried and failed — a second SIGTERM would
-				// overwrite the Failed reason `stop` just recorded with `Draining`.
-				return;
-			}
-			// Waited out, not skipped. Skipping deferred the node to the pass after
-			// `await pendingTick`, which made the two passes ADDITIVE: a tick
-			// holding one node in an observe or an unwedge cost a full drain round
-			// before that node's own drain even started — measured at two rounds,
-			// which at the real budget is 310s against the 240s SHUTDOWN_GRACE_MS.
-			// Waiting here costs only the tick's own hold, and every other node
-			// drains through its own worker meanwhile.
-			//
-			// Deliberately unbounded: the tick's work is bounded by the same
-			// timeouts this is, and the grace period is the backstop. A bound would
-			// only reintroduce the deferral it exists to remove.
-			while (this.inFlight.has(record.nodeId)) {
-				await sleep(100);
-			}
-			// Re-read after that wait. The tick may have stopped this node while we
-			// waited, and the record read before the wait still says it was Draining.
-			const current = (await this.store.read(record.nodeId).catch(() => null)) ?? record;
-			// Not `isRunning` alone: that answers "do I hold a handle?", and a node this
-			// host lost the handle to — SIGTERM before boot adopted it, an entry
-			// `revalidateAdopted` dropped — is still a running process. `stop` re-adopts
-			// by pid, so reaching it is what drains that node.
-			if (
-				!this.processes.isRunning(current.nodeId) &&
-				!mayStillBeRunning(current, current.pid !== undefined && isProcessAlive(current.pid))
-			) {
-				return;
-			}
-			// Same claim the tick makes, and taken the same way — checked and set
-			// with no await in between, so exactly one of the two owns the node.
-			// Without it a node could be sent SIGTERM twice and have two drains
-			// racing on its record.
-			if (this.inFlight.has(record.nodeId)) {
-				return;
-			}
-			this.inFlight.add(record.nodeId);
-			attempted.add(record.nodeId);
-			try {
-				await this.stop(current, 'host shutting down');
-			} catch (error) {
-				this.logger.error(`[supervisor] stopping ${record.nodeId} failed: ${(error as Error).message}`);
-			} finally {
-				this.inFlight.delete(record.nodeId);
-			}
+		await drainRunningNodes(attempted, {
+			store: this.store,
+			processes: this.processes,
+			inFlight: this.inFlight,
+			logger: this.logger,
+			stop: (target, why) => this.stop(target, why),
 		});
 	}
 }

@@ -17,8 +17,10 @@
  * snapshot recovers current datum states. Both paths use the same idempotent,
  * evidence-validating writers as the event observer.
  *
- * Retryable replay or live-snapshot evidence keeps a finalized head connected
- * so a later reconciliation pass can finish before the transport is released.
+ * Retryable replay evidence keeps a finalized head connected so a later
+ * reconciliation pass can finish before the transport is released. A finalized
+ * head has no live snapshot to read: its handoff rests on the drained replay and
+ * the node's verified fanout map.
  *
  * Mesh pinning (ADR 0005): lives in payment-source-v2 so `deserializeDatum` /
  * `decodeV2ContractDatum` resolve the V2 mesh line that wrote the datum.
@@ -43,12 +45,18 @@ import {
 	observedHydraOutputMatchesEvidence,
 	parseHydraTransactionEvidence,
 } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
-import { verifyHydraFanoutOnChain, type HydraFanoutChainObserver } from '@/lib/hydra/hydra/fanout-validation';
+import {
+	bindFinalizedFanoutToL1Chain,
+	verifyHydraFanoutOnChain,
+	type HydraFanoutChainObserver,
+} from '@/lib/hydra/hydra/fanout-validation';
+import type { HydraHeadChainObserver } from '@/lib/hydra/hydra/head-init-validation';
 import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-verification';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
 import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
+import { recordReplayedCloseSnapshot } from './replayed-close';
 import {
 	findIdentifiersWithNothingToApply,
 	isLivePassDue,
@@ -59,13 +67,15 @@ import {
 	retainLiveEscrowMemoHeads,
 } from './live-escrow-memo';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
+import { noteLiveEvidenceGaps, retainEvidenceGapHeads } from './evidence-gap-watchdog';
 
 const MAX_REPLAY_TRANSACTIONS_PER_HEAD_PER_RUN = 250;
 
 /**
  * Reconcile every enabled active/final head's in-head escrow UTxOs against this node's
- * own payment/purchase requests. Runs on the pending L2 tx handler cadence so the
- * ordered replay drains promptly; the live-snapshot pass is throttled per head by
+ * own payment/purchase requests, and hand a final head's escrows back to L1. Runs on
+ * the pending L2 tx handler cadence so the ordered replay drains promptly; the
+ * live-snapshot pass of an active head is throttled per head by
  * HYDRA_ESCROW_RECONCILE_INTERVAL. Idempotent.
  */
 export async function reconcileHydraHeadEscrowStates(): Promise<void> {
@@ -84,6 +94,7 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	});
 	// A completed head never runs a live pass again, so its memo is dropped too.
 	retainLiveEscrowMemoHeads(heads.filter((head) => head.reconciliationCompletedAt == null).map((head) => head.id));
+	retainEvidenceGapHeads(new Set(heads.map((head) => head.id)));
 	if (heads.length === 0) {
 		return;
 	}
@@ -218,15 +229,22 @@ async function reconcileHead(
 	// history absence cannot prove that a locally accepted transaction is absent
 	// while it remains outside a signed snapshot.
 	if (!(node?.hasVerifiedPinnedSessions && node.confirmedTransactionHistoryReady)) return;
+	// The handoff below expects the row's snapshot number, so the snapshot of the
+	// last close or contest in the history is recorded first.
+	if (await recordReplayedCloseSnapshot(hydraHeadId, latestSnapshotNumber, node)) return;
 	await reportExpiredL2Reservations({ hydraHeadId, network: source.network, node });
 
 	// The live snapshot is a safety net behind the TxConfirmed handler, so it is
-	// throttled per head. A finalized head is never throttled or skipped: there a
-	// 'retry' outcome gates the fan-out handoff and disconnect.
+	// throttled per head. A finalized head is never throttled: its handoff below
+	// runs on every pass.
 	const isFinalized = finalizedAt != null;
 	if (!isFinalized && !isLivePassDue(hydraHeadId, CONFIG.HYDRA_ESCROW_RECONCILE_INTERVAL * 1000)) return;
 
-	const utxos = await provider.fetchAddressUTxOs(source.smartContractAddress);
+	// A finalized head has no live snapshot to read. After HeadIsFinalized,
+	// hydra-node (2.3.0 and 2.4.1) is back in its Idle state and answers
+	// GET /snapshot/utxo with a 404. The handoff below rests on the drained
+	// replay and the node's verified fanout map instead.
+	const utxos = isFinalized ? [] : await provider.fetchAddressUTxOs(source.smartContractAddress);
 	const observations: Array<{
 		utxo: UTxO;
 		decoded: DecodedV1ContractDatum;
@@ -269,6 +287,7 @@ async function reconcileHead(
 
 	const identifierCounts = new Map<string, number>();
 	let hasRetryableLiveObservation = false;
+	const outputsMissingEvidence: string[] = [];
 	for (const observation of observations) {
 		identifierCounts.set(
 			observation.decoded.blockchainIdentifier,
@@ -315,6 +334,9 @@ async function reconcileHead(
 			}
 			continue;
 		}
+		if (!node.getConfirmedTransaction(observation.utxo.input.txHash)) {
+			outputsMissingEvidence.push(`${observation.utxo.input.txHash}#${observation.utxo.input.outputIndex}`);
+		}
 		const outcome = await reconcileEscrowUtxo(
 			hydraHeadId,
 			source,
@@ -327,12 +349,14 @@ async function reconcileHead(
 	}
 	// A pass with retryable outputs stays due, so it reruns on the next tick.
 	recordLivePass(hydraHeadId, !hasRetryableLiveObservation);
+	// Not for a finalized head: its live pass reads no outputs. A closed head keeps
+	// the watchdog, because a replay still re-reads the frames a stalled stream withheld.
+	if (!isFinalized) noteLiveEvidenceGaps(hydraHeadId, outputsMissingEvidence, node);
 
 	// A finalized head can be disconnected only after the history socket's
 	// Greetings marker proves replay completion and every queued tx was resolved.
 	if (
-		finalizedAt != null &&
-		!hasRetryableLiveObservation &&
+		isFinalized &&
 		node?.confirmedTransactionHistoryReady &&
 		node.getConfirmedTransactionsForReconciliation().length === 0
 	) {
@@ -344,6 +368,27 @@ async function reconcileHead(
 			node == null
 		)
 			return;
+		const blockfrost = getBlockfrostInstance(source.network, source.PaymentSourceConfig.rpcProviderApiKey);
+		const fanoutObserver = blockfrost as unknown as HydraFanoutChainObserver;
+		// Finds the burn step of a fanout whose last step distributed nothing.
+		const headStateObserver = blockfrost as unknown as HydraHeadChainObserver;
+		// A fanout over several L1 steps reports the earlier steps' outputs under
+		// in-head keys. Until they are bound to L1, the node resolves no fanout
+		// reference at all, so this must run before anything below reads one.
+		const bindingInput = node.getFinalizedFanoutBindingInput?.(expectedSnapshotNumber);
+		if (bindingInput) {
+			const bound = await bindFinalizedFanoutToL1Chain({
+				observer: fanoutObserver,
+				headStateObserver,
+				headId: headIdentifier,
+				participantVkeys: [localParticipantVkey, remoteParticipantVkey],
+				...bindingInput,
+			});
+			if (!node.adoptFinalizedFanoutL1Binding?.(expectedSnapshotNumber, bound)) {
+				logger.error('[HydraReconcile] refused an L1 binding of the finalized fanout map', { hydraHeadId });
+				return;
+			}
+		}
 		// One observer pass per reference set: the release step and the handoff
 		// both check the same fanout when a release happens.
 		const fanoutChecks = new Map<string, ReturnType<typeof verifyHydraFanoutOnChain>>();
@@ -352,10 +397,8 @@ async function reconcileHead(
 			const check =
 				fanoutChecks.get(key) ??
 				verifyHydraFanoutOnChain({
-					observer: getBlockfrostInstance(
-						source.network,
-						source.PaymentSourceConfig.rpcProviderApiKey,
-					) as unknown as HydraFanoutChainObserver,
+					observer: fanoutObserver,
+					headStateObserver,
 					headId: headIdentifier,
 					participantVkeys: [localParticipantVkey, remoteParticipantVkey],
 					references,

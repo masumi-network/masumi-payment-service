@@ -6,6 +6,7 @@ import { registerHydraSnapshotRoundPaths } from './docs-snapshot-round';
 import { registerHydraL2ReservationPaths } from './docs-l2-reservations';
 import { registerHydraHostPausePaths } from './docs-host-pause';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
+import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
 import {
 	getHeadSchemaInput,
 	getHeadSchemaOutput,
@@ -18,7 +19,8 @@ import {
 	clearHeadErrorsSchemaInput,
 	clearHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
-import { lifecycleInput, lifecycleOutput, commitInput, commitOutput } from '@/routes/api/hydra/head/lifecycle';
+import { lifecycleInput, lifecycleOutput } from '@/routes/api/hydra/head/lifecycle';
+import { commitInput, commitOutput } from '@/routes/api/hydra/head/commit';
 import { closeHeadInput } from '@/routes/api/hydra/head/settlement';
 import {
 	topupInput,
@@ -361,7 +363,28 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				200: successResponse(`Head ${action} result`, lifecycleOutput, { headId: HEAD_ID, status: 'Open' }),
 				...unauthorized,
 				...notFound,
-				409: { description: `Head is not in a state that permits ${action}` },
+				...(action === 'init'
+					? {
+							409: {
+								description:
+									'Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, ' +
+									`or its node reports no numeric L2 maxTxSize or one above ${EXPECTED_MAX_TX_SIZE}`,
+							},
+							400: { description: 'Invalid input, or the head has no local participant' },
+							502: { description: 'The Hydra node could not be reached, or the InitTx could not be verified' },
+							503: {
+								description:
+									'The node is behind the chain and did not post Init, or independent L1 evidence is not available yet',
+							},
+							504: {
+								description:
+									'The node failed to post the InitTx, Init did not confirm in time, or its outcome waits on the node catching up',
+							},
+						}
+					: {
+							409: { description: `Head is not in a state that permits ${action}` },
+							503: { description: 'The node is behind the chain and did not post the fanout' },
+						}),
 			},
 		});
 	}
@@ -442,7 +465,11 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				utxoCount: 1,
 				unbackedLovelace: '0',
 				hasUnbackedUtxos: false,
+				l2MintedUtxoCount: 0,
+				l2MintedLovelace: '0',
+				l2MintChecked: true,
 				balance: [{ unit: '', quantity: '10000000' }],
+				spendableBalance: [{ unit: '', quantity: '10000000' }],
 			}),
 			...unauthorized,
 			404: { description: 'Hydra head or its local participant wallet not found' },
@@ -567,7 +594,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/low-balance',
 		summary: 'Create or update a Hydra in-head low-balance rule. (admin access required)',
 		description:
-			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
+			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own spendable in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
 		tags: TAG,
 		security: secured,
 		request: {

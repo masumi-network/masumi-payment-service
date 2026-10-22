@@ -58,7 +58,8 @@ export const checkHeadOnChainPost = adminAuthenticatedEndpointFactory.build({
 		} catch (error) {
 			if (isHttpError(error)) throw error;
 			const message = error instanceof Error ? error.message : String(error);
-			if (error instanceof HydraHeadInitObservationError) throw createHttpError(503, message);
+			if (error instanceof HydraHeadInitObservationError) throw createHttpError(503, message, { expose: true });
+			// Not exposed: any other throw, a database error included, lands here.
 			throw createHttpError(502, `Could not read the head state on chain: ${message}`);
 		}
 	},

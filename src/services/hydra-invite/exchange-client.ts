@@ -236,15 +236,89 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
 	});
 }
 
-async function post(
+/**
+ * What a send attempt tells the caller about whether the nonce may be spent.
+ *
+ * - `accepted`: the Host took it (2xx), or recognised it as the same redemption.
+ * - `answered`: a status other than 2xx. `fromHost` says the body is a Host
+ *   refusal that carries one of the Host's codes. Every Host 503 carries one and
+ *   comes before the nonce is spent. Without a code the status may come from a
+ *   gateway in front of the Host, which can answer after a redemption landed.
+ * - `not-sent`: nothing left this machine, or no connection was ever made.
+ * - `unknown`: the request may have reached the Host and the answer was lost.
+ */
+export type ExchangeAttempt =
+	| { kind: 'accepted' }
+	| { kind: 'answered'; status: number; code: string | null; fromHost: boolean; detail: string }
+	| { kind: 'not-sent'; error: createHttpError.HttpError }
+	| { kind: 'unknown'; reason: string; host: string };
+
+/**
+ * Errors raised before any request bytes could have reached the Host: no
+ * connection, or a TLS handshake that failed verification. A reset, a timeout
+ * or a broken pipe are deliberately absent, because those can follow a
+ * request the Host already processed.
+ */
+const NEVER_SENT_ERROR_CODES = new Set([
+	'ECONNREFUSED',
+	'ENOTFOUND',
+	'EHOSTUNREACH',
+	'ENETUNREACH',
+	'EAI_AGAIN',
+	'CERT_HAS_EXPIRED',
+	'CERT_NOT_YET_VALID',
+	'DEPTH_ZERO_SELF_SIGNED_CERT',
+	'SELF_SIGNED_CERT_IN_CHAIN',
+	'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+	'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+	'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
+/**
+ * The codes the Host puts on a refusal: `redeemed-by-other` on a 409 and
+ * `host-unavailable` on every 503 (`HOST_UNAVAILABLE_CODE` in the Host's
+ * exchange server). Kept as a copy because `src/` does not depend on the Host.
+ */
+const HOST_REFUSAL_CODES: ReadonlySet<string> = new Set(['redeemed-by-other', 'host-unavailable']);
+
+/**
+ * Read a refusal body. Every Host refusal is `{ error }`, and the ones a
+ * redeemer acts on add a `code`. A gateway's HTML, plain text or its own
+ * `{ error }` JSON carries none of the Host's codes, so it reads as not the Host's.
+ */
+export function readRefusal(detail: string): { code: string | null; fromHost: boolean } {
+	try {
+		const parsed: unknown = JSON.parse(detail);
+		if (typeof parsed === 'object' && parsed !== null) {
+			const code = 'code' in parsed && typeof parsed.code === 'string' ? parsed.code : null;
+			return {
+				code,
+				fromHost:
+					'error' in parsed && typeof parsed.error === 'string' && code !== null && HOST_REFUSAL_CODES.has(code),
+			};
+		}
+	} catch {
+		// A gateway's HTML or plain text.
+	}
+	return { code: null, fromHost: false };
+}
+
+async function attempt(
 	rawUrl: string,
 	pathname: string,
 	body: unknown,
 	what: string,
 	transport: ExchangeTransportOptions,
 	deps: ExchangeClientDeps = {},
-): Promise<void> {
-	const { url, target } = await resolveExchangeTarget(rawUrl, transport, deps.resolve);
+): Promise<ExchangeAttempt> {
+	let url: URL;
+	let target: ResolvedExchangeTarget;
+	try {
+		({ url, target } = await resolveExchangeTarget(rawUrl, transport, deps.resolve));
+	} catch (error) {
+		if (createHttpError.isHttpError(error)) return { kind: 'not-sent', error };
+		throw error;
+	}
 	url.pathname = `${url.pathname.replace(/\/+$/, '')}${pathname}`;
 	if (url.protocol === 'http:') {
 		logger.warn(`hydra: sending ${what} over explicitly allowed HTTP to ${url.host}`);
@@ -253,6 +327,7 @@ async function post(
 		logger.warn(`hydra: sending ${what} to explicitly allowed private address for ${url.host}`);
 	}
 
+	let earlierMayHaveLanded = false;
 	try {
 		const send = deps.send ?? sendPinnedRequest;
 		const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -262,35 +337,57 @@ async function post(
 		// landed and spent the nonce, so it is never retried.
 		for (const delayMs of BUSY_RETRY_DELAYS_MS) {
 			if (result.status !== BUSY_STATUS) break;
+			// A 503 that is not the Host's own may follow a redemption it stored, and
+			// then whatever the resend hears says nothing about the first send.
+			if (!readRefusal(result.detail).fromHost) earlierMayHaveLanded = true;
 			await sleep(delayMs);
 			result = await send(url, target, payload);
 		}
-		if (result.status < 200 || result.status >= 300) {
-			// 401 is the Host refusing our signature before it spent the nonce, so
-			// the invite is still open and the operator can retry. So is 503, which
-			// a paused Host also answers.
-			const detail = [401, 409, 410, 503].includes(result.status) ? result.detail.slice(0, 200) : '';
-			throw createHttpError(
-				502,
-				`the counterparty refused the ${what} (${result.status})${detail ? `: ${detail}` : ''}`,
-			);
+		if (result.status >= 200 && result.status < 300) return { kind: 'accepted' };
+		if (earlierMayHaveLanded) {
+			return { kind: 'unknown', reason: `a gateway answered ${BUSY_STATUS} before the Host did`, host: url.host };
 		}
+		return { kind: 'answered', status: result.status, ...readRefusal(result.detail), detail: result.detail };
 	} catch (error) {
-		if (createHttpError.isHttpError(error)) {
-			throw error;
-		}
 		const reason = (error as Error).message;
 		logger.warn(`hydra: ${what} to ${url.host} failed: ${reason}`);
-		throw createHttpError(502, `could not reach the counterparty exchange at ${url.host}: ${reason}`);
+		const code = (error as NodeJS.ErrnoException).code;
+		if (!earlierMayHaveLanded && code !== undefined && NEVER_SENT_ERROR_CODES.has(code)) {
+			return {
+				kind: 'not-sent',
+				error: createHttpError(502, `could not reach the counterparty exchange at ${url.host}: ${reason}`),
+			};
+		}
+		return { kind: 'unknown', reason, host: url.host };
 	}
 }
 
-/** Send our material to the issuer, which is what lets their reserved node boot. */
-export async function postRedemption(
+/** The error that describes an attempt which did not work, in the words the operator has always seen. */
+export function attemptFailure(
+	outcome: Exclude<ExchangeAttempt, { kind: 'accepted' }>,
+	what = 'redemption',
+): createHttpError.HttpError {
+	if (outcome.kind === 'not-sent') return outcome.error;
+	if (outcome.kind === 'unknown') {
+		return createHttpError(502, `could not reach the counterparty exchange at ${outcome.host}: ${outcome.reason}`);
+	}
+	// 401 is the Host refusing our signature before it spent the nonce, so
+	// the invite is still open and the operator can retry. So is 503, which
+	// a paused Host also answers.
+	const detail = [401, 409, 410, 503].includes(outcome.status) ? outcome.detail.slice(0, 200) : '';
+	return createHttpError(502, `the counterparty refused the ${what} (${outcome.status})${detail ? `: ${detail}` : ''}`);
+}
+
+/**
+ * Send our material to the issuer, which is what lets their reserved node boot,
+ * and say what happened rather than throwing: the caller decides what an
+ * answered refusal, a lost answer and an unsent request each mean for its record.
+ */
+export async function attemptRedemption(
 	exchangeUrl: string,
 	body: RedemptionBody,
 	transport: ExchangeTransportOptions,
 	deps: ExchangeClientDeps = {},
-): Promise<void> {
-	await post(exchangeUrl, '/redeem', body, 'redemption', transport, deps);
+): Promise<ExchangeAttempt> {
+	return await attempt(exchangeUrl, '/redeem', body, 'redemption', transport, deps);
 }

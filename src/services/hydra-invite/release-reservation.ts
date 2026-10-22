@@ -23,7 +23,8 @@ import { logger } from '@masumi/payment-core/logger';
 import { HydraInviteStatus } from '@/generated/prisma/client';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
 import { decrypt } from '@/utils/security/encryption';
-import { HydraHostRequestError, removeHostNode } from '@/services/hydra-host/client';
+import { removeHostNode } from '@/services/hydra-host/client';
+import { isHostNodeGone } from '@/services/hydra-host/node-gone';
 
 export type ReservationRelease = {
 	/** Participants deleted, along with their keys. */
@@ -127,6 +128,28 @@ export async function releaseReservedParticipants(input: {
 		return { released: 0, retained };
 	}
 
+	// Asked again now, not only when the sweep began. Settling a node's funds
+	// takes chain reads, and a redemption retried in that time records a live
+	// invite for this very node; removing it then would strand a redemption the
+	// issuer has already accepted. This narrows the window, it does not close it:
+	// a record created after this query but before the node is gone is still
+	// removed. That needs a retry of a reservation more than an hour old to land
+	// during a sweep of that very node, and closing it would mean holding a lock
+	// across the Host call. The participant it would strand is the only cost; the
+	// issuer's side is untouched.
+	const claimedMeanwhile = await prisma.hydraHeadInvite.findMany({
+		where: {
+			hydraHostId: input.hydraHostId,
+			hostNodeId: input.hostNodeId,
+			status: { in: [HydraInviteStatus.Issued, HydraInviteStatus.Redeemed, HydraInviteStatus.Started] },
+		},
+		select: { id: true },
+		take: 1,
+	});
+	if (claimedMeanwhile.length > 0) {
+		return { released: 0, retained: retained + settled.length };
+	}
+
 	// The Host's node goes before the rows that name it.
 	//
 	// `hostNodeId` is recorded nowhere else, so deleting the participant while
@@ -181,7 +204,7 @@ async function removeReservedHostNode(hydraHostId: string, hostNodeId: string): 
 	} catch (error) {
 		// A node the Host no longer has is the outcome this asks for — the usual
 		// case, because revoke and the expiry sweep both remove it before calling.
-		if (error instanceof HydraHostRequestError && error.status === 404) return true;
+		if (isHostNodeGone(error)) return true;
 		logger.warn(`hydra: could not remove reserved node ${hostNodeId}: ${(error as Error).message}`);
 		return false;
 	}

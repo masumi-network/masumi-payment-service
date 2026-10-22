@@ -10,7 +10,7 @@ import {
  * The most inputs one consolidation spends.
  *
  * Every input adds bytes, and an in-head transaction is still bound by the
- * head's maxTxSize. A hundred plain inputs stay well inside the default 16 KiB;
+ * head's maxTxSize. A hundred plain inputs stay well inside the shipped 15,000;
  * a wallet holding more is consolidated in several rounds, one per request.
  */
 export const MAX_CONSOLIDATION_INPUTS = 100;

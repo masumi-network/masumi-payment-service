@@ -81,6 +81,8 @@ export async function createBoundHydraHead(input: {
 							where: {
 								hydraRelationId: relation.id,
 								status: { not: HydraHeadStatus.Final },
+								// A retired head can never reach Final; it no longer holds the relation.
+								retiredAt: null,
 							},
 							select: { id: true },
 						});

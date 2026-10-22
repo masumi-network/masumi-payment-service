@@ -18,17 +18,13 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from './nonce-log-ref';
 import { decrypt } from '@/utils/security/encryption';
-import {
-	fetchHostRedemptions,
-	forgetHostInvite,
-	HydraHostRequestError,
-	type HostInviteRecord,
-} from '@/services/hydra-host/client';
+import { fetchHostRedemptions, forgetHostInvite, type HostInviteRecord } from '@/services/hydra-host/client';
 import { verifyHydraRedemption } from './invite-signing';
 import { createHeadFromExchange } from './orchestrator';
 import { deriveNodeCardanoVkey } from './node-keys';
 import { canRemoveReservedHostNode, releaseReservedParticipants } from './release-reservation';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
+import { isHostNodeGone } from '@/services/hydra-host/node-gone';
 
 /**
  * Where to start when we have no watermark for a Host: the beginning.
@@ -127,9 +123,19 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 				// its public-plane copy or its larger key/signature payload. A
 				// finished invite replayed here means an earlier acknowledgement
 				// did not reach the Host, which keeps the record until one does.
-				await forgetHostInvite(host.baseUrl, decrypt(host.encryptedAdminToken), record.nonce, {
-					allowInsecureHttp: host.allowInsecureHttp,
-				}).catch((error: unknown) =>
+				//
+				// `keepReplay`: the Host keeps the redeemer's public material for a
+				// week. A redeemer whose answer was lost, or that crashed before it
+				// recorded one, repeats its redemption and can only learn it landed
+				// if the Host still recognises it. Only an adopted redemption may
+				// ask for this; a discarded one must be forgotten completely.
+				await forgetHostInvite(
+					host.baseUrl,
+					decrypt(host.encryptedAdminToken),
+					record.nonce,
+					{ allowInsecureHttp: host.allowInsecureHttp },
+					{ keepReplay: true },
+				).catch((error: unknown) =>
 					logger.warn(
 						`hydra: could not prune adopted invite ${nonceLogRef(record.nonce)}: ${(error as Error).message}`,
 					),
@@ -235,7 +241,7 @@ export async function discardUnadoptableRedemption(
 					});
 			} catch (error) {
 				// A node the Host no longer has is the outcome this asks for.
-				if (!(error instanceof HydraHostRequestError && error.status === 404)) throw error;
+				if (!isHostNodeGone(error)) throw error;
 			}
 		}
 		// Cancellation stops setup retries before discarding their durable material.
@@ -564,7 +570,7 @@ export async function reapExpiredInvites(): Promise<number> {
 					// happens whenever a previous sweep removed the node and died
 					// before the status write, and treating it as a failure left the
 					// invite `Issued` on every retry from then on.
-					if (!(error instanceof HydraHostRequestError && error.status === 404)) {
+					if (!isHostNodeGone(error)) {
 						throw error;
 					}
 				}

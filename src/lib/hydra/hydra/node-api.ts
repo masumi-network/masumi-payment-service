@@ -7,6 +7,8 @@
 
 import { Protocol, UTxO } from '@meshsdk/core';
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import type { FinalizedFanoutBindingInput } from './node-finalized-fanout';
+import type { L2MintCheck } from './l2-mint-tally';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
 import { type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraTransaction } from './types';
@@ -75,6 +77,8 @@ export interface IHydraNode {
 	get headClock(): HydraHeadClock | undefined;
 	readonly hasPendingIncrement?: boolean;
 	readonly pendingIncrementUtxoRefs?: ReadonlySet<string>;
+	/** Unburned L2 mints as of the replay's verified snapshot; undefined while unknown. See `l2-mint-tally`. */
+	readonly l2MintCheck?: L2MintCheck;
 	readonly hasVerifiedPinnedSessions?: boolean;
 	readonly expectedHeadId?: string;
 	pinExpectedHeadId?(headId: string): void;
@@ -83,6 +87,9 @@ export interface IHydraNode {
 		expectedSnapshotNumber: number,
 	): VerifiedHydraFanoutReference | null;
 	getVerifiedFanoutReferences?(expectedSnapshotNumber: number): VerifiedHydraFanoutReference[] | null;
+	/** Non-null while partial fanout steps still carry in-head keys; see node-finalized-fanout.ts. */
+	getFinalizedFanoutBindingInput?(expectedSnapshotNumber: number): FinalizedFanoutBindingInput | null;
+	adoptFinalizedFanoutL1Binding?(expectedSnapshotNumber: number, bound: ReadonlyMap<string, string>): boolean;
 }
 
 export interface HydraNodeClientConfig {

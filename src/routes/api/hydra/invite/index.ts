@@ -20,12 +20,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
 import { HydraInviteRole, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
-import {
-	fetchHostRedemptions,
-	forgetHostInvite,
-	HydraHostRequestError,
-	removeHostNode,
-} from '@/services/hydra-host/client';
+import { fetchHostRedemptions, forgetHostInvite, removeHostNode } from '@/services/hydra-host/client';
 import {
 	CONTESTATION_PERIOD_BOUNDS_SECONDS,
 	DEPOSIT_PERIOD_BOUNDS_SECONDS,
@@ -36,12 +31,15 @@ import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
 import { canRemoveReservedHostNode, releaseReservedParticipants } from '@/services/hydra-invite/release-reservation';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
 import { discardUnadoptableRedemption } from '@/services/hydra-invite/adoption';
+import { abandonRedemption } from '@/services/hydra-invite/abandon-redemption';
+import { LIVE_REDEEMER_STATUSES } from '@/services/hydra-invite/redemption-store';
 import { inspectExchangeNetwork } from '@/services/hydra-invite/exchange-client';
 import {
 	registryPolicyIdFor,
 	resolveCounterpartyIdentity,
 	type CounterpartyIdentity,
 } from '@/services/hydra-invite/counterparty-identity';
+import { isHostNodeGone } from '@/services/hydra-host/node-gone';
 
 /**
  * Registry identity for the wallet that signed an invite.
@@ -429,10 +427,53 @@ export const deleteInviteSchemaInput = z.object({
 		.boolean()
 		.optional()
 		.describe(
-			'Also cancel an invite the counterparty already redeemed but this service could not adopt. Its node is removed unless a head here claims it.',
+			'Also cancel an invite the counterparty already redeemed but this service could not adopt. Its node is removed unless a head here claims it. For a redemption of someone else’s invite that is stuck here, this abandons it: the node is removed and the issuer is left with a head whose peer never joins.',
 		),
 });
 export const deleteInviteSchemaOutput = z.object({ id: z.string(), status: z.nativeEnum(HydraInviteStatus) });
+
+/**
+ * A redemption of someone else's invite that cannot finish.
+ *
+ * It completes by itself when what blocks it clears, so this is refused unless
+ * the operator says they mean it: the issuer already holds our material, and
+ * abandoning leaves them a head whose peer never joins.
+ */
+async function abandonStuckRedemption(
+	invite: Parameters<typeof abandonRedemption>[0] & { status: HydraInviteStatus; redeemedAt: Date | null },
+	discard: boolean,
+): Promise<{ id: string; status: HydraInviteStatus }> {
+	if (!LIVE_REDEEMER_STATUSES.some((status) => status === invite.status)) {
+		throw createHttpError(409, `this redemption is ${invite.status.toLowerCase()} and can no longer be abandoned`);
+	}
+	if (!discard) {
+		throw createHttpError(
+			409,
+			invite.redeemedAt !== null
+				? 'the issuer accepted this redemption. It finishes on its own once what blocks it clears, or retry the same invite code. ' +
+						'To give up on it, revoke it again with discardRedemption set: your node is removed and the issuer is left with a head whose peer never joins'
+				: 'this redemption may have reached the issuer, which has not confirmed it yet. It is retried on its own, or retry the same invite code. ' +
+						'To give up on it, revoke it again with discardRedemption set: your node is removed, and if the issuer did take it they are left with a head whose peer never joins',
+		);
+	}
+	const outcome = await abandonRedemption(invite);
+	const current = await prisma.hydraHeadInvite.findUniqueOrThrow({ where: { id: invite.id } });
+	if (outcome === 'raced') {
+		throw createHttpError(
+			409,
+			`this redemption was ${current.status.toLowerCase()} while the revoke was in progress, so it was not abandoned`,
+		);
+	}
+	if (outcome === 'host-refused') {
+		throw createHttpError(
+			502,
+			`the redemption is abandoned here, but its host refused the cleanup; node ${invite.hostNodeId} must be removed by hand`,
+			{ expose: true },
+		);
+	}
+	logger.info(`hydra: abandoned redemption ${nonceLogRef(invite.nonce)}`);
+	return { id: current.id, status: current.status };
+}
 
 /**
  * Withdraw an invite nobody has redeemed, releasing its node and peer port.
@@ -460,8 +501,8 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		if (!invite) {
 			throw createHttpError(404, 'invite not found');
 		}
-		if (invite.role !== HydraInviteRole.Issuer) {
-			throw createHttpError(409, 'only an invite we issued can be revoked');
+		if (invite.role === HydraInviteRole.Redeemer) {
+			return await abandonStuckRedemption(invite, input.discardRedemption === true);
 		}
 		if (invite.status !== HydraInviteStatus.Issued) {
 			throw createHttpError(409, `this invite is ${invite.status.toLowerCase()} and can no longer be revoked`);
@@ -511,6 +552,7 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(
 					502,
 					`the invite is revoked here, but its host refused the cleanup; node ${invite.hostNodeId} must be removed by hand`,
+					{ expose: true },
 				);
 			}
 			logger.info(`hydra: revoked redeemed invite ${nonceLogRef(invite.nonce)} and discarded its redemption`);
@@ -533,7 +575,7 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 			// second attempt 404s on a node the first one already took, the local
 			// invite is never marked Revoked, and its participant stays held until
 			// the invite expires on its own.
-			if (!(error instanceof HydraHostRequestError && error.status === 404)) throw error;
+			if (!isHostNodeGone(error)) throw error;
 		}
 
 		// Revoked first, released second. Releasing sweeps the node's fuel back to

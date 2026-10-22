@@ -136,6 +136,63 @@ it again on every reconnect, so a counterparty that controls its DNS can rebind
 it later. Block egress from the Host to private, link-local and metadata
 addresses as well.
 
+### Stranded snapshot rounds
+
+A node that is killed mid-round (an out-of-memory kill, a host failure) can come
+back with a snapshot round that never completes, so the head confirms nothing.
+The recovery is to side-load the node's own last confirmed snapshot. That
+discards the round in flight, so it is only safe if the counterparty has not
+already confirmed that round.
+
+If the counterparty has confirmed it, this node is one snapshot behind. Hydra
+refuses a side-load below a node's confirmed number, so the counterparty cannot
+go back. This node has to adopt the counterparty's confirmed snapshot instead.
+Hydra accepts that side-load because every party signed the snapshot, as long as
+its version, pending commit, deposit and decommit match this node's confirmed
+snapshot. Neither the Host nor the payment service does this step. If Hydra
+refuses it, close the head: the counterparty's node contests the close with its
+later snapshot.
+
+Within the protocol, two confirmed numbers are never more than one apart: a node
+signs snapshot n only after it confirmed n - 1, and n confirms only with every
+party's signature. A counterparty one behind is still waiting for this node's
+signature on the snapshot this node confirmed: after this node is reset, its
+operator side-loads this node's confirmed snapshot (resetting it to its own does
+not help). If Hydra refuses that, close the head: this node contests the close
+with its later snapshot. A counterparty further behind has lost or restored its
+node state. It has to adopt this node's confirmed snapshot too, and if Hydra
+refuses that, close the head. Once it reports this node's confirmed number, reset
+this node: it still holds that round and refuses a new request for the same
+number.
+
+To adopt a snapshot, the operator of the node that is ahead sends the full JSON
+from `GET /snapshot` on their node (the snapshot and its signatures, not only the
+number). The other operator posts that JSON to `POST /snapshot` on their own
+node.
+
+Neither the Host nor the payment service can see the counterparty's node (its API
+binds loopback), so neither repairs on its own. The counterparty's operator runs
+`GET /snapshot` on their node and sends you `snapshot.number` (0 if it shows
+`InitialSnapshot`):
+
+- **Host:** `HYDRA_HOST_AUTO_SIDELOAD` is off by default. A stranded node is left
+  running, so it can still contest a close, and the Host logs
+  `needs an operator`. Set it to `true` only if you accept that risk for every
+  node on the Host.
+- **Payment service:** `POST /hydra/head/snapshot-round/reset` requires
+  `peerConfirmedSnapshotNumber`, the number the counterparty's operator sent. Ask
+  for it again just before the reset: the counterparty can still confirm the
+  round if this node's signature reaches it late. The reset is refused if it is
+  ahead of this node's confirmed snapshot or more than one behind it. The admin
+  UI asks for the same number, and again after every attempt.
+
+With the side-load off, the Host also puts the reason, with the time it was
+seen, in the node's `failureReason` (`GET /v1/nodes`). A round the Host holds
+with the side-load on (an unsettled deposit, or a head state it could not read)
+gets the same record. The node stays `Running`, nothing retries the side-load,
+and the next start clears the reason. The payment service's round watch alerts
+on the same stuck round on its own.
+
 The base Compose file also binds the Control Plane and Exchange Plane to
 `127.0.0.1`. Public access requires an explicit deployment configuration.
 
@@ -149,6 +206,10 @@ starts, so the whole range is refused and verified. Then run
 `hydra-peer-firewall refresh` on a timer and after every membership change, so
 each peered port opens to its counterparty only. Skipping it leaves 32
 unauthenticated etcd raft ports open to every address the cloud firewall admits.
+Also set `HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true`. The Host then keeps a
+removed node's peer port out of use until `refresh` acknowledges a ruleset
+without that node's peers. Without it, a new node on that port is open to the
+old counterparty until the next successful refresh.
 
 How you open the range depends on how you run the Host:
 
@@ -471,6 +532,85 @@ The service leaves those funds out of coin selection during the window, so the
 rest of the head keeps working. If the arriving deposit is the _only_ money in
 the head, there is nothing to work with and payments wait for the fold to
 finish. That is expected; it resolves itself.
+
+### A head that stays in FanoutPossible or FanningOut
+
+A head can close and then never reach `Final`. The usual cause is one output
+that no fanout transaction can carry (ADR 0013, limit 3). Its relation then
+refuses a new head.
+
+1. Read the head on L1 with `POST /hydra/head/chain-check`. If it shows
+   `gone`, the fanout landed: reconciliation adopts it, so wait.
+2. If it shows `closed` and fanout keeps failing, move out what fits. List
+   what the head holds with `GET /hydra/head/partial-fanout?headId=<head id>`,
+   then send every output except the stuck one:
+
+   ```json
+   POST /hydra/head/partial-fanout
+   {
+     "headId": "<head id>",
+     "outputRefs": ["<txHash#index>", "<txHash#index>"]
+   }
+   ```
+
+   The head is then `FanningOut`. From here only `partial-fanout` continues
+   it; a plain fanout is refused. Repeat until only the stuck output is left.
+   The `GET` reply carries `fanoutMode`. Send the next selection only when it
+   is `null` or `AwaitingSelection`: in the other modes the node posts the
+   next step itself, and the endpoint refuses. If the mode stays `AutoDrain`
+   or `DistributingSelection` and `chain-check` shows the same head output
+   tx for several minutes, the step is stuck. Then add
+   `"replaceInProgressSelection": true` to the selection, or add
+   `"acknowledgeFanoutStalled": true` to the retire call. A replacement
+   selection helps only while other outputs are left to move: when only the
+   stuck output remains, any selection is that output again and fails again,
+   so retire instead. A replacement can also report a refusal that belongs to
+   the replaced step. Read `fanoutMode` again before you retry.
+
+3. Retire the head:
+
+   ```json
+   POST /hydra/head/retire
+   {
+     "headId": "<head id>",
+     "reason": "<why the head cannot reach Final>",
+     "acknowledgeStrandedFunds": true
+   }
+   ```
+
+4. Open a new head on the same relation.
+
+Retiring moves no money. What is left in the head stays on L1 behind the head
+script, and the requests that were in the head stay unsettled. The head record
+keeps the head identifier, the L1 tx that holds the head output and the
+remaining UTxO set, so a later recovery has what it needs. A retired head
+cannot be enabled again, and its relation, participants and host cannot be
+deleted.
+
+Do not retire a head while a fanout is in flight. The endpoint refuses when
+the node already reports the head past its stored status, or when the head
+output moves on L1 during the request. It cannot see a fanout that is posted
+but not yet on L1. Wait for a failed fanout to fail before you retire.
+
+The endpoint refuses a head inside its contestation period. It checks the
+stored deadline of a `Closed` head and the deadline the node reports for any
+head, because a contest moves the node's deadline and the stored one can miss
+it. It refuses a `Closed` head with no stored deadline (409), a node deadline
+still in the future (409) and a `Closed` head whose node reports no readable
+deadline (502). In each case, wait until the head is `FanoutPossible`, then
+retire it. That is also the safe choice when a deadline just passed: the node
+can lag the chain, and a contest it has not processed yet still moves the
+deadline. The check also uses this service's clock, which can run ahead of
+the chain.
+
+If the node is down, it refuses too, because it cannot read the remaining UTxO
+set. Add `"acknowledgeRemainingUtxoUnknown": true` to retire without that set.
+The flag also covers a head with no node connection (a disabled head, for
+example), a node that reports the head neither closed nor fanning out, and a
+head state this service cannot read. When the node gives no readable deadline
+in these cases, retire checks only the stored deadline of a `Closed` head and
+cannot see a contest that is still running. The flag never skips a node
+deadline that this service can read.
 
 ### "Transaction is invalid" on a head
 

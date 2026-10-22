@@ -1,7 +1,12 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
-import { HydraCommandRejectedError, HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra/hydra/errors';
+import {
+	HydraCommandRefusedUnsyncedError,
+	HydraCommandRejectedError,
+	HydraTransportAmbiguousError,
+	HydraTransportError,
+} from '@/lib/hydra/hydra/errors';
 import { HydraHeadInitObservationError } from '@/lib/hydra/hydra/head-init-validation';
 
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -18,6 +23,8 @@ const mockUpdateHead = jest.fn() as AnyMock;
 const mockReleaseClose = jest.fn() as AnyMock;
 const mockCreateHeadError = jest.fn() as AnyMock;
 const mockClose = jest.fn() as AnyMock;
+const mockFanout = jest.fn() as AnyMock;
+let liveHeadStatus: HydraHeadStatus | null = null;
 const mockFlushHeadStatus = jest.fn() as AnyMock;
 const mockReconcileEnabledState = jest.fn() as AnyMock;
 
@@ -57,7 +64,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({
-		getHead: () => ({ close: mockClose }),
+		getHead: () => ({ close: mockClose, fanout: mockFanout, status: liveHeadStatus }),
 		flushHeadStatus: mockFlushHeadStatus,
 		reconcileEnabledState: mockReconcileEnabledState,
 	}),
@@ -68,11 +75,12 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 let beginHydraHeadClose: typeof import('./settlement').beginHydraHeadClose;
 let updateHydraHeadEnabledState: typeof import('./index').updateHydraHeadEnabledState;
 let closeHeadPost: typeof import('./settlement').closeHeadPost;
+let fanoutHeadPost: typeof import('./settlement').fanoutHeadPost;
 let getOrListHeadsGet: typeof import('./index').getOrListHeadsGet;
 
 beforeAll(async () => {
 	({ updateHydraHeadEnabledState, getOrListHeadsGet } = await import('./index'));
-	({ beginHydraHeadClose, closeHeadPost } = await import('./settlement'));
+	({ beginHydraHeadClose, closeHeadPost, fanoutHeadPost } = await import('./settlement'));
 });
 
 const openHead = {
@@ -89,6 +97,7 @@ const openHead = {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	liveHeadStatus = null;
 	mockTransaction.mockImplementation(
 		async (operation: (tx: typeof transactionClient) => Promise<unknown>) => await operation(transactionClient),
 	);
@@ -252,17 +261,45 @@ describe('Hydra head state convergence', () => {
 
 	it('clears stale InitTx admission evidence when disabling a head', async () => {
 		const disabledHead = { ...openHead, isEnabled: false, initTxHash: null };
-		mockUpdateHead.mockResolvedValue(disabledHead);
+		mockFindHead.mockResolvedValueOnce(openHead).mockResolvedValueOnce(disabledHead);
 
 		await expect(updateHydraHeadEnabledState('head-1', false)).resolves.toBe(disabledHead);
 
-		expect(mockUpdateHead).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
-			}),
-		);
-		expect(mockReleaseClose).not.toHaveBeenCalled();
+		expect(mockReleaseClose).toHaveBeenCalledWith({
+			where: { id: 'head-1', retiredAt: null },
+			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
+		});
+		// The disable write is the only updateMany: the close latch is untouched.
+		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
+	});
+
+	// Disabling clears the init anchors that a recovery of a retired head
+	// restarts the node from.
+	it.each([false, true])('refuses to set a retired head enabled=%s', async (isEnabled) => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible, retiredAt: new Date() });
+
+		await expect(updateHydraHeadEnabledState('head-1', isEnabled, jest.fn() as AnyMock)).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(mockUpdateHead).not.toHaveBeenCalled();
+		expect(mockReleaseClose).not.toHaveBeenCalled();
+	});
+
+	it('reports a head deleted during a disable as not found', async () => {
+		mockReleaseClose.mockResolvedValue({ count: 0 });
+		mockFindHead.mockResolvedValueOnce(openHead).mockResolvedValueOnce(null);
+
+		await expect(updateHydraHeadEnabledState('head-1', false)).rejects.toMatchObject({ statusCode: 404 });
+	});
+
+	// A retire that commits between the read and the disable write must keep
+	// the anchors: the guarded write matches nothing and the request fails.
+	it('refuses a disable that races a retire', async () => {
+		mockReleaseClose.mockResolvedValue({ count: 0 });
+
+		await expect(updateHydraHeadEnabledState('head-1', false)).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockReconcileEnabledState).not.toHaveBeenCalled();
 	});
 
 	// Re-proving an enabled head meant disabling it first, which dropped the
@@ -296,8 +333,10 @@ describe('Hydra head state convergence', () => {
 			updatedAt: new Date('2026-07-23T01:01:00Z'),
 		};
 		const enabledHead = { ...quarantinedHead, isEnabled: true, initTxHash: 'c'.repeat(64) };
-		mockFindHead.mockResolvedValueOnce(staleHead).mockResolvedValueOnce(enabledHead);
-		mockUpdateHead.mockResolvedValue(quarantinedHead);
+		mockFindHead
+			.mockResolvedValueOnce(staleHead)
+			.mockResolvedValueOnce(quarantinedHead)
+			.mockResolvedValueOnce(enabledHead);
 		const verify = jest.fn<(headId: string) => Promise<{ headIdentifier: string; initTxHash: string }>>(async () => ({
 			headIdentifier: staleHead.headIdentifier,
 			initTxHash: 'c'.repeat(64),
@@ -305,17 +344,16 @@ describe('Hydra head state convergence', () => {
 
 		await expect(updateHydraHeadEnabledState('head-1', true, verify)).resolves.toBe(enabledHead);
 
-		expect(mockUpdateHead).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: { id: 'head-1' },
-				data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
-			}),
-		);
+		expect(mockReleaseClose).toHaveBeenCalledWith({
+			where: { id: 'head-1', retiredAt: null },
+			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
+		});
 		expect(verify).toHaveBeenCalledWith('head-1');
 		expect(mockReleaseClose).toHaveBeenCalledWith({
 			where: {
 				id: 'head-1',
 				isEnabled: false,
+				retiredAt: null,
 				initTxHash: null,
 				updatedAt: quarantinedHead.updatedAt,
 				headIdentifier: staleHead.headIdentifier,
@@ -341,8 +379,10 @@ describe('Hydra head state convergence', () => {
 		};
 		const quarantinedHead = { ...staleHead, initTxHash: null, updatedAt: new Date('2026-07-23T01:01:00Z') };
 		const enabledHead = { ...quarantinedHead, isEnabled: true, initTxHash: 'c'.repeat(64) };
-		mockFindHead.mockResolvedValueOnce(staleHead).mockResolvedValueOnce(enabledHead);
-		mockUpdateHead.mockResolvedValue(quarantinedHead);
+		mockFindHead
+			.mockResolvedValueOnce(staleHead)
+			.mockResolvedValueOnce(quarantinedHead)
+			.mockResolvedValueOnce(enabledHead);
 		mockReleaseClose.mockResolvedValue({ count: 1 });
 		// The quarantine reconcile settles; the connect after enable never does.
 		mockReconcileEnabledState.mockResolvedValueOnce(false).mockReturnValueOnce(new Promise(() => undefined));
@@ -375,8 +415,7 @@ describe('Hydra head state convergence', () => {
 			contestationPeriod: 86_400n,
 			HydraRelation: {},
 		};
-		mockFindHead.mockResolvedValue(staleHead);
-		mockUpdateHead.mockResolvedValue({
+		mockFindHead.mockResolvedValueOnce(staleHead).mockResolvedValueOnce({
 			...staleHead,
 			isEnabled: false,
 			initTxHash: null,
@@ -388,7 +427,8 @@ describe('Hydra head state convergence', () => {
 
 		await expect(updateHydraHeadEnabledState('head-1', true, verify)).rejects.toMatchObject({ statusCode: 503 });
 
-		expect(mockReleaseClose).not.toHaveBeenCalled();
+		// Only the quarantine write ran: the enable CAS never did.
+		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
 	});
 
@@ -459,5 +499,89 @@ describe('Hydra head state convergence', () => {
 		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
 
 		expect(mockReleaseClose).not.toHaveBeenCalled();
+	});
+});
+
+describe('fanoutHeadPost', () => {
+	// The node reports the first partial step before flushHeadStatus stores it.
+	// A plain Fanout sent then is refused by hydra-node and recorded as a
+	// command failure.
+	it('refuses a plain fanout once the live head is fanning out in steps', async () => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible });
+		liveHeadStatus = HydraHeadStatus.FanningOut;
+		const handler = (
+			fanoutHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringContaining('partial-fanout') as unknown as string,
+		});
+		expect(mockFanout).not.toHaveBeenCalled();
+	});
+
+	const fanout = () =>
+		(
+			fanoutHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler({ input: { headId: 'head-1' } });
+
+	// hydra-node's refusal of a second Fanout names no request, so it failed
+	// every waiting Fanout, the one that landed included (MAS-646).
+	it('refuses a second fanout while the first is in flight, without recording an error', async () => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible });
+		liveHeadStatus = HydraHeadStatus.FanoutPossible;
+		let landFirst!: () => void;
+		mockFanout.mockImplementationOnce(() => new Promise<void>((resolve) => (landFirst = resolve)));
+
+		const first = fanout();
+		await new Promise((resolve) => setImmediate(resolve));
+		await expect(fanout()).rejects.toMatchObject({ status: 409, message: 'Hydra head fanout is already in progress' });
+		landFirst();
+
+		await expect(first).resolves.toMatchObject({ headId: 'head-1' });
+		expect(mockFanout).toHaveBeenCalledTimes(1);
+		expect(mockCreateHeadError).not.toHaveBeenCalled();
+	});
+
+	it('accepts a fanout again once the one in flight has failed', async () => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible });
+		liveHeadStatus = HydraHeadStatus.FanoutPossible;
+		mockFanout.mockRejectedValueOnce(new Error('timed out')).mockResolvedValueOnce(undefined);
+
+		await expect(fanout()).rejects.toThrow('timed out');
+		await expect(fanout()).resolves.toMatchObject({ headId: 'head-1' });
+		expect(mockFanout).toHaveBeenCalledTimes(2);
+	});
+
+	// After finalization hydra-node 2.3/2.4.1 greets without a head, so the live
+	// status is Idle while the stored one can still read FanoutPossible.
+	it('refuses a fanout when the live head has moved past FanoutPossible', async () => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible });
+		liveHeadStatus = HydraHeadStatus.Idle;
+
+		await expect(fanout()).rejects.toMatchObject({ status: 409 });
+		expect(mockFanout).not.toHaveBeenCalled();
+	});
+});
+
+describe('fanoutHeadPost, when the node refuses Fanout because it is behind', () => {
+	it('says Fanout was not posted and records no head error', async () => {
+		mockFindHead.mockResolvedValue({ id: 'head-1', status: HydraHeadStatus.FanoutPossible, isEnabled: true });
+		mockFanout.mockRejectedValue(
+			new HydraCommandRefusedUnsyncedError(
+				'Command Fanout was refused: the node is not synced with the chain (drift 90s)',
+			),
+		);
+		const handler = (fanoutHeadPost as unknown as { handler: (args: unknown) => Promise<unknown> }).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 503,
+			message: expect.stringMatching(/Fanout was not posted/),
+		});
+		expect(mockCreateHeadError).not.toHaveBeenCalled();
 	});
 });

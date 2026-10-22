@@ -12,10 +12,10 @@
  *    script spend with `PPViewHashesDontMatch` — and it fails at commit time,
  *    far from the cause. See docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
  *  - Execution units and `maxTxSize`. These bound what can eventually be fanned
- *    out. An L2 ledger that permits a larger transaction than L1 lets a head
- *    accept an output that no fanout transaction can ever distribute, because a
- *    fanout chunk cannot be smaller than one output. That is not recoverable
- *    after close.
+ *    out. An L2 ledger that permits a transaction within about 900 bytes of
+ *    L1's limit lets a head accept an output that no fanout transaction can
+ *    ever distribute, because a fanout chunk cannot be smaller than one output.
+ *    That is not recoverable after close.
  *
  * Like protocol-drift, this reports and never refuses. Refusing on a parameter
  * change would take down a head that is working; the value here is that someone
@@ -56,8 +56,14 @@ export const EXPECTED_COST_MODEL_LENGTHS: ReadonlyMap<string, number> = new Map(
 	['PlutusV3', 297],
 ]);
 
-/** Matches L1. A head permitting more than L1 can accept an unfanoutable output. */
-export const EXPECTED_MAX_TX_SIZE = 16_384;
+/**
+ * Below L1's 16,384 on purpose. A hydra-node 2.4.1 fanout tx is 917 bytes larger
+ * than the one output it moves (docs/hydra-fanout-output-size-measurement.md), so
+ * a head that accepts L2 txs near L1's limit can hold an output no fanout can
+ * move, and then never reaches Final. Also asserted against the shipped file in
+ * packages/hydra-host/src/ledger-params.spec.ts. Change both.
+ */
+export const EXPECTED_MAX_TX_SIZE = 15_000;
 
 export const EXPECTED_TX_EXECUTION_UNITS = { memory: 16_500_000, steps: 10_000_000_000 } as const;
 

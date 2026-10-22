@@ -15,11 +15,15 @@ import { registerFundWalletPaths } from '@/routes/api/fund-wallet/docs';
 import { registerFundDistributionPaths } from '@/routes/api/fund-distribution/docs';
 import { registerHydraPaths } from '@/routes/api/hydra/docs';
 import { registerHydraHeadChainCheckPath } from '@/routes/api/hydra/docs-head-chain-check';
+import { registerHydraHeadRetirePath } from '@/routes/api/hydra/docs-head-retire';
+import { registerHydraHeadPartialFanoutPath } from '@/routes/api/hydra/docs-head-partial-fanout';
 import { registerRailReadinessPaths } from '@/routes/api/rail-readiness/docs';
 import { registerTxSyncQuarantinePaths } from '@/routes/api/tx-sync-quarantine/docs';
 import { registerRequestRepairPaths } from '@/routes/api/request-repair/docs';
 import { registerReportPaths } from '@/routes/api/reports/docs';
 import { registerReleaseStatusPaths } from '@/routes/api/release-status/docs';
+import { registerSecurityStatusPaths } from '@/routes/api/security-status/docs';
+import { registerAcknowledgeManualActionPaths } from '@/routes/api/acknowledge-manual-action/docs';
 
 extendZodWithOpenApi(z);
 
@@ -45,11 +49,15 @@ export function generateOpenAPI() {
 	registerFundDistributionPaths({ registry, apiKeyAuth });
 	registerHydraPaths({ registry, apiKeyAuth });
 	registerHydraHeadChainCheckPath({ registry, apiKeyAuth });
+	registerHydraHeadRetirePath({ registry, apiKeyAuth });
+	registerHydraHeadPartialFanoutPath({ registry, apiKeyAuth });
 	registerRailReadinessPaths({ registry, apiKeyAuth });
 	registerTxSyncQuarantinePaths({ registry, apiKeyAuth });
 	registerRequestRepairPaths({ registry, apiKeyAuth });
 	registerReportPaths({ registry, apiKeyAuth });
 	registerReleaseStatusPaths({ registry, apiKeyAuth });
+	registerSecurityStatusPaths({ registry, apiKeyAuth });
+	registerAcknowledgeManualActionPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
 		openapi: '3.0.0',

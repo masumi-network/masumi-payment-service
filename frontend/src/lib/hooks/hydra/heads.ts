@@ -26,9 +26,11 @@ import type {
  * A head sits in one of these for a block or two after an action, and the
  * action's own request does not carry the result, the status arrives from
  * frames the node pushes. Without polling, an operator who opened a head saw
- * Idle until they reloaded, which reads as "nothing happened".
+ * Idle until they reloaded, which reads as "nothing happened". FanningOut also
+ * waits on the operator between partial steps; it polls anyway, because a step
+ * the node or the counterparty posts changes the row without a request here.
  */
-const SETTLING_STATUSES: HydraHeadStatus[] = ['Initializing', 'Connecting', 'Closed'];
+const SETTLING_STATUSES: HydraHeadStatus[] = ['Initializing', 'Connecting', 'Closed', 'FanningOut'];
 
 /** Rows per request for a head's errors and transactions. Older pages load on demand. */
 const HEAD_LIST_PAGE_SIZE = 25;
@@ -141,7 +143,10 @@ export function useHydraHeadReadiness(
     },
     enabled: !!apiClient && headId !== null && enabled,
     staleTime: 5000,
-    refetchInterval: (query) => (poll && query.state.data?.isReady !== true ? 10_000 : false),
+    refetchInterval: (query) =>
+      poll && (query.state.data?.isReady !== true || query.state.data?.syncReady === false)
+        ? 10_000
+        : false,
   });
 
   return { connection: query.data ?? null, ...query };

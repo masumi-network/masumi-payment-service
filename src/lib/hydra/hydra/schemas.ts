@@ -130,6 +130,18 @@ export const commandFailedMessageSchema = z.looseObject({
 });
 
 /**
+ * The node refused client input because its chain follower is behind by more
+ * than `--unsynced-period`. Same echoed `clientInput` as `CommandFailed`, plus
+ * the drift in seconds. The node did not act on the input.
+ */
+export const rejectedInputBecauseUnsyncedMessageSchema = commandFailedMessageSchema.extend({
+	tag: z.literal('RejectedInputBecauseUnsynced'),
+	// Only shown to the operator. Unchecked, so an odd encoding cannot turn a
+	// clear refusal into a protocol error for the waiting command.
+	drift: z.unknown().optional(),
+});
+
+/**
  * The head signed a snapshot that removes a withdrawal's outputs.
  *
  * The moment that matters: from here the value is out of the head, and the only
@@ -139,6 +151,8 @@ export const commandFailedMessageSchema = z.looseObject({
 export const decommitApprovedMessageSchema = z.looseObject({
 	tag: z.literal('DecommitApproved'),
 	decommitTxId: canonicalHydraTransactionIdSchema,
+	/** Optional metadata: a malformed date keeps the existing receipt-time fallback. */
+	timestamp: z.unknown().optional(),
 	headId: canonicalHydraHeadIdSchema,
 	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
 });
@@ -328,6 +342,36 @@ export const hydraConfirmedSnapshotSchema = z.union([
 	}),
 	z.looseObject({ tag: z.literal('InitialSnapshot'), headId: z.string() }),
 ]);
+
+/** The fields of a snapshot that say which deposit it holds. */
+const hydraSnapshotDepositSchema = z.looseObject({
+	utxoToCommit: hydraSnapshotUtxoSchema.nullish(),
+	depositTxId: canonicalHydraTransactionIdSchema.nullish(),
+});
+
+/**
+ * `GET /snapshot`, read for the deposit the head has agreed to absorb.
+ *
+ * Its own schema rather than a widening of the one above: that one is shared
+ * with the snapshot reset, which must keep accepting every snapshot it accepts
+ * today. In hydra-node 2.4.1 a confirmed snapshot carries `utxoToCommit` and the
+ * `depositTxId` it came from while an increment is pending (`api.yaml`,
+ * `Snapshot`).
+ */
+export const hydraAcknowledgedDepositSchema = z.union([
+	z.looseObject({ tag: z.literal('ConfirmedSnapshot'), snapshot: hydraSnapshotDepositSchema }),
+	z.looseObject({ tag: z.literal('InitialSnapshot') }),
+]);
+
+/**
+ * `GET /snapshot/last-seen`, read for the deposit in the round being signed.
+ * Only a `SeenSnapshot` carries its snapshot. Any tag is accepted here, and the
+ * caller decides what an unknown one means.
+ */
+export const hydraSeenDepositSchema = z.looseObject({
+	tag: z.string().max(64),
+	snapshot: hydraSnapshotDepositSchema.optional(),
+});
 
 /**
  * `GET /snapshot/last-seen`: the node's view of the snapshot round in flight.

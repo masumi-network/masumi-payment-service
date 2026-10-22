@@ -4,6 +4,7 @@ import {
 	Prisma,
 	PurchaseErrorType,
 	PurchasingAction,
+	TransactionLayer,
 } from '@/generated/prisma/client';
 import { webhookEventsService } from '@/services/webhooks/events.service';
 import {
@@ -18,6 +19,8 @@ type ErrorTransitionParams<TErrorType> = {
 	errorNote: string;
 	errorType?: TErrorType;
 	unlockWallet?: boolean;
+	/** The layer read by the caller, before a final handoff can change it. */
+	expectedLayer?: TransactionLayer;
 };
 
 type PaymentErrorTransitionParams = ErrorTransitionParams<PaymentErrorType> & {
@@ -48,7 +51,14 @@ export async function writePaymentErrorTransition(
 	params: PaymentErrorTransitionParams,
 ): Promise<void> {
 	const request = await tx.paymentRequest.update({
-		where: { id: params.requestId },
+		where: {
+			id: params.requestId,
+			// Fence the layer the caller read. A final handoff can move a stale
+			// L2 caller's request to L1 while another worker advances its action.
+			...(params.expectedLayer === TransactionLayer.L2
+				? { layer: TransactionLayer.L2, nextActionId: params.nextActionId }
+				: {}),
+		},
 		data: {
 			...connectPreviousAction(params.nextActionId),
 			...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
@@ -67,7 +77,12 @@ export async function writePurchaseErrorTransition(
 	params: ErrorTransitionParams<PurchaseErrorType>,
 ): Promise<void> {
 	const request = await tx.purchaseRequest.update({
-		where: { id: params.requestId },
+		where: {
+			id: params.requestId,
+			...(params.expectedLayer === TransactionLayer.L2
+				? { layer: TransactionLayer.L2, nextActionId: params.nextActionId }
+				: {}),
+		},
 		data: {
 			...connectPreviousAction(params.nextActionId),
 			...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {

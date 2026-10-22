@@ -385,7 +385,7 @@ describe('advanceHydraHostPause', () => {
 	});
 
 	// isClosing stays set after Final, so it must not hold a pause forever.
-	it('counts a closing head only while it is still Open, plus Closed and FanoutPossible', async () => {
+	it('counts a closing head only while it is still Open, plus Closed, FanoutPossible and FanningOut', async () => {
 		mockHostFindUnique.mockResolvedValue(hostRow());
 
 		await pause.advanceHydraHostPause('host-1', { force: false });
@@ -393,7 +393,10 @@ describe('advanceHydraHostPause', () => {
 		expect(mockHeadCount).toHaveBeenCalledWith({
 			where: {
 				LocalParticipant: { hydraHostId: 'host-1' },
-				OR: [{ isClosing: true, status: 'Open' }, { status: { in: ['Closed', 'FanoutPossible'] } }],
+				OR: [
+					{ isClosing: true, status: 'Open' },
+					{ status: { in: ['Closed', 'FanoutPossible', 'FanningOut'] }, retiredAt: null },
+				],
 			},
 		});
 	});
@@ -513,7 +516,8 @@ describe('resumeHydraHost', () => {
 		expect(mockStartHostNode).toHaveBeenCalledTimes(2);
 		expect(mockHostUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'host-1', pausedAt: PAUSED_AT },
-			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null },
+			// The redemption give-up counts from resumedAt, so a pause is not days of retries.
+			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: expect.any(Date) },
 		});
 	});
 

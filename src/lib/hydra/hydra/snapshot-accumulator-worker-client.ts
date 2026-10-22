@@ -116,7 +116,6 @@ export function createWorkerAccumulatorComputer(
 			return undefined;
 		}
 		const slot: WorkerSlot = { worker, pending: new Map(), isReady: false, watchdog: undefined };
-		worker.unref();
 		worker.on('message', (reply: AccumulatorReply) => {
 			if ('ready' in reply) {
 				slot.isReady = true;
@@ -150,6 +149,9 @@ export function createWorkerAccumulatorComputer(
 			retire(slot);
 			rejectAll(slot, new HydraTransportError(`Hydra accumulator worker exited with code ${code}`));
 		});
+		// Adding a message listener references the worker's port again. Unref
+		// after registration so an idle worker cannot prevent process shutdown.
+		worker.unref();
 		current = slot;
 		return slot;
 	};

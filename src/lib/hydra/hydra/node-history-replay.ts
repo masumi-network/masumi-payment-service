@@ -25,6 +25,7 @@ import {
 	assertExpectedFrameHeadId,
 	parseBoundedJsonFrame,
 	protocolErrorToString,
+	readClosedSnapshotNumber,
 	readDecommitSettled,
 	readDepositRecorded,
 } from './node-frames';
@@ -40,7 +41,8 @@ import {
 	decommitRequestedMessageSchema,
 	hasFinalizedUtxoField,
 } from './schemas';
-import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
+import { rememberDecommitTransaction, resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
+import * as l2Mint from './l2-mint-tally';
 import {
 	completeHydraSnapshotVerification,
 	doesHydraTransactionTransitionReachSnapshot,
@@ -50,23 +52,17 @@ import {
 } from './snapshot-verification';
 import { computeHydraAccumulatorHash } from './snapshot-accumulator';
 import { HistoryFrameQueue, type QueuedHistoryFrame } from './node-history-frame-queue';
-import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
-import { DecommitSettledData, DepositRecordedData, HydraConfirmedTransaction, HydraTransaction } from './types';
+import { pageClosedBeforeHeadExisted } from './node-history-page';
+import type { HistoryReplayHost } from './node-history-replay-host';
+import { HydraTransaction } from './types';
 
 const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
 	HydraHeadStatus.Open,
 	HydraHeadStatus.Closed,
 	HydraHeadStatus.FanoutPossible,
+	HydraHeadStatus.FanningOut,
 	HydraHeadStatus.Final,
 ]);
-
-/**
- * How many decommit transactions to keep for transition checking.
- *
- * Only one can be pending at a time, so this is generous by design: it exists
- * so a long history cannot grow the map without bound.
- */
-const MAX_TRACKED_DECOMMIT_TRANSACTIONS = 64;
 
 const MAX_UNPINNED_HISTORY_BUFFER_BYTES = 8 * 1024 * 1024;
 
@@ -77,44 +73,25 @@ const MAX_UNPINNED_HISTORY_BUFFER_BYTES = 8 * 1024 * 1024;
  */
 const SLOW_REPLAY_WORK_MS = 1_000;
 
-/** What the replay needs from the session it serves. */
-export interface HistoryReplayHost {
-	readonly expectedHeadId: string | undefined;
-	readonly trustLocalNodeSnapshotMetadata: boolean;
-	/** The latched, instance-fatal rotation error, if one was ever observed. */
-	readonly persistenceRotationError: HydraProtocolError | undefined;
-	readonly orderedSnapshotVerificationKeys: string[] | undefined;
-	/** Computes snapshot accumulators; defaults to the event loop. */
-	readonly computeSnapshotAccumulator?: HydraAccumulatorComputer;
-	/** Throws (and latches) when the frame announces event-log rotation. */
-	assertPersistenceReplayIsSupported(message: unknown): void;
-	bindSnapshotPartyOrder(message: unknown): void;
-	verifyGreetingsPartyIdentity(message: unknown): void;
-	setNetworkConnected(connected: boolean): void;
-	/** Record a finalized fanout map, shared with the live session's copy. */
-	recordFinalizedFanout(message: unknown): void;
-	rememberReplayedDeposit(data: DepositRecordedData): void;
-	rememberReplayedDecommit(data: DecommitSettledData): void;
-	emitTxConfirmed(txId: string, transaction: HydraConfirmedTransaction): void;
-	onProtocolDrift(description: string): void;
-	/** Rotation is fatal for this client instance: tear down the live session and both transports. */
-	onRotationReplayFailure(error: HydraProtocolError): void;
-	/** The first failure of a pass: surface it (event + operator record). */
-	onReplayFailed(error: Error): void;
-}
-
 export class HydraHistoryReplay {
 	private _complete = false;
 	private _failed = false;
 	private _error: Error | undefined;
 	private _sessionHeadId: string | undefined;
+	/** The pinned head this pass saw finalized. Pass-local: a fresh pass must read the log again. */
+	private _finalizedHeadId: string | undefined;
 	private _truncated = false;
 	private _restartRequested = false;
 	private _unpinnedFrames: string[] = [];
 	private _unpinnedBytes = 0;
 	private _lastSequence: number | undefined;
+	/** Highest `seq` of any frame this pass, and whether its Greetings arrived. */
+	private _maxFrameSequence: number | undefined;
+	private _pastGreetings = false;
 	private _partyIdentityVerified = false;
 	private _verifiedSnapshot: VerifiedHydraSnapshot | undefined;
+	/** Newest snapshot a close or contest put on chain this pass. Only history has it after a restart. */
+	private _closedSnapshotNumber: number | undefined;
 	/**
 	 * The exact signed payload behind `_verifiedSnapshot` (version, accumulator,
 	 * party signatures), kept only to tell an idempotent re-delivery of that same
@@ -151,6 +128,9 @@ export class HydraHistoryReplay {
 	/** Unknown snapshot fields already reported, so a replay says it once. */
 	private readonly _reportedDriftFields = new Set<string>();
 
+	/** Net L2 mint over this pass's confirmed transactions, reported while current; see `l2-mint-tally`. */
+	private _l2MintTally: l2Mint.L2MintTally = { units: new Map() };
+
 	constructor(
 		private readonly connection: Connection,
 		private readonly ledger: ConfirmedTransactionLedger,
@@ -173,12 +153,40 @@ export class HydraHistoryReplay {
 		return this._sessionHeadId;
 	}
 
+	/**
+	 * The pass accepted its closing Greetings and has not failed since, so it
+	 * reports nothing more. A truncated pass counts: it still checked every frame.
+	 */
+	get isClosed(): boolean {
+		return this._partyIdentityVerified && !this._failed;
+	}
+
+	/** The pinned head this pass saw finalized, once the pass is closed. */
+	get finalizedHeadId(): string | undefined {
+		return this.isClosed ? this._finalizedHeadId : undefined;
+	}
+
+	/** The snapshot that finalized head settled on: its close, or a later contest. */
+	get finalizedSnapshotNumber(): number | undefined {
+		return this.finalizedHeadId ? this._closedSnapshotNumber : undefined;
+	}
+
 	get partyIdentityVerified(): boolean {
 		return this._partyIdentityVerified;
 	}
 
 	get verifiedSnapshot(): VerifiedHydraSnapshot | undefined {
 		return this._verifiedSnapshot;
+	}
+
+	get closedSnapshotNumber(): number | undefined {
+		return this._closedSnapshotNumber;
+	}
+
+	/** Unburned L2 mints as of the last verified snapshot. Undefined until this pass has replayed the whole history. */
+	get l2MintCheck(): l2Mint.L2MintCheck | undefined {
+		const snapshot = this._complete && !this._failed ? this._verifiedSnapshot : undefined;
+		return snapshot && l2Mint.buildL2MintCheck(this._l2MintTally, snapshot);
 	}
 
 	fail(error: unknown): void {
@@ -220,14 +228,19 @@ export class HydraHistoryReplay {
 		this._complete = false;
 		this._failed = false;
 		this._sessionHeadId = undefined;
+		this._finalizedHeadId = undefined;
 		this._truncated = false;
 		this._restartRequested = false;
 		this._unpinnedFrames = [];
 		this._unpinnedBytes = 0;
 		this._lastSequence = undefined;
+		this._maxFrameSequence = undefined;
+		this._pastGreetings = false;
 		this._partyIdentityVerified = false;
 		this._verifiedSnapshot = undefined;
 		this._lastVerifiedFrame = undefined;
+		this._closedSnapshotNumber = undefined;
+		this._l2MintTally = { units: new Map() };
 		const rotationError = this.host.persistenceRotationError;
 		if (rotationError) {
 			this._failed = true;
@@ -244,7 +257,7 @@ export class HydraHistoryReplay {
 			return;
 		}
 		this._restartRequested = true;
-		this.connection.invalidate(
+		this.connection.restart(
 			new HydraTransportError('Hydra bounded history page was durably reconciled; restarting replay'),
 		);
 	}
@@ -295,9 +308,9 @@ export class HydraHistoryReplay {
 		// that Greetings is asked to name a head that did not exist when it was
 		// written. Read it again instead, now that there is a head to read it
 		// against.
-		if (this.pageClosedBeforeHeadExisted(bufferedFrames)) {
+		if (pageClosedBeforeHeadExisted(bufferedFrames)) {
 			this._restartRequested = true;
-			this.connection.invalidate(
+			this.connection.restart(
 				new HydraTransportError('Hydra history page closed before the head existed; restarting replay'),
 			);
 			return;
@@ -309,38 +322,6 @@ export class HydraHistoryReplay {
 		this._queue.pushFront(bufferedFrames.map((rawMessage) => ({ rawMessage, pass: this._pass })));
 	}
 
-	/**
-	 * Was this buffered page written by a node that had no head yet?
-	 *
-	 * Greetings closes a history page and states the node's status as it stood
-	 * then, so an Idle one carrying no head id is proof rather than a violation —
-	 * the same reading the live session already gives it, where returning to Idle
-	 * is a legitimate rollback through Init rather than a protocol breach.
-	 *
-	 * Scoped to the flush deliberately. Frames are only buffered while no head is
-	 * pinned, and nothing unpins one, so this cannot fire twice and the restart it
-	 * asks for cannot loop. A pinned pass that reaches Idle is a different
-	 * question — a head this service believes in that its node no longer sees —
-	 * and still fails closed.
-	 */
-	private pageClosedBeforeHeadExisted(frames: readonly string[]): boolean {
-		for (const frame of frames) {
-			let message: unknown;
-			try {
-				message = parseBoundedJsonFrame(frame);
-			} catch {
-				// Malformed: let the normal pass report it with its own message.
-				return false;
-			}
-			const envelope = messageSchema.safeParse(message);
-			if (!envelope.success || envelope.data.tag !== 'Greetings') continue;
-			if (envelope.data.headId != null || envelope.data.hydraHeadId != null) continue;
-			const status = hydraHeadStatusSchema.safeParse(envelope.data.headStatus);
-			if (status.success && status.data === HydraHeadStatus.Idle) return true;
-		}
-		return false;
-	}
-
 	/** Returns a promise only while the frame waits for its accumulator. */
 	private processPinnedMessage(rawMessage: string, pass: number): Promise<void> | undefined {
 		try {
@@ -348,6 +329,20 @@ export class HydraHistoryReplay {
 			this.host.assertPersistenceReplayIsSupported(message);
 			const parsedEnvelope = messageSchema.parse(message);
 			assertExpectedFrameHeadId(parsedEnvelope, this.host.expectedHeadId);
+			// hydra-node subscribes a socket to live outputs BEFORE it streams the
+			// history (WSServer.wsApp: dupTChan, then forwardHistory), so an output
+			// persisted during a long replay arrives twice: in the history, then
+			// again after Greetings with the same seq. Rejecting the copy failed
+			// the pass, and the next pass on a busy head met the same race. A seq
+			// at or below one this pass already holds is that copy, and only after
+			// Greetings: inside the history itself a repeat is still an error.
+			const frameSequence = (message as { seq?: unknown }).seq;
+			if (typeof frameSequence === 'number') {
+				if (this._pastGreetings && this._maxFrameSequence != null && frameSequence <= this._maxFrameSequence) {
+					return undefined;
+				}
+				this._maxFrameSequence = Math.max(this._maxFrameSequence ?? frameSequence, frameSequence);
+			}
 			// Learn the peer link from replay as well as from live frames.
 			//
 			// hydra-node reports it on connection EVENTS, and the live socket is
@@ -385,7 +380,10 @@ export class HydraHistoryReplay {
 			}
 			if (parsedEnvelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
 				this.host.recordFinalizedFanout(message);
+				this._finalizedHeadId = suppliedHeadId;
 			}
+			const closedAt = readClosedSnapshotNumber(parsedEnvelope);
+			if (closedAt !== undefined) this._closedSnapshotNumber = Math.max(this._closedSnapshotNumber ?? 0, closedAt);
 
 			// A deposit stays pending for a deposit period or more, so a service
 			// that reconnected in between meets its CommitRecorded only here. Held
@@ -412,7 +410,10 @@ export class HydraHistoryReplay {
 			// request first, and the transaction it carries is what accounts for the
 			// value change that snapshot signs.
 			if (parsedEnvelope.tag === 'DecommitRequested') {
-				this.rememberDecommitTransaction(decommitRequestedMessageSchema.parse(message).decommitTx);
+				rememberDecommitTransaction(
+					this._decommitTransactions,
+					decommitRequestedMessageSchema.parse(message).decommitTx,
+				);
 			}
 
 			if (parsedEnvelope.tag === 'SnapshotConfirmed') {
@@ -430,10 +431,18 @@ export class HydraHistoryReplay {
 				if (!parsedHeadStatus.success) {
 					throw new HydraProtocolError('History Greetings frame has an invalid headStatus');
 				}
-				if ((this.host.expectedHeadId || this._verifiedSnapshot) && !suppliedHeadId) {
+				// hydra-node is Idle again once a head is finalized, and an Idle
+				// Greetings names no head. So a pass that finalized the pinned head
+				// ends exactly like this, and the head it closes is that one.
+				const isHeadlessIdle = !suppliedHeadId && parsedHeadStatus.data === HydraHeadStatus.Idle;
+				// A head status after HeadIsFinalized: an L1 rollback undid the fanout.
+				if (!isHeadlessIdle) this._finalizedHeadId = undefined;
+				const sessionHeadId = suppliedHeadId ?? (isHeadlessIdle ? this._finalizedHeadId : undefined);
+				if ((this.host.expectedHeadId || this._verifiedSnapshot) && !sessionHeadId) {
+					if (isHeadlessIdle) this.host.onIdleWithoutFinalization();
 					throw new HydraProtocolError('Pinned Hydra history Greetings omitted its head identifier');
 				}
-				if (this._verifiedSnapshot && suppliedHeadId !== this._verifiedSnapshot.headId) {
+				if (this._verifiedSnapshot && sessionHeadId !== this._verifiedSnapshot.headId) {
 					throw new HydraProtocolError('Hydra history Greetings did not identify the signed snapshot head');
 				}
 				// Hydra 2.3 reports the head's confirmed ledger here rather than on
@@ -455,8 +464,9 @@ export class HydraHistoryReplay {
 						'Hydra history ended without an authenticated Open or signed snapshot state anchor',
 					);
 				}
-				if (suppliedHeadId) this._sessionHeadId = suppliedHeadId;
+				if (sessionHeadId) this._sessionHeadId = sessionHeadId;
 				this._partyIdentityVerified = true;
+				this._pastGreetings = true;
 				// Greetings authenticates the end marker, not the preceding transaction
 				// metadata. A truncated page remains fail-closed until every retained
 				// item has a durable cursor and a later full pass reaches this marker.
@@ -464,7 +474,12 @@ export class HydraHistoryReplay {
 				if (this._complete) {
 					this._error = undefined;
 					this.ledger.trim();
-				} else this.maybeRestartTruncated();
+					if (this._l2MintTally.openedBy) this.host.reportL2MintOutstanding(this._l2MintTally.openedBy);
+				}
+				// Before any restart: a truncated page restarts only once it is drained,
+				// and a held live Idle holds the drain until this verdict.
+				this.host.onPassClosed();
+				if (!this._complete) this.maybeRestartTruncated();
 			}
 		} catch (error) {
 			this.fail(error);
@@ -535,28 +550,6 @@ export class HydraHistoryReplay {
 		const description = describeProtocolDrift(fresh);
 		logger.warn(`[HydraNode] ${description}`);
 		this.host.onProtocolDrift(description);
-	}
-
-	private rememberDecommitTransaction(transaction: HydraTransaction): void {
-		const txId = transaction.txId?.toLowerCase();
-		if (!txId) return;
-		if (this._decommitTransactions.has(txId)) return;
-		// Narrowed to the modelled fields, not stored verbatim. `hydraTransactionSchema`
-		// is deliberately loose so a field a newer node adds cannot wedge replay, and
-		// this map's only bound is an entry count — 64 frames each just under the 4 MiB
-		// frame limit because of one unmodelled field retain ~256 MiB per node, four
-		// times the whole configured CBOR budget, and nothing clears the map on
-		// disconnect. Only `txId` and `cborHex` are ever read back off these entries.
-		this._decommitTransactions.set(txId, {
-			type: transaction.type,
-			cborHex: transaction.cborHex,
-			description: transaction.description,
-			txId: transaction.txId,
-		});
-		if (this._decommitTransactions.size > MAX_TRACKED_DECOMMIT_TRANSACTIONS) {
-			const oldest = this._decommitTransactions.keys().next().value;
-			if (oldest !== undefined) this._decommitTransactions.delete(oldest);
-		}
 	}
 
 	/** Adopt a verified snapshot as the anchor and remember the exact signed payload behind it. */
@@ -710,6 +703,8 @@ export class HydraHistoryReplay {
 			);
 		}
 		this.captureVerifiedFrame(verifiedSnapshot, parsedMessage);
+		l2Mint.recordL2TransactionMints(this._l2MintTally, transitionTransactions, verifiedSnapshot.number);
+		if (this._complete && this._l2MintTally.openedBy) this.host.reportL2MintOutstanding(this._l2MintTally.openedBy);
 		const protectedProducerTxIds = this.ledger.resolveProtectedSnapshotProducerTxIds(verifiedSnapshot);
 		// Hydra 2.3 signatures authenticate only the TxOut multiset. Recording
 		// tx ids/CBOR therefore additionally relies on this explicitly configured

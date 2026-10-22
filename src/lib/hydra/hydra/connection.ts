@@ -15,6 +15,25 @@ const DISCONNECT_GRACE_TIMEOUT_MS = 1_000;
 const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const RECONNECT_JITTER_RATIO = 0.2;
+/**
+ * A socket whose peer vanished without a FIN (a dropped NAT entry, a dead
+ * host) stays OPEN forever: nothing is sent on a quiet head, and the
+ * hydra-host proxy disables idle timeouts on purpose. On the history socket
+ * that is silent: replay keeps counting as complete while no confirmation
+ * arrives. A ping every interval, answered by the peer's websocket stack,
+ * proves the path; `HEARTBEAT_MAX_SILENT_INTERVALS` intervals with no inbound
+ * frame at all fail the transport.
+ */
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_MAX_SILENT_INTERVALS = 2;
+/**
+ * A socket open this many heartbeat intervals (5 minutes) has worked, so
+ * earlier failures, an outage or refused frames, stop counting. A replay that
+ * fails later than this restarts at most once per period.
+ */
+const BACKOFF_FORGET_AFTER_INTERVALS = 10;
+/** `ws` error codes for a frame it refused (over maxPayload, bad UTF-8, ...): the peer's frame failed, not the path. */
+const WS_FRAME_ERROR_CODE_PREFIX = 'WS_ERR_';
 
 /**
  * Anchored to the scheme, which a bare `replace('http', 'ws')` is not.
@@ -47,6 +66,19 @@ export class Connection extends EventEmitter {
 	private _socketGeneration = 0;
 	private _reconnectAttempt = 0;
 	/**
+	 * Set once the current socket has stayed open a full heartbeat interval. Only
+	 * a proven socket's transport failure, or a socket that worked for
+	 * `BACKOFF_FORGET_AFTER_INTERVALS`, starts the backoff over. Resetting the
+	 * backoff on open let a socket that fails right after opening, such as a
+	 * history socket whose replay fails, reconnect about once a second for good.
+	 */
+	private _isSocketProven = false;
+	/** Sockets that opened. With history=yes, Hydra streams its log again from each open. */
+	private _openCount = 0;
+	private _heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+	/** A paused socket reads no pongs either, so the heartbeat waits it out. */
+	private _isReceivingPaused = false;
+	/**
 	 * Sent on every upgrade, including reconnects: a Hydra Host authenticates the
 	 * upgrade itself, so a socket that reconnects without the credential would be
 	 * refused and the head would look permanently disconnected.
@@ -76,21 +108,28 @@ export class Connection extends EventEmitter {
 			...(Object.keys(this._authHeaders).length === 0 ? {} : { headers: this._authHeaders }),
 		});
 		this._websocket = websocket;
+		// A replacement socket starts reading regardless of the old one's pause.
+		this._isReceivingPaused = false;
+		this._isSocketProven = false;
 		this._status = HydraHeadStatus.Connecting;
 
 		websocket.on('open', () => {
 			if (generation !== this._socketGeneration || this._isManuallyDisconnected) return;
-			this._reconnectAttempt = 0;
 			this._status = HydraHeadStatus.Connected;
+			this._openCount += 1;
+			this.startHeartbeat(websocket, generation);
 			this.safeEmit('open');
 		});
 
 		websocket.on('error', (error: Error) => {
 			if (generation !== this._socketGeneration || this._isManuallyDisconnected) return;
+			// A refused connect to a dual-stack host is an AggregateError with an empty message and only a code.
+			const fallback = 'code' in error && typeof error.code === 'string' ? error.code : error.name;
 			this.handleTransportFailure(
-				new HydraTransportError(`WebSocket error: ${errorToString(error)}`),
+				new HydraTransportError(`WebSocket error: ${errorToString(error) || fallback}`),
 				websocket,
 				generation,
+				fallback.startsWith(WS_FRAME_ERROR_CODE_PREFIX),
 			);
 		});
 
@@ -116,6 +155,7 @@ export class Connection extends EventEmitter {
 					new HydraProtocolError('Hydra websocket sent a non-text frame'),
 					websocket,
 					generation,
+					true,
 				);
 				return;
 			}
@@ -125,6 +165,7 @@ export class Connection extends EventEmitter {
 					new HydraProtocolError(`Hydra websocket frame exceeded ${MAX_HYDRA_WS_FRAME_BYTES} bytes`),
 					websocket,
 					generation,
+					true,
 				);
 				return;
 			}
@@ -184,14 +225,19 @@ export class Connection extends EventEmitter {
 		}
 	}
 
-	private handleTransportFailure(error: Error, websocket: WebSocket, generation: number) {
+	private handleTransportFailure(error: Error, websocket: WebSocket, generation: number, isRefused = false) {
 		if (generation !== this._socketGeneration) return;
 		if (this._status === HydraHeadStatus.Idle || this._isManuallyDisconnected) {
 			return;
 		}
+		// A refused socket (its owner invalidated it, or its own frames broke the
+		// protocol) grows the backoff however long it lived, up to the forget period.
+		if (this._isSocketProven && !isRefused) this._reconnectAttempt = 0;
+		this._isSocketProven = false;
 
 		// Invalidate this socket before closing it so its subsequent callbacks cannot
 		// race the replacement socket or schedule another reconnect.
+		this.stopHeartbeat();
 		this._socketGeneration += 1;
 		if (this._websocket === websocket) this._websocket = undefined;
 		if (this._status !== HydraHeadStatus.Disconnected) {
@@ -206,6 +252,8 @@ export class Connection extends EventEmitter {
 		websocket.on('error', () => undefined);
 		websocket.removeAllListeners('close');
 		websocket.removeAllListeners('message');
+		websocket.removeAllListeners('pong');
+		websocket.removeAllListeners('ping');
 		if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
 			try {
 				// A socket paused for backpressure never reads the peer's close frame,
@@ -261,6 +309,7 @@ export class Connection extends EventEmitter {
 		const generation = this._socketGeneration;
 		this._isManuallyDisconnected = true;
 		this._isDisconnecting = true;
+		this.stopHeartbeat();
 		if (this._reconnectTimer) {
 			clearTimeout(this._reconnectTimer);
 			this._reconnectTimer = undefined;
@@ -286,23 +335,85 @@ export class Connection extends EventEmitter {
 		return this._status === HydraHeadStatus.Connected;
 	}
 
+	get openCount(): number {
+		return this._openCount;
+	}
+
 	/**
 	 * Stop reading frames from the current socket until `resumeReceiving`.
 	 * Backpressure for a consumer that cannot keep up; a replacement socket
 	 * starts reading regardless.
 	 */
 	pauseReceiving(): void {
+		this._isReceivingPaused = true;
 		this._websocket?.pause();
 	}
 
 	resumeReceiving(): void {
+		this._isReceivingPaused = false;
 		this._websocket?.resume();
 	}
 
+	private startHeartbeat(websocket: WebSocket, generation: number): void {
+		this.stopHeartbeat();
+		let silentIntervals = 0;
+		let openIntervals = 0;
+		const markAlive = () => {
+			silentIntervals = 0;
+		};
+		// Any inbound frame proves the path. hydra-node also pings every 30s itself.
+		websocket.on('pong', markAlive);
+		websocket.on('ping', markAlive);
+		websocket.on('message', markAlive);
+		this._heartbeatTimer = setInterval(() => {
+			if (generation !== this._socketGeneration) return;
+			this._isSocketProven = true;
+			openIntervals += 1;
+			if (openIntervals === BACKOFF_FORGET_AFTER_INTERVALS) this._reconnectAttempt = 0;
+			if (this._isReceivingPaused) {
+				silentIntervals = 0;
+				return;
+			}
+			// Two silent intervals, not one: a pong cannot overtake a maximum-size
+			// frame still arriving on a slow link, and a long event-loop stall can
+			// fire this timer before the pong already in the kernel buffer is read.
+			if (silentIntervals >= HEARTBEAT_MAX_SILENT_INTERVALS) {
+				this.handleTransportFailure(
+					new HydraTransportError(
+						`Hydra websocket answered no ping within ${HEARTBEAT_INTERVAL_MS * HEARTBEAT_MAX_SILENT_INTERVALS}ms`,
+					),
+					websocket,
+					generation,
+				);
+				return;
+			}
+			silentIntervals += 1;
+			try {
+				websocket.ping();
+			} catch {
+				// A socket that cannot ping is failing; the next ticks see no pong.
+			}
+		}, HEARTBEAT_INTERVAL_MS);
+		this._heartbeatTimer.unref?.();
+	}
+
+	private stopHeartbeat(): void {
+		clearInterval(this._heartbeatTimer);
+		this._heartbeatTimer = undefined;
+	}
+
+	/** Drop a socket whose frames the owner refused. Its replacement waits out a growing backoff. */
 	invalidate(error: Error): void {
 		const websocket = this._websocket;
 		if (!websocket) return;
-		this.handleTransportFailure(error, websocket, this._socketGeneration);
+		this.handleTransportFailure(error, websocket, this._socketGeneration, true);
+	}
+
+	/** Drop the socket on purpose, for a fresh replay. Its replacement connects on the first backoff step. */
+	restart(error: Error): void {
+		if (!this._websocket) return;
+		this._reconnectAttempt = 0;
+		this.invalidate(error);
 	}
 
 	send(data: unknown, options: { signal?: AbortSignal; onQueued?: () => void } = {}): Promise<void> {

@@ -17,6 +17,8 @@ type X402PaymentWebhookData = WebhookPayloadDataByEvent<X402PaymentWebhookEvent>
 type X402WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'X402_WALLET_LOW_BALANCE'>;
 type HydraHeadLowBalanceWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_LOW_BALANCE'>;
 type HydraHeadSnapshotRoundStuckWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+type HydraHeadPostTxFailedWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_POST_TX_FAILED'>;
+type HydraHeadContestMissingWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_CONTEST_MISSING'>;
 type PaymentWebhookQueryClient = Pick<Prisma.TransactionClient, 'paymentRequest'>;
 type PurchaseWebhookQueryClient = Pick<Prisma.TransactionClient, 'purchaseRequest'>;
 
@@ -410,20 +412,46 @@ class WebhookEventsService {
 		}
 	}
 
-	async triggerHydraHeadSnapshotRoundStuck(payload: HydraHeadSnapshotRoundStuckWebhookData): Promise<void> {
+	async queueHydraHeadSnapshotRoundStuckInTransaction(
+		tx: Prisma.TransactionClient,
+		payload: HydraHeadSnapshotRoundStuckWebhookData,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK,
+			payload,
+			payload.hydraHeadId,
+			undefined,
+		);
+	}
+
+	async triggerHydraHeadPostTxFailed(payload: HydraHeadPostTxFailedWebhookData): Promise<void> {
 		try {
 			await webhookQueueService.queueWebhook(
-				WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK,
+				WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
 				payload,
 				payload.hydraHeadId,
 				undefined,
 			);
 		} catch (error) {
-			logger.error('Failed to trigger HYDRA_HEAD_SNAPSHOT_ROUND_STUCK webhook', {
+			logger.error('Failed to trigger HYDRA_HEAD_POST_TX_FAILED webhook', {
 				hydraHeadId: payload.hydraHeadId,
 				error: error instanceof Error ? error.message : 'Unknown error',
 			});
 		}
+	}
+
+	async queueHydraHeadContestMissingInTransaction(
+		tx: Prisma.TransactionClient,
+		payload: HydraHeadContestMissingWebhookData,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.HYDRA_HEAD_CONTEST_MISSING,
+			payload,
+			payload.hydraHeadId,
+			undefined,
+		);
 	}
 }
 

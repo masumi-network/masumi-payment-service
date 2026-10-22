@@ -13,7 +13,13 @@ const fetchRedemptions =
 	jest.fn<(baseUrl: string, token: string, since: number) => Promise<{ now: number; invites: object[] }>>();
 const forget =
 	jest.fn<
-		(baseUrl: string, token: string, nonce: string, transport: { allowInsecureHttp: boolean }) => Promise<void>
+		(
+			baseUrl: string,
+			token: string,
+			nonce: string,
+			transport: { allowInsecureHttp: boolean },
+			options?: { keepReplay?: boolean },
+		) => Promise<void>
 	>();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
@@ -57,7 +63,15 @@ beforeEach(() => {
 it('asks a Host from the beginning on cold start and acknowledges a finished replay', async () => {
 	expect(await pollHydraRedemptions()).toEqual({ polled: 1, adopted: 0, rejected: 0 });
 	expect(fetchRedemptions.mock.calls[0][2]).toBe(0);
-	expect(forget).toHaveBeenCalledWith('https://host.example', 'token', 'nonce', { allowInsecureHttp: false });
+	// Kept for replay: the redeemer's answer may have been lost, and it can only
+	// learn that its redemption landed if the Host still recognises it.
+	expect(forget).toHaveBeenCalledWith(
+		'https://host.example',
+		'token',
+		'nonce',
+		{ allowInsecureHttp: false },
+		{ keepReplay: true },
+	);
 });
 
 it('leaves a discarded invite on the Host so its failed node removal stays visible', async () => {

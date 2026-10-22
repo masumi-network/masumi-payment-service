@@ -1,6 +1,7 @@
 import { Routing } from 'express-zod-api';
 import { healthEndpointGet } from '@/routes/api/health';
 import { releaseStatusGet } from '@/routes/api/release-status';
+import { securityStatusGet } from '@/routes/api/security-status';
 import {
 	queryAPIKeyEndpointGet as queryCentralizedRegistrySourceGet,
 	addAPIKeyEndpointPost as addCentralizedRegistrySourceEndpointPost,
@@ -69,6 +70,7 @@ import { postInternalGenerateMonthlyInvoiceEndpoint } from './invoice/monthly/in
 import { getMissingInvoicePaymentsEndpoint as getMissingPaymentsEndpoint } from './invoice/monthly/missing';
 import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
+import { paymentAcknowledgeManualActionPost, purchaseAcknowledgeManualActionPost } from './acknowledge-manual-action';
 import { queryRegistryDiffGet } from './registry/diff';
 import { queryAgentByIdentifierGet } from './registry/agent-identifier';
 import { queryRegistryInboxDiffGet } from './registry-inbox/diff';
@@ -121,6 +123,9 @@ import {
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
 	fanoutHeadPost,
+	partialFanoutHeadPost,
+	fanoutRemainingGet,
+	retireHeadPost,
 	getLocalParticipantGet,
 	getOrListHeadsGet,
 	getHeadBalanceGet,
@@ -201,6 +206,7 @@ export const apiRouter: Routing = {
 	v1: {
 		health: healthEndpointGet,
 		'release-status': releaseStatusGet,
+		'security-status': securityStatusGet,
 		purchase: {
 			get: queryPurchaseRequestGet,
 			post: createPurchaseInitPost,
@@ -224,6 +230,9 @@ export const apiRouter: Routing = {
 			},
 			'error-state-recovery': {
 				post: purchaseErrorStateRecoveryPost,
+			},
+			'acknowledge-manual-action': {
+				post: purchaseAcknowledgeManualActionPost,
 			},
 			spending: {
 				post: postPurchaseSpending,
@@ -258,6 +267,9 @@ export const apiRouter: Routing = {
 			},
 			'error-state-recovery': {
 				post: paymentErrorStateRecoveryPost,
+			},
+			'acknowledge-manual-action': {
+				post: paymentAcknowledgeManualActionPost,
 			},
 			income: {
 				post: getPaymentIncome,
@@ -584,6 +596,9 @@ export const apiRouter: Routing = {
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
+				// What is left to fan out, and fanning out part of it.
+				'partial-fanout': { get: fanoutRemainingGet, post: partialFanoutHeadPost },
+				retire: { post: retireHeadPost },
 				// Read-only: the head's state on L1, from an independent observer.
 				'chain-check': { post: checkHeadOnChainPost },
 				balance: { get: getHeadBalanceGet },

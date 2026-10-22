@@ -1,14 +1,19 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { HydraHeadStatus, Network, OnChainState, TransactionStatus } from '@/generated/prisma/client';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { HydraErrorType, HydraHeadStatus, Network, OnChainState, TransactionStatus } from '@/generated/prisma/client';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import {
 	CustomHydraHead,
 	deriveHydraVerificationKeyCborHex,
 	HydraNode,
+	HydraProtocolError,
 	HydraTransactionType,
+	HydraTransportError,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
+import { HydraNodeEvent } from '@/lib/hydra/hydra/types';
 import { EventEmitter } from 'node:events';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { encrypt } from '@/utils/security/encryption';
 
 const mockTransactionFindFirst = jest.fn<(_args: unknown) => Promise<unknown>>();
@@ -27,6 +32,8 @@ const mockFindRequestLineages =
 const mockParseEvidence = jest.fn<(cborHex: string) => unknown>();
 const mockFetchUtxos = jest.fn<(_txId?: string) => Promise<unknown[]>>();
 const mockDecodeV2ContractDatum = jest.fn<(...args: unknown[]) => unknown>();
+const mockRecordHeadError = jest.fn<(...args: unknown[]) => Promise<boolean>>();
+const mockTriggerPostTxFailed = jest.fn<(...args: unknown[]) => Promise<void>>();
 
 const transactionClient = {
 	$queryRaw: mockQueryRaw,
@@ -69,6 +76,14 @@ jest.unstable_mockModule('./hydra-transaction-evidence', () => ({
 
 jest.unstable_mockModule('@/utils/converter/string-datum-convert', () => ({
 	decodeV2ContractDatum: mockDecodeV2ContractDatum,
+}));
+
+jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
+	recordHeadError: mockRecordHeadError,
+}));
+
+jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
+	webhookEventsService: { triggerHydraHeadPostTxFailed: mockTriggerPostTxFailed },
 }));
 
 const { HydraConnectionManager } = await import('./hydra-connection-manager.service');
@@ -315,19 +330,16 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	it('shares one in-flight transport startup across concurrent connect callers', async () => {
 		const manager = new HydraConnectionManager();
 		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-		let releaseProbe!: (isReachable: boolean) => void;
+		let releaseProbe!: () => void;
 		let markProbeStarted!: () => void;
 		const probeStarted = new Promise<void>((resolve) => {
 			markProbeStarted = resolve;
 		});
-		const probeResult = new Promise<boolean>((resolve) => {
+		const probeResult = new Promise<void>((resolve) => {
 			releaseProbe = resolve;
 		});
 		const probeSpy = jest
-			.spyOn(
-				manager as unknown as { probeNode: (httpUrl: string, timeoutMs?: number) => Promise<boolean> },
-				'probeNode',
-			)
+			.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
 			.mockImplementation(async () => {
 				markProbeStarted();
 				return await probeResult;
@@ -340,7 +352,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			const secondConnect = manager.connect({ id: 'head-1' });
 
 			expect(mockHydraHeadFindUnique).toHaveBeenCalledTimes(1);
-			releaseProbe(true);
+			releaseProbe();
 			await Promise.all([firstConnect, secondConnect]);
 			expect(connectSpy).toHaveBeenCalledTimes(1);
 			expect(manager.isConnected('head-1')).toBe(true);
@@ -353,19 +365,16 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	it('does not publish a transport revoked while its reachability probe is pending', async () => {
 		const manager = new HydraConnectionManager();
 		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-		let releaseProbe!: (isReachable: boolean) => void;
+		let releaseProbe!: () => void;
 		let markProbeStarted!: () => void;
 		const probeStarted = new Promise<void>((resolve) => {
 			markProbeStarted = resolve;
 		});
-		const probeResult = new Promise<boolean>((resolve) => {
+		const probeResult = new Promise<void>((resolve) => {
 			releaseProbe = resolve;
 		});
 		const probeSpy = jest
-			.spyOn(
-				manager as unknown as { probeNode: (httpUrl: string, timeoutMs?: number) => Promise<boolean> },
-				'probeNode',
-			)
+			.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
 			.mockImplementation(async () => {
 				markProbeStarted();
 				return await probeResult;
@@ -376,7 +385,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			const pendingConnect = manager.connect({ id: 'head-1' });
 			await probeStarted;
 			await manager.disconnect('head-1');
-			releaseProbe(true);
+			releaseProbe();
 
 			await expect(pendingConnect).rejects.toThrow('transport was revoked while connecting');
 			expect(connectSpy).not.toHaveBeenCalled();
@@ -385,6 +394,107 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			probeSpy.mockRestore();
 			connectSpy.mockRestore();
 		}
+	});
+
+	// Init answers a transport error with a retryable 502 that names its reason,
+	// and records no head error. The reason is what tells a node still starting
+	// from a wrong URL or token.
+	describe('when the node probe fails', () => {
+		const probeTimeoutMs = (HydraConnectionManager as unknown as { PROBE_TIMEOUT_MS: number }).PROBE_TIMEOUT_MS;
+		const realFetch = globalThis.fetch;
+		// Runs after a test timeout too, so a hung probe cannot leave later tests on fake timers or a mocked fetch.
+		afterEach(() => {
+			jest.useRealTimers();
+			globalThis.fetch = realFetch;
+		});
+
+		it('keeps the fetch error, where the socket error sits, as the cause', async () => {
+			const manager = new HydraConnectionManager();
+			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+			const refused = Object.assign(new TypeError('fetch failed'), {
+				cause: Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' }),
+			});
+			jest.spyOn(globalThis, 'fetch').mockRejectedValue(refused);
+
+			const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+			expect(error).toBeInstanceOf(HydraTransportError);
+			// A node that is down must not read as one too slow to answer.
+			expect((error as Error).message).toContain('unreachable for head head-1');
+			expect((error as HydraTransportError).cause).toBe(refused);
+			expect(manager.isConnected('head-1')).toBe(false);
+		});
+
+		// A node too slow to answer and a node that is down need different fixes.
+		it('says the probe timed out', async () => {
+			const manager = new HydraConnectionManager();
+			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+			jest.spyOn(globalThis, 'fetch').mockImplementation(
+				(_url, init) =>
+					new Promise((_resolve, reject) => {
+						init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+					}),
+			);
+			jest.useFakeTimers();
+
+			const pendingConnect = manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+			await jest.advanceTimersByTimeAsync(probeTimeoutMs);
+			const error = await pendingConnect;
+			expect(error).toBeInstanceOf(HydraTransportError);
+			expect((error as Error).message).toContain(`did not answer within ${probeTimeoutMs}ms`);
+		});
+
+		it('names the status a node answered with', async () => {
+			const manager = new HydraConnectionManager();
+			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+			jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }));
+
+			const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
+			expect(error).toBeInstanceOf(HydraTransportError);
+			expect((error as Error).message).toContain('answered the probe with HTTP 401');
+		});
+
+		// Real servers: the redirect mode is a runtime behavior, and CI runs the production Node.
+		it('reports a redirect as its status and does not follow it', async () => {
+			const listen = (server: Server) =>
+				new Promise<number>((resolve) =>
+					server.listen(0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port)),
+				);
+			let targetHits = 0;
+			const target = createServer((_request, reply) => {
+				targetHits += 1;
+				reply.writeHead(200).end();
+			});
+			const targetPort = await listen(target);
+			const node = createServer((_request, reply) => {
+				reply.writeHead(302, { Location: `http://127.0.0.1:${targetPort}/protocol-parameters` }).end();
+			});
+			const nodePort = await listen(node);
+			const manager = new HydraConnectionManager() as unknown as {
+				probeNode: (hydraHeadId: string, httpUrl: string, authToken?: string) => Promise<void>;
+			};
+
+			try {
+				await expect(manager.probeNode('head-1', `http://127.0.0.1:${nodePort}`, 'host-user-token')).rejects.toThrow(
+					'answered the probe with HTTP 302',
+				);
+				expect(targetHits).toBe(0);
+			} finally {
+				node.close();
+				target.close();
+			}
+		});
+
+		// A retry cannot fix a blank token, so it must not read as unreachable.
+		it('raises a blank token as a protocol error before probing', async () => {
+			const manager = new HydraConnectionManager();
+			const head = connectableConfiguredHead();
+			head.LocalParticipant.HydraHost.encryptedUserToken = encrypt('   ');
+			mockHydraHeadFindUnique.mockResolvedValue(head);
+			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('the probe must not run'));
+
+			await expect(manager.connect({ id: 'head-1' })).rejects.toBeInstanceOf(HydraProtocolError);
+			expect(fetchSpy).not.toHaveBeenCalled();
+		});
 	});
 
 	it('does not publish a transport revoked while its owner epoch is being acquired', async () => {
@@ -406,11 +516,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			return await epochResult;
 		});
 		const probeSpy = jest
-			.spyOn(
-				manager as unknown as { probeNode: (httpUrl: string, timeoutMs?: number) => Promise<boolean> },
-				'probeNode',
-			)
-			.mockResolvedValue(true);
+			.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
+			.mockResolvedValue(undefined);
 		const connectSpy = jest.spyOn(CustomHydraHead.prototype, 'connect').mockImplementation(async () => undefined);
 
 		try {
@@ -564,7 +671,11 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('drains a headless rollback and removes listeners when pinned connect then rejects', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { probeNode: () => Promise<boolean> }).probeNode = async () => true;
+		(manager as unknown as { probeNode: () => Promise<void> }).probeNode = async () => undefined;
+		// The rollback disables the head and schedules a transport release; that
+		// release would outlive this test and read the next test's mocked rows.
+		(manager as unknown as { scheduleStatusPersistenceRecovery: jest.Mock }).scheduleStatusPersistenceRecovery =
+			jest.fn();
 		const localSigningKey = `5820${'11'.repeat(32)}`;
 		const remoteSigningKey = `5820${'22'.repeat(32)}`;
 		const configuredHead = {
@@ -656,6 +767,82 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		expect(createdHead?.mainNode.listenerCount('StatusChange')).toBe(0);
 		expect(sessionOf(manager, 'head-1')._statusQueue ?? null).toBeNull();
 		expect(sessionOf(manager, 'head-1').attachment).toBeNull();
+	});
+
+	// A connect that fails builds a new transport each time, so the replay error
+	// window must outlive it, or a stuck head writes a row per reconnect. Only a
+	// deliberate disconnect ends it, also when no transport is attached.
+	it('records a repeated replay error once across failed connects until a disconnect', async () => {
+		const manager = new HydraConnectionManager();
+		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+		mockRecordHeadError.mockResolvedValue(true);
+		const probeSpy = jest
+			.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
+			.mockResolvedValue(undefined);
+		const connectSpy = jest.spyOn(CustomHydraHead.prototype, 'connect').mockImplementation(async function (
+			this: CustomHydraHead,
+		) {
+			this.mainNode.emit(HydraNodeEvent.HistoryReplayFailed, new Error('Hydra frame head id did not match'));
+			throw new Error('pinned connect rejected');
+		});
+		const nodeDisconnectSpy = jest.spyOn(HydraNode.prototype, 'disconnect').mockResolvedValue(undefined);
+		const replayRows = () => mockRecordHeadError.mock.calls.filter((call) => call[4] === 'HistoryReplay');
+
+		try {
+			await expect(manager.connect({ id: 'head-1' })).rejects.toThrow('pinned connect rejected');
+			await expect(manager.connect({ id: 'head-1' })).rejects.toThrow('pinned connect rejected');
+			expect(replayRows()).toHaveLength(1);
+
+			await manager.disconnect('head-1');
+			await expect(manager.connect({ id: 'head-1' })).rejects.toThrow('pinned connect rejected');
+			expect(replayRows()).toHaveLength(2);
+		} finally {
+			await manager.disconnect('head-1');
+			probeSpy.mockRestore();
+			connectSpy.mockRestore();
+			nodeDisconnectSpy.mockRestore();
+		}
+	});
+
+	// The node posts a contest on its own when a peer closes on an old snapshot.
+	// When that post fails nothing is waiting on it, so without a record and an
+	// alert the operator never learns why. Every failure is announced; a failed
+	// Close already has its caller's CommandFailed row, so it gets no second one.
+	it('announces every L1 transaction the node could not post and records it once', async () => {
+		const manager = new HydraConnectionManager();
+		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & { status: HydraHeadStatus } };
+		head.mainNode = Object.assign(new EventEmitter(), { status: HydraHeadStatus.Closed });
+		mockRecordHeadError.mockResolvedValue(true);
+		(manager as unknown as { setupEventHandlers: (id: string, value: unknown) => void }).setupEventHandlers(
+			'head-1',
+			head,
+		);
+
+		head.mainNode.emit('PostTxFailed', { postChainTxTag: 'CloseTx', reason: 'NotEnoughFuel', answersCommand: true });
+		head.mainNode.emit('PostTxFailed', {
+			postChainTxTag: 'ContestTx',
+			reason: 'NotEnoughFuel: fund the node',
+			answersCommand: false,
+		});
+
+		expect(mockTriggerPostTxFailed.mock.calls.map(([payload]) => payload)).toEqual([
+			expect.objectContaining({ hydraHeadId: 'head-1', postChainTxTag: 'CloseTx', reportedToCaller: true }),
+			expect.objectContaining({
+				hydraHeadId: 'head-1',
+				headStatus: HydraHeadStatus.Closed,
+				postChainTxTag: 'ContestTx',
+				reason: 'NotEnoughFuel: fund the node',
+				reportedToCaller: false,
+			}),
+		]);
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+		expect(mockRecordHeadError).toHaveBeenCalledWith(
+			'head-1',
+			HydraHeadStatus.Closed,
+			HydraErrorType.PostTxOnChainFailed,
+			'ContestTx failed: NotEnoughFuel: fund the node',
+			'PostTx:ContestTx',
+		);
 	});
 
 	it('persists the close admission gate when another participant closes the head', async () => {
@@ -816,7 +1003,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		// enabled (it misses here, as every write does), then unconditionally.
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(5);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
-			where: { id: 'head-1' },
+			where: { id: 'head-1', retiredAt: null },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -1068,6 +1255,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 				quarantine: jest.fn(),
 				clearQuarantineAfterReobservation: jest.fn(),
 				scheduleRecovery,
+				reconcileSibling: jest.fn(),
 				onStaleOwner: jest.fn(),
 			},
 			'head-1',
@@ -1125,7 +1313,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 		expect(mockTransactionFindFirst).not.toHaveBeenCalled();
 		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', isEnabled: true },
+			where: { id: 'head-1', isEnabled: true, retiredAt: null },
 			data: {
 				isEnabled: false,
 				initTxHash: null,
@@ -1137,6 +1325,58 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		expect(mainNode.disconnect).toHaveBeenCalledTimes(1);
 		expect(manager.isConnected('head-1')).toBe(false);
 	});
+
+	// A session of a finalized head reports Final once its replay proves the
+	// fanout. An Idle naming no head means the node lost that history.
+	it.each([
+		['after the fanout handoff completed', 'f'.repeat(64)],
+		['while the fanout handoff is pending', null],
+	])(
+		'keeps a finalized head whose node shows no finalization instead of rolling it back (%s)',
+		async (_case, fanoutTxHash) => {
+			const manager = new HydraConnectionManager();
+			const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & { pinExpectedHeadId: jest.Mock } };
+			head.mainNode = Object.assign(new EventEmitter(), { pinExpectedHeadId: jest.fn() });
+			mockHydraHeadFindUnique.mockResolvedValue({
+				isEnabled: true,
+				status: HydraHeadStatus.Final,
+				hydraRelationId: 'relation-1',
+				headIdentifier: 'a'.repeat(56),
+				openedAt: new Date('2026-07-22T10:00:00Z'),
+				closedAt: new Date('2026-07-22T11:00:00Z'),
+				finalizedAt: new Date('2026-07-22T12:00:00Z'),
+				contestationDeadline: new Date('2026-07-22T11:30:00Z'),
+				latestSnapshotNumber: 9n,
+			});
+			mockQueryRaw.mockResolvedValue([
+				{
+					id: 'head-1',
+					hydraRelationId: 'relation-1',
+					isEnabled: true,
+					status: HydraHeadStatus.Final,
+					headIdentifier: 'a'.repeat(56),
+					fanoutTxHash,
+				},
+			]);
+			const session = sessionOf(manager, 'head-1') as unknown as {
+				quarantine(h: unknown): void;
+				isQuarantined: boolean;
+			};
+			session.quarantine({});
+			(manager as unknown as { setupEventHandlers: (id: string, value: unknown) => void }).setupEventHandlers(
+				'head-1',
+				head,
+			);
+
+			head.emit('StatusChange', { status: HydraHeadStatus.Idle });
+			await manager.flushHeadStatus('head-1');
+
+			expect(mockPrismaTransaction).not.toHaveBeenCalled();
+			expect(mockHydraHeadUpdateMany).not.toHaveBeenCalled();
+			expect(mockPaymentRequestUpdateMany).not.toHaveBeenCalled();
+			expect(session.isQuarantined).toBe(true);
+		},
+	);
 
 	it('quarantines a contradictory post-confirmation regression without erasing adopted L1 lineage', async () => {
 		const manager = new HydraConnectionManager();
@@ -1191,7 +1431,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			},
 		});
 		expect(mockHydraHeadUpdateMany).toHaveBeenNthCalledWith(2, {
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		expect(mockPaymentRequestUpdateMany).not.toHaveBeenCalled();
@@ -1314,7 +1554,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			}),
 		);
 		expect(mockHydraHeadUpdateMany).toHaveBeenNthCalledWith(2, {
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		const lockedHeadQuery = (
@@ -1374,7 +1614,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 		expect(mockPrismaTransaction).toHaveBeenCalledTimes(2);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
-			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
+			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' }, retiredAt: null },
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 	});
@@ -1427,6 +1667,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('quarantines a live rollback past Open and clears its replay cursor', async () => {
 		const manager = new HydraConnectionManager();
+		// Nothing reconnects a disabled head, so nothing else would release this transport.
+		const disconnect = jest.spyOn(manager, 'disconnect').mockResolvedValue();
 		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & { pinExpectedHeadId: jest.Mock } };
 		head.mainNode = Object.assign(new EventEmitter(), { pinExpectedHeadId: jest.fn() });
 		mockHydraHeadFindUnique.mockResolvedValue({
@@ -1470,6 +1712,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 				}),
 			}),
 		);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(disconnect).toHaveBeenCalledWith('head-1');
 	});
 
 	it('does not overwrite an existing lifecycle timestamp on a duplicate status frame', async () => {
@@ -1706,6 +1950,43 @@ describe('HydraConnectionManager durable enable-state convergence', () => {
 			isEnabled: true,
 			status: HydraHeadStatus.Idle,
 			initTxHash: null,
+		});
+		const connect = jest.spyOn(manager, 'connect').mockResolvedValue();
+
+		await expect(manager.reconcileEnabledState('head-1')).resolves.toBe(true);
+
+		expect(connect).toHaveBeenCalledWith({ id: 'head-1' });
+	});
+
+	it('releases a finalized head whose fanout handoff completed instead of reconnecting it', async () => {
+		const manager = new HydraConnectionManager();
+		mockHydraHeadFindUnique.mockResolvedValue({
+			isEnabled: true,
+			status: HydraHeadStatus.Final,
+			initTxHash: 'a'.repeat(64),
+			reconciliationCompletedAt: new Date('2026-07-22T12:01:00Z'),
+		});
+		const disconnect = jest.spyOn(manager, 'disconnect').mockResolvedValue();
+		const connect = jest.spyOn(manager, 'connect').mockResolvedValue();
+
+		await expect(manager.reconcileEnabledState('head-1')).resolves.toBe(false);
+
+		// The mock returns the field whatever is selected; real Prisma would not.
+		expect(mockHydraHeadFindUnique).toHaveBeenCalledWith(
+			expect.objectContaining({ select: expect.objectContaining({ reconciliationCompletedAt: true }) }),
+		);
+		expect(disconnect).toHaveBeenCalledWith('head-1');
+		expect(connect).not.toHaveBeenCalled();
+	});
+
+	// After a restart, the replay of a finalized head is what finishes its handoff.
+	it('still connects a finalized head whose fanout handoff is pending', async () => {
+		const manager = new HydraConnectionManager();
+		mockHydraHeadFindUnique.mockResolvedValue({
+			isEnabled: true,
+			status: HydraHeadStatus.Final,
+			initTxHash: 'a'.repeat(64),
+			reconciliationCompletedAt: null,
 		});
 		const connect = jest.spyOn(manager, 'connect').mockResolvedValue();
 

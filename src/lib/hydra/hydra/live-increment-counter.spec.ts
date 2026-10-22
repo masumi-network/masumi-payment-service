@@ -27,9 +27,14 @@ function makeProcessor(): { processor: LiveFrameProcessor; increments: number[] 
 		verifyGreetingsPartyIdentity: () => {},
 		recordFinalizedFanout: () => {},
 		clearFinalizedFanout: () => {},
+		finalizedHeadProven: () => false,
+		finalizedSnapshotNumber: () => undefined,
+		rereadHistory: () => {},
+		historyOpenCount: () => 0,
 		setNetworkConnected: () => {},
 		onRotationError: () => {},
 		invalidateLiveConnection: () => {},
+		isAwaitingPostChainTx: () => false,
 	};
 	const emitter = new EventEmitter();
 	const increments: number[] = [];

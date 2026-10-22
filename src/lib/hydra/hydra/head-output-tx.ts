@@ -120,6 +120,41 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
 	return producers.size === 1 ? [...producers][0] : undefined;
 }
 
+/** The deadline of a close, as read from the node's head state. */
+export type ClosedHeadFacts = { contestationDeadline: string };
+
+/**
+ * The contestation deadline of a closed head, or undefined.
+ *
+ * A close this service was not there to see reaches it as Greetings, which carry
+ * no deadline. hydra-node 2.4.1 keeps it in `ClosedState` and, once the first
+ * partial fanout step lands, in `PartialFanoutState`, so unlike the close
+ * transaction it stays readable until the head is final. A contest replaces it.
+ *
+ * The head state gives no snapshot number for the close. Its `confirmedSnapshot`
+ * is the node's own latest one, which a contest does not replace. On a devnet,
+ * a node restored to snapshot 1 still reported 1 after a peer contested with 2.
+ * The closed snapshot comes from the replayed close and contest frames instead.
+ *
+ * Undefined for every "cannot tell" case: a missing fact has to stay missing so
+ * a later read can still fill it.
+ */
+export function extractClosedHeadFacts(headState: unknown, headIdentifier: string): ClosedHeadFacts | undefined {
+	if (!isPlainObject(headState)) return undefined;
+	if (!/^[0-9a-fA-F]{56}$/.test(headIdentifier)) return undefined;
+
+	// Nested under `contents` in the real reply; a flat state is accepted too.
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	// Refuse a state that names another head. A state that names none is accepted:
+	// the session is already pinned to this head.
+	const stateHeadId = getOwnValue(state, 'headId');
+	if (typeof stateHeadId === 'string' && stateHeadId.toLowerCase() !== headIdentifier.toLowerCase()) return undefined;
+
+	const contestationDeadline = getOwnValue(state, 'contestationDeadline');
+	if (typeof contestationDeadline !== 'string' || contestationDeadline.length === 0) return undefined;
+	return { contestationDeadline };
+}
+
 /**
  * Output references (`txid#ix`, lower-cased) the head's confirmed snapshot is
  * still waiting to decommit onto L1.
@@ -146,9 +181,9 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
  * `decommitTx` object AND no numeric version pair — an unrecognised shape)
  * clears the guard instead, logged: the opposite would jam every withdrawal
  * from the head forever rather than for one refused attempt, which is what
- * this guard's own refinement exists to avoid, and it would contradict
- * `fetchHydraPendingDecommitRefs`, which already fails open on a transport
- * error one layer up.
+ * this guard's own refinement exists to avoid. When the node cannot be reached
+ * or refuses the request, `fetchHydraPendingDecommitRefs` one layer up refuses
+ * instead.
  *
  * `[]` rather than throwing for every "cannot tell" case, exactly like
  * `extractHeadOutputTxId`: this feeds a pre-flight guard, and a head whose
@@ -187,10 +222,9 @@ export function extractPendingDecommitRefs(headState: unknown): string[] {
 	// means this combination can never satisfy the check above on its own: it
 	// always needs the version pair to be BOTH readable AND past. Left alone
 	// that is not a cautious guard, it is a permanent one — every withdrawal
-	// from this head refused forever. Fail open instead, the same way
-	// `fetchHydraPendingDecommitRefs` already fails open on a transport error
-	// one layer up: worst case one withdrawal is refused or left to retry,
-	// never funds actually leaving the head.
+	// from this head refused forever. Fail open instead: worst case one
+	// withdrawal is refused or left to retry, never funds actually leaving
+	// the head.
 	if (!decommitTxHeld && !versionReadable) {
 		logger.warn(
 			'[HydraNode] Pending-decommit state unreadable (no decommitTx object, no numeric version pair); treating as resolved rather than blocking withdrawals indefinitely',
@@ -223,4 +257,37 @@ export function extractDecommitInFlight(headState: unknown): boolean | undefined
 	// shape this code does not know, and reads as "cannot tell".
 	if (decommitTx !== null) return undefined;
 	return extractPendingDecommitRefs(headState).length > 0;
+}
+
+/**
+ * Whether the head's confirmed snapshot holds a deposit that the chain has not
+ * settled yet.
+ *
+ * This is hydra-node's own test (2.4.1 `HeadLogic`, `waitForDeposit`): while
+ * the confirmed snapshot carries `utxoToCommit` and the head's version still
+ * equals that snapshot's version, every node rejects a snapshot request that
+ * carries a different deposit (`ReqSnCommitNotSettled`). The version moves on
+ * when the node observes the increment on chain.
+ *
+ * False for any state that cannot show it, so a caller only refuses on
+ * positive evidence.
+ */
+export function extractCommitNotSettled(headState: unknown): boolean {
+	if (!isPlainObject(headState)) return false;
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	const coordinatedHeadState = getOwnPlainObject(state, 'coordinatedHeadState');
+	if (coordinatedHeadState === undefined) return false;
+	const confirmedSnapshot = getOwnPlainObject(coordinatedHeadState, 'confirmedSnapshot');
+	if (confirmedSnapshot === undefined) return false;
+	const snapshot = getOwnPlainObject(confirmedSnapshot, 'snapshot');
+	if (snapshot === undefined) return false;
+	const utxoToCommit = getOwnPlainObject(snapshot, 'utxoToCommit');
+	if (utxoToCommit === undefined) return false;
+	const version = getOwnValue(coordinatedHeadState, 'version');
+	const snapshotVersion = getOwnValue(snapshot, 'version');
+	if (typeof version !== 'number' || typeof snapshotVersion !== 'number') {
+		logger.warn('[HydraNode] Head state holds a commit but no numeric version pair; treating the commit as settled');
+		return false;
+	}
+	return version === snapshotVersion;
 }

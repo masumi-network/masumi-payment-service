@@ -6,7 +6,13 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
 }));
 
-const { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } = await import('./head-output-tx');
+const {
+	extractClosedHeadFacts,
+	extractCommitNotSettled,
+	extractDecommitInFlight,
+	extractHeadOutputTxId,
+	extractPendingDecommitRefs,
+} = await import('./head-output-tx');
 
 const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
 const CLOSE_TX = 'f96e9b1375c44ac6865c19682df5043911f15682db436ba27948421d75ccc2f5';
@@ -275,10 +281,9 @@ describe('extractPendingDecommitRefs', () => {
 	 * The deadlock this guards against: with no decommitTx held AND no readable
 	 * version pair, the old formula defaulted `chainNotPastSnapshot` to `true`
 	 * (fail-closed), so `!decommitTxHeld && !chainNotPastSnapshot` was always
-	 * false and the withdrawal stayed refused forever — even though the same
-	 * "cannot tell" outcome fails OPEN one layer up, in
-	 * `fetchHydraPendingDecommitRefs`'s transport-error catch. Both signals
-	 * unreadable must resolve the same way: no pending refs, logged.
+	 * false and the withdrawal stayed refused forever. Unlike a transport error,
+	 * an unrecognised shape does not pass on retry, so both signals unreadable
+	 * resolve to no pending refs, logged.
 	 */
 	it('returns no pending refs, and logs, when neither decommitTx nor the version pair can be read', () => {
 		mockWarn.mockClear();
@@ -325,5 +330,117 @@ describe('extractDecommitInFlight', () => {
 	it('cannot tell from a state without a coordinated head state', () => {
 		expect(extractDecommitInFlight({ tag: 'Idle' })).toBeUndefined();
 		expect(extractDecommitInFlight('not json')).toBeUndefined();
+	});
+});
+
+/**
+ * hydra-node 2.4.1 `waitForDeposit`: a commit is unsettled while the head's
+ * version still equals the confirmed snapshot's version.
+ */
+describe('extractCommitNotSettled', () => {
+	const COMMIT = { [`${OTHER_TX}#0`]: {} };
+	const commitHeadState = (utxoToCommit: unknown, version: unknown = 3, snapshotVersion: unknown = 3) => ({
+		tag: 'Open',
+		contents: {
+			coordinatedHeadState: { version, confirmedSnapshot: { snapshot: { version: snapshotVersion, utxoToCommit } } },
+		},
+	});
+
+	it('reports a commit the chain has not settled, even an empty one, as hydra checks only that it is set', () => {
+		expect(extractCommitNotSettled(commitHeadState(COMMIT))).toBe(true);
+		expect(extractCommitNotSettled(commitHeadState({}))).toBe(true);
+	});
+
+	it.each([
+		['the chain has settled it', commitHeadState(COMMIT, 4, 3)],
+		['the snapshot holds no commit', commitHeadState(null)],
+		[
+			'the head is still on its initial snapshot',
+			{
+				tag: 'Open',
+				contents: { coordinatedHeadState: { version: 0, confirmedSnapshot: { tag: 'InitialSnapshot' } } },
+			},
+		],
+		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
+	])('reports nothing unsettled when %s', (_label, state) => {
+		expect(extractCommitNotSettled(state)).toBe(false);
+	});
+});
+
+/**
+ * A head closed while the service was off is first seen through Greetings, which
+ * carry no deadline. hydra-node 2.4.1 keeps it in `ClosedState` and, once partial
+ * fanout starts, in `PartialFanoutState`.
+ */
+describe('extractClosedHeadFacts', () => {
+	const DEADLINE = '2026-10-22T12:00:00Z';
+	const confirmed = (number: unknown) => ({
+		tag: 'ConfirmedSnapshot',
+		snapshot: { headId: HEAD_ID, version: 0, number },
+		signatures: {},
+	});
+	const closedState = (confirmedSnapshot: unknown, contents: Record<string, unknown> = {}) => ({
+		tag: 'Closed',
+		contents: {
+			headId: HEAD_ID,
+			contestationDeadline: DEADLINE,
+			confirmedSnapshot,
+			readyToFanoutSent: false,
+			...contents,
+		},
+	});
+
+	it('reads the deadline of a closed head and no snapshot number', () => {
+		// `confirmedSnapshot` is the node's own snapshot, not the one the close put on chain.
+		expect(extractClosedHeadFacts(closedState(confirmed(7)), HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
+	it.each([
+		['missing', undefined],
+		['of a kind it does not know', { tag: 'SomethingElse' }],
+	])('reads the deadline when the confirmed snapshot is %s', (_label, confirmedSnapshot) => {
+		expect(extractClosedHeadFacts(closedState(confirmedSnapshot), HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
+	it('reads it once the head fans out in steps', () => {
+		const state = { tag: 'FanoutProgress', contents: { ...closedState(confirmed(12)).contents, remainingOutputs: {} } };
+
+		expect(extractClosedHeadFacts(state, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
+	it('accepts a state that is not nested under contents', () => {
+		const flat = { tag: 'Closed', ...closedState(confirmed(3)).contents };
+
+		expect(extractClosedHeadFacts(flat, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
+	});
+
+	it('does not need the state to carry a head id', () => {
+		const { headId: _headId, ...withoutHeadId } = closedState(confirmed(4)).contents;
+
+		expect(extractClosedHeadFacts({ tag: 'Closed', contents: withoutHeadId }, HEAD_ID)).toEqual({
+			contestationDeadline: DEADLINE,
+		});
+	});
+
+	it('matches the head id whatever its case', () => {
+		expect(extractClosedHeadFacts(closedState(confirmed(1), { headId: HEAD_ID.toUpperCase() }), HEAD_ID)).toEqual({
+			contestationDeadline: DEADLINE,
+		});
+	});
+
+	// Unknown must never become a value: a missing fact stays missing, so a later read can still fill it.
+	it.each([
+		['the node reports no head', { tag: 'Idle', contents: { chainState: {} } }],
+		['it is not an object', 'Closed'],
+		['it is null', null],
+		['the deadline is missing', closedState(confirmed(7), { contestationDeadline: undefined })],
+		['the deadline is not a string', closedState(confirmed(7), { contestationDeadline: 1_761_134_400 })],
+		['the state belongs to another head', closedState(confirmed(7), { headId: 'f'.repeat(56) })],
+	])('says nothing when %s', (_label, state) => {
+		expect(extractClosedHeadFacts(state, HEAD_ID)).toBeUndefined();
+	});
+
+	it('says nothing without a well-formed head id to check against', () => {
+		expect(extractClosedHeadFacts(closedState(confirmed(7)), 'not-a-head-id')).toBeUndefined();
 	});
 });

@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
+const mockUnburnedUnits = new Set<string>();
+const mockPendingIncrementRefs = new Set<string>();
 const mockDecommitUpdateMany = jest.fn() as AnyMock;
 const mockDecommitUpdate = jest.fn() as AnyMock;
 const mockDecommitCreate = jest.fn() as AnyMock;
 const mockDecommitFindFirst = jest.fn() as AnyMock;
 const mockHeadFindUnique = jest.fn() as AnyMock;
+const mockSignTx = jest.fn() as AnyMock;
 const mockHeadUpdate = jest.fn() as AnyMock;
 const mockDecommitCall = jest.fn() as AnyMock;
 const mockNewTx = jest.fn() as AnyMock;
@@ -14,6 +17,8 @@ const mockFetchPendingDecommitRefs = jest.fn() as AnyMock;
 /** The node's raw `GET /head`, which decides whether a stale withdrawal may expire. */
 const mockNodeGet = jest.fn() as AnyMock;
 const mockFetchAddressUTxOs = jest.fn() as AnyMock;
+/** What the head lists at the address once the node has taken the withdrawal request. */
+const mockUTxOsAfterRequest = jest.fn() as AnyMock;
 /** Tracks which inputs the in-head transaction builder was given. */
 const mockTxIn = jest.fn() as AnyMock;
 /**
@@ -31,6 +36,9 @@ const mockTxQueryRaw = jest.fn() as AnyMock;
 const mockPaymentCount = jest.fn() as AnyMock;
 const mockPurchaseCount = jest.fn() as AnyMock;
 const mockTransactionCount = jest.fn() as AnyMock;
+/** The wallet claim, inside the slot transaction, and the release after it. */
+const mockWalletClaim = jest.fn() as AnyMock;
+const mockWalletRelease = jest.fn() as AnyMock;
 
 const mockIsPausedLocked = jest.fn(async () => false) as AnyMock;
 
@@ -44,6 +52,7 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHead: { findUnique: mockHeadFindUnique, update: mockHeadUpdate },
+		hotWallet: { updateMany: mockWalletRelease },
 		hydraDecommit: {
 			findFirst: mockDecommitFindFirst,
 			create: mockDecommitCreate,
@@ -57,6 +66,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 				paymentRequest: { count: mockPaymentCount },
 				purchaseRequest: { count: mockPurchaseCount },
 				transaction: { count: mockTransactionCount },
+				hotWallet: { updateMany: mockWalletClaim },
 				hydraDecommit: {
 					findFirst: mockDecommitFindFirst,
 					create: mockDecommitCreate,
@@ -94,14 +104,16 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 			decommit: mockDecommitCall,
 			newTx: mockNewTx,
 			mainNode: {
-				pendingIncrementUtxoRefs: new Set<string>(),
+				pendingIncrementUtxoRefs: mockPendingIncrementRefs,
+				l2MintCheck: { unburnedUnits: mockUnburnedUnits, verifiedOutputs: { has: () => true } },
 				fetchPendingDecommitRefs: mockFetchPendingDecommitRefs,
 				isTxConfirmed: mockIsTxConfirmed,
 				get: mockNodeGet,
 			},
 		}),
 		getProvider: () => ({
-			fetchAddressUTxOs: mockFetchAddressUTxOs,
+			fetchAddressUTxOs: (...args: unknown[]) =>
+				mockDecommitCall.mock.calls.length > 0 ? mockUTxOsAfterRequest(...args) : mockFetchAddressUTxOs(...args),
 			fetchProtocolParameters: mockFetchProtocolParameters,
 			fetchUTxOs: mockFetchUTxOs,
 		}),
@@ -121,7 +133,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 			return [];
 		}
 		async signTx() {
-			return 'ff'.repeat(20);
+			return mockSignTx();
 		}
 	},
 	MeshTxBuilder: class {
@@ -186,7 +198,7 @@ beforeEach(() => {
 		priceStep: 0,
 		coinsPerUtxoSize: 4310,
 		collateralPercent: 150,
-		maxTxSize: 16384,
+		maxTxSize: 15_000,
 	});
 	mockFetchAddressUTxOs.mockResolvedValue([
 		{
@@ -199,11 +211,15 @@ beforeEach(() => {
 		},
 	]);
 	mockIsTxConfirmed.mockReturnValue(true);
+	mockSignTx.mockResolvedValue('ff'.repeat(20));
 	mockFetchUTxOs.mockResolvedValue([]);
 	mockTxQueryRaw.mockResolvedValue([]);
 	mockPaymentCount.mockResolvedValue(0);
 	mockPurchaseCount.mockResolvedValue(0);
 	mockTransactionCount.mockResolvedValue(0);
+	mockWalletClaim.mockResolvedValue({ count: 1 });
+	mockWalletRelease.mockResolvedValue({ count: 1 });
+	mockUTxOsAfterRequest.mockResolvedValue([]);
 });
 
 describe('executeHydraDecommit request outcomes', () => {
@@ -247,6 +263,34 @@ describe('executeHydraDecommit request outcomes', () => {
 		expect(mockRecordHeadError).toHaveBeenCalled();
 	});
 
+	// Refused before the row is Pending: past that, this service's own send
+	// check would read as the node rejecting the withdrawal.
+	it('refuses a withdrawal too large for the head before sending it', async () => {
+		mockSignTx.mockResolvedValue('ff'.repeat(15_001));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+			statusCode: 422,
+			message: expect.stringContaining('Consolidate the wallet in the head first'),
+		});
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+		expect(mockDecommitUpdate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: 'Pending' }) }),
+		);
+	});
+
+	// A recorded splitTxId is what the withdrawal waits on, so an oversized split
+	// is refused before it is written.
+	it('refuses a split too large for the head before recording it', async () => {
+		mockSignTx.mockResolvedValue('ff'.repeat(15_001));
+
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 10_000_000n })).rejects.toMatchObject({
+			statusCode: 422,
+		});
+		expect(mockDecommitUpdate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ splitTxId: expect.anything() }) }),
+		);
+	});
+
 	it('leaves an ambiguous request Pending for the head to settle', async () => {
 		mockDecommitCall.mockRejectedValue(new HydraTransportAmbiguousError('POST outcome is ambiguous'));
 
@@ -273,6 +317,20 @@ describe('executeHydraDecommit request outcomes', () => {
 		expect(mockDecommitUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
 		);
+		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+	});
+
+	// A failed /head read once came back as "nothing pending", which let a split
+	// start that the head could never confirm.
+	it('refuses before the split when the node cannot say whether a decommit is pending', async () => {
+		mockFetchPendingDecommitRefs.mockResolvedValue(undefined);
+
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 5_000_000n })).rejects.toMatchObject({
+			statusCode: 502,
+			message: expect.stringContaining('Could not read the head state'),
+		});
+
 		expect(mockNewTx).not.toHaveBeenCalled();
 		expect(mockDecommitCall).not.toHaveBeenCalled();
 	});
@@ -506,6 +564,52 @@ describe('withdrawing a token that sits on the collateral reserve', () => {
 		expect(mockTxIn).toHaveBeenCalledWith('c'.repeat(64), 0, expect.anything(), 'addr_test1_local');
 	});
 
+	// "Only 0 is eligible" for a token the balance shows sent operators hunting.
+	// The refusal has to say which rule held the token back.
+	// Only UTxOs that hold the requested token are named: an ADA-only deposit
+	// still being folded in has nothing to do with it.
+	it('names why a requested token is held back', async () => {
+		mockUnburnedUnits.add(USDM);
+		mockPendingIncrementRefs.add(`${'e'.repeat(64)}#0`);
+		try {
+			mockFetchAddressUTxOs.mockResolvedValue([
+				reserveWithToken('10000000'),
+				{
+					input: { txHash: 'd'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '50000000' }] },
+				},
+				{
+					input: { txHash: 'e'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '30000000' }] },
+				},
+			]);
+
+			const refusal = executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 20_000_000n } });
+			await expect(refusal).rejects.toThrow(
+				'Held back: carries a token minted inside the head, which L1 cannot pay out',
+			);
+			await expect(refusal).rejects.not.toThrow('still being folded');
+		} finally {
+			mockUnburnedUnits.clear();
+			mockPendingIncrementRefs.clear();
+		}
+	});
+
+	// The reserve's token is already counted as eligible, so it is not "held back".
+	it('does not name the reserve when it is counted and still too little', async () => {
+		mockFetchAddressUTxOs.mockResolvedValue([
+			reserveWithToken('10000000'),
+			{
+				input: { txHash: 'd'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '50000000' }] },
+			},
+		]);
+
+		const refusal = executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 30_000_000n } });
+		await expect(refusal).rejects.toThrow('Only 20000000 of that asset is eligible');
+		await expect(refusal).rejects.not.toThrow('Held back');
+	});
+
 	// The carve's change is the only output left in the head, so it must still
 	// be big enough to serve as collateral once the token has gone.
 	it('refuses a carve that would leave no collateral-sized change', async () => {
@@ -637,5 +741,226 @@ describe('executeHydraDecommit with a stale pending withdrawal', () => {
 
 		expect(mockNodeGet).not.toHaveBeenCalled();
 		expect(failedWrites()).toHaveLength(0);
+	});
+});
+
+/**
+ * MAS-649. A pending payment has reserved the inputs of its in-head body, and it
+ * holds the hot wallet for them: every L2 reservation claims the wallet in the
+ * transaction that records it. A withdrawal that skips the claim reads and spends
+ * funds a payment was promised, and a payment reserved while it runs can pick the
+ * same outputs. Consolidation takes the same lock for the same reason.
+ */
+describe('executeHydraDecommit and the wallet lock', () => {
+	const WALLET_CLAIM = {
+		id: 'wallet-1',
+		deletedAt: null,
+		lockedAt: null,
+		pendingTransactionId: null,
+		lockPurpose: null,
+	};
+	const claimedAt = () => (mockWalletClaim.mock.calls[0]![0] as { data: { lockedAt: Date } }).data.lockedAt;
+
+	beforeEach(() => {
+		mockDecommitCall.mockResolvedValue(undefined);
+	});
+
+	it('claims the wallet before it reads the funds in the head', async () => {
+		await executeHydraDecommit({ headId: 'head-1' });
+
+		expect(mockWalletClaim).toHaveBeenCalledWith({ where: WALLET_CLAIM, data: { lockedAt: expect.any(Date) } });
+		expect(mockWalletClaim.mock.invocationCallOrder[0]).toBeLessThan(
+			mockFetchAddressUTxOs.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it('refuses while a pending payment holds the wallet, reading and sending nothing', async () => {
+		mockWalletClaim.mockResolvedValue({ count: 0 });
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('busy'),
+		});
+
+		expect(mockDecommitCreate).not.toHaveBeenCalled();
+		expect(mockFetchAddressUTxOs).not.toHaveBeenCalled();
+		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+		// Nothing was claimed, so there is nothing to release.
+		expect(mockWalletRelease).not.toHaveBeenCalled();
+	});
+
+	// A payment pending on the wallet is routine, and an error that routinely means
+	// nothing is what teaches an operator to ignore the ones that matter.
+	it('does not record a head error for that refusal', async () => {
+		mockWalletClaim.mockResolvedValue({ count: 0 });
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({ statusCode: 409 });
+
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
+
+	it('does not mark the collateral drained for a refused drain', async () => {
+		mockWalletClaim.mockResolvedValue({ count: 0 });
+
+		await expect(executeHydraDecommit({ headId: 'head-1', drain: true })).rejects.toMatchObject({ statusCode: 409 });
+
+		expect(mockHeadUpdate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ collateralDrainedAt: expect.anything() }) }),
+		);
+		expect(mockDecommitCreate).not.toHaveBeenCalled();
+	});
+
+	it('leaves the wallet alone when another withdrawal already holds the slot', async () => {
+		mockDecommitFindFirst.mockResolvedValue({ ...STALE_PENDING, updatedAt: new Date() });
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+			message: expect.stringContaining('already in progress'),
+		});
+
+		expect(mockWalletClaim).not.toHaveBeenCalled();
+	});
+
+	it('releases its own claim once the node has taken the request', async () => {
+		await executeHydraDecommit({ headId: 'head-1' });
+
+		expect(mockWalletRelease).toHaveBeenCalledTimes(1);
+		expect(mockWalletRelease).toHaveBeenCalledWith({
+			where: { id: 'wallet-1', lockedAt: claimedAt(), pendingTransactionId: null },
+			data: { lockedAt: null },
+		});
+	});
+
+	it('releases the wallet when the node rejects the request', async () => {
+		mockDecommitCall.mockRejectedValue(new Error('DecommitInvalid: nope'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toThrow('rejected the withdrawal');
+
+		expect(mockWalletRelease).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases the wallet when the withdrawal fails before anything is sent', async () => {
+		mockSignTx.mockResolvedValue('ff'.repeat(15_001));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({ statusCode: 422 });
+
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+		expect(mockWalletRelease).toHaveBeenCalledTimes(1);
+	});
+
+	// The request may be proposed to the head right now, so the wallet stays held
+	// and the stale-lock reaper frees it, as consolidation does for a self-send.
+	it('keeps the wallet when the outcome of the request is ambiguous', async () => {
+		mockDecommitCall.mockRejectedValue(new HydraTransportAmbiguousError('POST outcome is ambiguous'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toThrow('stays pending');
+
+		expect(mockWalletRelease).not.toHaveBeenCalled();
+	});
+
+	it('releases the wallet when the head refuses the in-head split', async () => {
+		mockNewTx.mockRejectedValue(new Error('TxInvalid: input already spent'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 10_000_000n })).rejects.toThrow('TxInvalid');
+
+		expect(mockWalletRelease).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps the wallet when sending the in-head split ends ambiguous', async () => {
+		mockNewTx.mockRejectedValue(new HydraTransportAmbiguousError('NewTx outcome is ambiguous'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 10_000_000n })).rejects.toBeInstanceOf(
+			HydraTransportAmbiguousError,
+		);
+
+		expect(mockWalletRelease).not.toHaveBeenCalled();
+	});
+
+	// The split was sent and the head may still apply it later, so its inputs stay
+	// spoken for until the reaper frees the wallet.
+	it('keeps the wallet when the in-head split was sent and did not confirm in time', async () => {
+		jest.useFakeTimers();
+		try {
+			mockNewTx.mockResolvedValue(undefined);
+			mockIsTxConfirmed.mockReturnValue(false);
+
+			const outcome = expect(executeHydraDecommit({ headId: 'head-1', lovelace: 10_000_000n })).rejects.toMatchObject({
+				statusCode: 504,
+			});
+			await jest.advanceTimersByTimeAsync(61_000);
+			await outcome;
+
+			expect(mockNewTx).toHaveBeenCalledTimes(1);
+			expect(mockWalletRelease).not.toHaveBeenCalled();
+		} finally {
+			jest.useRealTimers();
+			mockIsTxConfirmed.mockReturnValue(true);
+		}
+	});
+
+	// Until the next snapshot the leaving inputs still read as spendable. A payment
+	// that reserved one would be refused by the head and held until an operator
+	// releases it, so the wallet stays with the reaper instead.
+	it('keeps the wallet while the head still lists the inputs the node took', async () => {
+		jest.useFakeTimers();
+		try {
+			mockUTxOsAfterRequest.mockResolvedValue([
+				{
+					input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '20000000' }] },
+				},
+			]);
+
+			const outcome = executeHydraDecommit({ headId: 'head-1' });
+			await jest.advanceTimersByTimeAsync(11_000);
+			await expect(outcome).resolves.toMatchObject({ decommitId: 'decommit-1' });
+
+			expect(mockWalletRelease).not.toHaveBeenCalled();
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
+	it('keeps that hold when a later write fails', async () => {
+		jest.useFakeTimers();
+		try {
+			mockUTxOsAfterRequest.mockResolvedValue([
+				{
+					input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '20000000' }] },
+				},
+			]);
+			mockHeadUpdate.mockRejectedValue(new Error('database hiccup'));
+
+			const outcome = expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toThrow('database hiccup');
+			await jest.advanceTimersByTimeAsync(11_000);
+			await outcome;
+
+			expect(mockWalletRelease).not.toHaveBeenCalled();
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
+	it('releases the wallet once the head has dropped the inputs the node took', async () => {
+		mockUTxOsAfterRequest
+			.mockResolvedValueOnce([
+				{
+					input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '20000000' }] },
+				},
+			])
+			.mockResolvedValue([]);
+
+		await executeHydraDecommit({ headId: 'head-1' });
+
+		expect(mockUTxOsAfterRequest).toHaveBeenCalledTimes(2);
+		expect(mockWalletRelease).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not let a failed release replace the outcome of the withdrawal', async () => {
+		mockWalletRelease.mockRejectedValue(new Error('database is gone'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).resolves.toMatchObject({ decommitId: 'decommit-1' });
 	});
 });

@@ -15,6 +15,7 @@ export type HydraHeadStatus =
   | 'Open'
   | 'Closed'
   | 'FanoutPossible'
+  | 'FanningOut'
   | 'Final';
 
 export type HydraParticipant = {
@@ -221,7 +222,22 @@ export type HydraHeadBalance = {
    */
   unbackedLovelace?: string;
   hasUnbackedUtxos?: boolean;
+  /**
+   * Own in-head UTxOs carrying a unit with a positive net L2 mint in the head,
+   * as far as the node's history replay has checked
+   * (0 until it is current). The node never spends them, so their ADA is stuck
+   * with them, and an unburned L2-minted token blocks the head's final fanout.
+   */
+  l2MintedUtxoCount?: number;
+  l2MintedLovelace?: string;
+  /**
+   * False when not connected, until the node's history replay is current, and while it has
+   * failed; the L2-minted figures are 0 then.
+   */
+  l2MintChecked?: boolean;
   balance: HydraHeadBalanceAsset[];
+  /** `balance` without those UTxOs. Low-balance rules compare against this. */
+  spendableBalance?: HydraHeadBalanceAsset[];
 };
 
 /**
@@ -313,6 +329,9 @@ export type HydraHeadConnection = {
   nodeState: string;
   isReady: boolean;
   reason: string | null;
+  /** Whether this service verified the Open head's history. Null outside Open. */
+  syncReady?: boolean | null;
+  syncReason?: string | null;
   /**
    * Ways the head's own ledger no longer matches the chain it settles on.
    *

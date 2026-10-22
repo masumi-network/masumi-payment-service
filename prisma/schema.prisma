@@ -953,17 +953,19 @@ model PaymentRequest {
 }
 
 model PaymentActionData {
-  id                      String            @id @default(cuid())
-  createdAt               DateTime          @default(now())
-  updatedAt               DateTime          @updatedAt
-  requestedAction         PaymentAction
-  resultHash              String?
-  submittedTxHash         String?
-  errorType               PaymentErrorType?
-  errorNote               String?
-  PaymentRequestCurrent   PaymentRequest?   @relation("NextAction")
-  paymentRequestHistoryId String?
-  PaymentRequestHistory   PaymentRequest?   @relation("PaymentActionHistory", fields: [paymentRequestHistoryId], references: [id])
+  id                         String            @id @default(cuid())
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
+  requestedAction            PaymentAction
+  resultHash                 String?
+  submittedTxHash            String?
+  errorType                  PaymentErrorType?
+  errorNote                  String?
+  /// Operator hid this action from Needs Action. A DB trigger resets it when requestedAction, errorType or errorNote changes.
+  manualActionAcknowledgedAt DateTime?
+  PaymentRequestCurrent      PaymentRequest?   @relation("NextAction")
+  paymentRequestHistoryId    String?
+  PaymentRequestHistory      PaymentRequest?   @relation("PaymentActionHistory", fields: [paymentRequestHistoryId], references: [id])
 }
 
 model PurchaseRequest {
@@ -1073,16 +1075,18 @@ model PurchaseRequest {
 }
 
 model PurchaseActionData {
-  id                       String             @id @default(cuid())
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
-  requestedAction          PurchasingAction
-  submittedTxHash          String?
-  errorType                PurchaseErrorType?
-  errorNote                String?
-  PurchaseRequestCurrent   PurchaseRequest?   @relation("NextAction")
-  purchaseRequestHistoryId String?
-  PurchaseRequestHistory   PurchaseRequest?   @relation("PurchaseActionHistory", fields: [purchaseRequestHistoryId], references: [id])
+  id                         String             @id @default(cuid())
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+  requestedAction            PurchasingAction
+  submittedTxHash            String?
+  errorType                  PurchaseErrorType?
+  errorNote                  String?
+  /// Operator hid this action from Needs Action. A DB trigger resets it when requestedAction, errorType or errorNote changes.
+  manualActionAcknowledgedAt DateTime?
+  PurchaseRequestCurrent     PurchaseRequest?   @relation("NextAction")
+  purchaseRequestHistoryId   String?
+  PurchaseRequestHistory     PurchaseRequest?   @relation("PurchaseActionHistory", fields: [purchaseRequestHistoryId], references: [id])
 }
 
 model PaymentSourceIdentifiers {
@@ -1613,6 +1617,8 @@ enum WebhookEventType {
   X402_WALLET_LOW_BALANCE
   HYDRA_HEAD_LOW_BALANCE
   HYDRA_HEAD_SNAPSHOT_ROUND_STUCK
+  HYDRA_HEAD_POST_TX_FAILED
+  HYDRA_HEAD_CONTEST_MISSING
 }
 
 // Critical is retained for historical rows only: the dispatcher creates
@@ -1657,6 +1663,7 @@ enum HydraHeadStatus {
   Open
   Closed
   FanoutPossible
+  FanningOut
   Final
 }
 
@@ -1669,6 +1676,8 @@ enum HydraErrorType {
   TxInvalid
   /// Client input was invalid.
   InvalidInput
+  /// The head was closed on an older snapshot than this node holds and no contest landed.
+  ContestMissing
 }
 
 /// Lifecycle of a single incremental-commit (top-up) deposit into an Open head.
@@ -1758,150 +1767,6 @@ model HydraRelation {
   @@unique([network, localHotWalletId, remoteWalletId])
   @@index([network])
   @@index([localHotWalletId])
-}
-
-/// A single Hydra head instance within a participant relation.
-/// Each head is one "session" — it goes through Idle → Open → Closed → Final.
-/// A relation can have many heads over its lifetime, but typically only one is Open.
-model HydraHead {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /// The participant relation this head belongs to
-  hydraRelationId String
-  HydraRelation   HydraRelation @relation(fields: [hydraRelationId], references: [id], onDelete: Cascade)
-
-  /// Hydra head identifier (assigned after Init)
-  headIdentifier String? @unique
-
-  /// Current status of the Hydra head
-  status HydraHeadStatus @default(Idle)
-
-  /// Contestation period in seconds (configured on the Hydra node)
-  contestationPeriod BigInt @default(86400)
-
-  /// Lifecycle timestamps
-  openedAt    DateTime?
-  closedAt    DateTime?
-  finalizedAt DateTime?
-
-  /// Deadline after which fanout is possible (set when head is closed)
-  contestationDeadline DateTime?
-
-  /// Latest activity timestamp for idle detection / auto-close
-  latestActivityAt DateTime?
-
-  /// Latest confirmed snapshot number (monotonically increasing while head is open)
-  latestSnapshotNumber BigInt @default(0)
-
-  /// Durable ordered history high-water mark. Both fields are null or both set.
-  lastReconciledSnapshotSequence         BigInt?
-  lastReconciledSnapshotTransactionIndex Int?
-
-  /// Set only after a Final head has completed authenticated history replay,
-  /// live-tip reconciliation, and has no pending L2 work left. Destructive
-  /// cleanup must require this marker rather than treating Final as sufficient.
-  reconciliationCompletedAt DateTime?
-
-  /// Operator surface for fail-closed replay halts: when the ordered replay is
-  /// stuck on one confirmed transaction (unparseable evidence, or an apply that
-  /// keeps returning retry), the stall is persisted here so it is visible in the
-  /// API/UI instead of only in logs. Cleared automatically when replay drains.
-  reconciliationStalledTxId   String?
-  reconciliationStalledReason String?
-  reconciliationStalledSince  DateTime?
-
-  /// Operator surface for a snapshot round that stopped moving: our node
-  /// reports a round in flight (`GET /snapshot/last-seen`) that no party has
-  /// advanced. A round normally completes in about a second, so one unchanged
-  /// for minutes means a party can never sign it, and the head confirms nothing
-  /// until an operator resets the round. The signature identifies the round
-  /// (tag, number, signatory count); `since` is when it was first seen; the
-  /// alert time makes the webhook fire once per round. Cleared when the node
-  /// reports no round in flight.
-  snapshotRoundSignature String?
-  snapshotRoundSince     DateTime?
-  snapshotRoundAlertedAt DateTime?
-
-  /// Durable admission gate set before Close is sent. Reservation writers lock
-  /// the head row and refuse new L2 work once closing has begun.
-  isClosing Boolean @default(false)
-
-  /// When the admission gate above was taken.
-  ///
-  /// Written once, because the stalled-close reaper has to age off something the
-  /// rest of the service does not touch: `updatedAt` is refreshed by every write
-  /// to the row, including the ownerEpoch increment the connection manager makes
-  /// on every attach, so a flapping session hid a stuck latch from it forever.
-  closingSince DateTime?
-
-  /// Set when a withdrawal starts to drain the local participant's collateral.
-  ///
-  /// Taken under the head row lock that new L2 escrow reservations also take,
-  /// so no escrow can enter between the live-escrow check and the collateral
-  /// leaving. While set, new escrows are refused: one admitted now could not be
-  /// settled until collateral returns. Cleared by the next escrow admission that
-  /// finds no withdrawal in flight and collateral back in the wallet.
-  collateralDrainedAt DateTime?
-
-  /// When the head's node refused the Close admitted above.
-  ///
-  /// The only proof the stalled-close reaper accepts that the command can no
-  /// longer execute: a node can park a Close (a node behind the chain holds it
-  /// until synced), so neither elapsed time nor a status read of `Open` shows
-  /// the Close is dead. Set only while the latch is held, cleared with it.
-  closeRefusedAt DateTime?
-
-  /// L1 transaction hashes for head lifecycle events
-  initTxHash   String?
-  closeTxHash  String?
-  fanoutTxHash String?
-
-  /// Chain-replay anchor for hydra-node persistence-loss recovery: the block
-  /// point immediately BEFORE the block that carries the InitTx. A wiped node
-  /// restarted with `--start-chain-from <initChainSlot>.<initChainHash>`
-  /// re-observes the whole head from L1 (verified live on preprod; see
-  /// docs/hydra-persistence-recovery-verification.md). Both fields are null or
-  /// both set; written alongside initTxHash during on-chain verification.
-  initChainSlot BigInt?
-  initChainHash String?
-
-  /// Monotonic ownership fence (fencing token): incremented once per
-  /// head-session acquisition. Lifecycle writes carry it, so a stale session's
-  /// late write misses its guarded UPDATE and self-demotes instead of
-  /// clobbering (or durably disabling) a head a newer session owns.
-  ownerEpoch BigInt @default(0)
-
-  /// Errors that have occurred during the head's lifecycle
-  Errors HydraHeadError[]
-
-  /// Incremental-commit top-ups into this head
-  Topups HydraTopup[]
-
-  /// Incremental-decommit withdrawals out of this head
-  Withdrawals HydraDecommit[]
-
-  /// The local participant in this head (this server's wallet + node)
-  LocalParticipant HydraLocalParticipant?
-
-  /// Remote participants in this head (counterparties, public info only)
-  RemoteParticipants HydraRemoteParticipant[]
-
-  /// Transactions submitted through this head (L2)
-  Transactions Transaction[]
-
-  /// The redeemed invite that produced this head.
-  Invite HydraHeadInvite?
-
-  /// Is enabled
-  isEnabled Boolean @default(true)
-  // One non-Final head per relation is enforced by the partial unique index
-  // HydraHead_one_non_final_per_relation_key in the head-binding migration.
-
-  @@index([status])
-  @@index([hydraRelationId, status])
-  @@index([hydraRelationId, status, isEnabled])
 }
 
 /// Low-balance monitoring for a local participant's OWN funds inside its head.

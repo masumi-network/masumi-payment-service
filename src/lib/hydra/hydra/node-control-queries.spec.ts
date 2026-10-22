@@ -1,6 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
-import { fetchHydraSnapshotRound } from './node-control-queries';
-import { HydraProtocolError } from './errors';
+import {
+	fetchHydraAcknowledgedDeposits,
+	fetchHydraClosedHeadFacts,
+	fetchHydraPendingDecommitRefs,
+	fetchHydraSnapshotRound,
+} from './node-control-queries';
+import { HydraProtocolError, HydraTransportError } from './errors';
+import { HydraHttpResponseError } from './node-http-response';
 
 const TX_ID = 'DC3EDEE5C3EB0B5B50809EC9FA41FB590818412383DA4F03CBF645FB0C1728E7';
 
@@ -14,6 +20,67 @@ function transportReturning(body: unknown) {
 		},
 	};
 }
+
+function transportThrowing(error: Error) {
+	return {
+		get: async <T>(_url: string): Promise<T> => {
+			throw error;
+		},
+	};
+}
+
+describe('fetchHydraPendingDecommitRefs', () => {
+	// An empty list lets a caller start an in-head split, and one started while
+	// a decommit is pending is accepted but never snapshot-confirmed.
+	// The two shapes an unreachable node takes: a direct connection failure, and
+	// hydra-host's 502 when it cannot reach the node behind it.
+	it.each([
+		['the connection fails', new HydraTransportError('Hydra HTTP GET failed before a response was received')],
+		['the proxy answers 502', new HydraHttpResponseError('Hydra HTTP request failed with 502 Bad Gateway', 502)],
+	])('reads the head state as unknown, never as nothing pending, when %s', async (_label, error) => {
+		await expect(fetchHydraPendingDecommitRefs(transportThrowing(error))).resolves.toBeUndefined();
+	});
+
+	// `/head` carries the snapshot more than once, so a large head can outgrow
+	// the byte limit for good. Refusing on that would block every withdrawal
+	// and consolidation from it.
+	it('clears the guard when the node answered with something it cannot use', async () => {
+		const transport = transportThrowing(new HydraProtocolError('Hydra HTTP response exceeded its byte limit'));
+
+		await expect(fetchHydraPendingDecommitRefs(transport)).resolves.toEqual([]);
+	});
+});
+
+describe('fetchHydraClosedHeadFacts', () => {
+	const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
+	const closedHead = {
+		tag: 'Closed',
+		contents: {
+			headId: HEAD_ID,
+			contestationDeadline: '2026-10-22T12:00:00Z',
+			confirmedSnapshot: { tag: 'ConfirmedSnapshot', snapshot: { number: 7 } },
+		},
+	};
+
+	it('reads the deadline from one read of the head state', async () => {
+		const transport = transportReturning(closedHead);
+
+		await expect(fetchHydraClosedHeadFacts(transport, HEAD_ID)).resolves.toEqual({
+			contestationDeadline: '2026-10-22T12:00:00Z',
+		});
+		expect(transport.paths).toEqual(['/head']);
+	});
+
+	// A head that cannot be read is not a head with no deadline: the
+	// caller writes nothing, and a later read can still fill the row in.
+	it.each([
+		['the connection fails', new HydraTransportError('Hydra HTTP GET failed before a response was received')],
+		['the proxy answers 502', new HydraHttpResponseError('Hydra HTTP request failed with 502 Bad Gateway', 502)],
+		['the answer is over the byte limit', new HydraProtocolError('Hydra HTTP response exceeded its byte limit')],
+	])('says nothing when %s', async (_label, error) => {
+		await expect(fetchHydraClosedHeadFacts(transportThrowing(error), HEAD_ID)).resolves.toBeUndefined();
+	});
+});
 
 describe('fetchHydraSnapshotRound', () => {
 	it('reads a SeenSnapshot round as in flight, with its number, signers and transactions', async () => {
@@ -86,5 +153,154 @@ describe('fetchHydraSnapshotRound', () => {
 		await expect(
 			fetchHydraSnapshotRound(transportReturning({ tag: 'SeenSnapshot', snapshot: { number: 1 }, signatories })),
 		).rejects.toBeInstanceOf(HydraProtocolError);
+	});
+});
+
+describe('fetchHydraAcknowledgedDeposits', () => {
+	const DEPOSIT_TX = 'DD'.repeat(32);
+	const OUTPUT = {
+		address: 'addr_test1vz',
+		value: { lovelace: 5_000_000 },
+		referenceScript: null,
+		inlineDatum: null,
+		inlineDatumRaw: null,
+		datum: null,
+	};
+	const IDLE_ROUND = { tag: 'LastSeenSnapshot', lastSeen: 7 };
+	const NO_DEPOSIT = { utxoToCommit: null, depositTxId: null };
+	const snapshotBody = (fields: { utxoToCommit?: unknown; depositTxId?: string | null }) => ({
+		headId: 'cc'.repeat(28),
+		version: 1,
+		number: 7,
+		confirmed: [],
+		utxo: {},
+		...fields,
+	});
+	const confirmed = (fields: { utxoToCommit?: unknown; depositTxId?: string | null }) => ({
+		tag: 'ConfirmedSnapshot',
+		signatures: { multiSignature: [] },
+		snapshot: snapshotBody(fields),
+	});
+
+	/** Answers `GET /snapshot` and `GET /snapshot/last-seen`. */
+	function nodeAnswering(snapshot: unknown, lastSeen: unknown = IDLE_ROUND) {
+		return {
+			get: async <T>(url: string): Promise<T> => (url === '/snapshot/last-seen' ? lastSeen : snapshot) as T,
+		};
+	}
+
+	it('reads the deposit a confirmed snapshot holds, with its id in lowercase', async () => {
+		const transport = nodeAnswering(
+			confirmed({ utxoToCommit: { [`${DEPOSIT_TX}#0`]: OUTPUT }, depositTxId: DEPOSIT_TX }),
+		);
+
+		await expect(fetchHydraAcknowledgedDeposits(transport)).resolves.toEqual([DEPOSIT_TX.toLowerCase()]);
+	});
+
+	// A signed round that confirms between the two reads must show up in the
+	// second one. Asking for both at once would let it slip past both.
+	it('asks for the confirmed snapshot only once the round in flight has answered', async () => {
+		let answerRound: (body: unknown) => void = () => undefined;
+		const paths: string[] = [];
+		const transport = {
+			get: async <T>(url: string): Promise<T> => {
+				paths.push(url);
+				if (url !== '/snapshot/last-seen') return confirmed(NO_DEPOSIT) as T;
+				return await new Promise<T>((resolve) => {
+					answerRound = (body) => resolve(body as T);
+				});
+			},
+		};
+
+		const acknowledged = fetchHydraAcknowledgedDeposits(transport);
+		await Promise.resolve();
+		expect(paths).toEqual(['/snapshot/last-seen']);
+
+		answerRound(IDLE_ROUND);
+		await expect(acknowledged).resolves.toEqual([]);
+		expect(paths).toEqual(['/snapshot/last-seen', '/snapshot']);
+	});
+
+	/** A node reporting `roundTag` that refuses `GET /snapshot` with `status`. */
+	function refusingSnapshot(status: number, roundTag: string) {
+		const error = new HydraHttpResponseError(`Hydra HTTP request failed with ${status}`, status);
+		const transport = {
+			get: async <T>(url: string): Promise<T> => {
+				if (url === '/snapshot/last-seen') return { tag: roundTag, lastSeen: 7 } as T;
+				throw error;
+			},
+		};
+		return { error, transport };
+	}
+
+	// hydra-node answers 404 for an Idle head, which is where a head ends after
+	// fanout, and an Idle head reports NoSeenSnapshot.
+	it('reads a node that holds no head as holding no deposit', async () => {
+		const { transport } = refusingSnapshot(404, 'NoSeenSnapshot');
+
+		await expect(fetchHydraAcknowledgedDeposits(transport)).resolves.toEqual([]);
+	});
+
+	// A Closed head reports LastSeenSnapshot, so a 404 beside it came from
+	// something in front of the node, not from an Idle head.
+	it.each([
+		['a 404 beside a round tag an Idle head never reports', 404, 'LastSeenSnapshot'],
+		['a 409', 409, 'NoSeenSnapshot'],
+		['a 503', 503, 'NoSeenSnapshot'],
+	])('passes on %s from the confirmed snapshot', async (_label, status, roundTag) => {
+		const { error, transport } = refusingSnapshot(status, roundTag);
+
+		await expect(fetchHydraAcknowledgedDeposits(transport)).rejects.toBe(error);
+	});
+
+	it.each([
+		['null', null],
+		['absent', undefined],
+		['empty', {}],
+	])('reads a snapshot whose utxoToCommit is %s as holding no deposit', async (_label, utxoToCommit) => {
+		const transport = nodeAnswering(confirmed({ utxoToCommit, depositTxId: null }));
+
+		await expect(fetchHydraAcknowledgedDeposits(transport)).resolves.toEqual([]);
+	});
+
+	it('reads a head still on its initial snapshot as holding no deposit', async () => {
+		const transport = nodeAnswering({ tag: 'InitialSnapshot', headId: 'cc'.repeat(28) });
+
+		await expect(fetchHydraAcknowledgedDeposits(transport)).resolves.toEqual([]);
+	});
+
+	it('refuses an answer it cannot read, rather than reporting no deposit', async () => {
+		const transport = nodeAnswering({ tag: 'ConfirmedSnapshot', snapshot: { utxoToCommit: 'not-a-map' } });
+
+		await expect(fetchHydraAcknowledgedDeposits(transport)).rejects.toBeInstanceOf(HydraProtocolError);
+	});
+
+	// This node has signed it, so the round can still confirm once the other
+	// signatures arrive.
+	it('reads the deposit a round this node has signed holds', async () => {
+		const seen = {
+			tag: 'SeenSnapshot',
+			snapshot: snapshotBody({ utxoToCommit: { [`${DEPOSIT_TX}#0`]: OUTPUT }, depositTxId: DEPOSIT_TX }),
+			signatories: {},
+		};
+
+		await expect(fetchHydraAcknowledgedDeposits(nodeAnswering(confirmed(NO_DEPOSIT), seen))).resolves.toEqual([
+			DEPOSIT_TX.toLowerCase(),
+		]);
+	});
+
+	it('reads a round this node has only requested as holding no deposit', async () => {
+		const requested = { tag: 'RequestedSnapshot', lastSeen: 7, requested: 8 };
+
+		await expect(fetchHydraAcknowledgedDeposits(nodeAnswering(confirmed(NO_DEPOSIT), requested))).resolves.toEqual([]);
+	});
+
+	it.each([
+		['a round tag it does not know', { tag: 'FutureSnapshot' }],
+		['a signed round without its snapshot', { tag: 'SeenSnapshot', signatories: {} }],
+	])('refuses %s, rather than reporting no deposit', async (_label, lastSeen) => {
+		await expect(fetchHydraAcknowledgedDeposits(nodeAnswering(confirmed(NO_DEPOSIT), lastSeen))).rejects.toBeInstanceOf(
+			HydraProtocolError,
+		);
 	});
 });

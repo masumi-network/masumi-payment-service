@@ -17,7 +17,8 @@ export const HYDRA_HEAD_STATUS_RANK: Record<HydraHeadStatus, number> = {
 	[HydraHeadStatus.Open]: 2,
 	[HydraHeadStatus.Closed]: 3,
 	[HydraHeadStatus.FanoutPossible]: 4,
-	[HydraHeadStatus.Final]: 5,
+	[HydraHeadStatus.FanningOut]: 5,
+	[HydraHeadStatus.Final]: 6,
 };
 
 export type LockedHydraHeadLifecycle = {
@@ -28,6 +29,7 @@ export type LockedHydraHeadLifecycle = {
 	headIdentifier: string | null;
 	fanoutTxHash: string | null;
 	ownerEpoch: bigint;
+	retiredAt: Date | null;
 };
 
 export type RegressiveStatusResult =

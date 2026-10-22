@@ -6,21 +6,27 @@
  * every party, so nothing new enters the head: the node only discards the round
  * in flight and its unconfirmed local transactions, which a round that can never
  * complete would never have confirmed anyway. hydra-host's `unwedge` does the
- * same after an undrained restart; this is the live, operator-approved path.
+ * same after an undrained restart when `HYDRA_HOST_AUTO_SIDELOAD` is on; this is
+ * the live, operator-approved path.
  *
  * Every precondition is re-checked here, against live node state, because the
  * request only carries what the admin saw:
  * - the session for this head is held by this instance (the ownership fence);
  * - the round in flight is the exact round the admin approved (no stale UI);
  * - that round has been recorded unchanged for the stuck threshold;
+ * - the counterparty has not confirmed a later snapshot than this node, and is
+ *   not more than one behind it (its operator reports that number);
  * - the body posted is the node's own `GET /snapshot`, never client input, and
- *   it is the pinned head's snapshot at the number this service verified.
+ *   it is the pinned head's snapshot at the number this service verified;
+ * - that snapshot holds no deposit the chain has not settled yet.
  */
 import createHttpError from 'http-errors';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTransportAmbiguousError } from '@/lib/hydra';
+import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
+import { extractCommitNotSettled } from '@/lib/hydra/hydra/head-output-tx';
 import { fetchHydraSnapshotRound, type HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
 import { hydraConfirmedSnapshotSchema } from '@/lib/hydra/hydra/schemas';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
@@ -93,11 +99,12 @@ async function loadOwnedHead(headId: string): Promise<{ head: HeadRow; node: Hyd
 	return { head, node };
 }
 
-async function readRound(node: HydraNode): Promise<HydraSnapshotRound> {
+async function readRound(node: HydraNode, hydraHeadId: string): Promise<HydraSnapshotRound> {
 	try {
 		return await fetchHydraSnapshotRound(node);
 	} catch (error) {
 		logger.warn('[HydraSnapshotRound] could not read the snapshot round', {
+			hydraHeadId,
 			error: error instanceof Error ? error.message : 'Unknown error',
 		});
 		throw createHttpError(502, 'Could not read the snapshot round from the Hydra node');
@@ -123,7 +130,7 @@ function toStatus(head: HeadRow, round: HydraSnapshotRound, now: Date): Snapshot
 }
 
 /**
- * The checks above awaited the node twice. Before the side-load, confirm this
+ * The checks above awaited the node three times. Before the side-load, confirm this
  * instance still holds the same session, the service still verifies the same
  * snapshot, and no other attachment or close started meanwhile.
  */
@@ -135,7 +142,7 @@ async function assertStillOwned(
 ): Promise<void> {
 	// The round can complete while the confirmed snapshot is read; a reset then
 	// would side-load a snapshot older than the one just confirmed.
-	const roundNow = await readRound(node);
+	const roundNow = await readRound(node, head.id);
 	const current = await prisma.hydraHead.findUnique({ where: { id: head.id }, select: headSelect });
 	if (
 		getHydraConnectionManager().getNode(head.id) !== node ||
@@ -152,17 +159,62 @@ async function assertStillOwned(
 	}
 }
 
+/**
+ * Refuse a reset while the confirmed snapshot holds a deposit that the chain
+ * has not settled.
+ *
+ * A side-load clears the node's record of the deposit in flight. While the
+ * confirmed snapshot holds a commit that the chain has not settled, this node,
+ * when it leads, can then request a snapshot with a different deposit, which
+ * every node rejects (hydra-node 2.4.1 `ReqSnCommitNotSettled`), so the head
+ * stalls again after a reset that reported success. Whether that happens
+ * depends on deposit state that the node's HTTP API does not report, so this
+ * refuses every case.
+ *
+ * `GET /head` carries the snapshot more than once, so a large head can outgrow
+ * the byte limit for good. An answer the client cannot use, such as one over
+ * the byte limit, lets the reset go ahead as it did before this check:
+ * refusing would block the only live recovery for that head.
+ */
+async function assertCommitSettled(node: HydraNode, hydraHeadId: string): Promise<void> {
+	let headState: unknown;
+	try {
+		headState = await node.get('/head');
+	} catch (error) {
+		if (!(error instanceof HydraProtocolError)) {
+			logger.warn('[HydraSnapshotRound] could not read the head state', {
+				hydraHeadId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+			throw createHttpError(502, 'Could not read the head state from the Hydra node');
+		}
+		logger.warn('[HydraSnapshotRound] could not use the head state; resetting without the deposit check', {
+			hydraHeadId,
+			error: error.message,
+		});
+		return;
+	}
+	if (extractCommitNotSettled(headState)) {
+		throw createHttpError(
+			409,
+			'The confirmed snapshot holds a deposit that the chain has not settled yet, and a reset now can stall the head again at the next deposit. Wait until the head absorbs the deposit, then retry. If the deposit passes its deadline first, close the head',
+		);
+	}
+}
+
 export async function getSnapshotRoundStatus(headId: string): Promise<SnapshotRoundStatus> {
 	const { head, node } = await loadOwnedHead(headId);
-	return toStatus(head, await readRound(node), new Date());
+	return toStatus(head, await readRound(node, head.id), new Date());
 }
 
 export async function resetSnapshotRound(params: {
 	headId: string;
 	expectedSignature: string;
+	/** The confirmed snapshot number the counterparty's node reports, as its operator relays it. */
+	peerConfirmedSnapshotNumber: number;
 	actorApiKeyId: string;
 }): Promise<ResetSnapshotRoundResult> {
-	const { headId, expectedSignature, actorApiKeyId } = params;
+	const { headId, expectedSignature, peerConfirmedSnapshotNumber, actorApiKeyId } = params;
 	if (resetsInFlight.has(headId)) throw createHttpError(409, 'A reset of this head is already running');
 	resetsInFlight.add(headId);
 	try {
@@ -170,7 +222,7 @@ export async function resetSnapshotRound(params: {
 		if (!head.isEnabled) throw createHttpError(409, 'Cannot reset a round in a disabled Hydra head');
 		if (head.isClosing) throw createHttpError(409, 'Cannot reset a round in a Hydra head that is closing');
 
-		const round = await readRound(node);
+		const round = await readRound(node, head.id);
 		if (!round.inFlight) throw createHttpError(409, 'No snapshot round is in flight; nothing to reset');
 		// An unknown tag counts as in flight for the watch, but without a number
 		// nothing shows the round is ahead of the confirmed snapshot.
@@ -211,7 +263,37 @@ export async function resetSnapshotRound(params: {
 		if (round.number <= snapshot.number) {
 			throw createHttpError(409, 'The round in flight is not newer than the confirmed snapshot');
 		}
+		// The side-load throws away the round in flight. If the counterparty already
+		// confirmed it, this node is the one behind, and the reset leaves it there
+		// without its copy of the round. Hydra refuses a side-load below a
+		// node's confirmed number, so the counterparty cannot step back; only this
+		// node adopting the counterparty's snapshot brings the two together again.
+		// Its API is not reachable from here, so its operator reports the number.
+		if (peerConfirmedSnapshotNumber > snapshot.number) {
+			throw createHttpError(
+				409,
+				`The counterparty has confirmed snapshot ${peerConfirmedSnapshotNumber}, ahead of this node's ${snapshot.number}. ` +
+					'Check the number with its operator. Do not reset: resetting does not help, because this node stays behind and drops its copy of that round. ' +
+					'If the number is right, this node has to adopt the counterparty’s confirmed snapshot, which this endpoint does not do. ' +
+					'If Hydra refuses that side-load, close the head: the counterparty’s node contests with its later snapshot',
+			);
+		}
+		// Within the protocol a party signs snapshot n only once it confirmed n - 1,
+		// and n confirms only with every party's signature, so two confirmed numbers
+		// are never more than one apart. Further behind is a typo, a number read for
+		// an earlier round, or a counterparty node that lost or restored its state.
+		// Resetting this node fixes none of those.
+		if (peerConfirmedSnapshotNumber < snapshot.number - 1) {
+			throw createHttpError(
+				409,
+				`The counterparty reports snapshot ${peerConfirmedSnapshotNumber}, more than one behind this node's ${snapshot.number}. ` +
+					'Within the protocol two parties are never more than one snapshot apart, so the number is wrong or the counterparty’s node lost or restored its state. ' +
+					'Check the number with its operator. Do not reset yet: if the number is right, the counterparty has to adopt this node’s confirmed snapshot, and if Hydra refuses that, close the head. ' +
+					`Once its node reports snapshot ${snapshot.number}, reset this node`,
+			);
+		}
 
+		await assertCommitSettled(node, head.id);
 		await assertStillOwned(head, node, verifiedNumber, round.signature);
 
 		logger.warn('[HydraSnapshotRound] admin is resetting a stuck snapshot round', {
@@ -223,12 +305,16 @@ export async function resetSnapshotRound(params: {
 			droppedTxIds: round.txIds,
 			stuckSince: status.since?.toISOString(),
 			confirmedSnapshotNumber: snapshot.number,
+			peerConfirmedSnapshotNumber,
 		});
 		try {
 			await node.post('/snapshot', confirmed);
 		} catch (error) {
 			if (error instanceof HydraTransportAmbiguousError) {
-				throw createHttpError(504, 'The node did not answer the reset; check the round before retrying');
+				throw createHttpError(
+					504,
+					"The node did not answer the reset; check the round and ask for the counterparty's snapshot number again before retrying",
+				);
 			}
 			logger.warn('[HydraSnapshotRound] node refused the reset', {
 				hydraHeadId: head.id,
@@ -248,7 +334,7 @@ export async function resetSnapshotRound(params: {
 			// then only drops our unconfirmed transactions again.
 			throw createHttpError(
 				502,
-				'Our node is in the same round after the reset. The other party may have proposed it again; reset their node before retrying.',
+				'Our node is in the same round after the reset. The other party may have proposed it again; ask its operator to reset it, then ask for its snapshot number again before retrying.',
 			);
 		}
 		if (after) {

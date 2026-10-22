@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { resolveSubmitResultConstrainAfterMs, SubmitResultWindowClosedError } from './service';
+import { resolveSubmitResultConstrainAfterMs, SubmitResultWindowClosedError } from './window';
 
 const NOW = 1_800_000_000_000;
 const MINUTE = 60_000;

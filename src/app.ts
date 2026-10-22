@@ -7,6 +7,7 @@ import { router } from '@/routes/index';
 import ui, { JsonObject } from 'swagger-ui-express';
 import { generateOpenAPI } from '@/utils/generator/swagger-generator';
 import { cleanupDB, initDB, prisma } from '@masumi/payment-core/db';
+import { ApiKeyStatus } from '@/generated/prisma/client';
 import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from '@masumi/payment-core/config';
@@ -14,6 +15,7 @@ import { requestLogger } from '@/utils/middleware/request-logger';
 import { robotsNoindex, serveRobotsTxt } from '@/utils/middleware/robots-noindex';
 import { allowSameOriginFraming } from '@/utils/middleware/allow-same-origin-framing';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
+import { usesPublicEncryptionKey } from '@/utils/security/public-encryption-key';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
 import { backfillTransactionAgentIdentifiers } from '@/utils/startup-migrations/backfill-transaction-agent-identifiers';
@@ -37,11 +39,12 @@ async function initialize() {
 	await backfillTransactionAgentNames();
 	await warnOutOfSyncV2PaymentSources();
 
+	// Public keys only warn, by design: see docs/security.md, Accepted Risks #4.
 	const publicAdminHashes = await Promise.all(
 		[DEFAULTS.DEFAULT_ADMIN_KEY, DEFAULTS.EXAMPLE_ADMIN_KEY].map((key) => generateApiKeySecureHash(key)),
 	);
 	const publicKeyRow = await prisma.apiKey.findFirst({
-		where: { tokenHash: { in: publicAdminHashes } },
+		where: { tokenHash: { in: publicAdminHashes }, status: ApiKeyStatus.Active },
 		select: { id: true },
 	});
 	if (publicKeyRow !== null) {
@@ -51,7 +54,7 @@ async function initialize() {
 		logger.warn('*  set a secure ADMIN_KEY in .env before seeding or change it in the admin tool now   *');
 		logger.warn('*****************************************************************');
 	}
-	if (CONFIG.ENCRYPTION_KEY?.trim() === DEFAULTS.EXAMPLE_ENCRYPTION_KEY) {
+	if (usesPublicEncryptionKey()) {
 		logger.warn('*****************************************************************');
 		logger.warn('*  WARNING: ENCRYPTION_KEY is the public .env.example value.     *');
 		logger.warn('*  A database copy exposes every encrypted secret. Use it only   *');

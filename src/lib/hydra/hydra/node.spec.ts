@@ -1,10 +1,18 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { createPrivateKey, createPublicKey, sign as signEd25519, type KeyObject } from 'node:crypto';
 import { resolveTxHash } from '@meshsdk/core';
 import {
 	Address,
+	AssetName,
+	Assets,
 	BigNum,
+	Int,
+	Mint,
+	MintAssets,
+	MultiAsset,
+	ScriptHash,
 	Transaction,
 	TransactionBody,
 	TransactionHash,
@@ -17,7 +25,9 @@ import {
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
+import type { L2MintIncident } from './l2-mint-tally';
 import {
+	HydraCommandRefusedUnsyncedError,
 	HydraProtocolError,
 	HydraTransactionRejectedError,
 	HydraTransportAmbiguousError,
@@ -42,6 +52,15 @@ class MockConnection extends EventEmitter {
 		.mockResolvedValue(undefined);
 	isOpen = jest.fn<() => boolean>().mockReturnValue(false);
 	invalidate = jest.fn<(error: Error) => void>();
+	restart = jest.fn<(error: Error) => void>();
+	openCount = 0;
+
+	constructor() {
+		super();
+		this.on('open', () => {
+			this.openCount += 1;
+		});
+	}
 }
 
 let mockConnectionInstance: MockConnection;
@@ -151,6 +170,49 @@ function makeSpendingHydraTransaction(inputTxHash: string, inputIndex: number, o
 		description: '',
 		txId: String(resolveTxHash(cborHex)).toLowerCase(),
 	};
+}
+
+const MINT_POLICY_ID = 'ab'.repeat(28);
+const MINT_ASSET_NAME = '6576696c';
+
+/** Spends output 0 of `inputTxHash` and mints (positive) or burns (negative) one asset. */
+function makeMintingHydraTransaction(inputTxHash: string, outputLovelace: number, mintQuantity: number) {
+	const inputs = TransactionInputs.new();
+	inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(inputTxHash, 'hex')), 0));
+	const value = Value.new(BigNum.from_str(String(outputLovelace)));
+	if (mintQuantity > 0) {
+		const assets = Assets.new();
+		assets.insert(AssetName.new(Buffer.from(MINT_ASSET_NAME, 'hex')), BigNum.from_str(String(mintQuantity)));
+		const multiAsset = MultiAsset.new();
+		multiAsset.insert(ScriptHash.from_hex(MINT_POLICY_ID), assets);
+		value.set_multiasset(multiAsset);
+	}
+	const outputs = TransactionOutputs.new();
+	outputs.add(TransactionOutput.new(Address.from_bech32(TEST_ADDRESS), value));
+	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+	const mintAssets = MintAssets.new();
+	mintAssets.insert(
+		AssetName.new(Buffer.from(MINT_ASSET_NAME, 'hex')),
+		mintQuantity < 0
+			? Int.new_negative(BigNum.from_str(String(-mintQuantity)))
+			: Int.new(BigNum.from_str(String(mintQuantity))),
+	);
+	body.set_mint(Mint.new_from_entry(ScriptHash.from_hex(MINT_POLICY_ID), mintAssets));
+	const cborHex = Buffer.from(Transaction.new(body, TransactionWitnessSet.new()).to_bytes()).toString('hex');
+	return {
+		type: HydraTransactionType.TxConwayEra,
+		cborHex,
+		description: '',
+		txId: String(resolveTxHash(cborHex)).toLowerCase(),
+	};
+}
+
+/** A snapshot output holding one unit of the test mint. */
+function mintedTokenOutput(lovelace: number): TestSnapshotOutput {
+	return {
+		...snapshotOutput(lovelace),
+		value: { lovelace, [MINT_POLICY_ID]: { [MINT_ASSET_NAME]: 1 } },
+	} as unknown as TestSnapshotOutput;
 }
 
 function signedSnapshotFrame(options: {
@@ -306,6 +368,34 @@ function finishHistoryReplay(historyConnection: MockConnection): void {
 	historyConnection.emit('message', JSON.stringify(liveGreetings()));
 }
 
+/** What hydra-node greets with once it is Idle, after a fanout or a rollback through Init. */
+function headlessIdleGreetings() {
+	return { ...liveGreetings(), headStatus: 'Idle', hydraHeadId: undefined };
+}
+
+/** The whole history a node serves after it fanned out the signed chain. */
+function finalizedHistory() {
+	const chain = signedHistoryChain();
+	const fanoutTxHash = '55'.repeat(32);
+	return {
+		finalReference: `${chain.transactions[2].txId}#0`,
+		fanoutTxHash,
+		frames: [
+			headIsOpen(),
+			...chain.frames,
+			// Closed on an older snapshot, then contested with the final one.
+			{ tag: 'HeadIsClosed', headId: HEAD_ID_A, snapshotNumber: 2, contestationDeadline: '2026-07-22T11:30:00Z' },
+			{ tag: 'HeadIsContested', headId: HEAD_ID_A, snapshotNumber: 3, contestationDeadline: '2026-07-22T11:30:00Z' },
+			{
+				tag: 'HeadIsFinalized',
+				headId: HEAD_ID_A,
+				finalizedUTxO: { [`${fanoutTxHash}#0`]: snapshotOutput(7_000_000) },
+			},
+			headlessIdleGreetings(),
+		],
+	};
+}
+
 describe('HydraNode', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -455,6 +545,31 @@ describe('HydraNode', () => {
 			expect(statuses).toEqual([HydraHeadStatus.Closed]);
 		});
 
+		// A contest leaves the head Closed but makes its snapshot the one the fanout
+		// must match. The handoff checks the fanout against the persisted number.
+		it('emits StatusChange with the contested snapshot when HeadIsContested received', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+
+			const changes: unknown[] = [];
+			node.on(HydraNodeEvent.StatusChange, (data) => changes.push(data));
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'HeadIsClosed', headId: HEAD_ID_A, snapshotNumber: 3 }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'HeadIsContested', headId: HEAD_ID_A, snapshotNumber: 5 }),
+			);
+
+			expect(changes).toEqual([
+				expect.objectContaining({ status: HydraHeadStatus.Closed, snapshotNumber: 3 }),
+				expect.objectContaining({ status: HydraHeadStatus.Closed, headId: HEAD_ID_A, snapshotNumber: 5 }),
+			]);
+			expect(node.status).toBe(HydraHeadStatus.Closed);
+		});
+
 		it('emits StatusChange with FanoutPossible when ReadyToFanout received', () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();
@@ -596,6 +711,191 @@ describe('HydraNode', () => {
 		});
 	});
 
+	// The node posts some L1 transactions on its own, a contest above all: when a
+	// peer closes on an old snapshot it answers with ContestTx without being
+	// asked. If that post fails, no command is waiting on it, so the frame used to
+	// be read and dropped and the failure left no trace. Frames below use the real
+	// hydra-node shape: no top-level head id, the head named inside postChainTx.
+	describe('PostTxOnChainFailed processing', () => {
+		function failureEvents(node: { on(event: string, listener: (data: unknown) => void): unknown }) {
+			const events: unknown[] = [];
+			node.on(HydraNodeEvent.PostTxFailed, (data) => events.push(data));
+			return events;
+		}
+
+		function postTxFailedFrame(
+			postChainTx: { tag: string; headId?: string },
+			postTxError: { tag: string; failureReason?: string },
+		) {
+			return JSON.stringify({ tag: 'PostTxOnChainFailed', postChainTx, postTxError });
+		}
+
+		async function pinnedNode() {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const connectPromise = node.connect();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Open', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+			return node;
+		}
+
+		it('reports a failed contest with the transaction and the node reason', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+
+			expect(events).toEqual([
+				{ postChainTxTag: 'ContestTx', reason: expect.stringContaining('NotEnoughFuel'), answersCommand: false },
+			]);
+		});
+
+		it.each(['DecrementTx', 'IncrementTx', 'RecoverTx', 'FanoutTx'])('reports a failed %s too', (tag) => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag }, { tag: 'FailedToPostTx' }));
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: tag })]);
+		});
+
+		// Reported, not dropped: a failure whose shape we cannot read is still a failure.
+		it('reports a failure it cannot read as an unknown transaction', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'PostTxOnChainFailed',
+					postChainTx: { tag: 42 },
+					postTxError: { tag: 'FailedToPostTx' },
+				}),
+			);
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+
+			expect(events).toEqual([
+				expect.objectContaining({ postChainTxTag: 'unknown' }),
+				expect.objectContaining({ postChainTxTag: 'unknown', reason: 'no reason given' }),
+			]);
+		});
+
+		it('reports only the failures that name the pinned head', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: 'b'.repeat(56) }, { tag: 'FailedToPostTx' }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A.toUpperCase() }, { tag: 'FailedToPostTx' }),
+			);
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+		});
+
+		// Held like a settlement outcome: a frame that arrives before the session
+		// proves its identity is emitted once it does, not dropped.
+		it('holds a failure seen before the session is authenticated until it is', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001', expectedHeadId: HEAD_ID_A });
+			const events = failureEvents(node);
+			// The manager records the failure with the status it reads at this moment.
+			const statusAtFailure: HydraHeadStatus[] = [];
+			node.on(HydraNodeEvent.PostTxFailed, () => statusAtFailure.push(node.status));
+			const connectPromise = node.connect();
+
+			mockConnectionInstance.emit('message', postTxFailedFrame({ tag: 'ContestTx' }, { tag: 'NotEnoughFuel' }));
+			expect(events).toEqual([]);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Greetings', headStatus: 'Closed', hydraHeadId: HEAD_ID_A }),
+			);
+			await connectPromise;
+
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'ContestTx' })]);
+			expect(statusAtFailure).toEqual([HydraHeadStatus.Closed]);
+		});
+
+		// The node said an L1 post failed but not which. Waiting out the full
+		// timeout for a Close that may be the one that failed helps no one.
+		it('fails a waiting Close at once on a failure that names no transaction', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The caller's row quotes the node's reason too.
+			await expect(closePromise).rejects.toThrow(/unnamed failed L1 transaction/);
+			// Not marked as the command's: the Init route can settle an ambiguous Init
+			// without a record, so the manager keeps the only sure one.
+			expect(events).toEqual([expect.objectContaining({ postChainTxTag: 'unknown', answersCommand: false })]);
+		});
+
+		// The live path ignores a failure for another head, so a waiting Close must
+		// too: otherwise the Close fails on a frame nothing else records.
+		it('keeps a waiting Close for a failure that names another head', async () => {
+			const node = await pinnedNode();
+			const closePromise = node.close();
+			let isSettled = false;
+			void closePromise.catch(() => undefined).finally(() => (isSettled = true));
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_B }, { tag: 'NotEnoughFuel' }),
+			);
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(isSettled).toBe(false);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			await expect(closePromise).rejects.toThrow(/NotEnoughFuel/);
+		});
+
+		// The waiting Close reports its own failure, so the event says so and the
+		// manager does not write the same failure twice.
+		it('marks a failure a waiting command answers, and only that one', async () => {
+			const node = await pinnedNode();
+			const events = failureEvents(node);
+
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'ContestTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+			await expect(closePromise).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+			// The caller's CommandFailed row is now the only record, so it keeps the reason.
+			await expect(closePromise).rejects.toThrow(/NotEnoughFuel/);
+			mockConnectionInstance.emit(
+				'message',
+				postTxFailedFrame({ tag: 'CloseTx', headId: HEAD_ID_A }, { tag: 'NotEnoughFuel' }),
+			);
+
+			expect(events).toEqual([
+				expect.objectContaining({ postChainTxTag: 'ContestTx', answersCommand: false }),
+				expect.objectContaining({ postChainTxTag: 'CloseTx', answersCommand: true }),
+				expect.objectContaining({ postChainTxTag: 'CloseTx', answersCommand: false }),
+			]);
+		});
+	});
+
 	describe('unsigned SnapshotConfirmed processing', () => {
 		it('fails closed, invalidates the history socket, and retains no evidence', async () => {
 			const { node, historyConnection } = await startSignedNode();
@@ -652,6 +952,125 @@ describe('HydraNode', () => {
 			liveConnection.emit('message', JSON.stringify(liveGreetings()));
 			expect(node.status).toBe(HydraHeadStatus.Open);
 			expect(node.getVerifiedFanoutReference(hydraReference, 3)).toBeNull();
+		});
+
+		// A peer can mint through its own node, and Hydra cannot finalize a head
+		// that still holds the token. Replay has to name the unit so our own
+		// spending leaves it alone, name nothing before the whole history is in,
+		// and drop the unit once it is burned.
+		it('tracks units minted in the head and not burned', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
+			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
+			const frames = [
+				signedSnapshotFrame({
+					seq: 1,
+					number: 1,
+					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
+					confirmed: [],
+				}),
+				signedSnapshotFrame({
+					seq: 2,
+					number: 2,
+					utxo: { [`${mintTx.txId}#0`]: mintedTokenOutput(9_000_000) },
+					confirmed: [mintTx],
+				}),
+				signedSnapshotFrame({
+					seq: 3,
+					number: 3,
+					utxo: { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) },
+					confirmed: [burnTx],
+				}),
+			];
+			for (const frame of frames.slice(0, 2)) historyConnection.emit('message', JSON.stringify(frame));
+
+			expect(node.l2MintCheck).toBeUndefined();
+			finishHistoryReplay(historyConnection);
+			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set([`${MINT_POLICY_ID}${MINT_ASSET_NAME}`]));
+			expect(node.l2MintCheck?.verifiedOutputs.has(`${mintTx.txId}#0`)).toBe(true);
+
+			// A new history socket replays from the start. Counting the mint again
+			// on top of the old pass would leave the unit flagged after its burn.
+			historyConnection.emit('close');
+			expect(node.l2MintCheck).toBeUndefined();
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			expect(node.l2MintCheck?.unburnedUnits).toEqual(new Set());
+			expect(node.l2MintCheck?.verifiedOutputs.has(`${burnTx.txId}#0`)).toBe(true);
+		});
+
+		// The operator record is written from this event. It must not fire for
+		// history still being read, must fire again on a later pass so a restart
+		// cannot lose it, and must name the transaction that opened the incident.
+		it('reports an unburned mint once the replay is current', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const reported: string[] = [];
+			node.on(HydraNodeEvent.L2MintOutstanding, (incident: L2MintIncident) => reported.push(incident.txHash));
+			const mintTx = makeMintingHydraTransaction('11'.repeat(32), 9_000_000, 1);
+			const burnTx = makeMintingHydraTransaction(mintTx.txId, 8_000_000, -1);
+			const remintTx = makeMintingHydraTransaction(burnTx.txId, 7_000_000, 1);
+			const laterTx = makeMintingHydraTransaction(remintTx.txId, 6_000_000, 1);
+			const history = [
+				signedSnapshotFrame({
+					seq: 1,
+					number: 1,
+					utxo: { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) },
+					confirmed: [],
+				}),
+				signedSnapshotFrame({
+					seq: 2,
+					number: 2,
+					utxo: { [`${mintTx.txId}#0`]: mintedTokenOutput(9_000_000) },
+					confirmed: [mintTx],
+				}),
+			];
+			for (const frame of history) historyConnection.emit('message', JSON.stringify(frame));
+			expect(reported).toEqual([]);
+			finishHistoryReplay(historyConnection);
+			expect(reported).toEqual([mintTx.txId]);
+
+			historyConnection.emit('close');
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			for (const frame of history) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			expect(reported).toEqual([mintTx.txId, mintTx.txId]);
+
+			// Live from here: the burn closes the incident, the next mint opens a
+			// new one, and each later snapshot reports it again while it is open.
+			const live = [
+				signedSnapshotFrame({
+					seq: 3,
+					number: 3,
+					utxo: { [`${burnTx.txId}#0`]: snapshotOutput(8_000_000) },
+					confirmed: [burnTx],
+				}),
+				signedSnapshotFrame({
+					seq: 4,
+					number: 4,
+					utxo: { [`${remintTx.txId}#0`]: mintedTokenOutput(7_000_000) },
+					confirmed: [remintTx],
+				}),
+				signedSnapshotFrame({
+					seq: 5,
+					number: 5,
+					utxo: { [`${laterTx.txId}#0`]: mintedTokenOutput(6_000_000) },
+					confirmed: [laterTx],
+				}),
+			];
+			for (const frame of live) historyConnection.emit('message', JSON.stringify(frame));
+			expect(reported).toEqual([mintTx.txId, mintTx.txId, remintTx.txId, remintTx.txId]);
+		});
+
+		// A head with no signed snapshot, or a node rebuilt from L1, states its
+		// ledger only in Greetings. No transaction behind it was tallied, so a
+		// token there must not pass as checked.
+		it('vouches for no output on the unsigned Greetings anchor', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const snapshotUtxo = { [`${'22'.repeat(32)}#0`]: mintedTokenOutput(9_000_000) };
+			historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), snapshotUtxo }));
+
+			expect(node.l2MintCheck).toEqual({ unburnedUnits: new Set(), verifiedOutputs: new Map() });
 		});
 
 		// Hydra 2.2.0 renamed HeadIsFinalized's `utxo` to `finalizedUTxO`, and 2.3.0
@@ -736,6 +1155,113 @@ describe('HydraNode', () => {
 					snapshotNumber: 2,
 				}),
 			);
+		});
+
+		// hydra-node 2.4.1 keys the outputs of earlier partial fanout steps by their
+		// in-head reference. Resolving one of those as an L1 reference sent the
+		// handoff to an output that does not exist on L1.
+		describe('a fanout over several L1 steps', () => {
+			const partialStepHash = '59'.repeat(32);
+			const terminalHash = '5a'.repeat(32);
+
+			async function finalizedOverTwoSteps() {
+				const started = await startSignedNode();
+				const chain = signedTwoOutputHistory();
+				for (const frame of chain.frames) started.historyConnection.emit('message', JSON.stringify(frame));
+				finishHistoryReplay(started.historyConnection);
+				const finalized = JSON.stringify({
+					tag: 'HeadIsFinalized',
+					headId: HEAD_ID_A,
+					finalizedUTxO: {
+						// Distributed by the partial step: still under its in-head key.
+						[`${chain.first.txId}#0`]: chain.firstFinalOutput,
+						[`${terminalHash}#0`]: chain.secondFinalOutput,
+					},
+				});
+				started.liveConnection.emit('message', finalized);
+				return { ...started, chain, finalized };
+			}
+
+			it('resolves nothing until the in-head keys are bound to L1', async () => {
+				const { node, chain } = await finalizedOverTwoSteps();
+
+				expect(node.getVerifiedFanoutReferences(2)).toBeNull();
+				expect(node.getVerifiedFanoutReference(`${chain.second.txId}#0`, 2)).toBeNull();
+				expect(node.getFinalizedFanoutBindingInput(2)?.inHeadReferences.has(`${chain.first.txId}#0`)).toBe(true);
+			});
+
+			it('reports a head between partial fanout steps as FanningOut', async () => {
+				const started = await startSignedNode();
+				const chain = signedTwoOutputHistory();
+				for (const frame of chain.frames) started.historyConnection.emit('message', JSON.stringify(frame));
+				finishHistoryReplay(started.historyConnection);
+				const remainingReference = `${chain.second.txId}#0`;
+				started.liveConnection.emit(
+					'message',
+					JSON.stringify({
+						tag: 'HeadPartiallyFannedOut',
+						headId: HEAD_ID_A,
+						seq: 40,
+						distributedUTxO: { [`${chain.first.txId}#0`]: chain.firstFinalOutput },
+						remainingUTxO: { [remainingReference]: chain.secondFinalOutput },
+						fanoutMode: 'AwaitingFanoutSelection',
+					}),
+				);
+
+				expect(started.node.status).toBe(HydraHeadStatus.FanningOut);
+			});
+
+			it('resolves the L1 output the partial step created once a binding is adopted, across a replay', async () => {
+				const { node, chain, finalized, historyConnection } = await finalizedOverTwoSteps();
+				const input = node.getFinalizedFanoutBindingInput(2)!;
+				const bound = new Map([
+					[`${partialStepHash}#1`, input.finalizedOutputs.get(`${chain.first.txId}#0`)!],
+					[`${terminalHash}#0`, input.finalizedOutputs.get(`${terminalHash}#0`)!],
+				]);
+
+				expect(node.adoptFinalizedFanoutL1Binding(2, bound)).toBe(true);
+				// Replay re-reports the same map on every reconnect pass.
+				historyConnection.emit('message', finalized);
+
+				expect(node.getFinalizedFanoutBindingInput(2)).toBeNull();
+				expect(node.getVerifiedFanoutReference(`${chain.first.txId}#0`, 2)).toEqual(
+					expect.objectContaining({ txHash: partialStepHash, outputIndex: 1 }),
+				);
+				expect(node.getVerifiedFanoutReference(`${chain.second.txId}#0`, 2)).toEqual(
+					expect.objectContaining({ txHash: terminalHash, outputIndex: 0 }),
+				);
+			});
+
+			it('refuses a binding that changes anything but the in-head keys', async () => {
+				const { node, chain } = await finalizedOverTwoSteps();
+				const input = node.getFinalizedFanoutBindingInput(2)!;
+				const first = input.finalizedOutputs.get(`${chain.first.txId}#0`)!;
+				const second = input.finalizedOutputs.get(`${terminalHash}#0`)!;
+
+				// The terminal step's L1 entry moved.
+				expect(
+					node.adoptFinalizedFanoutL1Binding(
+						2,
+						new Map([
+							[`${partialStepHash}#1`, first],
+							[`${terminalHash}#1`, second],
+						]),
+					),
+				).toBe(false);
+				// A partial-step output bound to a different value.
+				expect(
+					node.adoptFinalizedFanoutL1Binding(
+						2,
+						new Map([
+							[`${partialStepHash}#1`, second],
+							[`${terminalHash}#0`, second],
+						]),
+					),
+				).toBe(false);
+				// An in-head key left in place.
+				expect(node.adoptFinalizedFanoutL1Binding(2, new Map(input.finalizedOutputs))).toBe(false);
+				expect(node.getVerifiedFanoutReferences(2)).toBeNull();
+			});
 		});
 
 		it('refuses candidate ownership when two final outputs have identical serialized values', async () => {
@@ -1186,7 +1712,7 @@ describe('HydraNode', () => {
 			node.pinExpectedHeadId(HEAD_ID_A);
 
 			expect(node.confirmedTransactionHistoryError).toBeUndefined();
-			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+			expect(historyConnection.restart).toHaveBeenCalledWith(expect.any(HydraTransportError));
 		});
 
 		it('still refuses a pinned page whose Greetings omits the head id at Open', async () => {
@@ -1301,10 +1827,11 @@ describe('HydraNode', () => {
 				}),
 			]);
 			node.markConfirmedTransactionReconciled(transactions[0].txId);
-			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+			expect(historyConnection.restart).not.toHaveBeenCalled();
 			finishHistoryReplay(historyConnection);
 			expect(node.confirmedTransactionHistoryReady).toBe(false);
-			expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
+			expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
 
 			historyConnection.emit('close', new Error('bounded page restart'));
 			historyConnection.emit('message', JSON.stringify(headIsOpen()));
@@ -1318,7 +1845,7 @@ describe('HydraNode', () => {
 				}),
 			]);
 			node.markConfirmedTransactionReconciled(transactions[1].txId);
-			expect(historyConnection.invalidate).toHaveBeenCalledTimes(2);
+			expect(historyConnection.restart).toHaveBeenCalledTimes(2);
 
 			historyConnection.emit('close', new Error('bounded page restart'));
 			historyConnection.emit('message', JSON.stringify(headIsOpen()));
@@ -1344,6 +1871,24 @@ describe('HydraNode', () => {
 				transactions[0].txId,
 				transactions[1].txId,
 			]);
+		});
+
+		// hydra-node subscribes the socket to live outputs before it streams the
+		// history, so an output persisted mid-replay is sent again after Greetings.
+		it('drops a live copy of a frame the history already delivered, and keeps recording', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const { frames, transactions } = signedHistoryChain();
+			historyConnection.emit('message', JSON.stringify(frames[0]));
+			historyConnection.emit('message', JSON.stringify(frames[1]));
+			finishHistoryReplay(historyConnection);
+			historyConnection.emit('message', JSON.stringify(frames[1]));
+
+			expect(node.confirmedTransactionHistoryError).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(true);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+
+			historyConnection.emit('message', JSON.stringify(frames[2]));
+			expect(node.getConfirmedTransaction(transactions[2].txId)).not.toBeNull();
 		});
 
 		it('rejects out-of-order durable cursor advancement', async () => {
@@ -1426,6 +1971,19 @@ describe('HydraNode', () => {
 			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
 		});
 
+		// The backstop. Consolidate has no earlier check of its own; split,
+		// release nudge and decommit check before they record anything.
+		it('refuses a NewTx or Decommit above the shipped L2 maxTxSize before sending', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const oversized = { type: HydraTransactionType.TxConwayEra, description: '', cborHex: '00'.repeat(15_001) };
+
+			await expect(node.newTx(oversized)).rejects.toThrow('15001 bytes');
+			await expect(node.decommit(oversized)).rejects.toThrow('15001 bytes');
+			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
+			expect(mockFetch).not.toHaveBeenCalled();
+		});
+
 		it('correlates CommandFailed to only the matching concurrent transaction', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();
@@ -1438,6 +1996,54 @@ describe('HydraNode', () => {
 			mockConnectionInstance.emit(
 				'message',
 				JSON.stringify({ tag: 'CommandFailed', clientInput: { tag: 'NewTx', transaction: tx1 } }),
+			);
+			await firstRejection;
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'TxValid', headId: HEAD_ID_A, transactionId: tx2.txId }),
+			);
+
+			await expect(secondSubmit).resolves.toBe(tx2.txId);
+		});
+
+		// An unnamed L1 failure is no answer to an L2 transaction. Failing it as
+		// ambiguous would fail an escrow step closed for nothing.
+		it('keeps waiting on a failed L1 post that names no transaction', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const transaction = makeHydraTransaction(19);
+			const submit = node.newTx(transaction);
+			await Promise.resolve();
+
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'PostTxOnChainFailed' }));
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'TxValid', headId: HEAD_ID_A, transactionId: transaction.txId }),
+			);
+
+			await expect(submit).resolves.toBe(transaction.txId);
+		});
+
+		it('rejects only the transaction a sync refusal echoes, instead of timing out ambiguously', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const tx1 = makeHydraTransaction(41);
+			const tx2 = makeHydraTransaction(42);
+			const firstSubmit = node.newTx(tx1);
+			const secondSubmit = node.newTx(tx2);
+			const firstRejection = expect(firstSubmit).rejects.toThrow(
+				new HydraTransactionRejectedError(
+					`Transaction ${tx1.txId} was refused: the node is not synced with the chain (drift 313s)`,
+				),
+			);
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'RejectedInputBecauseUnsynced',
+					clientInput: { tag: 'NewTx', transaction: tx1 },
+					drift: 312.5,
+				}),
 			);
 			await firstRejection;
 			mockConnectionInstance.emit(
@@ -1595,19 +2201,383 @@ describe('HydraNode', () => {
 		});
 
 		it('accepts only a party-authenticated headless Idle Greetings as a live rollback', async () => {
-			const { node, liveConnection } = await startSignedNode();
+			const { node, historyConnection, liveConnection } = await startSignedNode();
+			const chain = signedHistoryChain();
+			for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
 			const statuses: HydraHeadStatus[] = [];
 			node.on(HydraNodeEvent.StatusChange, (data) => statuses.push((data as { status: HydraHeadStatus }).status));
 
-			liveConnection.emit(
-				'message',
-				JSON.stringify({ ...liveGreetings(), headStatus: 'Idle', hydraHeadId: undefined }),
-			);
+			liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+			// A closed pass cannot tell a fanout still in its queue from a rollback,
+			// so the history is read again first.
+			expect(statuses).toEqual([]);
+			expect(historyConnection.restart).toHaveBeenCalledWith(expect.any(HydraTransportError));
+			historyConnection.emit('close');
+			historyConnection.emit('open');
+			for (const frame of [headIsOpen(), ...chain.frames, headlessIdleGreetings()]) {
+				historyConnection.emit('message', JSON.stringify(frame));
+			}
 
 			expect(node.status).toBe(HydraHeadStatus.Idle);
 			expect(statuses).toContain(HydraHeadStatus.Idle);
 			expect(node.hasVerifiedPinnedSessions).toBe(false);
 			expect(liveConnection.invalidate).not.toHaveBeenCalled();
+		});
+
+		describe('a node that is Idle after the pinned head', () => {
+			const signedConfig = {
+				httpUrl: 'http://localhost:4001',
+				expectedHeadId: HEAD_ID_A,
+				snapshotVerificationKeys: TEST_PARTIES.map(({ cborVerificationKey }) => cborVerificationKey),
+				expectedNodeVerificationKey: TEST_PARTIES[0].cborVerificationKey,
+				trustLocalNodeSnapshotMetadata: true,
+				connectTimeoutMs: 100,
+			};
+
+			function restartedNode(overrides: Partial<ConstructorParameters<typeof HydraNode>[0]> = {}) {
+				const node = new HydraNode({ ...signedConfig, ...overrides });
+				const statuses: unknown[] = [];
+				node.on(HydraNodeEvent.StatusChange, (data) => statuses.push(data));
+				const connectPromise = node.connect();
+				const [historyConnection, liveConnection] = mockConnectionInstances;
+				return { node, statuses, connectPromise, historyConnection, liveConnection };
+			}
+
+			/**
+			 * The live Greetings is headless Idle and no closed pass proves why. The
+			 * pass streaming now may have read the log before the fanout, so it is
+			 * dropped and the history is read again from the start, on a new socket.
+			 */
+			async function holdHeadlessIdle({
+				connectPromise,
+				historyConnection,
+				liveConnection,
+			}: ReturnType<typeof restartedNode>) {
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+				expect(historyConnection.invalidate).not.toHaveBeenCalled();
+				historyConnection.emit('close', new Error('replaying the history again'));
+				historyConnection.emit('open');
+			}
+
+			const finalized = { status: HydraHeadStatus.Final, headId: HEAD_ID_A };
+
+			it('binds a restarted session to the finalized head its replay proves', async () => {
+				const started = restartedNode();
+				const { node, statuses, historyConnection } = started;
+				const history = finalizedHistory();
+				const signedFrames = history.frames.slice(0, -2);
+
+				// The live Greetings comes first; the history takes longer than the connect timeout.
+				await holdHeadlessIdle(started);
+				expect(statuses).toEqual([]);
+				expect(node.hasVerifiedPinnedSessions).toBe(false);
+
+				// Signed confirmations are not handed out until the verdict: a rollback
+				// verdict must close the admission gate before any of them applies.
+				for (const frame of signedFrames) historyConnection.emit('message', JSON.stringify(frame));
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+				expect(node.isTxConfirmed(history.finalReference.split('#')[0])).toBe(false);
+				expect(statuses).toEqual([]);
+
+				for (const frame of history.frames.slice(-2)) historyConnection.emit('message', JSON.stringify(frame));
+				expect(node.getConfirmedTransactionsForReconciliation()).toHaveLength(3);
+
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+				expect(node.confirmedTransactionHistoryError).toBeUndefined();
+				expect(node.confirmedTransactionHistoryReady).toBe(true);
+				expect(node.status).toBe(HydraHeadStatus.Final);
+				// The contest's snapshot, which the handoff checks the fanout against.
+				expect(statuses).toEqual([expect.objectContaining({ ...finalized, snapshotNumber: 3 })]);
+				expect(node.hasVerifiedPinnedSessions).toBe(true);
+				expect(node.getVerifiedFanoutReference(history.finalReference, 3)).toEqual(
+					expect.objectContaining({ txHash: history.fanoutTxHash, outputIndex: 0, snapshotNumber: 3 }),
+				);
+			});
+
+			// The manager records a failure with the status it reads when the event
+			// fires, so a failure held through the hold must come after Final.
+			it('emits a failure held through the hold after the Final status', async () => {
+				const started = restartedNode();
+				const { node, historyConnection, liveConnection } = started;
+				const statusAtFailure: HydraHeadStatus[] = [];
+				node.on(HydraNodeEvent.PostTxFailed, () => statusAtFailure.push(node.status));
+				await holdHeadlessIdle(started);
+				liveConnection.emit(
+					'message',
+					JSON.stringify({
+						tag: 'PostTxOnChainFailed',
+						postChainTx: { tag: 'FanoutTx', headId: HEAD_ID_A },
+						postTxError: { tag: 'NotEnoughFuel' },
+					}),
+				);
+				expect(statusAtFailure).toEqual([]);
+
+				for (const frame of finalizedHistory().frames) historyConnection.emit('message', JSON.stringify(frame));
+
+				expect(statusAtFailure).toEqual([HydraHeadStatus.Final]);
+			});
+
+			// A pass that started after the hold read the log while the node was Idle.
+			// Restarting it on every live re-greet could keep any pass from closing.
+			it('keeps the reread pass across a live re-greet', async () => {
+				const started = restartedNode();
+				const { statuses, historyConnection, liveConnection } = started;
+				const history = finalizedHistory();
+				await holdHeadlessIdle(started);
+				for (const frame of history.frames.slice(0, -2)) historyConnection.emit('message', JSON.stringify(frame));
+
+				liveConnection.emit('close', new Error('live socket dropped'));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				for (const frame of history.frames.slice(-2)) historyConnection.emit('message', JSON.stringify(frame));
+
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+			});
+
+			// A pass that closes while the live socket is down gives no verdict, and
+			// it may be a rollback. Evidence applied meanwhile would land before it.
+			it('keeps replayed evidence held across a live socket close', async () => {
+				const started = restartedNode();
+				const { node, statuses, historyConnection, liveConnection } = started;
+				const history = finalizedHistory();
+				const confirmedTxHash = history.finalReference.split('#')[0];
+				await holdHeadlessIdle(started);
+				for (const frame of history.frames.slice(0, -2)) historyConnection.emit('message', JSON.stringify(frame));
+
+				liveConnection.emit('close', new Error('live socket dropped'));
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+				expect(node.isTxConfirmed(confirmedTxHash)).toBe(false);
+
+				for (const frame of history.frames.slice(-2)) historyConnection.emit('message', JSON.stringify(frame));
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+				expect(statuses).toEqual([]);
+
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+				expect(node.getConfirmedTransactionsForReconciliation()).toHaveLength(3);
+				expect(node.isTxConfirmed(confirmedTxHash)).toBe(true);
+			});
+
+			// A misrouted endpoint can name the head with another party's key.
+			it('keeps replayed evidence held across a live Greetings that fails party identity', async () => {
+				const started = restartedNode();
+				const { node, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+				for (const frame of [headIsOpen(), ...signedHistoryChain().frames]) {
+					historyConnection.emit('message', JSON.stringify(frame));
+				}
+
+				liveConnection.emit('close', new Error('live socket dropped'));
+				const foreignGreetings = { ...liveGreetings(), me: { vkey: TEST_PARTIES[1].rawVerificationKey } };
+				liveConnection.emit('message', JSON.stringify(foreignGreetings));
+
+				expect(liveConnection.invalidate).toHaveBeenCalled();
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+			});
+
+			it('binds at once when the replay proved the finalization before the live Greetings', async () => {
+				const { node, statuses, connectPromise, historyConnection, liveConnection } = restartedNode();
+				const history = finalizedHistory();
+
+				for (const frame of history.frames) historyConnection.emit('message', JSON.stringify(frame));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+				expect(node.hasVerifiedPinnedSessions).toBe(true);
+				expect(node.getVerifiedFanoutReference(history.finalReference, 3)).not.toBeNull();
+			});
+
+			// A truncated page restarts only once it is drained, and the hold blocks
+			// the drain. So the verdict must come from the page itself.
+			it('settles a held Idle from a truncated replay page', async () => {
+				const started = restartedNode({ maxUnreconciledTransactions: 1 });
+				const { node, statuses, historyConnection } = started;
+				const history = finalizedHistory();
+				await holdHeadlessIdle(started);
+
+				for (const frame of history.frames) historyConnection.emit('message', JSON.stringify(frame));
+
+				expect(node.confirmedTransactionHistoryReady).toBe(false);
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+				const [firstPage] = node.getConfirmedTransactionsForReconciliation();
+				expect(firstPage).toBeDefined();
+				node.markConfirmedTransactionReconciled(firstPage.txId);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
+			});
+
+			it('binds at once when a truncated replay page proved the finalization first', async () => {
+				const { statuses, connectPromise, historyConnection, liveConnection } = restartedNode({
+					maxUnreconciledTransactions: 1,
+				});
+
+				for (const frame of finalizedHistory().frames) historyConnection.emit('message', JSON.stringify(frame));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+			});
+
+			it('keeps a finalized head and its fanout map across a live Greetings that is Idle', async () => {
+				const { node, historyConnection, liveConnection } = await startSignedNode();
+				const history = finalizedHistory();
+				for (const frame of signedHistoryChain().frames) historyConnection.emit('message', JSON.stringify(frame));
+				finishHistoryReplay(historyConnection);
+				liveConnection.emit('message', JSON.stringify(history.frames[history.frames.length - 2]));
+				const statuses: unknown[] = [];
+				node.on(HydraNodeEvent.StatusChange, (data) => statuses.push(data));
+
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				expect(statuses).toEqual([]);
+				expect(node.status).toBe(HydraHeadStatus.Final);
+				expect(node.hasVerifiedPinnedSessions).toBe(true);
+				expect(node.getVerifiedFanoutReference(history.finalReference, 3)).not.toBeNull();
+			});
+
+			it('ignores a held Idle once a live frame names the head again', async () => {
+				const started = restartedNode();
+				const { statuses, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				liveConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				// The history pass was opened while the node was still Idle.
+				historyConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				historyConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				expect(statuses).toEqual([expect.objectContaining({ status: HydraHeadStatus.Initializing })]);
+			});
+
+			// The pass reread for the first hold started before any later Idle.
+			it('reads the history again for a hold after the live socket named the head', async () => {
+				const started = restartedNode();
+				const { historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				liveConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				liveConnection.emit('close', new Error('live socket dropped'));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
+			});
+
+			it('greets again when the history names the head the held Idle did not', async () => {
+				const started = restartedNode();
+				const { node, statuses, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				for (const frame of [headIsOpen(), ...signedHistoryChain().frames]) {
+					historyConnection.emit('message', JSON.stringify(frame));
+				}
+				finishHistoryReplay(historyConnection);
+
+				expect(liveConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+				expect(statuses).toEqual([]);
+				expect(node.hasVerifiedPinnedSessions).toBe(false);
+
+				// That pass closed, so the next held Idle reads the history again.
+				liveConnection.emit('close', new Error('greeting again'));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
+			});
+
+			// hydra-node reports no undo of a finalization. A head status after it
+			// means an L1 rollback of the fanout, so the history disagrees.
+			it('greets again when the history names a head status after its finalization', async () => {
+				const started = restartedNode();
+				const { statuses, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				for (const frame of finalizedHistory().frames.slice(0, -1)) {
+					historyConnection.emit('message', JSON.stringify(frame));
+				}
+				historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), headStatus: 'Closed' }));
+
+				expect(liveConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+				expect(statuses).toEqual([]);
+			});
+
+			// The note that a reread is on its way ends with the transports.
+			it('reads the history again for a hold after a disconnect', async () => {
+				const started = restartedNode();
+				const { node, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				await node.disconnect();
+				const reconnected = node.connect();
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await reconnected;
+
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
+			});
+
+			it('does not settle connect on a held Idle after the event log rotated', async () => {
+				const { connectPromise, historyConnection, liveConnection } = restartedNode();
+
+				historyConnection.emit('message', JSON.stringify({ tag: 'EventLogRotated' }));
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				await expect(connectPromise).rejects.toThrow(/did not provide a matching identity-bearing Greetings/);
+			});
+
+			it('does not bind on a finalization from a pass whose Greetings failed party identity', async () => {
+				const started = restartedNode();
+				const { node, statuses, historyConnection, liveConnection } = started;
+				await holdHeadlessIdle(started);
+
+				const frames = finalizedHistory().frames;
+				const foreignGreetings = { ...headlessIdleGreetings(), me: { vkey: TEST_PARTIES[1].rawVerificationKey } };
+				for (const frame of [...frames.slice(0, -1), foreignGreetings]) {
+					historyConnection.emit('message', JSON.stringify(frame));
+				}
+
+				expect(node.confirmedTransactionHistoryError).toBeInstanceOf(HydraProtocolError);
+				expect(statuses).toEqual([]);
+				expect(node.hasVerifiedPinnedSessions).toBe(false);
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(statuses).toEqual([]);
+			});
+
+			it('reports a rollback only once a replay that never finalized the head closes Idle', async () => {
+				const started = restartedNode();
+				const { statuses, historyConnection } = started;
+
+				await holdHeadlessIdle(started);
+				expect(statuses).toEqual([]);
+
+				historyConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				historyConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+
+				expect(statuses).toEqual([{ status: HydraHeadStatus.Idle, headId: undefined }]);
+				expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+			});
+
+			// A disconnecting socket ignores the reread and keeps streaming the pass it
+			// began before the hold. That pass can close Idle before it reaches a
+			// HeadIsFinalized written after it read the log.
+			it('takes no verdict from a pass whose socket ignored the reread', async () => {
+				const { statuses, connectPromise, historyConnection, liveConnection } = restartedNode();
+				historyConnection.emit('open');
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				await connectPromise;
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+
+				historyConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
+				historyConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				expect(statuses).toEqual([]);
+
+				// Every path that drops the history socket drops the live one too.
+				liveConnection.emit('close', new Error('disconnected'));
+				historyConnection.emit('close', new Error('disconnected'));
+				historyConnection.emit('open');
+				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
+				for (const frame of finalizedHistory().frames) historyConnection.emit('message', JSON.stringify(frame));
+				expect(statuses).toEqual([expect.objectContaining(finalized)]);
+			});
 		});
 
 		it('invalidates an authenticated session after a conflicting identity frame', async () => {
@@ -1812,6 +2782,61 @@ describe('HydraNode', () => {
 
 			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsClosed', headId: HEAD_ID_A }));
 			await expect(closePromise).resolves.toBeUndefined();
+		});
+
+		it('rejects a lifecycle command the node refused while unsynced', async () => {
+			// Pinned head: the refusal carries no headId and must still be accepted.
+			const { node, liveConnection } = await startSignedNode();
+
+			const fanoutPromise = node.fanout();
+			await Promise.resolve();
+			liveConnection.emit(
+				'message',
+				JSON.stringify({ tag: 'RejectedInputBecauseUnsynced', clientInput: { tag: 'Fanout' }, drift: 90 }),
+			);
+
+			await expect(fanoutPromise).rejects.toThrow(
+				new HydraCommandRefusedUnsyncedError(
+					'Command Fanout was refused: the node is not synced with the chain (drift 90s)',
+				),
+			);
+		});
+
+		it('still rejects clearly when the sync refusal carries an unexpected drift encoding', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			void node.connect();
+
+			const fanoutPromise = node.fanout();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'RejectedInputBecauseUnsynced', clientInput: { tag: 'Fanout' }, drift: '90s' }),
+			);
+
+			await expect(fanoutPromise).rejects.toThrow(
+				new HydraCommandRefusedUnsyncedError(
+					'Command Fanout was refused: the node is not synced with the chain (drift unknown)',
+				),
+			);
+		});
+
+		it('keeps an unsynced Close refusal ambiguous but names the refusal as its cause', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			void node.connect();
+
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'RejectedInputBecauseUnsynced', clientInput: { tag: 'Close' }, drift: 90 }),
+			);
+
+			const error = await closePromise.then(
+				() => undefined,
+				(rejection: unknown) => rejection,
+			);
+			expect(error).toBeInstanceOf(HydraTransportAmbiguousError);
+			expect((error as HydraTransportAmbiguousError).cause).toBeInstanceOf(HydraCommandRefusedUnsyncedError);
 		});
 
 		it('treats a post-dispatch Close rejection as ambiguous', async () => {
@@ -2086,6 +3111,19 @@ describe('HydraNode', () => {
 	});
 
 	describe('fetchProtocolParameters()', () => {
+		// Builders take maxTxSize from here. A head started before the L2 cap
+		// reports 16,384, which would let them build a tx whose output no fanout
+		// can move.
+		it('caps maxTxSize at the shipped L2 limit for a head on the older ledger', async () => {
+			const shipped = JSON.parse(
+				readFileSync(new URL('../../../../packages/hydra-host/params/preprod.json', import.meta.url), 'utf8'),
+			) as Record<string, unknown>;
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			mockFetch.mockResolvedValue({ json: async () => ({ ...shipped, maxTxSize: 16_384 }) } as unknown as Response);
+
+			await expect(node.fetchProtocolParameters()).resolves.toMatchObject({ maxTxSize: 15_000 });
+		});
+
 		it('rejects incomplete or non-finite protocol parameters at runtime', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			mockFetch.mockResolvedValue({ json: async () => ({ maxTxSize: Number.NaN }) } as unknown as Response);

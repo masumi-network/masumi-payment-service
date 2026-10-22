@@ -14,6 +14,7 @@ const mockDeleteVerificationKeys = jest.fn() as AnyMock;
 const mockQuiesceHydraHeadsForDeletion = jest.fn() as AnyMock;
 const mockAssertNoUnrecoveredHydraDeposits = jest.fn() as AnyMock;
 const mockWithdrawNodeFunds = jest.fn() as AnyMock;
+const mockReleaseHostNodeOfFinishedHead = jest.fn() as AnyMock;
 
 const unrecoveredHydraTopupWhere = {
 	depositTxHash: { not: null },
@@ -68,6 +69,10 @@ jest.unstable_mockModule('@/services/hydra-node-funding/withdraw', () => ({
 	withdrawNodeFunds: mockWithdrawNodeFunds,
 }));
 
+jest.unstable_mockModule('@/services/hydra-host/release-node', () => ({
+	releaseHostNodeOfFinishedHead: mockReleaseHostNodeOfFinishedHead,
+}));
+
 jest.unstable_mockModule('../deletion-guard', () => ({
 	quiesceHydraHeadsForDeletion: mockQuiesceHydraHeadsForDeletion,
 	reconciledFinalHeadFilter,
@@ -78,6 +83,27 @@ jest.unstable_mockModule('../deletion-guard', () => ({
 
 let deleteHydraRelation: typeof import('./index').deleteHydraRelation;
 
+const HOST = { baseUrl: 'https://host.example', encryptedAdminToken: 'token', allowInsecureHttp: false };
+
+function plannedHead(n: number) {
+	return {
+		id: `head-${n}`,
+		LocalParticipant: { id: `participant-${n}`, hostNodeId: `node-${n}`, HydraHost: HOST },
+	};
+}
+
+function finalHead(n: number) {
+	return {
+		status: HydraHeadStatus.Final,
+		isEnabled: false,
+		fanoutTxHash: 'f'.repeat(64),
+		reconciliationCompletedAt: new Date(),
+		_count: { Transactions: 0, Topups: 0 },
+		LocalParticipant: { hydraSecretKeyId: `secret-${n}` },
+		RemoteParticipants: [],
+	};
+}
+
 beforeAll(async () => {
 	({ deleteHydraRelation } = await import('./index'));
 });
@@ -87,7 +113,8 @@ beforeEach(() => {
 	mockTransaction.mockImplementation(
 		async (operation: (tx: typeof transactionClient) => Promise<unknown>) => await operation(transactionClient),
 	);
-	mockFindRelationPlan.mockResolvedValue({ Heads: [{ id: 'head-1', LocalParticipant: { id: 'participant-1' } }] });
+	mockFindRelationPlan.mockResolvedValue({ Heads: [plannedHead(1)] });
+	mockReleaseHostNodeOfFinishedHead.mockResolvedValue(undefined);
 	mockWithdrawNodeFunds.mockResolvedValue({
 		address: 'addr_test1node',
 		balanceLovelace: '0',
@@ -270,4 +297,61 @@ describe('deleteHydraRelation', () => {
 			expect(mockDeleteSecrets).not.toHaveBeenCalled();
 		},
 	);
+
+	// The slot is only given back when the Host removes the node. Quiesce is what
+	// proves each head is finished, so no node goes before it, and no row goes
+	// before the nodes.
+	it("removes every finished head's node from its Host after quiesce and before any row goes", async () => {
+		mockFindRelationPlan.mockResolvedValue({ Heads: [plannedHead(1), plannedHead(2)] });
+		mockFindRelation.mockResolvedValue({ Heads: [finalHead(1), finalHead(2)] });
+
+		await expect(deleteHydraRelation('relation-1')).resolves.toBeUndefined();
+
+		expect(mockReleaseHostNodeOfFinishedHead).toHaveBeenCalledTimes(2);
+		expect(mockReleaseHostNodeOfFinishedHead).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ hostNodeId: 'node-1', HydraHost: HOST }),
+		);
+		expect(mockReleaseHostNodeOfFinishedHead).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ hostNodeId: 'node-2', HydraHost: HOST }),
+		);
+		const first = mockReleaseHostNodeOfFinishedHead.mock.invocationCallOrder[0] ?? 0;
+		expect(mockQuiesceHydraHeadsForDeletion.mock.invocationCallOrder[0]).toBeLessThan(first);
+		expect(first).toBeLessThan(mockTransaction.mock.invocationCallOrder[0] ?? 0);
+	});
+
+	it('keeps every row when the Host refuses to remove a node, so the delete can be retried', async () => {
+		mockReleaseHostNodeOfFinishedHead.mockRejectedValue(
+			Object.assign(new Error('the hydra host refused to remove node node-1'), { statusCode: 502 }),
+		);
+
+		await expect(deleteHydraRelation('relation-1')).rejects.toMatchObject({ statusCode: 502 });
+
+		expect(mockTransaction).not.toHaveBeenCalled();
+		expect(mockDeleteRelation).not.toHaveBeenCalled();
+	});
+
+	it("leaves the nodes on their Host while a node's funds are not settled", async () => {
+		mockWithdrawNodeFunds.mockResolvedValue({
+			address: 'addr_test1node',
+			balanceLovelace: '29500000',
+			txHash: 'a'.repeat(64),
+			reason: null,
+			code: 'swept',
+		});
+
+		await expect(deleteHydraRelation('relation-1')).rejects.toMatchObject({ statusCode: 409 });
+
+		expect(mockReleaseHostNodeOfFinishedHead).not.toHaveBeenCalled();
+	});
+
+	it('does not touch the Host for a head without a local participant', async () => {
+		mockFindRelationPlan.mockResolvedValue({ Heads: [{ id: 'head-1', LocalParticipant: null }] });
+		mockFindRelation.mockResolvedValue({ Heads: [{ ...finalHead(1), LocalParticipant: null }] });
+
+		await expect(deleteHydraRelation('relation-1')).resolves.toBeUndefined();
+
+		expect(mockReleaseHostNodeOfFinishedHead).not.toHaveBeenCalled();
+	});
 });

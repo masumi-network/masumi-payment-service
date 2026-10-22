@@ -434,6 +434,7 @@ export const SERVICE_CONSTANTS = {
 } as const;
 
 export const DEFAULTS = {
+	// Public on purpose. Intended: see docs/security.md, Accepted Risks #4.
 	DEFAULT_ADMIN_KEY: 'DefaultUnsecureAdminKey',
 	// Published in .env.example. Allowed for one-off setups, but warned about.
 	EXAMPLE_ADMIN_KEY: 'abcdef_this_should_be_very_secure',
