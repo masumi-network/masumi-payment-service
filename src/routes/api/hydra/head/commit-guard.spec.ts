@@ -53,7 +53,7 @@ jest.unstable_mockModule('@/services/hydra-topup/pre-split', () => ({
 let commitHeadPost: { handler: (args: { input: unknown; options: unknown }) => Promise<unknown> };
 
 beforeAll(async () => {
-	({ commitHeadPost } = (await import('./lifecycle')) as never);
+	({ commitHeadPost } = (await import('./commit')) as never);
 });
 
 beforeEach(() => {
