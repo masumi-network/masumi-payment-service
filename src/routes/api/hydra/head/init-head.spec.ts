@@ -209,6 +209,74 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 		expect(mockInit).toHaveBeenCalledTimes(1);
 	});
 
+	// Leaves head-1 held, as an Init that timed out on a node behind the chain does.
+	const holdHead = async () => {
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: false,
+			reason: 'catching up',
+			chainSynced: false,
+			driftSeconds: 14_571,
+		});
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({ statusCode: 504 });
+		mockInit.mockClear();
+		mockInit.mockResolvedValue(undefined);
+	};
+	// Frees head-1 for later tests: an Idle head on a node that caught up lets a retry through.
+	const freeHead = async () => {
+		observedStatus = HydraHeadStatus.Idle;
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: true,
+			reason: null,
+			chainSynced: true,
+			driftSeconds: 0,
+		});
+		mockInit.mockResolvedValue(undefined);
+		await initHeadPost.handler({ input: { headId: 'head-1' } }).catch(() => undefined);
+	};
+
+	// The Host reads "not synced" with no drift for a node it cannot ask. That is no
+	// evidence of a parked Init, and a restarted node has dropped any it held.
+	it('lets a held retry through when the Host cannot ask the node', async () => {
+		try {
+			await holdHead();
+			mockReadNodeState.mockResolvedValue({
+				state: 'Running',
+				isReady: false,
+				reason: 'not responding',
+				chainSynced: false,
+				driftSeconds: null,
+			});
+			await initHeadPost.handler({ input: { headId: 'head-1' } }).catch(() => undefined);
+			expect(mockInit).toHaveBeenCalledTimes(1);
+		} finally {
+			await freeHead();
+		}
+	});
+
+	it('refuses a held retry once the parked Init has moved the head', async () => {
+		try {
+			await holdHead();
+			mockReadNodeState.mockResolvedValue({
+				state: 'Running',
+				isReady: true,
+				reason: null,
+				chainSynced: true,
+				driftSeconds: 0,
+			});
+			observedStatus = HydraHeadStatus.Initializing;
+			await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+				statusCode: 409,
+				message: 'Cannot init: head status is Initializing, expected Idle',
+			});
+			expect(mockFlush).toHaveBeenCalled();
+			expect(mockInit).not.toHaveBeenCalled();
+		} finally {
+			await freeHead();
+		}
+	});
+
 	// The node refused the InitTx outright. Nothing is parked, so a node that is
 	// behind must not turn this into "wait, do not re-post": that verdict wrote no
 	// row, and the waiting Init is the only place this refusal is recorded.

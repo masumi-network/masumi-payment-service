@@ -114,15 +114,23 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		// posted once the node catches up. A second Init now is refused with a CommandFailed,
 		// recorded against a head that is fine. If the first was never sent (our client also
 		// waits for a node that is behind), a retry would only wait and time out again. Only a
-		// Host that says the node is behind holds the retry: one that cannot be asked proceeds.
+		// Host that reports a drift holds the retry: it reads "not synced" with no drift for a
+		// node it cannot ask, and such a node, restarted or not, proceeds as before.
 		if (initsAwaitingNode.has(head.id)) {
 			const nodeState = await readParticipantNodeState(head.LocalParticipant.id);
-			if (nodeState.chainSynced === false) {
+			if (nodeState.chainSynced === false && nodeState.driftSeconds !== null) {
 				throw createHttpError(
 					409,
 					"An earlier Init is still waiting for this head's node: its Hydra Host reports the node is still " +
 						'behind the chain. Retry once the Host reports it caught up',
 				);
+			}
+			// A node that just caught up may have posted the parked Init already. Drained first,
+			// so a head that moved is refused here rather than by a second Init on the node.
+			await cm.flushHeadStatus(head.id).catch(() => undefined);
+			const current = await prisma.hydraHead.findUnique({ where: { id: head.id }, select: { status: true } });
+			if (current && current.status !== HydraHeadStatus.Idle) {
+				throw createHttpError(409, `Cannot init: head status is ${current.status}, expected Idle`);
 			}
 			initsAwaitingNode.delete(head.id);
 		}
