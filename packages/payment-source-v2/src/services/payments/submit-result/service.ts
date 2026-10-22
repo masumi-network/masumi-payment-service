@@ -21,6 +21,7 @@ import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { isRequestedResultOnChain } from '@/utils/logic/result-on-chain';
+import { finishL2SubmitAlreadyOnChain } from './already-on-chain';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
@@ -594,24 +595,7 @@ async function processL2SubmitResult(
 	const { utxo, decodedContract } = matchResult;
 
 	if (isRequestedResultOnChain(decodedContract, request.NextAction.resultHash)) {
-		await prisma.paymentRequest.update({
-			where: { id: request.id, nextActionId: request.nextActionId },
-			data: {
-				...connectPreviousAction(request.nextActionId),
-				...createNextPaymentAction(PaymentAction.WaitingForExternalAction, {
-					resultHash: request.NextAction.resultHash,
-				}),
-			},
-		});
-		await unlockHotWalletIfNoPendingTransaction(
-			request.SmartContractWallet!.id,
-			'submit-result-l2-already-on-chain',
-			request.SmartContractWallet!.lockedAt!,
-		);
-		logger.info('L2 submit-result skipped; the escrow already holds the requested result', {
-			requestId: request.id,
-			txHash,
-		});
+		await finishL2SubmitAlreadyOnChain(request, txHash);
 		return true;
 	}
 
