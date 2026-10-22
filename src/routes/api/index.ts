@@ -161,6 +161,8 @@ import {
 	resetSnapshotRoundPost,
 	listL2ReservationsGet,
 	releaseL2ReservationPost,
+	stalledReleaseGet,
+	reapplyL2ReservationPost,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
@@ -593,6 +595,9 @@ export const apiRouter: Routing = {
 				'l2-reservations': {
 					get: listL2ReservationsGet,
 					release: { post: releaseL2ReservationPost },
+					// A released body that confirmed anyway, and the admin's re-apply of it.
+					'stalled-release': { get: stalledReleaseGet },
+					reapply: { post: reapplyL2ReservationPost },
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },

@@ -90,3 +90,73 @@ export async function releaseHydraL2Reservation(
 
   return ensureData(response?.data?.data, 'The release response was not returned by the API');
 }
+
+/** A released reservation whose body confirmed anyway, holding the head's replay. */
+export type HydraStalledRelease = {
+  transactionId: string;
+  /** Sent back on re-apply. The server refuses it if the row changed. */
+  updatedAt: string;
+  intendedTxHash: string;
+  releasedBy: 'input-proof' | 'operator';
+  releasedAt: string;
+  kind: 'initial-lock' | 'action';
+  purchaseRequestIds: string[];
+  paymentRequestIds: string[];
+  reapplicable: boolean;
+  blockedReason: string | null;
+};
+
+export async function fetchHydraStalledRelease(
+  apiClient: Client,
+  headId: string,
+): Promise<HydraStalledRelease | null> {
+  const response = await handleApiCall(
+    () =>
+      apiClient.get<{
+        200: ApiEnvelope<{ headId: string; reservation: HydraStalledRelease | null }>;
+      }>({
+        responseType: 'json',
+        url: '/hydra/head/l2-reservations/stalled-release',
+        query: { headId },
+      }),
+    {
+      onError: (error: unknown) => {
+        console.error('Failed to read the stalled Hydra release:', error);
+      },
+    },
+  );
+  if (response?.data?.data == null) {
+    throw new Error('Failed to read the stalled Hydra release');
+  }
+  return response.data.data.reservation;
+}
+
+/** Read only while the head's replay is held on a confirmed body. */
+export function useHydraStalledRelease(headId: string, isHeld: boolean) {
+  const { apiClient } = useAppContext();
+
+  return useQuery<HydraStalledRelease | null>({
+    queryKey: ['hydra-stalled-release', headId],
+    queryFn: async () => fetchHydraStalledRelease(apiClient, headId),
+    enabled: !!apiClient && isHeld,
+    staleTime: L2_RESERVATIONS_POLL_MS / 2,
+    refetchInterval: L2_RESERVATIONS_POLL_MS,
+  });
+}
+
+export async function reapplyHydraL2Reservation(
+  apiClient: Client,
+  payload: { headId: string; transactionId: string; expectedUpdatedAt: string },
+) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<{ 200: ApiEnvelope<HydraL2ReservationRelease> }>({
+        responseType: 'json',
+        url: '/hydra/head/l2-reservations/reapply',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to re-apply the L2 reservation' },
+  );
+
+  return ensureData(response?.data?.data, 'The re-apply response was not returned by the API');
+}

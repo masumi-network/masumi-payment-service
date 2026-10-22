@@ -15,6 +15,7 @@ import { HydraHeadWallets } from '@/components/hydra/HydraHeadWallets';
 import { HydraHeadConnectionPanel } from '@/components/hydra/HydraHeadConnection';
 import { HydraHeadSnapshotRoundNotice } from '@/components/hydra/HydraHeadSnapshotRoundNotice';
 import { HydraHeadL2ReservationsNotice } from '@/components/hydra/HydraHeadL2ReservationsNotice';
+import { HydraHeadStalledRelease } from '@/components/hydra/HydraHeadStalledRelease';
 import { counterpartRole } from '@/components/hydra/WalletRoleBadge';
 import { headStagePermitsAnyAction } from '@/components/hydra/head-lifecycle';
 import { formatDate } from '@/components/hydra/head-display';
@@ -133,6 +134,10 @@ export function HydraHeadOverviewTab({
               Stalled since {new Date(head.reconciliationStalledSince).toLocaleString()}
             </p>
           )}
+          <HydraHeadStalledRelease
+            headId={head.id}
+            stalledReason={head.reconciliationStalledReason}
+          />
         </HydraNotice>
       )}
 
