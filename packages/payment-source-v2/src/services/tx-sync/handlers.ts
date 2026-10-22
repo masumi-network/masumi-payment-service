@@ -8,7 +8,8 @@
 
 import { prisma } from '@masumi/payment-core/db';
 import { OnChainState, Prisma, TransactionStatus } from '@/generated/prisma/client';
-import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
+import { convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
+import { convertSyncedPaymentAction } from '@/utils/logic/result-on-chain';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphore';
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
@@ -82,7 +83,12 @@ export async function handleV2PaymentTransaction(
 						// instead of `(SubmitResultInitiated, ResultSubmitted)` → WaitingForExternalAction).
 						// Reading from the just-fetched paymentRequest closes the window.
 						const currentAction = paymentRequest.NextAction.requestedAction;
-						const newAction = convertNewPaymentActionAndError(currentAction, newState);
+						const newAction = convertSyncedPaymentAction(
+							currentAction,
+							paymentRequest.NextAction.resultHash,
+							newState,
+							resultHash,
+						);
 
 						const isConfirmationTransaction =
 							paymentRequest.currentTransactionId && paymentRequest.CurrentTransaction?.txHash == tx_hash;
@@ -110,6 +116,7 @@ export async function handleV2PaymentTransaction(
 													newAction.errorNote
 												: newAction.errorNote,
 										errorType: newAction.errorType,
+										resultHash: newAction.resultHash,
 									},
 								},
 								TransactionHistory: !isConfirmationTransaction
