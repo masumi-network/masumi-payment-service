@@ -32,17 +32,17 @@ export function useAcknowledgeNeedsAction() {
         for (const batch of buildAcknowledgeBatches(transactions, contextNetwork)) {
           const body = {
             network: batch.network,
-            blockchainIdentifiers: batch.blockchainIdentifiers,
+            requests: batch.requests,
           };
           try {
             const response =
               batch.type === 'purchase'
                 ? await postPurchaseAcknowledgeManualAction({ client: apiClient, body })
                 : await postPaymentAcknowledgeManualAction({ client: apiClient, body });
-            if (response.error) failed += batch.blockchainIdentifiers.length;
+            if (response.error) failed += batch.requests.length;
             else acknowledged += response.data?.data?.acknowledgedCount ?? 0;
           } catch {
-            failed += batch.blockchainIdentifiers.length;
+            failed += batch.requests.length;
           }
         }
       } finally {

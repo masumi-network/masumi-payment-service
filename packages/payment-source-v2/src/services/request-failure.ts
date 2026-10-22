@@ -2,6 +2,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { writePaymentErrorTransition, writePurchaseErrorTransition } from '@/services/shared/error-transition';
+import type { TransactionLayer } from '@/generated/prisma/client';
 
 /**
  * Factories for the per-service `markRequestFailed` / `unlockHotWallet`
@@ -25,7 +26,12 @@ interface PaymentFailureConfig {
 
 export function makePaymentRequestFailureMarker(config: PaymentFailureConfig) {
 	return async function markRequestFailed(
-		request: { id: string; nextActionId: string; NextAction?: { resultHash: string | null } | null },
+		request: {
+			id: string;
+			nextActionId: string;
+			layer?: TransactionLayer;
+			NextAction?: { resultHash: string | null } | null;
+		},
 		error: unknown,
 		options: { unlockWallet?: boolean } = {},
 	): Promise<void> {
@@ -41,6 +47,7 @@ export function makePaymentRequestFailureMarker(config: PaymentFailureConfig) {
 			writePaymentErrorTransition(tx, {
 				requestId: request.id,
 				nextActionId: request.nextActionId,
+				expectedLayer: request.layer,
 				errorNote: config.errorNotePrefix + interpretBlockchainError(error),
 				unlockWallet,
 				...(config.carryResultHash ? { resultHash: request.NextAction?.resultHash ?? null } : {}),
@@ -56,7 +63,7 @@ interface PurchaseFailureConfig {
 
 export function makePurchaseRequestFailureMarker(config: PurchaseFailureConfig) {
 	return async function markRequestFailed(
-		request: { id: string; nextActionId: string },
+		request: { id: string; nextActionId: string; layer?: TransactionLayer },
 		error: unknown,
 		options: { unlockWallet?: boolean } = {},
 	): Promise<void> {
@@ -68,6 +75,7 @@ export function makePurchaseRequestFailureMarker(config: PurchaseFailureConfig) 
 			writePurchaseErrorTransition(tx, {
 				requestId: request.id,
 				nextActionId: request.nextActionId,
+				expectedLayer: request.layer,
 				errorNote: config.errorNotePrefix + interpretBlockchainError(error),
 				unlockWallet: options.unlockWallet ?? true,
 			}),

@@ -27,6 +27,7 @@ const mockTransactionCreate = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHotWalletUpdate = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHydraHeadFindUnique = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHydraAdmissionQuery = jest.fn<(_args: unknown) => Promise<unknown>>();
+const mockPaymentActionFindFirst = jest.fn<(_args: unknown) => Promise<unknown>>();
 
 const transactionClient = {
 	$queryRaw: mockHydraAdmissionQuery,
@@ -45,6 +46,7 @@ const transactionClient = {
 		findFirst: mockTransactionFindFirst,
 		create: mockTransactionCreate,
 	},
+	paymentActionData: { findFirst: mockPaymentActionFindFirst },
 	hotWallet: { update: mockHotWalletUpdate },
 	hydraHead: { findUnique: mockHydraHeadFindUnique },
 };
@@ -272,6 +274,10 @@ describe('applyDatumStateToLocalRequests', () => {
 		mockPurchaseFindUnique.mockResolvedValue(null);
 		mockPurchaseFindMany.mockResolvedValue([]);
 		mockPaymentFindMany.mockResolvedValue([]);
+		mockPaymentActionFindFirst.mockResolvedValue({
+			requestedAction: PaymentAction.WaitingForExternalAction,
+			errorType: null,
+		});
 		mockPaymentUpdate.mockResolvedValue({});
 		mockTransactionFindFirst.mockResolvedValue(null);
 		mockTransactionCreate.mockResolvedValue({ id: 'observed-transaction-1' });

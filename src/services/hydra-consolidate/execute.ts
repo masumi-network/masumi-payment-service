@@ -113,7 +113,7 @@ export async function executeHydraConsolidation(headId: string): Promise<Execute
 
 		// The head's own parameters, never L1's: the head charges no fee, and a fee
 		// burned in the head changes its ADA overhead (H65 at Close). See
-		// splitExactAmountInHead in hydra-decommit/execute.ts.
+		// splitExactAmountInHead in hydra-decommit/in-head-split.ts.
 		const builder = new MeshTxBuilder({
 			fetcher: provider,
 			submitter: provider,

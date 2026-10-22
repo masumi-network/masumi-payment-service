@@ -6,8 +6,13 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
 }));
 
-const { extractCommitNotSettled, extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } =
-	await import('./head-output-tx');
+const {
+	extractClosedHeadFacts,
+	extractCommitNotSettled,
+	extractDecommitInFlight,
+	extractHeadOutputTxId,
+	extractPendingDecommitRefs,
+} = await import('./head-output-tx');
 
 const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
 const CLOSE_TX = 'f96e9b1375c44ac6865c19682df5043911f15682db436ba27948421d75ccc2f5';
@@ -359,5 +364,93 @@ describe('extractCommitNotSettled', () => {
 		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
 	])('reports nothing unsettled when %s', (_label, state) => {
 		expect(extractCommitNotSettled(state)).toBe(false);
+	});
+});
+
+/**
+ * A head closed while the service was off is first seen through Greetings, which
+ * carry neither the snapshot number nor the deadline. hydra-node 2.4.1 keeps both
+ * in `ClosedState` and, once partial fanout starts, in `PartialFanoutState`.
+ */
+describe('extractClosedHeadFacts', () => {
+	const DEADLINE = '2026-10-22T12:00:00Z';
+	const confirmed = (number: unknown) => ({
+		tag: 'ConfirmedSnapshot',
+		snapshot: { headId: HEAD_ID, version: 0, number },
+		signatures: {},
+	});
+	const closedState = (confirmedSnapshot: unknown, contents: Record<string, unknown> = {}) => ({
+		tag: 'Closed',
+		contents: {
+			headId: HEAD_ID,
+			contestationDeadline: DEADLINE,
+			confirmedSnapshot,
+			readyToFanoutSent: false,
+			...contents,
+		},
+	});
+
+	it('reads the deadline and the confirmed snapshot number of a closed head', () => {
+		expect(extractClosedHeadFacts(closedState(confirmed(7)), HEAD_ID)).toEqual({
+			contestationDeadline: DEADLINE,
+			snapshotNumber: 7,
+		});
+	});
+
+	it('reads snapshot 0 for a head that closed on its initial snapshot', () => {
+		expect(extractClosedHeadFacts(closedState({ tag: 'InitialSnapshot', headId: HEAD_ID }), HEAD_ID)).toEqual({
+			contestationDeadline: DEADLINE,
+			snapshotNumber: 0,
+		});
+	});
+
+	it('reads them once the head fans out in steps', () => {
+		const state = { tag: 'FanoutProgress', contents: { ...closedState(confirmed(12)).contents, remainingOutputs: {} } };
+
+		expect(extractClosedHeadFacts(state, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE, snapshotNumber: 12 });
+	});
+
+	it('accepts a state that is not nested under contents', () => {
+		const flat = { tag: 'Closed', ...closedState(confirmed(3)).contents };
+
+		expect(extractClosedHeadFacts(flat, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE, snapshotNumber: 3 });
+	});
+
+	it('does not need the state to carry a head id', () => {
+		const { headId: _headId, ...withoutHeadId } = closedState(confirmed(4)).contents;
+
+		expect(extractClosedHeadFacts({ tag: 'Closed', contents: withoutHeadId }, HEAD_ID)).toMatchObject({
+			snapshotNumber: 4,
+		});
+	});
+
+	it('matches the head id whatever its case', () => {
+		expect(extractClosedHeadFacts(closedState(confirmed(1), { headId: HEAD_ID.toUpperCase() }), HEAD_ID)).toMatchObject(
+			{
+				snapshotNumber: 1,
+			},
+		);
+	});
+
+	// Unknown must never become zero: a missing fact stays missing, so a later read can still fill it.
+	it.each([
+		['the node reports no head', { tag: 'Idle', contents: { chainState: {} } }],
+		['it is not an object', 'Closed'],
+		['it is null', null],
+		['the deadline is missing', closedState(confirmed(7), { contestationDeadline: undefined })],
+		['the deadline is not a string', closedState(confirmed(7), { contestationDeadline: 1_761_134_400 })],
+		['the confirmed snapshot is missing', closedState(undefined)],
+		['the confirmed snapshot is of a kind it does not know', closedState({ tag: 'SomethingElse' })],
+		['the snapshot number is missing', closedState(confirmed(undefined))],
+		['the snapshot number is negative', closedState(confirmed(-1))],
+		['the snapshot number is not a whole number', closedState(confirmed(1.5))],
+		['the snapshot number is a string', closedState(confirmed('7'))],
+		['the state belongs to another head', closedState(confirmed(7), { headId: 'f'.repeat(56) })],
+	])('says nothing when %s', (_label, state) => {
+		expect(extractClosedHeadFacts(state, HEAD_ID)).toBeUndefined();
+	});
+
+	it('says nothing without a well-formed head id to check against', () => {
+		expect(extractClosedHeadFacts(closedState(confirmed(7)), 'not-a-head-id')).toBeUndefined();
 	});
 });

@@ -29,6 +29,7 @@ import { recordHeadError } from '@/services/hydra-head-error/record';
 import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
 import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
 
+import { fanoutsInFlight } from './fanout-in-flight';
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
 
 // --- Lifecycle: POST close ---
@@ -189,16 +190,6 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 });
 
 // --- Lifecycle: POST fanout ---
-
-/**
- * Heads with a Fanout on the wire from this process.
- *
- * hydra-node refuses a second Fanout, and its refusal names only the command,
- * so with two in flight every waiting Fanout fails, including the one that landed. A
- * Fanout carries nothing but the head, so the second request adds nothing: it is
- * refused here, and the first one reports what happened.
- */
-const fanoutsInFlight = new Set<string>();
 
 export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
