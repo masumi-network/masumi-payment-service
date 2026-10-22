@@ -20,6 +20,7 @@ import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
+import { isRequestedResultOnChain } from './result-on-chain';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
@@ -200,26 +201,6 @@ export function resolveSubmitResultConstrainAfterMs(decodedContract: DecodedV1Co
 		decodedContract.resultHash == null
 			? 'SubmitResult window closed: past submit_result_time and no on-chain result to rotate during the dispute window; manual intervention required'
 			: 'SubmitResult window closed: past both submit_result_time and external_dispute_unlock_time; manual intervention required',
-	);
-}
-
-/**
- * Whether the escrow already carries the result this request still asks to submit.
- *
- * A result the head rejected can confirm later. Datum sync then moves the escrow
- * to ResultSubmitted, but the shared transition table keeps the request at
- * SubmitResultRequested, and the validator accepts the same result a second time.
- */
-export function isRequestedResultOnChain(
-	decodedContract: Pick<DecodedV1ContractDatum, 'state' | 'resultHash'>,
-	requestedResultHash: string | null,
-): boolean {
-	return (
-		requestedResultHash != null &&
-		decodedContract.resultHash != null &&
-		decodedContract.resultHash.toLowerCase() === requestedResultHash.toLowerCase() &&
-		(decodedContract.state === SmartContractState.ResultSubmitted ||
-			decodedContract.state === SmartContractState.Disputed)
 	);
 }
 
