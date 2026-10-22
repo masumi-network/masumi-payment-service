@@ -202,6 +202,28 @@ describe('persistHeadStatus for a contested head', () => {
 		expect(call.data.latestSnapshotNumber).toBe(5n);
 		expect(call.data).not.toHaveProperty('closedAt');
 	});
+
+	// Retire refuses a Closed head before its deadline: the head may still need
+	// contesting. A contest moves that deadline later.
+	it('moves the contestation deadline later on a contest', async () => {
+		mockFindUnique.mockResolvedValue(
+			durableRow({
+				status: HydraHeadStatus.Closed,
+				closedAt: new Date('2026-08-01T11:00:00Z'),
+				contestationDeadline: new Date('2026-08-01T11:30:00Z'),
+			}),
+		);
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, {
+			status: HydraHeadStatus.Closed,
+			headId: 'a'.repeat(56),
+			snapshotNumber: 5,
+			contestationDeadline: '2026-08-01T12:00:00Z',
+		});
+
+		const call = mockUpdateMany.mock.calls[0][0] as { data: Record<string, unknown> };
+		expect(call.data.contestationDeadline).toEqual(new Date('2026-08-01T12:00:00Z'));
+	});
 });
 
 describe('failClosedAfterStatusPersistenceFailure under the ownership fence', () => {
