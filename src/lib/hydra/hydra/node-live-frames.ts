@@ -6,7 +6,9 @@
  *
  * The mirror of `HydraHistoryReplay`, for the live socket. Everything here is
  * per-session and re-derived on reconnect; identity is never assumed, only
- * proven by a Greetings that names the configured keys and pinned head.
+ * proven by a Greetings that names the configured keys and pinned head. A
+ * finalized head's node greets Idle and names no head; there the replayed
+ * history proves the head.
  */
 
 import { EventEmitter } from 'node:events';
@@ -28,12 +30,13 @@ import { HeldBackEmissions } from './node-held-back';
 import { hasFinalizedUtxoField, headClockMessageSchema, messageSchema } from './schemas';
 import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, PostTxFailedData, StatusChangeData } from './types';
 
+/** Connect may return. Also emitted for a held headless Idle, which is not live-ready. */
 export const LIVE_SESSION_READY_EVENT = 'hydraLiveSessionReady';
 export const LIVE_SESSION_REJECTED_EVENT = 'hydraLiveSessionRejected';
 
 /**
- * Resolve once `emitter` reports a ready live session, reject on its rejection
- * or after `timeoutMs`. Resolves at once if `isReady()` already holds.
+ * Resolve once `emitter` reports that connect may return, reject on its
+ * rejection or after `timeoutMs`. Resolves at once if `isReady()` already holds.
  */
 export function waitForLiveSessionReady(
 	emitter: EventEmitter,
@@ -88,6 +91,12 @@ export interface LiveFrameHost {
 	recordFinalizedFanout(message: unknown): void;
 	/** Never carry an old fanout map past a non-Final tip. */
 	clearFinalizedFanout(): void;
+	/** The pinned head is proven finalized: its fanout map, and a live Final or a closed pass that finalized it. */
+	finalizedHeadProven(): boolean;
+	/** The snapshot the proven finalized head settled on, if its replay saw the close. */
+	finalizedSnapshotNumber(): number | undefined;
+	/** Replay the history again from the start: only a pass that starts now can give a verdict. */
+	rereadHistory(): void;
 	setNetworkConnected(connected: boolean): void;
 	/** The rotation latch was hit on the live socket: fail the replay with it. */
 	onRotationError(error: unknown): void;
@@ -100,6 +109,27 @@ export class LiveFrameProcessor {
 	private _status: HydraHeadStatus = HydraHeadStatus.Disconnected;
 	private _liveSessionHeadId: string | undefined;
 	private _livePartyIdentityVerified = false;
+	/**
+	 * A party-verified headless Idle Greetings for the pinned head is held until
+	 * the replay says whether that head was finalized. hydra-node is Idle after a
+	 * fanout and after a rollback through Init, and only the history tells them
+	 * apart. The history socket can need far longer than the connect timeout.
+	 */
+	private _awaitingReplayVerdict = false;
+	/**
+	 * Polled evidence (`isTxConfirmed`, the reconcile queue) is held from a hold
+	 * until a verdict binds or rolls back the head, or a live frame names it.
+	 * Survives a live socket close: the verdict of a pass that closes meanwhile
+	 * is ignored, and it may be a rollback. A pass that closes naming the head
+	 * still emits TxConfirmed, on the trust of a normal session.
+	 */
+	private _evidenceHeld = false;
+	/**
+	 * A history pass this session restarted for a held Idle has not closed yet.
+	 * It read the log after the node was Idle, so a live re-greet keeps it.
+	 * Survives a live socket close: it belongs to the history socket.
+	 */
+	private _historyRereadPending = false;
 	private _headClock: HydraHeadClock | undefined;
 	/**
 	 * Whether the node says it is caught up with its chain, from
@@ -145,6 +175,11 @@ export class LiveFrameProcessor {
 		return this._livePartyIdentityVerified;
 	}
 
+	/** See `_evidenceHeld`. The session must not act on replayed evidence meanwhile. */
+	get isEvidenceHeld(): boolean {
+		return this._evidenceHeld;
+	}
+
 	get headClock(): HydraHeadClock | undefined {
 		return this._headClock;
 	}
@@ -169,11 +204,86 @@ export class LiveFrameProcessor {
 		return this.host.persistenceRotationError == null && isHeadReady && isPartyReady;
 	}
 
+	/** Connect may return: the session is ready, or it holds a headless Idle for the replay to decide. */
+	isConnectSettled(): boolean {
+		return this.isLiveSessionReady() || (this._awaitingReplayVerdict && this.host.persistenceRotationError == null);
+	}
+
+	/**
+	 * The replay decided the headless Idle this session holds, if it holds one.
+	 * A history that names the head disagrees with this Greetings, so the live
+	 * socket greets again instead of either side being guessed.
+	 */
+	settleHeadlessIdle(verdict: 'finalized' | 'rolled-back' | 'disagrees'): void {
+		// Every closed pass reports here, held or not: the next hold reads again.
+		this._historyRereadPending = false;
+		if (!this._awaitingReplayVerdict) return;
+		this._awaitingReplayVerdict = false;
+		if (verdict === 'finalized') this.bindFinalizedHead();
+		else if (verdict === 'rolled-back') this.reportRollbackToIdle();
+		else {
+			this.host.invalidateLiveConnection(
+				new HydraTransportError('Hydra history names the head the live Greetings did not; greeting again'),
+			);
+		}
+	}
+
+	/**
+	 * The node is Idle because the pinned head is finalized: the session is that
+	 * head's, in the state an in-process HeadIsFinalized leaves it. Party
+	 * identity was proven by the live Greetings, the head by the node's history.
+	 */
+	private bindFinalizedHead(): void {
+		this._evidenceHeld = false;
+		this._liveSessionHeadId = this.host.expectedHeadId;
+		this.flushHeldBackWhenLive();
+		// The close's snapshot is the tip the handoff checks the fanout against.
+		// A service that was down from Open to here never heard HeadIsClosed.
+		this.emitStatusChange(HydraHeadStatus.Final, this.host.expectedHeadId, this.host.finalizedSnapshotNumber());
+		this.emitter.emit(LIVE_SESSION_READY_EVENT);
+	}
+
+	/**
+	 * An L1 rollback before/through Init legitimately returns hydra-node to
+	 * Idle, where no head id exists. Clear the old session proof before
+	 * emitting the regression so the manager can durably invalidate routing.
+	 */
+	private reportRollbackToIdle(): void {
+		this._evidenceHeld = false;
+		this._liveSessionHeadId = undefined;
+		this._headClock = undefined;
+		this.host.clearFinalizedFanout();
+		this.emitStatusChange(HydraHeadStatus.Idle, undefined);
+	}
+
+	/**
+	 * A live frame named the head: whatever a held headless Idle said is out of
+	 * date. So is a pass reread for it: it started before any later Idle.
+	 */
+	private bindLiveHead(headId: string): void {
+		this._liveSessionHeadId = headId;
+		this._awaitingReplayVerdict = false;
+		this._evidenceHeld = false;
+		this._historyRereadPending = false;
+	}
+
+	private emitStatusChange(status: HydraHeadStatus, headId: string | undefined, snapshotNumber?: number): void {
+		if (this._status === status) return;
+		this._status = status;
+		this.emitter.emit(HydraNodeEvent.StatusChange, {
+			status,
+			headId,
+			snapshotNumber,
+			contestationDeadline: undefined,
+		} satisfies StatusChangeData);
+	}
+
 	/** The session's identity proof is gone (socket closed, rotation, rejection). */
 	clearLiveIdentity(): { hadLiveIdentity: boolean } {
 		const hadLiveIdentity = this._liveSessionHeadId != null || this._livePartyIdentityVerified;
 		this._liveSessionHeadId = undefined;
 		this._livePartyIdentityVerified = false;
+		this._awaitingReplayVerdict = false;
 		this._headClock = undefined;
 		this.clearPendingIncrements();
 		return { hadLiveIdentity };
@@ -183,6 +293,9 @@ export class LiveFrameProcessor {
 		this._status = HydraHeadStatus.Disconnected;
 		this._liveSessionHeadId = undefined;
 		this._livePartyIdentityVerified = false;
+		this._awaitingReplayVerdict = false;
+		this._evidenceHeld = false;
+		this._historyRereadPending = false;
 		this._headClock = undefined;
 		// A closed transport says nothing about whether the node is still caught
 		// up; the next Greetings re-establishes it.
@@ -345,7 +458,7 @@ export class LiveFrameProcessor {
 				) {
 					this.host.bindSnapshotPartyOrder(message);
 				}
-				if (suppliedHeadId) this._liveSessionHeadId = suppliedHeadId;
+				if (suppliedHeadId) this.bindLiveHead(suppliedHeadId);
 			}
 			if (envelope.tag === 'Greetings') {
 				// A Greetings that carries the field settles the sync state either way;
@@ -358,27 +471,35 @@ export class LiveFrameProcessor {
 				if (this.host.expectedHeadId && !suppliedHeadId && !isHeadlessIdle) {
 					throw new HydraProtocolError('Pinned Hydra session Greetings omitted its head identifier');
 				}
-				if (suppliedHeadId) {
-					this._liveSessionHeadId = suppliedHeadId;
-				}
 				this.host.verifyGreetingsPartyIdentity(message);
+				// Only after identity: a rejected Greetings must not release a hold.
+				if (suppliedHeadId) this.bindLiveHead(suppliedHeadId);
 				this._livePartyIdentityVerified = true;
 				if (isHeadlessIdle) {
-					// An L1 rollback before/through Init legitimately returns hydra-node
-					// to Idle, where no head id exists. Party identity still binds this
-					// configured endpoint; clear the old session proof before emitting
-					// the regression so the manager can durably invalidate routing.
+					// Party identity still binds this configured endpoint. Whether the
+					// pinned head is finalized or rolled back is the history's to say.
 					this._liveSessionHeadId = undefined;
 					this._headClock = undefined;
-					this.host.clearFinalizedFanout();
-					if (this._status !== HydraHeadStatus.Idle) {
-						this._status = HydraHeadStatus.Idle;
-						this.emitter.emit(HydraNodeEvent.StatusChange, {
-							status: HydraHeadStatus.Idle,
-							headId: undefined,
-							snapshotNumber: undefined,
-							contestationDeadline: undefined,
-						} satisfies StatusChangeData);
+					if (this.host.finalizedHeadProven()) this.bindFinalizedHead();
+					else {
+						// Never decided from a pass that started earlier. A closed one can
+						// still hold a HeadIsFinalized in its queue, and hydra-node greets a
+						// streaming one with the current status before it forwards a
+						// HeadIsFinalized written after that pass read the log. A rollback
+						// read from either would undo a fanned-out head. No time bound
+						// either: a history that never reaches its Greetings keeps this held
+						// and fail-closed, each failed pass recorded as a head error. A
+						// timeout read as a rollback could disable a head that fanned out
+						// while this service was down.
+						this._awaitingReplayVerdict = true;
+						this._evidenceHeld = true;
+						// Settles connect() only: isLiveSessionReady stays false, so websocket
+						// commands are refused and outcomes stay held until the verdict.
+						if (this.isConnectSettled()) this.emitter.emit(LIVE_SESSION_READY_EVENT);
+						if (!this._historyRereadPending) {
+							this._historyRereadPending = true;
+							this.host.rereadHistory();
+						}
 					}
 					return;
 				}
@@ -447,6 +568,7 @@ export class LiveFrameProcessor {
 					error instanceof Error ? error : new HydraProtocolError('Hydra live session identity validation failed');
 				this._liveSessionHeadId = undefined;
 				this._livePartyIdentityVerified = false;
+				this._awaitingReplayVerdict = false;
 				this._headClock = undefined;
 				// Whatever the replay held back came over a socket whose identity has
 				// just been rejected. Keeping it would mean applying, on the next
@@ -493,8 +615,8 @@ export class LiveFrameProcessor {
 			// The head is over before it ever opened, and nothing this session proved
 			// about it survives: there is no head left to clock, and a fanout map
 			// held from a replay belongs to a head that no longer exists. The same
-			// clearing the headless-Idle Greetings path does, for the same reason —
-			// both describe a node back at Idle.
+			// clearing a rollback verdict on a headless Idle Greetings does, for the
+			// same reason: both describe a node back at Idle.
 			//
 			// After the emission above, not before: clearing the session head id
 			// makes `isLiveSessionReady` false, and the early return that follows

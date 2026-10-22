@@ -27,7 +27,8 @@ import { HYDRA_HEAD_STATUS_RANK, type LockedHydraHeadLifecycle, type RegressiveS
 /**
  * Persist an authenticated live lifecycle rollback while holding the same
  * head-row lock used by final reconciliation. Hydra history replay never
- * emits StatusChange; a lower-ranked frame here therefore describes the
+ * emits StatusChange of its own; it only decides what a live headless Idle
+ * Greetings means. A lower-ranked frame here therefore describes the
  * local node's current L1 view rather than an old history item.
  */
 export async function persistRegressiveHeadStatus(

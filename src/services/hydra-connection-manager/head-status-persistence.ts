@@ -99,6 +99,25 @@ export async function persistHeadStatus(
 				});
 				return;
 			}
+			// A session of a finalized head reports Final once its replay proves the
+			// fanout, so an Idle naming no head here means the node's history does not
+			// show the finalization this row records: a node that lost its state. A
+			// rollback written from that would undo a fanout the handoff proves on L1
+			// before it moves anything, and could disable the whole relation. Leave the
+			// row and any fence as they are, for an operator. The transport stays up,
+			// and its history replay keeps failing, each pass recorded as a head error.
+			// If the node's log comes back, only a fresh live session binds the head.
+			if (
+				status === HydraHeadStatus.Idle &&
+				!headId &&
+				current.status === HydraHeadStatus.Final &&
+				current.finalizedAt != null
+			) {
+				logger.error('[HydraConnectionManager] Node is Idle without the finalization this head recorded', {
+					hydraHeadId,
+				});
+				return;
+			}
 			if (HYDRA_HEAD_STATUS_RANK[status] < HYDRA_HEAD_STATUS_RANK[current.status]) {
 				const rollbackResult = await persistRegressiveHeadStatus(
 					hydraHeadId,
@@ -120,6 +139,9 @@ export async function persistHeadStatus(
 					rollbackResult === 'persisted' &&
 					HYDRA_HEAD_STATUS_RANK[status] < HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Open];
 				if (rollbackResult.startsWith('quarantined') || rolledBackPastOpen) {
+					// The head is disabled now. Release its transport, as a failed connect
+					// would have: nothing else reconnects or tears down a disabled head.
+					host.scheduleRecovery();
 					// The head (or every head of the relation) is now held for explicit
 					// operator recovery; an earlier fail-closed mark must not undo that.
 					forgetHeadFailedClosed(hydraHeadId);

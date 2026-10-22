@@ -31,6 +31,7 @@ import {
 	isAwaitingPostChainTx,
 	prepareNewTxCommand,
 	sendHydraCommandAndWait,
+	waitUntilNodeSyncedForInit,
 } from './node-command-channel';
 import {
 	buildHydraCommitRequest,
@@ -47,7 +48,8 @@ import {
 	isEventLogRotatedFrame,
 	protocolErrorToString,
 } from './node-frames';
-import { HydraHistoryReplay, type HistoryReplayHost } from './node-history-replay';
+import { HydraHistoryReplay } from './node-history-replay';
+import type { HistoryReplayHost } from './node-history-replay-host';
 import { HydraHttpClient } from './node-http';
 import {
 	LIVE_SESSION_REJECTED_EVENT,
@@ -89,7 +91,6 @@ export class HydraNode extends EventEmitter {
 	 * spending that budget here would leave Init itself no time to be observed.
 	 */
 	static readonly INIT_SYNC_WAIT_MS = 180_000;
-	private static readonly INIT_SYNC_POLL_MS = 250;
 	static readonly COMMAND_RESPONSE_TIMEOUT_MS = 30_000;
 	/**
 	 * How long a submission waits for the HEAD to confirm a body this node has
@@ -155,10 +156,11 @@ export class HydraNode extends EventEmitter {
 		super();
 		this._httpUrl = config.httpUrl;
 		this._wsUrl = config.wsUrl ?? config.httpUrl.replace('http://', 'ws://').replace('https://', 'wss://');
-		// Dedicated evidence-only history socket: replay must never feed lifecycle
+		// Dedicated evidence-only history socket: replay never feeds lifecycle
 		// status or command listeners, which could regress head state or stampede
-		// handlers out of order. Construct the live socket last so existing test
-		// harnesses that capture the latest Connection still exercise live events.
+		// handlers out of order, except its verdict on a held headless Idle. Build
+		// the live socket last so test harnesses that capture the latest
+		// Connection still exercise live events.
 		this._historyConnection = new Connection(withHistorySetting(this._wsUrl, true), config.authToken);
 		this._connection = new Connection(withHistorySetting(this._wsUrl, false), config.authToken);
 		this._connectTimeoutMs = config.connectTimeoutMs ?? HydraNode.CONNECTION_TIMEOUT_MS;
@@ -222,6 +224,13 @@ export class HydraNode extends EventEmitter {
 			verifyGreetingsPartyIdentity: (message) => this._partyIdentity.verifyGreetingsPartyIdentity(message),
 			recordFinalizedFanout: (message) => this.recordFinalizedFanout(message),
 			clearFinalizedFanout: () => this._finalizedFanout.clear(),
+			finalizedHeadProven: () => this.finalizedHeadProven(),
+			finalizedSnapshotNumber: () => this._replay.finalizedSnapshotNumber,
+			rereadHistory: () => {
+				// Still failed only under the rotation latch, which ends the session.
+				if (this._replay.isFailed) return;
+				this._historyConnection.invalidate(new HydraTransportError('Live Greetings is Idle; replaying the history'));
+			},
 			setNetworkConnected: (connected) => {
 				this._liveNetworkConnected = connected;
 			},
@@ -253,6 +262,8 @@ export class HydraNode extends EventEmitter {
 				this._replayedNetworkConnected = connected;
 			},
 			recordFinalizedFanout: (message) => this.recordFinalizedFanout(message),
+			onIdleWithoutFinalization: () => this._live.settleHeadlessIdle('rolled-back'),
+			onPassClosed: () => this._live.settleHeadlessIdle(this.finalizedHeadProven() ? 'finalized' : 'disagrees'),
 			rememberReplayedDeposit: (data) => this._live.rememberReplayedDeposit(data),
 			rememberReplayedDecommit: (data) => this._live.rememberReplayedDecommit(data),
 			emitTxConfirmed: (txId, transaction) => {
@@ -303,7 +314,7 @@ export class HydraNode extends EventEmitter {
 		// Provider construction can call connect() again before Greetings changes
 		// the protocol status. Keep transport startup independent from head status.
 		if (this._connectPromise) return this._connectPromise;
-		if (this._connectionsStarted && this._connection.isOpen() && this._live.isLiveSessionReady()) {
+		if (this._connectionsStarted && this._connection.isOpen() && this._live.isConnectSettled()) {
 			return Promise.resolve();
 		}
 		this._connectionsStarted = true;
@@ -333,7 +344,7 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private waitForPinnedLiveSession(): Promise<void> {
-		return waitForLiveSessionReady(this, () => this._live.isLiveSessionReady(), this._connectTimeoutMs);
+		return waitForLiveSessionReady(this, () => this._live.isConnectSettled(), this._connectTimeoutMs);
 	}
 
 	private assertPersistenceReplayIsSupported(message: unknown): void {
@@ -372,6 +383,13 @@ export class HydraNode extends EventEmitter {
 
 	private recordFinalizedFanout(message: unknown): void {
 		this._finalizedFanout.record(message, (parsed) => this.assertExpectedHeadId(parsed));
+	}
+
+	/** The shared map alone is not proof: it survives a pass that later failed. */
+	private finalizedHeadProven(): boolean {
+		const headId = this._expectedHeadId;
+		if (headId == null || this._finalizedFanout.headId !== headId) return false;
+		return this._live.status === HydraHeadStatus.Final || this._replay.finalizedHeadId === headId;
 	}
 
 	private bindSnapshotPartyOrder(message: unknown): void {
@@ -428,7 +446,7 @@ export class HydraNode extends EventEmitter {
 		return this.hasVerifiedPinnedSessions && closed !== undefined ? BigInt(closed) : undefined;
 	}
 
-	/** Both evidence sockets have authenticated the same explicitly pinned head. */
+	/** Both evidence sockets have authenticated the same pinned head; never while a headless Idle is held. */
 	get hasVerifiedPinnedSessions(): boolean {
 		return (
 			this._unsupportedPersistenceRotationError == null &&
@@ -534,7 +552,7 @@ export class HydraNode extends EventEmitter {
 		// already-resolved promise still yields a microtask, and callers rely on
 		// Init reaching the socket in the same synchronous turn as the call.
 		if (this._live.chainSynced === false) {
-			await this.awaitChainSyncedForInit();
+			await waitUntilNodeSyncedForInit(() => this._live.chainSynced, this._expectedHeadId, HydraNode.INIT_SYNC_WAIT_MS);
 		}
 
 		return await this.sendCommandAndWait({
@@ -617,31 +635,8 @@ export class HydraNode extends EventEmitter {
 		return this._live.chainSynced;
 	}
 
-	/**
-	 * Hold until a node that reported itself behind the chain reports synced.
-	 * Resolves at once when the state is synced or unknown. Rejects as a
-	 * transport error — the command was never sent, so there is nothing to
-	 * reconcile — if the node is still behind after `INIT_SYNC_WAIT_MS`.
-	 */
-	private async awaitChainSyncedForInit(): Promise<void> {
-		logger.info('[HydraNode] Node reports it is catching up; holding Init until it is synced', {
-			headId: this._expectedHeadId,
-		});
-		const deadline = Date.now() + HydraNode.INIT_SYNC_WAIT_MS;
-		while (this._live.chainSynced === false) {
-			if (Date.now() >= deadline) {
-				throw new HydraTransportError(
-					`Init not sent: hydra-node still reports it is behind the chain after ${Math.round(
-						HydraNode.INIT_SYNC_WAIT_MS / 1000,
-					)}s; retry once it reports synced`,
-				);
-			}
-			await new Promise((resolve) => setTimeout(resolve, HydraNode.INIT_SYNC_POLL_MS));
-		}
-	}
-
 	isTxConfirmed(txHash: string): boolean {
-		return this._ledger.hasConfirmed(txHash);
+		return !this._live.isEvidenceHeld && this._ledger.hasConfirmed(txHash);
 	}
 
 	getConfirmedTransaction(txHash: string): HydraConfirmedTransaction | null {
@@ -659,7 +654,13 @@ export class HydraNode extends EventEmitter {
 		// accumulator verification, and a consecutive signed-state transition. It is
 		// safe to durably drain a bounded page before the terminal Greetings marker;
 		// destructive/live-tip inference remains separately gated on a complete pass.
+		// Not while a headless Idle is held, a live socket close included: a
+		// rollback verdict must close its admission gate before any of this
+		// applies. That [] means held, not drained. Paths that act on an empty
+		// queue are gated on hasVerifiedPinnedSessions (false while held), except
+		// the reconcile loop's stall-marker clear, which only an operator reads.
 		if (this._expectedHeadId == null || this._unsupportedPersistenceRotationError) return [];
+		if (this._live.isEvidenceHeld) return [];
 		return this._ledger.getUnreconciledSorted();
 	}
 
@@ -685,10 +686,10 @@ export class HydraNode extends EventEmitter {
 
 	async awaitTx(txHash: string, checkInterval: number = 1000, timeoutMs: number = this._commandTimeoutMs) {
 		assertTxConfirmationPolling(checkInterval, timeoutMs);
-		if (this._ledger.hasConfirmed(txHash)) return true;
+		if (this.isTxConfirmed(txHash)) return true;
 		return await awaitHydraTxConfirmation({
 			connections: [this._connection, this._historyConnection],
-			hasConfirmed: (hash) => this._ledger.hasConfirmed(hash),
+			hasConfirmed: (hash) => this.isTxConfirmed(hash),
 			txHash,
 			checkIntervalMs: checkInterval,
 			timeoutMs,

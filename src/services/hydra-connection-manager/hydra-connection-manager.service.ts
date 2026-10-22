@@ -55,6 +55,15 @@ import {
  */
 const snapshotAccumulator = createWorkerAccumulatorComputer();
 
+/**
+ * Heads this process keeps a session for. A head whose fanout handoff
+ * completed gets none: its node is Idle again and answers no head query, and
+ * a session would read that Idle as a rollback. So an L1 rollback of the
+ * fanout after the handoff is not observed here; the handoff's confirmation
+ * depth is the only guard against it.
+ */
+const SESSION_HEAD_WHERE = { isEnabled: true, reconciliationCompletedAt: null } as const;
+
 export class HydraConnectionManager {
 	/**
 	 * One slot per head this process has ever touched. Slots are permanent for
@@ -85,7 +94,7 @@ export class HydraConnectionManager {
 
 	async initialize(): Promise<void> {
 		const enabledHeads = await prisma.hydraHead.findMany({
-			where: { isEnabled: true },
+			where: SESSION_HEAD_WHERE,
 			include: headConfigurationInclude,
 		});
 
@@ -105,6 +114,7 @@ export class HydraConnectionManager {
 
 	/**
 	 * Give every enabled head a session, not just the ones that existed at boot.
+	 * A head whose fanout handoff completed is left out (`SESSION_HEAD_WHERE`).
 	 *
 	 * `initialize` runs once. A head created afterwards — which is every head
 	 * created from an invite — was never connected, so the issuing side sat with
@@ -117,7 +127,7 @@ export class HydraConnectionManager {
 	 */
 	async reconcileMissingSessions(): Promise<number> {
 		const enabledHeads = await prisma.hydraHead.findMany({
-			where: { isEnabled: true, LocalParticipant: { isNot: null } },
+			where: { ...SESSION_HEAD_WHERE, LocalParticipant: { isNot: null } },
 			select: { id: true },
 		});
 
@@ -136,7 +146,7 @@ export class HydraConnectionManager {
 		return reconnected;
 	}
 
-	/** Converge the in-memory transport to the latest durable enable flag. */
+	/** Converge the in-memory transport to the latest durable enable flag; a completed head is released. */
 	async reconcileEnabledState(hydraHeadId: string): Promise<boolean> {
 		return await this.sessionFor(hydraHeadId).runControl(
 			async () => await this.reconcileEnabledStateInner(hydraHeadId),
@@ -146,9 +156,9 @@ export class HydraConnectionManager {
 	private async reconcileEnabledStateInner(hydraHeadId: string): Promise<boolean> {
 		const durable = await prisma.hydraHead.findUnique({
 			where: { id: hydraHeadId },
-			select: { isEnabled: true, status: true, initTxHash: true },
+			select: { isEnabled: true, status: true, initTxHash: true, reconciliationCompletedAt: true },
 		});
-		if (!durable?.isEnabled) {
+		if (!durable?.isEnabled || durable.reconciliationCompletedAt != null) {
 			await this.disconnect(hydraHeadId);
 			this.getSession(hydraHeadId)?.clearQuarantine();
 			return false;
@@ -287,10 +297,10 @@ export class HydraConnectionManager {
 				}
 			}
 		} catch (error) {
-			// A failed pinned-session handshake can still emit an authenticated
-			// headless Idle Greetings that rolls durable Open state back. Keep the
-			// attachment/listeners alive until that queued regression and any frame
-			// received during socket shutdown have both been persisted.
+			// A failed pinned-session handshake can still have queued an authenticated
+			// status that rolls durable state back. Keep the attachment/listeners alive
+			// until that queued regression and any frame received during socket
+			// shutdown have both been persisted.
 			await this.flushHeadStatus(head.id);
 			try {
 				await hydraHead.mainNode.disconnect();
@@ -376,9 +386,10 @@ export class HydraConnectionManager {
 		session.revokeCommands(attachment.head);
 
 		// Keep lifecycle listeners attached until both sockets are closed. A live
-		// rollback Greetings can arrive while websocket shutdown is in flight; if
-		// listeners are removed first, DB can retain false Final/completion state
-		// forever after the transport disappears.
+		// rollback can arrive while websocket shutdown is in flight; if listeners
+		// are removed first, DB can retain false Final/completion state forever
+		// after the transport disappears. A headless Idle Greetings is held for the
+		// replay instead, and a hold still open at shutdown is dropped.
 		await this.flushHeadStatus(hydraHeadId);
 		try {
 			await attachment.head.mainNode.disconnect();
