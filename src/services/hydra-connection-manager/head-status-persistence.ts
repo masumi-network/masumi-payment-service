@@ -369,6 +369,17 @@ export async function recordClosedHeadFacts(hydraHeadId: string, node: HydraNode
 	try {
 		const facts = await node.fetchClosedHeadFacts();
 		if (!facts) return;
+		// The snapshot goes first. A null deadline is what makes the caller read again,
+		// so the deadline is written last: if the snapshot write fails, the next
+		// reconnect still retries both.
+		// 0 is what the row already holds, so there is nothing to record.
+		if (facts.snapshotNumber > 0) {
+			const snapshotNumber = BigInt(facts.snapshotNumber);
+			await prisma.hydraHead.updateMany({
+				where: { id: hydraHeadId, latestSnapshotNumber: { lt: snapshotNumber }, ownerEpoch },
+				data: { latestSnapshotNumber: snapshotNumber },
+			});
+		}
 		const deadline = new Date(facts.contestationDeadline);
 		if (Number.isFinite(deadline.getTime())) {
 			await prisma.hydraHead.updateMany({
@@ -379,14 +390,6 @@ export async function recordClosedHeadFacts(hydraHeadId: string, node: HydraNode
 			logger.warn('[HydraConnectionManager] Ignoring unparseable contestationDeadline in the node head state', {
 				hydraHeadId,
 				contestationDeadline: facts.contestationDeadline,
-			});
-		}
-		// 0 is what the row already holds, so there is nothing to record.
-		if (facts.snapshotNumber > 0) {
-			const snapshotNumber = BigInt(facts.snapshotNumber);
-			await prisma.hydraHead.updateMany({
-				where: { id: hydraHeadId, latestSnapshotNumber: { lt: snapshotNumber }, ownerEpoch },
-				data: { latestSnapshotNumber: snapshotNumber },
 			});
 		}
 	} catch (error) {

@@ -321,6 +321,26 @@ describe('recordClosedHeadFacts under the ownership fence', () => {
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
+	it('leaves the deadline unset when the snapshot write fails, so the next reconnect reads again', async () => {
+		const head = fakeHead();
+		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
+		const isSnapshotWrite = (args: unknown) =>
+			typeof args === 'object' &&
+			args !== null &&
+			'data' in args &&
+			typeof args.data === 'object' &&
+			args.data !== null &&
+			'latestSnapshotNumber' in args.data;
+		mockUpdateMany.mockImplementation((args) =>
+			isSnapshotWrite(args) ? Promise.reject(new Error('database blip')) : Promise.resolve({ count: 1 }),
+		);
+
+		await expect(recordClosedHeadFacts('head-1', head.mainNode, 2n)).resolves.toBeUndefined();
+		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: { contestationDeadline: expect.any(Date) as unknown as Date } }),
+		);
+	});
+
 	it('swallows a failed write', async () => {
 		const head = fakeHead();
 		factsOf(head).mockReturnValue(Promise.resolve(FACTS));
