@@ -17,6 +17,10 @@ const ADMIN = 'a'.repeat(40);
 const USER = 'u'.repeat(40);
 /** Long enough that only a hung response reaches it. */
 const CALLER_TIMEOUT_MS = 2_000;
+/** Long enough that only a node connection that is never released reaches it. */
+const NODE_RELEASE_WAIT_MS = 2_000;
+/** The proxy's own side of a hang-up can log after the node already saw its socket close. */
+const LATE_LOG_WAIT_MS = 100;
 
 const env: EnvSource = {
 	get: (key) =>
@@ -246,6 +250,66 @@ describe('node api proxy', () => {
 			// wait on it until jest's own timeout hid the real failure.
 			dropping.closeAllConnections();
 			await new Promise<void>((resolve) => dropping.close(() => resolve()));
+		}
+	});
+
+	// 'aborted' only covers a request still being read, so a caller that hung
+	// up after that left the node's connection open: for good mid-body, and
+	// until the node answered when the caller left first.
+	it.each([
+		['mid-body', true],
+		['before the node answers', false],
+	])('releases the node connection when the caller hangs up %s', async (_label, isNodeAnswering) => {
+		let markNodeReached: () => void = () => undefined;
+		const nodeReached = new Promise<void>((resolve) => {
+			markNodeReached = resolve;
+		});
+		let markNodeReleased: () => void = () => undefined;
+		const nodeReleased = new Promise<'released'>((resolve) => {
+			markNodeReleased = () => resolve('released');
+		});
+		const streaming = createServer((request, response) => {
+			request.socket.once('close', () => markNodeReleased());
+			markNodeReached();
+			if (isNodeAnswering) {
+				response.writeHead(200, { 'Content-Type': 'application/json' });
+				response.write('{"tag":"Open","contents":');
+			}
+		});
+		await new Promise<void>((resolve) => streaming.listen(0, '127.0.0.1', resolve));
+		let waitTimer: NodeJS.Timeout | undefined;
+		try {
+			const apiPort = (streaming.address() as AddressInfo).port;
+			await store.update('node-1', (current) => ({ ...current, apiPort }));
+			const caller = new AbortController();
+			const answer = fetch(`${baseUrl}/v1/nodes/node-1/api/head`, {
+				headers: { Authorization: `Bearer ${USER}` },
+				signal: caller.signal,
+			});
+			if (isNodeAnswering) {
+				// The headers came through the proxy, so the caller leaves mid-body.
+				const response = await answer;
+				caller.abort();
+				await response.text().catch(() => undefined);
+			} else {
+				await nodeReached;
+				caller.abort();
+				await answer.catch(() => undefined);
+			}
+			const outcome = await Promise.race([
+				nodeReleased,
+				new Promise<'held'>((resolve) => {
+					waitTimer = setTimeout(() => resolve('held'), NODE_RELEASE_WAIT_MS);
+				}),
+			]);
+			expect(outcome).toBe('released');
+			// The caller left; the node did nothing wrong.
+			await new Promise((resolve) => setTimeout(resolve, LATE_LOG_WAIT_MS));
+			expect(loggedErrors).toEqual([]);
+		} finally {
+			clearTimeout(waitTimer);
+			streaming.closeAllConnections();
+			await new Promise<void>((resolve) => streaming.close(() => resolve()));
 		}
 	});
 

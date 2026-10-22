@@ -92,8 +92,11 @@ export function proxyHttp(
 			// A node that closes the connection mid-body fails only this response,
 			// and pipe() does not pass that on: the caller's response stayed open,
 			// unlogged, until the caller's own timeout. Cut it instead. A reset
-			// fails the request as well; destroying twice is harmless.
+			// fails the request first, and its handler has already logged and cut
+			// the response. A caller that hung up lands here too, and that is no
+			// node failure. Either way there is nothing left to report.
 			upstreamResponse.on('error', (error: Error) => {
+				if (response.destroyed) return;
 				onError(`proxy to node api port ${apiPort} failed mid-response: ${error.message}`);
 				response.destroy();
 			});
@@ -103,6 +106,8 @@ export function proxyHttp(
 	);
 
 	upstream.on('error', (error: Error) => {
+		// A caller that hung up is not a node failure.
+		if (response.destroyed) return;
 		onError(`proxy to node api port ${apiPort} failed: ${error.message}`);
 		// Once writeHead has run, the node's status is committed, so a body
 		// appended here would read as the node's own complete answer.
@@ -115,6 +120,12 @@ export function proxyHttp(
 	});
 
 	request.on('aborted', () => upstream.destroy());
+	// 'aborted' only covers a request still being read. A caller that hung up
+	// after that left the node's connection open: until the node answered, or
+	// for good mid-body, where pipe() pauses on the dead response.
+	response.on('close', () => {
+		if (!response.writableFinished) upstream.destroy();
+	});
 	request.pipe(upstream);
 }
 
