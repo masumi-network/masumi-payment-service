@@ -40,6 +40,7 @@ function host(): { [K in keyof HeadStatusPersistenceHost]: jest.Mock } {
 		quarantine: jest.fn(),
 		clearQuarantineAfterReobservation: jest.fn(),
 		scheduleRecovery: jest.fn(),
+		reconcileSibling: jest.fn(),
 		onStaleOwner: jest.fn(),
 	};
 }
@@ -109,21 +110,28 @@ describe('persistHeadStatus under the ownership fence', () => {
 		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Final }));
 		mockPersistRegressive.mockResolvedValue('quarantined-relation-conflict');
 		mockFindMany.mockResolvedValue([{ id: 'head-1' }, { id: 'head-2' }]);
+		const persistenceHost = host();
 
-		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Open });
+		await persistHeadStatus(persistenceHost, 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Open });
 
 		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-1');
 		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-2');
+		// The quarantine disabled head-2 as well; its live transport must go too.
+		expect(persistenceHost.reconcileSibling).toHaveBeenCalledWith('head-2');
+		expect(persistenceHost.reconcileSibling).toHaveBeenCalledTimes(1);
 	});
 
 	it('drops the auto-recovery mark when a rollback below Open disabled the head', async () => {
 		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Open }));
 		mockPersistRegressive.mockResolvedValue('persisted');
-		mockFindMany.mockResolvedValue([{ id: 'head-1' }]);
+		mockFindMany.mockResolvedValue([{ id: 'head-1' }, { id: 'head-2' }]);
+		const persistenceHost = host();
 
-		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Initializing });
+		await persistHeadStatus(persistenceHost, 'head-1', fakeHead(), 1n, { status: HydraHeadStatus.Initializing });
 
 		expect(mockForgetHeadFailedClosed).toHaveBeenCalledWith('head-1');
+		// A plain rollback leaves the siblings enabled.
+		expect(persistenceHost.reconcileSibling).not.toHaveBeenCalled();
 	});
 
 	it('keeps the mark for a rollback that leaves the head open', async () => {
