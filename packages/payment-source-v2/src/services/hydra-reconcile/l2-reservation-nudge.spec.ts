@@ -5,6 +5,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { Network } from '@/generated/prisma/client';
 import { encrypt } from '@/utils/security/encryption';
 import { readHydraSignedTransactionShape } from '@/lib/hydra/hydra/signed-transaction-shape';
+import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from '@/services/hydra-decommit/stale';
 import { encodeL2ReleaseNudgeDatum, readL2ReleaseNudgeProof } from './l2-release-nudge-proof';
 import {
 	L2_RELEASE_NUDGE_INTERVAL_MS,
@@ -133,6 +134,12 @@ describe('nudgeIdleHeadForRelease', () => {
 		options: {
 			wallet?: boolean;
 			decommit?: boolean;
+			/** A withdrawal row this old, in ms, with this status. */
+			staleDecommit?: { status: 'Preparing' | 'Pending'; ageMs: number };
+			/** Also a fresh Preparing row next to the stale one. */
+			alsoFresh?: boolean;
+			/** The node's `GET /head` reply, or an Error it throws. */
+			headState?: unknown;
 			/** Null: the node could not be asked. */
 			pendingDecommits?: readonly string[] | null;
 			recordedCount?: number;
@@ -152,7 +159,21 @@ describe('nudgeIdleHeadForRelease', () => {
 							},
 				),
 			},
-			hydraDecommit: { findFirst: jest.fn(async () => (options.decommit ? { id: 'decommit-1' } : null)) },
+			hydraDecommit: {
+				findMany: jest.fn(async () => {
+					if (options.staleDecommit) {
+						const at = new Date(nowMs - options.staleDecommit.ageMs);
+						const fresh = { status: 'Preparing', createdAt: new Date(nowMs), updatedAt: new Date(nowMs) };
+						return [
+							{ status: options.staleDecommit.status, createdAt: at, updatedAt: at },
+							...(options.alsoFresh ? [fresh] : []),
+						];
+					}
+					return options.decommit
+						? [{ status: 'Preparing', createdAt: new Date(nowMs), updatedAt: new Date(nowMs) }]
+						: [];
+				}),
+			},
 			transaction: { updateMany: jest.fn(async (_args: unknown) => ({ count: options.recordedCount ?? 1 })) },
 		};
 		const node = {
@@ -161,6 +182,10 @@ describe('nudgeIdleHeadForRelease', () => {
 			fetchPendingDecommitRefs: jest.fn(async () =>
 				options.pendingDecommits === null ? undefined : [...(options.pendingDecommits ?? [])],
 			),
+			get: jest.fn(async (_url: string) => {
+				if (options.headState instanceof Error) throw options.headState;
+				return options.headState;
+			}),
 		};
 		const provider = {
 			fetchAddressUTxOs: jest.fn(async (_address: string) => options.utxos ?? [lockInputA, lockInputB, utxo('c', 0)]),
@@ -244,6 +269,46 @@ describe('nudgeIdleHeadForRelease', () => {
 		const h = harness(options);
 		await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(false);
 		expect(h.head.newTx).not.toHaveBeenCalled();
+	});
+
+	describe('an abandoned withdrawal row', () => {
+		const nodeHoldsNoWithdrawal = { contents: { coordinatedHeadState: { decommitTx: null } } };
+		const nodeHoldsWithdrawal = { contents: { coordinatedHeadState: { decommitTx: { txId: 'd'.repeat(64) } } } };
+		const staleAgeMs = 2 * PENDING_STALE_AFTER_MS;
+
+		it.each([
+			['a crash left it Preparing', { status: 'Preparing', ageMs: PREPARING_STALE_AFTER_MS + 1 }],
+			['an ambiguous answer left it Pending', { status: 'Pending', ageMs: staleAgeMs }],
+		] as const)('no longer blocks once %s and the node holds no withdrawal', async (_label, staleDecommit) => {
+			const h = harness({ staleDecommit, headState: nodeHoldsNoWithdrawal });
+			await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(true);
+			expect(h.node.get).toHaveBeenCalledWith('/head');
+			expect(h.head.newTx).toHaveBeenCalled();
+		});
+
+		it.each([
+			['the node still holds a withdrawal', nodeHoldsWithdrawal],
+			['the node cannot be read', new Error('502 Bad Gateway')],
+			['the node reply has an unknown shape', { contents: { coordinatedHeadState: {} } }],
+		])('still blocks when %s', async (_label, headState) => {
+			const h = harness({ staleDecommit: { status: 'Pending', ageMs: staleAgeMs }, headState });
+			await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(false);
+			expect(h.head.newTx).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			['a Pending row is younger than its age limit', { status: 'Pending', ageMs: PENDING_STALE_AFTER_MS - 1 }, false],
+			[
+				'a Preparing row is younger than its age limit',
+				{ status: 'Preparing', ageMs: PREPARING_STALE_AFTER_MS - 1 },
+				false,
+			],
+			['a fresh row sits next to the abandoned one', { status: 'Pending', ageMs: staleAgeMs }, true],
+		] as const)('still blocks, without asking the node, when %s', async (_label, staleDecommit, alsoFresh) => {
+			const h = harness({ staleDecommit, alsoFresh, headState: nodeHoldsNoWithdrawal });
+			await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(false);
+			expect(h.node.get).not.toHaveBeenCalled();
+		});
 	});
 
 	it('sends nothing when another writer recorded a nudge first', async () => {

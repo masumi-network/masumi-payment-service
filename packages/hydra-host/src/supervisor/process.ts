@@ -25,6 +25,42 @@ export type SpawnRequest = {
 	nodeDir: string;
 };
 
+/**
+ * The only environment variables a hydra-node inherits from the Host.
+ *
+ * The Host process holds HYDRA_HOST_ADMIN_TOKEN and HYDRA_HOST_USER_TOKEN, and
+ * `spawn` without `env` hands every child the whole parent environment. This
+ * keeps the tokens out of anything a node logs or dumps. It is no barrier to
+ * code execution in a node: the node runs as the Host's uid and can read
+ * `/proc/<Host pid>/environ`.
+ *
+ * A node takes its own configuration from argv. PATH stays because
+ * `--use-system-etcd` makes hydra-node find etcd there, and the locale and
+ * zone keep its log output unchanged.
+ *
+ * `ETCD_*` keys pass through as well: hydra-node hands its environment to the
+ * etcd it runs, and the documented recovery for a wiped node next to an intact
+ * peer is `ETCD_INITIAL_CLUSTER_STATE=existing`. The one exception is
+ * `ETCD_VERSION`, which the image sets as build metadata. etcd ignores that
+ * key with a warning, so dropping it only keeps the warning out of the log.
+ */
+const NODE_ENV_ALLOWLIST = ['PATH', 'LANG', 'LC_ALL', 'TZ'] as const;
+const ETCD_ENV_PREFIX = 'ETCD_';
+const ETCD_ENV_EXCLUDED = 'ETCD_VERSION';
+
+export function nodeEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+	const result: NodeJS.ProcessEnv = {};
+	for (const [key, value] of Object.entries(env)) {
+		if (value === undefined) continue;
+		const isAllowed = (NODE_ENV_ALLOWLIST as readonly string[]).includes(key);
+		const isEtcdOverride = key.startsWith(ETCD_ENV_PREFIX) && key !== ETCD_ENV_EXCLUDED;
+		if (isAllowed || isEtcdOverride) {
+			result[key] = value;
+		}
+	}
+	return result;
+}
+
 export type StopResult = {
 	/** True when the process exited on SIGTERM; false when it had to be killed. */
 	graceful: boolean;
@@ -285,6 +321,7 @@ export class NodeProcessManager {
 
 		const child = spawn(request.binary, request.args, {
 			cwd: request.nodeDir,
+			env: nodeEnvironment(),
 			stdio: ['ignore', handle.fd, handle.fd],
 			detached: false,
 		});
