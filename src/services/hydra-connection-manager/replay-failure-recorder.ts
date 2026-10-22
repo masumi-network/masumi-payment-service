@@ -26,7 +26,11 @@ export const REPLAY_FAILURE_RETRY_MS = 30 * 1000;
  * looking, instead of only in a log line they have no reason to read.
  *
  * A changed error is recorded at once. The same error is recorded again once
- * per window, so the newest row still shows that the head is stuck.
+ * per window, so the newest row still shows that the head is stuck. Only the
+ * last error is kept: two errors that took turns would each be recorded on
+ * every pass. No history is known to fail that way. No event reports a pass
+ * that completed, so a head that recovers and fails the same way inside the
+ * window gets no new row until the window ends.
  */
 export function recordReplayFailures(node: EventEmitter, hydraHeadId: string): void {
 	/** Monotonic time: a wall clock stepped back would stretch the wait. */

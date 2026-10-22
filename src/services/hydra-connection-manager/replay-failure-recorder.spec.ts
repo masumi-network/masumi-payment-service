@@ -45,13 +45,13 @@ describe('recordReplayFailures', () => {
 		const node = new EventEmitter();
 		recordReplayFailures(node, 'head-1');
 
-		for (let pass = 0; pass < 5; pass += 1) await failPass(node, HEAD_ID_MISMATCH);
-		expect(recordedMessages()).toEqual([HEAD_ID_MISMATCH]);
+		// A pass every second through a whole window, then two into the next: one
+		// records, one is skipped. A window that slid with each skipped pass would
+		// never record again, and one not renewed would record a third row.
+		const passes = REPLAY_FAILURE_REPEAT_WINDOW_MS / PASS_INTERVAL_MS + 2;
+		for (let pass = 0; pass < passes; pass += 1) await failPass(node, HEAD_ID_MISMATCH);
 
-		await jest.advanceTimersByTimeAsync(REPLAY_FAILURE_REPEAT_WINDOW_MS);
-		await failPass(node, HEAD_ID_MISMATCH);
-		await failPass(node, HEAD_ID_MISMATCH);
-		expect(recordedMessages()).toHaveLength(2);
+		expect(recordedMessages()).toEqual([HEAD_ID_MISMATCH, HEAD_ID_MISMATCH]);
 	});
 
 	it('records a changed replay error at once', async () => {
