@@ -34,6 +34,9 @@ services:
       # only when the loaded ruleset refuses the peer range on both hooks, so an
       # empty value means the firewall is not verified.
       HYDRA_HOST_PEER_FIREWALL_ACK: ${HYDRA_HOST_PEER_FIREWALL_ACK:?set it from hydra-peer-firewall verify}
+      # Hold a removed node's peer port until `refresh` acknowledges a ruleset
+      # without that node's peers. Provisioning waits for the first refresh.
+      HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH: 'true'
     ports:
       # Must match HYDRA_HOST_PEER_PORT_START and _COUNT in the base file.
       - '${HYDRA_HOST_PEER_BIND_IP:-0.0.0.0}:5001-5032:5001-5032'

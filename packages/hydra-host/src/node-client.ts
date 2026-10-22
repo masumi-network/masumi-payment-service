@@ -127,6 +127,10 @@ export class NodeClient {
 		return this.request('/snapshot');
 	}
 
+	async fetchHead(): Promise<unknown> {
+		return this.request('/head');
+	}
+
 	async sideLoadSnapshot(snapshot: unknown): Promise<void> {
 		await this.request('/snapshot', {
 			method: 'POST',

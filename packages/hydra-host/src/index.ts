@@ -17,6 +17,7 @@ import { redemptionNetwork, verifyRedemptionSignature } from './registry/redempt
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
 import { peerTargetRejection } from './peer-target-policy.js';
+import { describeUnsettleableLedgerParams } from './ledger-params.js';
 import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
@@ -80,6 +81,15 @@ async function main(): Promise<void> {
 				'(a network needs a reviewed base file in packages/hydra-host/params/base first)',
 		);
 	}
+	// Logged here and enforced on every node not yet acked and peered (see
+	// `ledger-params.ts`): refusing the boot would also stop the nodes of heads
+	// already open on this file.
+	const ledgerParamsRefusal = describeUnsettleableLedgerParams(config.ledgerProtocolParametersFile);
+	if (ledgerParamsRefusal !== null) {
+		logger.error(
+			`[host] ${ledgerParamsRefusal}. Running nodes keep running; nodes not yet acked and peered are refused`,
+		);
+	}
 
 	// Same reasoning for the two executables every node needs. Neither is used
 	// until a node is provisioned, and a node that cannot find them dies seconds
@@ -109,6 +119,7 @@ async function main(): Promise<void> {
 	const allocator = new PortAllocator(
 		config.ports,
 		existing.map((record) => record.peerPort),
+		{ requirePeerFirewallRefresh: config.requirePeerFirewallRefresh },
 	);
 	for (const { peerPort, reason } of allocator.unclaimablePorts) {
 		// Loud, because the node holding it keeps running and keeps that port
@@ -120,6 +131,9 @@ async function main(): Promise<void> {
 		);
 	}
 	logger.info(`[host] ${allocator.used} of ${config.ports.capacity} node slots in use`);
+	if (config.requirePeerFirewallRefresh) {
+		logger.info('[host] provisioning waits for the first acknowledged hydra-peer-firewall refresh');
+	}
 
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
 	startup.supervisor = supervisor;
@@ -160,6 +174,7 @@ async function main(): Promise<void> {
 		// key material on the volume for a node no record mentions. Without this,
 		// that rollback failure was logged to an optional logger nothing supplied.
 		logger,
+		ledgerParamsRefusal,
 	};
 
 	const recoverRedemptions = createRedemptionRecovery(exchange, provisionDeps, logger);
@@ -209,6 +224,7 @@ async function main(): Promise<void> {
 		verifyRedemption: async (nonce, redeemer, signature) =>
 			await verifyRedemptionSignature(nonce, redemptionNetwork(config.network), redeemer, signature),
 		isNodeStopped: async (hostNodeId) => (await store.read(hostNodeId))?.desired === 'Stopped',
+		ledgerParamsRefusal,
 		onRedeemed: async () => {
 			await recoverRedemptions();
 			tickSupervisor('exchange redemption');

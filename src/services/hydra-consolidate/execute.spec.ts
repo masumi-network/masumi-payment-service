@@ -55,6 +55,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 		getProvider: () => ({
 			fetchAddressUTxOs: mockFetchAddressUTxOs,
 			fetchProtocolParameters: mockFetchProtocolParameters,
+			spendableUTxOs: <T>(utxos: T[]) => utxos,
 		}),
 	}),
 }));

@@ -30,6 +30,16 @@ import { deriveNodeCardanoVkey } from './node-keys';
 
 /** The Host's answer when every node slot is in use (`PortExhaustedError`). */
 const HOST_FULL_STATUS = 507;
+/**
+ * The Host's answer while every free slot waits for its peer firewall refresh
+ * (`PeerFirewallPendingError`). A load balancer in front of a Host that is down
+ * answers the same, and both pass on their own.
+ */
+const HOST_UNAVAILABLE_STATUS = 503;
+/** The peer firewall timer runs every 30 seconds, so one retry after that finds a slot. */
+const HOST_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
+/** The Host's refusal: unsafe L2 ledger params, or an idempotency key reused with different parameters. */
+const HOST_REFUSED_STATUS = 409;
 
 export type HeadPeriods = {
 	contestationPeriodSeconds: number;
@@ -397,6 +407,22 @@ export async function reserveNodeForExchange(
 					`HYDRA_HOST_PEER_PORT_COUNT on it, or free a slot by removing the node of a finalised head (${error.message})`,
 			);
 		}
+		// Transient, and nothing is reserved yet: the Host refuses before it takes a
+		// port or writes a key, and nothing here has written a row. So the caller
+		// can simply retry. Exposed, because the default 5xx handling would hide
+		// the reason in production.
+		if (error instanceof HydraHostRequestError && error.status === HOST_UNAVAILABLE_STATUS) {
+			throw createHttpError(
+				503,
+				`the hydra host cannot provision a node right now; retry in ${HOST_UNAVAILABLE_RETRY_AFTER_SECONDS} seconds (${error.message})`,
+				{ expose: true, headers: { 'Retry-After': String(HOST_UNAVAILABLE_RETRY_AFTER_SECONDS) } },
+			);
+		}
+		// The Host's own refusal, such as unsafe L2 ledger params. An HttpError, so
+		// the operator reads its fix instead of a bare 500.
+		if (error instanceof HydraHostRequestError && error.status === HOST_REFUSED_STATUS) {
+			throw createHttpError(409, `the hydra host at ${host.baseUrl} refused to provision a node: ${error.message}`);
+		}
 		throw error;
 	}
 	const urls = hostNodeUrls(host.baseUrl, provisioned.nodeId, transport);
@@ -406,11 +432,19 @@ export async function reserveNodeForExchange(
 	// node on a previous attempt, and its participant row already exists.
 	const existing = await prisma.hydraLocalParticipant.findFirst({
 		where: { hydraHostId: host.id, hostNodeId: provisioned.nodeId },
-		select: { id: true },
+		select: { id: true, walletId: true },
 	});
 
 	let localParticipantId: string;
 	if (existing !== null) {
+		// Two redemptions of one invite share its nonce, so the second replays the
+		// node the first reserved. When they name different wallets, accepting the
+		// row recorded a redemption for a node bound to the other wallet; head
+		// creation then refused the mismatch with the nonce already spent. Refuse
+		// before the ack, so this attempt leaves nothing behind.
+		if (existing.walletId !== localHotWalletId) {
+			throw createHttpError(409, 'the node reserved for this nonce belongs to a different wallet');
+		}
 		localParticipantId = existing.id;
 	} else if (provisioned.secrets === null) {
 		// No secrets and no prior row: the material exists only on the Host, and

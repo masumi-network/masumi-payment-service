@@ -1,13 +1,21 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
+import {
+	HydraCommandRejectedError,
+	HydraPostTxRejectedError,
+	HydraProtocolError,
+	HydraTransportError,
+} from '@/lib/hydra';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindHead = jest.fn() as AnyMock;
 const mockConnect = jest.fn() as AnyMock;
 const mockInit = jest.fn() as AnyMock;
+const mockNodeGet = jest.fn() as AnyMock;
 const mockFlush = jest.fn() as AnyMock;
+const mockWarn = jest.fn() as AnyMock;
 const mockReadNodeState = jest.fn() as AnyMock;
 const mockRecordHeadError = jest.fn() as AnyMock;
 
@@ -34,7 +42,7 @@ jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: jest.fn(), warn: mockWarn, error: jest.fn(), debug: jest.fn() },
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/node-state', () => ({
@@ -48,7 +56,7 @@ jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({
 		connect: mockConnect,
-		getHead: () => ({ init: mockInit }),
+		getHead: () => ({ init: mockInit, mainNode: { get: mockNodeGet } }),
 		flushHeadStatus: mockFlush,
 		reconcileEnabledState: jest.fn(),
 	}),
@@ -88,6 +96,7 @@ beforeEach(() => {
 	});
 	mockConnect.mockResolvedValue(undefined);
 	mockInit.mockResolvedValue(undefined);
+	mockNodeGet.mockResolvedValue({ maxTxSize: 15_000 });
 	mockFlush.mockResolvedValue(undefined);
 	// Caught up by default, so a timeout with nothing else set is a real failure.
 	mockReadNodeState.mockResolvedValue({
@@ -124,6 +133,115 @@ describe('initHeadPost, on the issuing side', () => {
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 			message: expect.stringContaining('counterparty'),
 		});
+	});
+});
+
+// Whatever Host the node runs on, an older build included, a head opened on an
+// L2 maxTxSize above the shipped one can hold an output fanout cannot move.
+describe('initHeadPost, on a node with unsafe L2 params', () => {
+	it('refuses before posting Init', async () => {
+		mockNodeGet.mockResolvedValue({ maxTxSize: 16_384 });
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('L2 maxTxSize of 16384, above 15000'),
+		});
+		expect(mockNodeGet).toHaveBeenCalledWith('/protocol-parameters');
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	// A node that is down is not a failed Init, so it must not land on the head as an error.
+	it('answers 502 without a head error when the params cannot be read', async () => {
+		// The shape fetch gives for localhost: the socket error sits two levels down, with only a code.
+		const refused = Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' });
+		mockNodeGet.mockRejectedValue(
+			new HydraTransportError('Hydra HTTP GET failed before a response was received', {
+				cause: Object.assign(new TypeError('fetch failed'), { cause: refused }),
+			}),
+		);
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 502,
+			expose: true,
+			message: expect.stringContaining('failed before a response was received: ECONNREFUSED'),
+		});
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	it('records a protocol fault from the params read instead of asking for a retry', async () => {
+		const protocolFault = new HydraProtocolError('Hydra HTTP response was not valid JSON');
+		mockNodeGet.mockRejectedValue(protocolFault);
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toBe(protocolFault);
+		expect(mockRecordHeadError).toHaveBeenCalledWith(
+			'head-1',
+			expect.anything(),
+			expect.anything(),
+			protocolFault,
+			'Init',
+		);
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+});
+
+// A transport failure in connect happens before anything is sent, so it is not a failed Init.
+describe('initHeadPost, when the node cannot be reached', () => {
+	it('answers an exposed 502 that names the cause, without a head error', async () => {
+		// The node wraps the reason a session closed before Greetings; the reason is the useful part.
+		mockConnect.mockRejectedValue(
+			new HydraTransportError('Hydra live session closed before identity verification', {
+				cause: new HydraTransportError('Connection closed unexpectedly (code 1006)'),
+			}),
+		);
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 502,
+			expose: true,
+			// A node still starting and a wrong URL can fail alike; the cause tells them apart.
+			message: expect.stringContaining(
+				'closed before identity verification: Connection closed unexpectedly (code 1006)',
+			),
+		});
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	it('names a probe failure that wraps nothing', async () => {
+		mockConnect.mockRejectedValue(
+			new HydraTransportError('Local Hydra node for head head-1 answered the probe with HTTP 401'),
+		);
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 502,
+			message: expect.stringContaining('answered the probe with HTTP 401. Retry'),
+		});
+	});
+
+	// Only a transport failure is mapped: any other connect failure is still a head error.
+	it('still records any other connect failure', async () => {
+		mockConnect.mockRejectedValue(new Error('Hydra head head-1 transport was revoked while connecting'));
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toThrow('revoked');
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+	});
+
+	// A retry cannot fix a node that breaks the protocol, so it must not read as unreachable.
+	it('records a protocol fault that closed the session before Greetings', async () => {
+		const protocolFault = new HydraProtocolError('Hydra websocket sent a non-text frame');
+		mockConnect.mockRejectedValue(
+			new HydraTransportError('Hydra live session closed before identity verification', { cause: protocolFault }),
+		);
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toBe(protocolFault);
+		// The head error must name the fault, not the closed session that reads like a passing drop.
+		expect(mockRecordHeadError).toHaveBeenCalledWith(
+			'head-1',
+			expect.anything(),
+			expect.anything(),
+			protocolFault,
+			'Init',
+		);
 	});
 });
 
@@ -184,6 +302,55 @@ describe('initHeadPost, when Init does not confirm in time', () => {
 		});
 
 		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
+
+	// The node refused the InitTx outright. Nothing is parked, so a node that is
+	// behind must not turn this into "wait, do not re-post": that verdict wrote no
+	// row, and the waiting Init is the only place this refusal is recorded.
+	it('records an outright refusal without diagnosing it as a wait', async () => {
+		mockInit.mockRejectedValue(
+			new HydraPostTxRejectedError('hydra-node refused to post the Init transaction: NoSeedInput'),
+		);
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: false,
+			reason: 'catching up',
+			chainSynced: false,
+			driftSeconds: 14_571,
+		});
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 504,
+			message: expect.stringContaining('NoSeedInput'),
+		});
+
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+		expect(mockReadNodeState).not.toHaveBeenCalled();
+	});
+
+	// The node also answers CommandFailed when the head initialized while Init
+	// waited for the node to catch up, and only the diagnosis can see the head
+	// moved. Short of that it is a refusal: nothing was posted, so a node that is
+	// behind must not turn it into "wait, do not re-post".
+	it('records a CommandFailed from a node that is behind, without saying to wait', async () => {
+		mockInit.mockRejectedValue(new HydraCommandRejectedError('Command Init failed'));
+		mockReadNodeState.mockResolvedValue({
+			state: 'Running',
+			isReady: false,
+			reason: 'catching up',
+			chainSynced: false,
+			driftSeconds: 14_571,
+		});
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 504,
+			message: 'Command Init failed',
+		});
+
+		expect(mockFlush).toHaveBeenCalled();
+		expect(mockReadNodeState).toHaveBeenCalled();
+		expect(mockRecordHeadError).toHaveBeenCalledTimes(1);
+		expect(mockWarn).not.toHaveBeenCalledWith(expect.stringMatching(/race/), expect.anything());
 	});
 
 	it('falls back to a failure when the diagnosis itself cannot run', async () => {

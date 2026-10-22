@@ -23,9 +23,13 @@ import createHttpError from 'http-errors';
 import {
 	buildValidatedHydraCommit,
 	type ValidatedHydraCommit,
+	HydraCommandRejectedError,
+	HydraPostTxRejectedError,
 	HydraCommitFlowError,
 	HydraHeadInitObservationError,
+	HydraProtocolError,
 	HydraTransactionType,
+	HydraTransportError,
 	interpretCardanoTxSubmitResult,
 } from '@/lib/hydra';
 import {
@@ -34,6 +38,7 @@ import {
 	reserveAndSubmitHydraCommit,
 	type HydraCommitReconciliationResult,
 } from '@/services/hydra-commit-reconciliation';
+import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
@@ -44,6 +49,7 @@ import { classifyInitObservation, type InitObservationVerdict } from '@/utils/hy
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
+import { nodeFailedBeforeInit } from './init-node-failure';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
@@ -105,10 +111,42 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		const cm = getHydraConnectionManager();
 
 		try {
-			await cm.connect(head);
+			try {
+				await cm.connect(head);
+			} catch (error) {
+				if (!(error instanceof HydraTransportError)) throw error;
+				// A closed live session wraps its reason, so a protocol fault before Greetings arrives as a
+				// transport error. Throw the fault itself, so the head error names it.
+				if (error.cause instanceof HydraProtocolError) throw error.cause;
+				throw nodeFailedBeforeInit(head.id, "Could not reach this head's Hydra node", error);
+			}
 			const hydraHead = cm.getHead(head.id);
 			if (!hydraHead) {
-				throw createHttpError(502, 'Failed to connect to Hydra node');
+				logger.warn('[HydraAPI] no live session after connect before Init', { hydraHeadId: head.id });
+				throw createHttpError(502, 'Failed to connect to Hydra node', { expose: true });
+			}
+			// The last point before a head exists. A node on L2 ledger params above
+			// the shipped maxTxSize, from a Host on unsafe params or an older Host
+			// build, opens a head that can hold an output no fanout can move to L1.
+			// Read raw: the parsed parameters are capped at the shipped value.
+			let maxTxSize: unknown;
+			try {
+				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
+			} catch (error) {
+				// A non-JSON answer or a rotation latch needs a fix, not a retry, so the head error records it.
+				if (error instanceof HydraProtocolError) throw error;
+				throw nodeFailedBeforeInit(head.id, "Could not read the L2 maxTxSize from this head's node", error);
+			}
+			if (typeof maxTxSize !== 'number') {
+				throw createHttpError(409, "This head's node reports no numeric L2 maxTxSize, so it cannot be checked");
+			}
+			if (maxTxSize > EXPECTED_MAX_TX_SIZE) {
+				throw createHttpError(
+					409,
+					`This head's node runs an L2 maxTxSize of ${maxTxSize}, above ${EXPECTED_MAX_TX_SIZE}. ` +
+						'A head on it can hold an output no fanout can move to L1. Start the node on ledger params ' +
+						`with maxTxSize ${EXPECTED_MAX_TX_SIZE} or less, then retry`,
+				);
 			}
 
 			// True on the normal path and cleared when the timeout diagnosis has
@@ -117,6 +155,16 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				await hydraHead.init();
 			} catch (initError) {
+				// A failed InitTx post is not a timeout: the node answered, so no Init
+				// is parked or racing and there is nothing to diagnose. This row is the
+				// failure's only record; the connection manager leaves a failure that a
+				// waiting command reports to that command. A CommandFailed still goes
+				// through the diagnosis below: the node also sends it for a head that
+				// has already initialized, which is no failure.
+				if (initError instanceof HydraPostTxRejectedError) {
+					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
+					throw createHttpError(504, initError.message);
+				}
 				// A bounded init that never observed HeadIsInitializing has two very
 				// different causes, and the timeout alone cannot tell them apart: the
 				// chain backend silently dropped the InitTx and the node is wedged, or
@@ -142,6 +190,12 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 						chainSynced: nodeState.chainSynced,
 						driftSeconds: nodeState.driftSeconds,
 					});
+					// A CommandFailed is the node refusing this Init, so nothing was
+					// posted and "wait, do not re-post" would be false. Only a head seen
+					// moving clears it.
+					if (verdict.kind === 'awaiting-node' && initError instanceof HydraCommandRejectedError) {
+						verdict = { kind: 'failed' };
+					}
 					if (verdict.kind === 'observed') {
 						logger.info('[Hydra] Init was observed after the wait ran out; head is already moving', {
 							hydraHeadId: head.id,

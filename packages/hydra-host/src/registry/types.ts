@@ -130,7 +130,13 @@ export type NodeRecord = {
 	createdAt: string;
 	updatedAt: string;
 
-	/** Populated when state is Failed, so an operator sees why without reading logs. */
+	/**
+	 * Populated when state is Failed, so an operator sees why without reading logs.
+	 * Also set on a node that stays Running but has a stranded round waiting for
+	 * an operator: automatic side-load is off, or the round is held because the
+	 * confirmed snapshot holds a deposit the chain has not settled or the head
+	 * state could not be read.
+	 */
 	failureReason?: string;
 	/**
 	 * Spawn attempts in the current unhealthy streak, reset once the node is

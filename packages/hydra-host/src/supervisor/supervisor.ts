@@ -32,7 +32,7 @@ import {
 	type PlanLimits,
 } from './plan.js';
 import { findProcessRunningNode, isProcessAlive, isProcessRunningNode, NodeProcessManager } from './process.js';
-import { unwedgeNode } from './unwedge.js';
+import { unwedgeRecord } from './unwedge.js';
 
 /** One initial start plus four retries before a node is declared Failed. */
 const MAX_START_ATTEMPTS = 5;
@@ -770,46 +770,15 @@ export class Supervisor {
 	}
 
 	private async unwedge(record: NodeRecord, reason: string): Promise<void> {
-		this.logger.info(`[supervisor] checking ${record.nodeId} for a stranded round: ${reason}`);
-		const client = this.client(record);
-
-		const outcome = await unwedgeNode({
-			fetchLastSeen: () => client.fetchLastSeen(),
-			fetchConfirmedSnapshot: () => client.fetchConfirmedSnapshot(),
-			sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
+		await unwedgeRecord(record, reason, {
+			client: this.client(record),
+			store: this.store,
+			logger: this.logger,
+			allowAutoSideLoad: this.config.allowAutoSideLoad,
 			settleWaitMs: STRANDED_SETTLE_WAIT_MS,
 			sleep,
 			isAborted: () => this.stopped,
 		});
-
-		switch (outcome.kind) {
-			case 'Deferred':
-				this.logger.info(
-					`[supervisor] deferring the stranded-round check for ${record.nodeId}: a shutdown began. ` +
-						'The undrained stop stays recorded, so the check runs on the way back up',
-				);
-				return;
-			case 'Healthy':
-			case 'Progressing':
-			case 'Recovered':
-				if (outcome.kind === 'Recovered') {
-					this.logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
-				}
-				await this.store.update(record.nodeId, (current) => ({
-					...current,
-					lastStopUndrained: false,
-					startAttempts: 0,
-				}));
-				return;
-			case 'Unrecovered':
-				this.logger.error(`[supervisor] ${record.nodeId} could not be unwedged: ${outcome.reason}`);
-				await this.store.update(record.nodeId, (current) => ({
-					...current,
-					state: 'Failed',
-					failureReason: outcome.reason,
-				}));
-				return;
-		}
 	}
 
 	private async remove(record: NodeRecord, reason: string): Promise<void> {

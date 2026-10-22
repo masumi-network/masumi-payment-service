@@ -18,6 +18,7 @@ import { HydraTransactionType } from './types';
 import type { HydraTransaction } from './types';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTransportError } from './errors';
+import { describeUnits, l2TokenRisk, type L2MintCheck } from './l2-mint-tally';
 
 export class HydraProvider implements IFetcher, ISubmitter {
 	private readonly _node: IHydraNode;
@@ -106,6 +107,32 @@ export class HydraProvider implements IFetcher, ISubmitter {
 	 */
 	getPendingIncrementUtxoRefs(): ReadonlySet<string> {
 		return this._node.pendingIncrementUtxoRefs ?? new Set<string>();
+	}
+
+	/** Unburned L2 mints as the history replay last verified them; undefined until it completes. */
+	getL2MintCheck(): L2MintCheck | undefined {
+		return this._node.l2MintCheck;
+	}
+
+	/**
+	 * The UTxOs our own transactions may spend. Leaves out any UTxO holding a
+	 * token minted in the head and not burned, which can never leave the head
+	 * and would carry that token into our change, and any token UTxO the replay
+	 * has not checked yet (see `l2TokenRisk`). Filter inputs through this before
+	 * selecting them; `fetchAddressUTxOs` stays the full view for balances and
+	 * escrow lookups.
+	 */
+	spendableUTxOs<T extends Parameters<typeof l2TokenRisk>[0]>(utxos: readonly T[]): T[] {
+		const check = this._node.l2MintCheck;
+		const spendable = utxos.filter((utxo) => l2TokenRisk(utxo, check) === null);
+		if (spendable.length !== utxos.length) {
+			logger.warn('[HydraProvider] Leaving in-head token UTxOs that are L2-minted or not yet checked out of spending', {
+				excludedCount: utxos.length - spendable.length,
+				unburnedUnits:
+					check === undefined ? 'unknown until history replay completes' : describeUnits(check.unburnedUnits),
+			});
+		}
+		return spendable;
 	}
 
 	async fetchUTxOs(hash?: string, index?: number): Promise<UTxO[]> {

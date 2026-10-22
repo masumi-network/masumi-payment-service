@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "WebhookEventType" ADD VALUE 'HYDRA_HEAD_POST_TX_FAILED';

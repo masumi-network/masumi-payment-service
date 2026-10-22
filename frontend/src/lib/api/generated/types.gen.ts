@@ -3515,6 +3515,9 @@ export type HydraLowBalanceRule = {
     enabled: boolean;
     topupEnabled: boolean;
     topupAmount: string | null;
+    /**
+     * Last evaluated state. A Low rule stays Low on a reading the history replay has not checked, so lastKnownAmount can be at or above the threshold while it is Low.
+     */
     status: 'Unknown' | 'Healthy' | 'Low';
     lastKnownAmount: string | null;
     lastCheckedAt: string | null;
@@ -5220,7 +5223,7 @@ export type GetPaymentData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -5790,7 +5793,7 @@ export type GetPaymentCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -5843,7 +5846,7 @@ export type GetPurchaseCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -8035,7 +8038,7 @@ export type GetPurchaseData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes
          */
         filterNeedsManualAction?: string;
         /**
@@ -11609,7 +11612,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -11653,7 +11656,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11701,7 +11704,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -11733,7 +11736,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11781,7 +11784,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE' | 'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK' | 'HYDRA_HEAD_POST_TX_FAILED' | 'HYDRA_HEAD_CONTEST_MISSING'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -13616,7 +13619,7 @@ export type DeleteHydraInviteData = {
     body?: {
         id: string;
         /**
-         * Also cancel an invite the counterparty already redeemed but this service could not adopt. Its node is removed unless a head here claims it.
+         * Also cancel an invite the counterparty already redeemed but this service could not adopt. Its node is removed unless a head here claims it. For a redemption of someone else’s invite that is stuck here, this abandons it: the node is removed and the issuer is left with a head whose peer never joins.
          */
         discardRedemption?: boolean;
     };
@@ -14424,6 +14427,10 @@ export type PostHydraHeadInitData = {
 
 export type PostHydraHeadInitErrors = {
     /**
+     * Invalid input, or the head has no local participant
+     */
+    400: unknown;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14432,9 +14439,13 @@ export type PostHydraHeadInitErrors = {
      */
     404: unknown;
     /**
-     * Head is not in a state that permits init
+     * Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, or its node reports no numeric L2 maxTxSize or one above 15000
      */
     409: unknown;
+    /**
+     * The Hydra node could not be reached, or the InitTx could not be verified
+     */
+    502: unknown;
 };
 
 export type PostHydraHeadInitResponses = {
@@ -15001,6 +15012,10 @@ export type PostHydraHeadSnapshotRoundResetData = {
          * The round signature from GET /hydra/head/snapshot-round. The reset is refused if the round changed.
          */
         expectedSignature: string;
+        /**
+         * The confirmed snapshot number shown by the counterparty node (GET /snapshot on it, 0 if it shows InitialSnapshot), as its operator reports it. The reset is refused if it is ahead of this node (this node is then behind and resetting does not help) or more than one behind it (within the protocol no counterparty can be).
+         */
+        peerConfirmedSnapshotNumber: number;
     };
     path?: never;
     query?: never;
@@ -15021,15 +15036,15 @@ export type PostHydraHeadSnapshotRoundResetErrors = {
      */
     404: unknown;
     /**
-     * Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, or the confirmed snapshot does not match the verified one
+     * Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, the confirmed snapshot does not match the verified one or holds a deposit that the chain has not settled, or the counterparty number is ahead of this node or more than one behind it
      */
     409: unknown;
     /**
-     * No live connection to the head, or the node refused the reset or is still stuck
+     * No live connection to the head, the node could not be read, or the node refused the reset or is still stuck
      */
     502: unknown;
     /**
-     * The node did not answer the reset; read the round again before retrying
+     * The node did not answer the reset; read the round and ask for the counterparty's snapshot number again before retrying
      */
     504: unknown;
 };
@@ -15381,9 +15396,34 @@ export type GetHydraHeadBalanceResponses = {
              */
             hasUnbackedUtxos: boolean;
             /**
+             * In-head UTxOs at this address that carry a unit with a positive net L2 mint in the head, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
+             */
+            l2MintedUtxoCount: number;
+            /**
+             * Lovelace held by those UTxOs. It is counted in balance, and the service does not spend it.
+             */
+            l2MintedLovelace: string;
+            /**
+             * True when the history replay is current, so l2MintedUtxoCount counts every L2-minted UTxO the replay has verified; spendableBalance still counts token UTxOs from transactions it has not reached. False when not connected, right after a connect until the replay completes, and while the replay has failed. While connected and false, no UTxO counts as L2-minted and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading, and auto top-up waits.
+             */
+            l2MintChecked: boolean;
+            /**
              * This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty.
              */
             balance: Array<{
+                /**
+                 * Empty string for ADA/lovelace; otherwise policyId+assetName hex
+                 */
+                unit: string;
+                /**
+                 * Aggregate quantity across the local address in-head UTxOs
+                 */
+                quantity: string;
+            }>;
+            /**
+             * balance without the L2-minted UTxOs counted above. Low-balance rules compare against this. It still counts token UTxOs the replay has not checked yet and UTxOs of a deposit the head has not finished folding in; the service does not spend those until they are checked or folded in.
+             */
+            spendableBalance: Array<{
                 /**
                  * Empty string for ADA/lovelace; otherwise policyId+assetName hex
                  */
@@ -15647,7 +15687,7 @@ export type GetHydraHeadErrorsResponses = {
             errors: Array<{
                 id: string;
                 createdAt: Date;
-                errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput';
+                errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput' | 'ContestMissing';
                 errorMessage: string;
                 headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'FanningOut' | 'Final';
                 clientInput: string | null;
@@ -15929,7 +15969,7 @@ export type GetHydraLowBalanceResponse = GetHydraLowBalanceResponses[keyof GetHy
 export type PostHydraLowBalanceData = {
     body?: {
         /**
-         * Local participant whose in-head balance to monitor
+         * Local participant whose spendable in-head balance to monitor
          */
         hydraLocalParticipantId: string;
         /**
@@ -15937,12 +15977,12 @@ export type PostHydraLowBalanceData = {
          */
         assetUnit: string;
         /**
-         * Alert when the in-head balance falls below this
+         * Alert when the spendable in-head balance falls below this
          */
         thresholdAmount: string;
         enabled?: boolean;
         /**
-         * Auto top-up from the assigned funding wallet when low
+         * Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a positive net L2 mint in the head.
          */
         topupEnabled?: boolean;
         /**
@@ -18275,3 +18315,128 @@ export type GetReleaseStatusResponses = {
 };
 
 export type GetReleaseStatusResponse = GetReleaseStatusResponses[keyof GetReleaseStatusResponses];
+
+export type GetSecurityStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/security-status';
+};
+
+export type GetSecurityStatusErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetSecurityStatusResponses = {
+    /**
+     * Security status
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * True when ENCRYPTION_KEY is the public .env.example value. A database copy then exposes every secret.
+             */
+            isEncryptionKeyPublic: boolean;
+        };
+    };
+};
+
+export type GetSecurityStatusResponse = GetSecurityStatusResponses[keyof GetSecurityStatusResponses];
+
+export type PostPaymentAcknowledgeManualActionData = {
+    /**
+     * Requests to acknowledge
+     */
+    body?: {
+        /**
+         * The network the requests were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Blockchain identifiers of the requests to acknowledge
+         */
+        blockchainIdentifiers: Array<string>;
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/acknowledge-manual-action';
+};
+
+export type PostPaymentAcknowledgeManualActionErrors = {
+    /**
+     * Bad Request (invalid input)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostPaymentAcknowledgeManualActionResponses = {
+    /**
+     * Acknowledged count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Requests that were in Needs Action and are now acknowledged. Others in the list are skipped.
+             */
+            acknowledgedCount: number;
+        };
+    };
+};
+
+export type PostPaymentAcknowledgeManualActionResponse = PostPaymentAcknowledgeManualActionResponses[keyof PostPaymentAcknowledgeManualActionResponses];
+
+export type PostPurchaseAcknowledgeManualActionData = {
+    /**
+     * Requests to acknowledge
+     */
+    body?: {
+        /**
+         * The network the requests were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Blockchain identifiers of the requests to acknowledge
+         */
+        blockchainIdentifiers: Array<string>;
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/acknowledge-manual-action';
+};
+
+export type PostPurchaseAcknowledgeManualActionErrors = {
+    /**
+     * Bad Request (invalid input)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostPurchaseAcknowledgeManualActionResponses = {
+    /**
+     * Acknowledged count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Requests that were in Needs Action and are now acknowledged. Others in the list are skipped.
+             */
+            acknowledgedCount: number;
+        };
+    };
+};
+
+export type PostPurchaseAcknowledgeManualActionResponse = PostPurchaseAcknowledgeManualActionResponses[keyof PostPurchaseAcknowledgeManualActionResponses];
