@@ -56,7 +56,7 @@ export function HydraHeadConnectionPanel({
     refetch,
   } = useHydraHeadReadiness(headId, true, poll);
 
-  const isHealthy = state !== null && state.connected && state.isReady;
+  const isHealthy = state !== null && state.connected && state.isReady && state.syncReady !== false;
 
   return (
     <div className="space-y-3 rounded-lg border p-4">
@@ -139,6 +139,11 @@ export function HydraHeadConnectionPanel({
           {state.reason !== null && (
             <HydraNotice tone="warn">
               <p>{state.reason}</p>
+            </HydraNotice>
+          )}
+          {state.syncReason && (
+            <HydraNotice tone="warn">
+              <p>{state.syncReason}</p>
             </HydraNotice>
           )}
           {state.reason === null && !state.connected && (

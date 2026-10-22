@@ -23,6 +23,7 @@ import { TxSyncBeforeWrite } from '../quarantine/fenced-write';
 import { canL1ObservationOwnPaymentRequest } from '@/utils/logic/force-layer';
 import type { UpdateTransactionInput } from './types';
 import { nullableStringEquals } from './datum-verification';
+import { isUnobservedLockTimeout } from '@/utils/logic/unobserved-lock-timeout';
 
 export async function updateInitialPaymentTransaction(
 	decodedNewContract: DecodedV1ContractDatum,
@@ -48,13 +49,12 @@ export async function updateInitialPaymentTransaction(
 							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
 							paymentSourceId: paymentContract.id,
 							BuyerWallet: null,
-							NextAction: {
-								requestedAction: PaymentAction.WaitingForExternalAction,
-							},
 						},
 						include: {
 							RequestedFunds: true,
 							BuyerWallet: true,
+							NextAction: true,
+							TransactionHistory: { select: { txHash: true } },
 							SmartContractWallet: { where: { deletedAt: null } },
 							CurrentTransaction: {
 								include: { BlocksWallet: true },
@@ -63,6 +63,12 @@ export async function updateInitialPaymentTransaction(
 					});
 					if (dbEntry == null) {
 						//transaction is not registered with us or duplicated (therefore invalid)
+						return;
+					}
+					if (
+						dbEntry.NextAction.requestedAction !== PaymentAction.WaitingForExternalAction &&
+						!isUnobservedLockTimeout(dbEntry, OnChainState.FundsLocked)
+					) {
 						return;
 					}
 					if (!canL1ObservationOwnPaymentRequest(dbEntry)) {

@@ -151,6 +151,8 @@ export const rejectedInputBecauseUnsyncedMessageSchema = commandFailedMessageSch
 export const decommitApprovedMessageSchema = z.looseObject({
 	tag: z.literal('DecommitApproved'),
 	decommitTxId: canonicalHydraTransactionIdSchema,
+	/** Optional metadata: a malformed date keeps the existing receipt-time fallback. */
+	timestamp: z.unknown().optional(),
 	headId: canonicalHydraHeadIdSchema,
 	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
 });
