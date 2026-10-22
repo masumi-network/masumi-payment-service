@@ -223,8 +223,8 @@ export type HydraHeadBalance = {
   unbackedLovelace?: string;
   hasUnbackedUtxos?: boolean;
   /**
-   * Own in-head UTxOs carrying a token minted or burned inside the head whose
-   * net is not back at zero, as far as the node's history replay has checked
+   * Own in-head UTxOs carrying a unit with a positive net L2 mint in the head,
+   * as far as the node's history replay has checked
    * (0 until it is current). The node never spends them, so their ADA is stuck
    * with them, and an unburned L2-minted token blocks the head's final fanout.
    */

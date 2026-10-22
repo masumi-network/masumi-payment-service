@@ -119,9 +119,9 @@ describe('runHydraAutoTopupCycle', () => {
 		});
 	});
 
-	// A deposit of a unit with a nonzero net L2 mint never counts as spendable,
+	// A deposit of a unit with a positive net L2 mint never counts as spendable,
 	// so the rule would stay Low and every cycle would deposit more of it.
-	it('sends no deposit of a unit that has a nonzero net L2 mint in the head', async () => {
+	it('sends no deposit of a unit that has a positive net L2 mint in the head', async () => {
 		const unit = 'cc'.repeat(28) + '0014df10';
 		mockUnburnedUnits.add(unit);
 		mockFindMany.mockResolvedValue([rule({ assetUnit: unit.toUpperCase(), topupAmount: 500n })]);
@@ -132,7 +132,7 @@ describe('runHydraAutoTopupCycle', () => {
 	});
 
 	// A peer mint of one unit must not stop the ADA top-ups the stranded ADA makes necessary.
-	it('still tops up ADA while a different unit has a nonzero net L2 mint', async () => {
+	it('still tops up ADA while a different unit has a positive net L2 mint', async () => {
 		mockUnburnedUnits.add('cc'.repeat(28) + '0014df10');
 		mockFindMany.mockResolvedValue([rule()]);
 

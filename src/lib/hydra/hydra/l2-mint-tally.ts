@@ -46,7 +46,7 @@ export interface L2MintTally {
 }
 
 /**
- * What the history replay can vouch for: the units still unburned as of the
+ * What the history replay can vouch for: the units with a positive net L2 mint as of the
  * signed snapshot whose outputs are `verifiedOutputs` (keyed `txid#index`,
  * lowercase). The node's HTTP UTxO view runs ahead of the replay, and a peer
  * can widen that gap, so a token UTxO missing from `verifiedOutputs` comes from
@@ -66,8 +66,11 @@ export function buildL2MintCheck(
 	tally: L2MintTally,
 	snapshot: { number: number; outputs: ReadonlyMap<string, string> },
 ): L2MintCheck {
+	// A negative net is a committed L1 token burned in the head. What is left of
+	// it is still backed by the commit, so only a positive net marks a mint.
+	const unburnedUnits = new Set([...tally.units].filter(([, net]) => net > 0n).map(([unit]) => unit));
 	return {
-		unburnedUnits: new Set(tally.units.keys()),
+		unburnedUnits,
 		verifiedOutputs: snapshot.number === 0 ? new Map() : snapshot.outputs,
 	};
 }

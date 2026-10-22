@@ -15380,7 +15380,7 @@ export type GetHydraHeadBalanceResponses = {
              */
             hasUnbackedUtxos: boolean;
             /**
-             * In-head UTxOs at this address that carry a token minted or burned inside the head whose net is not back at zero, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
+             * In-head UTxOs at this address that carry a unit with a positive net L2 mint in the head, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.
              */
             l2MintedUtxoCount: number;
             /**
@@ -15966,7 +15966,7 @@ export type PostHydraLowBalanceData = {
         thresholdAmount: string;
         enabled?: boolean;
         /**
-         * Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a nonzero net L2 mint in the head.
+         * Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a positive net L2 mint in the head.
          */
         topupEnabled?: boolean;
         /**
