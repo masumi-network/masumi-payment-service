@@ -89,15 +89,16 @@ polling `/snapshot/last-seen` until `LastSeenSnapshot`/`NoSeenSnapshot`.
 But a container can always be killed involuntarily — OOM, host failure,
 platform eviction — so **draining is a probability reduction, not a guarantee**,
 and correctness rests on recovery rather than on clean shutdown. Recovery is
-automatic and needs no operator:
+automatic except at levels 2 and 3, which need an operator by default (see the
+amendment below):
 
-| Level | Situation                             | Action                                                                        |
-| ----- | ------------------------------------- | ----------------------------------------------------------------------------- |
-| 0     | process crash, volume intact          | restart with backoff; `hydra.db` replays, etcd resumes its WAL                |
-| 1     | container/host SIGKILL                | identical to level 0 on next boot                                             |
-| 2     | restarted but snapshot round stranded | detect, then side-load the node's own confirmed snapshot via `POST /snapshot` |
-| 3     | offline past etcd's compaction window | same side-load path                                                           |
-| 4     | persistence volume destroyed          | restore a volume snapshot plus the escrowed keys — the only manual case       |
+| Level | Situation                             | Action                                                                                                |
+| ----- | ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 0     | process crash, volume intact          | restart with backoff; `hydra.db` replays, etcd resumes its WAL                                        |
+| 1     | container/host SIGKILL                | identical to level 0 on next boot                                                                     |
+| 2     | restarted but snapshot round stranded | detect, then side-load the node's own confirmed snapshot via `POST /snapshot` (opt-in, see amendment) |
+| 3     | offline past etcd's compaction window | same side-load path (opt-in, see amendment)                                                           |
+| 4     | persistence volume destroyed          | restore a volume snapshot plus the escrowed keys (manual)                                             |
 
 The level-2/3 procedure is not new: it is already proven in
 `hydra-l2-flow/run-hydra-e2e.sh:909-921`, which detects a stranded round and
@@ -108,6 +109,16 @@ because the service refuses to treat `SnapshotSideLoaded` as a replay
 authentication anchor (see "Snapshot verification" in
 `docs/hydra-architecture.md`), so side-loading can
 restore a node without becoming a channel for injecting unverified state.
+
+**Amendment (2026-10-21, MAS-643).** Levels 2 and 3 are no longer automatic by
+default. The side-load discards the round in flight. If the counterparty already
+confirmed that round, this node ends up one snapshot behind it, and the
+counterparty cannot step back, because Hydra refuses a side-load below a node's
+confirmed number. So "no counterparty action is required" holds only when the
+counterparty has not confirmed the round, and the Host cannot see whether it
+has. The supervisor now side-loads only with `HYDRA_HOST_AUTO_SIDELOAD=true`.
+Otherwise it leaves the node running and logs it for an operator. See "Stranded
+snapshot rounds" in `docs/hydra-operations.md`.
 
 The supervisor also owns a **drift watchdog**: on Blockfrost the chain follower
 loses ≈17 s per minute with no catch-up path (upstream `#2753`), and past

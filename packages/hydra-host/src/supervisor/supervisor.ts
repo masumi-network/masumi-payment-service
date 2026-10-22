@@ -774,6 +774,7 @@ export class Supervisor {
 			client: this.client(record),
 			store: this.store,
 			logger: this.logger,
+			allowAutoSideLoad: this.config.allowAutoSideLoad,
 			settleWaitMs: STRANDED_SETTLE_WAIT_MS,
 			sleep,
 			isAborted: () => this.stopped,

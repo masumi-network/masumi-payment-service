@@ -1,5 +1,5 @@
 /**
- * Automatic recovery from a stranded snapshot round.
+ * Recovery from a stranded snapshot round.
  *
  * Draining covers voluntary stops, but an OOM kill or host failure bypasses it,
  * and a node killed mid-round can come back permanently stuck: the etcd layer
@@ -9,10 +9,11 @@
  *
  * The recovery is to side-load the node's own last *confirmed* snapshot, which
  * resets the round. This is a port of the procedure already proven in
- * `hydra-l2-flow/run-hydra-e2e.sh` — it needs no counterparty action, and the
- * payment service refuses to treat `SnapshotSideLoaded` as a replay
- * authentication anchor, so recovering a node cannot be used to inject
- * unverified state into the service.
+ * `hydra-l2-flow/run-hydra-e2e.sh`. It is only safe if the counterparty has not
+ * confirmed the stranded round, which the Host cannot see, so it runs only when
+ * `allowAutoSideLoad` is set. The payment service refuses to treat
+ * `SnapshotSideLoaded` as a replay authentication anchor, so recovering a node
+ * cannot be used to inject unverified state into the service.
  */
 
 import type { NodeClient } from '../node-client.js';
@@ -29,6 +30,11 @@ export type UnwedgeOutcome =
 	| { kind: 'Progressing'; tag: string | null }
 	/** Stranded and recovered by side-loading the confirmed snapshot. */
 	| { kind: 'Recovered'; tag: string | null }
+	/**
+	 * Stranded, but side-loading on our own is not permitted. Nothing was changed;
+	 * an operator decides after looking at the counterparty's node.
+	 */
+	| { kind: 'NeedsOperator'; tag: string | null; reason: string }
 	/** Stranded, side-load attempted, still stuck. Needs an operator. */
 	| { kind: 'Unrecovered'; tag: string | null; reason: string }
 	/**
@@ -51,6 +57,13 @@ export type UnwedgeOptions = {
 	fetchHead: () => Promise<unknown>;
 	/** `POST /snapshot` — side-load. */
 	sideLoadSnapshot: (snapshot: unknown) => Promise<void>;
+	/**
+	 * Whether to side-load without asking. The Host cannot see whether the
+	 * counterparty already confirmed the round, and side-loading then leaves this
+	 * node a snapshot behind it, so this is an explicit opt-in
+	 * (`HYDRA_HOST_AUTO_SIDELOAD`).
+	 */
+	allowAutoSideLoad: boolean;
 	/** How long to let a round settle before calling it stranded. */
 	settleWaitMs: number;
 	sleep: (ms: number) => Promise<void>;
@@ -120,8 +133,16 @@ function readTag(response: LastSeenSnapshotResponse | null | undefined): string 
  * discard in-flight work for no reason.
  */
 export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutcome> {
-	const { fetchLastSeen, fetchConfirmedSnapshot, fetchHead, sideLoadSnapshot, settleWaitMs, sleep, isAborted } =
-		options;
+	const {
+		fetchLastSeen,
+		fetchConfirmedSnapshot,
+		fetchHead,
+		sideLoadSnapshot,
+		allowAutoSideLoad,
+		settleWaitMs,
+		sleep,
+		isAborted,
+	} = options;
 	const aborted = (): boolean => isAborted?.() === true;
 
 	/**
@@ -169,6 +190,19 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 
 	const tag = readTag(second);
 	if (aborted()) return { kind: 'Deferred' };
+
+	// Checked after the settle wait, so a merely busy node is never reported.
+	if (!allowAutoSideLoad) {
+		return {
+			kind: 'NeedsOperator',
+			tag,
+			reason:
+				'the snapshot round is stranded and automatic side-load is off (HYDRA_HOST_AUTO_SIDELOAD), because the ' +
+				'counterparty may already have confirmed the round. Get its confirmed snapshot number from its operator and ' +
+				'follow "Stranded snapshot rounds" in docs/hydra-operations.md; reset the round from the payment service ' +
+				'only if the counterparty is not ahead',
+		};
+	}
 
 	let confirmed: unknown;
 	try {
@@ -239,6 +273,8 @@ export type UnwedgeRecordDeps = {
 	client: Pick<NodeClient, 'fetchLastSeen' | 'fetchConfirmedSnapshot' | 'fetchHead' | 'sideLoadSnapshot'>;
 	store: Pick<NodeRegistryStore, 'update'>;
 	logger: SupervisorLogger;
+	/** `HYDRA_HOST_AUTO_SIDELOAD`; see `UnwedgeOptions.allowAutoSideLoad`. */
+	allowAutoSideLoad: boolean;
 	settleWaitMs: number;
 	sleep: (ms: number) => Promise<void>;
 	isAborted: () => boolean;
@@ -257,6 +293,7 @@ export async function unwedgeRecord(record: NodeRecord, reason: string, deps: Un
 		fetchConfirmedSnapshot: () => client.fetchConfirmedSnapshot(),
 		fetchHead: () => client.fetchHead(),
 		sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
+		allowAutoSideLoad: deps.allowAutoSideLoad,
 		settleWaitMs: deps.settleWaitMs,
 		sleep: deps.sleep,
 		isAborted: deps.isAborted,
@@ -285,6 +322,19 @@ export async function unwedgeRecord(record: NodeRecord, reason: string, deps: Un
 				...current,
 				lastStopUndrained: false,
 				startAttempts: 0,
+			}));
+			return;
+		case 'NeedsOperator':
+			// Kept running for the same reason as `Held`. The reason goes on the
+			// record so the API shows it. Nothing re-checks the round, and an admin
+			// may reset it from the payment service, so the reason carries when it
+			// was seen. The next start clears it.
+			logger.error(`[supervisor] ${record.nodeId} needs an operator: ${outcome.reason}`);
+			await store.update(record.nodeId, (current) => ({
+				...current,
+				lastStopUndrained: false,
+				startAttempts: 0,
+				failureReason: `${outcome.reason} (seen ${new Date().toISOString()})`,
 			}));
 			return;
 		case 'Unrecovered':
