@@ -195,6 +195,31 @@ describe('reserveNodeForExchange', () => {
 		expect(mockAcknowledge).not.toHaveBeenCalled();
 	});
 
+	// The Host holds released peer ports until its firewall refresh lands, and
+	// answers 503 meanwhile. Passed through, that became an opaque 500 with no
+	// hint that a retry 30 seconds later succeeds.
+	it('tells the caller to retry while the Host waits for its peer firewall', async () => {
+		mockProvision.mockRejectedValue(
+			new HydraHostRequestError(
+				'POST /v1/nodes on the hydra host failed (503): every free node slot waits for the peer firewall',
+				503,
+			),
+		);
+
+		const failure = await reserveNodeForExchange(Network.Preprod, 'wallet-1', 'nonce-1', PERIODS).catch(
+			(error: unknown) => error,
+		);
+
+		expect(failure).toMatchObject({
+			statusCode: 503,
+			expose: true,
+			headers: { 'Retry-After': '30' },
+			message: expect.stringMatching(/retry in 30 seconds.*every free node slot waits for the peer firewall/),
+		});
+		expect(mockCreate).not.toHaveBeenCalled();
+		expect(mockAcknowledge).not.toHaveBeenCalled();
+	});
+
 	it('passes any other Host error through', async () => {
 		const failure = new HydraHostRequestError('POST /v1/nodes on the hydra host failed (500): internal error', 500);
 		mockProvision.mockRejectedValue(failure);

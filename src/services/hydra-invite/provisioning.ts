@@ -30,6 +30,14 @@ import { deriveNodeCardanoVkey } from './node-keys';
 
 /** The Host's answer when every node slot is in use (`PortExhaustedError`). */
 const HOST_FULL_STATUS = 507;
+/**
+ * The Host's answer while every free slot waits for its peer firewall refresh
+ * (`PeerFirewallPendingError`). A load balancer in front of a Host that is down
+ * answers the same, and both pass on their own.
+ */
+const HOST_UNAVAILABLE_STATUS = 503;
+/** The peer firewall timer runs every 30 seconds, so one retry after that finds a slot. */
+const HOST_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
 
 export type HeadPeriods = {
 	contestationPeriodSeconds: number;
@@ -395,6 +403,17 @@ export async function reserveNodeForExchange(
 			throw new HostIncompatibleError(
 				'the hydra host has no free node slots; drain this host so new heads go to another one, raise ' +
 					`HYDRA_HOST_PEER_PORT_COUNT on it, or free a slot by removing the node of a finalised head (${error.message})`,
+			);
+		}
+		// Transient, and nothing is reserved yet: the Host refuses before it takes a
+		// port or writes a key, and nothing here has written a row. So the caller
+		// can simply retry. Exposed, because the default 5xx handling would hide
+		// the reason in production.
+		if (error instanceof HydraHostRequestError && error.status === HOST_UNAVAILABLE_STATUS) {
+			throw createHttpError(
+				503,
+				`the hydra host cannot provision a node right now; retry in ${HOST_UNAVAILABLE_RETRY_AFTER_SECONDS} seconds (${error.message})`,
+				{ expose: true, headers: { 'Retry-After': String(HOST_UNAVAILABLE_RETRY_AFTER_SECONDS) } },
 			);
 		}
 		throw error;
