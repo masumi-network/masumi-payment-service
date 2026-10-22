@@ -62,19 +62,21 @@ export type ResumeOutcome = {
 const include = { LocalHotWallet: true, HydraHost: true } as const;
 
 async function failStaleUnconfirmed(now: number, outcome: ResumeOutcome): Promise<void> {
+	const giveUpBefore = new Date(now - UNCONFIRMED_GIVE_UP_MS);
 	const stale = await prisma.hydraHeadInvite.findMany({
 		where: {
 			role: HydraInviteRole.Redeemer,
 			status: HydraInviteStatus.Redeemed,
 			redeemedAt: null,
-			expiresAt: { lt: new Date(now - UNCONFIRMED_GIVE_UP_MS) },
+			expiresAt: { lt: giveUpBefore },
 			// Idle, like every record the pass below takes: a retry that claimed the
 			// record a moment ago may be posting it now, and its claim predates the
 			// one below, so only the idle window keeps this from failing it mid-post.
 			updatedAt: { lt: new Date(now - UNCONFIRMED_RETRY_IDLE_MS) },
 			// The pass below sends nothing for a paused Host, so its days paused are
-			// not days of retries, and they must not count toward giving up.
-			HydraHost: { pausedAt: null },
+			// not days of retries, and they must not count toward giving up: the
+			// eight days restart when the Host resumes.
+			HydraHost: { pausedAt: null, OR: [{ resumedAt: null }, { resumedAt: { lt: giveUpBefore } }] },
 		},
 		include,
 		orderBy: { expiresAt: 'asc' },

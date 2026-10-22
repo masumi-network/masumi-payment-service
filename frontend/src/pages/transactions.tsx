@@ -247,7 +247,7 @@ export default function Transactions() {
       }
       if (skipped > 0) {
         toast.info(
-          `${skipped} transaction${skipped === 1 ? ' was' : 's were'} not acknowledged: already out of Needs Action, or created by another API key.`,
+          `${skipped} transaction${skipped === 1 ? ' was' : 's were'} not acknowledged: changed since this page loaded, already out of Needs Action, or created by another API key.`,
         );
       }
       clearSelection();
