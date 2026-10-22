@@ -508,6 +508,31 @@ describe('HydraNode', () => {
 			expect(statuses).toEqual([HydraHeadStatus.Closed]);
 		});
 
+		// A contest leaves the head Closed but makes its snapshot the one the fanout
+		// must match. The handoff checks the fanout against the persisted number.
+		it('emits StatusChange with the contested snapshot when HeadIsContested received', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+
+			const changes: unknown[] = [];
+			node.on(HydraNodeEvent.StatusChange, (data) => changes.push(data));
+
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'HeadIsClosed', headId: HEAD_ID_A, snapshotNumber: 3 }),
+			);
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'HeadIsContested', headId: HEAD_ID_A, snapshotNumber: 5 }),
+			);
+
+			expect(changes).toEqual([
+				expect.objectContaining({ status: HydraHeadStatus.Closed, snapshotNumber: 3 }),
+				expect.objectContaining({ status: HydraHeadStatus.Closed, headId: HEAD_ID_A, snapshotNumber: 5 }),
+			]);
+			expect(node.status).toBe(HydraHeadStatus.Closed);
+		});
+
 		it('emits StatusChange with FanoutPossible when ReadyToFanout received', () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();

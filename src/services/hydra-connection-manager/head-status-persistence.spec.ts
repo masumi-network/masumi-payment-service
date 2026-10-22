@@ -182,6 +182,28 @@ describe('persistHeadStatus under the ownership fence', () => {
 	});
 });
 
+// The fanout handoff checks the fanout against the persisted snapshot number.
+// A contest keeps the status, so a write skipped as "no change" strands it.
+describe('persistHeadStatus for a contested head', () => {
+	it('raises the snapshot number on a contest that keeps the head Closed', async () => {
+		const closedAt = new Date('2026-08-01T11:00:00Z');
+		mockFindUnique.mockResolvedValue(
+			durableRow({ status: HydraHeadStatus.Closed, closedAt, latestSnapshotNumber: 3n }),
+		);
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, {
+			status: HydraHeadStatus.Closed,
+			headId: 'a'.repeat(56),
+			snapshotNumber: 5,
+		});
+
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		const call = mockUpdateMany.mock.calls[0][0] as { data: Record<string, unknown> };
+		expect(call.data.latestSnapshotNumber).toBe(5n);
+		expect(call.data).not.toHaveProperty('closedAt');
+	});
+});
+
 describe('failClosedAfterStatusPersistenceFailure under the ownership fence', () => {
 	it('fences the durable disable on the owner epoch', async () => {
 		const persistenceHost = host();

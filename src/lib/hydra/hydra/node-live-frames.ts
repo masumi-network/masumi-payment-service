@@ -292,6 +292,8 @@ export class LiveFrameProcessor {
 		let postTxFailed: PostTxFailedData | undefined;
 		/** Acted on after the status change is emitted, never before — see below. */
 		let headWasAborted = false;
+		/** Same status, newer snapshot: the fanout must match the contested one. */
+		let headWasContested = false;
 		try {
 			const message = parseBoundedJsonFrame(rawMessage);
 			this.host.assertPersistenceReplayIsSupported(message);
@@ -334,6 +336,7 @@ export class LiveFrameProcessor {
 			if (envelope.tag === 'HeadIsAborted') {
 				headWasAborted = true;
 			}
+			headWasContested = envelope.tag === 'HeadIsContested';
 			if (envelope.tag === 'HeadIsInitializing' || envelope.tag === 'HeadIsOpen') {
 				// `HeadIsOpen` is guarded on actually carrying `parties`, matching the
 				// replay pass. Unguarded, the same frame was valid on replay and threw
@@ -480,7 +483,7 @@ export class LiveFrameProcessor {
 			// old fanout map into a later finalization attempt.
 			this.host.clearFinalizedFanout();
 		}
-		if (changeData && changeData.status !== this._status) {
+		if (changeData && (changeData.status !== this._status || headWasContested)) {
 			this._status = changeData.status;
 			this.emitter.emit(HydraNodeEvent.StatusChange, changeData);
 		}
