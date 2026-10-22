@@ -7,6 +7,7 @@ import { router } from '@/routes/index';
 import ui, { JsonObject } from 'swagger-ui-express';
 import { generateOpenAPI } from '@/utils/generator/swagger-generator';
 import { cleanupDB, initDB, prisma } from '@masumi/payment-core/db';
+import { ApiKeyStatus } from '@/generated/prisma/client';
 import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from '@masumi/payment-core/config';
@@ -43,7 +44,7 @@ async function initialize() {
 		[DEFAULTS.DEFAULT_ADMIN_KEY, DEFAULTS.EXAMPLE_ADMIN_KEY].map((key) => generateApiKeySecureHash(key)),
 	);
 	const publicKeyRow = await prisma.apiKey.findFirst({
-		where: { tokenHash: { in: publicAdminHashes } },
+		where: { tokenHash: { in: publicAdminHashes }, status: ApiKeyStatus.Active },
 		select: { id: true },
 	});
 	if (publicKeyRow !== null) {
