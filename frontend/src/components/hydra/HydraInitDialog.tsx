@@ -141,10 +141,7 @@ export function HydraInitDialog({
           </p>
         ) : nodeBlocker !== null ? (
           <HydraNotice tone="warn">
-            <p>
-              {nodeBlocker} Opening now fails as &ldquo;node unreachable&rdquo;, which says nothing
-              about the cause. Try again in a minute.
-            </p>
+            <p>{nodeBlocker} Opening now fails until the node is ready. Try again in a minute.</p>
           </HydraNotice>
         ) : isUnderfunded && funding ? (
           <HydraNotice tone="warn">

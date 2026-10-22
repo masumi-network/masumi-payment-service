@@ -22,6 +22,7 @@ import {
 	type DepositRecordedData,
 	type PostTxFailedData,
 	buildHydraHttpEndpoint,
+	HydraTransportError,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { recordHeadError } from '@/services/hydra-head-error/record';
@@ -223,7 +224,8 @@ export class HydraConnectionManager {
 		const relation = configuredHead.HydraRelation;
 		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
 		if (!isReachable) {
-			throw new Error(`Local Hydra node unreachable for head ${head.id}`);
+			// No command was sent to the node, so a caller may retry and need not treat it as a failed command.
+			throw new HydraTransportError(`Local Hydra node unreachable for head ${head.id}`);
 		}
 		if (session.transportGeneration !== transportGeneration) {
 			throw new Error(`Hydra head ${head.id} transport was revoked while connecting`);

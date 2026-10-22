@@ -6,6 +6,7 @@ import {
 	deriveHydraVerificationKeyCborHex,
 	HydraNode,
 	HydraTransactionType,
+	HydraTransportError,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
 import { EventEmitter } from 'node:events';
@@ -394,6 +395,23 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		} finally {
 			probeSpy.mockRestore();
 			connectSpy.mockRestore();
+		}
+	});
+
+	// Init answers this with a retryable 502 and records no head error, so the
+	// class is the contract, not the message.
+	it('throws a transport error when the node probe fails', async () => {
+		const manager = new HydraConnectionManager();
+		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+		const probeSpy = jest
+			.spyOn(manager as unknown as { probeNode: () => Promise<boolean> }, 'probeNode')
+			.mockResolvedValue(false);
+
+		try {
+			await expect(manager.connect({ id: 'head-1' })).rejects.toBeInstanceOf(HydraTransportError);
+			expect(manager.isConnected('head-1')).toBe(false);
+		} finally {
+			probeSpy.mockRestore();
 		}
 	});
 

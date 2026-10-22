@@ -27,7 +27,9 @@ import {
 	HydraPostTxRejectedError,
 	HydraCommitFlowError,
 	HydraHeadInitObservationError,
+	HydraProtocolError,
 	HydraTransactionType,
+	HydraTransportError,
 	interpretCardanoTxSubmitResult,
 } from '@/lib/hydra';
 import {
@@ -47,6 +49,7 @@ import { classifyInitObservation, type InitObservationVerdict } from '@/utils/hy
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
+import { nodeFailedBeforeInit } from './init-node-failure';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
@@ -108,10 +111,19 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		const cm = getHydraConnectionManager();
 
 		try {
-			await cm.connect(head);
+			try {
+				await cm.connect(head);
+			} catch (error) {
+				if (!(error instanceof HydraTransportError)) throw error;
+				// A closed live session wraps its reason, so a protocol fault before Greetings arrives as a
+				// transport error. Throw the fault itself, so the head error names it.
+				if (error.cause instanceof HydraProtocolError) throw error.cause;
+				throw nodeFailedBeforeInit(head.id, "Could not reach this head's Hydra node", error);
+			}
 			const hydraHead = cm.getHead(head.id);
 			if (!hydraHead) {
-				throw createHttpError(502, 'Failed to connect to Hydra node');
+				logger.warn('[HydraAPI] no live session after connect before Init', { hydraHeadId: head.id });
+				throw createHttpError(502, 'Failed to connect to Hydra node', { expose: true });
 			}
 			// The last point before a head exists. A node on L2 ledger params above
 			// the shipped maxTxSize, from a Host on unsafe params or an older Host
@@ -121,15 +133,9 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
 			} catch (error) {
-				// Exposed errors skip the server-error log, so this line is the only record of this failure.
-				logger.warn('[HydraAPI] could not read L2 protocol parameters before Init', {
-					hydraHeadId: head.id,
-					error: getErrorMessage(error),
-				});
-				throw createHttpError(502, "Could not read the L2 maxTxSize from this head's node. Try again later", {
-					cause: error,
-					expose: true,
-				});
+				// A non-JSON answer or a rotation latch needs a fix, not a retry, so the head error records it.
+				if (error instanceof HydraProtocolError) throw error;
+				throw nodeFailedBeforeInit(head.id, "Could not read the L2 maxTxSize from this head's node", error);
 			}
 			if (typeof maxTxSize !== 'number') {
 				throw createHttpError(409, "This head's node reports no numeric L2 maxTxSize, so it cannot be checked");
