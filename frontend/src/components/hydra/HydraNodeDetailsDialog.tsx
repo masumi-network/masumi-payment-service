@@ -308,7 +308,20 @@ export function HydraNodeDetailsDialog({
     }
   }
 
-  if (!host) return null;
+  // Kept mounted when the host drops out of the list (a refetch, a network
+  // switch): unmounting it mid-backup would drop the one-time keys.
+  const backUpDialog = (
+    <BackUpNodeKeysDialog
+      open={backUpId !== null}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setBackUpId(null);
+      }}
+      participantId={backUpId}
+      onDone={() => void refetchParticipants()}
+    />
+  );
+
+  if (!host) return backUpDialog;
 
   const neverProbed = host.lastHealthAt === null;
   const healthProblems = hydraHostHealthProblems(host.lastHealthError);
@@ -586,14 +599,7 @@ export function HydraNodeDetailsDialog({
         />
       ) : null}
 
-      <BackUpNodeKeysDialog
-        open={backUpId !== null}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) setBackUpId(null);
-        }}
-        participantId={backUpId}
-        onDone={() => void refetchParticipants()}
-      />
+      {backUpDialog}
 
       {/* Draining reads as "stop the node" and is nothing of the kind, so the
           confirmation spends its words on what does not happen. It is also the

@@ -278,10 +278,14 @@ test('backup: refuses to close after reveal until the operator confirms the keys
   assert.equal(dialog.props.open, true);
   assert.equal(dialog.has(keys.hydraSigningKey), true);
   assert.equal(dialog.button('Done').props.disabled, true);
+  const hideClose = () =>
+    (dialog.find((element: any) => 'hideClose' in (element.props ?? {})) as any).props.hideClose;
+  assert.equal(hideClose(), true);
   (
     dialog.find((element: any) => typeof element.props?.onCheckedChange === 'function') as any
   ).props.onCheckedChange(true);
   dialog.render();
+  assert.equal(hideClose(), false);
   dialog.button('Done').props.onClick!();
   assert.equal(dialog.props.open, false);
 });
