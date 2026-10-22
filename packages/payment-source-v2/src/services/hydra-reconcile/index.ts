@@ -57,6 +57,7 @@ import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
 import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
 import { recordReplayedCloseSnapshot } from './replayed-close';
+import { REPLAY_APPLY_RETRY_REASON } from './replay-stall-reason';
 import {
 	findIdentifiersWithNothingToApply,
 	isLivePassDue,
@@ -207,7 +208,7 @@ async function reconcileHead(
 		if (outcome === 'retry') {
 			// Later confirmations may depend on this transaction's persisted UTxO
 			// lineage. Keep the entire causal suffix queued and retry it in order.
-			await markReconciliationStalled(hydraHeadId, confirmedTransaction.txId, 'replay-apply-retry');
+			await markReconciliationStalled(hydraHeadId, confirmedTransaction.txId, REPLAY_APPLY_RETRY_REASON);
 			return;
 		}
 		if (!(await persistReconciledCursor(hydraHeadId, confirmedTransaction, node))) return;

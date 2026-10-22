@@ -4,6 +4,10 @@ import {
 	listHeldL2Reservations,
 	releaseHeldL2Reservation,
 } from '@masumi/payment-source-v2/services/hydra-reconcile/operator-l2-reservation-release';
+import {
+	findStalledReleasedL2Reservation,
+	reapplyReleasedL2Reservation,
+} from '@masumi/payment-source-v2/services/hydra-reconcile/operator-l2-reservation-reapply';
 
 export const l2ReservationsInput = z.object({
 	headId: z.string().max(64).describe('The Hydra head to inspect'),
@@ -85,6 +89,71 @@ export const releaseL2ReservationPost = adminAuthenticatedEndpointFactory.build(
 	output: releaseL2ReservationOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof releaseL2ReservationInput>; ctx: AuthContext }) =>
 		await releaseHeldL2Reservation({
+			headId: input.headId,
+			transactionId: input.transactionId,
+			expectedUpdatedAt: new Date(input.expectedUpdatedAt),
+			actorApiKeyId: ctx.id,
+		}),
+});
+
+const stalledReleaseShape = z.object({
+	transactionId: z.string(),
+	updatedAt: z.string().describe('Send it back to re-apply; the call is refused if the row changed'),
+	intendedTxHash: z.string().describe('Hash of the released body that confirmed in the head'),
+	releasedBy: z.enum(['input-proof', 'operator']).describe('Who released the reservation'),
+	releasedAt: z.string(),
+	kind: z.enum(['initial-lock', 'action']).describe('An initial lock, or an action on an existing escrow'),
+	purchaseRequestIds: z.array(z.string()),
+	paymentRequestIds: z.array(z.string()),
+	reapplicable: z.boolean().describe('Whether an admin may re-apply it now'),
+	blockedReason: z.string().nullable().describe('Why it cannot be re-applied now'),
+});
+
+export const stalledReleaseOutput = z.object({
+	headId: z.string(),
+	reservation: stalledReleaseShape.nullable().describe('Null when replay is not held on a released reservation'),
+});
+
+/** The released reservation whose confirmed body holds the head's replay, if any. */
+export const stalledReleaseGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: l2ReservationsInput,
+	output: stalledReleaseOutput,
+	handler: async ({ input }) => {
+		const { headId, reservation } = await findStalledReleasedL2Reservation(input.headId);
+		return {
+			headId,
+			reservation: reservation && {
+				...reservation,
+				updatedAt: reservation.updatedAt.toISOString(),
+				releasedAt: reservation.releasedAt.toISOString(),
+			},
+		};
+	},
+});
+
+export const reapplyL2ReservationInput = z.object({
+	headId: z.string().max(64).describe('The Hydra head whose replay is held'),
+	transactionId: z.string().max(64).describe('The released reservation to re-apply'),
+	expectedUpdatedAt: z.iso.datetime().describe('updatedAt from GET /hydra/head/l2-reservations/stalled-release'),
+});
+
+export const reapplyL2ReservationOutput = z.object({
+	transactionId: z.string(),
+	purchaseRequestIds: z.array(z.string()).describe('Purchases put back on the reservation'),
+	paymentRequestIds: z.array(z.string()).describe('Payments put back on the reservation'),
+});
+
+/**
+ * Undo the release of an action reservation whose body confirmed anyway, so
+ * the head's next replay pass applies it. Initial locks are refused.
+ */
+export const reapplyL2ReservationPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: reapplyL2ReservationInput,
+	output: reapplyL2ReservationOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof reapplyL2ReservationInput>; ctx: AuthContext }) =>
+		await reapplyReleasedL2Reservation({
 			headId: input.headId,
 			transactionId: input.transactionId,
 			expectedUpdatedAt: new Date(input.expectedUpdatedAt),
