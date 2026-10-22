@@ -161,7 +161,9 @@ describe('quiesceHydraHeadsForDeletion', () => {
 			network: 'Preprod',
 			rpcProviderApiKey: 'project-key',
 			txHash: 'f'.repeat(64),
-			requiredConfirmations: 5,
+			// The configured 5 is raised to the key-release depth: deletion takes
+			// the node and its keys, so a shallow fanout is not enough.
+			requiredConfirmations: 20,
 		});
 	});
 
@@ -239,6 +241,17 @@ describe('quiesceHydraHeadsForDeletion', () => {
 		await expect(quiesceHydraHeadsForDeletion(['head-1'])).rejects.toMatchObject({ statusCode: 409 });
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 		expect(mockReconcileEnabledState).toHaveBeenCalledWith('head-1');
+	});
+
+	// Too shallow is not a rollback, and the operator is told to wait.
+	it('refuses deletion with a retry hint while the fanout is not deep enough', async () => {
+		mockLookupConfirmedChainTx.mockResolvedValue('pending');
+
+		await expect(quiesceHydraHeadsForDeletion(['head-1'])).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('20 confirmations deep'),
+		});
+		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
 	it.each([
