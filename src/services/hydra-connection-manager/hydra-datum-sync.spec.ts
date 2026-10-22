@@ -1426,11 +1426,16 @@ describe('applyDatumStateToLocalRequests', () => {
 	});
 
 	// The head refused the result, the request rolled back to SubmitResultRequested,
-	// and then the same body confirmed. The new action carries no hash, so a request
-	// left at SubmitResultRequested is never selected by the submit pass again.
+	// and then a body confirmed. The submit pass selects only requests that still
+	// carry a hash, so a confirmed result must leave SubmitResultRequested and a
+	// rotation to a different result must keep its hash.
 	it.each([
-		['the requested result confirms', 'result-hash', PaymentAction.WaitingForExternalAction],
-		['a different result confirms', 'other-hash', PaymentAction.SubmitResultRequested],
+		['the requested result confirms', 'result-hash', { requestedAction: PaymentAction.WaitingForExternalAction }],
+		[
+			'a different result confirms',
+			'other-hash',
+			{ requestedAction: PaymentAction.SubmitResultRequested, resultHash: 'other-hash' },
+		],
 	])('settles a rolled-back submit-result request when %s', async (_label, requestedHash, expectedAction) => {
 		mockPaymentFindUnique.mockResolvedValue({
 			...makePaymentRequest(),
@@ -1480,7 +1485,7 @@ describe('applyDatumStateToLocalRequests', () => {
 			expect.objectContaining({
 				data: expect.objectContaining({
 					onChainState: OnChainState.ResultSubmitted,
-					NextAction: { create: expect.objectContaining({ requestedAction: expectedAction }) },
+					NextAction: { create: expect.objectContaining(expectedAction) },
 				}),
 			}),
 		);

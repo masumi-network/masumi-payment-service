@@ -684,6 +684,10 @@ export async function applyDatumStateToLocalRequests(params: {
 									requestedAction: newAction.action,
 									errorNote: newAction.errorNote,
 									errorType: newAction.errorType,
+									// A pending rotation keeps its hash, or the submit pass never selects it.
+									...(newAction.action === PaymentAction.SubmitResultRequested
+										? { resultHash: paymentRequest.NextAction.resultHash }
+										: {}),
 								},
 							},
 							BuyerWallet: {
