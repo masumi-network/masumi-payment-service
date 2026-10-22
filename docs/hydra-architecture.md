@@ -156,6 +156,7 @@ stateDiagram-v2
   | `HeadIsInitializing`               | Initializing                                |
   | `HeadIsOpen`                       | Open                                        |
   | `HeadIsClosed`                     | Closed                                      |
+  | `HeadIsContested`                  | Closed (snapshot raised, deadline later)    |
   | `ReadyToFanout`                    | FanoutPossible                              |
   | `HeadIsFinalized`                  | Final                                       |
   | `HeadIsAborted`                    | Idle (the manager quarantines the head)     |
