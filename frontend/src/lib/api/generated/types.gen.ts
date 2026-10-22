@@ -15576,6 +15576,11 @@ export type GetHydraHeadConnectionResponses = {
             nodeState: string;
             isReady: boolean;
             /**
+             * Whether both sessions and history are verified. Null outside Open.
+             */
+            syncReady: boolean | null;
+            syncReason: string | null;
+            /**
              * Whether this node is in its Hydra cluster, which for a two-party head means the counterparty's node is up and reachable. Null until the node reports either way. Not a statement about their chain sync.
              */
             peerConnected: boolean | null;

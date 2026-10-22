@@ -33,8 +33,10 @@ import {
 	prepareNewTxCommand,
 	sendHydraCommandAndWait,
 } from './node-command-channel';
+import type { ClosedHeadFacts } from './head-output-tx';
 import {
 	buildHydraCommitRequest,
+	fetchHydraClosedHeadFacts,
 	fetchHydraHeadOutputTxId,
 	fetchHydraPendingDecommitRefs,
 	fetchHydraProtocolParameters,
@@ -587,6 +589,13 @@ export class HydraNode extends EventEmitter {
 		const headIdentifier = this._expectedHeadId ?? this._live.liveSessionHeadId;
 		if (!headIdentifier) return undefined;
 		return await fetchHydraHeadOutputTxId(this, headIdentifier);
+	}
+
+	/** See `fetchHydraClosedHeadFacts`: the deadline and snapshot number a missed close left unrecorded. */
+	async fetchClosedHeadFacts(): Promise<ClosedHeadFacts | undefined> {
+		const headIdentifier = this._expectedHeadId ?? this._live.liveSessionHeadId;
+		if (!headIdentifier) return undefined;
+		return await fetchHydraClosedHeadFacts(this, headIdentifier);
 	}
 
 	/** See `fetchHydraPendingDecommitRefs`: output refs still awaiting L1 decommit. */

@@ -464,6 +464,10 @@ async function rollbackL2Action(
 						data: { status: TransactionStatus.RolledBack },
 					});
 
+					// A completed rollback returns to the exact Requested action this
+					// caller read. A fresh action id would make its exhaustion marker
+					// stale immediately. Keep the attempted Initiated action in history;
+					// every later reservation still gets its own distinct Initiated id.
 					if (params.requestKind === 'payment') {
 						await tx.paymentRequest.update({
 							where: {
@@ -473,8 +477,13 @@ async function rollbackL2Action(
 								layer: TransactionLayer.L2,
 							},
 							data: {
-								...connectPreviousAction(reservation.initiatedActionId),
-								...createNextPaymentAction(params.retryAction, params.retryActionData),
+								ActionHistory: {
+									disconnect: { id: params.nextActionId },
+									connect: { id: reservation.initiatedActionId },
+								},
+								NextAction: {
+									connect: { id: params.nextActionId, requestedAction: params.retryAction, ...params.retryActionData },
+								},
 								CurrentTransaction: { connect: { id: params.previousTransactionId } },
 								TransactionHistory: {
 									disconnect: { id: params.previousTransactionId },
@@ -491,8 +500,13 @@ async function rollbackL2Action(
 								layer: TransactionLayer.L2,
 							},
 							data: {
-								...connectPreviousAction(reservation.initiatedActionId),
-								...createNextPurchaseAction(params.retryAction, params.retryActionData),
+								ActionHistory: {
+									disconnect: { id: params.nextActionId },
+									connect: { id: reservation.initiatedActionId },
+								},
+								NextAction: {
+									connect: { id: params.nextActionId, requestedAction: params.retryAction, ...params.retryActionData },
+								},
 								CurrentTransaction: { connect: { id: params.previousTransactionId } },
 								TransactionHistory: {
 									disconnect: { id: params.previousTransactionId },

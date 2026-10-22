@@ -36816,6 +36816,15 @@
                                                 "isReady": {
                                                     "type": "boolean"
                                                 },
+                                                "syncReady": {
+                                                    "type": "boolean",
+                                                    "nullable": true,
+                                                    "description": "Whether both sessions and history are verified. Null outside Open."
+                                                },
+                                                "syncReason": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
                                                 "peerConnected": {
                                                     "type": "boolean",
                                                     "nullable": true,
@@ -36870,6 +36879,8 @@
                                                 "connected",
                                                 "nodeState",
                                                 "isReady",
+                                                "syncReady",
+                                                "syncReason",
                                                 "peerConnected",
                                                 "reason",
                                                 "paramDrift",

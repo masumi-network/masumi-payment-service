@@ -11,13 +11,17 @@ const mockGetNode = jest.fn() as AnyMock;
 const mockFetchRound = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hydraHead: { findMany: mockFindMany, updateMany: mockUpdateMany } },
+	prisma: {
+		hydraHead: { findMany: mockFindMany, updateMany: mockUpdateMany },
+		$transaction: async (callback: (tx: object) => Promise<unknown>) =>
+			await callback({ hydraHead: { updateMany: mockUpdateMany } }),
+	},
 }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
-	webhookEventsService: { triggerHydraHeadSnapshotRoundStuck: mockTrigger },
+	webhookEventsService: { queueHydraHeadSnapshotRoundStuckInTransaction: mockTrigger },
 }));
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({ getNode: mockGetNode }),
@@ -101,7 +105,7 @@ describe('applySnapshotRoundObservation', () => {
 		};
 		await watch.applySnapshotRoundObservation(head, round(), NOW);
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', snapshotRoundSignature: 'SeenSnapshot|313|2' },
+			where: { id: 'head-1', snapshotRoundSignature: 'SeenSnapshot|313|2', snapshotRoundSince: minutesAgo(1) },
 			data: { snapshotRoundSignature: 'SeenSnapshot|314|1', snapshotRoundSince: NOW, snapshotRoundAlertedAt: null },
 		});
 	});
@@ -116,10 +120,15 @@ describe('applySnapshotRoundObservation', () => {
 
 		await expect(watch.applySnapshotRoundObservation(head, round(), NOW)).resolves.toBe('alert');
 		expect(mockUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'head-1', snapshotRoundSignature: round().signature, snapshotRoundAlertedAt: null },
+			where: {
+				id: 'head-1',
+				snapshotRoundSignature: round().signature,
+				snapshotRoundSince: minutesAgo(15),
+				snapshotRoundAlertedAt: null,
+			},
 			data: { snapshotRoundAlertedAt: NOW },
 		});
-		expect(mockTrigger).toHaveBeenCalledWith({
+		expect(mockTrigger).toHaveBeenCalledWith(expect.objectContaining({ hydraHead: expect.any(Object) }), {
 			hydraHeadId: 'head-1',
 			roundTag: 'SeenSnapshot',
 			snapshotNumber: 314,
