@@ -120,6 +120,49 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
 	return producers.size === 1 ? [...producers][0] : undefined;
 }
 
+/** What a live `HeadIsClosed` frame says about a close, as read from the node's head state instead. */
+export type ClosedHeadFacts = { contestationDeadline: string; snapshotNumber: number };
+
+/**
+ * The contestation deadline and the confirmed snapshot number of a closed head,
+ * or undefined.
+ *
+ * A close this service was not there to see reaches it as Greetings, which carry
+ * neither. hydra-node 2.4.1 keeps both in `ClosedState` and, once the first
+ * partial fanout step lands, in `PartialFanoutState`, so unlike the close
+ * transaction they stay readable until the head is final.
+ *
+ * Undefined, never zero, for every "cannot tell" case: a missing fact has to stay
+ * missing so a later read can still fill it. A head that closed on its initial
+ * snapshot is the one case that is really 0.
+ */
+export function extractClosedHeadFacts(headState: unknown, headIdentifier: string): ClosedHeadFacts | undefined {
+	if (!isPlainObject(headState)) return undefined;
+	if (!/^[0-9a-fA-F]{56}$/.test(headIdentifier)) return undefined;
+
+	// Nested under `contents` in the real reply; a flat state is accepted too.
+	const state = getOwnPlainObject(headState, 'contents') ?? headState;
+	// Refuse a state that names another head. A state that names none is accepted:
+	// the session is already pinned to this head.
+	const stateHeadId = getOwnValue(state, 'headId');
+	if (typeof stateHeadId === 'string' && stateHeadId.toLowerCase() !== headIdentifier.toLowerCase()) return undefined;
+
+	const contestationDeadline = getOwnValue(state, 'contestationDeadline');
+	if (typeof contestationDeadline !== 'string' || contestationDeadline.length === 0) return undefined;
+
+	const snapshotNumber = readConfirmedSnapshotNumber(getOwnPlainObject(state, 'confirmedSnapshot'));
+	return snapshotNumber === undefined ? undefined : { contestationDeadline, snapshotNumber };
+}
+
+function readConfirmedSnapshotNumber(confirmedSnapshot: object | undefined): number | undefined {
+	if (confirmedSnapshot === undefined) return undefined;
+	// A head that closed before any snapshot was confirmed.
+	if (getOwnValue(confirmedSnapshot, 'tag') === 'InitialSnapshot') return 0;
+	const snapshot = getOwnPlainObject(confirmedSnapshot, 'snapshot');
+	const number = snapshot === undefined ? undefined : getOwnValue(snapshot, 'number');
+	return typeof number === 'number' && Number.isSafeInteger(number) && number >= 0 ? number : undefined;
+}
+
 /**
  * Output references (`txid#ix`, lower-cased) the head's confirmed snapshot is
  * still waiting to decommit onto L1.

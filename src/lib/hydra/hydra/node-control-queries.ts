@@ -8,7 +8,13 @@ import { Protocol, UTxO, castProtocol } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { HydraProtocolError } from './errors';
-import { extractDecommitInFlight, extractHeadOutputTxId, extractPendingDecommitRefs } from './head-output-tx';
+import {
+	type ClosedHeadFacts,
+	extractClosedHeadFacts,
+	extractDecommitInFlight,
+	extractHeadOutputTxId,
+	extractPendingDecommitRefs,
+} from './head-output-tx';
 import { HydraHttpResponseError, protocolErrorToString } from './node-frames';
 import { type HydraRawCostModels } from './node-api';
 import { EXPECTED_MAX_TX_SIZE, reportParamsDrift } from './params-drift';
@@ -260,6 +266,31 @@ export async function fetchHydraHeadOutputTxId(
 		return extractHeadOutputTxId(await transport.get('/head'), headIdentifier);
 	} catch (error) {
 		logger.warn('[HydraNode] Could not read the head state output transaction', {
+			headIdentifier,
+			error: protocolErrorToString(error),
+		});
+		return undefined;
+	}
+}
+
+/**
+ * The contestation deadline and confirmed snapshot number of a closed head, in
+ * one read of the head state. See `extractClosedHeadFacts`.
+ *
+ * Undefined rather than throwing on any failure, a response over the byte limit
+ * included (`/head` carries the whole snapshot, so a large head can outgrow it):
+ * this fills in what a missed close left unrecorded, and a head that cannot be
+ * read is not a head with snapshot 0 and no deadline. The caller writes nothing,
+ * and a later read can still fill the row in.
+ */
+export async function fetchHydraClosedHeadFacts(
+	transport: HydraQueryTransport,
+	headIdentifier: string,
+): Promise<ClosedHeadFacts | undefined> {
+	try {
+		return extractClosedHeadFacts(await transport.get('/head'), headIdentifier);
+	} catch (error) {
+		logger.warn('[HydraNode] Could not read the deadline and snapshot of a closed head', {
 			headIdentifier,
 			error: protocolErrorToString(error),
 		});
