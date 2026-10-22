@@ -1425,6 +1425,67 @@ describe('applyDatumStateToLocalRequests', () => {
 		);
 	});
 
+	// The head refused the result, the request rolled back to SubmitResultRequested,
+	// and then the same body confirmed. The new action carries no hash, so a request
+	// left at SubmitResultRequested is never selected by the submit pass again.
+	it.each([
+		['the requested result confirms', 'result-hash', PaymentAction.WaitingForExternalAction],
+		['a different result confirms', 'other-hash', PaymentAction.SubmitResultRequested],
+	])('settles a rolled-back submit-result request when %s', async (_label, requestedHash, expectedAction) => {
+		mockPaymentFindUnique.mockResolvedValue({
+			...makePaymentRequest(),
+			onChainState: OnChainState.FundsLocked,
+			layer: TransactionLayer.L2,
+			currentHydraUtxoTxHash: 'lock-tx',
+			currentHydraUtxoOutputIndex: 0,
+			currentHydraUtxoValue: [{ unit: 'lovelace', quantity: '10000000' }],
+			currentTransactionId: 'lock-transaction',
+			CurrentTransaction: {
+				id: 'lock-transaction',
+				txHash: 'lock-tx',
+				status: TransactionStatus.Confirmed,
+				layer: TransactionLayer.L2,
+				hydraHeadId: 'head-1',
+				BlocksWallet: null,
+			},
+			BuyerWallet: { walletVkey: 'buyer-vkey', walletAddress: 'addr-buyer' },
+			NextAction: { requestedAction: PaymentAction.SubmitResultRequested, resultHash: requestedHash },
+		});
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'result-tx',
+			paymentSourceId: 'source-1',
+			decoded: {
+				...decodedInitialLock,
+				state: SmartContractState.ResultSubmitted,
+				resultHash: 'result-hash',
+				sellerCooldownTime: 1_655_769_702_000n,
+			},
+			newOnChainState: OnChainState.ResultSubmitted,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'result-tx', outputIndex: 1 },
+			transactionEvidence: makeEvidence({
+				txHash: 'result-tx',
+				outputIndex: 1,
+				inputs: [{ txHash: 'lock-tx', outputIndex: 0, bodyIndex: 0 }],
+				signerVkeys: ['seller-vkey'],
+			}),
+			confirmationTimeMs: 60,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('applied');
+		expect(mockPaymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					onChainState: OnChainState.ResultSubmitted,
+					NextAction: { create: expect.objectContaining({ requestedAction: expectedAction }) },
+				}),
+			}),
+		);
+	});
+
 	it('rejects a continuation when the actor witnessed the body but was not body-required', async () => {
 		const currentTransaction = {
 			id: 'current-transaction',

@@ -4,9 +4,11 @@ import type { DecodedV1ContractDatum } from '@/utils/converter/string-datum-conv
 /**
  * Whether the escrow already carries the result this request still asks to submit.
  *
- * A result the head rejected can confirm later. Datum sync then moves the escrow
- * to ResultSubmitted, but the shared transition table keeps the request at
- * SubmitResultRequested, and the validator accepts the same result a second time.
+ * A result the head rejected can confirm later. The request is then back at
+ * SubmitResultRequested, and the shared transition table keeps it there when the
+ * escrow reaches ResultSubmitted, because a different hash is a real rotation.
+ * The validator accepts the same result a second time, so callers read a match as
+ * a submit that already happened.
  */
 export function isRequestedResultOnChain(
 	decodedContract: Pick<DecodedV1ContractDatum, 'state' | 'resultHash'>,

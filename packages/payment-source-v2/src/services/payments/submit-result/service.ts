@@ -20,7 +20,7 @@ import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
-import { isRequestedResultOnChain } from './result-on-chain';
+import { isRequestedResultOnChain } from '@/utils/logic/result-on-chain';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';

@@ -14,6 +14,7 @@ import {
 } from '@/generated/prisma/client';
 import { type DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { datumMatchesRequest } from '@/utils/logic/l2-datum-validation';
+import { isRequestedResultOnChain } from '@/utils/logic/result-on-chain';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import {
 	canonicalizeHydraAmounts,
@@ -647,10 +648,18 @@ export async function applyDatumStateToLocalRequests(params: {
 						previousState: paymentRecoversTimeout ? null : paymentRequest.onChainState,
 						newState: effectiveState,
 					});
+					// A refused result that confirms later finds the request back at
+					// SubmitResultRequested. This write drops its hash, so the submit pass
+					// never selects it again; read it as the submit it was.
+					const isRequestedResultConfirmed =
+						paymentRequest.NextAction.requestedAction === PaymentAction.SubmitResultRequested &&
+						isRequestedResultOnChain(decoded, paymentRequest.NextAction.resultHash);
 					const newAction = convertNewPaymentActionAndError(
 						paymentClearsTimeoutAction
 							? PaymentAction.WaitingForExternalAction
-							: paymentRequest.NextAction.requestedAction,
+							: isRequestedResultConfirmed
+								? PaymentAction.SubmitResultInitiated
+								: paymentRequest.NextAction.requestedAction,
 						effectiveState,
 					);
 					await tx.paymentRequest.update({
