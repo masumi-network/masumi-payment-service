@@ -314,7 +314,7 @@ export async function applyDatumStateToLocalRequests(params: {
 					buyerAddress: paymentRequest.BuyerWallet?.walletAddress ?? null,
 					sellerAddress: paymentRequest.SmartContractWallet?.walletAddress ?? null,
 					buyerReturnAddress:
-						paymentRequest.onChainState == null && paymentRequest.buyerReturnAddress == null
+						(paymentRequest.onChainState == null || paymentRecoversTimeout) && paymentRequest.buyerReturnAddress == null
 							? undefined
 							: paymentRequest.buyerReturnAddress,
 					sellerReturnAddress: paymentRequest.sellerReturnAddress,
@@ -566,7 +566,7 @@ export async function applyDatumStateToLocalRequests(params: {
 						hydraHeadId,
 						txId,
 						currentTransaction: purchaseRequest.CurrentTransaction,
-						previousState: purchaseRequest.onChainState,
+						previousState: purchaseRecoversTimeout ? null : purchaseRequest.onChainState,
 						newState: effectiveState,
 					});
 					const newAction = convertNewPurchasingActionAndError(
@@ -638,7 +638,7 @@ export async function applyDatumStateToLocalRequests(params: {
 						hydraHeadId,
 						txId,
 						currentTransaction: paymentRequest.CurrentTransaction,
-						previousState: paymentRequest.onChainState,
+						previousState: paymentRecoversTimeout ? null : paymentRequest.onChainState,
 						newState: effectiveState,
 					});
 					const newAction = convertNewPaymentActionAndError(paymentRequest.NextAction.requestedAction, effectiveState);

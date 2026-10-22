@@ -843,7 +843,7 @@ describe('applyDatumStateToLocalRequests', () => {
 			hydraHeadId: 'head-1',
 			txId: 'late-seen-lock-tx',
 			paymentSourceId: 'source-1',
-			decoded: decodedInitialLock,
+			decoded: { ...decodedInitialLock, buyerReturnAddress: 'addr-buyer-return' },
 			newOnChainState: OnChainState.FundsLocked,
 			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
 			outputReference: { txHash: 'late-seen-lock-tx', outputIndex: 0 },
@@ -861,9 +861,40 @@ describe('applyDatumStateToLocalRequests', () => {
 					onChainState: OnChainState.FundsLocked,
 					currentHydraUtxoTxHash: 'late-seen-lock-tx',
 					currentHydraUtxoOutputIndex: 0,
+					buyerReturnAddress: 'addr-buyer-return',
 				}),
 			}),
 		);
+		expect(mockTransactionCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					txHash: 'late-seen-lock-tx',
+					previousOnChainState: null,
+					newOnChainState: OnChainState.FundsLocked,
+				}),
+			}),
+		);
+	});
+
+	it('keeps a timed-out row permanently rejected, not retryable, when a timely lock lacks the buyer witness', async () => {
+		mockPaymentFindUnique.mockResolvedValue(makeTimedOutPaymentRequest());
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'unwitnessed-late-seen-lock-tx',
+			paymentSourceId: 'source-1',
+			decoded: decodedInitialLock,
+			newOnChainState: OnChainState.FundsLocked,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'unwitnessed-late-seen-lock-tx', outputIndex: 0 },
+			transactionEvidence: makeEvidence({ txHash: 'unwitnessed-late-seen-lock-tx', signerVkeys: ['seller-vkey'] }),
+			confirmationTimeMs: 49,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('irrelevant');
+		expect(mockPaymentUpdate).not.toHaveBeenCalled();
+		expect(mockTransactionCreate).not.toHaveBeenCalled();
 	});
 
 	it('keeps a timed-out row rejected without wedging replay when the signed bound is past payByTime', async () => {
