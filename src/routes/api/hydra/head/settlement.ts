@@ -185,6 +185,16 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 
 // --- Lifecycle: POST fanout ---
 
+/**
+ * Heads with a Fanout on the wire from this process.
+ *
+ * hydra-node refuses a second Fanout, and its refusal names no request, so with
+ * two in flight every waiting Fanout fails, including the one that landed. A
+ * Fanout carries nothing but the head, so the second request adds nothing: it is
+ * refused here, and the first one reports what happened.
+ */
+const fanoutsInFlight = new Set<string>();
+
 export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: lifecycleInput,
@@ -212,10 +222,20 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		if (head.status !== HydraHeadStatus.FanoutPossible) {
 			throw createHttpError(409, `Cannot fanout: head status is ${head.status}, expected FanoutPossible`);
 		}
+		if (hydraHead?.status === HydraHeadStatus.Final) {
+			throw createHttpError(409, `Cannot fanout: head status is ${hydraHead.status}, expected FanoutPossible`);
+		}
 
 		if (!hydraHead) {
 			throw createHttpError(502, 'No active connection to Hydra head');
 		}
+
+		// No await between this check and the add, so two requests cannot both pass.
+		// Thrown before the try: a refusal is not a failed command.
+		if (fanoutsInFlight.has(head.id)) {
+			throw createHttpError(409, 'Hydra head fanout is already in progress');
+		}
+		fanoutsInFlight.add(head.id);
 
 		try {
 			await hydraHead.fanout();
@@ -231,6 +251,8 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		} catch (error) {
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Fanout');
 			throw error;
+		} finally {
+			fanoutsInFlight.delete(head.id);
 		}
 	},
 });
