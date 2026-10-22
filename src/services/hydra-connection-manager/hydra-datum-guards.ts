@@ -424,6 +424,41 @@ export function observationHasValidLineage(params: {
 	);
 }
 
+/**
+ * The payByTime timeout job parks a never-observed request as
+ * FundsOrDatumInvalid without attaching an output. That verdict is a local
+ * guess ("no lock seen yet"), not a judgement on chain evidence. A delayed
+ * observation of an initial lock may therefore treat the row as unlocked, but
+ * only when the signed body itself proves the lock happened by payByTime.
+ * Everything else keeps the permanent reject of an invalid row.
+ */
+export function isRecoverableTimeoutInvalidation(params: {
+	request: {
+		onChainState: OnChainState | null;
+		currentHydraUtxoTxHash: string | null;
+		currentHydraUtxoOutputIndex: number | null;
+		currentHydraUtxoValue: Prisma.JsonValue | null;
+	};
+	observedState: OnChainState;
+	payByTime: bigint | number;
+	confirmationTimeMs: number | null;
+	signedValidityUpperBoundTimeMs: bigint | null;
+}): boolean {
+	const { request, observedState, payByTime, confirmationTimeMs, signedValidityUpperBoundTimeMs } = params;
+	return (
+		request.onChainState === OnChainState.FundsOrDatumInvalid &&
+		request.currentHydraUtxoTxHash == null &&
+		request.currentHydraUtxoOutputIndex == null &&
+		request.currentHydraUtxoValue == null &&
+		observedState === OnChainState.FundsLocked &&
+		confirmationTimeMs != null &&
+		Number.isSafeInteger(confirmationTimeMs) &&
+		BigInt(confirmationTimeMs) <= BigInt(payByTime) &&
+		signedValidityUpperBoundTimeMs != null &&
+		signedValidityUpperBoundTimeMs <= BigInt(payByTime)
+	);
+}
+
 export function isLegacyPendingLineageCandidate(params: {
 	hydraHeadId: string;
 	txId: string;

@@ -828,6 +828,69 @@ describe('applyDatumStateToLocalRequests', () => {
 		expect(mockTransactionCreate).not.toHaveBeenCalled();
 	});
 
+	function makeTimedOutPaymentRequest() {
+		return {
+			...makePaymentRequest(),
+			onChainState: OnChainState.FundsOrDatumInvalid,
+			NextAction: { requestedAction: PaymentAction.WaitingForManualAction },
+		};
+	}
+
+	it('recovers a timely signed lock observed after the payByTime timeout invalidated the row', async () => {
+		mockPaymentFindUnique.mockResolvedValue(makeTimedOutPaymentRequest());
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'late-seen-lock-tx',
+			paymentSourceId: 'source-1',
+			decoded: decodedInitialLock,
+			newOnChainState: OnChainState.FundsLocked,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'late-seen-lock-tx', outputIndex: 0 },
+			transactionEvidence: makeEvidence({ txHash: 'late-seen-lock-tx', signerVkeys: ['buyer-vkey'] }),
+			confirmationTimeMs: 49,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('applied');
+		expect(mockPaymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'payment-1' },
+				data: expect.objectContaining({
+					layer: TransactionLayer.L2,
+					onChainState: OnChainState.FundsLocked,
+					currentHydraUtxoTxHash: 'late-seen-lock-tx',
+					currentHydraUtxoOutputIndex: 0,
+				}),
+			}),
+		);
+	});
+
+	it('keeps a timed-out row rejected without wedging replay when the signed bound is past payByTime', async () => {
+		mockPaymentFindUnique.mockResolvedValue(makeTimedOutPaymentRequest());
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'really-late-lock-tx',
+			paymentSourceId: 'source-1',
+			decoded: decodedInitialLock,
+			newOnChainState: OnChainState.FundsLocked,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'really-late-lock-tx', outputIndex: 0 },
+			transactionEvidence: makeEvidence({
+				txHash: 'really-late-lock-tx',
+				signerVkeys: ['buyer-vkey'],
+				validityUpperSlot: 86_800n,
+			}),
+			confirmationTimeMs: 49,
+			targetSide: 'payment',
+		});
+
+		expect(outcome).toBe('irrelevant');
+		expect(mockPaymentUpdate).not.toHaveBeenCalled();
+		expect(mockTransactionCreate).not.toHaveBeenCalled();
+	});
+
 	it('confirms both sides of a buyer-local shared lock in one transaction', async () => {
 		const sharedTransaction = {
 			id: 'shared-transaction-1',

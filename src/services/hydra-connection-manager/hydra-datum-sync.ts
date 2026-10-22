@@ -27,6 +27,7 @@ import {
 	continuationHasAuthorizedActor,
 	headParticipantsMatch,
 	isLegacyPendingLineageCandidate,
+	isRecoverableTimeoutInvalidation,
 	lockHydraMutationAdmission,
 	observationHasValidLineage,
 	parsePersistedHydraValue,
@@ -147,6 +148,20 @@ export async function applyDatumStateToLocalRequests(params: {
 					SmartContractWallet: true,
 				},
 			});
+			// A row the payByTime job invalidated before any lock was seen is judged
+			// like an unlocked row when this observation provably locked in time.
+			const timeoutRecoveryEvidence = {
+				observedState: newOnChainState,
+				payByTime: decoded.payByTime,
+				confirmationTimeMs,
+				signedValidityUpperBoundTimeMs,
+			};
+			const purchaseRecoversTimeout =
+				purchaseRequest != null &&
+				isRecoverableTimeoutInvalidation({ request: purchaseRequest, ...timeoutRecoveryEvidence });
+			const paymentRecoversTimeout =
+				paymentRequest != null &&
+				isRecoverableTimeoutInvalidation({ request: paymentRequest, ...timeoutRecoveryEvidence });
 			const purchaseEffectiveForceLayer =
 				purchaseRequest == null
 					? null
@@ -156,14 +171,14 @@ export async function applyDatumStateToLocalRequests(params: {
 			const purchaseRoutingAllowsHydra =
 				purchaseRequest == null ||
 				purchaseHasHydraOwnership ||
-				(purchaseRequest.onChainState == null &&
+				((purchaseRequest.onChainState == null || purchaseRecoversTimeout) &&
 					purchaseRequest.CurrentTransaction == null &&
 					purchaseEffectiveForceLayer !== TransactionLayer.L1 &&
 					purchaseEffectiveForceLayer !== 'conflict');
 			const paymentRoutingAllowsHydra =
 				paymentRequest == null ||
 				paymentHasHydraOwnership ||
-				(paymentRequest.onChainState == null &&
+				((paymentRequest.onChainState == null || paymentRecoversTimeout) &&
 					paymentRequest.CurrentTransaction == null &&
 					paymentRequest.forceLayer !== TransactionLayer.L1);
 			const hasTargetPurchase =
@@ -239,7 +254,7 @@ export async function applyDatumStateToLocalRequests(params: {
 					hydraHeadId,
 					txId,
 					observedState: newOnChainState,
-					currentState: purchaseRequest.onChainState,
+					currentState: purchaseRecoversTimeout ? null : purchaseRequest.onChainState,
 					requestLayer: purchaseRequest.layer,
 					currentHydraUtxoTxHash: purchaseRequest.currentHydraUtxoTxHash,
 					currentHydraUtxoOutputIndex: purchaseRequest.currentHydraUtxoOutputIndex,
@@ -265,7 +280,7 @@ export async function applyDatumStateToLocalRequests(params: {
 						(purchaseRequest.currentHydraUtxoValue == null ||
 							(purchasePersistedInputValue != null &&
 								hydraAmountListsEqual(purchasePersistedInputValue, canonicalOutputAmounts)))
-					: purchaseRequest.onChainState == null
+					: purchaseRequest.onChainState == null || purchaseRecoversTimeout
 						? newOnChainState === OnChainState.FundsLocked && purchaseRequest.currentHydraUtxoValue == null
 						: transactionEvidence != null &&
 							purchasePersistedInputValue != null &&
@@ -376,7 +391,7 @@ export async function applyDatumStateToLocalRequests(params: {
 					hydraHeadId,
 					txId,
 					observedState: newOnChainState,
-					currentState: paymentRequest.onChainState,
+					currentState: paymentRecoversTimeout ? null : paymentRequest.onChainState,
 					requestLayer: paymentRequest.layer,
 					currentHydraUtxoTxHash: paymentRequest.currentHydraUtxoTxHash,
 					currentHydraUtxoOutputIndex: paymentRequest.currentHydraUtxoOutputIndex,
@@ -402,7 +417,7 @@ export async function applyDatumStateToLocalRequests(params: {
 						(paymentRequest.currentHydraUtxoValue == null ||
 							(paymentPersistedInputValue != null &&
 								hydraAmountListsEqual(paymentPersistedInputValue, canonicalOutputAmounts)))
-					: paymentRequest.onChainState == null
+					: paymentRequest.onChainState == null || paymentRecoversTimeout
 						? newOnChainState === OnChainState.FundsLocked && paymentRequest.currentHydraUtxoValue == null
 						: transactionEvidence != null &&
 							paymentPersistedInputValue != null &&
@@ -445,9 +460,11 @@ export async function applyDatumStateToLocalRequests(params: {
 				(!purchaseParticipantsAreValid ||
 					!purchaseDatumIsValid ||
 					purchaseRequest.TransactionHistory.some((history) => history.txHash === txId) ||
-					(purchaseRequest.onChainState === OnChainState.FundsOrDatumInvalid && !purchaseIsSameAcceptedOutput) ||
+					(purchaseRequest.onChainState === OnChainState.FundsOrDatumInvalid &&
+						!purchaseIsSameAcceptedOutput &&
+						!(purchaseRecoversTimeout && purchaseIsTrusted)) ||
 					(newOnChainState === OnChainState.FundsLocked &&
-						purchaseRequest.onChainState == null &&
+						(purchaseRequest.onChainState == null || purchaseRecoversTimeout) &&
 						transactionEvidence != null &&
 						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)));
 			const paymentIsPermanentReject =
@@ -456,9 +473,11 @@ export async function applyDatumStateToLocalRequests(params: {
 				(!paymentParticipantsAreValid ||
 					!paymentDatumIsValid ||
 					paymentRequest.TransactionHistory.some((history) => history.txHash === txId) ||
-					(paymentRequest.onChainState === OnChainState.FundsOrDatumInvalid && !paymentIsSameAcceptedOutput) ||
+					(paymentRequest.onChainState === OnChainState.FundsOrDatumInvalid &&
+						!paymentIsSameAcceptedOutput &&
+						!(paymentRecoversTimeout && paymentIsTrusted)) ||
 					(newOnChainState === OnChainState.FundsLocked &&
-						paymentRequest.onChainState == null &&
+						(paymentRequest.onChainState == null || paymentRecoversTimeout) &&
 						transactionEvidence != null &&
 						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)));
 			// Per-side gating: only a TRANSIENTLY-unproven side (not yet trusted but not
