@@ -257,7 +257,7 @@ export class HydraHistoryReplay {
 			return;
 		}
 		this._restartRequested = true;
-		this.connection.invalidate(
+		this.connection.restart(
 			new HydraTransportError('Hydra bounded history page was durably reconciled; restarting replay'),
 		);
 	}
@@ -310,7 +310,7 @@ export class HydraHistoryReplay {
 		// against.
 		if (pageClosedBeforeHeadExisted(bufferedFrames)) {
 			this._restartRequested = true;
-			this.connection.invalidate(
+			this.connection.restart(
 				new HydraTransportError('Hydra history page closed before the head existed; restarting replay'),
 			);
 			return;

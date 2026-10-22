@@ -52,6 +52,7 @@ class MockConnection extends EventEmitter {
 		.mockResolvedValue(undefined);
 	isOpen = jest.fn<() => boolean>().mockReturnValue(false);
 	invalidate = jest.fn<(error: Error) => void>();
+	restart = jest.fn<(error: Error) => void>();
 	openCount = 0;
 
 	constructor() {
@@ -1686,7 +1687,7 @@ describe('HydraNode', () => {
 			node.pinExpectedHeadId(HEAD_ID_A);
 
 			expect(node.confirmedTransactionHistoryError).toBeUndefined();
-			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+			expect(historyConnection.restart).toHaveBeenCalledWith(expect.any(HydraTransportError));
 		});
 
 		it('still refuses a pinned page whose Greetings omits the head id at Open', async () => {
@@ -1801,10 +1802,11 @@ describe('HydraNode', () => {
 				}),
 			]);
 			node.markConfirmedTransactionReconciled(transactions[0].txId);
-			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+			expect(historyConnection.restart).not.toHaveBeenCalled();
 			finishHistoryReplay(historyConnection);
 			expect(node.confirmedTransactionHistoryReady).toBe(false);
-			expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
+			expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
 
 			historyConnection.emit('close', new Error('bounded page restart'));
 			historyConnection.emit('message', JSON.stringify(headIsOpen()));
@@ -1818,7 +1820,7 @@ describe('HydraNode', () => {
 				}),
 			]);
 			node.markConfirmedTransactionReconciled(transactions[1].txId);
-			expect(historyConnection.invalidate).toHaveBeenCalledTimes(2);
+			expect(historyConnection.restart).toHaveBeenCalledTimes(2);
 
 			historyConnection.emit('close', new Error('bounded page restart'));
 			historyConnection.emit('message', JSON.stringify(headIsOpen()));
@@ -2186,7 +2188,7 @@ describe('HydraNode', () => {
 			// A closed pass cannot tell a fanout still in its queue from a rollback,
 			// so the history is read again first.
 			expect(statuses).toEqual([]);
-			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+			expect(historyConnection.restart).toHaveBeenCalledWith(expect.any(HydraTransportError));
 			historyConnection.emit('close');
 			historyConnection.emit('open');
 			for (const frame of [headIsOpen(), ...chain.frames, headlessIdleGreetings()]) {
@@ -2230,7 +2232,8 @@ describe('HydraNode', () => {
 			}: ReturnType<typeof restartedNode>) {
 				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
 				await connectPromise;
-				expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+				expect(historyConnection.invalidate).not.toHaveBeenCalled();
 				historyConnection.emit('close', new Error('replaying the history again'));
 				historyConnection.emit('open');
 			}
@@ -2258,7 +2261,7 @@ describe('HydraNode', () => {
 				for (const frame of history.frames.slice(-2)) historyConnection.emit('message', JSON.stringify(frame));
 				expect(node.getConfirmedTransactionsForReconciliation()).toHaveLength(3);
 
-				expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
 				expect(node.confirmedTransactionHistoryError).toBeUndefined();
 				expect(node.confirmedTransactionHistoryReady).toBe(true);
 				expect(node.status).toBe(HydraHeadStatus.Final);
@@ -2283,7 +2286,7 @@ describe('HydraNode', () => {
 				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
 				for (const frame of history.frames.slice(-2)) historyConnection.emit('message', JSON.stringify(frame));
 
-				expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
 				expect(statuses).toEqual([expect.objectContaining(finalized)]);
 			});
 
@@ -2356,7 +2359,7 @@ describe('HydraNode', () => {
 				const [firstPage] = node.getConfirmedTransactionsForReconciliation();
 				expect(firstPage).toBeDefined();
 				node.markConfirmedTransactionReconciled(firstPage.txId);
-				expect(historyConnection.invalidate).toHaveBeenCalledTimes(2);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
 			});
 
 			it('binds at once when a truncated replay page proved the finalization first', async () => {
@@ -2411,7 +2414,7 @@ describe('HydraNode', () => {
 				liveConnection.emit('close', new Error('live socket dropped'));
 				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
 
-				expect(historyConnection.invalidate).toHaveBeenCalledTimes(2);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
 			});
 
 			it('greets again when the history names the head the held Idle did not', async () => {
@@ -2431,7 +2434,7 @@ describe('HydraNode', () => {
 				// That pass closed, so the next held Idle reads the history again.
 				liveConnection.emit('close', new Error('greeting again'));
 				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
-				expect(historyConnection.invalidate).toHaveBeenCalledTimes(2);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
 			});
 
 			// hydra-node reports no undo of a finalization. A head status after it
@@ -2461,7 +2464,7 @@ describe('HydraNode', () => {
 				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
 				await reconnected;
 
-				expect(historyConnection.invalidate).toHaveBeenCalledTimes(2);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(2);
 			});
 
 			it('does not settle connect on a held Idle after the event log rotated', async () => {
@@ -2513,7 +2516,7 @@ describe('HydraNode', () => {
 				historyConnection.emit('open');
 				liveConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
 				await connectPromise;
-				expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
+				expect(historyConnection.restart).toHaveBeenCalledTimes(1);
 
 				historyConnection.emit('message', JSON.stringify({ ...headIsOpen(), tag: 'HeadIsInitializing' }));
 				historyConnection.emit('message', JSON.stringify(headlessIdleGreetings()));
