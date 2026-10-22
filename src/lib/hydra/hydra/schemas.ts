@@ -136,7 +136,9 @@ export const commandFailedMessageSchema = z.looseObject({
  */
 export const rejectedInputBecauseUnsyncedMessageSchema = commandFailedMessageSchema.extend({
 	tag: z.literal('RejectedInputBecauseUnsynced'),
-	drift: z.number().optional(),
+	// Only shown to the operator. Unchecked, so an odd encoding cannot turn a
+	// clear refusal into a protocol error for the waiting command.
+	drift: z.unknown().optional(),
 });
 
 /**

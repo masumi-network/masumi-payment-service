@@ -1952,7 +1952,7 @@ describe('HydraNode', () => {
 			const secondSubmit = node.newTx(tx2);
 			const firstRejection = expect(firstSubmit).rejects.toThrow(
 				new HydraTransactionRejectedError(
-					`Transaction ${tx1.txId} was refused: the node is not synced with the chain (drift 312.5s)`,
+					`Transaction ${tx1.txId} was refused: the node is not synced with the chain (drift 313s)`,
 				),
 			);
 

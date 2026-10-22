@@ -339,7 +339,7 @@ export function handleWsResponse(
 			const unsynced = isUnsynced ? rejectedInputBecauseUnsyncedMessageSchema.parse(raw) : undefined;
 			const message = unsynced ?? commandFailedMessageSchema.parse(raw);
 			assertExpectedFrameHeadId(message, expectedHeadId);
-			const drift = unsynced?.drift === undefined ? 'unknown' : `${unsynced.drift}s`;
+			const drift = typeof unsynced?.drift === 'number' ? `${Math.round(unsynced.drift)}s` : 'unknown';
 			const unsyncedReason = `the node is not synced with the chain (drift ${drift})`;
 			if (command === 'NewTx') {
 				if (message.clientInput?.tag !== 'NewTx' || !message.clientInput.transaction || !transactionHash) {
