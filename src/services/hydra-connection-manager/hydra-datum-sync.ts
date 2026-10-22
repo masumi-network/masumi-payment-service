@@ -38,6 +38,7 @@ import {
 } from './hydra-datum-guards';
 import { ensureObservedTransaction, releaseBlockedWallet } from './hydra-datum-observation';
 import { didTimeoutReplacePlainPaymentWait, isUnobservedLockTimeout } from '@/utils/logic/unobserved-lock-timeout';
+import { isTransactionBoundToHydraLineage, type HydraRequestLineage } from './hydra-request-lineage';
 
 // Re-exported so the split stays invisible to importers: this module was the
 // whole datum surface before it was broken up.
@@ -458,6 +459,22 @@ export async function applyDatumStateToLocalRequests(params: {
 				applyOutcome = hasPendingTarget ? 'retry' : 'irrelevant';
 				return;
 			}
+			// An output that copies the identifier of a live escrow, made by a
+			// transaction the escrow never recorded and that leaves its accepted
+			// output unspent, can never continue that escrow. Anyone can fund the
+			// script address this way, so waiting on it would let a peer hold every
+			// later transaction of the head. A row the timeout parked without an
+			// output counts as having no state, like everywhere else here.
+			const isUnboundCopy = (
+				request: HydraRequestLineage & { onChainState: OnChainState | null },
+				isSame: boolean,
+				recoversTimeout: boolean,
+			) =>
+				request.onChainState != null &&
+				!recoversTimeout &&
+				!isSame &&
+				transactionEvidence != null &&
+				!isTransactionBoundToHydraLineage(request, { hydraHeadId, txId, consumedInputs: transactionEvidence.inputs });
 			const purchaseIsPermanentReject =
 				shouldApplyPurchase &&
 				purchaseRequest != null &&
@@ -470,7 +487,8 @@ export async function applyDatumStateToLocalRequests(params: {
 					(newOnChainState === OnChainState.FundsLocked &&
 						(purchaseRequest.onChainState == null || purchaseRecoversTimeout) &&
 						transactionEvidence != null &&
-						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)));
+						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)) ||
+					isUnboundCopy(purchaseRequest, purchaseIsSameAcceptedOutput, purchaseRecoversTimeout));
 			const paymentIsPermanentReject =
 				shouldApplyPayment &&
 				paymentRequest != null &&
@@ -483,7 +501,8 @@ export async function applyDatumStateToLocalRequests(params: {
 					(newOnChainState === OnChainState.FundsLocked &&
 						(paymentRequest.onChainState == null || paymentRecoversTimeout) &&
 						transactionEvidence != null &&
-						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)));
+						!transactionEvidence.signerVkeys.includes(decoded.buyerVkey)) ||
+					isUnboundCopy(paymentRequest, paymentIsSameAcceptedOutput, paymentRecoversTimeout));
 			// Per-side gating: only a TRANSIENTLY-unproven side (not yet trusted but not
 			// permanently rejected either) blocks the tx with 'retry'. A PERMANENTLY
 			// rejected side can never become trusted, so it is excluded from application
@@ -520,6 +539,7 @@ export async function applyDatumStateToLocalRequests(params: {
 							canonicalOutputAmounts,
 							confirmationTimeMs,
 							signedValidityUpperBoundTimeMs,
+							transactionEvidence.validityUpperSlot != null,
 							{ hydraHeadId, blockchainIdentifier, side: 'purchase' },
 						)
 					: null;
@@ -534,6 +554,7 @@ export async function applyDatumStateToLocalRequests(params: {
 							canonicalOutputAmounts,
 							confirmationTimeMs,
 							signedValidityUpperBoundTimeMs,
+							transactionEvidence.validityUpperSlot != null,
 							{ hydraHeadId, blockchainIdentifier, side: 'payment' },
 						)
 					: null;

@@ -531,6 +531,7 @@ export function resolveInitialLockState(
 	outputAmounts: Array<{ unit: string; quantity: string }>,
 	confirmationTimeMs: number | null,
 	signedValidityUpperBoundTimeMs: bigint | null,
+	hasSignedUpperSlot: boolean,
 	logContext: { hydraHeadId: string; blockchainIdentifier: string; side: 'payment' | 'purchase' },
 ): OnChainState | null {
 	if (newOnChainState !== OnChainState.FundsLocked) return newOnChainState;
@@ -548,18 +549,36 @@ export function resolveInitialLockState(
 		!Number.isSafeInteger(confirmationTimeMs) ||
 		BigInt(confirmationTimeMs) > BigInt(decoded.payByTime)
 	) {
+		logger.warn('[HydraDatumSync] initial lock has no usable confirmation time before payByTime; retrying', {
+			...logContext,
+			confirmationTimeMs,
+			payByTime: decoded.payByTime.toString(),
+		});
 		return null;
 	}
 	// SnapshotConfirmed timestamps are API metadata. A forged early timestamp
 	// cannot authorize a late/unbounded initial lock: the immutable signed body
 	// must independently end no later than the datum's payByTime.
+	if (signedValidityUpperBoundTimeMs == null && hasSignedUpperSlot) {
+		// The body is bounded but the slot config cannot convert it: a local
+		// configuration fault, so retry instead of judging the lock.
+		logger.error('[HydraDatumSync] cannot convert the signed validity upper bound; check the L2 slot config', {
+			...logContext,
+			payByTime: decoded.payByTime.toString(),
+		});
+		return null;
+	}
 	if (signedValidityUpperBoundTimeMs == null || signedValidityUpperBoundTimeMs > BigInt(decoded.payByTime)) {
-		logger.warn('[HydraDatumSync] initial lock lacks a safe signed validity upper bound', {
+		// The signed body is final evidence. A lock that is unbounded or may land
+		// after payByTime can never become valid, and a retry would hold every
+		// later transaction of the head behind it. The buyer can build such a
+		// lock at will, so the verdict is permanent.
+		logger.warn('[HydraDatumSync] initial lock lacks a safe signed validity upper bound -> FundsOrDatumInvalid', {
 			...logContext,
 			signedValidityUpperBoundTimeMs: signedValidityUpperBoundTimeMs?.toString() ?? null,
 			payByTime: decoded.payByTime.toString(),
 		});
-		return null;
+		return OnChainState.FundsOrDatumInvalid;
 	}
 	const check = validateCanonicalInitialLock(decoded, expectedFunds, outputAmounts, confirmationTimeMs);
 	if (check.valid) return OnChainState.FundsLocked;

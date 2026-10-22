@@ -73,6 +73,7 @@ const { logger: diagnosticLogger } = await import('@masumi/payment-core/logger')
 // The terminal spend moved to its own module when this one passed the line
 // limit; the datum flow it ends is still the same one exercised here.
 const { applyTerminalHydraSpends } = await import('./hydra-datum-terminal');
+const { resolveInitialLockState } = await import('./hydra-datum-guards');
 const applyDatumStateToLocalRequests = (
 	params: Omit<Parameters<typeof applyDatumStateToLocalRequestsRaw>[0], 'network'>,
 ) => applyDatumStateToLocalRequestsRaw({ ...params, network: Network.Preprod });
@@ -784,7 +785,24 @@ describe('applyDatumStateToLocalRequests', () => {
 		expect(mockTransactionCreate).not.toHaveBeenCalled();
 	});
 
-	it('keeps a first-seen lock retryable when signed invalid-hereafter is missing', async () => {
+	it('retries, not rejects, a bounded lock whose upper slot the slot config cannot convert', () => {
+		const state = resolveInitialLockState(
+			OnChainState.FundsLocked,
+			null,
+			false,
+			decodedInitialLock,
+			[{ unit: 'lovelace', amount: 10_000_000n }],
+			[{ unit: 'lovelace', quantity: '10000000' }],
+			Number(decodedInitialLock.payByTime) - 1,
+			null,
+			true,
+			{ hydraHeadId: 'head-1', blockchainIdentifier: 'id', side: 'payment' },
+		);
+
+		expect(state).toBeNull();
+	});
+
+	it('rejects a first-seen lock for good when signed invalid-hereafter is missing', async () => {
 		mockPaymentFindUnique.mockResolvedValue(makePaymentRequest());
 
 		const outcome = await applyDatumStateToLocalRequests({
@@ -804,9 +822,13 @@ describe('applyDatumStateToLocalRequests', () => {
 			targetSide: 'payment',
 		});
 
-		expect(outcome).toBe('retry');
-		expect(mockPaymentUpdate).not.toHaveBeenCalled();
-		expect(mockTransactionCreate).not.toHaveBeenCalled();
+		// A retry here would hold every later transaction of the head.
+		expect(outcome).toBe('applied');
+		expect(mockPaymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ onChainState: OnChainState.FundsOrDatumInvalid }),
+			}),
+		);
 	});
 
 	it('rejects a late signed upper bound despite a forged early API timestamp', async () => {
@@ -829,9 +851,13 @@ describe('applyDatumStateToLocalRequests', () => {
 			targetSide: 'payment',
 		});
 
-		expect(outcome).toBe('retry');
-		expect(mockPaymentUpdate).not.toHaveBeenCalled();
-		expect(mockTransactionCreate).not.toHaveBeenCalled();
+		// A retry here would hold every later transaction of the head.
+		expect(outcome).toBe('applied');
+		expect(mockPaymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ onChainState: OnChainState.FundsOrDatumInvalid }),
+			}),
+		);
 	});
 
 	function makeTimedOutPaymentRequest() {
@@ -1423,6 +1449,44 @@ describe('applyDatumStateToLocalRequests', () => {
 				}),
 			}),
 		);
+	});
+
+	it('skips, not waits on, an output that copies a live identifier and leaves its output unspent', async () => {
+		mockPaymentFindUnique.mockResolvedValue({
+			...makePaymentRequest(),
+			onChainState: OnChainState.FundsLocked,
+			layer: TransactionLayer.L2,
+			currentHydraUtxoTxHash: 'lock-tx',
+			currentHydraUtxoOutputIndex: 0,
+			currentHydraUtxoValue: [{ unit: 'lovelace', quantity: '10000000' }],
+			BuyerWallet: { walletVkey: 'buyer-vkey', walletAddress: 'addr-buyer' },
+		});
+
+		const outcome = await applyDatumStateToLocalRequests({
+			hydraHeadId: 'head-1',
+			txId: 'copy-tx',
+			paymentSourceId: 'source-1',
+			decoded: {
+				...decodedInitialLock,
+				state: SmartContractState.ResultSubmitted,
+				resultHash: 'result-hash',
+				sellerCooldownTime: 1_655_769_702_000n,
+			},
+			newOnChainState: OnChainState.ResultSubmitted,
+			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+			outputReference: { txHash: 'copy-tx', outputIndex: 0 },
+			transactionEvidence: makeEvidence({
+				txHash: 'copy-tx',
+				inputs: [{ txHash: 'peer-funds', outputIndex: 0, bodyIndex: 0 }],
+				signerVkeys: ['seller-vkey'],
+			}),
+			confirmationTimeMs: 60,
+			targetSide: 'payment',
+		});
+
+		// A retry here would hold every later transaction of the head.
+		expect(outcome).toBe('irrelevant');
+		expect(mockPaymentUpdate).not.toHaveBeenCalled();
 	});
 
 	it('rejects a continuation when the actor witnessed the body but was not body-required', async () => {
