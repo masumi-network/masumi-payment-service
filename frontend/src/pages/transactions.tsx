@@ -122,7 +122,9 @@ export default function Transactions() {
   const isBusy = isRecovering || isAcknowledging;
   // Acknowledge is offered only here: every row in this view is unacknowledged,
   // because the backend filter leaves acknowledged rows out.
-  const isNeedsActionView = activeTab === 'Needs Action' || filters.needsAction;
+  // Placeholder rows belong to the previous view and may hold acknowledged rows.
+  const isNeedsActionView =
+    (activeTab === 'Needs Action' || filters.needsAction) && !isPlaceholderData;
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
@@ -234,6 +236,7 @@ export default function Transactions() {
   const handleAcknowledge = useCallback(
     async (targets: Transaction[]) => {
       const { acknowledged, failed } = await acknowledge(targets);
+      const skipped = targets.length - acknowledged - failed;
       if (acknowledged > 0) {
         toast.success(
           `Acknowledged ${acknowledged} transaction${acknowledged === 1 ? '' : 's'}. They no longer show in Needs Action.`,
@@ -241,8 +244,11 @@ export default function Transactions() {
       }
       if (failed > 0) {
         toast.error(`Failed to acknowledge ${failed} transaction${failed === 1 ? '' : 's'}`);
-      } else if (acknowledged === 0) {
-        toast.info('Nothing to acknowledge. The rows already left Needs Action.');
+      }
+      if (skipped > 0) {
+        toast.info(
+          `${skipped} transaction${skipped === 1 ? ' was' : 's were'} not acknowledged: already out of Needs Action, or created by another API key.`,
+        );
       }
       clearSelection();
       refreshTransactions();
