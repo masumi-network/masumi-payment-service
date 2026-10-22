@@ -2357,6 +2357,24 @@ describe('HydraNode', () => {
 			);
 		});
 
+		it('still rejects clearly when the sync refusal carries an unexpected drift encoding', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			void node.connect();
+
+			const fanoutPromise = node.fanout();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'RejectedInputBecauseUnsynced', clientInput: { tag: 'Fanout' }, drift: '90s' }),
+			);
+
+			await expect(fanoutPromise).rejects.toThrow(
+				new HydraCommandRefusedUnsyncedError(
+					'Command Fanout was refused: the node is not synced with the chain (drift unknown)',
+				),
+			);
+		});
+
 		it('keeps an unsynced Close refusal ambiguous but names the refusal as its cause', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			void node.connect();
