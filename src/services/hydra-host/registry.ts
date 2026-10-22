@@ -193,6 +193,43 @@ export function normalizeHostToken(token: string, field: string): string {
 	return trimmed;
 }
 
+/**
+ * A Host without its own user token runs on the admin token. Over HTTP that
+ * sends the fleet credential in cleartext on every node call.
+ */
+function warnAdminTokenAsRuntimeTokenOverHttp(name: string, baseUrl: string): void {
+	logger.warn(
+		`hydra: ${name} at ${baseUrl} uses its admin token for runtime calls over HTTP; every node call sends the fleet credential in cleartext. Set a separate userToken to limit the exposure`,
+	);
+}
+
+/**
+ * Whether the runtime slot will hold the admin token after this update. When
+ * the admin slot is cleared, the old admin token still works on the Host, so
+ * compare against it. Read before the write: a slot that cannot be decrypted
+ * skips the warning rather than failing an update that already committed.
+ */
+export function willRunOnAdminToken(
+	existing: { encryptedUserToken: string; encryptedAdminToken: string | null },
+	input: { userToken?: string; adminToken?: string | null },
+): boolean {
+	try {
+		const runtimeToken =
+			input.userToken === undefined
+				? decrypt(existing.encryptedUserToken)
+				: normalizeHostToken(input.userToken, 'userToken');
+		const adminToken =
+			typeof input.adminToken === 'string'
+				? normalizeHostToken(input.adminToken, 'adminToken')
+				: existing.encryptedAdminToken === null
+					? null
+					: decrypt(existing.encryptedAdminToken);
+		return runtimeToken === adminToken;
+	} catch {
+		return false;
+	}
+}
+
 function validateToken(token: string, field: string): string {
 	return encrypt(normalizeHostToken(token, field));
 }
@@ -234,10 +271,18 @@ export async function registerHydraHost(input: {
 	// The admin token satisfies every runtime call too, so a Host registered with
 	// only an admin token works completely. Storing it in both slots keeps the
 	// runtime path unchanged and leaves room to rotate a lower-privilege token in
-	// later without a migration.
+	// later without a migration. This is an accepted risk: the runtime path then
+	// carries the fleet credential (docs/security.md, Accepted Risks).
 	const encryptedAdminToken = validateToken(input.adminToken, 'adminToken');
 	const encryptedUserToken =
 		input.userToken === undefined ? encryptedAdminToken : validateToken(input.userToken, 'userToken');
+	if (
+		allowInsecureHttp &&
+		(input.userToken === undefined ||
+			normalizeHostToken(input.userToken, 'userToken') === normalizeHostToken(input.adminToken, 'adminToken'))
+	) {
+		warnAdminTokenAsRuntimeTokenOverHttp(input.name, baseUrl);
+	}
 
 	// Rely on the unique index rather than a read-then-write check: two
 	// concurrent registrations would both pass a pre-check, and the caller
@@ -294,6 +339,7 @@ export async function updateHydraHost(
 	if (input.allowInsecureHttp === true) {
 		normalizeHostBaseUrl(existing.baseUrl, true);
 	}
+	const runsOnAdminToken = willRunOnAdminToken(existing, input);
 
 	const updated = await prisma.hydraHost.update({
 		where: { id },
@@ -316,6 +362,9 @@ export async function updateHydraHost(
 		logger.warn(
 			`hydra: HTTP explicitly enabled for ${updated.name} at ${updated.baseUrl}; bearer tokens are not transport-encrypted`,
 		);
+	}
+	if (updated.allowInsecureHttp && runsOnAdminToken) {
+		warnAdminTokenAsRuntimeTokenOverHttp(updated.name, updated.baseUrl);
 	}
 	return toPublicHydraHost(updated);
 }

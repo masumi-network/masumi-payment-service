@@ -178,7 +178,10 @@ async function countInFlight(hostId: string): Promise<HydraHostPauseInFlight> {
 				// `isClosing` stays set after Final, so it counts only while still Open.
 				OR: [
 					{ isClosing: true, status: HydraHeadStatus.Open },
-					{ status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] } },
+					{
+						status: { in: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible, HydraHeadStatus.FanningOut] },
+						retiredAt: null,
+					},
 				],
 			},
 		}),
@@ -286,8 +289,9 @@ export async function getHydraHostPauseState(hostId: string): Promise<HydraHostP
 }
 
 /**
- * The nodes a pause stops: every node with a head, and every node an open
- * invite reserved. A reserved node has no head yet, but a redemption would
+ * The nodes a pause stops: every node with a head, every node an open
+ * invite reserved, and every node a redemption of someone else's invite is
+ * still finishing. A reserved node has no head yet, but a redemption would
  * configure and start it. Stopped, the Host refuses the redemption and the
  * invite stays open until Resume.
  */
@@ -298,7 +302,21 @@ async function loadPauseNodeIds(db: Prisma.TransactionClient, hostId: string): P
 			select: { hostNodeId: true },
 		}),
 		db.hydraHeadInvite.findMany({
-			where: { hydraHostId: hostId, role: HydraInviteRole.Issuer, status: HydraInviteStatus.Issued },
+			where: {
+				hydraHostId: hostId,
+				OR: [
+					{ role: HydraInviteRole.Issuer, status: HydraInviteStatus.Issued },
+					// A redemption of someone else's invite keeps its node until the head
+					// exists, and the resume job would start it. See `resume-redemptions.ts`.
+					// Only once the issuer acknowledged it: before that the node was never
+					// configured or started, and Resume starts every node listed here.
+					{
+						role: HydraInviteRole.Redeemer,
+						status: { in: [HydraInviteStatus.Redeemed, HydraInviteStatus.Started] },
+						redeemedAt: { not: null },
+					},
+				],
+			},
 			select: { hostNodeId: true },
 		}),
 	]);

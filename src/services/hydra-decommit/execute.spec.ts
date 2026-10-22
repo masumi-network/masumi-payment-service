@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
+const mockUnburnedUnits = new Set<string>();
+const mockPendingIncrementRefs = new Set<string>();
 const mockDecommitUpdateMany = jest.fn() as AnyMock;
 const mockDecommitUpdate = jest.fn() as AnyMock;
 const mockDecommitCreate = jest.fn() as AnyMock;
 const mockDecommitFindFirst = jest.fn() as AnyMock;
 const mockHeadFindUnique = jest.fn() as AnyMock;
+const mockSignTx = jest.fn() as AnyMock;
 const mockHeadUpdate = jest.fn() as AnyMock;
 const mockDecommitCall = jest.fn() as AnyMock;
 const mockNewTx = jest.fn() as AnyMock;
@@ -94,7 +97,8 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 			decommit: mockDecommitCall,
 			newTx: mockNewTx,
 			mainNode: {
-				pendingIncrementUtxoRefs: new Set<string>(),
+				pendingIncrementUtxoRefs: mockPendingIncrementRefs,
+				l2MintCheck: { unburnedUnits: mockUnburnedUnits, verifiedOutputs: { has: () => true } },
 				fetchPendingDecommitRefs: mockFetchPendingDecommitRefs,
 				isTxConfirmed: mockIsTxConfirmed,
 				get: mockNodeGet,
@@ -121,7 +125,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 			return [];
 		}
 		async signTx() {
-			return 'ff'.repeat(20);
+			return mockSignTx();
 		}
 	},
 	MeshTxBuilder: class {
@@ -186,7 +190,7 @@ beforeEach(() => {
 		priceStep: 0,
 		coinsPerUtxoSize: 4310,
 		collateralPercent: 150,
-		maxTxSize: 16384,
+		maxTxSize: 15_000,
 	});
 	mockFetchAddressUTxOs.mockResolvedValue([
 		{
@@ -199,6 +203,7 @@ beforeEach(() => {
 		},
 	]);
 	mockIsTxConfirmed.mockReturnValue(true);
+	mockSignTx.mockResolvedValue('ff'.repeat(20));
 	mockFetchUTxOs.mockResolvedValue([]);
 	mockTxQueryRaw.mockResolvedValue([]);
 	mockPaymentCount.mockResolvedValue(0);
@@ -247,6 +252,34 @@ describe('executeHydraDecommit request outcomes', () => {
 		expect(mockRecordHeadError).toHaveBeenCalled();
 	});
 
+	// Refused before the row is Pending: past that, this service's own send
+	// check would read as the node rejecting the withdrawal.
+	it('refuses a withdrawal too large for the head before sending it', async () => {
+		mockSignTx.mockResolvedValue('ff'.repeat(15_001));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({
+			statusCode: 422,
+			message: expect.stringContaining('Consolidate the wallet in the head first'),
+		});
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+		expect(mockDecommitUpdate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: 'Pending' }) }),
+		);
+	});
+
+	// A recorded splitTxId is what the withdrawal waits on, so an oversized split
+	// is refused before it is written.
+	it('refuses a split too large for the head before recording it', async () => {
+		mockSignTx.mockResolvedValue('ff'.repeat(15_001));
+
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 10_000_000n })).rejects.toMatchObject({
+			statusCode: 422,
+		});
+		expect(mockDecommitUpdate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ splitTxId: expect.anything() }) }),
+		);
+	});
+
 	it('leaves an ambiguous request Pending for the head to settle', async () => {
 		mockDecommitCall.mockRejectedValue(new HydraTransportAmbiguousError('POST outcome is ambiguous'));
 
@@ -273,6 +306,20 @@ describe('executeHydraDecommit request outcomes', () => {
 		expect(mockDecommitUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
 		);
+		expect(mockNewTx).not.toHaveBeenCalled();
+		expect(mockDecommitCall).not.toHaveBeenCalled();
+	});
+
+	// A failed /head read once came back as "nothing pending", which let a split
+	// start that the head could never confirm.
+	it('refuses before the split when the node cannot say whether a decommit is pending', async () => {
+		mockFetchPendingDecommitRefs.mockResolvedValue(undefined);
+
+		await expect(executeHydraDecommit({ headId: 'head-1', lovelace: 5_000_000n })).rejects.toMatchObject({
+			statusCode: 502,
+			message: expect.stringContaining('Could not read the head state'),
+		});
+
 		expect(mockNewTx).not.toHaveBeenCalled();
 		expect(mockDecommitCall).not.toHaveBeenCalled();
 	});
@@ -504,6 +551,52 @@ describe('withdrawing a token that sits on the collateral reserve', () => {
 		).rejects.not.toThrow('eligible to withdraw');
 
 		expect(mockTxIn).toHaveBeenCalledWith('c'.repeat(64), 0, expect.anything(), 'addr_test1_local');
+	});
+
+	// "Only 0 is eligible" for a token the balance shows sent operators hunting.
+	// The refusal has to say which rule held the token back.
+	// Only UTxOs that hold the requested token are named: an ADA-only deposit
+	// still being folded in has nothing to do with it.
+	it('names why a requested token is held back', async () => {
+		mockUnburnedUnits.add(USDM);
+		mockPendingIncrementRefs.add(`${'e'.repeat(64)}#0`);
+		try {
+			mockFetchAddressUTxOs.mockResolvedValue([
+				reserveWithToken('10000000'),
+				{
+					input: { txHash: 'd'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '50000000' }] },
+				},
+				{
+					input: { txHash: 'e'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '30000000' }] },
+				},
+			]);
+
+			const refusal = executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 20_000_000n } });
+			await expect(refusal).rejects.toThrow(
+				'Held back: carries a token minted inside the head, which L1 cannot pay out',
+			);
+			await expect(refusal).rejects.not.toThrow('still being folded');
+		} finally {
+			mockUnburnedUnits.clear();
+			mockPendingIncrementRefs.clear();
+		}
+	});
+
+	// The reserve's token is already counted as eligible, so it is not "held back".
+	it('does not name the reserve when it is counted and still too little', async () => {
+		mockFetchAddressUTxOs.mockResolvedValue([
+			reserveWithToken('10000000'),
+			{
+				input: { txHash: 'd'.repeat(64), outputIndex: 0 },
+				output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '50000000' }] },
+			},
+		]);
+
+		const refusal = executeHydraDecommit({ headId: 'head-1', asset: { unit: USDM, amount: 30_000_000n } });
+		await expect(refusal).rejects.toThrow('Only 20000000 of that asset is eligible');
+		await expect(refusal).rejects.not.toThrow('Held back');
 	});
 
 	// The carve's change is the only output left in the head, so it must still

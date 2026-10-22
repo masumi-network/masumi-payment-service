@@ -69,11 +69,19 @@ export function buildMatchingStates(searchLower: string | undefined): OnChainSta
 	);
 }
 
+/** The same condition, applied to the action-data row itself. */
+export const needsManualActionDataFilter = {
+	manualActionAcknowledgedAt: null,
+	OR: [{ requestedAction: 'WaitingForManualAction' as const }, { errorType: { not: null } }],
+};
+
 /**
  * Prisma where-fragment selecting payment/purchase requests that need an
  * operator to step in: the automated state machine parked them in
  * WaitingForManualAction (the only state error-state-recovery accepts), or a
  * NextAction error was recorded without changing the requested action.
+ * Rows an operator acknowledged are left out until the action or error changes
+ * (a DB trigger resets `manualActionAcknowledgedAt`).
  *
  * Shared between PaymentRequest and PurchaseRequest: both relate to their
  * action-data row via `NextAction`, and PaymentAction and PurchasingAction
@@ -81,11 +89,7 @@ export function buildMatchingStates(searchLower: string | undefined): OnChainSta
  */
 export function buildNeedsManualActionFilter(filterNeedsManualAction: boolean | undefined) {
 	if (filterNeedsManualAction !== true) return {};
-	return {
-		NextAction: {
-			OR: [{ requestedAction: 'WaitingForManualAction' as const }, { errorType: { not: null } }],
-		},
-	};
+	return { NextAction: needsManualActionDataFilter };
 }
 
 /**

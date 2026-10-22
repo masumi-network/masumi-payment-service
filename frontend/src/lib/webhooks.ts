@@ -15,6 +15,8 @@ export const WEBHOOK_EVENTS = [
   'X402_WALLET_LOW_BALANCE',
   'HYDRA_HEAD_LOW_BALANCE',
   'HYDRA_HEAD_SNAPSHOT_ROUND_STUCK',
+  'HYDRA_HEAD_POST_TX_FAILED',
+  'HYDRA_HEAD_CONTEST_MISSING',
 ] as const;
 
 export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number];
@@ -64,6 +66,8 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEvent, string> = {
   X402_WALLET_LOW_BALANCE: 'x402 wallet low balance',
   HYDRA_HEAD_LOW_BALANCE: 'Hydra in-head low balance',
   HYDRA_HEAD_SNAPSHOT_ROUND_STUCK: 'Hydra snapshot round stuck',
+  HYDRA_HEAD_POST_TX_FAILED: 'Hydra L1 transaction failed',
+  HYDRA_HEAD_CONTEST_MISSING: 'Hydra head closed on an old snapshot',
 };
 
 export function formatWebhookDate(value: Date | string | null | undefined) {

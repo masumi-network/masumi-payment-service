@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { promisify } from 'node:util';
 import type { ReleaseInfo } from './release.js';
+import { nodeEnvironment } from './supervisor/process.js';
 
 const run = promisify(execFile);
 
@@ -72,7 +73,7 @@ async function hashFile(filePath: string): Promise<string | null> {
 
 export async function readCapabilities(deps: CapabilitiesDeps): Promise<Capabilities> {
 	// A hung binary must not hang the capabilities request.
-	const exec = deps.exec ?? ((file, args) => run(file, args, { timeout: 5_000 }));
+	const exec = deps.exec ?? ((file, args) => run(file, args, { timeout: 5_000, env: nodeEnvironment() }));
 
 	const probeErrors: string[] = [];
 	const probe = async (args: string[]): Promise<{ stdout: string }> => {

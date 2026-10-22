@@ -126,6 +126,21 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
               Closing may fail until it is cleared.
             </div>
           )}
+          {data.l2MintChecked === false && (
+            <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+              Not yet checked for tokens minted inside the head: this node&apos;s history replay is
+              not current, so funds it will not spend are not flagged here. A failed replay stays
+              this way until the node reconnects.
+            </div>
+          )}
+          {(data.l2MintedUtxoCount ?? 0) > 0 && (
+            <div className="border-t px-4 py-2 text-xs text-amber-600 dark:text-amber-400">
+              {formatAssetAmount(data.l2MintedLovelace ?? '0', 'lovelace', network)} of this sits in{' '}
+              {data.l2MintedUtxoCount} piece{data.l2MintedUtxoCount === 1 ? '' : 's'} carrying a
+              token minted inside the head and not burned. This node will not spend them, and the
+              head cannot fully settle on chain while a token minted in it stays unburned.
+            </div>
+          )}
         </div>
       )}
     </div>

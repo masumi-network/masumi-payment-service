@@ -23,9 +23,13 @@ import createHttpError from 'http-errors';
 import {
 	buildValidatedHydraCommit,
 	type ValidatedHydraCommit,
+	HydraCommandRejectedError,
+	HydraPostTxRejectedError,
 	HydraCommitFlowError,
 	HydraHeadInitObservationError,
+	HydraProtocolError,
 	HydraTransactionType,
+	HydraTransportError,
 	interpretCardanoTxSubmitResult,
 } from '@/lib/hydra';
 import {
@@ -34,6 +38,7 @@ import {
 	reserveAndSubmitHydraCommit,
 	type HydraCommitReconciliationResult,
 } from '@/services/hydra-commit-reconciliation';
+import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
@@ -44,6 +49,7 @@ import { classifyInitObservation, type InitObservationVerdict } from '@/utils/hy
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
+import { nodeFailedBeforeInit } from './init-node-failure';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
@@ -60,6 +66,45 @@ export const lifecycleOutput = z.object({
 	headId: z.string(),
 	status: z.nativeEnum(HydraHeadStatus),
 });
+
+const initsInFlight = new Set<string>();
+/** Heads whose last Init timed out on a node behind the chain, so that Init may still be parked there. */
+const initsAwaitingNode = new Set<string>();
+
+/**
+ * Refuses a retry while an earlier Init may still be parked on the node.
+ *
+ * An Init that timed out on a node behind the chain may still be parked there, to be
+ * posted once the node catches up. A second Init then is refused with a CommandFailed,
+ * recorded against a head that is fine. If the first was never sent (our client also
+ * waits for a node that is behind), a retry would only wait and time out again.
+ */
+async function assertNoParkedInit(hydraHeadId: string, localParticipantId: string): Promise<void> {
+	if (!initsAwaitingNode.has(hydraHeadId)) return;
+	const nodeState = await readParticipantNodeState(localParticipantId);
+	// Only a running node with a reported drift is behind. The Host reads "not synced" with
+	// no drift for a node it cannot ask. A node it is stopping or restarting drops an Init
+	// still parked on it, while its last drift reading can stay on the record until the next
+	// check. An InitTx it already posted is not dropped: init() returns early once the
+	// restarted node reports the head Initializing.
+	if (nodeState.state === 'Running' && nodeState.chainSynced === false && nodeState.driftSeconds !== null) {
+		throw createHttpError(
+			409,
+			"An earlier Init is still waiting for this head's node: its Hydra Host reports the node is still " +
+				'behind the chain. Retry once the Host reports it caught up',
+		);
+	}
+	// A node that just caught up may have posted the parked Init already. Drained first,
+	// so a head that moved is refused here rather than by a second Init on the node.
+	await getHydraConnectionManager()
+		.flushHeadStatus(hydraHeadId)
+		.catch(() => undefined);
+	const current = await prisma.hydraHead.findUnique({ where: { id: hydraHeadId }, select: { status: true } });
+	if (current && current.status !== HydraHeadStatus.Idle) {
+		throw createHttpError(409, `Cannot init: head status is ${current.status}, expected Idle`);
+	}
+	initsAwaitingNode.delete(hydraHeadId);
+}
 
 export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -104,11 +149,59 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 
 		const cm = getHydraConnectionManager();
 
+		// hydra-node refuses a second Init with a CommandFailed that names no request, so it
+		// fails every waiting Init, the one that started the head too. No await between this
+		// check and the add, so two requests cannot both pass. Thrown before the try: a
+		// refusal is not a failed command.
+		if (initsInFlight.has(head.id)) {
+			throw createHttpError(409, 'Hydra head init is already in progress');
+		}
+		initsInFlight.add(head.id);
+		// Checked while holding the slot, so no other init can park a new Init meanwhile.
 		try {
-			await cm.connect(head);
+			await assertNoParkedInit(head.id, head.LocalParticipant.id);
+		} catch (error) {
+			initsInFlight.delete(head.id);
+			throw error;
+		}
+
+		try {
+			try {
+				await cm.connect(head);
+			} catch (error) {
+				if (!(error instanceof HydraTransportError)) throw error;
+				// A closed live session wraps its reason, so a protocol fault before Greetings arrives as a
+				// transport error. Throw the fault itself, so the head error names it.
+				if (error.cause instanceof HydraProtocolError) throw error.cause;
+				throw nodeFailedBeforeInit(head.id, "Could not reach this head's Hydra node", error);
+			}
 			const hydraHead = cm.getHead(head.id);
 			if (!hydraHead) {
-				throw createHttpError(502, 'Failed to connect to Hydra node');
+				logger.warn('[HydraAPI] no live session after connect before Init', { hydraHeadId: head.id });
+				throw createHttpError(502, 'Failed to connect to Hydra node', { expose: true });
+			}
+			// The last point before a head exists. A node on L2 ledger params above
+			// the shipped maxTxSize, from a Host on unsafe params or an older Host
+			// build, opens a head that can hold an output no fanout can move to L1.
+			// Read raw: the parsed parameters are capped at the shipped value.
+			let maxTxSize: unknown;
+			try {
+				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
+			} catch (error) {
+				// A non-JSON answer or a rotation latch needs a fix, not a retry, so the head error records it.
+				if (error instanceof HydraProtocolError) throw error;
+				throw nodeFailedBeforeInit(head.id, "Could not read the L2 maxTxSize from this head's node", error);
+			}
+			if (typeof maxTxSize !== 'number') {
+				throw createHttpError(409, "This head's node reports no numeric L2 maxTxSize, so it cannot be checked");
+			}
+			if (maxTxSize > EXPECTED_MAX_TX_SIZE) {
+				throw createHttpError(
+					409,
+					`This head's node runs an L2 maxTxSize of ${maxTxSize}, above ${EXPECTED_MAX_TX_SIZE}. ` +
+						'A head on it can hold an output no fanout can move to L1. Start the node on ledger params ' +
+						`with maxTxSize ${EXPECTED_MAX_TX_SIZE} or less, then retry`,
+				);
 			}
 
 			// True on the normal path and cleared when the timeout diagnosis has
@@ -117,6 +210,16 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				await hydraHead.init();
 			} catch (initError) {
+				// A failed InitTx post is not a timeout: the node answered, so no Init
+				// is parked or racing and there is nothing to diagnose. This row is the
+				// failure's only record; the connection manager leaves a failure that a
+				// waiting command reports to that command. A CommandFailed still goes
+				// through the diagnosis below: the node also sends it for a head that
+				// has already initialized, which is no failure.
+				if (initError instanceof HydraPostTxRejectedError) {
+					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
+					throw createHttpError(504, initError.message);
+				}
 				// A bounded init that never observed HeadIsInitializing has two very
 				// different causes, and the timeout alone cannot tell them apart: the
 				// chain backend silently dropped the InitTx and the node is wedged, or
@@ -142,6 +245,12 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 						chainSynced: nodeState.chainSynced,
 						driftSeconds: nodeState.driftSeconds,
 					});
+					// A CommandFailed is the node refusing this Init, so nothing was
+					// posted and "wait, do not re-post" would be false. Only a head seen
+					// moving clears it.
+					if (verdict.kind === 'awaiting-node' && initError instanceof HydraCommandRejectedError) {
+						verdict = { kind: 'failed' };
+					}
 					if (verdict.kind === 'observed') {
 						logger.info('[Hydra] Init was observed after the wait ran out; head is already moving', {
 							hydraHeadId: head.id,
@@ -166,6 +275,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 					// is exactly the self-resolving error that teaches operators to
 					// disregard the ones that matter. The message tells the operator not
 					// to re-post, since two Inits race for the same seed input.
+					initsAwaitingNode.add(head.id);
 					throw createHttpError(504, verdict.message);
 				}
 				if (verdict.kind === 'failed') {
@@ -223,6 +333,8 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Init');
 			throw error;
+		} finally {
+			initsInFlight.delete(head.id);
 		}
 	},
 });
@@ -284,6 +396,12 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			);
 		}
 
+		// Rechecked under the head lock at reservation; refused here too so a
+		// closing head costs no carve.
+		if (head.isClosing) {
+			throw createHttpError(409, 'Cannot commit: Hydra head close is in progress');
+		}
+
 		const localParticipant = head.LocalParticipant;
 		if (!localParticipant) {
 			throw createHttpError(400, 'Head has no local participant');
@@ -309,7 +427,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		// commit could choose the same UTxO and one of them would be rejected on
 		// chain after being signed and submitted. Held until the commit is away,
 		// including across the carve's own wait for confirmation.
-		await claimHotWalletForL1(localParticipant.walletId, 'commit');
+		const walletClaimToken = await claimHotWalletForL1(localParticipant.walletId, 'commit');
 		// Set the moment the carve is signed, before it is submitted — see the
 		// release guard in this handler's `finally`.
 		let carveTxHash: string | null = null;
@@ -344,6 +462,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 					hasCommitted: localParticipant.hasCommitted,
 					commitTxHash: localParticipant.commitTxHash,
 					commitInvalidHereafterSlot: localParticipant.commitInvalidHereafterSlot,
+					commitWalletClaimToken: localParticipant.commitWalletClaimToken,
 					network: hotWallet.PaymentSource.network,
 					rpcProviderApiKey,
 				});
@@ -471,8 +590,10 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				submitResult = await reserveAndSubmitHydraCommit(
 					{
 						participantId: localParticipant.id,
+						hydraHeadId: head.id,
 						commitTxHash,
 						invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
+						walletClaimToken,
 					},
 					async () =>
 						await hydraHead.cardanoTransaction(
@@ -545,6 +666,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				hasCommitted: false,
 				commitTxHash,
 				commitInvalidHereafterSlot: validatedDraft.invalidHereafterSlot,
+				commitWalletClaimToken: walletClaimToken,
 				network: hotWallet.PaymentSource.network,
 				rpcProviderApiKey,
 			});
@@ -601,7 +723,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			// case where nothing ever settles it.
 			const pending = await prisma.hydraLocalParticipant.findUnique({
 				where: { id: localParticipant.id },
-				select: { commitTxHash: true, hasCommitted: true },
+				select: { commitTxHash: true, hasCommitted: true, commitWalletClaimToken: true },
 			});
 			// The carve is its own L1 transaction, submitted before the commit is
 			// even built, and a failure after that point says nothing about where it
@@ -611,8 +733,39 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			// once this returns, so the lock is left for the stale-lock sweep half
 			// an hour later.
 			const carveUnsettled = carveTxHash !== null && !pending?.hasCommitted;
-			if ((pending?.commitTxHash == null || pending.hasCommitted) && !carveUnsettled) {
-				await releaseHotWalletAfterL1(localParticipant.walletId);
+			// A refused retry can leave an EARLIER commit's reservation outstanding.
+			// Its reconciler releases with that commit's own token, which no longer
+			// matches the claim this request took over, so the wallet would wait for
+			// the stale-lock sweep. Hand this claim to that reservation instead: its
+			// reconciler then frees the wallet when the earlier commit settles.
+			let heldForPendingCommit = pending?.commitTxHash != null && !pending.hasCommitted;
+			// Not while our own carve is unsettled: that reconciler would free the
+			// wallet when ITS commit settles, with our carve's inputs still in flight.
+			if (heldForPendingCommit && !carveUnsettled && pending?.commitWalletClaimToken !== walletClaimToken) {
+				const handedOver = await prisma.hydraLocalParticipant
+					.updateMany({
+						// Fenced on the token read above too: a holder that took the wallet
+						// over since then may have handed its own claim over already.
+						where: {
+							id: localParticipant.id,
+							hasCommitted: false,
+							commitTxHash: pending?.commitTxHash,
+							commitWalletClaimToken: pending?.commitWalletClaimToken,
+						},
+						data: { commitWalletClaimToken: walletClaimToken },
+					})
+					.catch((handoverError: unknown) => {
+						logger.warn('[HydraAPI] Could not hand the wallet claim to the pending commit', {
+							error: handoverError instanceof Error ? handoverError.message : 'Non-error failure',
+						});
+						return null;
+					});
+				// Settled in the meantime: nothing is left to hold the wallet for. A
+				// failed write keeps the lock and leaves it to the stale-lock sweep.
+				if (handedOver?.count === 0) heldForPendingCommit = false;
+			}
+			if (!heldForPendingCommit && !carveUnsettled) {
+				await releaseHotWalletAfterL1(localParticipant.walletId, walletClaimToken);
 			}
 		}
 	},

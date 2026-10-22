@@ -71,6 +71,11 @@ model HydraLocalParticipant {
   /// with the hash absent. Legacy already-confirmed rows are migrated with 0.
   commitInvalidHereafterSlot BigInt?
 
+  /// The token of the hot-wallet claim this commit holds until its reconciler
+  /// releases it. Written with `commitTxHash`, so a late release for an earlier
+  /// commit cannot free a newer claim on the same wallet.
+  commitWalletClaimToken String?
+
   /// When this participant's signing keys were handed to an operator to back
   /// up. Set by the one-time reveal and never cleared: the disclosure path
   /// seals after the first use, mirroring the Host's own escrow so key material

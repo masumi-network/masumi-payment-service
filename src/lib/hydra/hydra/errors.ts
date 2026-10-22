@@ -24,6 +24,19 @@ export class HydraCommandRejectedError extends Error {
 }
 
 /**
+ * hydra-node could not post the L1 transaction a waiting command asked for
+ * (PostTxOnChainFailed). Unlike a CommandFailed, which the node also sends for
+ * a command the head has already moved past, this one means the transaction
+ * never reached the chain.
+ */
+export class HydraPostTxRejectedError extends HydraCommandRejectedError {
+	constructor(message: string) {
+		super(message);
+		this.name = 'HydraPostTxRejectedError';
+	}
+}
+
+/**
  * A transport failure which happened before a command could be queued on the
  * websocket. Retrying is safe because no bytes were handed to the transport.
  */

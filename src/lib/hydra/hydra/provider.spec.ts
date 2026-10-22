@@ -163,6 +163,28 @@ describe('HydraProvider', () => {
 	});
 
 	// -------------------------------------------------------------------------
+	// spendableUTxOs
+	// -------------------------------------------------------------------------
+
+	describe('spendableUTxOs', () => {
+		// Every in-head spend path filters its inputs here, so it has to read the
+		// node's mint check and not just pass UTxOs through.
+		it('spends a token UTxO only when the replay verified it and found no unburned mint', () => {
+			const [tokenUtxo, adaUtxo] = snapshotUtxos;
+			const verifiedOutputs = new Map([['tx001#0', '']]);
+			const withCheck = (l2MintCheck: unknown) => {
+				Object.assign(node, { l2MintCheck });
+				return provider.spendableUTxOs([tokenUtxo, adaUtxo]);
+			};
+
+			expect(withCheck({ unburnedUnits: new Set(), verifiedOutputs })).toEqual([tokenUtxo, adaUtxo]);
+			expect(withCheck({ unburnedUnits: new Set([`${validPolicyId}token`]), verifiedOutputs })).toEqual([adaUtxo]);
+			expect(withCheck({ unburnedUnits: new Set(), verifiedOutputs: new Map() })).toEqual([adaUtxo]);
+			expect(withCheck(undefined)).toEqual([adaUtxo]);
+		});
+	});
+
+	// -------------------------------------------------------------------------
 	// fetchProtocolParameters
 	// -------------------------------------------------------------------------
 

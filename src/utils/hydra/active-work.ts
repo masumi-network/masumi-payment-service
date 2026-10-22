@@ -13,6 +13,7 @@
  */
 
 import { HydraTopupStatus, type Prisma, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { PREPARING_STALE_AFTER_MS } from '@/services/hydra-topup/stale';
 
 /**
  * A deposit that reached L1 and has neither been taken by the head nor sent
@@ -60,7 +61,8 @@ export type HydraHeadActiveWork = {
 	activeEscrows: number;
 	/**
 	 * Deposits at the L1 deposit script that the head has neither absorbed nor
-	 * returned.
+	 * returned, plus deposits this service is still preparing or has reserved
+	 * but not yet recorded: a close admitted now would let them land after it.
 	 *
 	 * Unlike the other two, closing does NOT settle these: an unabsorbed deposit
 	 * is not part of the fanout. It comes back only through Recover, which the
@@ -87,6 +89,23 @@ const activeEscrowWhere = (headId: string) => ({
 	],
 });
 
+/**
+ * An initial commit is reserved on the participant before it is submitted, and
+ * gets its deposit row only after. Counted from the reservation until that row
+ * exists, so a close in between still sees it, and never twice.
+ */
+async function countUnrecordedInitialCommit(client: Prisma.TransactionClient, headId: string): Promise<number> {
+	const participant = await client.hydraLocalParticipant.findFirst({
+		where: { hydraHeadId: headId, hasCommitted: false, commitTxHash: { not: null } },
+		select: { commitTxHash: true },
+	});
+	if (participant?.commitTxHash == null) return 0;
+	const recorded = await client.hydraTopup.count({
+		where: { hydraHeadId: headId, depositTxHash: participant.commitTxHash },
+	});
+	return recorded === 0 ? 1 : 0;
+}
+
 export async function countHydraHeadActiveWork(
 	client: Prisma.TransactionClient,
 	headId: string,
@@ -100,14 +119,27 @@ export async function countHydraHeadActiveWork(
 	});
 	const activePaymentEscrows = await client.paymentRequest.count({ where: activeEscrowWhere(headId) });
 	const activePurchaseEscrows = await client.purchaseRequest.count({ where: activeEscrowWhere(headId) });
-	const unrecoveredDeposits = await client.hydraTopup.count({
-		where: { hydraHeadId: headId, ...unrecoveredHydraTopupWhere },
+	const topupsInFlight = await client.hydraTopup.count({
+		where: {
+			hydraHeadId: headId,
+			OR: [
+				unrecoveredHydraTopupWhere,
+				// Not at the script yet, but on its way: the carve may already be on
+				// L1 and the deposit follows it. A stale row is one whose process died;
+				// the next top-up fails it, and it must not block a close forever.
+				{
+					status: HydraTopupStatus.Preparing,
+					createdAt: { gte: new Date(Date.now() - PREPARING_STALE_AFTER_MS) },
+				},
+			],
+		},
 	});
+	const unrecordedInitialCommit = await countUnrecordedInitialCommit(client, headId);
 
 	return {
 		pendingL2Transactions,
 		activeEscrows: activePaymentEscrows + activePurchaseEscrows,
-		unrecoveredDeposits,
+		unrecoveredDeposits: topupsInFlight + unrecordedInitialCommit,
 	};
 }
 

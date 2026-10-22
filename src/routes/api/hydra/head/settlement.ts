@@ -185,6 +185,16 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 
 // --- Lifecycle: POST fanout ---
 
+/**
+ * Heads with a Fanout on the wire from this process.
+ *
+ * hydra-node refuses a second Fanout, and its refusal names only the command,
+ * so with two in flight every waiting Fanout fails, including the one that landed. A
+ * Fanout carries nothing but the head, so the second request adds nothing: it is
+ * refused here, and the first one reports what happened.
+ */
+const fanoutsInFlight = new Set<string>();
+
 export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: lifecycleInput,
@@ -199,15 +209,36 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, 'Cannot fanout a disabled Hydra head');
 		}
 
+		// Once a partial step has landed, hydra-node accepts only PartialFanout.
+		// The live status can be ahead of the stored one, so check both.
+		const cm = getHydraConnectionManager();
+		const hydraHead = cm.getHead(head.id);
+		if (head.status === HydraHeadStatus.FanningOut || hydraHead?.status === HydraHeadStatus.FanningOut) {
+			throw createHttpError(
+				409,
+				'Cannot fanout: the head is fanning out in steps; select what is left with POST /hydra/head/partial-fanout',
+			);
+		}
 		if (head.status !== HydraHeadStatus.FanoutPossible) {
 			throw createHttpError(409, `Cannot fanout: head status is ${head.status}, expected FanoutPossible`);
 		}
+		// The stored status can lag a fanout that just landed: the live head is then
+		// Final, or Idle once hydra-node greets without a head. Null means the node
+		// has not reported yet, which is no evidence either way.
+		if (hydraHead?.status != null && hydraHead.status !== HydraHeadStatus.FanoutPossible) {
+			throw createHttpError(409, `Cannot fanout: live head status is ${hydraHead.status}, expected FanoutPossible`);
+		}
 
-		const cm = getHydraConnectionManager();
-		const hydraHead = cm.getHead(head.id);
 		if (!hydraHead) {
 			throw createHttpError(502, 'No active connection to Hydra head');
 		}
+
+		// No await between this check and the add, so two requests cannot both pass.
+		// Thrown before the try: a refusal is not a failed command.
+		if (fanoutsInFlight.has(head.id)) {
+			throw createHttpError(409, 'Hydra head fanout is already in progress');
+		}
+		fanoutsInFlight.add(head.id);
 
 		try {
 			await hydraHead.fanout();
@@ -223,6 +254,8 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		} catch (error) {
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Fanout');
 			throw error;
+		} finally {
+			fanoutsInFlight.delete(head.id);
 		}
 	},
 });

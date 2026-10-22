@@ -40,15 +40,29 @@ They are worth separating, because only one of them is ours to fix.
    change output; `coverFee_` then adds them and the same script exceeds
    `maxTxExUnits`. Balancing costs 62,013,782 steps and the fit check left
    3,722,596. There is no feedback path, so the identical chunk is retried
-   forever. **Upstream.**
+   forever. **Upstream.** _Still true in 2.4.1:_ `fitsTx` checks the built
+   transaction and `finalizeTx` balances it afterwards
+   (`Chain/Direct/Handlers.hs:211-257`).
 
-2. **Chunks are prefixes.** `partialFanout` takes `take chunkSize` over
-   TxIn-ordered UTxOs and only the length varies — no offset, no skip. One
-   undistributable UTxO therefore blocks everything ordered behind it, and at
-   index 0 nothing leaves the head at all. The on-chain side does not require
-   this: `FanoutProgressDatum` carries only an accumulator commitment and
-   `headAdaOverhead`, with no cursor or count, so arbitrary partitions are
-   valid. **Upstream**, and it needs no contract change.
+2. **Chunks are prefixes.** In hydra-node 2.3, `partialFanout` takes
+   `take chunkSize` over TxIn-ordered UTxOs and only the length varies — no
+   offset, no skip. One undistributable UTxO therefore blocks everything
+   ordered behind it, and at index 0 nothing leaves the head at all. The
+   on-chain side does not require this: `FanoutProgressDatum` carries only an
+   accumulator commitment and `headAdaOverhead`, with no cursor or count, so
+   arbitrary partitions are valid. **Upstream**, and it needs no contract
+   change.
+
+   _Corrected 2026-10-21 for hydra-node 2.4.1, which this service now pins:_
+   the paragraph above is stale. 2.4.1 adds a client-driven `PartialFanout
+{utxoToFanout}` command (`hydra-node/src/Hydra/API/ClientInput.hs:22`).
+   The node accepts any non-empty sub-multiset of the remaining outputs
+   (`HeadLogic.hs:1493-1531`), so healthy outputs can leave the head even when
+   a bad output sorts before them. Inside one selection the node still chunks
+   by prefix (`take chunkSize`, `Chain/Direct/State.hs:669`). A bad output
+   therefore blocks only the selection that contains it. The earlier text
+   described 2.3 correctly; it went stale when the pin moved to 2.4.1 and the
+   ADR was not reviewed with it.
 
 3. **A single output can be individually undistributable.** A chunk cannot be
    smaller than one output. The L2 ledger and L1 share `maxTxSize` 16,384, but
@@ -60,6 +74,14 @@ They are worth separating, because only one of them is ours to fix.
    the full set to reconcile, and it is the step that burns the head tokens.
    **Upstream** for the abandonment path; **ours** for not creating such an
    output.
+
+   _Still true in 2.4.1 (checked 2026-10-21):_ `finalPartialFanout`
+   (`Chain/Direct/State.hs:684`) must distribute every remaining output, and
+   it is the only step that burns the head tokens. A selection never removes
+   the bad output, so the head can drain everything else and still never
+   reach `Final`. The relation stays blocked (see decision 3). The size at
+   which one output stops fitting is not measured for 2.4.1; the
+   15,544 to 16,028 byte range above is an estimate from 2.3 envelope sizes.
 
 4. **Accumulation costs time and node funds.** Chunking means a large head is
    survivable, not free: every chunk is a separate L1 transaction at roughly
@@ -94,15 +116,78 @@ Document all four limits. Build against none of them.
    trains operators to ignore alerts. It is an operational cost, not a safety
    one, because chunking handles size.
 
-2. **Do not cap per-output datum size in code.** Our resting datums are 771–812
-   bytes against a limit near 15,500. A cap would guard a distance of twenty
-   times, and the guard would be a constant we would have to keep correct
-   against a boundary we have not measured precisely (we have one data point
-   and cannot separate fixed proof cost from per-output and per-byte cost).
-   Revisit if our datum shape grows materially, or if the slope is ever
-   measured.
+2. **Cap output size through the L2 ledger, not in code.** _Revised
+   2026-10-21; the original decision follows._ The shipped L2 ledger now uses
+   `maxTxSize` 15,000. An L2 tx can then create no output larger than that, and
+   the 2.4.1 fanout envelope measured at 917 bytes
+   (`docs/hydra-fanout-output-size-measurement.md`) keeps every such output
+   under L1's 16,384. The node itself enforces the limit on every L2 tx it
+   validates, so a hostile peer cannot park an oversized output in a snapshot
+   our node signs. A deposit cannot bring one in either: the measured deposit
+   limit (datum about 15,266 bytes) is below the fanout limit (15,421).
+   `ledger-params.spec.ts` and `params-drift.ts` both hold the value.
 
-3. **Do not build an operator retire path yet.** A head that cannot reach
+   _Original decision, superseded:_ do not cap per-output datum size in code.
+   Our resting datums are 771 to 812 bytes against a limit near 15,500. A cap
+   would guard a distance of twenty times, and the guard would be a constant
+   we would have to keep correct against a boundary we have not measured
+   precisely. It was wrong in one respect: the guard needed no constant in our
+   code, because the L2 ledger already has one. The boundary is now measured.
+
+3. **Give operators a retire path.** _Revised 2026-10-21; the original
+   decision follows._ `POST /hydra/head/retire` (`head/retire.ts`) retires a
+   head that cannot reach `Final` and frees its relation for a new head. It
+   moves no funds. The caller must send `acknowledgeStrandedFunds: true` and a
+   reason. The endpoint accepts a `FanoutPossible` head, or a `Closed` head
+   after its stored contestation deadline (a `Closed` head with no stored
+   deadline is refused), and only when the independent L1 observer
+   shows the head closed. It disables the head and stores `retiredAt`, the
+   reason, the remaining UTxO set from the node and the L1 tx that holds the
+   head output. It keeps `headIdentifier` and whatever init anchors the head
+   still has, because a later recovery restarts a node from them. Retire does
+   not check that the anchors exist: a head that was disabled before may have
+   lost them. Retire bumps `ownerEpoch`, so the old session cannot write to the
+   record, and enable, disable and the status fail-closed path all skip a
+   retired head. Before the write it refuses when the node reports a later
+   status than the database, and it reads L1 a second time and requires the
+   same head output tx. A fanout that is posted but not yet on L1 stays
+   invisible to both checks, so an operator must not retire a head while a
+   fanout is in flight. The contestation guard reads the stored
+   `contestationDeadline`, which is written once at close and does not move
+   when a contest extends the deadline. The L1 observer reads Close and
+   Contest both as `closed`. So retire can pass while a contest is still
+   running. The hydra-node process contests on its own and retire does not
+   stop it, so we accept this. The one-live-head index
+   (`HydraHead_one_live_per_relation_key`) leaves retired heads out. A retired
+   head still blocks deletion of its relation, participants and host, and the
+   requests bound to it stay unsettled: their funds are on L1 behind the head
+   script, and nothing here can prove where they go next.
+
+   Before retiring, an operator can move every output that fits out of the
+   head with `POST /hydra/head/partial-fanout` (`head/partial-fanout.ts`). It
+   sends hydra-node 2.4.1 a `PartialFanout` with the chosen in-head
+   references. After the first step the head is `FanningOut` (a status ranked
+   between `FanoutPossible` and `Final`) and hydra-node refuses a plain
+   `Fanout`. Every selection is built from the node's own head state
+   (`GET /head`, parsed in `fanout-head-state.ts`), the set the node checks
+   a selection against. `GET /snapshot/utxo` is not that set: it adds a
+   pending commit the node may not fan out, leaves out a pending decommit the
+   node does fan out, and keeps the confirmed snapshot after the first step.
+   The endpoint and retire refuse while the node fans out on its own
+   (`AutoDrain` or `DistributingSelection`): a new selection would replace the
+   one in progress. A step that can never post leaves the node in that mode
+   for good, so both take an explicit override: `replaceInProgressSelection`
+   on the endpoint and `acknowledgeFanoutStalled` on retire. A
+   `PartialFanout` command completes only on a step that distributed part of
+   its own selection, matched by reference or by output content, because the
+   node removes outputs by content. Two limits remain. A step in flight that
+   moves an output identical to one selected can settle the command early, and
+   after a replacement a post failure of the replaced step can be reported as
+   a refusal of the new selection. The node checks every selection again, so
+   neither can move funds the operator did not select. Retire accepts a `FanningOut` head too and stores the
+   remaining set.
+
+   _Original decision, superseded:_ do not build an operator retire path yet. A head that cannot reach
    `Final` blocks its relation permanently: `head/create-head.ts` rejects any new
    head while a non-`Final` one exists, `deletion-guard.ts` requires a
    `fanoutTxHash` verified on chain that such a head does not have, and the
@@ -126,7 +211,34 @@ Document all four limits. Build against none of them.
   this, by choice. Roughly: one chunk per 20 in-head UTxOs, about 2.2 ADA each,
   paid from the node's own wallet in one burst at close. An operator closing a
   large head should check the node wallet against that estimate first.
-- We remain exposed to limit 3 by construction. It requires a counterparty to
+- _Superseded 2026-10-21 by revised decision 2:_ a head that runs the shipped
+  L2 ledger cannot hold an output that fanout cannot move. A head started
+  before the change still runs `maxTxSize` 16,384 and stays exposed;
+  `params-drift.ts` reports it. Restart a node on the new params only between
+  heads. INFERRED, not tested: a node mid-head on a smaller limit rejects a
+  peer tx above 15,000 bytes, and that tx's snapshot then stalls.
+- _Corrected 2026-10-21:_ the sentence that followed here said the V2
+  builders cap their unsigned txs at 14,000 bytes (`MAX_SAFE_TX_BYTES`). That
+  cap applies only to L1 batch builds; no L2 path used it, so on a head started
+  on 16,384 this service could itself build an L2 tx above 15,000 bytes. Every
+  L2 tx is now refused above 15,000 bytes before it is sent, with no
+  reservation for it left held (`assertL2TxWithinMaxSize`), and builders get
+  the head's `maxTxSize` capped at 15,000. A release nudge that comes out
+  too large is not sent, so the reservation it would release stays held.
+  On any network, mainnet included, a Host whose params file sets
+  `maxTxSize` above 15,000 refuses every node not yet acked and peered: no
+  provision, first ack, first peer set or invite redemption. It still boots, so
+  nodes of heads already open keep running
+  (`packages/hydra-host/src/ledger-params.ts`). A node acked and peered before
+  such a restart still starts, and so does any node on an older Host build:
+  this service refuses to Init a head on a node whose L2 `maxTxSize` is above
+  15,000. That check reads only the node of the side that Inits. For a head
+  made from an invite that is the redeemer, so the issuer's node is not
+  checked there. Every node must sign each snapshot, so the smaller of the
+  two limits should bind what gets confirmed, and a larger tx stalls its
+  snapshot as above (INFERRED from the Hydra snapshot protocol, not measured).
+- _Original consequence, kept for the record:_ we remain exposed to limit 3
+  by construction. It requires a counterparty to
   deliberately park an output with a very large resting datum, costs them its
   min-UTxO (roughly 67 ADA at 15.5 KB, at `utxoCostPerByte` 4310), and gains
   them nothing but denial. We accept that rather than carry a guard constant we
@@ -135,8 +247,12 @@ Document all four limits. Build against none of them.
   still be changed by spending the offending output on L2; after close nothing
   about it can change. We do not implement detection for this today, which
   means in practice the mitigation is unavailable.
-- If a head does become unsettleable, its relation is dead until someone edits
-  the database. That is a known, accepted operational gap, not an oversight.
+- _Superseded 2026-10-21 by revised decision 3:_ an unsettleable head no
+  longer kills its relation. An operator retires it and opens a new head. The
+  funds left in the retired head stay stranded until the protocol frees them.
+- _Original consequence, kept for the record:_ if a head does become
+  unsettleable, its relation is dead until someone edits the database. That is
+  a known, accepted operational gap, not an oversight.
 - `docs/adr/0005-meshsdk-version-pinning-v1-v2.md` governs why the head's cost
   models must match the pinned mesh line; `src/lib/hydra/hydra/params-drift.ts`
   now checks the running head against the ledger we ship, including `maxTxSize`

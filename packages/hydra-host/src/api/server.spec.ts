@@ -10,7 +10,7 @@ import { NodeRegistryStore } from '../registry/store.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
-import type { ProvisionDeps } from './provision.js';
+import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
@@ -395,6 +395,123 @@ describe('lifecycle guards over HTTP', () => {
 	});
 });
 
+// A separate control plane, because the refusal is computed at boot.
+describe('control plane on ledger params above the L2 maxTxSize cap', () => {
+	let refusingDir: string;
+	let refusingServer: Server;
+	let refusingBaseUrl: string;
+	let refusingStore: NodeRegistryStore;
+	let refusingProvision: ProvisionDeps;
+
+	beforeEach(async () => {
+		refusingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-params-'));
+		const config = { ...loadHostConfig(env), dataDir: refusingDir };
+		const store = new NodeRegistryStore(refusingDir);
+		const ports = new PortAllocator(config.ports);
+		refusingStore = store;
+		refusingProvision = {
+			store,
+			ports,
+			advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+			checkPeerTarget: async () => null,
+			newNodeId: () => 'node-refused',
+			now: () => new Date('2026-07-28T12:00:00.000Z'),
+			ledgerParamsRefusal: 'maxTxSize 16384, above 15000',
+		};
+		refusingServer = createControlPlane({
+			config,
+			store,
+			exchange: new ExchangeStore(refusingDir),
+			ports,
+			supervisor: { tick: async () => undefined } as unknown as Supervisor,
+			provision: refusingProvision,
+			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		});
+		await new Promise<void>((resolve) => refusingServer.listen(0, '127.0.0.1', resolve));
+		refusingBaseUrl = `http://127.0.0.1:${(refusingServer.address() as AddressInfo).port}`;
+	});
+
+	afterEach(async () => {
+		await new Promise<void>((resolve) => refusingServer.close(() => resolve()));
+		await fs.rm(refusingDir, { recursive: true, force: true });
+	});
+
+	// The Host still boots, so nodes of heads already open keep running; only
+	// a node that has no head yet, and would start one on these params, is refused.
+	it('refuses to provision a node and keeps serving the rest', async () => {
+		const headers = { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' };
+		const provisioned = await fetch(`${refusingBaseUrl}/v1/nodes`, {
+			method: 'POST',
+			headers: { ...headers, 'idempotency-key': 'idem-refused' },
+			body: JSON.stringify({}),
+		});
+
+		expect(provisioned.status).toBe(409);
+		expect(await provisioned.json()).toEqual({ error: 'maxTxSize 16384, above 15000' });
+		const listed = await fetch(`${refusingBaseUrl}/v1/nodes`, { headers });
+		expect(listed.status).toBe(200);
+		expect(await listed.json()).toMatchObject({ nodes: [] });
+	});
+
+	/** A node provisioned, and acked if asked, before the Host restarted onto these params. */
+	async function nodeFromBeforeRestart(acked: boolean): Promise<string> {
+		const beforeRestart = { ...refusingProvision, ledgerParamsRefusal: null };
+		const { record } = await provisionNode(
+			{
+				idempotencyKey: 'idem-before-restart',
+				network: 'preprod',
+				contestationPeriodSeconds: 60,
+				depositPeriodSeconds: 120,
+				unsyncedPeriodSeconds: 60,
+				depositActivationSeconds: 120,
+			},
+			beforeRestart,
+		);
+		if (acked) await acknowledgeEscrow(record.nodeId, beforeRestart);
+		return record.nodeId;
+	}
+
+	function ack(nodeId: string): Promise<Response> {
+		return fetch(`${refusingBaseUrl}/v1/nodes/${nodeId}/escrow-ack`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${ADMIN}` },
+		});
+	}
+
+	// The ack would start it, and it would Init a head on these params.
+	it('refuses to ack a node never acked', async () => {
+		const nodeId = await nodeFromBeforeRestart(false);
+
+		expect((await ack(nodeId)).status).toBe(409);
+		expect((await refusingStore.read(nodeId))?.escrowAckedAt).toBeNull();
+	});
+
+	// A repeated ack for an acked node is a no-op, and that node can belong to a
+	// head that is already open.
+	it('answers a repeated ack for an acked node', async () => {
+		const nodeId = await nodeFromBeforeRestart(true);
+		const ackedAt = (await refusingStore.read(nodeId))?.escrowAckedAt;
+
+		expect((await ack(nodeId)).status).toBe(200);
+		expect((await refusingStore.read(nodeId))?.escrowAckedAt).toBe(ackedAt);
+	});
+
+	// An acked node without peers has no head yet: peers would make it start.
+	// Redemption recovery sets peers through the same path.
+	it('refuses peers for an acked node that has none', async () => {
+		const nodeId = await nodeFromBeforeRestart(true);
+
+		const patched = await fetch(`${refusingBaseUrl}/v1/nodes/${nodeId}`, {
+			method: 'PATCH',
+			headers: { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' },
+			body: JSON.stringify({ peers: [PEER] }),
+		});
+
+		expect(patched.status).toBe(409);
+		expect((await refusingStore.read(nodeId))?.peers).toEqual([]);
+	});
+});
+
 // A separate control plane, because the override is read at config load.
 describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 	let overrideDir: string;
@@ -472,5 +589,91 @@ describe('control plane with HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS set', () => {
 		// Named, so this keeps failing for the right reason if another 400 is
 		// ever added ahead of this one.
 		expect(((await response.json()) as { error: string }).error).toContain('depositActivationSeconds');
+	});
+});
+
+describe('control plane with HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH set', () => {
+	let gatedDir: string;
+	let gatedServer: Server;
+	let gatedStore: NodeRegistryStore;
+	let gatedPorts: PortAllocator;
+	let gatedUrl: string;
+	let nodes: number;
+
+	beforeEach(async () => {
+		gatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-gated-'));
+		nodes = 0;
+		const gatedEnv: EnvSource = {
+			get: (key) => (key === 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH' ? 'true' : env.get(key)),
+		};
+		const config = { ...loadHostConfig(gatedEnv), dataDir: gatedDir };
+		gatedStore = new NodeRegistryStore(gatedDir);
+		gatedPorts = new PortAllocator(config.ports, [], { requirePeerFirewallRefresh: config.requirePeerFirewallRefresh });
+		gatedServer = createControlPlane({
+			config,
+			store: gatedStore,
+			exchange: new ExchangeStore(gatedDir),
+			ports: gatedPorts,
+			supervisor: { tick: async () => undefined } as unknown as Supervisor,
+			provision: {
+				store: gatedStore,
+				ports: gatedPorts,
+				advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+				checkPeerTarget: async () => null,
+				newNodeId: () => `gated-${++nodes}`,
+				now: () => new Date('2026-07-28T12:00:00.000Z'),
+			},
+			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		});
+		await new Promise<void>((resolve) => gatedServer.listen(0, '127.0.0.1', resolve));
+		gatedUrl = `http://127.0.0.1:${(gatedServer.address() as AddressInfo).port}`;
+	});
+
+	afterEach(async () => {
+		await new Promise<void>((resolve) => gatedServer.close(() => resolve()));
+		await fs.rm(gatedDir, { recursive: true, force: true });
+	});
+
+	const gated = (method: string, url: string, body?: unknown, idempotencyKey?: string): Promise<Response> =>
+		fetch(`${gatedUrl}${url}`, {
+			method,
+			headers: {
+				authorization: `Bearer ${ADMIN}`,
+				'content-type': 'application/json',
+				...(idempotencyKey === undefined ? {} : { 'idempotency-key': idempotencyKey }),
+			},
+			body: body === undefined ? undefined : JSON.stringify(body),
+		});
+	const provision = async (key: string): Promise<Response> => await gated('POST', '/v1/nodes', undefined, key);
+	const generation = async (): Promise<string> =>
+		((await (await gated('GET', '/v1/peer-allowlist')).json()) as { generation: string }).generation;
+	const applied = async (value: unknown): Promise<Response> =>
+		await gated('POST', '/v1/peer-allowlist/applied', { generation: value });
+
+	// The firewall script's whole cycle, with the supervisor's removal done by
+	// hand: it deletes the record, then releases the port.
+	it('reuses a removed node peer port only after a later ruleset is acknowledged', async () => {
+		const waiting = await provision('idem-boot');
+		expect(waiting.status).toBe(503);
+		expect(((await waiting.json()) as { error: string }).error).toContain('hydra-peer-firewall refresh');
+
+		expect(await (await applied(await generation())).json()).toEqual({ released: [] });
+		const first = (await (await provision('idem-1')).json()) as { nodeId: string; peerPort: number };
+		expect(first.peerPort).toBe(5001);
+
+		const beforeRemoval = await generation();
+		await gatedStore.remove(first.nodeId);
+		gatedPorts.release(first.peerPort);
+		expect(((await (await provision('idem-2')).json()) as { peerPort: number }).peerPort).toBe(5002);
+
+		expect(await (await applied(beforeRemoval)).json()).toEqual({ released: [] });
+		expect(await (await applied(await generation())).json()).toEqual({ released: [5001] });
+		expect(((await (await provision('idem-3')).json()) as { peerPort: number }).peerPort).toBe(5001);
+	});
+
+	it('refuses an acknowledgement the running Host did not issue', async () => {
+		expect((await applied('0b6f3c1e-2d4a-4f5b-9c8d-7e6f5a4b3c2d.0')).status).toBe(409);
+		expect((await applied(7)).status).toBe(400);
+		expect((await provision('idem-refused')).status).toBe(503);
 	});
 });

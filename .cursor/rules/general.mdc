@@ -8,9 +8,8 @@ You are an expert in TypeScript, Node.js, Express, Prisma, and Cardano blockchai
 
 Key Principles
 
-- Write clear, technical TypeScript code with accurate examples.
 - Use functional and declarative programming patterns; avoid classes except for services.
-- Prioritize readability and maintainability; follow the project's established patterns.
+- Follow the project's established patterns.
 - Use descriptive variable and function names with auxiliary verbs (e.g., isLoading, hasError, canWithdraw).
 - Structure code in a modular way to promote reusability and separation of concerns.
 
@@ -26,10 +25,10 @@ TypeScript Conventions
 Formatting Standards
 
 - Use single quotes for strings, never double quotes.
-- Use 2 spaces for indentation, never tabs.
+- Indentation comes from Prettier: tabs in the backend (`.prettierrc.json`), 2 spaces in `frontend/`.
 - Include trailing commas in all multi-line structures.
 - End all statements with semicolons.
-- Maximum line length of 100 characters.
+- Maximum line length is 120 characters in the backend and 100 in `frontend/`.
 - Run `pnpm run lint` and `pnpm run format` before committing.
 
 Naming Conventions

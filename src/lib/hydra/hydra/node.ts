@@ -21,11 +21,14 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
+import { assertL2TxWithinMaxSize } from './l2-tx-size';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
-import { isVerifiedPendingCommitOutput, readVerifiedCurrentOutput } from './node-current-output';
+import { isVerifiedPendingCommitOutput, readFinalSnapshot, readVerifiedCurrentOutput } from './node-current-output';
 import {
 	HydraCommandOptions,
+	assertTxConfirmationPolling,
 	awaitHydraTxConfirmation,
+	isAwaitingPostChainTx,
 	prepareNewTxCommand,
 	sendHydraCommandAndWait,
 } from './node-command-channel';
@@ -43,7 +46,6 @@ import {
 	createUnsupportedPersistenceRotationError,
 	isEventLogRotatedFrame,
 	protocolErrorToString,
-	stringMapsEqual,
 } from './node-frames';
 import { HydraHistoryReplay, type HistoryReplayHost } from './node-history-replay';
 import { HydraHttpClient } from './node-http';
@@ -61,9 +63,13 @@ import {
 	validateHydraNodeLimits,
 } from './node-api';
 import { withHistorySetting } from './node-url';
+import type { L2MintCheck } from './l2-mint-tally';
 import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-client';
-import { canonicalHydraHeadIdSchema, finalizedUtxoOf, headIsFinalizedMessageSchema } from './schemas';
-import { serializeHydraSnapshotOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
+import { FinalizedFanoutState, type FinalizedFanoutBindingInput } from './node-finalized-fanout';
+import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
+import * as settlementCommands from './node-settlement-commands';
+import { canonicalHydraHeadIdSchema } from './schemas';
+import type { VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction } from './types';
 
 export type { HydraHeadClock, HydraNodeClientConfig, HydraRawCostModels, IHydraNode } from './node-api';
@@ -132,8 +138,7 @@ export class HydraNode extends EventEmitter {
 	private _connectPromise: Promise<void> | undefined;
 	private _expectedHeadId: string | undefined;
 	private readonly _trustLocalNodeSnapshotMetadata: boolean;
-	/** Shared between live and replay sightings; they must never disagree. */
-	private _finalizedFanoutOutputs: Map<string, string> | undefined;
+	private readonly _finalizedFanout = new FinalizedFanoutState();
 	private readonly _connectTimeoutMs: number;
 	private readonly _commandTimeoutMs: number;
 
@@ -216,14 +221,13 @@ export class HydraNode extends EventEmitter {
 			bindSnapshotPartyOrder: (message) => this.bindSnapshotPartyOrder(message),
 			verifyGreetingsPartyIdentity: (message) => this._partyIdentity.verifyGreetingsPartyIdentity(message),
 			recordFinalizedFanout: (message) => this.recordFinalizedFanout(message),
-			clearFinalizedFanout: () => {
-				this._finalizedFanoutOutputs = undefined;
-			},
+			clearFinalizedFanout: () => this._finalizedFanout.clear(),
 			setNetworkConnected: (connected) => {
 				this._liveNetworkConnected = connected;
 			},
 			onRotationError: (error) => this._replay.fail(error),
 			invalidateLiveConnection: (error) => this._connection.invalidate(error),
+			isAwaitingPostChainTx: (postChainTxTag) => isAwaitingPostChainTx(this._connection, postChainTxTag),
 		};
 	}
 
@@ -254,6 +258,7 @@ export class HydraNode extends EventEmitter {
 			emitTxConfirmed: (txId, transaction) => {
 				this.emit(HydraNodeEvent.TxConfirmed, txId, transaction);
 			},
+			reportL2MintOutstanding: (incident) => this.emit(HydraNodeEvent.L2MintOutstanding, incident),
 			onProtocolDrift: (description) => {
 				this.emit(HydraNodeEvent.ProtocolDriftDetected, description);
 			},
@@ -365,25 +370,12 @@ export class HydraNode extends EventEmitter {
 		assertExpectedFrameHeadId(message, this._expectedHeadId);
 	}
 
-	private bindSnapshotPartyOrder(message: unknown): void {
-		this._partyIdentity.bindSnapshotPartyOrder(message, (parsed) => this.assertExpectedHeadId(parsed));
+	private recordFinalizedFanout(message: unknown): void {
+		this._finalizedFanout.record(message, (parsed) => this.assertExpectedHeadId(parsed));
 	}
 
-	/**
-	 * Record the finalized L1 fanout output map, from live frame or replay
-	 * alike. Both sockets can report it; they must never disagree.
-	 */
-	private recordFinalizedFanout(message: unknown): void {
-		const parsedMessage = headIsFinalizedMessageSchema.parse(message);
-		this.assertExpectedHeadId(parsedMessage);
-		const fanoutOutputs = new Map<string, string>();
-		for (const [reference, output] of Object.entries(finalizedUtxoOf(parsedMessage))) {
-			fanoutOutputs.set(reference.toLowerCase(), serializeHydraSnapshotOutput(output));
-		}
-		if (this._finalizedFanoutOutputs && !stringMapsEqual(this._finalizedFanoutOutputs, fanoutOutputs)) {
-			throw new HydraProtocolError('Hydra history equivocated on the finalized L1 fanout output map');
-		}
-		this._finalizedFanoutOutputs = fanoutOutputs;
+	private bindSnapshotPartyOrder(message: unknown): void {
+		this._partyIdentity.bindSnapshotPartyOrder(message, (parsed) => this.assertExpectedHeadId(parsed));
 	}
 
 	get hasPendingIncrement(): boolean {
@@ -392,6 +384,11 @@ export class HydraNode extends EventEmitter {
 
 	get pendingIncrementUtxoRefs(): ReadonlySet<string> {
 		return this._live.pendingIncrementUtxoRefs;
+	}
+
+	/** Unburned L2 mints as of the replay's verified snapshot; undefined until replay completes. See `l2-mint-tally`. */
+	get l2MintCheck(): L2MintCheck | undefined {
+		return this._replay.l2MintCheck;
 	}
 
 	get headClock(): HydraHeadClock | undefined {
@@ -423,6 +420,12 @@ export class HydraNode extends EventEmitter {
 	get verifiedSnapshotNumber(): bigint | undefined {
 		const snapshot = this._replay.verifiedSnapshot;
 		return this.hasVerifiedPinnedSessions && snapshot ? BigInt(snapshot.number) : undefined;
+	}
+
+	/** Newest snapshot a close or contest put on chain, on the same trust as `verifiedSnapshotNumber`. */
+	get closedSnapshotNumber(): bigint | undefined {
+		const closed = this._replay.closedSnapshotNumber;
+		return this.hasVerifiedPinnedSessions && closed !== undefined ? BigInt(closed) : undefined;
 	}
 
 	/** Both evidence sockets have authenticated the same explicitly pinned head. */
@@ -467,21 +470,28 @@ export class HydraNode extends EventEmitter {
 		return context ? fanoutReferences.readFinalSnapshotOutput(context, reference) : null;
 	}
 
+	getFinalizedFanoutBindingInput(expectedSnapshotNumber: number): FinalizedFanoutBindingInput | null {
+		const verifiedSnapshot = this.finalSnapshot(expectedSnapshotNumber);
+		return verifiedSnapshot ? this._finalizedFanout.bindingInput(verifiedSnapshot) : null;
+	}
+
+	adoptFinalizedFanoutL1Binding(expectedSnapshotNumber: number, bound: ReadonlyMap<string, string>): boolean {
+		const verifiedSnapshot = this.finalSnapshot(expectedSnapshotNumber);
+		return verifiedSnapshot ? this._finalizedFanout.adoptL1Binding(verifiedSnapshot, bound) : false;
+	}
+
+	private finalSnapshot(expectedSnapshotNumber: number) {
+		// prettier-ignore
+		return readFinalSnapshot(this.hasVerifiedPinnedSessions, this._live.status, this._replay.verifiedSnapshot, expectedSnapshotNumber);
+	}
+
 	private fanoutResolutionContext(expectedSnapshotNumber: number) {
-		const verifiedSnapshot = this._replay.verifiedSnapshot;
-		if (
-			!this.hasVerifiedPinnedSessions ||
-			this._live.status !== HydraHeadStatus.Final ||
-			!Number.isSafeInteger(expectedSnapshotNumber) ||
-			expectedSnapshotNumber < 0 ||
-			verifiedSnapshot?.number !== expectedSnapshotNumber ||
-			this._finalizedFanoutOutputs == null
-		) {
-			return null;
-		}
+		const verifiedSnapshot = this.finalSnapshot(expectedSnapshotNumber);
+		const finalizedFanoutOutputs = verifiedSnapshot && this._finalizedFanout.l1Outputs(verifiedSnapshot);
+		if (!verifiedSnapshot || !finalizedFanoutOutputs) return null;
 		return {
 			verifiedSnapshot,
-			finalizedFanoutOutputs: this._finalizedFanoutOutputs,
+			finalizedFanoutOutputs,
 			getConfirmedTransaction: (txHash: string) => this.getConfirmedTransaction(txHash),
 		};
 	}
@@ -558,6 +568,7 @@ export class HydraNode extends EventEmitter {
 	 * later as DecommitApproved, or does not, as DecommitInvalid.
 	 */
 	async decommit(transaction: HydraTransaction) {
+		assertL2TxWithinMaxSize(transaction.cborHex);
 		return await this.post('/decommit', transaction);
 	}
 
@@ -573,7 +584,7 @@ export class HydraNode extends EventEmitter {
 	}
 
 	/** See `fetchHydraPendingDecommitRefs`: output refs still awaiting L1 decommit. */
-	async fetchPendingDecommitRefs(): Promise<string[]> {
+	async fetchPendingDecommitRefs(): Promise<string[] | undefined> {
 		return await fetchHydraPendingDecommitRefs(this);
 	}
 
@@ -667,18 +678,13 @@ export class HydraNode extends EventEmitter {
 		this._live.resetOnDisconnect();
 		this._replay.resetPass();
 		this._ledger.clear();
-		this._finalizedFanoutOutputs = undefined;
+		this._finalizedFanout.clear();
 		this._replay.setErrorToRotationLatch();
 		this._connectionsStarted = false;
 	}
 
 	async awaitTx(txHash: string, checkInterval: number = 1000, timeoutMs: number = this._commandTimeoutMs) {
-		if (!Number.isSafeInteger(checkInterval) || checkInterval <= 0) {
-			throw new HydraProtocolError('Hydra confirmation polling interval must be a positive safe integer');
-		}
-		if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
-			throw new HydraProtocolError('Hydra confirmation timeout must be a positive safe integer');
-		}
+		assertTxConfirmationPolling(checkInterval, timeoutMs);
 		if (this._ledger.hasConfirmed(txHash)) return true;
 		return await awaitHydraTxConfirmation({
 			connections: [this._connection, this._historyConnection],
@@ -690,23 +696,16 @@ export class HydraNode extends EventEmitter {
 	}
 
 	async close() {
-		return await this.sendCommandAndWait({
-			command: 'Close',
-			payload: { tag: 'Close' },
-			timeoutMs: HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS,
-			timeoutMessage: 'Hydra Close outcome was not observed before the lifecycle deadline',
-			isComplete: (message) => message.tag === 'HeadIsClosed',
-		});
+		return await this.sendCommandAndWait(settlementCommands.closeCommand(HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS));
 	}
 
 	async fanout() {
-		return await this.sendCommandAndWait({
-			command: 'Fanout',
-			payload: { tag: 'Fanout' },
-			timeoutMs: HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS,
-			timeoutMessage: 'Hydra Fanout outcome was not observed before the lifecycle deadline',
-			isComplete: (message) => message.tag === 'HeadIsFinalized',
-		});
+		return await this.sendCommandAndWait(settlementCommands.fanoutCommand(HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS));
+	}
+
+	async partialFanout(selection: HydraFanoutRemainingUtxo) {
+		const timeoutMs = HydraNode.LIFECYCLE_RESPONSE_TIMEOUT_MS;
+		return await this.sendCommandAndWait(settlementCommands.partialFanoutCommand(selection, timeoutMs));
 	}
 
 	async get<T = unknown>(url: string): Promise<T> {

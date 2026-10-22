@@ -33,7 +33,7 @@
 		"memory": 16500000,
 		"steps": 10000000000
 	},
-	"maxTxSize": 16384,
+	"maxTxSize": 15000,
 	"maxValueSize": 5000,
 	"minFeeRefScriptCostPerByte": 0,
 	"minPoolCost": 170000000,

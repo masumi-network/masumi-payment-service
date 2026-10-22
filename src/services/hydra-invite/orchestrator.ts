@@ -13,7 +13,6 @@ import createHttpError from 'http-errors';
 import { createId } from '@paralleldrive/cuid2';
 import {
 	HotWalletType,
-	HydraHeadStatus,
 	HydraInviteRole,
 	HydraInviteStatus,
 	Network,
@@ -22,18 +21,12 @@ import {
 	WalletType,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from './nonce-log-ref';
 import { createBoundHydraHead } from '@/routes/api/hydra/head/create-head';
-import { registerInviteOnHost, setHostNodePeers, startHostNode } from '@/services/hydra-host/client';
+import { registerInviteOnHost } from '@/services/hydra-host/client';
 import { deriveNodeCardanoVkey } from './node-keys';
-import {
-	INVITE_TTL_MS,
-	buildHydraRedemptionPayload,
-	checkInviteFreshness,
-	type HydraHeadInvitePayloadInput,
-} from './invite-payload';
+import { INVITE_TTL_MS, checkInviteFreshness, type HydraHeadInvitePayloadInput } from './invite-payload';
 import { encodeInviteCode, type DecodedInvite } from './invite-code';
 import { signHydraHeadInvite, signHydraRedemption, verifyHydraHeadInvite } from './invite-signing';
 import {
@@ -44,7 +37,19 @@ import {
 	type HeadPeriods,
 } from './provisioning';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
-import { assertExchangeTransportAllowed, postRedemption, resolveExchangeTarget } from './exchange-client';
+import {
+	assertExchangeTransportAllowed,
+	resolveExchangeTarget,
+	type ExchangeTransportOptions,
+} from './exchange-client';
+import { advanceRedemption } from './redemption';
+import {
+	assertRelationHasNoLiveHead,
+	buildRedemptionPorts,
+	toRedemptionState,
+	type RedeemerRecord,
+} from './redemption-ports';
+import { LIVE_REDEEMER_STATUSES, createRedeemerRecord } from './redemption-store';
 import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
 
 type WalletContext = {
@@ -261,48 +266,70 @@ export type RedeemedInvite = {
 	issuerWalletAddress: string;
 };
 
-/**
- * Accept someone's invite: reserve our node, send them our material, and record
- * the Relation and Head.
- *
- * The order matters. We provision before sending, because the material is what
- * we are sending. We create the Relation and Head after the send succeeds,
- * because a redemption the issuer never received would leave us holding a head
- * whose counterparty does not know it exists.
- */
-/**
- * Refuse a redemption this service could not turn into a head.
- *
- * An advisory check, deliberately outside the transaction that creates the head:
- * that one holds the row locks and remains the authority. This one exists to
- * spend the refusal before the nonce is burned rather than after, so the pair
- * can simply try again with a fresh invite.
- */
-async function assertRelationHasNoLiveHead(input: {
-	network: Network;
-	localHotWalletId: string;
-	counterpartyWalletAddress: string;
-}): Promise<void> {
-	const liveHead = await prisma.hydraHead.findFirst({
-		where: {
-			status: { not: HydraHeadStatus.Final },
-			HydraRelation: {
-				network: input.network,
-				localHotWalletId: input.localHotWalletId,
-				RemoteWallet: { walletAddress: input.counterpartyWalletAddress },
-			},
-		},
-		select: { status: true },
+type RedeemerContext = {
+	wallet: WalletContext;
+	issuerSignature: string;
+	transport: ExchangeTransportOptions;
+};
+
+async function findRedeemerRecord(nonce: string): Promise<RedeemerRecord | null> {
+	return await prisma.hydraHeadInvite.findUnique({
+		where: { nonce },
+		include: { LocalHotWallet: true, HydraHost: true },
 	});
-	if (liveHead !== null) {
-		throw createHttpError(
-			409,
-			`you already have a ${liveHead.status.toLowerCase()} head with this counterparty on ${input.network}; ` +
-				'close and settle it before opening another, then ask them for a new invite',
-		);
-	}
 }
 
+/** Carry a recorded redemption to its head, or say why it cannot go further yet. */
+async function finishRedemption(
+	record: RedeemerRecord,
+	options: { rowIsNew: boolean; transport: ExchangeTransportOptions },
+): Promise<RedeemedInvite> {
+	const ports = buildRedemptionPorts({ record, transport: options.transport, createHead: createHeadFromExchange });
+	const result = await advanceRedemption(toRedemptionState(record), ports, { rowIsNew: options.rowIsNew });
+	logger.info(`hydra: redeemed invite ${nonceLogRef(record.nonce)} from ${record.issuerWalletAddress}`);
+	return { inviteId: record.id, hydraHeadId: result.hydraHeadId, issuerWalletAddress: record.issuerWalletAddress };
+}
+
+/**
+ * An earlier attempt at this nonce is continued, not refused.
+ *
+ * The invite's nonce is single-use on the issuer's Host, so once an attempt may
+ * have spent it the only way to finish is to carry that attempt on. This runs
+ * before the freshness check on purpose: the Host answers a repeat of a
+ * redemption that landed even after the invite has expired, and refusing here
+ * would stop a redeemer whose answer was lost from ever learning it succeeded.
+ */
+async function resumeRedemption(earlier: RedeemerRecord, context: RedeemerContext): Promise<RedeemedInvite> {
+	const isSameRedemption =
+		earlier.role === HydraInviteRole.Redeemer &&
+		earlier.localHotWalletId === context.wallet.id &&
+		earlier.issuerSignature === context.issuerSignature;
+	if (!isSameRedemption) {
+		throw createHttpError(409, 'this invite has already been redeemed here');
+	}
+	if (earlier.status === HydraInviteStatus.Completed && earlier.hydraHeadId !== null) {
+		return { inviteId: earlier.id, hydraHeadId: earlier.hydraHeadId, issuerWalletAddress: earlier.issuerWalletAddress };
+	}
+	if (earlier.status === HydraInviteStatus.Failed) {
+		throw createHttpError(409, 'an earlier redemption of this invite failed; ask the issuer for a new invite');
+	}
+	if (!LIVE_REDEEMER_STATUSES.some((status) => status === earlier.status)) {
+		throw createHttpError(409, 'this invite has already been redeemed here');
+	}
+	return await finishRedemption(earlier, { rowIsNew: false, transport: context.transport });
+}
+
+/**
+ * Accept someone's invite: reserve our node, record that we are about to send
+ * our material, send it, and create the Relation and Head.
+ *
+ * The order matters. We provision before sending, because the material is what
+ * we are sending. We record the redemption before sending, because the send
+ * spends the issuer's single-use nonce and a crash after it must leave
+ * something to finish from. And we create the Head only once the issuer has
+ * acknowledged, because a redemption the issuer never received would leave us
+ * holding a head whose counterparty does not know it exists.
+ */
 export async function redeemHeadInvite(input: {
 	invite: DecodedInvite;
 	localHotWalletId: string;
@@ -334,6 +361,17 @@ export async function redeemHeadInvite(input: {
 				'A head runs between a buyer and a seller, and payments only route through it in that direction',
 		);
 	}
+	const exchangeTransport = {
+		allowInsecureHttp: input.allowInsecureExchangeHttp === true,
+		allowPrivateNetwork: input.allowPrivateExchangeNetwork === true,
+	};
+	const context: RedeemerContext = { wallet, issuerSignature: signature.signature, transport: exchangeTransport };
+
+	const earlier = await findRedeemerRecord(payload.nonce);
+	if (earlier !== null) {
+		return await resumeRedemption(earlier, context);
+	}
+
 	const freshness = checkInviteFreshness(Number(payload.expiresAt), Date.now());
 	if (!freshness.fresh) {
 		throw createHttpError(409, freshness.reason);
@@ -344,14 +382,6 @@ export async function redeemHeadInvite(input: {
 	// head must not cost this side a node and its fuel to discover that.
 	assertHeadPeriodsAllowed(wallet.network, payload);
 
-	const existing = await prisma.hydraHeadInvite.findUnique({ where: { nonce: payload.nonce } });
-	if (existing !== null) {
-		throw createHttpError(409, 'this invite has already been redeemed here');
-	}
-	const exchangeTransport = {
-		allowInsecureHttp: input.allowInsecureExchangeHttp === true,
-		allowPrivateNetwork: input.allowPrivateExchangeNetwork === true,
-	};
 	// Reject before reserving a node. A missing HTTP opt-in is an operator
 	// decision, not a provisioning failure that should strand a port and keys.
 	assertExchangeTransportAllowed(payload.exchangeUrl, exchangeTransport);
@@ -366,12 +396,9 @@ export async function redeemHeadInvite(input: {
 	}
 
 	const periods: HeadPeriods = periodsFromInvite(payload);
-	// Asked here, where the answer still costs nothing. The head is only created
-	// after the redemption is posted, and a nonce is single-use: the issuer's Host
-	// burns it on first use, so a `createHeadFromExchange` that refuses — because
-	// this pair already has a live head, or a previous one is not yet fully
-	// reconciled — leaves the invite dead for both sides, our node reserved and
-	// funded, and the issuer holding a head whose peer can never join.
+	// Asked here, where the answer still costs nothing: the nonce is spent on
+	// the issuer's Host by the first post, so a pair that already has a head, or
+	// another redemption under way, must be refused before it.
 	await assertRelationHasNoLiveHead({
 		network: wallet.network,
 		localHotWalletId: wallet.id,
@@ -389,15 +416,6 @@ export async function redeemHeadInvite(input: {
 	}
 	const exchangeUrl = requireExchangeUrl(node);
 
-	const redemptionPayload = buildHydraRedemptionPayload({
-		nonce: payload.nonce,
-		network: wallet.network,
-		redeemerWalletAddress: wallet.walletAddress,
-		hydraVerificationKey: node.hydraVerificationKey,
-		cardanoVerificationKey: node.cardanoVerificationKey,
-		advertise: node.advertise,
-		exchangeUrl,
-	});
 	const redemptionSignature = await signHydraRedemption(
 		{
 			nonce: payload.nonce,
@@ -415,6 +433,55 @@ export async function redeemHeadInvite(input: {
 		},
 	);
 
+	// Recorded before the nonce is spent. Everything signed is already in hand, so
+	// whatever happens after the post (a crash, a lost answer, a Host that is
+	// down) leaves a record the retry and the resume job can finish, and one that
+	// shields the reservation from the abandoned-reservation sweep.
+	const recorded = await createRedeemerRecord({
+		network: wallet.network,
+		role: HydraInviteRole.Redeemer,
+		status: HydraInviteStatus.Redeemed,
+		nonce: payload.nonce,
+		expiresAt: new Date(Number(payload.expiresAt)),
+		LocalHotWallet: { connect: { id: wallet.id } },
+		HydraHost: { connect: { id: node.hostId } },
+		hostNodeId: node.nodeId,
+		issuerWalletAddress: payload.issuerWalletAddress,
+		issuerHydraVerificationKey: payload.hydraVerificationKey,
+		issuerCardanoVerificationKey: payload.cardanoVerificationKey,
+		issuerAdvertise: payload.advertise,
+		issuerExchangeUrl: payload.exchangeUrl,
+		issuerSignature: signature.signature,
+		issuerSignerKey: signature.key,
+		// Set when the issuer's Host acknowledges the redemption, not before.
+		redeemedAt: null,
+		redeemerWalletAddress: wallet.walletAddress,
+		redeemerHydraVerificationKey: node.hydraVerificationKey,
+		redeemerCardanoVerificationKey: node.cardanoVerificationKey,
+		redeemerAdvertise: node.advertise,
+		redeemerExchangeUrl: exchangeUrl,
+		redeemerSignature: redemptionSignature.signature,
+		redeemerSignerKey: redemptionSignature.key,
+		// Explicit, not `...periods`: `periods` also carries the LOCAL-only
+		// `depositActivationSeconds`, which `HydraHeadInvite` has no column for.
+		contestationPeriodSeconds: periods.contestationPeriodSeconds,
+		depositPeriodSeconds: periods.depositPeriodSeconds,
+		unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
+		ledgerParamsHash: payload.ledgerParamsHash,
+	});
+	if (!recorded.created) {
+		// A concurrent request recorded this nonce between our check and our write.
+		const winner = await findRedeemerRecord(payload.nonce);
+		if (winner === null) {
+			// A unique violation that is not this nonce: the node is held by another invite.
+			throw createHttpError(
+				409,
+				'this redemption conflicts with another one on the same node; retry the same invite code',
+			);
+		}
+		return await resumeRedemption(winner, context);
+	}
+
 	// Funded here, unlike the issuing side: the redeemer is the one that posts
 	// Init, and it can do so the moment this returns. Waiting for the scheduled
 	// cycle would put a chain confirmation between redeeming and being able to
@@ -425,114 +492,20 @@ export async function redeemHeadInvite(input: {
 		});
 	}
 
-	await postRedemption(
-		payload.exchangeUrl,
-		{
-			nonce: payload.nonce,
-			redeemer: {
-				walletAddress: redemptionPayload.redeemerWalletAddress,
-				hydraVerificationKey: redemptionPayload.hydraVerificationKey,
-				cardanoVerificationKey: redemptionPayload.cardanoVerificationKey,
-				advertise: redemptionPayload.advertise,
-				exchangeUrl: redemptionPayload.exchangeUrl,
-			},
-			signature: redemptionSignature,
-		},
-		exchangeTransport,
-	);
-
-	// Our side of the cluster, which nothing else will do for us. The issuer's
-	// Host configures and starts *its* node when the redemption lands; the
-	// mirror of that is ours to perform, and without it the node sits peerless
-	// and stopped while both sides believe a head exists.
-	await setHostNodePeers(
-		node.hostBaseUrl,
-		node.adminToken,
-		node.nodeId,
-		[
-			{
-				advertise: payload.advertise,
-				hydraVerificationKey: payload.hydraVerificationKey,
-				cardanoVerificationKey: payload.cardanoVerificationKey,
-			},
-		],
-		{ allowInsecureHttp: node.allowInsecureHttp },
-	);
-	await startHostNode(node.hostBaseUrl, node.adminToken, node.nodeId, {
-		allowInsecureHttp: node.allowInsecureHttp,
-	});
-
-	// The invite row is written in the head's own transaction. Written after it,
-	// a crash in between left a live head no invite pointed at, and the retry
-	// could only refuse: the relation already had a head, and the nonce was spent.
-	// Cast, so the assignment inside the callback is not narrowed away.
-	let inviteId = null as string | null;
-	const head = await createHeadFromExchange({
-		network: wallet.network,
-		paymentSourceId: wallet.paymentSourceId,
-		localHotWalletId: wallet.id,
-		localParticipantId: node.localParticipantId,
-		counterpartyWalletAddress: payload.issuerWalletAddress,
-		counterpartyExchangeUrl: payload.exchangeUrl,
-		counterpartyHydraVerificationKey: payload.hydraVerificationKey,
-		counterpartyCardanoVerificationKey: payload.cardanoVerificationKey,
-		counterpartyAdvertise: payload.advertise,
-		contestationPeriodSeconds: payload.contestationPeriodSeconds,
-		linkInvite: async (tx, hydraHeadId) => {
-			// The nonce check above runs before the exchange, so a concurrent
-			// redemption of the same invite only surfaces here, as a unique error.
-			const invite = await tx.hydraHeadInvite
-				.create({
-					data: {
-						network: wallet.network,
-						role: HydraInviteRole.Redeemer,
-						status: HydraInviteStatus.Completed,
-						nonce: payload.nonce,
-						expiresAt: new Date(Number(payload.expiresAt)),
-						LocalHotWallet: { connect: { id: wallet.id } },
-						HydraHost: { connect: { id: node.hostId } },
-						hostNodeId: node.nodeId,
-						issuerWalletAddress: payload.issuerWalletAddress,
-						issuerHydraVerificationKey: payload.hydraVerificationKey,
-						issuerCardanoVerificationKey: payload.cardanoVerificationKey,
-						issuerAdvertise: payload.advertise,
-						issuerExchangeUrl: payload.exchangeUrl,
-						issuerSignature: signature.signature,
-						issuerSignerKey: signature.key,
-						redeemedAt: new Date(),
-						redeemerWalletAddress: wallet.walletAddress,
-						redeemerHydraVerificationKey: node.hydraVerificationKey,
-						redeemerCardanoVerificationKey: node.cardanoVerificationKey,
-						redeemerAdvertise: node.advertise,
-						redeemerExchangeUrl: exchangeUrl,
-						redeemerSignature: redemptionSignature.signature,
-						redeemerSignerKey: redemptionSignature.key,
-						// Explicit, not `...periods`: see the matching comment on the issuer
-						// side. `periods` here also carries the LOCAL-only
-						// `depositActivationSeconds`, which `HydraHeadInvite` has no column for.
-						contestationPeriodSeconds: periods.contestationPeriodSeconds,
-						depositPeriodSeconds: periods.depositPeriodSeconds,
-						unsyncedPeriodSeconds: periods.unsyncedPeriodSeconds,
-						ledgerParamsHash: payload.ledgerParamsHash,
-						HydraHead: { connect: { id: hydraHeadId } },
-					},
-					select: { id: true },
-				})
-				.catch((error: unknown) => {
-					if (isUniqueConstraintError(error)) {
-						throw createHttpError(409, 'this invite has already been redeemed here');
-					}
-					throw error;
-				});
-			inviteId = invite.id;
-		},
-	});
-	if (inviteId === null) {
-		throw createHttpError(500, 'hydra: head was created without its invite row');
+	const record = await findRedeemerRecord(payload.nonce);
+	if (record === null) {
+		throw createHttpError(500, 'hydra: a redemption was recorded and then could not be read back');
 	}
-
-	logger.info(`hydra: redeemed invite ${nonceLogRef(payload.nonce)} from ${payload.issuerWalletAddress}`);
-	return { inviteId, hydraHeadId: head.hydraHeadId, issuerWalletAddress: payload.issuerWalletAddress };
+	// A concurrent retry finished or ended it in between: answer as that retry would.
+	if (record.status !== HydraInviteStatus.Redeemed) {
+		return await resumeRedemption(record, context);
+	}
+	// The version written by the create, not the one read back: a retry that
+	// claimed the record in between must make this request's deletes find nothing.
+	return await finishRedemption(
+		{ ...record, updatedAt: recorded.updatedAt },
+		{ rowIsNew: true, transport: exchangeTransport },
+	);
 }
 
 /**

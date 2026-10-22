@@ -21,7 +21,16 @@ import type { ExchangeMaterial, ExchangeSignature, InviteRecord } from './exchan
 import type { NodeRegistryStore } from './store.js';
 
 const EXCHANGE_FILE = 'exchange.json';
-/** Replay tombstones need not live forever after the invite can no longer be used. */
+/**
+ * How long an unredeemed invite is kept after it expires.
+ *
+ * Only unredeemed invites age out. A redeemed invite holds the counterparty's
+ * signed redemption, the one copy the owning service needs to adopt the head,
+ * so it stays until the service forgets it: after adoption, or when it cancels
+ * the invite. Ageing it out on a timer let a service that was down, or whose
+ * adoption kept failing, lose the evidence for good, and left a reserved node
+ * and an `Issued` invite that only manual repair could clear.
+ */
 export const INVITE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export class ExchangeStoreError extends Error {
@@ -34,6 +43,30 @@ export class ExchangeStoreError extends Error {
 type ExchangeState = {
 	invites: InviteRecord[];
 };
+
+/**
+ * Why a redemption was refused.
+ *
+ * `redeemed-by-other` is the one refusal that proves the nonce was spent by a
+ * different redemption than the one being asked about. The plain text stays
+ * `invite already redeemed`, so a client that predates the code reads the same
+ * answer it always did.
+ */
+export type RedeemRefusalCode = 'redeemed-by-other';
+
+export type RedeemResult =
+	| { ok: true; invite: InviteRecord; replayed: boolean }
+	| { ok: false; reason: string; status: 404 | 409 | 410; code?: RedeemRefusalCode };
+
+function sameMaterial(a: ExchangeMaterial, b: ExchangeMaterial): boolean {
+	return (
+		a.walletAddress === b.walletAddress &&
+		a.hydraVerificationKey === b.hydraVerificationKey &&
+		a.cardanoVerificationKey === b.cardanoVerificationKey &&
+		a.advertise === b.advertise &&
+		a.exchangeUrl === b.exchangeUrl
+	);
+}
 
 function emptyState(): ExchangeState {
 	return { invites: [] };
@@ -106,7 +139,7 @@ export class ExchangeStore {
 	 * redemption stamped earlier than the watermark but written later is invisible
 	 * for good: its invite stays `Issued` with no head, holding a node, its port
 	 * and its fuel, and blocking deletion of the Host until a process restart
-	 * falls back to the cold-start lookback. Taking it after `await listInvites()`
+	 * falls back to the cold-start watermark. Taking it after `await listInvites()`
 	 * resolved was exactly that window — the queue is FIFO, so a redemption
 	 * enqueued behind this read has its own timestamp taken behind it too, and
 	 * only a clock read from inside the queue orders the two.
@@ -124,7 +157,7 @@ export class ExchangeStore {
 			// over it forever. Reporting a millisecond earlier can at worst repeat
 			// a redemption this response already carried, which the owning service
 			// resolves idempotently.
-			return { invites: state.invites.map(copyInvite), now: now - 1 };
+			return { invites: state.invites.filter(isListed).map(copyInvite), now: now - 1 };
 		});
 	}
 
@@ -151,11 +184,7 @@ export class ExchangeStore {
 	 * The check and the write happen inside one queued task, so two callers
 	 * racing on the same nonce cannot both be told they won.
 	 */
-	async redeem(
-		nonce: string,
-		redeemer: ExchangeMaterial,
-		signature: ExchangeSignature,
-	): Promise<{ ok: true; invite: InviteRecord } | { ok: false; reason: string; status: 404 | 409 | 410 }> {
+	async redeem(nonce: string, redeemer: ExchangeMaterial, signature: ExchangeSignature): Promise<RedeemResult> {
 		return await this.enqueue(async () => {
 			// Read here rather than passed in from the handler. The stamp is what
 			// the owning service's watermark is compared against, and a timestamp
@@ -172,7 +201,20 @@ export class ExchangeStore {
 				return { ok: false as const, reason: 'no such invite', status: 404 as const };
 			}
 			if (invite.redeemedAt !== null) {
-				return { ok: false as const, reason: 'invite already redeemed', status: 409 as const };
+				// Checked before expiry: a redemption that landed stays answerable after
+				// the invite lapses, or a redeemer whose answer was lost could never learn
+				// it succeeded. The caller's signature was verified before this point and
+				// covers the nonce and every field below, so equal material is the same
+				// signer repeating itself, and nothing is written.
+				if (invite.redeemer !== null && sameMaterial(invite.redeemer, redeemer)) {
+					return { ok: true as const, invite, replayed: true };
+				}
+				return {
+					ok: false as const,
+					reason: 'invite already redeemed',
+					status: 409 as const,
+					code: 'redeemed-by-other' as const,
+				};
 			}
 			if (invite.expiresAt <= now) {
 				return { ok: false as const, reason: 'invite expired', status: 410 as const };
@@ -182,7 +224,7 @@ export class ExchangeStore {
 			invite.redeemer = redeemer;
 			invite.redeemerSignature = signature;
 			await this.write(state);
-			return { ok: true as const, invite };
+			return { ok: true as const, invite, replayed: false };
 		});
 	}
 
@@ -191,7 +233,7 @@ export class ExchangeStore {
 		await this.enqueue(async () => {
 			const state = await this.read();
 			const invite = state.invites.find((candidate) => candidate.nonce === nonce);
-			if (invite === undefined) {
+			if (invite === undefined || invite.forgottenAt !== undefined) {
 				return;
 			}
 			invite.startError = message;
@@ -199,19 +241,47 @@ export class ExchangeStore {
 		});
 	}
 
-	async forgetInvite(nonce: string, nodes?: NodeRegistryStore): Promise<boolean> {
+	/**
+	 * Forget an invite.
+	 *
+	 * `keepReplay` is for a redemption the service adopted: the record is reduced
+	 * to the redeemer's public material, so an identical replay is still answered
+	 * after the service no longer needs the signed redemption. Without it, or for
+	 * an invite nobody redeemed, the record is removed, which is what a cancelled
+	 * or revoked invite needs.
+	 */
+	async forgetInvite(
+		nonce: string,
+		nodes?: NodeRegistryStore,
+		options: { keepReplay?: boolean } = {},
+	): Promise<boolean> {
 		return await this.enqueue(async () => {
 			const state = await this.read();
 			const invite = state.invites.find((candidate) => candidate.nonce === nonce);
+			const keepReplay = options.keepReplay === true;
+			if (keepReplay && invite?.forgottenAt !== undefined) {
+				return true;
+			}
 			// Adoption can arrive before the exchange handler configures peers.
 			// Keep the durable material until setup no longer needs a retry.
-			if (nodes !== undefined && invite !== undefined && invite.redeemedAt !== null) {
+			if (
+				nodes !== undefined &&
+				invite !== undefined &&
+				invite.redeemedAt !== null &&
+				invite.forgottenAt === undefined
+			) {
 				const node = await nodes.read(invite.hostNodeId);
 				if (node !== null && !node.removalRequested && node.state !== 'Removing' && node.peers.length === 0) {
 					return false;
 				}
 			}
-			state.invites = state.invites.filter((candidate) => candidate.nonce !== nonce);
+			if (keepReplay && invite !== undefined && invite.redeemedAt !== null && invite.redeemer !== null) {
+				invite.forgottenAt = Date.now();
+				invite.redeemerSignature = null;
+				invite.startError = null;
+			} else {
+				state.invites = state.invites.filter((candidate) => candidate.nonce !== nonce);
+			}
 			await this.write(state);
 			return true;
 		});
@@ -224,7 +294,13 @@ function pickRedemption(invite: InviteRecord) {
 		redeemer: invite.redeemer,
 		redeemerSignature: invite.redeemerSignature,
 		startError: invite.startError,
+		forgottenAt: invite.forgottenAt,
 	};
+}
+
+/** A kept replay record is answered by `redeem` only; every listing skips it. */
+function isListed(invite: InviteRecord): boolean {
+	return invite.forgottenAt === undefined;
 }
 
 function copyInvite(invite: InviteRecord): InviteRecord {
@@ -237,7 +313,15 @@ function copyInvite(invite: InviteRecord): InviteRecord {
 
 function pruneRetainedInvites(state: ExchangeState, now: number): boolean {
 	const cutoff = now - INVITE_RETENTION_MS;
-	const retained = state.invites.filter((invite) => (invite.redeemedAt ?? invite.expiresAt) > cutoff);
+	const retained = state.invites.filter((invite) =>
+		// A kept replay record lives seven days from when the service forgot it, not
+		// from the redemption: a service that was down for a month adopts late, and
+		// its redeemer still needs the week after that. Every other redeemed record
+		// stays until forgotten.
+		invite.forgottenAt !== undefined
+			? invite.forgottenAt > cutoff
+			: invite.redeemedAt !== null || invite.expiresAt > cutoff,
+	);
 	if (retained.length === state.invites.length) {
 		return false;
 	}

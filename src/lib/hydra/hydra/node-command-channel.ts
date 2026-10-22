@@ -3,16 +3,18 @@
  * node answers with.
  *
  * The hard part this owns is ambiguity: once the command's bytes were queued
- * on the socket, a malformed response, a rejection of a Close already
- * dispatched, transport closure, or a timeout no longer means "not done" —
- * the head may have acted. Every such case surfaces as
+ * on the socket, a malformed response, a failed L1 post that names no
+ * transaction, a rejection of a Close already dispatched, transport closure,
+ * or a timeout no longer means "not done": the head may have acted. Every such
+ * case surfaces as
  * `HydraTransportAmbiguousError` so callers reconcile instead of retrying.
  */
 
 import { resolveTxHash } from '@meshsdk/core';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportAmbiguousError, HydraTransportError } from './errors';
-import { handleWsResponse, type HydraResponseMessage } from './node-frames';
+import { assertL2TxWithinMaxSize } from './l2-tx-size';
+import { handleWsResponse, postChainTxTagsFor, type HydraResponseMessage } from './node-frames';
 import { canonicalHydraTransactionIdSchema, hydraCommandTransactionSchema } from './schemas';
 import { HydraTransaction } from './types';
 
@@ -24,6 +26,29 @@ export interface HydraCommandOptions {
 	isComplete: (message: HydraResponseMessage) => boolean;
 	timeoutMessage: string;
 	retryIntervalMs?: number;
+}
+
+/**
+ * Commands still waiting for their answer, per live socket.
+ *
+ * The node answers a command's failed L1 post with the same
+ * `PostTxOnChainFailed` frame it sends for a post nobody asked for, such as a
+ * contest. The live frame processor reads that frame before the command's own
+ * listener does, so it asks here whether a waiting caller will report it.
+ */
+const awaitedCommands = new WeakMap<Connection, string[]>();
+
+/**
+ * Whether a command waiting on `connection` posts the L1 transaction
+ * `postChainTxTag`, so its caller records the failure.
+ *
+ * Never true for a failure that names no transaction. That one fails a waiting
+ * L1 command as ambiguous (see `handleWsResponse`), and the Init route can
+ * settle an ambiguous Init without a record, so the connection manager keeps
+ * its own.
+ */
+export function isAwaitingPostChainTx(connection: Connection, postChainTxTag: string): boolean {
+	return (awaitedCommands.get(connection) ?? []).some((command) => postChainTxTagsFor(command).has(postChainTxTag));
 }
 
 export function sendHydraCommandAndWait(
@@ -38,7 +63,12 @@ export function sendHydraCommandAndWait(
 		const pendingSend = new AbortController();
 		let retryInterval: ReturnType<typeof setInterval> | undefined;
 
+		const awaited = awaitedCommands.get(connection) ?? [];
+		awaitedCommands.set(connection, awaited);
+		awaited.push(command);
 		const cleanup = () => {
+			const awaitedIndex = awaited.indexOf(command);
+			if (awaitedIndex !== -1) awaited.splice(awaitedIndex, 1);
 			clearTimeout(timeout);
 			if (retryInterval) clearInterval(retryInterval);
 			// A command deadline can precede Connection.send's open deadline. Stop
@@ -70,7 +100,7 @@ export function sendHydraCommandAndWait(
 			if (outcome.kind === 'protocol-error') {
 				settleReject(
 					wasQueued
-						? ambiguousError(`Hydra ${command} outcome is ambiguous after a malformed response`, outcome.error)
+						? ambiguousError(`Hydra ${command} outcome is ambiguous: ${outcome.error.message}`, outcome.error)
 						: outcome.error,
 				);
 				return;
@@ -78,7 +108,10 @@ export function sendHydraCommandAndWait(
 			if (outcome.kind === 'reject') {
 				settleReject(
 					command === 'Close' && wasQueued
-						? ambiguousError('Hydra Close was rejected after dispatch; the head may already have closed', outcome.error)
+						? ambiguousError(
+								`Hydra Close was rejected after dispatch; the head may already have closed: ${outcome.error.message}`,
+								outcome.error,
+							)
 						: outcome.error,
 				);
 				return;
@@ -144,6 +177,7 @@ export function prepareNewTxCommand(transaction: HydraTransaction): {
 			cause: parsedTransaction.error,
 		});
 	}
+	assertL2TxWithinMaxSize(parsedTransaction.data.cborHex);
 	let txHash: string;
 	try {
 		txHash = String(resolveTxHash(parsedTransaction.data.cborHex)).toLowerCase();
@@ -164,6 +198,16 @@ export function prepareNewTxCommand(transaction: HydraTransaction): {
 			...(suppliedTxId?.success ? { txId: suppliedTxId.data } : {}),
 		},
 	};
+}
+
+/** Refuse polling options that would never settle or spin. */
+export function assertTxConfirmationPolling(checkIntervalMs: number, timeoutMs: number): void {
+	if (!Number.isSafeInteger(checkIntervalMs) || checkIntervalMs <= 0) {
+		throw new HydraProtocolError('Hydra confirmation polling interval must be a positive safe integer');
+	}
+	if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+		throw new HydraProtocolError('Hydra confirmation timeout must be a positive safe integer');
+	}
 }
 
 /**

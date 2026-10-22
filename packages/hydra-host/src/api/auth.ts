@@ -20,7 +20,7 @@ function digest(value: string): Buffer {
 	return createHash('sha256').update(value, 'utf8').digest();
 }
 
-function constantTimeEquals(a: string, b: string): boolean {
+export function constantTimeEquals(a: string, b: string): boolean {
 	return timingSafeEqual(digest(a), digest(b));
 }
 

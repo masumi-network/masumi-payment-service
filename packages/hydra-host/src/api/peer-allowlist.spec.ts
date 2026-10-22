@@ -177,9 +177,30 @@ describe('renderNftables', () => {
 						},
 					],
 					unusedPorts: [],
+					outOfRange: [],
 				},
 				RANGE,
 			),
 		).toThrow(/non-IPv4/);
+	});
+
+	// index.ts lets the Host boot with such a node after an operator narrows the
+	// range. A throw here failed every refresh, so the other nodes' rules went
+	// stale and no refresh could ever be acknowledged.
+	it('skips a node whose port lies outside the range and still renders the rest', async () => {
+		const allowlist = await resolvePeerAllowlist(
+			buildPeerAllowlist(
+				[
+					node({ nodeId: 'n1', peerPort: 5001, peers: [peer('them.example.com:5101')] }),
+					node({ nodeId: 'n9', peerPort: 5009, peers: [peer('other.example.com:5101')] }),
+				],
+				RANGE,
+			),
+			resolveTestAddresses,
+		);
+		expect(allowlist.outOfRange).toEqual([{ nodeId: 'n9', peerPort: 5009 }]);
+		const ruleset = renderNftables(allowlist, RANGE);
+		expect(ruleset).toContain('tcp dport 5001 ip saddr { 203.0.113.10 } accept');
+		expect(ruleset).not.toContain('5009');
 	});
 });

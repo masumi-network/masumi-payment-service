@@ -1,10 +1,18 @@
 import type { Prisma } from '@/generated/prisma/client';
+import { PREPARING_STALE_AFTER_MS } from '@/services/hydra-topup/stale';
 import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
 
 type CountArgs = { where: Record<string, unknown> };
 
 /** A client that records what it was asked and answers with fixed counts. */
-function fakeClient(counts: { transactions: number; payments: number; purchases: number; topups?: number }) {
+function fakeClient(counts: {
+	transactions: number;
+	payments: number;
+	purchases: number;
+	topups?: number;
+	pendingCommitTxHash?: string;
+	recordedCommitRows?: number;
+}) {
 	const calls: Record<string, CountArgs> = {};
 	const client = {
 		transaction: {
@@ -27,9 +35,16 @@ function fakeClient(counts: { transactions: number; payments: number; purchases:
 		},
 		hydraTopup: {
 			count: async (args: CountArgs) => {
+				if ('depositTxHash' in args.where && typeof args.where.depositTxHash === 'string') {
+					calls.recordedCommit = args;
+					return counts.recordedCommitRows ?? 0;
+				}
 				calls.hydraTopup = args;
 				return counts.topups ?? 0;
 			},
+		},
+		hydraLocalParticipant: {
+			findFirst: async () => (counts.pendingCommitTxHash == null ? null : { commitTxHash: counts.pendingCommitTxHash }),
 		},
 	} as unknown as Prisma.TransactionClient;
 
@@ -57,11 +72,44 @@ describe('countHydraHeadActiveWork', () => {
 		const work = await countHydraHeadActiveWork(client, 'head-1');
 
 		expect(work.unrecoveredDeposits).toBe(2);
-		expect(calls.hydraTopup.where).toEqual({
+		expect(calls.hydraTopup.where).toMatchObject({
 			hydraHeadId: 'head-1',
-			depositTxHash: { not: null },
-			status: { notIn: ['Absorbed', 'Recovered', 'Failed'] },
+			OR: expect.arrayContaining([
+				{ depositTxHash: { not: null }, status: { notIn: ['Absorbed', 'Recovered', 'Failed'] } },
+			]) as unknown[],
 		});
+	});
+
+	// A top-up is Preparing while its carve confirms; its deposit reaches L1
+	// later. A close admitted in that gap would let the deposit land after it.
+	it('counts a top-up still being prepared, but not an abandoned one', async () => {
+		const { client, calls } = fakeClient({ transactions: 0, payments: 0, purchases: 0 });
+
+		await countHydraHeadActiveWork(client, 'head-1');
+
+		const preparing = (calls.hydraTopup.where.OR as Array<Record<string, unknown>>).find(
+			(clause) => clause.status === 'Preparing',
+		);
+		// The same cutoff the top-up claim uses to fail an abandoned row.
+		const cutoff = (preparing?.createdAt as { gte: Date }).gte.getTime();
+		expect(Math.abs(Date.now() - PREPARING_STALE_AFTER_MS - cutoff)).toBeLessThan(5_000);
+	});
+
+	// The initial commit is reserved on the participant before submission and
+	// only gets its deposit row after. In between, only the reservation shows it.
+	it('counts a reserved initial commit once, whether or not its row exists yet', async () => {
+		const unrecorded = fakeClient({ transactions: 0, payments: 0, purchases: 0, pendingCommitTxHash: 'c'.repeat(64) });
+		expect((await countHydraHeadActiveWork(unrecorded.client, 'head-1')).unrecoveredDeposits).toBe(1);
+
+		const recorded = fakeClient({
+			transactions: 0,
+			payments: 0,
+			purchases: 0,
+			topups: 1,
+			pendingCommitTxHash: 'c'.repeat(64),
+			recordedCommitRows: 1,
+		});
+		expect((await countHydraHeadActiveWork(recorded.client, 'head-1')).unrecoveredDeposits).toBe(1);
 	});
 
 	// `Failed` reads like the opposite of settled and is not. Both writers that
@@ -79,7 +127,11 @@ describe('countHydraHeadActiveWork', () => {
 
 		await countHydraHeadActiveWork(client, 'head-1');
 
-		expect(calls.hydraTopup.where).toMatchObject({ status: { notIn: expect.arrayContaining(['Failed']) as string[] } });
+		expect(calls.hydraTopup.where).toMatchObject({
+			OR: expect.arrayContaining([
+				expect.objectContaining({ status: { notIn: expect.arrayContaining(['Failed']) as string[] } }),
+			]) as unknown[],
+		});
 	});
 
 	// Both sides have to be counted the same way. Asking them differently is how

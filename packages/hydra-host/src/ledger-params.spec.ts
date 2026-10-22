@@ -1,11 +1,26 @@
 import { describe, expect, it } from '@jest/globals';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+	describeUnsettleableLedgerParams,
+	FANOUT_ENVELOPE_BYTES,
+	L1_MAX_TX_SIZE,
+	MAX_L2_TX_SIZE,
+} from './ledger-params.js';
+
 const paramsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../params');
 
+/** Every generated network file the Host image ships. */
+const shippedNetworks = fs
+	.readdirSync(paramsDir)
+	.filter((file) => file.endsWith('.json'))
+	.map((file) => file.slice(0, -'.json'.length));
+
 type Params = {
+	maxTxSize: number;
 	txFeeFixed: number;
 	txFeePerByte: number;
 	executionUnitPrices: { priceMemory: number; priceSteps: number };
@@ -37,6 +52,34 @@ describe('shipped L2 ledger params', () => {
 	// These lengths are also asserted against the RUNNING head by
 	// src/lib/hydra/hydra/params-drift.ts. Two copies on purpose — src/ does not
 	// depend on this package — so change one and change the other.
+	// An L2 tx can create an output almost as large as the L2 maxTxSize. Fanout
+	// must move that output to L1 inside a tx that is 917 bytes larger, and
+	// no fanout tx can be smaller than one output. A larger L2 limit lets a peer
+	// park an output that blocks the head from ever reaching Final.
+	// The same value is asserted against the RUNNING head by
+	// src/lib/hydra/hydra/params-drift.ts (EXPECTED_MAX_TX_SIZE). Change both.
+	it('keeps maxTxSize small enough that any single L2 output can be fanned out', () => {
+		expect(MAX_L2_TX_SIZE + FANOUT_ENVELOPE_BYTES).toBeLessThan(L1_MAX_TX_SIZE);
+		expect(shippedNetworks.length).toBeGreaterThan(0);
+		for (const network of shippedNetworks) {
+			expect({ network, maxTxSize: load(network).maxTxSize }).toEqual({ network, maxTxSize: MAX_L2_TX_SIZE });
+			expect(describeUnsettleableLedgerParams(path.join(paramsDir, `${network}.json`))).toBeNull();
+		}
+	});
+
+	// HYDRA_HOST_LEDGER_PARAMS_FILE can point a Host at any file, and mainnet
+	// ships none, so the shipped files alone do not bound what a Host runs.
+	it('refuses new nodes on the pre-cap maxTxSize 16,384', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ledger-params-'));
+		try {
+			const file = path.join(dir, 'mainnet.json');
+			fs.writeFileSync(file, JSON.stringify({ ...load('preprod'), maxTxSize: 16_384 }));
+			expect(describeUnsettleableLedgerParams(file)).toMatch(/maxTxSize 16384, above 15000/);
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it('carries all three Plutus cost models at their pinned lengths', () => {
 		const { costModels } = load('preprod');
 		expect(Object.keys(costModels).sort()).toEqual(['PlutusV1', 'PlutusV2', 'PlutusV3']);

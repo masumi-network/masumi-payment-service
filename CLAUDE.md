@@ -34,22 +34,22 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 - `smart-contracts/payment/` - Payment escrow smart contract
 - `smart-contracts/registry/` - Registry minting contract
 - `prisma/` - Database schema and migrations
+- `packages/payment-core/` - Shared backend core: config, db, logger, auth, endpoint factories, zod
+- `packages/payment-source-v1/`, `packages/payment-source-v2/`, `packages/payment-source-x402/`, `packages/hydra-host/` - Payment source and Hydra packages
 
 ## Key Principles
 
-- Write clear, technical TypeScript code following established patterns.
 - Use functional programming patterns; avoid classes except for services.
-- Prioritize readability and maintainability over cleverness.
 - Use descriptive variable names with auxiliary verbs (isLoading, hasError).
 - Handle errors explicitly with proper status codes and logging.
 
 ## Critical Guidelines
 
-- Import Zod from `@/utils/zod-openapi`, never from 'zod' directly.
+- In backend code (`src/`, `packages/`), import Zod from `@masumi/payment-core/zod`, never from 'zod' directly.
 - Use BigInt for all monetary amounts; never use Number for lovelace values.
 - Convert BigInt to string for API responses; JSON cannot serialize BigInt.
 - Use `createHttpError()` for HTTP errors, never throw plain Error.
-- Use logger from `@/utils/logger`; never use console.log.
+- Use logger from `@masumi/payment-core/logger`; never use console.log.
 - Encrypt wallet secrets using `@/utils/security/encryption` utilities.
 - Never use unknown-valued map types; use domain types, Prisma JSON types, or explicit property guards.
 - Never edit files in `src/generated/` or `frontend/src/lib/api/generated/`.
@@ -57,7 +57,7 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 ## Formatting Standards
 
 - Use single quotes for strings.
-- Use 2 spaces for indentation.
+- Indentation and line width come from Prettier: tabs and width 120 in the backend (`.prettierrc.json`), 2 spaces and width 100 in `frontend/`.
 - Include trailing commas in multi-line structures.
 - End statements with semicolons.
 - Prefix unused variables with underscore.
@@ -66,7 +66,7 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 ## Commit Standards
 
 - Follow conventional commits: type(scope): description
-- Types: feat, fix, docs, style, refactor, test, chore, perf, ci
+- Types: feat, fix, docs, style, refactor, test, chore, perf, ci, revert, build
 - Keep header under 72 characters
 - Use lowercase for type; no period at end
 
@@ -87,9 +87,9 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 ## Dependencies
 
 - express-zod-api for API endpoints with Zod validation
-- Prisma for database access via `@/utils/db`
+- Prisma for database access via `@masumi/payment-core/db`
 - http-errors for HTTP error handling
-- Winston for logging via `@/utils/logger`
+- Winston for logging via `@masumi/payment-core/logger`
 - @meshsdk/core for Cardano operations
 - @blockfrost/blockfrost-js for blockchain queries
 - async-mutex for concurrency control
@@ -137,9 +137,9 @@ See `docs/adr/0005-meshsdk-version-pinning-v1-v2.md` for the full rationale.
 ## Key Files
 
 - Entry point: `src/index.ts`
-- Configuration: `src/utils/config/index.ts`
+- Configuration: `packages/payment-core/src/config.ts`
 - Database schema: `prisma/schema.prisma`
-- Zod extension: `src/utils/zod-openapi.ts`
+- Zod extension: `packages/payment-core/src/zod-openapi.ts`
 - Payment contract: `smart-contracts/payment/validators/vested_pay.ak`
 - State machine docs: `smart-contracts/payment/state_machine_diagram.md`
 

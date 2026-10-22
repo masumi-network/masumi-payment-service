@@ -6556,6 +6556,7 @@ export const HydraRelationDetailSchema = {
                                     'Open',
                                     'Closed',
                                     'FanoutPossible',
+                                    'FanningOut',
                                     'Final'
                                 ]
                             },
@@ -6755,6 +6756,7 @@ export const HydraHeadSchema = {
                 'Open',
                 'Closed',
                 'FanoutPossible',
+                'FanningOut',
                 'Final'
             ]
         },
@@ -6813,6 +6815,20 @@ export const HydraHeadSchema = {
         fanoutTxHash: {
             type: 'string',
             nullable: true
+        },
+        retiredAt: {
+            type: 'string',
+            nullable: true,
+            description: 'When an operator retired this head because it cannot reach Final'
+        },
+        retiredReason: {
+            type: 'string',
+            nullable: true
+        },
+        retiredHeadOutputTxHash: {
+            type: 'string',
+            nullable: true,
+            description: 'L1 tx holding the head output at retirement'
         },
         Invite: {
             type: 'object',
@@ -7035,7 +7051,10 @@ export const HydraHeadSchema = {
         'reconciliationStalledSince',
         'initTxHash',
         'closeTxHash',
-        'fanoutTxHash'
+        'fanoutTxHash',
+        'retiredAt',
+        'retiredReason',
+        'retiredHeadOutputTxHash'
     ]
 } as const;
 
@@ -7159,7 +7178,8 @@ export const HydraLowBalanceRuleSchema = {
                 'Unknown',
                 'Healthy',
                 'Low'
-            ]
+            ],
+            description: 'Last evaluated state. A Low rule stays Low on a reading the history replay has not checked, so lastKnownAmount can be at or above the threshold while it is Low.'
         },
         lastKnownAmount: {
             type: 'string',
@@ -7260,6 +7280,7 @@ export const HydraLocalParticipantSchema = {
                         'Open',
                         'Closed',
                         'FanoutPossible',
+                        'FanningOut',
                         'Final'
                     ]
                 }

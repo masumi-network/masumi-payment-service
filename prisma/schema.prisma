@@ -974,17 +974,19 @@ model RevealSignatureUsage {
 }
 
 model PaymentActionData {
-  id                      String            @id @default(cuid())
-  createdAt               DateTime          @default(now())
-  updatedAt               DateTime          @updatedAt
-  requestedAction         PaymentAction
-  resultHash              String?
-  submittedTxHash         String?
-  errorType               PaymentErrorType?
-  errorNote               String?
-  PaymentRequestCurrent   PaymentRequest?   @relation("NextAction")
-  paymentRequestHistoryId String?
-  PaymentRequestHistory   PaymentRequest?   @relation("PaymentActionHistory", fields: [paymentRequestHistoryId], references: [id])
+  id                         String            @id @default(cuid())
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
+  requestedAction            PaymentAction
+  resultHash                 String?
+  submittedTxHash            String?
+  errorType                  PaymentErrorType?
+  errorNote                  String?
+  /// Operator hid this action from Needs Action. A DB trigger resets it when requestedAction, errorType or errorNote changes.
+  manualActionAcknowledgedAt DateTime?
+  PaymentRequestCurrent      PaymentRequest?   @relation("NextAction")
+  paymentRequestHistoryId    String?
+  PaymentRequestHistory      PaymentRequest?   @relation("PaymentActionHistory", fields: [paymentRequestHistoryId], references: [id])
 }
 
 model PurchaseRequest {
@@ -1094,16 +1096,18 @@ model PurchaseRequest {
 }
 
 model PurchaseActionData {
-  id                       String             @id @default(cuid())
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
-  requestedAction          PurchasingAction
-  submittedTxHash          String?
-  errorType                PurchaseErrorType?
-  errorNote                String?
-  PurchaseRequestCurrent   PurchaseRequest?   @relation("NextAction")
-  purchaseRequestHistoryId String?
-  PurchaseRequestHistory   PurchaseRequest?   @relation("PurchaseActionHistory", fields: [purchaseRequestHistoryId], references: [id])
+  id                         String             @id @default(cuid())
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+  requestedAction            PurchasingAction
+  submittedTxHash            String?
+  errorType                  PurchaseErrorType?
+  errorNote                  String?
+  /// Operator hid this action from Needs Action. A DB trigger resets it when requestedAction, errorType or errorNote changes.
+  manualActionAcknowledgedAt DateTime?
+  PurchaseRequestCurrent     PurchaseRequest?   @relation("NextAction")
+  purchaseRequestHistoryId   String?
+  PurchaseRequestHistory     PurchaseRequest?   @relation("PurchaseActionHistory", fields: [purchaseRequestHistoryId], references: [id])
 }
 
 model PaymentSourceIdentifiers {
@@ -1634,6 +1638,8 @@ enum WebhookEventType {
   X402_WALLET_LOW_BALANCE
   HYDRA_HEAD_LOW_BALANCE
   HYDRA_HEAD_SNAPSHOT_ROUND_STUCK
+  HYDRA_HEAD_POST_TX_FAILED
+  HYDRA_HEAD_CONTEST_MISSING
 }
 
 // Critical is retained for historical rows only: the dispatcher creates
@@ -1678,6 +1684,7 @@ enum HydraHeadStatus {
   Open
   Closed
   FanoutPossible
+  FanningOut
   Final
 }
 
@@ -1690,6 +1697,8 @@ enum HydraErrorType {
   TxInvalid
   /// Client input was invalid.
   InvalidInput
+  /// The head was closed on an older snapshot than this node holds and no contest landed.
+  ContestMissing
 }
 
 /// Lifecycle of a single incremental-commit (top-up) deposit into an Open head.
@@ -1845,6 +1854,15 @@ model HydraHead {
   snapshotRoundSince     DateTime?
   snapshotRoundAlertedAt DateTime?
 
+  /// Contest watch (`services/hydra-contest-watch`). Set while the head is
+  /// closed on an older snapshot than the one this node holds, which is exactly
+  /// when hydra-node must contest. The signature names the gap (on-chain number
+  /// and ours); `since` is when it was first seen; the alert time makes the
+  /// webhook fire once per gap. Cleared once a contest closes the gap.
+  contestGapSignature String?
+  contestGapSince     DateTime?
+  contestGapAlertedAt DateTime?
+
   /// Durable admission gate set before Close is sent. Reservation writers lock
   /// the head row and refuse new L2 work once closing has begun.
   isClosing Boolean @default(false)
@@ -1917,8 +1935,20 @@ model HydraHead {
 
   /// Is enabled
   isEnabled Boolean @default(true)
-  // One non-Final head per relation is enforced by the partial unique index
-  // HydraHead_one_non_final_per_relation_key in the head-binding migration.
+
+  /// Set when an operator retired a head that cannot reach Final. A retired
+  /// head is disabled, never Final, and no longer blocks its relation.
+  retiredAt               DateTime?
+  /// The operator's stated reason for retiring the head.
+  retiredReason           String?
+  /// The UTxO set the node still held in the head at retirement, or null when
+  /// the node could not be reached.
+  retiredRemainingUtxo    Json?
+  /// The L1 tx that holds the head output at retirement; where recovery starts.
+  retiredHeadOutputTxHash String?
+  // One live (non-Final, non-retired) head per relation is enforced by the
+  // partial unique index HydraHead_one_live_per_relation_key
+  // (migration 20261021000200_hydra_head_retirement).
 
   @@index([status])
   @@index([hydraRelationId, status])
@@ -2085,6 +2115,11 @@ model HydraTopup {
   /// transaction's own submission TTL and stops meaning anything once the
   /// transaction is in a block.
   nodeDeadline DateTime?
+
+  /// The token of the hot-wallet claim this top-up holds until its reconciler
+  /// releases it. A late release for this row then cannot free a newer claim
+  /// that took the wallet over after this one went stale.
+  walletClaimToken String?
 
   /// True when this row is the head's initial commit rather than a later top-up.
   ///

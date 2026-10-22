@@ -11,6 +11,7 @@ import { Check, Circle } from 'lucide-react';
 import { HydraHeadTransactions } from '@/components/hydra/HydraHeadTransactions';
 import { HydraInfoSection } from '@/components/hydra/HydraHeadInfoTab';
 import { TxLink } from '@/components/hydra/TxLink';
+import { isSettlingStatus } from '@/components/hydra/head-display';
 import type { HydraHead } from '@/lib/hooks/useHydraHeads';
 
 function LifecycleStep({
@@ -49,7 +50,7 @@ function LifecycleStep({
 }
 
 export function HydraHeadActivityTab({ head, network }: { head: HydraHead; network: string }) {
-  const isClosing = head.status === 'Closed' || head.status === 'FanoutPossible';
+  const isClosing = isSettlingStatus(head.status);
 
   return (
     <div className="space-y-8">
@@ -72,9 +73,11 @@ export function HydraHeadActivityTab({ head, network }: { head: HydraHead; netwo
             hash={head.fanoutTxHash}
             network={network}
             pendingReason={
-              head.status === 'FanoutPossible'
-                ? 'Ready to fan out'
-                : 'After close and the dispute window'
+              head.status === 'FanningOut'
+                ? 'Fanning out in steps'
+                : head.status === 'FanoutPossible'
+                  ? 'Ready to fan out'
+                  : 'After close and the dispute window'
             }
           />
         </ol>

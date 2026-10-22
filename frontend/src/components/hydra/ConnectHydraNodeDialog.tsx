@@ -272,6 +272,9 @@ export function ConnectHydraNodeDialog({
                   {isEditing && !allowInsecureHttp
                     ? ' Saving now disables all HTTP connections to this Host.'
                     : ''}
+                  {!isEditing && userToken.trim().length === 0
+                    ? ' With no user key, every node call sends the admin key. Set a user key under Advanced to limit this.'
+                    : ''}
                 </span>
               </p>
               <label className="flex cursor-pointer items-start gap-2 font-medium">

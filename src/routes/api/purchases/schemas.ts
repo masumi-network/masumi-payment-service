@@ -39,7 +39,7 @@ export const queryPurchaseRequestSchemaInput = z.object({
 		.optional()
 		.transform((val) => val?.toLowerCase() == 'true')
 		.describe(
-			'When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it',
+			'When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes',
 		),
 	filterAgentIdentifier: agentIdentifierFilterSchema,
 	searchQuery: searchQuerySchema,
@@ -58,7 +58,7 @@ export const queryPurchaseCountSchemaInput = z.object({
 		.optional()
 		.transform((val) => val?.toLowerCase() == 'true')
 		.describe(
-			'When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it',
+			'When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it. Rows acknowledged via acknowledge-manual-action are left out until the action or the error changes',
 		),
 	filterSmartContractAddress: z
 		.string()

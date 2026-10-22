@@ -24,16 +24,25 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 5 },
 }));
 
-jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: {
+const mockQueryRaw = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
+	withSerializableSlotRetry: async <T>(operation: () => Promise<T>) => await operation(),
+}));
+
+jest.unstable_mockModule('@masumi/payment-core/db', () => {
+	const prisma: Record<string, unknown> = {
+		$queryRaw: mockQueryRaw,
 		hydraTopup: {
 			create: mockCreate,
 			update: mockUpdate,
 			updateMany: mockUpdateMany,
 			findMany: mockFindMany,
 		},
-	},
-}));
+	};
+	prisma.$transaction = async (run: (tx: unknown) => Promise<unknown>) => await run(prisma);
+	return { prisma };
+});
 
 jest.unstable_mockModule('@masumi/payment-core/db-retry', () => ({
 	isUniqueConstraintError: mockIsUniqueConstraintError,
@@ -78,6 +87,7 @@ function candidate(overrides: Partial<Parameters<typeof reconcilePendingHydraTop
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockQueryRaw.mockResolvedValue([{ status: 'Open', isEnabled: true, isClosing: false }]);
 	mockCreate.mockResolvedValue({ id: 'topup-1' });
 	mockUpdate.mockResolvedValue({ id: 'topup-1' });
 	mockUpdateMany.mockResolvedValue({ count: 1 });
@@ -115,6 +125,33 @@ describe('reserveAndSubmitHydraTopup', () => {
 		await expect(reserveAndSubmitHydraTopup(reservation, submit)).rejects.toThrow('connection reset');
 		expect(mockUpdate).toHaveBeenCalledTimes(1);
 		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	// A close admitted while the top-up was Preparing must stop it before L1: a
+	// deposit that lands after close is not in the fanout.
+	it('does not promote or submit once the head is closing', async () => {
+		mockQueryRaw.mockResolvedValue([{ status: 'Open', isEnabled: true, isClosing: true }]);
+		const submit = jest.fn<() => Promise<unknown>>();
+
+		await expect(reserveAndSubmitHydraTopup(reservation, submit)).rejects.toMatchObject({ status: 409 });
+		expect(mockUpdate).not.toHaveBeenCalled();
+		expect(submit).not.toHaveBeenCalled();
+	});
+
+	// A row failed as stale while its slow process was still alive must not be
+	// flipped back to Pending beside the top-up that replaced it.
+	it('does not promote a row that is no longer Preparing', async () => {
+		const { Prisma } = await import('@/generated/prisma/client');
+		mockUpdate.mockRejectedValue(
+			new Prisma.PrismaClientKnownRequestError('not found', { code: 'P2025', clientVersion: 'test' }),
+		);
+		const submit = jest.fn<() => Promise<unknown>>();
+
+		await expect(reserveAndSubmitHydraTopup(reservation, submit)).rejects.toBeInstanceOf(
+			HydraTopupReservationConflictError,
+		);
+		expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'topup-1', status: 'Preparing' } }));
+		expect(submit).not.toHaveBeenCalled();
 	});
 
 	// The unique index on the deposit hash is what actually reserves the deposit,
@@ -185,10 +222,7 @@ describe('reconcilePendingHydraTopup', () => {
  * `LocalParticipant.commitTxHash`, which the commit reconciler already releases
  * on — so both jobs released, on their own schedules, for one deposit.
  *
- * The second release is the dangerous one: `releaseHotWalletAfterL1` is fenced
- * on `lockPurpose`, a shared constant rather than an operation's identity, so
- * once this row has resolved and a later top-up has claimed the same wallet, the
- * stale releaser frees THAT operation's lock while its carve is unconfirmed.
+ * One deposit, one releaser: the commit reconciler owns that lock.
  */
 describe('reconcilePendingHydraTopups lock release attribution', () => {
 	function row(commitTxHash: string | null, isInitialCommit = commitTxHash === DEPOSIT_TX_HASH) {
@@ -198,6 +232,7 @@ describe('reconcilePendingHydraTopups lock release attribution', () => {
 			depositTxHash: DEPOSIT_TX_HASH,
 			invalidHereafterSlot: INVALID_HEREAFTER_SLOT,
 			isInitialCommit,
+			walletClaimToken: 'claim-token-1',
 			LocalParticipant: {
 				walletId: 'wallet-1',
 				commitTxHash,
@@ -223,7 +258,7 @@ describe('reconcilePendingHydraTopups lock release attribution', () => {
 
 		await reconcilePendingHydraTopups();
 
-		expect(mockRelease).toHaveBeenCalledWith('wallet-1');
+		expect(mockRelease).toHaveBeenCalledWith('wallet-1', 'claim-token-1');
 	});
 
 	it('leaves the release to the commit reconciler for the commit display row', async () => {

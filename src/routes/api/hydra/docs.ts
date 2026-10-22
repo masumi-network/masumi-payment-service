@@ -6,6 +6,7 @@ import { registerHydraSnapshotRoundPaths } from './docs-snapshot-round';
 import { registerHydraL2ReservationPaths } from './docs-l2-reservations';
 import { registerHydraHostPausePaths } from './docs-host-pause';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
+import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
 import {
 	getHeadSchemaInput,
 	getHeadSchemaOutput,
@@ -164,13 +165,14 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/invite',
 		summary: 'Revoke an unredeemed invite. (admin access required)',
 		description:
-			'Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head.',
+			'Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head. Set `discardRedemption` to cancel a redemption this service could not adopt; its node is removed unless a head here claims it.',
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(deleteInviteSchemaInput, {}) },
 		responses: {
 			200: successResponse('Invite revoked', deleteInviteSchemaOutput, {}),
-			409: { description: 'Already redeemed, or not an invite we issued' },
+			409: { description: 'Already redeemed without discardRedemption, adopted meanwhile, or not an invite we issued' },
+			502: { description: 'Revoked here, but the Host refused to remove the node or forget the redemption' },
 			...unauthorized,
 		},
 	});
@@ -360,7 +362,17 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				200: successResponse(`Head ${action} result`, lifecycleOutput, { headId: HEAD_ID, status: 'Open' }),
 				...unauthorized,
 				...notFound,
-				409: { description: `Head is not in a state that permits ${action}` },
+				...(action === 'init'
+					? {
+							409: {
+								description:
+									'Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, ' +
+									`or its node reports no numeric L2 maxTxSize or one above ${EXPECTED_MAX_TX_SIZE}`,
+							},
+							400: { description: 'Invalid input, or the head has no local participant' },
+							502: { description: 'The Hydra node could not be reached, or the InitTx could not be verified' },
+						}
+					: { 409: { description: `Head is not in a state that permits ${action}` } }),
 			},
 		});
 	}
@@ -441,7 +453,11 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				utxoCount: 1,
 				unbackedLovelace: '0',
 				hasUnbackedUtxos: false,
+				l2MintedUtxoCount: 0,
+				l2MintedLovelace: '0',
+				l2MintChecked: true,
 				balance: [{ unit: '', quantity: '10000000' }],
+				spendableBalance: [{ unit: '', quantity: '10000000' }],
 			}),
 			...unauthorized,
 			404: { description: 'Hydra head or its local participant wallet not found' },
@@ -566,7 +582,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/low-balance',
 		summary: 'Create or update a Hydra in-head low-balance rule. (admin access required)',
 		description:
-			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
+			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own spendable in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
 		tags: TAG,
 		security: secured,
 		request: {

@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { FixedTransaction, PrivateKey } from '@emurgo/cardano-serialization-lib-nodejs';
 import { DEFAULT_PROTOCOL_PARAMETERS, MeshWallet, type UTxO } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { Network } from '@/generated/prisma/client';
 import { encrypt } from '@/utils/security/encryption';
 import { readHydraSignedTransactionShape } from '@/lib/hydra/hydra/signed-transaction-shape';
+import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from '@/services/hydra-decommit/stale';
 import { encodeL2ReleaseNudgeDatum, readL2ReleaseNudgeProof } from './l2-release-nudge-proof';
 import {
 	L2_RELEASE_NUDGE_INTERVAL_MS,
@@ -41,6 +42,15 @@ const lockInputB = utxo('b', 1, {
 });
 const reservedRefs = [toUtxoRef(lockInputA), toUtxoRef(lockInputB)];
 const valueFloor = [{ unit: '', amount: 8_000_000n }];
+
+/** The same nudge with `count` more vkey witnesses: the body, and so the release proof, is unchanged. */
+function withExtraWitnesses(signedTx: string, count: number): string {
+	const transaction = FixedTransaction.from_hex(signedTx);
+	for (let index = 0; index < count; index += 1) {
+		transaction.sign_and_add_vkey_signature(PrivateKey.generate_ed25519());
+	}
+	return transaction.to_hex();
+}
 
 describe('selectReleaseNudgeInputs', () => {
 	const select = (utxos: UTxO[], options: { pendingIncrementRefs?: Set<string> } = {}) =>
@@ -124,7 +134,14 @@ describe('nudgeIdleHeadForRelease', () => {
 		options: {
 			wallet?: boolean;
 			decommit?: boolean;
-			pendingDecommits?: readonly string[];
+			/** A withdrawal row this old, in ms, with this status. */
+			staleDecommit?: { status: 'Preparing' | 'Pending'; ageMs: number };
+			/** Also a fresh Preparing row next to the stale one. */
+			alsoFresh?: boolean;
+			/** The node's `GET /head` reply, or an Error it throws. */
+			headState?: unknown;
+			/** Null: the node could not be asked. */
+			pendingDecommits?: readonly string[] | null;
 			recordedCount?: number;
 			noHead?: boolean;
 			utxos?: UTxO[];
@@ -142,13 +159,33 @@ describe('nudgeIdleHeadForRelease', () => {
 							},
 				),
 			},
-			hydraDecommit: { findFirst: jest.fn(async () => (options.decommit ? { id: 'decommit-1' } : null)) },
+			hydraDecommit: {
+				findMany: jest.fn(async () => {
+					if (options.staleDecommit) {
+						const at = new Date(nowMs - options.staleDecommit.ageMs);
+						const fresh = { status: 'Preparing', createdAt: new Date(nowMs), updatedAt: new Date(nowMs) };
+						return [
+							{ status: options.staleDecommit.status, createdAt: at, updatedAt: at },
+							...(options.alsoFresh ? [fresh] : []),
+						];
+					}
+					return options.decommit
+						? [{ status: 'Preparing', createdAt: new Date(nowMs), updatedAt: new Date(nowMs) }]
+						: [];
+				}),
+			},
 			transaction: { updateMany: jest.fn(async (_args: unknown) => ({ count: options.recordedCount ?? 1 })) },
 		};
 		const node = {
 			verifiedSnapshotNumber: 7n as bigint | undefined,
 			pendingIncrementUtxoRefs: new Set<string>(),
-			fetchPendingDecommitRefs: jest.fn(async () => [...(options.pendingDecommits ?? [])]),
+			fetchPendingDecommitRefs: jest.fn(async () =>
+				options.pendingDecommits === null ? undefined : [...(options.pendingDecommits ?? [])],
+			),
+			get: jest.fn(async (_url: string) => {
+				if (options.headState instanceof Error) throw options.headState;
+				return options.headState;
+			}),
 		};
 		const provider = {
 			fetchAddressUTxOs: jest.fn(async (_address: string) => options.utxos ?? [lockInputA, lockInputB, utxo('c', 0)]),
@@ -213,15 +250,65 @@ describe('nudgeIdleHeadForRelease', () => {
 		expect(h.head.newTx).toHaveBeenCalledWith(expect.objectContaining({ cborHex: validNudge }));
 	});
 
+	// Recorded before the 15,000-byte L2 limit: the send check would refuse it
+	// at every interval, and a second nudge must never be built.
+	it('holds a recorded nudge above the L2 limit instead of resending it', async () => {
+		const h = harness();
+		await expect(h.run({ l2ReleaseNudgeTx: '00'.repeat(15_001) })).resolves.toBe(false);
+		expect(h.head.newTx).not.toHaveBeenCalled();
+		expect(h.signSpendNudge).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		['the wallet is not pinned by this reservation', { wallet: false }],
 		['a withdrawal is being prepared', { decommit: true }],
 		['a decommit is in flight on the node', { pendingDecommits: ['f'.repeat(64)] }],
+		['the node cannot say whether a decommit is in flight', { pendingDecommits: null }],
 		['the head session is gone at send time', { noHead: true }],
 	] as const)('sends nothing, not even a resend, when %s', async (_label, options) => {
 		const h = harness(options);
 		await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(false);
 		expect(h.head.newTx).not.toHaveBeenCalled();
+	});
+
+	describe('an abandoned withdrawal row', () => {
+		const nodeHoldsNoWithdrawal = { contents: { coordinatedHeadState: { decommitTx: null } } };
+		const nodeHoldsWithdrawal = { contents: { coordinatedHeadState: { decommitTx: { txId: 'd'.repeat(64) } } } };
+		const staleAgeMs = 2 * PENDING_STALE_AFTER_MS;
+
+		it.each([
+			['a crash left it Preparing', { status: 'Preparing', ageMs: PREPARING_STALE_AFTER_MS + 1 }],
+			['an ambiguous answer left it Pending', { status: 'Pending', ageMs: staleAgeMs }],
+		] as const)('no longer blocks once %s and the node holds no withdrawal', async (_label, staleDecommit) => {
+			const h = harness({ staleDecommit, headState: nodeHoldsNoWithdrawal });
+			await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(true);
+			expect(h.node.get).toHaveBeenCalledWith('/head');
+			expect(h.head.newTx).toHaveBeenCalled();
+		});
+
+		it.each([
+			['the node still holds a withdrawal', nodeHoldsWithdrawal],
+			['the node cannot be read', new Error('502 Bad Gateway')],
+			['the node reply has an unknown shape', { contents: { coordinatedHeadState: {} } }],
+		])('still blocks when %s', async (_label, headState) => {
+			const h = harness({ staleDecommit: { status: 'Pending', ageMs: staleAgeMs }, headState });
+			await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(false);
+			expect(h.head.newTx).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			['a Pending row is younger than its age limit', { status: 'Pending', ageMs: PENDING_STALE_AFTER_MS - 1 }, false],
+			[
+				'a Preparing row is younger than its age limit',
+				{ status: 'Preparing', ageMs: PREPARING_STALE_AFTER_MS - 1 },
+				false,
+			],
+			['a fresh row sits next to the abandoned one', { status: 'Pending', ageMs: staleAgeMs }, true],
+		] as const)('still blocks, without asking the node, when %s', async (_label, staleDecommit, alsoFresh) => {
+			const h = harness({ staleDecommit, alsoFresh, headState: nodeHoldsNoWithdrawal });
+			await expect(h.run({ l2ReleaseNudgeTx: validNudge })).resolves.toBe(false);
+			expect(h.node.get).not.toHaveBeenCalled();
+		});
 	});
 
 	it('sends nothing when another writer recorded a nudge first', async () => {
@@ -243,6 +330,21 @@ describe('nudgeIdleHeadForRelease', () => {
 		const h = harness();
 		h.signSpendNudge.mockResolvedValueOnce('not-a-nudge');
 		await expect(h.run()).resolves.toBe(false);
+		expect(h.database.transaction.updateMany).not.toHaveBeenCalled();
+		expect(h.head.newTx).not.toHaveBeenCalled();
+	});
+
+	// Only a row with no nudge recorded takes one, so recording an oversized
+	// nudge would block every smaller one for good.
+	it('records nothing when the signed nudge is above the L2 limit', async () => {
+		const h = harness();
+		const sign = h.signSpendNudge.getMockImplementation();
+		h.signSpendNudge.mockImplementationOnce(async (params) => withExtraWitnesses(await sign!(params), 160));
+
+		await expect(h.run()).resolves.toBe(false);
+		const signedTx = (await h.signSpendNudge.mock.results[0].value) as string;
+		expect(signedTx.length / 2).toBeGreaterThan(15_000);
+		expect(readL2ReleaseNudgeProof(signedTx, reservedRefs, valueFloor)).not.toBeNull();
 		expect(h.database.transaction.updateMany).not.toHaveBeenCalled();
 		expect(h.head.newTx).not.toHaveBeenCalled();
 	});

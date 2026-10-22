@@ -38,7 +38,9 @@ export async function backfillHydraInitTxHashes(): Promise<number> {
 			isEnabled: true,
 			OR: [{ initTxHash: null }, { initChainSlot: null }],
 			headIdentifier: { not: null },
-			status: { in: [HydraHeadStatus.Open, HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] },
+			status: {
+				in: [HydraHeadStatus.Open, HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible, HydraHeadStatus.FanningOut],
+			},
 		},
 		select: { id: true },
 		take: MAX_PER_CYCLE,

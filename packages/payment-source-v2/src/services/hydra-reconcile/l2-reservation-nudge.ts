@@ -29,6 +29,8 @@ import type { HydraProvider } from '@/lib/hydra';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { fetchHydraDecommitInFlight } from '@/lib/hydra/hydra/node-control-queries';
+import { staleWithdrawal } from '@/services/hydra-decommit/stale';
 import { asV2Provider } from '../provider-cast';
 import {
 	encodeL2ReleaseNudgeDatum,
@@ -36,6 +38,7 @@ import {
 	readL2ReleaseNudgeProof,
 	type L2ReleaseValueFloor,
 } from './l2-release-nudge-proof';
+import { assertL2TxWithinMaxSize } from '@/lib/hydra/hydra/l2-tx-size';
 
 /** At most one nudge per reservation in this window. A head confirms in about a second. */
 export const L2_RELEASE_NUDGE_INTERVAL_MS = 5 * 60_000;
@@ -50,7 +53,10 @@ export type L2ReleaseNudgeCandidate = {
 	valueFloor: L2ReleaseValueFloor;
 };
 
-type NudgeNode = Pick<HydraNode, 'verifiedSnapshotNumber' | 'pendingIncrementUtxoRefs' | 'fetchPendingDecommitRefs'>;
+type NudgeNode = Pick<
+	HydraNode,
+	'verifiedSnapshotNumber' | 'pendingIncrementUtxoRefs' | 'fetchPendingDecommitRefs' | 'get'
+>;
 type NudgeHead = Pick<CustomHydraHead, 'newTx'>;
 type NudgeProvider = Pick<HydraProvider, 'fetchAddressUTxOs' | 'fetchProtocolParameters'>;
 
@@ -140,12 +146,9 @@ export async function nudgeIdleHeadForRelease(params: {
 
 		// A withdrawal takes no wallet lock and may select the nudge's inputs, and
 		// the head confirms no snapshot while a decommit is in flight.
-		const activeWithdrawal = await database.hydraDecommit.findFirst({
-			where: { hydraHeadId, status: { in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending] } },
-			select: { id: true },
-		});
-		if (activeWithdrawal) return false;
-		if ((await node.fetchPendingDecommitRefs()).length > 0) return false;
+		if (await withdrawalMayBeInFlight(hydraHeadId, node, nowMs, database)) return false;
+		const pendingDecommits = await node.fetchPendingDecommitRefs();
+		if (pendingDecommits === undefined || pendingDecommits.length > 0) return false;
 
 		const signedTx =
 			candidate.l2ReleaseNudgeTx ??
@@ -164,6 +167,9 @@ export async function nudgeIdleHeadForRelease(params: {
 				signSpendNudge,
 			}));
 		if (signedTx === null) return false;
+		// Again for a nudge recorded before this limit: this service's own send
+		// check would refuse it at every interval, so it is held for an operator.
+		if (!nudgeFitsL2(signedTx, hydraHeadId, candidate.id)) return false;
 		const head = params.head === undefined ? getHydraConnectionManager().getHead(hydraHeadId) : params.head;
 		if (!head) return false;
 		// Not refused on a paused Host, unlike new L2 work: the reservation is a
@@ -185,6 +191,48 @@ export async function nudgeIdleHeadForRelease(params: {
 		});
 		return false;
 	}
+}
+
+/**
+ * Whether a Preparing or Pending withdrawal on the head may still be in flight.
+ *
+ * A row past the withdrawal claim's own age limits (`staleWithdrawal`) is
+ * abandoned: a crash leaves Preparing, an ambiguous node answer leaves Pending,
+ * and nothing but a new withdrawal request ever moves either. Such a row must
+ * not hold the release off forever, but its age alone does not prove the node
+ * dropped the request. So it stops blocking only when the node answers that it
+ * holds no withdrawal. An unread node blocks. The row itself is left for the
+ * claim to fail.
+ *
+ * For a Preparing row the node can only rule out a decommit the crashed
+ * process already requested. Whether its in-head split is still running rests
+ * on the age limit alone, the same assumption the claim makes. A split that
+ * did run in time makes the head refuse the nudge, so the cost is liveness.
+ */
+async function withdrawalMayBeInFlight(
+	hydraHeadId: string,
+	node: NudgeNode,
+	nowMs: number,
+	database: typeof prisma,
+): Promise<boolean> {
+	const active = await database.hydraDecommit.findMany({
+		where: { hydraHeadId, status: { in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending] } },
+		select: { status: true, createdAt: true, updatedAt: true },
+	});
+	if (active.length === 0) return false;
+	// Null is a row still inside its age limit. Whether the node agrees is asked below.
+	if (active.some((row) => staleWithdrawal(row, nowMs, false) === null)) return true;
+	const inFlight = await fetchHydraDecommitInFlight(node);
+	if (inFlight === false) return false;
+	logger.warn(
+		'[HydraReconcile] an abandoned withdrawal row holds the release nudge; the node did not confirm it holds none',
+		{
+			hydraHeadId,
+			abandonedRows: active.length,
+			nodeAnswer: inFlight === undefined ? 'unreadable' : 'withdrawal in flight',
+		},
+	);
+	return true;
 }
 
 /** Sign and record a nudge over `inputs`. Null when there is nothing safe to send. */
@@ -219,6 +267,10 @@ async function buildAndRecordNudge(params: {
 	if (readL2ReleaseNudgeProof(signedTx, candidate.l2ReservationInputRefs, candidate.valueFloor) === null) {
 		throw new Error('Signed release nudge does not meet the release proof');
 	}
+	// Never record one this service refuses to send for its size: it would be
+	// resent unchanged at every interval and never land. Only a reservation over
+	// hundreds of inputs comes near the limit.
+	if (!nudgeFitsL2(signedTx, hydraHeadId, candidate.id)) return null;
 	// Record before sending, and only over no nudge: a second, different nudge
 	// could apply in place of the recorded one, and release would never see it.
 	const recorded = await database.transaction.updateMany({
@@ -288,3 +340,18 @@ export const signInHeadSpendNudge: SignSpendNudge = async ({
 	const unsignedTx = builder.setFee('0').setNetwork(convertNetwork(network)).completeUnbalanced();
 	return await wallet.signTx(unsignedTx);
 };
+
+/** Whether the head takes a nudge this size. Logs the hold when it does not. */
+function nudgeFitsL2(signedTx: string, hydraHeadId: string, transactionId: string): boolean {
+	try {
+		assertL2TxWithinMaxSize(signedTx);
+		return true;
+	} catch (error) {
+		logger.warn('[HydraReconcile] the release nudge is too large to send; reservation stays held for an operator', {
+			hydraHeadId,
+			transactionId,
+			error: error instanceof Error ? error.message : error,
+		});
+		return false;
+	}
+}

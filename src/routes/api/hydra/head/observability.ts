@@ -265,6 +265,11 @@ export const headBalanceSchemaInput = z.object({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
 });
 
+const inHeadAssetSchema = z.object({
+	unit: z.string().describe('Empty string for ADA/lovelace; otherwise policyId+assetName hex'),
+	quantity: z.string().describe('Aggregate quantity across the local address in-head UTxOs'),
+});
+
 export const headBalanceSchemaOutput = z.object({
 	hydraHeadId: z.string(),
 	address: z.string().describe('The local participant wallet address whose in-head funds are reported'),
@@ -278,14 +283,27 @@ export const headBalanceSchemaOutput = z.object({
 			'Lovelace the head reports holding whose L1 deposit was recovered to the wallet. hydra-node can keep a deposit in its L2 ledger that was never really absorbed, so the balance above reads high by this much and a close would fail on the overhead it implies.',
 		),
 	hasUnbackedUtxos: z.boolean().describe('True when any reported UTxO is unbacked, so the balance is optimistic'),
+	l2MintedUtxoCount: z
+		.number()
+		.describe(
+			'In-head UTxOs at this address that carry a unit with a positive net L2 mint in the head, as far as the signed history replay has checked. It is 0 until the replay has caught up after a connect, and it leaves out token UTxOs from transactions the replay has not reached yet. The service never spends them. A token minted inside the head and still unburned blocks its final fanout.',
+		),
+	l2MintedLovelace: z
+		.string()
+		.describe('Lovelace held by those UTxOs. It is counted in balance, and the service does not spend it.'),
+	l2MintChecked: z
+		.boolean()
+		.describe(
+			'True when the history replay is current, so l2MintedUtxoCount counts every L2-minted UTxO the replay has verified; spendableBalance still counts token UTxOs from transactions it has not reached. False when not connected, right after a connect until the replay completes, and while the replay has failed. While connected and false, no UTxO counts as L2-minted and spendableBalance can read high. Low-balance rules do not turn Healthy on such a reading, and auto top-up waits.',
+		),
 	balance: z
-		.array(
-			z.object({
-				unit: z.string().describe('Empty string for ADA/lovelace; otherwise policyId+assetName hex'),
-				quantity: z.string().describe('Aggregate quantity across the local address in-head UTxOs'),
-			}),
-		)
+		.array(inHeadAssetSchema)
 		.describe("This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty."),
+	spendableBalance: z
+		.array(inHeadAssetSchema)
+		.describe(
+			'balance without the L2-minted UTxOs counted above. Low-balance rules compare against this. It still counts token UTxOs the replay has not checked yet and UTxOs of a deposit the head has not finished folding in; the service does not spend those until they are checked or folded in.',
+		),
 });
 
 export const getHeadBalanceGet = adminAuthenticatedEndpointFactory.build({
