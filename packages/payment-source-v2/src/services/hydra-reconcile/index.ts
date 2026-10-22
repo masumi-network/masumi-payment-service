@@ -56,6 +56,7 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
 import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
+import { recordReplayedCloseSnapshot } from './replayed-close';
 import {
 	findIdentifiersWithNothingToApply,
 	isLivePassDue,
@@ -228,6 +229,9 @@ async function reconcileHead(
 	// history absence cannot prove that a locally accepted transaction is absent
 	// while it remains outside a signed snapshot.
 	if (!(node?.hasVerifiedPinnedSessions && node.confirmedTransactionHistoryReady)) return;
+	// The handoff below expects the row's snapshot number, so a contest seen only in
+	// the history is recorded first.
+	if (await recordReplayedCloseSnapshot(hydraHeadId, latestSnapshotNumber, node)) return;
 	await reportExpiredL2Reservations({ hydraHeadId, network: source.network, node });
 
 	// The live snapshot is a safety net behind the TxConfirmed handler, so it is

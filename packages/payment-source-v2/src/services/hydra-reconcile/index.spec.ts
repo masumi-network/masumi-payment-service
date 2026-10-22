@@ -55,6 +55,7 @@ const mockFlushHeadStatus = jest.fn<(_hydraHeadId: string) => Promise<void>>();
 const mockRetainMemoHeads = jest.fn<(_hydraHeadIds: string[]) => void>();
 const mockIsLivePassDue = jest.fn<(_hydraHeadId: string, _intervalMs: number) => boolean>();
 const mockRecordLivePass = jest.fn<(_hydraHeadId: string, _isClean: boolean) => void>();
+const mockFetchClosedHeadFacts = jest.fn<() => Promise<unknown>>();
 const mockFindNothingToApply =
 	jest.fn<(_paymentSourceId: string, _candidates: Array<{ blockchainIdentifier: string }>) => Promise<Set<string>>>();
 
@@ -107,6 +108,8 @@ const mockNode = {
 	getFinalizedFanoutBindingInput: mockGetFanoutBindingInput,
 	adoptFinalizedFanoutL1Binding: mockAdoptFanoutBinding,
 	status: HydraHeadStatus.Final as HydraHeadStatus,
+	closedSnapshotNumber: undefined as bigint | undefined,
+	fetchClosedHeadFacts: mockFetchClosedHeadFacts,
 };
 
 const mockConnectionManager = {
@@ -316,6 +319,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockNode.hasVerifiedPinnedSessions = true;
 		mockNode.confirmedTransactionHistoryReady = true;
 		mockNode.status = HydraHeadStatus.Final;
+		mockNode.closedSnapshotNumber = undefined;
 		mockHydraHeadFindMany.mockResolvedValue([
 			{
 				id: 'head-1',
@@ -606,6 +610,24 @@ describe('Hydra live-snapshot reconciliation', () => {
 			mockHydraHeadUpdateMany.mock.invocationCallOrder[0],
 		);
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+	});
+
+	it('records a contest seen only in the history before the fanout handoff reads the row', async () => {
+		// The row kept the close's snapshot 3; the history also holds a contest at 5.
+		mockNode.closedSnapshotNumber = 5n;
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: 'head-1', latestSnapshotNumber: { lt: 5n } }),
+				data: { latestSnapshotNumber: 5n },
+			}),
+		);
+		// The handoff waits for the next pass, which reads snapshot 5 from the row.
+		expect(mockHeadLockQuery).not.toHaveBeenCalled();
+		expect(mockDisconnect).not.toHaveBeenCalled();
 	});
 
 	it('fails the live pass of an open head whose snapshot read fails instead of recording it as done', async () => {
