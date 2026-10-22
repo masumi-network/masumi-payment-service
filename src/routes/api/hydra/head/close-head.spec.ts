@@ -1,7 +1,12 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraHeadStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
-import { HydraCommandRejectedError, HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra/hydra/errors';
+import {
+	HydraCommandRefusedUnsyncedError,
+	HydraCommandRejectedError,
+	HydraTransportAmbiguousError,
+	HydraTransportError,
+} from '@/lib/hydra/hydra/errors';
 import { HydraHeadInitObservationError } from '@/lib/hydra/hydra/head-init-validation';
 
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -560,5 +565,23 @@ describe('fanoutHeadPost', () => {
 
 		await expect(fanout()).rejects.toMatchObject({ status: 409 });
 		expect(mockFanout).not.toHaveBeenCalled();
+	});
+});
+
+describe('fanoutHeadPost, when the node refuses Fanout because it is behind', () => {
+	it('says Fanout was not posted and records no head error', async () => {
+		mockFindHead.mockResolvedValue({ id: 'head-1', status: HydraHeadStatus.FanoutPossible, isEnabled: true });
+		mockFanout.mockRejectedValue(
+			new HydraCommandRefusedUnsyncedError(
+				'Command Fanout was refused: the node is not synced with the chain (drift 90s)',
+			),
+		);
+		const handler = (fanoutHeadPost as unknown as { handler: (args: unknown) => Promise<unknown> }).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 503,
+			message: expect.stringMatching(/Fanout was not posted/),
+		});
+		expect(mockCreateHeadError).not.toHaveBeenCalled();
 	});
 });

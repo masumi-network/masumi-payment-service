@@ -6,7 +6,7 @@ import {
 	fetchHydraSnapshotRound,
 } from './node-control-queries';
 import { HydraProtocolError, HydraTransportError } from './errors';
-import { HydraHttpResponseError } from './node-frames';
+import { HydraHttpResponseError } from './node-http-response';
 
 const TX_ID = 'DC3EDEE5C3EB0B5B50809EC9FA41FB590818412383DA4F03CBF645FB0C1728E7';
 

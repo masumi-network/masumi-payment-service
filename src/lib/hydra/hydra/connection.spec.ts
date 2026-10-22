@@ -6,6 +6,7 @@ class WsMock extends EventEmitter {
 	readonly send = jest.fn<(data: string) => void>();
 	readonly pause = jest.fn<() => void>();
 	readonly resume = jest.fn<() => void>();
+	readonly ping = jest.fn<() => void>();
 	readonly close = jest.fn<(code?: number) => void>().mockImplementation((code) => {
 		queueMicrotask(() => {
 			this.readyState = 3;
@@ -96,6 +97,109 @@ describe('Connection', () => {
 		conn.resumeReceiving();
 		expect(currentWsMock.pause).toHaveBeenCalledTimes(1);
 		expect(currentWsMock.resume).toHaveBeenCalledTimes(1);
+	});
+
+	describe('heartbeat', () => {
+		const HEARTBEAT_MS = 30_000;
+
+		async function openConnection() {
+			jest.useFakeTimers();
+			const conn = new Connection('ws://localhost:4001');
+			const closes: Error[] = [];
+			conn.on('close', (error: Error) => closes.push(error));
+			await conn.connect();
+			const socket = currentWsMock;
+			socket.emit('open');
+			return { conn, socket, closes };
+		}
+
+		// Regression: a history socket whose peer vanished without closing stayed
+		// OPEN for a day, so replay counted as complete while no confirmation came.
+		it('fails a socket whose peer stops answering pings, and reconnects', async () => {
+			const { conn, socket, closes } = await openConnection();
+			const socketsBefore = MockWebSocket.mock.calls.length;
+
+			jest.advanceTimersByTime(HEARTBEAT_MS * 2);
+			expect(socket.ping).toHaveBeenCalledTimes(2);
+			expect(conn.isOpen()).toBe(true);
+
+			jest.advanceTimersByTime(HEARTBEAT_MS);
+			expect(conn.isOpen()).toBe(false);
+			expect(closes[0]?.message).toContain('answered no ping');
+			expect(socket.close).toHaveBeenCalledWith(1011);
+
+			jest.advanceTimersByTime(1100);
+			expect(MockWebSocket.mock.calls.length).toBe(socketsBefore + 1);
+		});
+
+		it('keeps a socket whose peer answers every ping', async () => {
+			const { conn, socket, closes } = await openConnection();
+			for (let tick = 0; tick < 5; tick += 1) {
+				jest.advanceTimersByTime(HEARTBEAT_MS);
+				socket.emit('pong');
+			}
+			expect(socket.ping).toHaveBeenCalledTimes(5);
+			expect(conn.isOpen()).toBe(true);
+			expect(closes).toHaveLength(0);
+		});
+
+		it('tolerates one silent interval, as a pong can queue behind a large frame', async () => {
+			const { conn, socket } = await openConnection();
+			jest.advanceTimersByTime(HEARTBEAT_MS * 2);
+			socket.emit('pong');
+			jest.advanceTimersByTime(HEARTBEAT_MS * 2);
+			expect(conn.isOpen()).toBe(true);
+		});
+
+		it('counts any inbound frame as proof the path is alive', async () => {
+			const { conn, socket } = await openConnection();
+			for (let tick = 0; tick < 6; tick += 1) {
+				jest.advanceTimersByTime(HEARTBEAT_MS);
+				socket.emit('message', Buffer.from('{}'), false);
+			}
+			expect(conn.isOpen()).toBe(true);
+		});
+
+		it('does not start the heartbeat before the socket opens', async () => {
+			jest.useFakeTimers();
+			const conn = new Connection('ws://localhost:4001');
+			await conn.connect();
+			jest.advanceTimersByTime(HEARTBEAT_MS * 3);
+			expect(currentWsMock.ping).not.toHaveBeenCalled();
+		});
+
+		it('counts the peer pinging us as proof the path is alive', async () => {
+			const { conn, socket } = await openConnection();
+			for (let tick = 0; tick < 4; tick += 1) {
+				jest.advanceTimersByTime(HEARTBEAT_MS);
+				socket.emit('ping');
+			}
+			expect(conn.isOpen()).toBe(true);
+		});
+
+		it('does not fail a socket paused for backpressure, which cannot read pongs', async () => {
+			const { conn, socket } = await openConnection();
+			conn.pauseReceiving();
+			jest.advanceTimersByTime(HEARTBEAT_MS * 4);
+			expect(conn.isOpen()).toBe(true);
+			expect(socket.ping).not.toHaveBeenCalled();
+
+			conn.resumeReceiving();
+			jest.advanceTimersByTime(HEARTBEAT_MS * 2);
+			expect(socket.ping).toHaveBeenCalledTimes(2);
+			expect(conn.isOpen()).toBe(true);
+			jest.advanceTimersByTime(HEARTBEAT_MS);
+			expect(conn.isOpen()).toBe(false);
+		});
+
+		it('stops pinging after a manual disconnect', async () => {
+			const { conn, socket } = await openConnection();
+			const disconnected = conn.disconnect();
+			await jest.advanceTimersByTimeAsync(0);
+			await disconnected;
+			jest.advanceTimersByTime(HEARTBEAT_MS * 3);
+			expect(socket.ping).not.toHaveBeenCalled();
+		});
 	});
 
 	it('isOpen() returns true after WebSocket fires onopen', async () => {

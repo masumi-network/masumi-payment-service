@@ -124,7 +124,7 @@ describe('reserveNodeForExchange', () => {
 	// The Host discloses key material exactly once, so a replayed provision
 	// returns none. That path already has the keys and must still seal escrow.
 	it('acknowledges escrow on a replay that reuses the participant row', async () => {
-		mockFindFirst.mockResolvedValue({ id: 'participant-1' });
+		mockFindFirst.mockResolvedValue({ id: 'participant-1', walletId: 'wallet-1' });
 		mockProvision.mockResolvedValue({
 			nodeId: 'node-1',
 			advertise: 'host:5599',
@@ -138,6 +138,62 @@ describe('reserveNodeForExchange', () => {
 		expect(reserved.localParticipantId).toBe('participant-1');
 		expect(mockCreate).not.toHaveBeenCalled();
 		expect(mockAcknowledge).toHaveBeenCalledWith('https://host', 'admin-token', 'node-1', expect.anything());
+	});
+
+	// Two redemptions of one invite with different wallets: the second replays
+	// the node the first reserved and must not reuse wallet A's participant.
+	it('refuses a concurrent redemption of the same nonce by another wallet', async () => {
+		// B's replay reaches the Host only after A has written its row: the
+		// interleaving where B finds wallet A's participant.
+		let stored: { id: string; walletId: string } | null = null;
+		let markStored = () => {};
+		const rowStored = new Promise<void>((resolve) => (markStored = resolve));
+		let provisionCalls = 0;
+		mockProvision.mockImplementation(async () => {
+			const isFirst = provisionCalls++ === 0;
+			if (!isFirst) await rowStored;
+			return {
+				nodeId: 'node-1',
+				advertise: 'host:5599',
+				hydraVerificationKey: 'hydra-vkey',
+				cardanoVerificationKey: 'cardano-vkey-raw',
+				secrets: isFirst ? { hydraSigningKey: 'hydra-sk', cardanoSigningKey: 'cardano-sk' } : null,
+			};
+		});
+		mockFindFirst.mockImplementation(async () => stored);
+		mockCreate.mockImplementation(async (args: { data: { Wallet: { connect: { id: string } } } }) => {
+			stored = { id: 'participant-a', walletId: args.data.Wallet.connect.id };
+			markStored();
+			return { id: stored.id };
+		});
+
+		const [a, b] = await Promise.allSettled([
+			reserveNodeForExchange(Network.Preprod, 'wallet-a', 'nonce-1', PERIODS),
+			reserveNodeForExchange(Network.Preprod, 'wallet-b', 'nonce-1', PERIODS),
+		]);
+
+		expect(a.status).toBe('fulfilled');
+		expect(a.status === 'fulfilled' && a.value.localParticipantId).toBe('participant-a');
+		expect(b.status === 'rejected' && String(b.reason)).toMatch(/different wallet/);
+		expect(mockCreate).toHaveBeenCalledTimes(1);
+		expect(mockAcknowledge).toHaveBeenCalledTimes(1);
+	});
+
+	// A sequential replay by another wallet finds the row and must refuse it.
+	it('refuses, without acking, a replay whose participant belongs to another wallet', async () => {
+		mockFindFirst.mockResolvedValue({ id: 'participant-1', walletId: 'wallet-a' });
+		mockProvision.mockResolvedValue({
+			nodeId: 'node-1',
+			advertise: 'host:5599',
+			hydraVerificationKey: 'hydra-vkey',
+			cardanoVerificationKey: 'cardano-vkey-raw',
+			secrets: null,
+		});
+
+		await expect(reserveNodeForExchange(Network.Preprod, 'wallet-b', 'nonce-1', PERIODS)).rejects.toThrow(
+			/different wallet/,
+		);
+		expect(mockAcknowledge).not.toHaveBeenCalled();
 	});
 
 	// No row and no secrets means the material exists only on the Host. Acking
@@ -167,7 +223,7 @@ describe('reserveNodeForExchange', () => {
 			ledgerParamsHash: 'params-hash',
 			nodeSlots: { used: 1, capacity: 1 },
 		});
-		mockFindFirst.mockResolvedValue({ id: 'participant-1' });
+		mockFindFirst.mockResolvedValue({ id: 'participant-1', walletId: 'wallet-1' });
 		mockProvision.mockResolvedValue({
 			nodeId: 'node-1',
 			advertise: 'host:5599',
