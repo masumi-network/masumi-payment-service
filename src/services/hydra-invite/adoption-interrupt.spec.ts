@@ -339,6 +339,8 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	registerInviteOnHost: jest.fn(),
 	setHostNodePeers: jest.fn(),
 	startHostNode: jest.fn(),
+	fetchHostNodePeers: jest.fn(),
+	checkHostPeerTarget: jest.fn(),
 	HydraHostRequestError: class extends Error {},
 }));
 jest.unstable_mockModule('@/routes/api/hydra/head/create-head', () => ({
@@ -368,7 +370,8 @@ jest.unstable_mockModule('./provisioning', () => ({
 }));
 jest.unstable_mockModule('./exchange-client', () => ({
 	assertExchangeTransportAllowed: jest.fn(),
-	postRedemption: jest.fn(),
+	attemptFailure: jest.fn(),
+	attemptRedemption: jest.fn(),
 	resolveExchangeTarget: jest.fn(),
 }));
 jest.unstable_mockModule('@/services/hydra-host/compatibility', () => ({

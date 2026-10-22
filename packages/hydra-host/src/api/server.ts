@@ -21,6 +21,7 @@ import type { ExchangeStore } from '../registry/exchange-store.js';
 import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRecord } from '../registry/types.js';
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
+import { parsePeerAdvertise } from '../peer-address.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate } from './auth.js';
 import { nonceLogRef } from './nonce-log-ref.js';
@@ -384,10 +385,30 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'forgetInvite': {
-				if (!(await exchange.forgetInvite(nonce ?? '', store))) {
+				// Opt-in and exact: only `true` keeps a replay, so a caller that predates the
+				// flag, or mistypes it, gets the full delete it always got.
+				const keepReplay = new URL(request.url ?? '/', 'http://host.invalid').searchParams.get('keepReplay') === 'true';
+				if (!(await exchange.forgetInvite(nonce ?? '', store, { keepReplay }))) {
 					throw new HostApiError('redemption peer setup is still pending; retry after setup completes', 409);
 				}
 				send(response, 200, { forgotten: true });
+				return;
+			}
+
+			case 'checkPeer': {
+				const body = await readBody(request);
+				const advertise = isPlainObject(body) ? getOwnString(body, 'advertise') : undefined;
+				if (advertise === undefined) {
+					throw new ProvisionError('expected an object with an "advertise" string', 400);
+				}
+				// The grammar first and the policy second, the order setPeers uses, so a
+				// string that is not host:port never reaches a DNS lookup.
+				if (parsePeerAdvertise(advertise) === null) {
+					send(response, 200, { allowed: false, reason: 'the peer address must be host:port' });
+					return;
+				}
+				const rejection = await provision.checkPeerTarget(advertise);
+				send(response, 200, rejection === null ? { allowed: true } : { allowed: false, reason: rejection });
 				return;
 			}
 

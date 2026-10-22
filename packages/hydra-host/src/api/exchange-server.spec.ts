@@ -25,6 +25,8 @@ const MATERIAL = {
 	exchangeUrl: 'https://them.example.com/exchange',
 };
 const SIGNATURE = { signature: 'sig', key: 'key' };
+// A different wallet signing validly for the same nonce: what a leaked invite looks like.
+const OTHER_MATERIAL = { ...MATERIAL, walletAddress: 'addr_test1other' };
 
 let server: Server;
 let store: ExchangeStore;
@@ -196,16 +198,18 @@ describe('redeeming an invite', () => {
 		expect(onRedeemed).toHaveBeenCalledWith('nonce-cccccccc', 'node-1');
 	});
 
-	it('refuses a second redemption of the same nonce', async () => {
+	it('refuses a second redemption of the same nonce by a different redeemer', async () => {
 		await issue('nonce-dddddddd');
 		await post('/exchange/redeem', { nonce: 'nonce-dddddddd', redeemer: MATERIAL, signature: SIGNATURE });
 
 		const second = await post('/exchange/redeem', {
 			nonce: 'nonce-dddddddd',
-			redeemer: MATERIAL,
+			redeemer: OTHER_MATERIAL,
 			signature: SIGNATURE,
 		});
 		expect(second.status).toBe(409);
+		// Coded, so a redeemer can tell "someone else won" from "my own earlier attempt".
+		expect(second.body).toEqual({ error: 'invite already redeemed', code: 'redeemed-by-other' });
 		expect(onRedeemed).toHaveBeenCalledTimes(1);
 	});
 
@@ -602,8 +606,8 @@ describe('total request budget', () => {
  * and withheld after that.
  */
 describe('redemption failure disclosure', () => {
-	async function redeem(nonce: string) {
-		return await post('/exchange/redeem', { nonce, redeemer: MATERIAL, signature: SIGNATURE });
+	async function redeem(nonce: string, redeemer = MATERIAL) {
+		return await post('/exchange/redeem', { nonce, redeemer, signature: SIGNATURE });
 	}
 
 	it('still tells a genuine caller why their redemption failed', async () => {
@@ -612,7 +616,7 @@ describe('redemption failure disclosure', () => {
 		await redeem('nonce-disclose2');
 
 		expect((await redeem('nonce-disclose1')).body.error).toBe('invite expired');
-		expect((await redeem('nonce-disclose2')).body.error).toBe('invite already redeemed');
+		expect((await redeem('nonce-disclose2', OTHER_MATERIAL)).body.error).toBe('invite already redeemed');
 	});
 
 	it('stops distinguishing a spent nonce from an unknown one after a few tries', async () => {
@@ -621,7 +625,7 @@ describe('redemption failure disclosure', () => {
 
 		const answers: Array<{ status: number; error: unknown }> = [];
 		for (let attempt = 0; attempt < 6; attempt++) {
-			const spent = await redeem('nonce-probe0001');
+			const spent = await redeem('nonce-probe0001', OTHER_MATERIAL);
 			answers.push({ status: spent.status, error: spent.body.error });
 		}
 
@@ -633,6 +637,128 @@ describe('redemption failure disclosure', () => {
 		expect(last.error).toBe(unknown.body.error);
 		expect(last.status).toBe(404);
 		expect(answers[0].status).toBe(409);
+	});
+
+	// A masked answer must not carry the code either, or it would still tell a
+	// spent nonce from an unknown one.
+	it('withholds the redeemed-by-other code together with the reason', async () => {
+		await issue('nonce-probe0002');
+		await redeem('nonce-probe0002');
+		for (let attempt = 0; attempt < 3; attempt++) await redeem('nonce-probe0002', OTHER_MATERIAL);
+
+		const masked = await redeem('nonce-probe0002', OTHER_MATERIAL);
+		expect(masked.status).toBe(404);
+		expect(masked.body).toEqual({ error: 'no such invite' });
+	});
+});
+
+/**
+ * A redemption that landed but whose answer was lost must be repeatable, or the
+ * redeemer can never learn it succeeded and the invite is dead for both sides.
+ * Only the same signer can repeat it: the signature is verified before the
+ * store, and it covers the nonce and every field of the material.
+ */
+describe('replaying a redemption', () => {
+	async function redeem(nonce: string, redeemer = MATERIAL) {
+		return await post('/exchange/redeem', { nonce, redeemer, signature: SIGNATURE });
+	}
+
+	it('answers an identical replay with 200 and changes nothing', async () => {
+		await issue('nonce-replay001');
+		await redeem('nonce-replay001');
+		const [before] = await store.listInvites();
+
+		const replay = await redeem('nonce-replay001');
+
+		expect(replay.status).toBe(200);
+		expect(replay.body).toEqual({ redeemed: true });
+		const [after] = await store.listInvites();
+		expect(after).toEqual(before);
+	});
+
+	// `onRedeemed` is the Host's peer-setup recovery, deduplicated and
+	// `onlyIfUnconfigured`, so repeating it heals a node a DNS flake left peerless.
+	it('runs the idempotent peer-setup hook again on a replay', async () => {
+		await issue('nonce-replay002');
+		await redeem('nonce-replay002');
+		await redeem('nonce-replay002');
+
+		expect(onRedeemed).toHaveBeenCalledTimes(2);
+		expect(onRedeemed).toHaveBeenLastCalledWith('nonce-replay002', 'node-1');
+	});
+
+	it('does not count replays toward the failure-disclosure budget', async () => {
+		await issue('nonce-replay003');
+		await redeem('nonce-replay003');
+
+		const statuses: number[] = [];
+		for (let attempt = 0; attempt < 8; attempt++) statuses.push((await redeem('nonce-replay003')).status);
+
+		expect(statuses).toEqual(Array(8).fill(200));
+	});
+
+	it('still refuses a different redeemer, counted as a failure', async () => {
+		await issue('nonce-replay004');
+		await redeem('nonce-replay004');
+
+		const statuses: number[] = [];
+		for (let attempt = 0; attempt < 4; attempt++) {
+			statuses.push((await redeem('nonce-replay004', OTHER_MATERIAL)).status);
+		}
+
+		expect(statuses).toEqual([409, 409, 409, 404]);
+	});
+
+	it('repeats a redemption after the invite has expired', async () => {
+		await issue('nonce-replay005', 300);
+		await redeem('nonce-replay005');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+
+		expect((await redeem('nonce-replay005')).status).toBe(200);
+		// An invite nobody redeemed still expires.
+		await issue('nonce-replay006', 100);
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		expect((await redeem('nonce-replay006')).status).toBe(410);
+	});
+
+	it('refuses a replay whose signature does not verify', async () => {
+		await issue('nonce-replay007');
+		await redeem('nonce-replay007');
+		verifyRedemption.mockResolvedValueOnce(false);
+
+		const refused = await redeem('nonce-replay007');
+
+		expect(refused.status).toBe(401);
+		expect(onRedeemed).toHaveBeenCalledTimes(1);
+	});
+
+	it('past the shared budget, a replay waits like any other spent nonce', async () => {
+		await issue('nonce-replay008');
+		await redeem('nonce-replay008');
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			isNodeStopped,
+			limits: { totalRequestsPerMinute: 1 },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const url = `http://127.0.0.1:${(limited.address() as AddressInfo).port}/exchange/redeem`;
+		try {
+			await fetch(url, { method: 'POST', headers: { Connection: 'close' }, body: '{}' });
+			const replay = await fetch(url, {
+				method: 'POST',
+				headers: { Connection: 'close' },
+				body: JSON.stringify({ nonce: 'nonce-replay008', redeemer: MATERIAL, signature: SIGNATURE }),
+			});
+			// Serving it would tell a signed caller "spent" from "unknown" under flood.
+			expect(replay.status).toBe(429);
+		} finally {
+			limited.closeAllConnections();
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
 	});
 });
 

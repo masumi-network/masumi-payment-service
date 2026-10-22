@@ -22,6 +22,7 @@ const LEDGER_PARAMS_HASH = 'sha256:params';
 
 const mockHotWalletFindFirst = jest.fn() as AnyMock;
 const mockInviteFindUnique = jest.fn() as AnyMock;
+const mockInviteFindFirst = jest.fn() as AnyMock;
 const mockHeadFindFirst = jest.fn() as AnyMock;
 const mockHostFindMany = jest.fn() as AnyMock;
 const mockProvision = jest.fn() as AnyMock;
@@ -29,7 +30,7 @@ const mockProvision = jest.fn() as AnyMock;
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hotWallet: { findFirst: mockHotWalletFindFirst },
-		hydraHeadInvite: { findUnique: mockInviteFindUnique, create: jest.fn() },
+		hydraHeadInvite: { findUnique: mockInviteFindUnique, findFirst: mockInviteFindFirst, create: jest.fn() },
 		hydraHead: { findFirst: mockHeadFindFirst },
 		hydraHost: { findMany: mockHostFindMany },
 		hydraLocalParticipant: { findFirst: jest.fn(), create: jest.fn() },
@@ -51,6 +52,8 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	registerInviteOnHost: jest.fn(),
 	setHostNodePeers: jest.fn(),
 	startHostNode: jest.fn(),
+	fetchHostNodePeers: jest.fn(),
+	checkHostPeerTarget: jest.fn(),
 }));
 
 jest.unstable_mockModule('@/services/hydra-host/compatibility', () => ({
@@ -60,7 +63,13 @@ jest.unstable_mockModule('@/services/hydra-host/compatibility', () => ({
 jest.unstable_mockModule('./exchange-client', () => ({
 	assertExchangeTransportAllowed: () => undefined,
 	resolveExchangeTarget: async () => undefined,
-	postRedemption: jest.fn(),
+	attemptFailure: jest.fn(),
+	attemptRedemption: jest.fn(),
+}));
+
+jest.unstable_mockModule('./release-reservation', () => ({
+	releaseReservedParticipants: jest.fn(),
+	canRemoveReservedHostNode: jest.fn(),
 }));
 
 jest.unstable_mockModule('@/services/hydra-node-funding/service', () => ({
@@ -144,6 +153,7 @@ beforeAll(async () => {
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockInviteFindUnique.mockResolvedValue(null);
+	mockInviteFindFirst.mockResolvedValue(null);
 	mockHeadFindFirst.mockResolvedValue(null);
 	// The first thing a reservation does. Reaching it means every period check passed.
 	mockHostFindMany.mockRejectedValue(new Error(REACHED_RESERVATION));

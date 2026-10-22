@@ -20,6 +20,7 @@ import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
 import { pollHydraRedemptions, reapExpiredInvites } from '@/services/hydra-invite/adoption';
+import { resumeHydraRedemptions } from '@/services/hydra-invite/resume-redemptions';
 import { releaseAbandonedReservations } from '@/services/hydra-invite/release-reservation';
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
@@ -198,6 +199,20 @@ export const scheduledJobs: JobDefinition[] = [
 		// may not be reachable at all. So the service asks.
 		run: async () => {
 			await pollHydraRedemptions();
+		},
+	},
+	{
+		initialDelayMs: 11000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra redemption resume',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra redemption resume',
+		// The redeeming side's mirror of the poll above. Redeeming an invite spends
+		// its nonce on the issuer's Host before our node is configured, so a crash
+		// or a Host outage in between leaves a redemption the issuer is waiting on.
+		// A job of its own, so a redeemer Host that is down cannot delay adoption.
+		run: async () => {
+			await resumeHydraRedemptions();
 		},
 	},
 	{

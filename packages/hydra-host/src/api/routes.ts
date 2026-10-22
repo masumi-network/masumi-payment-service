@@ -26,7 +26,8 @@ export type RouteKind =
 	| 'peerAllowlist'
 	| 'registerInvite'
 	| 'listInvites'
-	| 'forgetInvite';
+	| 'forgetInvite'
+	| 'checkPeer';
 
 export type RouteMatch = {
 	kind: RouteKind;
@@ -60,6 +61,12 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 	// a map of the Host's public surface.
 	if (segments.length === 2 && segments[1] === 'peer-allowlist' && method === 'GET') {
 		return { kind: 'peerAllowlist', tier: 'admin' };
+	}
+
+	// Read-only: asks whether a peer address would be accepted, without writing
+	// anything. Admin, because it resolves names the caller chooses.
+	if (segments.length === 3 && segments[1] === 'peers' && segments[2] === 'check' && method === 'POST') {
+		return { kind: 'checkPeer', tier: 'admin' };
 	}
 
 	// Exchange administration. The Exchange Plane itself is a separate listener

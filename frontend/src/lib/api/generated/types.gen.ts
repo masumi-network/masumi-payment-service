@@ -13611,7 +13611,7 @@ export type DeleteHydraInviteData = {
     body?: {
         id: string;
         /**
-         * Also cancel an invite the counterparty already redeemed but this service could not adopt. Its node is removed unless a head here claims it.
+         * Also cancel an invite the counterparty already redeemed but this service could not adopt. Its node is removed unless a head here claims it. For a redemption of someone else’s invite that is stuck here, this abandons it: the node is removed and the issuer is left with a head whose peer never joins.
          */
         discardRedemption?: boolean;
     };
