@@ -37,6 +37,7 @@ import {
 	type HydraOutputReference,
 } from './hydra-datum-guards';
 import { ensureObservedTransaction, releaseBlockedWallet } from './hydra-datum-observation';
+import { isUnobservedLockTimeout } from '@/utils/logic/unobserved-lock-timeout';
 
 // Re-exported so the split stays invisible to importers: this module was the
 // whole datum surface before it was broken up.
@@ -148,8 +149,7 @@ export async function applyDatumStateToLocalRequests(params: {
 					SmartContractWallet: true,
 				},
 			});
-			// A row the payByTime job invalidated before any lock was seen is judged
-			// like an unlocked row when this observation provably locked in time.
+			// Keep the signed timing guard and recover only a wholly unobserved timeout.
 			const timeoutRecoveryEvidence = {
 				observedState: newOnChainState,
 				payByTime: decoded.payByTime,
@@ -158,9 +158,11 @@ export async function applyDatumStateToLocalRequests(params: {
 			};
 			const purchaseRecoversTimeout =
 				purchaseRequest != null &&
+				isUnobservedLockTimeout(purchaseRequest, newOnChainState) &&
 				isRecoverableTimeoutInvalidation({ request: purchaseRequest, ...timeoutRecoveryEvidence });
 			const paymentRecoversTimeout =
 				paymentRequest != null &&
+				isUnobservedLockTimeout(paymentRequest, newOnChainState) &&
 				isRecoverableTimeoutInvalidation({ request: paymentRequest, ...timeoutRecoveryEvidence });
 			const purchaseEffectiveForceLayer =
 				purchaseRequest == null
@@ -570,7 +572,9 @@ export async function applyDatumStateToLocalRequests(params: {
 						newState: effectiveState,
 					});
 					const newAction = convertNewPurchasingActionAndError(
-						purchaseRequest.NextAction.requestedAction,
+						purchaseRecoversTimeout
+							? PurchasingAction.FundsLockingInitiated
+							: purchaseRequest.NextAction.requestedAction,
 						effectiveState,
 					);
 					await tx.purchaseRequest.update({
@@ -641,7 +645,10 @@ export async function applyDatumStateToLocalRequests(params: {
 						previousState: paymentRecoversTimeout ? null : paymentRequest.onChainState,
 						newState: effectiveState,
 					});
-					const newAction = convertNewPaymentActionAndError(paymentRequest.NextAction.requestedAction, effectiveState);
+					const newAction = convertNewPaymentActionAndError(
+						paymentRecoversTimeout ? PaymentAction.WaitingForExternalAction : paymentRequest.NextAction.requestedAction,
+						effectiveState,
+					);
 					await tx.paymentRequest.update({
 						where: { id: paymentRequest.id },
 						data: {
