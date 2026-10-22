@@ -2357,6 +2357,25 @@ describe('HydraNode', () => {
 			);
 		});
 
+		it('keeps an unsynced Close refusal ambiguous but names the refusal as its cause', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			void node.connect();
+
+			const closePromise = node.close();
+			await Promise.resolve();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'RejectedInputBecauseUnsynced', clientInput: { tag: 'Close' }, drift: 90 }),
+			);
+
+			const error = await closePromise.then(
+				() => undefined,
+				(rejection: unknown) => rejection,
+			);
+			expect(error).toBeInstanceOf(HydraTransportAmbiguousError);
+			expect((error as HydraTransportAmbiguousError).cause).toBeInstanceOf(HydraCommandRefusedUnsyncedError);
+		});
+
 		it('treats a post-dispatch Close rejection as ambiguous', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			void node.connect();

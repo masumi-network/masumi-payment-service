@@ -265,12 +265,12 @@ export function resolveCommandTransactionHash(transaction: { txId?: string; cbor
 	try {
 		computedTxId = String(resolveTxHash(transaction.cborHex)).toLowerCase();
 	} catch (error) {
-		throw new HydraProtocolError('CommandFailed echoed invalid transaction CBOR', { cause: error });
+		throw new HydraProtocolError('Rejected command echoed invalid transaction CBOR', { cause: error });
 	}
 	if (transaction.txId != null) {
 		const parsedTxId = canonicalHydraTransactionIdSchema.safeParse(transaction.txId);
 		if (!parsedTxId.success || parsedTxId.data !== computedTxId) {
-			throw new HydraProtocolError('CommandFailed echoed inconsistent transaction identity');
+			throw new HydraProtocolError('Rejected command echoed inconsistent transaction identity');
 		}
 	}
 	return computedTxId;
