@@ -42,6 +42,14 @@ const { sendHydraCommandAndWait } = await import('./node-command-channel');
 const { HydraTransportError, HydraTransportAmbiguousError } = await import('./errors');
 
 describe('Connection', () => {
+	/**
+	 * Every connection a test connected. A socket left open keeps its heartbeat
+	 * interval running past this file; when it fires after Jest tore the
+	 * environment down, the logger throws and Jest fails whichever suite is
+	 * loading in the worker at that moment.
+	 */
+	const connectedConnections = new Set<InstanceType<typeof Connection>>();
+
 	beforeEach(() => {
 		jest.clearAllMocks();
 		currentWsMock = makeWsMock();
@@ -50,9 +58,17 @@ describe('Connection', () => {
 			return currentWsMock;
 		});
 		jest.spyOn(Math, 'random').mockReturnValue(0.5);
+		const connect = Connection.prototype.connect;
+		jest.spyOn(Connection.prototype, 'connect').mockImplementation(function (this: InstanceType<typeof Connection>) {
+			connectedConnections.add(this);
+			return connect.call(this);
+		});
 	});
 
 	afterEach(() => {
+		// disconnect() stops the heartbeat and any reconnect timer before its first await.
+		for (const conn of connectedConnections) void conn.disconnect().catch(() => undefined);
+		connectedConnections.clear();
 		jest.useRealTimers();
 		jest.restoreAllMocks();
 	});
