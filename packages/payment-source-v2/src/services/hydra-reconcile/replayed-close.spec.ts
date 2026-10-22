@@ -25,7 +25,7 @@ describe('recordReplayedCloseSnapshot', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockHydraHeadUpdateMany.mockResolvedValue({ count: 1 });
-		mockFetchClosedHeadFacts.mockResolvedValue({ contestationDeadline: CONTEST_DEADLINE, snapshotNumber: 5 });
+		mockFetchClosedHeadFacts.mockResolvedValue({ contestationDeadline: CONTEST_DEADLINE });
 	});
 
 	it('raises the row of a live Closed head and moves its deadline to a later time', async () => {
@@ -90,7 +90,7 @@ describe('recordReplayedCloseSnapshot', () => {
 	});
 
 	it('still raises the snapshot when the node reports an unparseable deadline', async () => {
-		mockFetchClosedHeadFacts.mockResolvedValue({ contestationDeadline: 'not a date', snapshotNumber: 5 });
+		mockFetchClosedHeadFacts.mockResolvedValue({ contestationDeadline: 'not a date' });
 
 		await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(HydraHeadStatus.Closed, 5n))).resolves.toBe(true);
 

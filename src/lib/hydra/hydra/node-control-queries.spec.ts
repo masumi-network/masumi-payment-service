@@ -62,17 +62,16 @@ describe('fetchHydraClosedHeadFacts', () => {
 		},
 	};
 
-	it('reads the deadline and the snapshot number from one read of the head state', async () => {
+	it('reads the deadline from one read of the head state', async () => {
 		const transport = transportReturning(closedHead);
 
 		await expect(fetchHydraClosedHeadFacts(transport, HEAD_ID)).resolves.toEqual({
 			contestationDeadline: '2026-10-22T12:00:00Z',
-			snapshotNumber: 7,
 		});
 		expect(transport.paths).toEqual(['/head']);
 	});
 
-	// A head that cannot be read is not a head with snapshot 0 and no deadline: the
+	// A head that cannot be read is not a head with no deadline: the
 	// caller writes nothing, and a later read can still fill the row in.
 	it.each([
 		['the connection fails', new HydraTransportError('Hydra HTTP GET failed before a response was received')],

@@ -120,25 +120,24 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
 	return producers.size === 1 ? [...producers][0] : undefined;
 }
 
-/** What a live `HeadIsClosed` frame says about a close, as read from the node's head state instead. */
-export type ClosedHeadFacts = { contestationDeadline: string; snapshotNumber: number };
+/** The deadline of a close, as read from the node's head state. */
+export type ClosedHeadFacts = { contestationDeadline: string };
 
 /**
- * The contestation deadline and the confirmed snapshot number of a closed head,
- * or undefined.
+ * The contestation deadline of a closed head, or undefined.
  *
  * A close this service was not there to see reaches it as Greetings, which carry
- * neither. hydra-node 2.4.1 keeps both in `ClosedState` and, once the first
+ * no deadline. hydra-node 2.4.1 keeps it in `ClosedState` and, once the first
  * partial fanout step lands, in `PartialFanoutState`, so unlike the close
- * transaction they stay readable until the head is final.
+ * transaction it stays readable until the head is final. A contest replaces it.
  *
- * The snapshot number is the node's own latest confirmed snapshot. After a peer
- * closes on an older one, it is higher than the number on chain until the
- * node's contest lands.
+ * The head state gives no snapshot number for the close. Its `confirmedSnapshot`
+ * is the node's own latest one, which a contest does not replace. On a devnet,
+ * a node restored to snapshot 1 still reported 1 after a peer contested with 2.
+ * The closed snapshot comes from the replayed close and contest frames instead.
  *
- * Undefined, never zero, for every "cannot tell" case: a missing fact has to stay
- * missing so a later read can still fill it. A head that closed on its initial
- * snapshot is the one case that is really 0.
+ * Undefined for every "cannot tell" case: a missing fact has to stay missing so
+ * a later read can still fill it.
  */
 export function extractClosedHeadFacts(headState: unknown, headIdentifier: string): ClosedHeadFacts | undefined {
 	if (!isPlainObject(headState)) return undefined;
@@ -153,18 +152,7 @@ export function extractClosedHeadFacts(headState: unknown, headIdentifier: strin
 
 	const contestationDeadline = getOwnValue(state, 'contestationDeadline');
 	if (typeof contestationDeadline !== 'string' || contestationDeadline.length === 0) return undefined;
-
-	const snapshotNumber = readConfirmedSnapshotNumber(getOwnPlainObject(state, 'confirmedSnapshot'));
-	return snapshotNumber === undefined ? undefined : { contestationDeadline, snapshotNumber };
-}
-
-function readConfirmedSnapshotNumber(confirmedSnapshot: object | undefined): number | undefined {
-	if (confirmedSnapshot === undefined) return undefined;
-	// A head that closed before any snapshot was confirmed.
-	if (getOwnValue(confirmedSnapshot, 'tag') === 'InitialSnapshot') return 0;
-	const snapshot = getOwnPlainObject(confirmedSnapshot, 'snapshot');
-	const number = snapshot === undefined ? undefined : getOwnValue(snapshot, 'number');
-	return typeof number === 'number' && Number.isSafeInteger(number) && number >= 0 ? number : undefined;
+	return { contestationDeadline };
 }
 
 /**

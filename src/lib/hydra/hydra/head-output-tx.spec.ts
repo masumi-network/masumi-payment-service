@@ -369,8 +369,8 @@ describe('extractCommitNotSettled', () => {
 
 /**
  * A head closed while the service was off is first seen through Greetings, which
- * carry neither the snapshot number nor the deadline. hydra-node 2.4.1 keeps both
- * in `ClosedState` and, once partial fanout starts, in `PartialFanoutState`.
+ * carry no deadline. hydra-node 2.4.1 keeps it in `ClosedState` and, once partial
+ * fanout starts, in `PartialFanoutState`.
  */
 describe('extractClosedHeadFacts', () => {
 	const DEADLINE = '2026-10-22T12:00:00Z';
@@ -390,61 +390,44 @@ describe('extractClosedHeadFacts', () => {
 		},
 	});
 
-	it('reads the deadline and the confirmed snapshot number of a closed head', () => {
-		expect(extractClosedHeadFacts(closedState(confirmed(7)), HEAD_ID)).toEqual({
-			contestationDeadline: DEADLINE,
-			snapshotNumber: 7,
-		});
+	it('reads the deadline of a closed head and no snapshot number', () => {
+		// `confirmedSnapshot` is the node's own snapshot, not the one the close put on chain.
+		expect(extractClosedHeadFacts(closedState(confirmed(7)), HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
 	});
 
-	it('reads snapshot 0 for a head that closed on its initial snapshot', () => {
-		expect(extractClosedHeadFacts(closedState({ tag: 'InitialSnapshot', headId: HEAD_ID }), HEAD_ID)).toEqual({
-			contestationDeadline: DEADLINE,
-			snapshotNumber: 0,
-		});
-	});
-
-	it('reads them once the head fans out in steps', () => {
+	it('reads it once the head fans out in steps', () => {
 		const state = { tag: 'FanoutProgress', contents: { ...closedState(confirmed(12)).contents, remainingOutputs: {} } };
 
-		expect(extractClosedHeadFacts(state, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE, snapshotNumber: 12 });
+		expect(extractClosedHeadFacts(state, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
 	});
 
 	it('accepts a state that is not nested under contents', () => {
 		const flat = { tag: 'Closed', ...closedState(confirmed(3)).contents };
 
-		expect(extractClosedHeadFacts(flat, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE, snapshotNumber: 3 });
+		expect(extractClosedHeadFacts(flat, HEAD_ID)).toEqual({ contestationDeadline: DEADLINE });
 	});
 
 	it('does not need the state to carry a head id', () => {
 		const { headId: _headId, ...withoutHeadId } = closedState(confirmed(4)).contents;
 
-		expect(extractClosedHeadFacts({ tag: 'Closed', contents: withoutHeadId }, HEAD_ID)).toMatchObject({
-			snapshotNumber: 4,
+		expect(extractClosedHeadFacts({ tag: 'Closed', contents: withoutHeadId }, HEAD_ID)).toEqual({
+			contestationDeadline: DEADLINE,
 		});
 	});
 
 	it('matches the head id whatever its case', () => {
-		expect(extractClosedHeadFacts(closedState(confirmed(1), { headId: HEAD_ID.toUpperCase() }), HEAD_ID)).toMatchObject(
-			{
-				snapshotNumber: 1,
-			},
-		);
+		expect(extractClosedHeadFacts(closedState(confirmed(1), { headId: HEAD_ID.toUpperCase() }), HEAD_ID)).toEqual({
+			contestationDeadline: DEADLINE,
+		});
 	});
 
-	// Unknown must never become zero: a missing fact stays missing, so a later read can still fill it.
+	// Unknown must never become a value: a missing fact stays missing, so a later read can still fill it.
 	it.each([
 		['the node reports no head', { tag: 'Idle', contents: { chainState: {} } }],
 		['it is not an object', 'Closed'],
 		['it is null', null],
 		['the deadline is missing', closedState(confirmed(7), { contestationDeadline: undefined })],
 		['the deadline is not a string', closedState(confirmed(7), { contestationDeadline: 1_761_134_400 })],
-		['the confirmed snapshot is missing', closedState(undefined)],
-		['the confirmed snapshot is of a kind it does not know', closedState({ tag: 'SomethingElse' })],
-		['the snapshot number is missing', closedState(confirmed(undefined))],
-		['the snapshot number is negative', closedState(confirmed(-1))],
-		['the snapshot number is not a whole number', closedState(confirmed(1.5))],
-		['the snapshot number is a string', closedState(confirmed('7'))],
 		['the state belongs to another head', closedState(confirmed(7), { headId: 'f'.repeat(56) })],
 	])('says nothing when %s', (_label, state) => {
 		expect(extractClosedHeadFacts(state, HEAD_ID)).toBeUndefined();

@@ -353,33 +353,25 @@ export async function recordCloseTransaction(hydraHeadId: string, node: HydraNod
 }
 
 /**
- * Record the deadline and snapshot number of a close this service did not see.
+ * Record the deadline of a close this service did not see.
  *
- * A live `HeadIsClosed` carries both, but a head closed while the service was
- * off reaches it as Greetings, which carry neither, so the row would stay at
- * snapshot 0 with no deadline. The node's own head state still holds both until
- * the head is final, unlike the close transaction, which a fanout step replaces.
+ * A live `HeadIsClosed` carries it, but a head closed while the service was off
+ * reaches it as Greetings, which do not, so the row would have no deadline. The
+ * node's own head state still holds it until the head is final, unlike the
+ * close transaction, which a fanout step replaces.
  *
- * Each write is guarded: the deadline on still being null, the snapshot on being
- * newer than the stored one, both on the owner epoch. A fact the node cannot say
- * is not written as zero. Failures are swallowed, because a closed head whose
- * facts cannot be read is still closed, and the next reconnect tries again.
+ * The snapshot number is not taken from there: the head state holds the node's
+ * own latest snapshot, not the one the close or a contest put on chain. The
+ * reconciler records that one from the replayed history.
+ *
+ * The write is guarded on the deadline still being null and on the owner epoch.
+ * Failures are swallowed, because a closed head whose deadline cannot be read is
+ * still closed, and the next reconnect tries again.
  */
 export async function recordClosedHeadFacts(hydraHeadId: string, node: HydraNode, ownerEpoch: bigint): Promise<void> {
 	try {
 		const facts = await node.fetchClosedHeadFacts();
 		if (!facts) return;
-		// The snapshot goes first. A null deadline is what makes the caller read again,
-		// so the deadline is written last: if the snapshot write fails, the next
-		// reconnect still retries both.
-		// 0 is what the row already holds, so there is nothing to record.
-		if (facts.snapshotNumber > 0) {
-			const snapshotNumber = BigInt(facts.snapshotNumber);
-			await prisma.hydraHead.updateMany({
-				where: { id: hydraHeadId, latestSnapshotNumber: { lt: snapshotNumber }, ownerEpoch },
-				data: { latestSnapshotNumber: snapshotNumber },
-			});
-		}
 		const deadline = new Date(facts.contestationDeadline);
 		if (Number.isFinite(deadline.getTime())) {
 			await prisma.hydraHead.updateMany({
@@ -393,7 +385,7 @@ export async function recordClosedHeadFacts(hydraHeadId: string, node: HydraNode
 			});
 		}
 	} catch (error) {
-		logger.warn('[HydraConnectionManager] Could not record the deadline and snapshot of a closed head', {
+		logger.warn('[HydraConnectionManager] Could not record the deadline of a closed head', {
 			hydraHeadId,
 			error: error instanceof Error ? error.message : 'Non-error failure',
 		});
