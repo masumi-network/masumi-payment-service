@@ -29,6 +29,8 @@ import type { HydraProvider } from '@/lib/hydra';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { fetchHydraDecommitInFlight } from '@/lib/hydra/hydra/node-control-queries';
+import { staleWithdrawal } from '@/services/hydra-decommit/stale';
 import { asV2Provider } from '../provider-cast';
 import {
 	encodeL2ReleaseNudgeDatum,
@@ -51,7 +53,10 @@ export type L2ReleaseNudgeCandidate = {
 	valueFloor: L2ReleaseValueFloor;
 };
 
-type NudgeNode = Pick<HydraNode, 'verifiedSnapshotNumber' | 'pendingIncrementUtxoRefs' | 'fetchPendingDecommitRefs'>;
+type NudgeNode = Pick<
+	HydraNode,
+	'verifiedSnapshotNumber' | 'pendingIncrementUtxoRefs' | 'fetchPendingDecommitRefs' | 'get'
+>;
 type NudgeHead = Pick<CustomHydraHead, 'newTx'>;
 type NudgeProvider = Pick<HydraProvider, 'fetchAddressUTxOs' | 'fetchProtocolParameters'>;
 
@@ -141,11 +146,7 @@ export async function nudgeIdleHeadForRelease(params: {
 
 		// A withdrawal takes no wallet lock and may select the nudge's inputs, and
 		// the head confirms no snapshot while a decommit is in flight.
-		const activeWithdrawal = await database.hydraDecommit.findFirst({
-			where: { hydraHeadId, status: { in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending] } },
-			select: { id: true },
-		});
-		if (activeWithdrawal) return false;
+		if (await withdrawalMayBeInFlight(hydraHeadId, node, nowMs, database)) return false;
 		const pendingDecommits = await node.fetchPendingDecommitRefs();
 		if (pendingDecommits === undefined || pendingDecommits.length > 0) return false;
 
@@ -190,6 +191,33 @@ export async function nudgeIdleHeadForRelease(params: {
 		});
 		return false;
 	}
+}
+
+/**
+ * Whether a Preparing or Pending withdrawal on the head may still be in flight.
+ *
+ * A row past the withdrawal claim's own age limits (`staleWithdrawal`) is
+ * abandoned: a crash leaves Preparing, an ambiguous node answer leaves Pending,
+ * and nothing but a new withdrawal request ever moves either. Such a row must
+ * not hold the release off forever, but its age alone does not prove the node
+ * dropped the request. So it stops blocking only when the node answers that it
+ * holds no withdrawal. An unread node blocks. The row itself is left for the
+ * claim to fail.
+ */
+async function withdrawalMayBeInFlight(
+	hydraHeadId: string,
+	node: NudgeNode,
+	nowMs: number,
+	database: typeof prisma,
+): Promise<boolean> {
+	const active = await database.hydraDecommit.findMany({
+		where: { hydraHeadId, status: { in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending] } },
+		select: { status: true, createdAt: true, updatedAt: true },
+	});
+	if (active.length === 0) return false;
+	// `true` only reads the age rules: whether the node agrees is asked below.
+	if (active.some((row) => staleWithdrawal(row, nowMs, true) === null)) return true;
+	return (await fetchHydraDecommitInFlight(node)) !== false;
 }
 
 /** Sign and record a nudge over `inputs`. Null when there is nothing safe to send. */
