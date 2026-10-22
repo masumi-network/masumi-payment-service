@@ -83,6 +83,10 @@ model HydraHost {
   /// When every node in `pausedNodeIds` was asked to stop. Null while the pause
   /// still waits for in-flight work.
   pauseStopRequestedAt DateTime?
+  /// When the last pause ended. The redemption resume job sends nothing while
+  /// a Host is paused, so it counts its give-up from this or the invite expiry,
+  /// whichever is later.
+  resumedAt            DateTime?
   /// Held while one instance stops or starts this Host's nodes, so a Resume
   /// and an advance never act at once. Expires on its own if the holder dies.
   pauseLeaseUntil      DateTime?

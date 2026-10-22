@@ -466,7 +466,7 @@ export async function resumeHydraHost(hostId: string): Promise<HydraHostPauseSta
 		}
 		await prisma.hydraHost.updateMany({
 			where: { id: hostId, pausedAt: host.pausedAt },
-			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null },
+			data: { pausedAt: null, pausedNodeIds: [], pauseStopRequestedAt: null, resumedAt: new Date() },
 		});
 	});
 	if (!acted) {
