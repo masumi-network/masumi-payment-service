@@ -98,6 +98,15 @@ describe('recordReplayedCloseSnapshot', () => {
 		);
 	});
 
+	it('holds the raise of a closed row until the node returns its head state', async () => {
+		// The raise ends the trigger, so raising here would lose the contest's deadline.
+		mockFetchClosedHeadFacts.mockResolvedValue(undefined);
+
+		await expect(recordReplayedCloseSnapshot('head-1', 3n, nodeWith(HydraHeadStatus.Closed, 5n))).resolves.toBe(false);
+
+		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalled();
+	});
+
 	it('lets the pass go on when the row moved under the write', async () => {
 		mockHydraHeadUpdateMany.mockResolvedValue({ count: 0 });
 

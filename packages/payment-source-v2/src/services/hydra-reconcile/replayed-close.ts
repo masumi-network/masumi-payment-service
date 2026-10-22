@@ -43,9 +43,12 @@ export async function recordReplayedCloseSnapshot(
 	// A live status outside the closed family means a rollback undid the close.
 	if (!CLOSED_HEAD_STATUSES.includes(node.status)) return false;
 
-	// The deadline goes first. If a write fails, the snapshot is still behind, so
-	// the next pass tries both again.
-	if (CONTESTABLE_HEAD_STATUSES.includes(node.status)) await recordLaterDeadline(hydraHeadId, node);
+	// The deadline goes first, and a head state the node did not return holds the
+	// raise: once the snapshot is current, no later pass tries the deadline again.
+	// A Final head skips this, so its handoff never waits on the read.
+	if (CONTESTABLE_HEAD_STATUSES.includes(node.status) && !(await recordLaterDeadline(hydraHeadId, node))) {
+		return false;
+	}
 
 	const raised = await prisma.hydraHead.updateMany({
 		where: {
@@ -66,16 +69,18 @@ export async function recordReplayedCloseSnapshot(
 	return true;
 }
 
-async function recordLaterDeadline(hydraHeadId: string, node: ReplayedCloseNode): Promise<void> {
+/** False when the node did not return its head state, so the caller can try again. */
+async function recordLaterDeadline(hydraHeadId: string, node: ReplayedCloseNode): Promise<boolean> {
 	const facts = await node.fetchClosedHeadFacts();
-	if (!facts) return;
+	if (!facts) return false;
 	const deadline = new Date(facts.contestationDeadline);
 	if (!Number.isFinite(deadline.getTime())) {
 		logger.warn('[HydraReconcile] Ignoring unparseable contestationDeadline in the node head state', {
 			hydraHeadId,
 			contestationDeadline: facts.contestationDeadline,
 		});
-		return;
+		// A retry would read the same value, so the snapshot goes ahead without it.
+		return true;
 	}
 	await prisma.hydraHead.updateMany({
 		where: {
@@ -86,4 +91,5 @@ async function recordLaterDeadline(hydraHeadId: string, node: ReplayedCloseNode)
 		},
 		data: { contestationDeadline: deadline },
 	});
+	return true;
 }
