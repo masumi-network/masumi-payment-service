@@ -28,7 +28,14 @@ import {
 } from './node-frames';
 import { HeldBackEmissions } from './node-held-back';
 import { hasFinalizedUtxoField, headClockMessageSchema, messageSchema } from './schemas';
-import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, PostTxFailedData, StatusChangeData } from './types';
+import {
+	DecommitSettledData,
+	DepositRecordedData,
+	HydraNodeEvent,
+	PostTxFailedData,
+	type PostTxFailure,
+	StatusChangeData,
+} from './types';
 
 /** Connect may return. Also emitted for a held headless Idle, which is not live-ready. */
 export const LIVE_SESSION_READY_EVENT = 'hydraLiveSessionReady';
@@ -103,8 +110,8 @@ export interface LiveFrameHost {
 	/** The rotation latch was hit on the live socket: fail the replay with it. */
 	onRotationError(error: unknown): void;
 	invalidateLiveConnection(error: Error): void;
-	/** A command waiting on this node posts `postChainTxTag`, so its caller hears of a failure to post it. */
-	isAwaitingPostChainTx(postChainTxTag: string): boolean;
+	/** A command waiting on this node owns `failure`, so its caller hears of it. */
+	isAwaitingPostChainTx(failure: PostTxFailure): boolean;
 }
 
 export class LiveFrameProcessor {
@@ -551,7 +558,7 @@ export class LiveFrameProcessor {
 				// Asked now, while the frame is current: the waiting command settles on
 				// this same frame and is gone by the time anything reads the event.
 				if (failure) {
-					postTxFailed = { ...failure, answersCommand: this.host.isAwaitingPostChainTx(failure.postChainTxTag) };
+					postTxFailed = { ...failure, answersCommand: this.host.isAwaitingPostChainTx(failure) };
 				}
 			}
 			if (envelope.tag === 'CommitRecovered') {

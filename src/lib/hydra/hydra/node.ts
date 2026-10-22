@@ -238,7 +238,7 @@ export class HydraNode extends EventEmitter {
 			},
 			onRotationError: (error) => this._replay.fail(error),
 			invalidateLiveConnection: (error) => this._connection.invalidate(error),
-			isAwaitingPostChainTx: (postChainTxTag) => isAwaitingPostChainTx(this._connection, postChainTxTag),
+			isAwaitingPostChainTx: (failure) => isAwaitingPostChainTx(this._connection, failure),
 		};
 	}
 
