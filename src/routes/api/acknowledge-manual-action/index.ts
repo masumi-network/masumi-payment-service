@@ -60,7 +60,6 @@ export const paymentAcknowledgeManualActionPost = payAuthenticatedEndpointFactor
 			data: { manualActionAcknowledgedAt: new Date() },
 		});
 		logger.info('Acknowledged payment requests in Needs Action', {
-			apiKeyId: ctx.id,
 			requested: input.blockchainIdentifiers.length,
 			acknowledged: count,
 		});
@@ -82,7 +81,6 @@ export const purchaseAcknowledgeManualActionPost = payAuthenticatedEndpointFacto
 			data: { manualActionAcknowledgedAt: new Date() },
 		});
 		logger.info('Acknowledged purchase requests in Needs Action', {
-			apiKeyId: ctx.id,
 			requested: input.blockchainIdentifiers.length,
 			acknowledged: count,
 		});
