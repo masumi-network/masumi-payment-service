@@ -52,6 +52,7 @@ class MockConnection extends EventEmitter {
 		.mockResolvedValue(undefined);
 	isOpen = jest.fn<() => boolean>().mockReturnValue(false);
 	invalidate = jest.fn<(error: Error) => void>();
+	restart = jest.fn<(error: Error) => void>();
 }
 
 let mockConnectionInstance: MockConnection;
@@ -1650,7 +1651,7 @@ describe('HydraNode', () => {
 			node.pinExpectedHeadId(HEAD_ID_A);
 
 			expect(node.confirmedTransactionHistoryError).toBeUndefined();
-			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+			expect(historyConnection.restart).toHaveBeenCalledWith(expect.any(HydraTransportError));
 		});
 
 		it('still refuses a pinned page whose Greetings omits the head id at Open', async () => {
@@ -1765,10 +1766,11 @@ describe('HydraNode', () => {
 				}),
 			]);
 			node.markConfirmedTransactionReconciled(transactions[0].txId);
-			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+			expect(historyConnection.restart).not.toHaveBeenCalled();
 			finishHistoryReplay(historyConnection);
 			expect(node.confirmedTransactionHistoryReady).toBe(false);
-			expect(historyConnection.invalidate).toHaveBeenCalledTimes(1);
+			expect(historyConnection.restart).toHaveBeenCalledTimes(1);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
 
 			historyConnection.emit('close', new Error('bounded page restart'));
 			historyConnection.emit('message', JSON.stringify(headIsOpen()));
@@ -1782,7 +1784,7 @@ describe('HydraNode', () => {
 				}),
 			]);
 			node.markConfirmedTransactionReconciled(transactions[1].txId);
-			expect(historyConnection.invalidate).toHaveBeenCalledTimes(2);
+			expect(historyConnection.restart).toHaveBeenCalledTimes(2);
 
 			historyConnection.emit('close', new Error('bounded page restart'));
 			historyConnection.emit('message', JSON.stringify(headIsOpen()));

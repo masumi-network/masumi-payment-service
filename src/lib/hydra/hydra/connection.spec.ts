@@ -213,6 +213,117 @@ describe('Connection', () => {
 		});
 	});
 
+	// Math.random is pinned to 0.5, so the jitter is zero and each delay is exact.
+	describe('reconnect backoff', () => {
+		const HEARTBEAT_MS = 30_000;
+
+		async function startConnection() {
+			jest.useFakeTimers();
+			const conn = createConnection();
+			await conn.connect();
+			return conn;
+		}
+
+		function msUntilNextSocket(): number {
+			const sockets = MockWebSocket.mock.calls.length;
+			let waitedMs = 0;
+			while (MockWebSocket.mock.calls.length === sockets && waitedMs < 60_000) {
+				jest.advanceTimersByTime(100);
+				waitedMs += 100;
+			}
+			return waitedMs;
+		}
+
+		function refuseRightAfterOpen(conn: InstanceType<typeof Connection>, times: number): number[] {
+			return Array.from({ length: times }, () => {
+				currentWsMock.emit('open');
+				conn.invalidate(new HydraTransportError('history replay failed'));
+				return msUntilNextSocket();
+			});
+		}
+
+		// Regression: the delay reset on every open, so a history whose replay
+		// fails reconnected and replayed about once a second for good.
+		it('grows the delay for a socket refused right after it opens', async () => {
+			const conn = await startConnection();
+			expect(refuseRightAfterOpen(conn, 4)).toEqual([1000, 2000, 4000, 8000]);
+		});
+
+		const refusals: [string, (conn: InstanceType<typeof Connection>) => void][] = [
+			['its owner invalidates it', (conn) => conn.invalidate(new HydraTransportError('history replay failed'))],
+			['it sends a binary frame', () => currentWsMock.emit('message', Buffer.from('x'), true)],
+			[
+				'ws refuses a malformed frame',
+				() =>
+					currentWsMock.emit(
+						'error',
+						Object.assign(new Error('Invalid UTF-8 sequence'), { code: 'WS_ERR_INVALID_UTF8' }),
+					),
+			],
+			[
+				'ws refuses an oversized frame',
+				() =>
+					currentWsMock.emit(
+						'error',
+						Object.assign(new RangeError('Max payload size exceeded'), {
+							code: 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH',
+						}),
+					),
+			],
+		];
+		it.each(refusals)('grows the delay for a proven socket when %s', async (_name, refuse) => {
+			const conn = await startConnection();
+			const delays = Array.from({ length: 3 }, () => {
+				currentWsMock.emit('open');
+				jest.advanceTimersByTime(HEARTBEAT_MS * 1.5);
+				refuse(conn);
+				return msUntilNextSocket();
+			});
+			expect(delays).toEqual([1000, 2000, 4000]);
+		});
+
+		it('forgets earlier failures once a socket has worked for five minutes', async () => {
+			const conn = await startConnection();
+			refuseRightAfterOpen(conn, 3);
+			currentWsMock.emit('open');
+			for (let interval = 0; interval < 10; interval++) {
+				jest.advanceTimersByTime(HEARTBEAT_MS);
+				currentWsMock.emit('pong');
+			}
+			conn.invalidate(new HydraTransportError('history replay failed'));
+			expect(msUntilNextSocket()).toBe(1000);
+		});
+
+		const drops: [string, () => void][] = [
+			['closes', () => currentWsMock.emit('close', 1006, Buffer.alloc(0))],
+			['fails', () => currentWsMock.emit('error', Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))],
+		];
+		it.each(drops)('reconnects on the first step when a proven socket %s', async (_name, drop) => {
+			const conn = await startConnection();
+			refuseRightAfterOpen(conn, 3);
+			currentWsMock.emit('open');
+			jest.advanceTimersByTime(HEARTBEAT_MS);
+			drop();
+			expect(msUntilNextSocket()).toBe(1000);
+		});
+
+		it('keeps growing the delay when a socket drops before it is proven', async () => {
+			const conn = await startConnection();
+			refuseRightAfterOpen(conn, 3);
+			currentWsMock.emit('open');
+			currentWsMock.emit('close', 1006, Buffer.alloc(0));
+			expect(msUntilNextSocket()).toBe(8000);
+		});
+
+		it('reconnects on the first step after a deliberate restart', async () => {
+			const conn = await startConnection();
+			refuseRightAfterOpen(conn, 3);
+			currentWsMock.emit('open');
+			conn.restart(new HydraTransportError('history page reconciled; restarting replay'));
+			expect(msUntilNextSocket()).toBe(1000);
+		});
+	});
+
 	it('isOpen() returns true after WebSocket fires onopen', async () => {
 		const conn = createConnection();
 		await conn.connect();
