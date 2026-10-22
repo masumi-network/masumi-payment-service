@@ -35,3 +35,25 @@ export function isVerifiedPendingCommitOutput(
 	}
 	return snapshot.committedOutputs.has(reference);
 }
+
+/**
+ * The verified snapshot a finalized head fanned out, when it is the one the
+ * caller expects. Null on any other session, status or snapshot number.
+ */
+export function readFinalSnapshot(
+	verified: boolean,
+	status: HydraHeadStatus,
+	snapshot: VerifiedHydraSnapshot | undefined,
+	expectedSnapshotNumber: number,
+): VerifiedHydraSnapshot | null {
+	if (
+		!verified ||
+		status !== HydraHeadStatus.Final ||
+		!Number.isSafeInteger(expectedSnapshotNumber) ||
+		expectedSnapshotNumber < 0 ||
+		snapshot?.number !== expectedSnapshotNumber
+	) {
+		return null;
+	}
+	return snapshot;
+}

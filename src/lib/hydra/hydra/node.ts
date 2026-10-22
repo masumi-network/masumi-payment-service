@@ -22,7 +22,7 @@ import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
-import { isVerifiedPendingCommitOutput, readVerifiedCurrentOutput } from './node-current-output';
+import { isVerifiedPendingCommitOutput, readFinalSnapshot, readVerifiedCurrentOutput } from './node-current-output';
 import {
 	HydraCommandOptions,
 	assertTxConfirmationPolling,
@@ -473,17 +473,8 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private finalSnapshot(expectedSnapshotNumber: number) {
-		const verifiedSnapshot = this._replay.verifiedSnapshot;
-		if (
-			!this.hasVerifiedPinnedSessions ||
-			this._live.status !== HydraHeadStatus.Final ||
-			!Number.isSafeInteger(expectedSnapshotNumber) ||
-			expectedSnapshotNumber < 0 ||
-			verifiedSnapshot?.number !== expectedSnapshotNumber
-		) {
-			return null;
-		}
-		return verifiedSnapshot;
+		// prettier-ignore
+		return readFinalSnapshot(this.hasVerifiedPinnedSessions, this._live.status, this._replay.verifiedSnapshot, expectedSnapshotNumber);
 	}
 
 	private fanoutResolutionContext(expectedSnapshotNumber: number) {
