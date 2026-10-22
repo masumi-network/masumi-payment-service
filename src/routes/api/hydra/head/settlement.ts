@@ -200,7 +200,10 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		// Once a partial step has landed, hydra-node accepts only PartialFanout.
-		if (head.status === HydraHeadStatus.FanningOut) {
+		// The live status can be ahead of the stored one, so check both.
+		const cm = getHydraConnectionManager();
+		const hydraHead = cm.getHead(head.id);
+		if (head.status === HydraHeadStatus.FanningOut || hydraHead?.status === HydraHeadStatus.FanningOut) {
 			throw createHttpError(
 				409,
 				'Cannot fanout: the head is fanning out in steps; select what is left with POST /hydra/head/partial-fanout',
@@ -210,8 +213,6 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, `Cannot fanout: head status is ${head.status}, expected FanoutPossible`);
 		}
 
-		const cm = getHydraConnectionManager();
-		const hydraHead = cm.getHead(head.id);
 		if (!hydraHead) {
 			throw createHttpError(502, 'No active connection to Hydra head');
 		}

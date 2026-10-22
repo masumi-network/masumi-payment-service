@@ -1,7 +1,7 @@
 import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { describe, expect, it } from '@jest/globals';
 
-import { recordL2TransactionMints, type L2MintTally } from './l2-mint-tally';
+import { buildL2MintCheck, l2TokenRisk, recordL2TransactionMints, type L2MintTally } from './l2-mint-tally';
 import { HydraTransactionType } from './types';
 
 const POLICY = 'ab'.repeat(28);
@@ -83,5 +83,21 @@ describe('recordL2TransactionMints', () => {
 		recordL2TransactionMints(tally, [transactionWithMint(BURN_A)], 1);
 
 		expect(tally.openedBy?.netUnits.sample).toEqual([`${POLICY}61 -1`]);
+	});
+
+	// A peer burning part of a committed token left every other UTxO holding it
+	// marked minted, so our own committed tokens dropped out of every L2 build.
+	it('does not mark a UTxO minted for a burned committed token', () => {
+		const tally = emptyTally();
+		recordL2TransactionMints(tally, [transactionWithMint(BURN_A), transactionWithMint(MINT_B, '22')], 1);
+		const ref = `${'ef'.repeat(32)}#0`;
+		const check = buildL2MintCheck(tally, { number: 1, outputs: new Map([[ref, '']]) });
+		const holding = (unit: string) => ({
+			input: { txHash: 'ef'.repeat(32), outputIndex: 0 },
+			output: { amount: [{ unit: 'lovelace' }, { unit }] },
+		});
+
+		expect(l2TokenRisk(holding(`${POLICY}61`), check)).toBeNull();
+		expect(l2TokenRisk(holding(`${POLICY}62`), check)).toBe('minted');
 	});
 });

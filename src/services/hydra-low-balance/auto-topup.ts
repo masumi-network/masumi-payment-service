@@ -139,13 +139,13 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 				continue;
 			}
 			// The rule reads the spendable balance, and an own UTxO carrying a unit
-			// with a nonzero net L2 mint does not count once the replay has verified
+			// with a positive net L2 mint does not count once the replay has verified
 			// it. A deposit of that unit would therefore leave the rule Low, and
 			// every later cycle would send another until the wallet ran out of it.
 			// Debug, not warn: this repeats every cycle, and the head error row
 			// already names the unit.
 			if (l2MintCheck.unburnedUnits.has(rule.assetUnit.toLowerCase())) {
-				logger.debug('hydra-auto-topup: skipping a Low rule whose unit has a nonzero net L2 mint in the head', {
+				logger.debug('hydra-auto-topup: skipping a Low rule whose unit has a positive net L2 mint in the head', {
 					ruleId: rule.id,
 					headId: head.id,
 					assetUnit: rule.assetUnit,

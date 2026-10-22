@@ -173,7 +173,7 @@ describe('recoverHydraDeposit', () => {
 		// the operator to wait for one past it, or with no known deadline, would
 		// have them wait for good.
 		it.each([
-			['ahead', 60_000, 'Wait for the deposit to be absorbed'],
+			['ahead', 60_000, 'Wait until the head absorbs it or the deadline passes'],
 			['passed', -60_000, 'the head can no longer absorb it'],
 			['not recorded', null, 'whether the head can still absorb it is unknown'],
 		])('says what to do when its deadline is %s', async (_label, offsetMs, expected) => {

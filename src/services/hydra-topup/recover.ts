@@ -200,7 +200,7 @@ async function refuseAcknowledgedDeposit(
 			depositTxHash,
 			requested: false,
 			reason:
-				'the head has acknowledged this deposit in a snapshot it signed and may still absorb it before its deadline. Wait for the deposit to be absorbed',
+				'the head has acknowledged this deposit in a snapshot it signed and may still absorb it before its deadline. Wait until the head absorbs it or the deadline passes',
 		};
 	}
 	const absorbOutlook =

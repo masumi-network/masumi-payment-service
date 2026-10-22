@@ -61,7 +61,7 @@ export const setHydraLowBalanceRuleSchemaInput = z.object({
 		.optional()
 		.default(false)
 		.describe(
-			'Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a nonzero net L2 mint in the head.',
+			'Auto top-up from the assigned funding wallet when low. Skipped while the history replay is not current, and for a unit with a positive net L2 mint in the head.',
 		),
 	topupAmount: amountString
 		.optional()
