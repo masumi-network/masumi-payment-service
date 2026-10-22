@@ -229,8 +229,8 @@ async function reconcileHead(
 	// history absence cannot prove that a locally accepted transaction is absent
 	// while it remains outside a signed snapshot.
 	if (!(node?.hasVerifiedPinnedSessions && node.confirmedTransactionHistoryReady)) return;
-	// The handoff below expects the row's snapshot number, so a contest seen only in
-	// the history is recorded first.
+	// The handoff below expects the row's snapshot number, so the snapshot of the
+	// last close or contest in the history is recorded first.
 	if (await recordReplayedCloseSnapshot(hydraHeadId, latestSnapshotNumber, node)) return;
 	await reportExpiredL2Reservations({ hydraHeadId, network: source.network, node });
 

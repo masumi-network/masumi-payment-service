@@ -16,14 +16,14 @@ const CONTESTABLE_HEAD_STATUSES: HydraHeadStatus[] = [HydraHeadStatus.Closed, Hy
 export type ReplayedCloseNode = Pick<HydraNode, 'status' | 'closedSnapshotNumber' | 'fetchClosedHeadFacts'>;
 
 /**
- * Persist the snapshot of a close or contest that this service saw only in the
- * replayed history.
+ * Persist the snapshot of the last close or contest in the replayed history.
  *
  * A contest moves the head to a newer snapshot, and the fanout pays out that
- * snapshot. The live frame carries its number, but a contest that happened while
- * the service was down or disconnected reaches it only through the history. The
- * row then keeps the older close's number, and the fanout handoff, which expects
- * the row's number, never completes.
+ * snapshot. The history holds every close and contest of the head, also the
+ * ones that happened while the service was down or disconnected, so it is the
+ * one source that cannot miss the contested number. A row without it keeps the
+ * older close's number, and the fanout handoff, which expects the row's number,
+ * never completes.
  *
  * The caller has checked that the history pass is complete and bound to this
  * head. The write changes no status, so it cannot look like a regression, and
