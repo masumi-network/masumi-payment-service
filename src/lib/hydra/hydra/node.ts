@@ -588,7 +588,7 @@ export class HydraNode extends EventEmitter {
 		return await fetchHydraHeadOutputTxId(this, headIdentifier);
 	}
 
-	/** See `fetchHydraClosedHeadFacts`: the deadline and snapshot number a missed close left unrecorded. */
+	/** See `fetchHydraClosedHeadFacts`: the deadline a missed close left unrecorded. */
 	async fetchClosedHeadFacts(): Promise<ClosedHeadFacts | undefined> {
 		const headIdentifier = this._expectedHeadId ?? this._live.liveSessionHeadId;
 		if (!headIdentifier) return undefined;

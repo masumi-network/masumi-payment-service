@@ -55,6 +55,7 @@ const mockFlushHeadStatus = jest.fn<(_hydraHeadId: string) => Promise<void>>();
 const mockRetainMemoHeads = jest.fn<(_hydraHeadIds: string[]) => void>();
 const mockIsLivePassDue = jest.fn<(_hydraHeadId: string, _intervalMs: number) => boolean>();
 const mockRecordLivePass = jest.fn<(_hydraHeadId: string, _isClean: boolean) => void>();
+const mockFetchClosedHeadFacts = jest.fn<() => Promise<unknown>>();
 const mockFindNothingToApply =
 	jest.fn<(_paymentSourceId: string, _candidates: Array<{ blockchainIdentifier: string }>) => Promise<Set<string>>>();
 
@@ -107,6 +108,8 @@ const mockNode = {
 	getFinalizedFanoutBindingInput: mockGetFanoutBindingInput,
 	adoptFinalizedFanoutL1Binding: mockAdoptFanoutBinding,
 	status: HydraHeadStatus.Final as HydraHeadStatus,
+	closedSnapshotNumber: undefined as bigint | undefined,
+	fetchClosedHeadFacts: mockFetchClosedHeadFacts,
 };
 
 const mockConnectionManager = {
@@ -316,6 +319,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockNode.hasVerifiedPinnedSessions = true;
 		mockNode.confirmedTransactionHistoryReady = true;
 		mockNode.status = HydraHeadStatus.Final;
+		mockNode.closedSnapshotNumber = undefined;
 		mockHydraHeadFindMany.mockResolvedValue([
 			{
 				id: 'head-1',
@@ -604,6 +608,58 @@ describe('Hydra live-snapshot reconciliation', () => {
 		);
 		expect(mockPurchaseRequestFindMany.mock.invocationCallOrder[1]).toBeLessThan(
 			mockHydraHeadUpdateMany.mock.invocationCallOrder[0],
+		);
+		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+	});
+
+	it('completes the fanout handoff at a contest snapshot seen only in the history', async () => {
+		// The row kept the close's snapshot 3; the history also holds a contest at 5.
+		mockNode.closedSnapshotNumber = 5n;
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: 'head-1', latestSnapshotNumber: { lt: 5n } }),
+				data: { latestSnapshotNumber: 5n },
+			}),
+		);
+		// The handoff waits for the next pass, which reads snapshot 5 from the row.
+		expect(mockHeadLockQuery).not.toHaveBeenCalled();
+		expect(mockDisconnect).not.toHaveBeenCalled();
+
+		const [head] = (await mockHydraHeadFindMany({})) as Array<Record<string, unknown>>;
+		mockHydraHeadFindMany.mockResolvedValue([{ ...head, latestSnapshotNumber: 5n }]);
+		mockHeadLockQuery.mockImplementation(async () =>
+			mockHeadLockQuery.mock.calls.length % 2 === 1
+				? [{ id: 'relation-1' }]
+				: [
+						{
+							status: HydraHeadStatus.Final,
+							isEnabled: true,
+							initTxHash: 'c'.repeat(64),
+							finalizedAt: new Date('2026-07-22T12:00:00Z'),
+							reconciliationCompletedAt: null,
+							headIdentifier: HEAD_IDENTIFIER,
+							latestSnapshotNumber: 5n,
+							fanoutTxHash: null,
+						},
+					],
+		);
+		const contestedReference = { ...FANOUT_REFERENCE, snapshotNumber: 5 };
+		mockGetVerifiedFanoutReferences.mockReturnValue([contestedReference]);
+		mockGetVerifiedFanoutReference.mockReturnValue(contestedReference);
+		mockHydraHeadUpdateMany.mockClear();
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockGetVerifiedFanoutReferences).toHaveBeenCalledWith(5);
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ latestSnapshotNumber: 5n }),
+				data: expect.objectContaining({ reconciliationCompletedAt: expect.any(Date) }),
+			}),
 		);
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 	});

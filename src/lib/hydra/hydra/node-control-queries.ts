@@ -275,14 +275,14 @@ export async function fetchHydraHeadOutputTxId(
 }
 
 /**
- * The contestation deadline and confirmed snapshot number of a closed head, in
- * one read of the head state. See `extractClosedHeadFacts`.
+ * The contestation deadline of a closed head, in one read of the head state.
+ * See `extractClosedHeadFacts`.
  *
  * Undefined rather than throwing on any failure, a response over the byte limit
  * included (`/head` carries the whole snapshot, so a large head can outgrow it):
  * this fills in what a missed close left unrecorded, and a head that cannot be
- * read is not a head with snapshot 0 and no deadline. The caller writes nothing,
- * and a later read can still fill the row in.
+ * read is not a head with no deadline. The caller writes nothing, and a later
+ * read can still fill the row in.
  */
 export async function fetchHydraClosedHeadFacts(
 	transport: HydraQueryTransport,
@@ -291,7 +291,7 @@ export async function fetchHydraClosedHeadFacts(
 	try {
 		return extractClosedHeadFacts(await transport.get('/head'), headIdentifier);
 	} catch (error) {
-		logger.warn('[HydraNode] Could not read the deadline and snapshot of a closed head', {
+		logger.warn('[HydraNode] Could not read the deadline of a closed head', {
 			headIdentifier,
 			error: protocolErrorToString(error),
 		});
