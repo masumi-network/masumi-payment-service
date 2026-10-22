@@ -14438,6 +14438,14 @@ export type PostHydraHeadInitErrors = {
      * The Hydra node could not be reached, or the InitTx could not be verified
      */
     502: unknown;
+    /**
+     * The node is behind the chain and did not post Init, or independent L1 evidence is not available yet
+     */
+    503: unknown;
+    /**
+     * The node failed to post the InitTx, Init did not confirm in time, or its outcome waits on the node catching up
+     */
+    504: unknown;
 };
 
 export type PostHydraHeadInitResponses = {
@@ -14480,6 +14488,10 @@ export type PostHydraHeadFanoutErrors = {
      * Head is not in a state that permits fanout
      */
     409: unknown;
+    /**
+     * The node is behind the chain and did not post the fanout
+     */
+    503: unknown;
 };
 
 export type PostHydraHeadFanoutResponses = {
@@ -16461,6 +16473,10 @@ export type PostHydraHeadPartialFanoutErrors = {
      * No connection to the head, or the node returned an unreadable head state
      */
     502: unknown;
+    /**
+     * The node is behind the chain and did not post the step
+     */
+    503: unknown;
 };
 
 export type PostHydraHeadPartialFanoutResponses = {
