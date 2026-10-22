@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
-import { readBoundedHttpResponse } from '@/lib/hydra/hydra/node-frames';
+import { readBoundedHttpResponse } from '@/lib/hydra/hydra/node-http-response';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';

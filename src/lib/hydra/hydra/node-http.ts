@@ -10,7 +10,7 @@
 
 import { stringifyHydraJson } from './json';
 import { HydraProtocolError, HydraTransportAmbiguousError, HydraTransportError } from './errors';
-import { HydraHttpResponseError, handleHttpResponse } from './node-frames';
+import { HydraHttpResponseError, handleHttpResponse } from './node-http-response';
 import { MAX_HYDRA_WS_FRAME_BYTES } from './schemas';
 
 export class HydraHttpClient {
