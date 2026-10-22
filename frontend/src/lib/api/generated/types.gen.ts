@@ -18349,9 +18349,18 @@ export type PostPaymentAcknowledgeManualActionData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Blockchain identifiers of the requests to acknowledge
+         * The requests to acknowledge
          */
-        blockchainIdentifiers: Array<string>;
+        requests: Array<{
+            /**
+             * The blockchain identifier of the request
+             */
+            blockchainIdentifier: string;
+            /**
+             * nextActionLastChangedAt as the caller last read it. A request whose action or error changed since then is skipped, so an error the caller has not seen stays in Needs Action.
+             */
+            nextActionLastChangedAt: Date | Date;
+        }>;
     };
     path?: never;
     query?: never;
@@ -18396,9 +18405,18 @@ export type PostPurchaseAcknowledgeManualActionData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Blockchain identifiers of the requests to acknowledge
+         * The requests to acknowledge
          */
-        blockchainIdentifiers: Array<string>;
+        requests: Array<{
+            /**
+             * The blockchain identifier of the request
+             */
+            blockchainIdentifier: string;
+            /**
+             * nextActionLastChangedAt as the caller last read it. A request whose action or error changed since then is skipped, so an error the caller has not seen stays in Needs Action.
+             */
+            nextActionLastChangedAt: Date | Date;
+        }>;
     };
     path?: never;
     query?: never;

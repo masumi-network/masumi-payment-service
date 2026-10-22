@@ -3,6 +3,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { logger } from '@masumi/payment-core/logger';
+import { ez } from 'express-zod-api';
 import { z } from '@masumi/payment-core/zod';
 import { needsManualActionDataFilter } from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -11,11 +12,20 @@ const MAX_ACKNOWLEDGE_BATCH = 100;
 
 export const acknowledgeManualActionSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The network the requests were made on'),
-	blockchainIdentifiers: z
-		.array(z.string().min(1).max(8000))
+	requests: z
+		.array(
+			z.object({
+				blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier of the request'),
+				nextActionLastChangedAt: ez
+					.dateIn()
+					.describe(
+						'nextActionLastChangedAt as the caller last read it. A request whose action or error changed since then is skipped, so an error the caller has not seen stays in Needs Action.',
+					),
+			}),
+		)
 		.min(1)
 		.max(MAX_ACKNOWLEDGE_BATCH)
-		.describe('Blockchain identifiers of the requests to acknowledge'),
+		.describe('The requests to acknowledge'),
 });
 
 export const acknowledgeManualActionSchemaOutput = z.object({
@@ -33,7 +43,10 @@ type AcknowledgeInput = z.infer<typeof acknowledgeManualActionSchemaInput>;
  */
 function buildOwnedRequestFilter(input: AcknowledgeInput, ctx: AuthContext) {
 	return {
-		blockchainIdentifier: { in: input.blockchainIdentifiers },
+		OR: input.requests.map(({ blockchainIdentifier, nextActionLastChangedAt }) => ({
+			blockchainIdentifier,
+			nextActionLastChangedAt,
+		})),
 		PaymentSource: { network: input.network, deletedAt: null },
 		...buildWalletScopeFilter(ctx.walletScopeIds),
 		...(ctx.canAdmin ? {} : { requestedById: ctx.id }),
@@ -60,7 +73,7 @@ export const paymentAcknowledgeManualActionPost = payAuthenticatedEndpointFactor
 			data: { manualActionAcknowledgedAt: new Date() },
 		});
 		logger.info('Acknowledged payment requests in Needs Action', {
-			requested: input.blockchainIdentifiers.length,
+			requested: input.requests.length,
 			acknowledged: count,
 		});
 		return { acknowledgedCount: count };
@@ -81,7 +94,7 @@ export const purchaseAcknowledgeManualActionPost = payAuthenticatedEndpointFacto
 			data: { manualActionAcknowledgedAt: new Date() },
 		});
 		logger.info('Acknowledged purchase requests in Needs Action', {
-			requested: input.blockchainIdentifiers.length,
+			requested: input.requests.length,
 			acknowledged: count,
 		});
 		return { acknowledgedCount: count };
