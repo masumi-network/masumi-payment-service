@@ -15016,11 +15016,11 @@ export type PostHydraHeadSnapshotRoundResetErrors = {
      */
     404: unknown;
     /**
-     * Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, or the confirmed snapshot does not match the verified one
+     * Head not open or disabled, no round in flight, the round changed since it was read, it is not stuck long enough, the confirmed snapshot does not match the verified one, or it holds a deposit that the chain has not settled
      */
     409: unknown;
     /**
-     * No live connection to the head, or the node refused the reset or is still stuck
+     * No live connection to the head, the node could not be read, or the node refused the reset or is still stuck
      */
     502: unknown;
     /**

@@ -1,5 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { roundSignature, unwedgeNode, type UnwedgeOptions } from './unwedge.js';
+import type { NodeRecord } from '../registry/types.js';
+import { holdsUnsettledCommit, roundSignature, unwedgeNode, unwedgeRecord, type UnwedgeOptions } from './unwedge.js';
 import type { LastSeenSnapshotResponse } from './drain.js';
 
 const noopSleep = async () => undefined;
@@ -8,12 +9,55 @@ function options(overrides: Partial<UnwedgeOptions> = {}): UnwedgeOptions {
 	return {
 		fetchLastSeen: jest.fn<() => Promise<LastSeenSnapshotResponse>>().mockResolvedValue({ tag: 'NoSeenSnapshot' }),
 		fetchConfirmedSnapshot: jest.fn<() => Promise<unknown>>().mockResolvedValue({ snapshot: 'confirmed' }),
+		fetchHead: jest.fn<() => Promise<unknown>>().mockResolvedValue({ tag: 'Open' }),
 		sideLoadSnapshot: jest.fn<(snapshot: unknown) => Promise<void>>().mockResolvedValue(undefined),
 		settleWaitMs: 30_000,
 		sleep: noopSleep,
 		...overrides,
 	};
 }
+
+const DEPOSIT = { [`${'dd'.repeat(32)}#0`]: {} };
+
+/** `GET /head` while Open, with the confirmed snapshot at version 3 holding `utxoToCommit`. */
+function headHolding(utxoToCommit: unknown, version: number): unknown {
+	return {
+		tag: 'Open',
+		contents: { coordinatedHeadState: { version, confirmedSnapshot: { snapshot: { version: 3, utxoToCommit } } } },
+	};
+}
+
+describe('holdsUnsettledCommit', () => {
+	it('reports an empty commit as unsettled, as hydra checks only that it is set', () => {
+		expect(holdsUnsettledCommit(headHolding({}, 3))).toBe(true);
+	});
+
+	it.each([
+		['the chain has settled it', headHolding(DEPOSIT, 4)],
+		['the snapshot holds no commit', headHolding(null, 3)],
+		[
+			'the head is still on its initial snapshot',
+			{
+				tag: 'Open',
+				contents: { coordinatedHeadState: { version: 0, confirmedSnapshot: { tag: 'InitialSnapshot', headId: 'cc' } } },
+			},
+		],
+		[
+			'the head version is not a number',
+			{
+				tag: 'Open',
+				contents: {
+					coordinatedHeadState: {
+						version: '3',
+						confirmedSnapshot: { snapshot: { version: 3, utxoToCommit: DEPOSIT } },
+					},
+				},
+			},
+		],
+	])('reports nothing unsettled when %s', (_label, state) => {
+		expect(holdsUnsettledCommit(state)).toBe(false);
+	});
+});
 
 describe('roundSignature', () => {
 	it('distinguishes rounds by sequence when the node reports one', () => {
@@ -104,6 +148,41 @@ describe('unwedgeNode', () => {
 		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
 	});
 
+	// A side-load clears the node's record of the deposit in flight, and the
+	// next deposit can then stall the head again (hydra-node 2.4.1
+	// `ReqSnCommitNotSettled`).
+	it('leaves a stranded round alone while the confirmed snapshot holds a deposit the chain has not settled', async () => {
+		const opts = options({
+			fetchLastSeen: jest
+				.fn<() => Promise<LastSeenSnapshotResponse>>()
+				.mockResolvedValue({ tag: 'SeenSnapshot', number: 7 }),
+			fetchHead: jest.fn<() => Promise<unknown>>().mockResolvedValue(headHolding(DEPOSIT, 3)),
+		});
+
+		const outcome = await unwedgeNode(opts);
+		expect(outcome).toMatchObject({
+			kind: 'Held',
+			reason: expect.stringContaining('not settled') as unknown as string,
+		});
+		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
+	});
+
+	it('reports unrecovered when the head state cannot be read', async () => {
+		const opts = options({
+			fetchLastSeen: jest
+				.fn<() => Promise<LastSeenSnapshotResponse>>()
+				.mockResolvedValue({ tag: 'SeenSnapshot', number: 7 }),
+			fetchHead: jest.fn<() => Promise<unknown>>().mockRejectedValue(new Error('GET /head returned 503')),
+		});
+
+		const outcome = await unwedgeNode(opts);
+		expect(outcome).toMatchObject({
+			kind: 'Unrecovered',
+			reason: expect.stringContaining('returned 503') as unknown as string,
+		});
+		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
+	});
+
 	it('reports unrecovered when the side-load is rejected', async () => {
 		const fetchLastSeen = jest
 			.fn<() => Promise<LastSeenSnapshotResponse>>()
@@ -131,6 +210,7 @@ describe('unwedgeNode read failures', () => {
 		const outcome = await unwedgeNode({
 			fetchLastSeen: rejecting,
 			fetchConfirmedSnapshot: () => Promise.resolve({}),
+			fetchHead: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
 			settleWaitMs: 0,
 			sleep: () => Promise.resolve(),
@@ -148,6 +228,7 @@ describe('unwedgeNode read failures', () => {
 				return call === 1 ? Promise.resolve({ tag: 'SeenSnapshot', snapshotNumber: 4 }) : rejecting();
 			},
 			fetchConfirmedSnapshot: () => Promise.resolve({}),
+			fetchHead: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
 			settleWaitMs: 0,
 			sleep: () => Promise.resolve(),
@@ -164,6 +245,7 @@ describe('unwedgeNode read failures', () => {
 				return call <= 2 ? Promise.resolve({ tag: 'SeenSnapshot', snapshotNumber: 4 }) : rejecting();
 			},
 			fetchConfirmedSnapshot: () => Promise.resolve({ snapshotNumber: 4 }),
+			fetchHead: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
 			settleWaitMs: 0,
 			sleep: () => Promise.resolve(),
@@ -180,11 +262,29 @@ describe('unwedgeNode read failures', () => {
 // about, one unwedge is the difference between draining the fleet and being
 // SIGKILLed mid-drain.
 describe('unwedgeNode during a shutdown', () => {
+	it('defers before the side-load when a shutdown begins during the head-state read', async () => {
+		let stopping = false;
+		const opts = options({
+			fetchLastSeen: jest
+				.fn<() => Promise<LastSeenSnapshotResponse>>()
+				.mockResolvedValue({ tag: 'SeenSnapshot', number: 7 }),
+			fetchHead: () => {
+				stopping = true;
+				return Promise.resolve({ tag: 'Open' });
+			},
+			isAborted: () => stopping,
+		});
+
+		expect(await unwedgeNode(opts)).toEqual({ kind: 'Deferred' });
+		expect(opts.sideLoadSnapshot).not.toHaveBeenCalled();
+	});
+
 	it('defers before the settle wait, leaving the record untouched', async () => {
 		let slept = false;
 		const outcome = await unwedgeNode({
 			fetchLastSeen: () => Promise.resolve({ tag: 'SeenSnapshot', snapshotNumber: 4 }),
 			fetchConfirmedSnapshot: () => Promise.resolve({}),
+			fetchHead: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
 			settleWaitMs: 30_000,
 			sleep: () => {
@@ -202,6 +302,7 @@ describe('unwedgeNode during a shutdown', () => {
 		const outcome = await unwedgeNode({
 			fetchLastSeen: () => Promise.resolve({ tag: 'LastSeenSnapshot' }),
 			fetchConfirmedSnapshot: () => Promise.resolve({}),
+			fetchHead: () => Promise.resolve({}),
 			sideLoadSnapshot: () => Promise.resolve(),
 			settleWaitMs: 0,
 			sleep: () => Promise.resolve(),
@@ -209,5 +310,37 @@ describe('unwedgeNode during a shutdown', () => {
 		});
 
 		expect(outcome.kind).toBe('Healthy');
+	});
+});
+
+describe('unwedgeRecord', () => {
+	// `Failed` closes the node's API, and the head could then be neither reset
+	// from the payment service nor closed from this side.
+	it('keeps a node it leaves stranded running, with its API open', async () => {
+		let record = { nodeId: 'node-1', state: 'Running', lastStopUndrained: true, startAttempts: 2 } as NodeRecord;
+		const store = {
+			update: async (_nodeId: string, mutate: (current: NodeRecord) => NodeRecord) => (record = mutate(record)),
+		};
+		const client = {
+			fetchLastSeen: () => Promise.resolve<LastSeenSnapshotResponse>({ tag: 'SeenSnapshot', number: 7 }),
+			fetchConfirmedSnapshot: () => Promise.resolve({ snapshot: 'confirmed' }),
+			fetchHead: () => Promise.resolve(headHolding(DEPOSIT, 3)),
+			sideLoadSnapshot: jest.fn<(snapshot: unknown) => Promise<void>>().mockResolvedValue(undefined),
+		};
+		const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+		await unwedgeRecord(record, 'previous stop could not be drained', {
+			client,
+			store,
+			logger,
+			settleWaitMs: 0,
+			sleep: noopSleep,
+			isAborted: () => false,
+		});
+
+		expect(record).toMatchObject({ state: 'Running', lastStopUndrained: false, startAttempts: 0 });
+		expect(record.failureReason).toBeUndefined();
+		expect(client.sideLoadSnapshot).not.toHaveBeenCalled();
+		expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('left a stranded round alone'));
 	});
 });
