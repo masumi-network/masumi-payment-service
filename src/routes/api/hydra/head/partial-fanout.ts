@@ -26,6 +26,7 @@ import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from '@/lib/hydra/hydra/snapshot-limits';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 
+import { fanoutsInFlight } from './fanout-in-flight';
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
 
 const PARTIAL_FANOUT_STATUSES: ReadonlySet<HydraHeadStatus> = new Set([
@@ -184,6 +185,13 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		const selection = selectFanoutOutputs(remaining, input.outputRefs);
 		const selectedCount = Object.keys(selection).length;
 
+		// No await between this check and the add. Thrown before the try: a
+		// refusal is not a failed command.
+		if (fanoutsInFlight.has(head.id)) {
+			throw createHttpError(409, 'Hydra head fanout is already in progress');
+		}
+		fanoutsInFlight.add(head.id);
+
 		try {
 			await hydraHead.partialFanout(selection);
 			await cm.flushHeadStatus(head.id);
@@ -202,6 +210,8 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		} catch (error) {
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'PartialFanout');
 			throw error;
+		} finally {
+			fanoutsInFlight.delete(head.id);
 		}
 	},
 });
