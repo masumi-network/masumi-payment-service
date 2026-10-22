@@ -254,6 +254,7 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(
 					503,
 					`${error.message}. Fanout was not posted; send it again once the node has caught up.`,
+					{ expose: true },
 				);
 			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Fanout');

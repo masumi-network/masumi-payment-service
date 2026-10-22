@@ -165,6 +165,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 					throw createHttpError(
 						503,
 						`${initError.message}. Init was not posted; send it again once the node has caught up.`,
+						{ expose: true },
 					);
 				}
 				// A failed InitTx post is not a timeout: the node answered, so no Init
@@ -175,7 +176,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				// has already initialized, which is no failure.
 				if (initError instanceof HydraPostTxRejectedError) {
 					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
-					throw createHttpError(504, initError.message);
+					throw createHttpError(504, initError.message, { expose: true });
 				}
 				// A bounded init that never observed HeadIsInitializing has two very
 				// different causes, and the timeout alone cannot tell them apart: the

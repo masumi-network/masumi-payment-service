@@ -155,12 +155,15 @@ async function readRemainingUtxo(
 		// The node answered, but with a state that cannot be retired from (not
 		// closed, or unreadable): keep that status rather than calling it down.
 		if (createHttpError.isHttpError(error)) {
-			throw createHttpError(error.status, `${message}; pass acknowledgeRemainingUtxoUnknown to retire without it`);
+			throw createHttpError(error.status, `${message}; pass acknowledgeRemainingUtxoUnknown to retire without it`, {
+				expose: true,
+			});
 		}
 		throw createHttpError(
 			503,
 			`Could not read the remaining UTxO set from the node (${message}); ` +
 				'retry, or pass acknowledgeRemainingUtxoUnknown to retire without it',
+			{ expose: true },
 		);
 	}
 	assertNodeAwaitsFanoutSelection(state, { allowed: acknowledge.fanoutStalled, flag: 'acknowledgeFanoutStalled' });

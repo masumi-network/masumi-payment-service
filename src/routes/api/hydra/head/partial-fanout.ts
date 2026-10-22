@@ -63,7 +63,10 @@ export async function readFanoutHeadState(node: FanoutHeadStateSource): Promise<
 		state = parseFanoutHeadState(await node.get('/head'));
 	} catch (error) {
 		if (error instanceof HydraFanoutHeadStateError) {
-			throw createHttpError(502, error.message, { contestationDeadline: error.contestationDeadline });
+			throw createHttpError(502, error.message, {
+				contestationDeadline: error.contestationDeadline,
+				expose: true,
+			});
 		}
 		throw error;
 	}
@@ -217,6 +220,7 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(
 					503,
 					`${error.message}. The step was not posted; send it again once the node has caught up.`,
+					{ expose: true },
 				);
 			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'PartialFanout');

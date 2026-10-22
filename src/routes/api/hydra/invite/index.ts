@@ -468,6 +468,7 @@ async function abandonStuckRedemption(
 		throw createHttpError(
 			502,
 			`the redemption is abandoned here, but its host refused the cleanup; node ${invite.hostNodeId} must be removed by hand`,
+			{ expose: true },
 		);
 	}
 	logger.info(`hydra: abandoned redemption ${nonceLogRef(invite.nonce)}`);
