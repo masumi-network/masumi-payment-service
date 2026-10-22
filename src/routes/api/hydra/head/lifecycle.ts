@@ -20,6 +20,7 @@ import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
 
 import {
+	HydraCommandRefusedUnsyncedError,
 	HydraCommandRejectedError,
 	HydraPostTxRejectedError,
 	HydraHeadInitObservationError,
@@ -138,6 +139,8 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, 'Hydra head init is already in progress');
 		}
 		initsInFlight.add(head.id);
+		// Read before the check, which clears the hold once it passes.
+		const wasAwaitingNode = initsAwaitingNode.has(head.id);
 		// Checked while holding the slot, so no other init can park a new Init meanwhile.
 		try {
 			await assertNoParkedInit(head.id, head.LocalParticipant.id);
@@ -191,6 +194,17 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				await hydraHead.init();
 			} catch (initError) {
+				// The node said it dropped this Init because it is behind the chain. That
+				// is an answer, not a timeout: nothing was posted, so it is no failed
+				// command and needs no diagnosis or head error. An earlier Init held for
+				// this head may still be parked, so that hold stays.
+				if (initError instanceof HydraCommandRefusedUnsyncedError) {
+					if (wasAwaitingNode) initsAwaitingNode.add(head.id);
+					throw createHttpError(
+						503,
+						`${initError.message}. Init was not posted; send it again once the node has caught up.`,
+					);
+				}
 				// A failed InitTx post is not a timeout: the node answered, so no Init
 				// is parked or racing and there is nothing to diagnose. This row is the
 				// failure's only record; the connection manager leaves a failure that a

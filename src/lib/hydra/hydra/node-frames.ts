@@ -15,6 +15,7 @@ import { resolveTxHash } from '@meshsdk/core';
 
 import { logger } from '@masumi/payment-core/logger';
 import {
+	HydraCommandRefusedUnsyncedError,
 	HydraCommandRejectedError,
 	HydraPostTxRejectedError,
 	HydraProtocolError,
@@ -338,7 +339,8 @@ export function handleWsResponse(
 			const unsynced = isUnsynced ? rejectedInputBecauseUnsyncedMessageSchema.parse(raw) : undefined;
 			const message = unsynced ?? commandFailedMessageSchema.parse(raw);
 			assertExpectedFrameHeadId(message, expectedHeadId);
-			const unsyncedReason = `the node is not synced with the chain (drift ${unsynced?.drift ?? 'unknown'}s)`;
+			const drift = unsynced?.drift === undefined ? 'unknown' : `${unsynced.drift}s`;
+			const unsyncedReason = `the node is not synced with the chain (drift ${drift})`;
 			if (command === 'NewTx') {
 				if (message.clientInput?.tag !== 'NewTx' || !message.clientInput.transaction || !transactionHash) {
 					return { kind: 'ignore' };
@@ -357,9 +359,9 @@ export function handleWsResponse(
 			if (message.clientInput?.tag === command) {
 				return {
 					kind: 'reject',
-					error: new HydraCommandRejectedError(
-						isUnsynced ? `Command ${command} was refused: ${unsyncedReason}` : `Command ${command} failed`,
-					),
+					error: isUnsynced
+						? new HydraCommandRefusedUnsyncedError(`Command ${command} was refused: ${unsyncedReason}`)
+						: new HydraCommandRejectedError(`Command ${command} failed`),
 				};
 			}
 			return { kind: 'message', message };

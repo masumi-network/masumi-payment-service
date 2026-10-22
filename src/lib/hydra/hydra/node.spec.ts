@@ -27,7 +27,7 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
 import type { L2MintIncident } from './l2-mint-tally';
 import {
-	HydraCommandRejectedError,
+	HydraCommandRefusedUnsyncedError,
 	HydraProtocolError,
 	HydraTransactionRejectedError,
 	HydraTransportAmbiguousError,
@@ -2340,18 +2340,20 @@ describe('HydraNode', () => {
 		});
 
 		it('rejects a lifecycle command the node refused while unsynced', async () => {
-			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
-			void node.connect();
+			// Pinned head: the refusal carries no headId and must still be accepted.
+			const { node, liveConnection } = await startSignedNode();
 
 			const fanoutPromise = node.fanout();
 			await Promise.resolve();
-			mockConnectionInstance.emit(
+			liveConnection.emit(
 				'message',
 				JSON.stringify({ tag: 'RejectedInputBecauseUnsynced', clientInput: { tag: 'Fanout' }, drift: 90 }),
 			);
 
 			await expect(fanoutPromise).rejects.toThrow(
-				new HydraCommandRejectedError('Command Fanout was refused: the node is not synced with the chain (drift 90s)'),
+				new HydraCommandRefusedUnsyncedError(
+					'Command Fanout was refused: the node is not synced with the chain (drift 90s)',
+				),
 			);
 		});
 
