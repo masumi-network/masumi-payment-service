@@ -189,20 +189,26 @@ describe('persistHeadStatus under the ownership fence', () => {
 describe('persistHeadStatus for a contested head', () => {
 	it('raises the snapshot number on a contest that keeps the head Closed', async () => {
 		const closedAt = new Date('2026-08-01T11:00:00Z');
+		// A real HeadIsContested carries a deadline, so the missed-close read does not run.
+		const contestationDeadline = new Date('2026-08-01T11:30:00Z');
 		mockFindUnique.mockResolvedValue(
-			durableRow({ status: HydraHeadStatus.Closed, closedAt, latestSnapshotNumber: 3n }),
+			durableRow({ status: HydraHeadStatus.Closed, closedAt, contestationDeadline, latestSnapshotNumber: 3n }),
 		);
 
-		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, {
+		const head = fakeHead();
+		await persistHeadStatus(host(), 'head-1', head, 1n, {
 			status: HydraHeadStatus.Closed,
 			headId: 'a'.repeat(56),
 			snapshotNumber: 5,
+			contestationDeadline: contestationDeadline.toISOString(),
 		});
 
 		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
 		const call = mockUpdateMany.mock.calls[0][0] as { data: Record<string, unknown> };
 		expect(call.data.latestSnapshotNumber).toBe(5n);
 		expect(call.data).not.toHaveProperty('closedAt');
+		expect(call.data).not.toHaveProperty('contestationDeadline');
+		expect(head.mainNode.fetchClosedHeadFacts).not.toHaveBeenCalled();
 	});
 
 	// Retire refuses a Closed head before its deadline: the head may still need
