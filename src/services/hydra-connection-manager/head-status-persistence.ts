@@ -182,8 +182,9 @@ export async function persistHeadStatus(
 				// Field-level parse guard (like the head-id regex above): the schema only
 				// bounds the string's length, so `new Date(garbage)` yields Invalid Date,
 				// the Prisma write throws, and the catch below would fail-closed the WHOLE
-				// head (durably disabled + InitTx attestation wiped) over one cosmetic
-				// field from a buggy node build. Skip the field instead of nuking the head.
+				// head (durably disabled + InitTx attestation wiped) over one field from a
+				// buggy node build. Skip the field instead of nuking the head. Retire reads
+				// it, so a skipped contest deadline leaves the earlier one in place.
 				const parsedDeadline = new Date(contestationDeadline);
 				if (!Number.isFinite(parsedDeadline.getTime())) {
 					logger.warn('[HydraConnectionManager] Ignoring unparseable contestationDeadline in status frame', {
