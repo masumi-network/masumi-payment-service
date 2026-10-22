@@ -10,6 +10,7 @@ import {
 	HydraTransportError,
 	type HydraConfirmedTransaction,
 } from '@/lib/hydra';
+import { HydraNodeEvent } from '@/lib/hydra/hydra/types';
 import { EventEmitter } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -31,7 +32,7 @@ const mockFindRequestLineages =
 const mockParseEvidence = jest.fn<(cborHex: string) => unknown>();
 const mockFetchUtxos = jest.fn<(_txId?: string) => Promise<unknown[]>>();
 const mockDecodeV2ContractDatum = jest.fn<(...args: unknown[]) => unknown>();
-const mockRecordHeadError = jest.fn<(...args: unknown[]) => Promise<void>>();
+const mockRecordHeadError = jest.fn<(...args: unknown[]) => Promise<boolean>>();
 const mockTriggerPostTxFailed = jest.fn<(...args: unknown[]) => Promise<void>>();
 
 const transactionClient = {
@@ -764,6 +765,41 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		expect(sessionOf(manager, 'head-1').attachment).toBeNull();
 	});
 
+	// A connect that fails builds a new transport each time, so the replay error
+	// window must outlive it, or a stuck head writes a row per reconnect. Only a
+	// deliberate disconnect ends it, also when no transport is attached.
+	it('records a repeated replay error once across failed connects until a disconnect', async () => {
+		const manager = new HydraConnectionManager();
+		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+		mockRecordHeadError.mockResolvedValue(true);
+		const probeSpy = jest
+			.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
+			.mockResolvedValue(undefined);
+		const connectSpy = jest.spyOn(CustomHydraHead.prototype, 'connect').mockImplementation(async function (
+			this: CustomHydraHead,
+		) {
+			this.mainNode.emit(HydraNodeEvent.HistoryReplayFailed, new Error('Hydra frame head id did not match'));
+			throw new Error('pinned connect rejected');
+		});
+		const nodeDisconnectSpy = jest.spyOn(HydraNode.prototype, 'disconnect').mockResolvedValue(undefined);
+		const replayRows = () => mockRecordHeadError.mock.calls.filter((call) => call[4] === 'HistoryReplay');
+
+		try {
+			await expect(manager.connect({ id: 'head-1' })).rejects.toThrow('pinned connect rejected');
+			await expect(manager.connect({ id: 'head-1' })).rejects.toThrow('pinned connect rejected');
+			expect(replayRows()).toHaveLength(1);
+
+			await manager.disconnect('head-1');
+			await expect(manager.connect({ id: 'head-1' })).rejects.toThrow('pinned connect rejected');
+			expect(replayRows()).toHaveLength(2);
+		} finally {
+			await manager.disconnect('head-1');
+			probeSpy.mockRestore();
+			connectSpy.mockRestore();
+			nodeDisconnectSpy.mockRestore();
+		}
+	});
+
 	// The node posts a contest on its own when a peer closes on an old snapshot.
 	// When that post fails nothing is waiting on it, so without a record and an
 	// alert the operator never learns why. Every failure is announced; a failed
@@ -772,7 +808,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		const manager = new HydraConnectionManager();
 		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & { status: HydraHeadStatus } };
 		head.mainNode = Object.assign(new EventEmitter(), { status: HydraHeadStatus.Closed });
-		mockRecordHeadError.mockResolvedValue(undefined);
+		mockRecordHeadError.mockResolvedValue(true);
 		(manager as unknown as { setupEventHandlers: (id: string, value: unknown) => void }).setupEventHandlers(
 			'head-1',
 			head,

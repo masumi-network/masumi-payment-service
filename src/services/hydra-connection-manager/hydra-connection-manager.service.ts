@@ -369,6 +369,8 @@ export class HydraConnectionManager {
 		session.stopClockRefresh();
 		const attachment = session.attachment;
 		if (!attachment) {
+			// A connect that failed detached without forgetting the head's replay window.
+			forgetReplayFailures(hydraHeadId);
 			return;
 		}
 		// Revoke captured command/provider references before waiting for status
