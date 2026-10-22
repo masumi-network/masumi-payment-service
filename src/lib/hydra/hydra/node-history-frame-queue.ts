@@ -37,7 +37,10 @@ export const HISTORY_REPLAY_QUEUE_HIGH_WATER = 16 * 1024 * 1024;
 export type QueuedHistoryFrame = { rawMessage: string; pass: number };
 
 export class HistoryFrameQueue {
+	/** Append new arrivals here; move each once to the front stack when needed. */
 	private readonly frames: QueuedHistoryFrame[] = [];
+	/** Oldest frame on top. Prepending pushes in reverse order without shifting the queue. */
+	private readonly frontFrames: QueuedHistoryFrame[] = [];
 	/** True while frames are worked, or while the queue waits to resume. */
 	private draining = false;
 	private queuedLength = 0;
@@ -53,7 +56,7 @@ export class HistoryFrameQueue {
 	) {}
 
 	get size(): number {
-		return this.frames.length;
+		return this.frames.length + this.frontFrames.length;
 	}
 
 	push(frame: QueuedHistoryFrame): void {
@@ -63,7 +66,7 @@ export class HistoryFrameQueue {
 
 	/** Queue frames that arrived before everything already queued. */
 	pushFront(frames: readonly QueuedHistoryFrame[]): void {
-		this.frames.unshift(...frames);
+		for (let index = frames.length - 1; index >= 0; index -= 1) this.frontFrames.push(frames[index]);
 		this.added(frames);
 	}
 
@@ -90,6 +93,7 @@ export class HistoryFrameQueue {
 	 */
 	clear(): void {
 		this.frames.length = 0;
+		this.frontFrames.length = 0;
 		this.queuedLength = 0;
 		if (this.paused) {
 			this.paused = false;
@@ -101,12 +105,15 @@ export class HistoryFrameQueue {
 		if (this.draining) return;
 		this.draining = true;
 		const sliceStartedAtMs = Date.now();
-		while (this.frames.length > 0) {
+		while (this.size > 0) {
 			if (Date.now() - sliceStartedAtMs >= historyReplayYieldSettings.budgetMs) {
 				setImmediate(() => this.resume());
 				return;
 			}
-			const frame = this.frames.shift() as QueuedHistoryFrame;
+			if (this.frontFrames.length === 0) {
+				while (this.frames.length > 0) this.frontFrames.push(this.frames.pop() as QueuedHistoryFrame);
+			}
+			const frame = this.frontFrames.pop() as QueuedHistoryFrame;
 			this.removed(frame);
 			if (!this.isFrameLive(frame)) continue;
 			const waiting = this.processFrame(frame);

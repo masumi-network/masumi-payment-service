@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Connection } from './connection';
 import type { ConfirmedTransactionLedger } from './node-confirmed-ledger';
 import type { HydraHistoryReplay as HydraHistoryReplayType } from './node-history-replay';
+import { HydraProtocolError } from './errors';
+import { MAX_HYDRA_WS_FRAME_BYTES } from './schemas';
 
 const mockWarn = jest.fn();
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -22,6 +24,8 @@ const { HydraHistoryReplay } = await import('./node-history-replay');
 
 const PINNED_HEAD_ID = 'a'.repeat(56);
 const OTHER_HEAD_ID = 'b'.repeat(56);
+const PRE_PIN_FRAME_LIMIT = 4_096;
+const NETWORK_CONNECTED_FRAME = JSON.stringify({ tag: 'NetworkConnected' });
 
 function createReplay() {
 	const verifyGreetingsPartyIdentity = jest.fn();
@@ -50,7 +54,7 @@ function createReplay() {
 	const ledger = { trim: () => undefined, hasUnreconciled: false } as unknown as ConfirmedTransactionLedger;
 
 	let replay: HydraHistoryReplayType;
-	const invalidate = jest.fn(() => {
+	const invalidate = jest.fn<Connection['invalidate']>(() => {
 		// What `HydraNode` wires up: the invalidated socket emits `close`
 		// synchronously, and its handler starts a fresh pass.
 		replay.resetPass();
@@ -62,6 +66,50 @@ function createReplay() {
 }
 
 describe('HydraHistoryReplay buffered flush', () => {
+	it('exhausts the pre-pin frame count below the byte bound and starts the next pass empty', () => {
+		const { replay, host, invalidate } = createReplay();
+		// Keep the failed pass visible until the transport closes it.
+		invalidate.mockImplementationOnce(() => undefined);
+		for (let index = 0; index < PRE_PIN_FRAME_LIMIT; index += 1) replay.processMessage(NETWORK_CONNECTED_FRAME);
+		expect(invalidate).not.toHaveBeenCalled();
+		expect(Buffer.byteLength(NETWORK_CONNECTED_FRAME) * (PRE_PIN_FRAME_LIMIT + 1)).toBeLessThan(8 * 1024 * 1024);
+
+		replay.processMessage(NETWORK_CONNECTED_FRAME);
+		expect(invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+		expect(replay.isFailed).toBe(true);
+		expect(replay.isComplete).toBe(false);
+		expect(replay.error?.message).toMatch(/bounded buffer/);
+		replay.processMessage(NETWORK_CONNECTED_FRAME);
+		expect(invalidate).toHaveBeenCalledTimes(1);
+
+		const connected = jest.fn();
+		host.setNetworkConnected = connected;
+		host.expectedHeadId = PINNED_HEAD_ID;
+		replay.processBufferedUnpinnedFrames();
+		expect(connected).not.toHaveBeenCalled();
+
+		// Socket close resets the count, not just the failure flag.
+		replay.resetPass();
+		host.expectedHeadId = undefined;
+		for (let index = 0; index < PRE_PIN_FRAME_LIMIT; index += 1) replay.processMessage(NETWORK_CONNECTED_FRAME);
+		expect(invalidate).toHaveBeenCalledTimes(1);
+		replay.resetPass();
+		replay.processMessage(NETWORK_CONNECTED_FRAME);
+		host.expectedHeadId = PINNED_HEAD_ID;
+		replay.processBufferedUnpinnedFrames();
+		expect(connected).toHaveBeenCalledTimes(1);
+	});
+
+	it('still exhausts the pre-pin byte bound with only three maximum-size frames', () => {
+		const { replay, invalidate } = createReplay();
+		const maximumFrame = 'x'.repeat(MAX_HYDRA_WS_FRAME_BYTES);
+		replay.processMessage(maximumFrame);
+		replay.processMessage(maximumFrame);
+		expect(invalidate).not.toHaveBeenCalled();
+		replay.processMessage(maximumFrame);
+		expect(invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+	});
+
 	it('stops at the first rejected frame instead of reading the rest as a fresh pass', () => {
 		const { replay, host, invalidate, verifyGreetingsPartyIdentity } = createReplay();
 

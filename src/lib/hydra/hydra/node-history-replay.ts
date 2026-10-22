@@ -65,6 +65,8 @@ const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
 ]);
 
 const MAX_UNPINNED_HISTORY_BUFFER_BYTES = 8 * 1024 * 1024;
+/** Bounds per-frame overhead and work when the pre-pin page is flushed, even for tiny frames. */
+const MAX_UNPINNED_HISTORY_BUFFER_FRAMES = 4_096;
 
 /**
  * One frame's work at least this long is reported. The queue yields between
@@ -287,7 +289,11 @@ export class HydraHistoryReplay {
 
 	private bufferUnpinnedFrame(rawMessage: string): void {
 		const frameBytes = Buffer.byteLength(rawMessage, 'utf8');
-		if (frameBytes > MAX_HYDRA_WS_FRAME_BYTES || this._unpinnedBytes + frameBytes > MAX_UNPINNED_HISTORY_BUFFER_BYTES) {
+		if (
+			this._unpinnedFrames.length >= MAX_UNPINNED_HISTORY_BUFFER_FRAMES ||
+			frameBytes > MAX_HYDRA_WS_FRAME_BYTES ||
+			this._unpinnedBytes + frameBytes > MAX_UNPINNED_HISTORY_BUFFER_BYTES
+		) {
 			this.fail(new HydraProtocolError('Hydra history exceeded the bounded buffer before its head id was pinned'));
 			return;
 		}
