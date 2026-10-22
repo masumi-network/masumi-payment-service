@@ -15157,7 +15157,7 @@ export type GetHydraHeadL2ReservationsResponses = {
                 releaseNudgeTxHash: string | null;
                 rejectedByHeadReason: string | null;
                 /**
-                 * Whether an admin may release it now
+                 * Whether an admin may release it now. The release also re-reads the node's snapshot round and UTxO set, and can still refuse.
                  */
                 releasable: boolean;
                 /**

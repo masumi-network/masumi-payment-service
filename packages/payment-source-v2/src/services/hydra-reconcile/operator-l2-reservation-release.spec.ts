@@ -61,6 +61,14 @@ function openHead(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+/** A node `get` that answers only `/snapshot/last-seen`, with this body. */
+function lastSeen(body: Record<string, unknown>) {
+	return async (url: string) => {
+		if (url === '/snapshot/last-seen') return body;
+		throw new Error(`unexpected node query ${url}`);
+	};
+}
+
 function liveNode(overrides: Record<string, unknown> = {}) {
 	return {
 		hasVerifiedPinnedSessions: true,
@@ -71,6 +79,10 @@ function liveNode(overrides: Record<string, unknown> = {}) {
 		getConfirmedTransaction: () => null,
 		// The node maps inputA onto an output, inputB onto nothing.
 		getVerifiedCurrentOutput: (reference: string) => (reference === inputA ? 'bytes' : null),
+		// The node's own snapshot still holds inputA: another transaction spent inputB.
+		snapshotUTxO: async () => [{ input: { txHash: 'a'.repeat(64), outputIndex: 0 } }],
+		// No snapshot round in flight.
+		get: lastSeen({ tag: 'LastSeenSnapshot', lastSeen: 9 }),
 		...overrides,
 	};
 }
@@ -260,6 +272,65 @@ describe('releaseHeldL2Reservation', () => {
 		mockGetNode.mockReturnValue(liveNode({ getConfirmedTransaction: () => ({}) }));
 
 		await expect(release()).rejects.toMatchObject({ status: 409 });
+		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	// 2026-10-22: the history stream went silent, so the node showed no
+	// confirmation of a body that had applied; it confirmed after the release.
+	it('refuses a body whose inputs are all spent in the node snapshot, even with no confirmation seen', async () => {
+		mockGetNode.mockReturnValue(liveNode({ snapshotUTxO: async () => [] }));
+
+		await expect(release()).rejects.toMatchObject({ status: 409 });
+		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	// Our node may have signed the round before the body expired; collecting
+	// the signatures does not re-check validity.
+	it.each([
+		['signed', { tag: 'SeenSnapshot', lastSeen: 9, snapshot: { number: 10 } }],
+		['requested', { tag: 'RequestedSnapshot', lastSeen: 9, requested: 10 }],
+		['of an unknown kind', { tag: 'SomeFutureTag' }],
+	])('refuses while a snapshot round %s is in flight, even with an input still live', async (_case, body) => {
+		mockGetNode.mockReturnValue(liveNode({ get: lastSeen(body) }));
+
+		await expect(release()).rejects.toMatchObject({ status: 409 });
+		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			'unreachable',
+			async () => {
+				throw new Error('connection reset');
+			},
+		],
+		['malformed', lastSeen({ lastSeen: 9 })],
+	])('502s, without releasing, when the snapshot round is %s', async (_case, get) => {
+		mockGetNode.mockReturnValue(liveNode({ get }));
+
+		await expect(release()).rejects.toMatchObject({ status: 502 });
+		expect(mockRelease).not.toHaveBeenCalled();
+	});
+
+	it('releases a row with no recorded inputs without reading the UTxO set', async () => {
+		const snapshotUTxO = jest.fn(async () => []);
+		mockTransactionFindFirst.mockResolvedValue(reservationRow({ l2ReservationInputRefs: [] }));
+		mockGetNode.mockReturnValue(liveNode({ snapshotUTxO }));
+
+		await expect(release()).resolves.toEqual(expect.objectContaining({ transactionId: 'tx-1' }));
+		expect(snapshotUTxO).not.toHaveBeenCalled();
+	});
+
+	it('502s, without releasing, when the node snapshot cannot be read', async () => {
+		mockGetNode.mockReturnValue(
+			liveNode({
+				snapshotUTxO: async () => {
+					throw new Error('connection reset');
+				},
+			}),
+		);
+
+		await expect(release()).rejects.toMatchObject({ status: 502 });
 		expect(mockRelease).not.toHaveBeenCalled();
 	});
 
