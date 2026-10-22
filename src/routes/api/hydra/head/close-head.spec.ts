@@ -18,6 +18,8 @@ const mockUpdateHead = jest.fn() as AnyMock;
 const mockReleaseClose = jest.fn() as AnyMock;
 const mockCreateHeadError = jest.fn() as AnyMock;
 const mockClose = jest.fn() as AnyMock;
+const mockFanout = jest.fn() as AnyMock;
+let liveHeadStatus: HydraHeadStatus | null = null;
 const mockFlushHeadStatus = jest.fn() as AnyMock;
 const mockReconcileEnabledState = jest.fn() as AnyMock;
 
@@ -57,7 +59,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({
-		getHead: () => ({ close: mockClose }),
+		getHead: () => ({ close: mockClose, fanout: mockFanout, status: liveHeadStatus }),
 		flushHeadStatus: mockFlushHeadStatus,
 		reconcileEnabledState: mockReconcileEnabledState,
 	}),
@@ -68,11 +70,12 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 let beginHydraHeadClose: typeof import('./settlement').beginHydraHeadClose;
 let updateHydraHeadEnabledState: typeof import('./index').updateHydraHeadEnabledState;
 let closeHeadPost: typeof import('./settlement').closeHeadPost;
+let fanoutHeadPost: typeof import('./settlement').fanoutHeadPost;
 let getOrListHeadsGet: typeof import('./index').getOrListHeadsGet;
 
 beforeAll(async () => {
 	({ updateHydraHeadEnabledState, getOrListHeadsGet } = await import('./index'));
-	({ beginHydraHeadClose, closeHeadPost } = await import('./settlement'));
+	({ beginHydraHeadClose, closeHeadPost, fanoutHeadPost } = await import('./settlement'));
 });
 
 const openHead = {
@@ -89,6 +92,7 @@ const openHead = {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	liveHeadStatus = null;
 	mockTransaction.mockImplementation(
 		async (operation: (tx: typeof transactionClient) => Promise<unknown>) => await operation(transactionClient),
 	);
@@ -490,5 +494,26 @@ describe('Hydra head state convergence', () => {
 		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
 
 		expect(mockReleaseClose).not.toHaveBeenCalled();
+	});
+});
+
+describe('fanoutHeadPost', () => {
+	// The node reports the first partial step before flushHeadStatus stores it.
+	// A plain Fanout sent then is refused by hydra-node and recorded as a
+	// command failure.
+	it('refuses a plain fanout once the live head is fanning out in steps', async () => {
+		mockFindHead.mockResolvedValue({ ...openHead, status: HydraHeadStatus.FanoutPossible });
+		liveHeadStatus = HydraHeadStatus.FanningOut;
+		const handler = (
+			fanoutHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringContaining('partial-fanout') as unknown as string,
+		});
+		expect(mockFanout).not.toHaveBeenCalled();
 	});
 });
