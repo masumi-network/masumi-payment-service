@@ -544,25 +544,11 @@ export function resolveInitialLockState(
 	// carry historical confirmation time; revalidating would turn a valid lock
 	// into FundsOrDatumInvalid. Preserve both valid and previously-invalid results.
 	if (currentState != null && isSameAcceptedOutput) return currentState;
-	// Hydra's API timestamp is transport metadata rather than part of the signed
-	// transaction body. It may help accept a lock from an authenticated node, but
-	// it must never irreversibly poison a request as "late". Missing, malformed,
-	// or after-deadline time remains quarantined/retryable for operator recovery.
-	if (
-		confirmationTimeMs == null ||
-		!Number.isSafeInteger(confirmationTimeMs) ||
-		BigInt(confirmationTimeMs) > BigInt(decoded.payByTime)
-	) {
-		logger.warn('[HydraDatumSync] initial lock has no usable confirmation time before payByTime; retrying', {
-			...logContext,
-			confirmationTimeMs,
-			payByTime: decoded.payByTime.toString(),
-		});
-		return null;
-	}
 	// SnapshotConfirmed timestamps are API metadata. A forged early timestamp
 	// cannot authorize a late/unbounded initial lock: the immutable signed body
-	// must independently end no later than the datum's payByTime.
+	// must independently end no later than the datum's payByTime. Check it before
+	// the API timestamp, so a missing or late timestamp cannot keep a lock the
+	// signed body already rules out in retry.
 	if (signedValidityUpperBoundTimeMs == null && hasSignedUpperSlot) {
 		// The body is bounded but the slot config cannot convert it: a local
 		// configuration fault, so retry instead of judging the lock.
@@ -583,6 +569,22 @@ export function resolveInitialLockState(
 			payByTime: decoded.payByTime.toString(),
 		});
 		return OnChainState.FundsOrDatumInvalid;
+	}
+	// Hydra's API timestamp is transport metadata rather than part of the signed
+	// transaction body. It may help accept a lock from an authenticated node, but
+	// it must never irreversibly poison a request as "late". Missing, malformed,
+	// or after-deadline time remains quarantined/retryable for operator recovery.
+	if (
+		confirmationTimeMs == null ||
+		!Number.isSafeInteger(confirmationTimeMs) ||
+		BigInt(confirmationTimeMs) > BigInt(decoded.payByTime)
+	) {
+		logger.warn('[HydraDatumSync] initial lock has no usable confirmation time before payByTime; retrying', {
+			...logContext,
+			confirmationTimeMs,
+			payByTime: decoded.payByTime.toString(),
+		});
+		return null;
 	}
 	const check = validateCanonicalInitialLock(decoded, expectedFunds, outputAmounts, confirmationTimeMs);
 	if (check.valid) return OnChainState.FundsLocked;
@@ -609,8 +611,9 @@ export type UnboundCopyRequest = HydraRequestLineage & { onChainState: OnChainSt
  *
  * - An escrow with state: the output's transaction was never recorded by the
  *   escrow and leaves its accepted output unspent.
- * - An escrow with no state and no accepted output (or one the timeout parked,
- *   which counts as having no state): the datum is not an initial lock.
+ * - An escrow with no state and no accepted output (or one whose timeout the
+ *   datum sync recovers, which counts as having no state): the datum is not an
+ *   initial lock.
  *
  * A missed intermediate transaction (persistence loss, compacted history) has
  * the same shape as a copy, so every skip is logged as an error for review.

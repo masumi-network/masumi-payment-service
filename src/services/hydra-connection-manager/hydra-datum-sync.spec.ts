@@ -802,34 +802,41 @@ describe('applyDatumStateToLocalRequests', () => {
 		expect(state).toBeNull();
 	});
 
-	it('rejects a first-seen lock for good when signed invalid-hereafter is missing', async () => {
-		mockPaymentFindUnique.mockResolvedValue(makePaymentRequest());
+	it.each([
+		['an on-time', Number(decodedInitialLock.payByTime) - 1],
+		['a late', Number(decodedInitialLock.payByTime) + 1],
+		['a missing', null],
+	])(
+		'rejects a first-seen lock for good when signed invalid-hereafter is missing, with %s API time',
+		async (_label, confirmationTimeMs) => {
+			mockPaymentFindUnique.mockResolvedValue(makePaymentRequest());
 
-		const outcome = await applyDatumStateToLocalRequests({
-			hydraHeadId: 'head-1',
-			txId: 'unbounded-lock-tx',
-			paymentSourceId: 'source-1',
-			decoded: decodedInitialLock,
-			newOnChainState: OnChainState.FundsLocked,
-			outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
-			outputReference: { txHash: 'unbounded-lock-tx', outputIndex: 0 },
-			transactionEvidence: makeEvidence({
-				txHash: 'unbounded-lock-tx',
-				signerVkeys: ['buyer-vkey'],
-				validityUpperSlot: null,
-			}),
-			confirmationTimeMs: Number(decodedInitialLock.payByTime) - 1,
-			targetSide: 'payment',
-		});
+			const outcome = await applyDatumStateToLocalRequests({
+				hydraHeadId: 'head-1',
+				txId: 'unbounded-lock-tx',
+				paymentSourceId: 'source-1',
+				decoded: decodedInitialLock,
+				newOnChainState: OnChainState.FundsLocked,
+				outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+				outputReference: { txHash: 'unbounded-lock-tx', outputIndex: 0 },
+				transactionEvidence: makeEvidence({
+					txHash: 'unbounded-lock-tx',
+					signerVkeys: ['buyer-vkey'],
+					validityUpperSlot: null,
+				}),
+				confirmationTimeMs,
+				targetSide: 'payment',
+			});
 
-		// A retry here would hold every later transaction of the head.
-		expect(outcome).toBe('applied');
-		expect(mockPaymentUpdate).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: expect.objectContaining({ onChainState: OnChainState.FundsOrDatumInvalid }),
-			}),
-		);
-	});
+			// A retry here would hold every later transaction of the head.
+			expect(outcome).toBe('applied');
+			expect(mockPaymentUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({ onChainState: OnChainState.FundsOrDatumInvalid }),
+				}),
+			);
+		},
+	);
 
 	it('rejects a late signed upper bound despite a forged early API timestamp', async () => {
 		mockPaymentFindUnique.mockResolvedValue(makePaymentRequest());
