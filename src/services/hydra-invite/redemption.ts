@@ -104,8 +104,11 @@ export type RedemptionPorts = {
 	assertNoCompetingRedemption(): Promise<void>;
 	/** Send the signed redemption to the issuer's Host. */
 	post(): Promise<ExchangeAttempt>;
-	/** Record the acknowledgement. False when the record is no longer in the state it was read in. */
-	markAcknowledged(): Promise<boolean>;
+	/**
+	 * Record the acknowledgement and return how far the record has got, which a concurrent caller may
+	 * have taken further. Null when the record is gone or ended.
+	 */
+	markAcknowledged(): Promise<'Redeemed' | 'Started' | 'Completed' | null>;
 	/** Delete a record that never landed. */
 	discard(): Promise<void>;
 	/**
@@ -150,7 +153,11 @@ function unfinished(error: unknown): createHttpError.HttpError {
 	);
 }
 
-async function acknowledge(state: RedemptionState, ports: RedemptionPorts, options: AdvanceOptions): Promise<void> {
+async function acknowledge(
+	state: RedemptionState,
+	ports: RedemptionPorts,
+	options: AdvanceOptions,
+): Promise<'Redeemed' | 'Started' | 'Completed'> {
 	if (!options.rowIsNew) {
 		// Before anything is sent. The request that created this record deletes it
 		// when the Host refuses it, and a retry that posted without claiming could
@@ -189,11 +196,13 @@ async function acknowledge(state: RedemptionState, ports: RedemptionPorts, optio
 
 	const decision = classifyRedemptionAttempt(await ports.post(), { rowIsNew: options.rowIsNew });
 	switch (decision.action) {
-		case 'accepted':
-			if (!(await ports.markAcknowledged())) {
+		case 'accepted': {
+			const status = await ports.markAcknowledged();
+			if (status === null) {
 				throw createHttpError(409, 'this redemption changed while it was being finished; check its status and retry');
 			}
-			return;
+			return status;
+		}
 		case 'discard':
 			await ports.discard();
 			throw decision.error;
@@ -217,9 +226,9 @@ export async function advanceRedemption(
 	ports: RedemptionPorts,
 	options: AdvanceOptions,
 ): Promise<{ hydraHeadId: string }> {
-	if (!state.acknowledged) {
-		await acknowledge(state, ports, options);
-	}
+	// After a fresh acknowledgement, from the record: a concurrent caller that got
+	// the same acknowledgement may already have started the node or finished.
+	const status = state.acknowledged ? state.status : await acknowledge(state, ports, options);
 
 	// The issuer needed nothing from this Host to acknowledge, so that went ahead.
 	// Starting a node or creating a head here would undo the pause.
@@ -233,7 +242,7 @@ export async function advanceRedemption(
 	// Only while the node is not yet marked started. Re-sending these to a node
 	// that has been started would override an operator's stop and restart a node
 	// that failed, for a step that already happened.
-	if (state.status === 'Redeemed') {
+	if (status === 'Redeemed') {
 		try {
 			if (!samePeers(await ports.currentPeers(), state.issuerPeer)) {
 				await ports.setPeers([state.issuerPeer]);

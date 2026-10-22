@@ -22,7 +22,7 @@ function ports(attempt: ExchangeAttempt, overrides: Partial<RedemptionPorts> = {
 		checkPeerTarget: jest.fn(async () => ({ supported: true, allowed: true, reason: null })),
 		assertNoCompetingRedemption: jest.fn(async () => undefined),
 		post: jest.fn(async () => attempt),
-		markAcknowledged: jest.fn(async () => true),
+		markAcknowledged: jest.fn(async (): Promise<'Redeemed' | 'Started' | 'Completed' | null> => 'Redeemed'),
 		discard: jest.fn(async () => undefined),
 		fail: jest.fn(async () => true),
 		currentPeers: jest.fn(async () => []),
@@ -134,11 +134,21 @@ describe('after the issuer acknowledged', () => {
 	});
 
 	it('starts nothing when the record changed before the acknowledgement was stored', async () => {
-		const fakes = ports({ kind: 'accepted' }, { markAcknowledged: jest.fn(async () => false) });
+		const fakes = ports({ kind: 'accepted' }, { markAcknowledged: jest.fn(async () => null) });
 
 		await expect(advanceRedemption(state(), fakes, { rowIsNew: true })).rejects.toMatchObject({ status: 409 });
 		expect(fakes.start).not.toHaveBeenCalled();
 		expect(fakes.createHead).not.toHaveBeenCalled();
+	});
+
+	// Regression: a creator whose post answered late must not restart a node a
+	// concurrent retry already started, and the operator may since have stopped.
+	it('leaves the node alone when a concurrent caller already started it', async () => {
+		const fakes = ports({ kind: 'accepted' }, { markAcknowledged: jest.fn(async () => 'Completed' as const) });
+
+		await advanceRedemption(state(), fakes, { rowIsNew: true });
+		expect(fakes.setPeers).not.toHaveBeenCalled();
+		expect(fakes.start).not.toHaveBeenCalled();
 	});
 
 	it('touches nothing on a paused Host', async () => {
