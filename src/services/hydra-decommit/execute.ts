@@ -272,7 +272,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 							throw Object.assign(
 								createHttpError(
 									409,
-									'This wallet is busy with another transaction, such as a payment that is pending in this head; retry in a few seconds',
+									'This wallet is busy with another transaction, such as a pending payment or an earlier withdrawal; retry once it has settled',
 								),
 								{ [WALLET_BUSY]: true },
 							);
@@ -666,11 +666,13 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					logger.error(`[HydraDecommit] could not fail the preparing withdrawal ${preparingId}`, { error: markError });
 				});
 		}
-		// Released once the outcome is known: the request never reached the head, or
-		// the head answered. Held while the head may still apply something this
-		// withdrawal sent, the request or its split, because the inputs of that
-		// body stay spoken for; the stale-lock reaper frees it, as it does for a
-		// consolidation that may still confirm.
+		// Released when nothing this withdrawal sent can still apply: the request
+		// never reached the head, or the node refused it. Held while the head may
+		// still apply the request or its split, because the inputs of that body stay
+		// spoken for; the stale-lock reaper frees it after WALLET_LOCK_TIMEOUT_INTERVAL,
+		// as it does for a consolidation that may still confirm. A request the node
+		// took also releases it: a payment that then picks the leaving inputs before
+		// the head drops them is refused by the head, so neither side loses funds.
 		keepWalletLock =
 			isAcceptedButUnconfirmed(error) ||
 			isMarked(error, SPLIT_MAY_STILL_CONFIRM) ||
