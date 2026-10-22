@@ -713,7 +713,9 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// spoken for; the stale-lock reaper frees it after WALLET_LOCK_TIMEOUT_INTERVAL,
 		// as it does for a consolidation that may still confirm. A request the node
 		// took is handled above: released once its inputs have left the head.
+		// Or-ed, never reset: a failure after the request keeps a hold already decided.
 		keepWalletLock =
+			keepWalletLock ||
 			isAcceptedButUnconfirmed(error) ||
 			isMarked(error, SPLIT_MAY_STILL_CONFIRM) ||
 			error instanceof HydraTransportAmbiguousError;

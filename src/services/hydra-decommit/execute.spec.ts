@@ -921,6 +921,27 @@ describe('executeHydraDecommit and the wallet lock', () => {
 		}
 	});
 
+	it('keeps that hold when a later write fails', async () => {
+		jest.useFakeTimers();
+		try {
+			mockUTxOsAfterRequest.mockResolvedValue([
+				{
+					input: { txHash: 'a'.repeat(64), outputIndex: 0 },
+					output: { address: 'addr_test1_local', amount: [{ unit: 'lovelace', quantity: '20000000' }] },
+				},
+			]);
+			mockHeadUpdate.mockRejectedValue(new Error('database hiccup'));
+
+			const outcome = expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toThrow('database hiccup');
+			await jest.advanceTimersByTimeAsync(11_000);
+			await outcome;
+
+			expect(mockWalletRelease).not.toHaveBeenCalled();
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
 	it('releases the wallet once the head has dropped the inputs the node took', async () => {
 		mockUTxOsAfterRequest
 			.mockResolvedValueOnce([
