@@ -109,6 +109,8 @@ export const headConnectionSchemaOutput = z.object({
 	connected: z.boolean(),
 	nodeState: z.string(),
 	isReady: z.boolean(),
+	syncReady: z.boolean().nullable().describe('Whether both sessions and history are verified. Null outside Open.'),
+	syncReason: z.string().nullable(),
 	peerConnected: z
 		.boolean()
 		.nullable()
@@ -242,7 +244,31 @@ export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
 		// node has finished syncing the chain, so it is reported rather than
 		// gated on.
 		const manager = getHydraConnectionManager();
-		const peerLink = manager.getNode(head.id)?.networkConnected ?? null;
+		const mainNode = manager.getNode(head.id);
+		const peerLink = mainNode?.networkConnected ?? null;
+		const syncReady =
+			head.status === HydraHeadStatus.Open
+				? Boolean(
+						mainNode?.hasVerifiedPinnedSessions &&
+						mainNode.confirmedTransactionHistoryReady &&
+						!mainNode.confirmedTransactionHistoryError,
+					)
+				: null;
+		let syncReason: string | null = null;
+		// An Open head cannot serve verified outputs until history replay finishes.
+		// Host health alone hid failed replay and stopped the UI's readiness polling.
+		// Report sync separately so a replay failure does not disable lifecycle controls.
+		if (syncReady === false) {
+			if (!mainNode) {
+				syncReason = 'This service has no active session to the head. Check the head errors if it does not reconnect.';
+			} else if (mainNode.confirmedTransactionHistoryError) {
+				syncReason = 'Transaction history verification failed. Check the head errors for the cause.';
+			} else if (!mainNode.confirmedTransactionHistoryReady) {
+				syncReason = 'This service is still verifying transaction history. Payment sync has not finished.';
+			} else {
+				syncReason = 'The live and history sessions have not both verified this head.';
+			}
+		}
 
 		return {
 			headId: head.id,
@@ -250,6 +276,8 @@ export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
 			nodeState: node.state,
 			isReady: node.isReady,
 			reason: node.reason,
+			syncReady,
+			syncReason,
 			peerConnected: peerLink,
 			paramDrift,
 			l2Blocked,
