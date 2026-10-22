@@ -36,8 +36,10 @@ const redactSensitive = (value: RuntimePropertyValue): RuntimePropertyValue => {
 	return value;
 };
 
+// Every 5xx is logged, also one exposed to show the operator its message:
+// for some, such as an unreachable node, this log is the only server record.
 const logServerError = (error: HttpError, logger: ErrorLogger, url: string, payload: FlatObject | null) =>
-	!error.expose &&
+	(error.statusCode >= 500 || !error.expose) &&
 	logger.error('Server side error', { error, url, payload: redactSensitive(payload) as FlatObject | null });
 
 export const endpointErrorResponseSchema = z
