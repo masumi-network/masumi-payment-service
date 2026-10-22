@@ -36,6 +36,7 @@ import {
 	readL2ReleaseNudgeProof,
 	type L2ReleaseValueFloor,
 } from './l2-release-nudge-proof';
+import { assertL2TxWithinMaxSize } from '@/lib/hydra/hydra/l2-tx-size';
 
 /** At most one nudge per reservation in this window. A head confirms in about a second. */
 export const L2_RELEASE_NUDGE_INTERVAL_MS = 5 * 60_000;
@@ -165,6 +166,9 @@ export async function nudgeIdleHeadForRelease(params: {
 				signSpendNudge,
 			}));
 		if (signedTx === null) return false;
+		// Again for a nudge recorded before this limit: this service's own send
+		// check would refuse it at every interval, so it is held for an operator.
+		if (!nudgeFitsL2(signedTx, hydraHeadId, candidate.id)) return false;
 		const head = params.head === undefined ? getHydraConnectionManager().getHead(hydraHeadId) : params.head;
 		if (!head) return false;
 		// Not refused on a paused Host, unlike new L2 work: the reservation is a
@@ -220,6 +224,10 @@ async function buildAndRecordNudge(params: {
 	if (readL2ReleaseNudgeProof(signedTx, candidate.l2ReservationInputRefs, candidate.valueFloor) === null) {
 		throw new Error('Signed release nudge does not meet the release proof');
 	}
+	// Never record one this service refuses to send for its size: it would be
+	// resent unchanged at every interval and never land. Only a reservation over
+	// hundreds of inputs comes near the limit.
+	if (!nudgeFitsL2(signedTx, hydraHeadId, candidate.id)) return null;
 	// Record before sending, and only over no nudge: a second, different nudge
 	// could apply in place of the recorded one, and release would never see it.
 	const recorded = await database.transaction.updateMany({
@@ -289,3 +297,18 @@ export const signInHeadSpendNudge: SignSpendNudge = async ({
 	const unsignedTx = builder.setFee('0').setNetwork(convertNetwork(network)).completeUnbalanced();
 	return await wallet.signTx(unsignedTx);
 };
+
+/** Whether the head takes a nudge this size. Logs the hold when it does not. */
+function nudgeFitsL2(signedTx: string, hydraHeadId: string, transactionId: string): boolean {
+	try {
+		assertL2TxWithinMaxSize(signedTx);
+		return true;
+	} catch (error) {
+		logger.warn('[HydraReconcile] the release nudge is too large to send; reservation stays held for an operator', {
+			hydraHeadId,
+			transactionId,
+			error: error instanceof Error ? error.message : error,
+		});
+		return false;
+	}
+}

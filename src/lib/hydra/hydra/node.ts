@@ -21,6 +21,7 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import { HydraProtocolError, HydraTransportError } from './errors';
+import { assertL2TxWithinMaxSize } from './l2-tx-size';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
 import { isVerifiedPendingCommitOutput, readFinalSnapshot, readVerifiedCurrentOutput } from './node-current-output';
 import {
@@ -567,6 +568,7 @@ export class HydraNode extends EventEmitter {
 	 * later as DecommitApproved, or does not, as DecommitInvalid.
 	 */
 	async decommit(transaction: HydraTransaction) {
+		assertL2TxWithinMaxSize(transaction.cborHex);
 		return await this.post('/decommit', transaction);
 	}
 

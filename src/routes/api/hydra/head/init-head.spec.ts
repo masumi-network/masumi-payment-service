@@ -8,6 +8,7 @@ type AnyMock = Mock<(...args: any[]) => any>;
 const mockFindHead = jest.fn() as AnyMock;
 const mockConnect = jest.fn() as AnyMock;
 const mockInit = jest.fn() as AnyMock;
+const mockNodeGet = jest.fn() as AnyMock;
 const mockFlush = jest.fn() as AnyMock;
 const mockWarn = jest.fn() as AnyMock;
 const mockReadNodeState = jest.fn() as AnyMock;
@@ -50,7 +51,7 @@ jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({
 		connect: mockConnect,
-		getHead: () => ({ init: mockInit }),
+		getHead: () => ({ init: mockInit, mainNode: { get: mockNodeGet } }),
 		flushHeadStatus: mockFlush,
 		reconcileEnabledState: jest.fn(),
 	}),
@@ -90,6 +91,7 @@ beforeEach(() => {
 	});
 	mockConnect.mockResolvedValue(undefined);
 	mockInit.mockResolvedValue(undefined);
+	mockNodeGet.mockResolvedValue({ maxTxSize: 15_000 });
 	mockFlush.mockResolvedValue(undefined);
 	// Caught up by default, so a timeout with nothing else set is a real failure.
 	mockReadNodeState.mockResolvedValue({
@@ -126,6 +128,33 @@ describe('initHeadPost, on the issuing side', () => {
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 			message: expect.stringContaining('counterparty'),
 		});
+	});
+});
+
+// Whatever Host the node runs on, an older build included, a head opened on an
+// L2 maxTxSize above the shipped one can hold an output fanout cannot move.
+describe('initHeadPost, on a node with unsafe L2 params', () => {
+	it('refuses before posting Init', async () => {
+		mockNodeGet.mockResolvedValue({ maxTxSize: 16_384 });
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('L2 maxTxSize of 16384, above 15000'),
+		});
+		expect(mockNodeGet).toHaveBeenCalledWith('/protocol-parameters');
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	// A node that is down is not a failed Init, so it must not land on the head as an error.
+	it('answers 502 without a head error when the params cannot be read', async () => {
+		mockNodeGet.mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 502,
+			expose: true,
+		});
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+		expect(mockInit).not.toHaveBeenCalled();
 	});
 });
 

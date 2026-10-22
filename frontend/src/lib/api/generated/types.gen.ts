@@ -14419,6 +14419,10 @@ export type PostHydraHeadInitData = {
 
 export type PostHydraHeadInitErrors = {
     /**
+     * Invalid input, or the head has no local participant
+     */
+    400: unknown;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14427,9 +14431,13 @@ export type PostHydraHeadInitErrors = {
      */
     404: unknown;
     /**
-     * Head is not in a state that permits init
+     * Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, or its node reports no numeric L2 maxTxSize or one above 15000
      */
     409: unknown;
+    /**
+     * The Hydra node could not be reached, or the InitTx could not be verified
+     */
+    502: unknown;
 };
 
 export type PostHydraHeadInitResponses = {

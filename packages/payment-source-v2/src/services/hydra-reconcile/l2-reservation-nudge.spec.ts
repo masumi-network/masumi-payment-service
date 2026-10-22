@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { FixedTransaction, PrivateKey } from '@emurgo/cardano-serialization-lib-nodejs';
 import { DEFAULT_PROTOCOL_PARAMETERS, MeshWallet, type UTxO } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { Network } from '@/generated/prisma/client';
@@ -41,6 +41,15 @@ const lockInputB = utxo('b', 1, {
 });
 const reservedRefs = [toUtxoRef(lockInputA), toUtxoRef(lockInputB)];
 const valueFloor = [{ unit: '', amount: 8_000_000n }];
+
+/** The same nudge with `count` more vkey witnesses: the body, and so the release proof, is unchanged. */
+function withExtraWitnesses(signedTx: string, count: number): string {
+	const transaction = FixedTransaction.from_hex(signedTx);
+	for (let index = 0; index < count; index += 1) {
+		transaction.sign_and_add_vkey_signature(PrivateKey.generate_ed25519());
+	}
+	return transaction.to_hex();
+}
 
 describe('selectReleaseNudgeInputs', () => {
 	const select = (utxos: UTxO[], options: { pendingIncrementRefs?: Set<string> } = {}) =>
@@ -216,6 +225,15 @@ describe('nudgeIdleHeadForRelease', () => {
 		expect(h.head.newTx).toHaveBeenCalledWith(expect.objectContaining({ cborHex: validNudge }));
 	});
 
+	// Recorded before the 15,000-byte L2 limit: the send check would refuse it
+	// at every interval, and a second nudge must never be built.
+	it('holds a recorded nudge above the L2 limit instead of resending it', async () => {
+		const h = harness();
+		await expect(h.run({ l2ReleaseNudgeTx: '00'.repeat(15_001) })).resolves.toBe(false);
+		expect(h.head.newTx).not.toHaveBeenCalled();
+		expect(h.signSpendNudge).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		['the wallet is not pinned by this reservation', { wallet: false }],
 		['a withdrawal is being prepared', { decommit: true }],
@@ -247,6 +265,21 @@ describe('nudgeIdleHeadForRelease', () => {
 		const h = harness();
 		h.signSpendNudge.mockResolvedValueOnce('not-a-nudge');
 		await expect(h.run()).resolves.toBe(false);
+		expect(h.database.transaction.updateMany).not.toHaveBeenCalled();
+		expect(h.head.newTx).not.toHaveBeenCalled();
+	});
+
+	// Only a row with no nudge recorded takes one, so recording an oversized
+	// nudge would block every smaller one for good.
+	it('records nothing when the signed nudge is above the L2 limit', async () => {
+		const h = harness();
+		const sign = h.signSpendNudge.getMockImplementation();
+		h.signSpendNudge.mockImplementationOnce(async (params) => withExtraWitnesses(await sign!(params), 160));
+
+		await expect(h.run()).resolves.toBe(false);
+		const signedTx = (await h.signSpendNudge.mock.results[0].value) as string;
+		expect(signedTx.length / 2).toBeGreaterThan(15_000);
+		expect(readL2ReleaseNudgeProof(signedTx, reservedRefs, valueFloor)).not.toBeNull();
 		expect(h.database.transaction.updateMany).not.toHaveBeenCalled();
 		expect(h.head.newTx).not.toHaveBeenCalled();
 	});

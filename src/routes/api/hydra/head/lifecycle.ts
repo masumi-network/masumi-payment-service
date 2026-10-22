@@ -36,6 +36,7 @@ import {
 	reserveAndSubmitHydraCommit,
 	type HydraCommitReconciliationResult,
 } from '@/services/hydra-commit-reconciliation';
+import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
@@ -111,6 +112,35 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			const hydraHead = cm.getHead(head.id);
 			if (!hydraHead) {
 				throw createHttpError(502, 'Failed to connect to Hydra node');
+			}
+			// The last point before a head exists. A node on L2 ledger params above
+			// the shipped maxTxSize, from a Host on unsafe params or an older Host
+			// build, opens a head that can hold an output no fanout can move to L1.
+			// Read raw: the parsed parameters are capped at the shipped value.
+			let maxTxSize: unknown;
+			try {
+				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
+			} catch (error) {
+				// Exposed errors skip the server-error log, so this line is the only record of this failure.
+				logger.warn('[HydraAPI] could not read L2 protocol parameters before Init', {
+					hydraHeadId: head.id,
+					error: getErrorMessage(error),
+				});
+				throw createHttpError(502, "Could not read the L2 maxTxSize from this head's node. Try again later", {
+					cause: error,
+					expose: true,
+				});
+			}
+			if (typeof maxTxSize !== 'number') {
+				throw createHttpError(409, "This head's node reports no numeric L2 maxTxSize, so it cannot be checked");
+			}
+			if (maxTxSize > EXPECTED_MAX_TX_SIZE) {
+				throw createHttpError(
+					409,
+					`This head's node runs an L2 maxTxSize of ${maxTxSize}, above ${EXPECTED_MAX_TX_SIZE}. ` +
+						'A head on it can hold an output no fanout can move to L1. Start the node on ledger params ' +
+						`with maxTxSize ${EXPECTED_MAX_TX_SIZE} or less, then retry`,
+				);
 			}
 
 			// True on the normal path and cleared when the timeout diagnosis has

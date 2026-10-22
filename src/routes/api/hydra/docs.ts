@@ -6,6 +6,7 @@ import { registerHydraSnapshotRoundPaths } from './docs-snapshot-round';
 import { registerHydraL2ReservationPaths } from './docs-l2-reservations';
 import { registerHydraHostPausePaths } from './docs-host-pause';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
+import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
 import {
 	getHeadSchemaInput,
 	getHeadSchemaOutput,
@@ -361,7 +362,17 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				200: successResponse(`Head ${action} result`, lifecycleOutput, { headId: HEAD_ID, status: 'Open' }),
 				...unauthorized,
 				...notFound,
-				409: { description: `Head is not in a state that permits ${action}` },
+				...(action === 'init'
+					? {
+							409: {
+								description:
+									'Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, ' +
+									`or its node reports no numeric L2 maxTxSize or one above ${EXPECTED_MAX_TX_SIZE}`,
+							},
+							400: { description: 'Invalid input, or the head has no local participant' },
+							502: { description: 'The Hydra node could not be reached, or the InitTx could not be verified' },
+						}
+					: { 409: { description: `Head is not in a state that permits ${action}` } }),
 			},
 		});
 	}

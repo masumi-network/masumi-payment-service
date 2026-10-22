@@ -38,6 +38,8 @@ const HOST_FULL_STATUS = 507;
 const HOST_UNAVAILABLE_STATUS = 503;
 /** The peer firewall timer runs every 30 seconds, so one retry after that finds a slot. */
 const HOST_UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
+/** The Host's refusal: unsafe L2 ledger params, or an idempotency key reused with different parameters. */
+const HOST_REFUSED_STATUS = 409;
 
 export type HeadPeriods = {
 	contestationPeriodSeconds: number;
@@ -415,6 +417,11 @@ export async function reserveNodeForExchange(
 				`the hydra host cannot provision a node right now; retry in ${HOST_UNAVAILABLE_RETRY_AFTER_SECONDS} seconds (${error.message})`,
 				{ expose: true, headers: { 'Retry-After': String(HOST_UNAVAILABLE_RETRY_AFTER_SECONDS) } },
 			);
+		}
+		// The Host's own refusal, such as unsafe L2 ledger params. An HttpError, so
+		// the operator reads its fix instead of a bare 500.
+		if (error instanceof HydraHostRequestError && error.status === HOST_REFUSED_STATUS) {
+			throw createHttpError(409, `the hydra host at ${host.baseUrl} refused to provision a node: ${error.message}`);
 		}
 		throw error;
 	}

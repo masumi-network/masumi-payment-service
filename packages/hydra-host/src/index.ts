@@ -17,6 +17,7 @@ import { redemptionNetwork, verifyRedemptionSignature } from './registry/redempt
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
 import { peerTargetRejection } from './peer-target-policy.js';
+import { describeUnsettleableLedgerParams } from './ledger-params.js';
 import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
@@ -78,6 +79,15 @@ async function main(): Promise<void> {
 			`no ledger protocol parameters for network "${config.network}" at ${config.ledgerProtocolParametersFile}. ` +
 				'Generate them with: pnpm --filter @masumi/payment-source-v2 run generate:hydra-params ' +
 				'(a network needs a reviewed base file in packages/hydra-host/params/base first)',
+		);
+	}
+	// Logged here and enforced on every node not yet acked and peered (see
+	// `ledger-params.ts`): refusing the boot would also stop the nodes of heads
+	// already open on this file.
+	const ledgerParamsRefusal = describeUnsettleableLedgerParams(config.ledgerProtocolParametersFile);
+	if (ledgerParamsRefusal !== null) {
+		logger.error(
+			`[host] ${ledgerParamsRefusal}. Running nodes keep running; nodes not yet acked and peered are refused`,
 		);
 	}
 
@@ -164,6 +174,7 @@ async function main(): Promise<void> {
 		// key material on the volume for a node no record mentions. Without this,
 		// that rollback failure was logged to an optional logger nothing supplied.
 		logger,
+		ledgerParamsRefusal,
 	};
 
 	const recoverRedemptions = createRedemptionRecovery(exchange, provisionDeps, logger);
@@ -213,6 +224,7 @@ async function main(): Promise<void> {
 		verifyRedemption: async (nonce, redeemer, signature) =>
 			await verifyRedemptionSignature(nonce, redemptionNetwork(config.network), redeemer, signature),
 		isNodeStopped: async (hostNodeId) => (await store.read(hostNodeId))?.desired === 'Stopped',
+		ledgerParamsRefusal,
 		onRedeemed: async () => {
 			await recoverRedemptions();
 			tickSupervisor('exchange redemption');

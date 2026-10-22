@@ -209,6 +209,12 @@ export type ExchangeDeps = {
 	 * stays open for a retry after the node is started again.
 	 */
 	isNodeStopped: (hostNodeId: string) => Promise<boolean>;
+	/**
+	 * Why this Host takes no new heads, or null (`../ledger-params.ts`). A
+	 * redemption always configures a node that has no head yet, so it is refused
+	 * as busy before the nonce is spent, and the invite stays open.
+	 */
+	ledgerParamsRefusal?: string | null;
 	/** Read X-Forwarded-For only when a trusted HTTP proxy is the sole caller. */
 	trustProxy?: boolean;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
@@ -270,7 +276,7 @@ function readRedeemBody(body: unknown): RedeemBody | null {
 }
 
 export function createExchangePlane(deps: ExchangeDeps): Server {
-	const { store, logger, onRedeemed, verifyRedemption, checkPeerTarget, isNodeStopped } = deps;
+	const { store, logger, onRedeemed, verifyRedemption, checkPeerTarget, isNodeStopped, ledgerParamsRefusal } = deps;
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
 	const totalRequestsPerMinute = deps.limits?.totalRequestsPerMinute ?? DEFAULT_TOTAL_REQUESTS_PER_MINUTE;
@@ -448,6 +454,13 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 				// An expired invite is left to the store, which answers 410. A stop
 				// that lands after this check still holds: peer setup never changes
 				// the desired state, so the node stays down until started.
+				// The reason stays in the log: it names a file path on this Host.
+				if (pending.expiresAt > Date.now() && ledgerParamsRefusal) {
+					logger.warn(`[exchange] redemption refused (503 ${ledgerParamsRefusal})`);
+					response.setHeader('Retry-After', String(STOPPED_NODE_RETRY_AFTER_SECONDS));
+					send(response, 503, { error: 'this host is not taking new heads; retry later' });
+					return;
+				}
 				if (pending.expiresAt > Date.now() && (await isNodeStopped(pending.hostNodeId))) {
 					logger.warn('[exchange] redemption refused (503 reserved node is stopped)');
 					response.setHeader('Retry-After', String(STOPPED_NODE_RETRY_AFTER_SECONDS));

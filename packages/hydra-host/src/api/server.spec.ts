@@ -10,7 +10,7 @@ import { NodeRegistryStore } from '../registry/store.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
-import type { ProvisionDeps } from './provision.js';
+import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
@@ -392,6 +392,123 @@ describe('lifecycle guards over HTTP', () => {
 
 		const record = await new NodeRegistryStore(dataDir).read(created.nodeId);
 		expect(record?.depositActivationSeconds).toBe(900);
+	});
+});
+
+// A separate control plane, because the refusal is computed at boot.
+describe('control plane on ledger params above the L2 maxTxSize cap', () => {
+	let refusingDir: string;
+	let refusingServer: Server;
+	let refusingBaseUrl: string;
+	let refusingStore: NodeRegistryStore;
+	let refusingProvision: ProvisionDeps;
+
+	beforeEach(async () => {
+		refusingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-params-'));
+		const config = { ...loadHostConfig(env), dataDir: refusingDir };
+		const store = new NodeRegistryStore(refusingDir);
+		const ports = new PortAllocator(config.ports);
+		refusingStore = store;
+		refusingProvision = {
+			store,
+			ports,
+			advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+			checkPeerTarget: async () => null,
+			newNodeId: () => 'node-refused',
+			now: () => new Date('2026-07-28T12:00:00.000Z'),
+			ledgerParamsRefusal: 'maxTxSize 16384, above 15000',
+		};
+		refusingServer = createControlPlane({
+			config,
+			store,
+			exchange: new ExchangeStore(refusingDir),
+			ports,
+			supervisor: { tick: async () => undefined } as unknown as Supervisor,
+			provision: refusingProvision,
+			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		});
+		await new Promise<void>((resolve) => refusingServer.listen(0, '127.0.0.1', resolve));
+		refusingBaseUrl = `http://127.0.0.1:${(refusingServer.address() as AddressInfo).port}`;
+	});
+
+	afterEach(async () => {
+		await new Promise<void>((resolve) => refusingServer.close(() => resolve()));
+		await fs.rm(refusingDir, { recursive: true, force: true });
+	});
+
+	// The Host still boots, so nodes of heads already open keep running; only
+	// a node that has no head yet, and would start one on these params, is refused.
+	it('refuses to provision a node and keeps serving the rest', async () => {
+		const headers = { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' };
+		const provisioned = await fetch(`${refusingBaseUrl}/v1/nodes`, {
+			method: 'POST',
+			headers: { ...headers, 'idempotency-key': 'idem-refused' },
+			body: JSON.stringify({}),
+		});
+
+		expect(provisioned.status).toBe(409);
+		expect(await provisioned.json()).toEqual({ error: 'maxTxSize 16384, above 15000' });
+		const listed = await fetch(`${refusingBaseUrl}/v1/nodes`, { headers });
+		expect(listed.status).toBe(200);
+		expect(await listed.json()).toMatchObject({ nodes: [] });
+	});
+
+	/** A node provisioned, and acked if asked, before the Host restarted onto these params. */
+	async function nodeFromBeforeRestart(acked: boolean): Promise<string> {
+		const beforeRestart = { ...refusingProvision, ledgerParamsRefusal: null };
+		const { record } = await provisionNode(
+			{
+				idempotencyKey: 'idem-before-restart',
+				network: 'preprod',
+				contestationPeriodSeconds: 60,
+				depositPeriodSeconds: 120,
+				unsyncedPeriodSeconds: 60,
+				depositActivationSeconds: 120,
+			},
+			beforeRestart,
+		);
+		if (acked) await acknowledgeEscrow(record.nodeId, beforeRestart);
+		return record.nodeId;
+	}
+
+	function ack(nodeId: string): Promise<Response> {
+		return fetch(`${refusingBaseUrl}/v1/nodes/${nodeId}/escrow-ack`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${ADMIN}` },
+		});
+	}
+
+	// The ack would start it, and it would Init a head on these params.
+	it('refuses to ack a node never acked', async () => {
+		const nodeId = await nodeFromBeforeRestart(false);
+
+		expect((await ack(nodeId)).status).toBe(409);
+		expect((await refusingStore.read(nodeId))?.escrowAckedAt).toBeNull();
+	});
+
+	// A repeated ack for an acked node is a no-op, and that node can belong to a
+	// head that is already open.
+	it('answers a repeated ack for an acked node', async () => {
+		const nodeId = await nodeFromBeforeRestart(true);
+		const ackedAt = (await refusingStore.read(nodeId))?.escrowAckedAt;
+
+		expect((await ack(nodeId)).status).toBe(200);
+		expect((await refusingStore.read(nodeId))?.escrowAckedAt).toBe(ackedAt);
+	});
+
+	// An acked node without peers has no head yet: peers would make it start.
+	// Redemption recovery sets peers through the same path.
+	it('refuses peers for an acked node that has none', async () => {
+		const nodeId = await nodeFromBeforeRestart(true);
+
+		const patched = await fetch(`${refusingBaseUrl}/v1/nodes/${nodeId}`, {
+			method: 'PATCH',
+			headers: { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' },
+			body: JSON.stringify({ peers: [PEER] }),
+		});
+
+		expect(patched.status).toBe(409);
+		expect((await refusingStore.read(nodeId))?.peers).toEqual([]);
 	});
 });
 
