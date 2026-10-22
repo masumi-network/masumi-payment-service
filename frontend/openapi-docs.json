@@ -35836,7 +35836,7 @@
                                                             },
                                                             "releasable": {
                                                                 "type": "boolean",
-                                                                "description": "Whether an admin may release it now"
+                                                                "description": "Whether an admin may release it now. The release also re-reads the node's snapshot round and UTxO set, and can still refuse."
                                                             },
                                                             "blockedReason": {
                                                                 "type": "string",

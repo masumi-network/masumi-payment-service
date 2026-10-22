@@ -26,7 +26,11 @@ const reservationShape = z.object({
 		.describe("Body inputs our node reports unspent. Read from the node's reference map: a hint, not evidence."),
 	releaseNudgeTxHash: z.string().nullable().describe('The recorded release nudge, if one was sent'),
 	rejectedByHeadReason: z.string().nullable(),
-	releasable: z.boolean().describe('Whether an admin may release it now'),
+	releasable: z
+		.boolean()
+		.describe(
+			"Whether an admin may release it now. The release also re-reads the node's snapshot round and UTxO set, and can still refuse.",
+		),
 	blockedReason: z.string().nullable().describe('Why it cannot be released now'),
 });
 
