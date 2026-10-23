@@ -8,6 +8,8 @@ import {
 } from './node-history-frame-queue';
 
 const NO_FLOW = { pause: () => undefined, resume: () => undefined };
+// Independent queue capacity requirement, including frames with no payload bytes.
+const FRAME_HIGH_WATER = 4096;
 
 const flush = async () => {
 	await new Promise((resolve) => setImmediate(resolve));
@@ -157,6 +159,47 @@ describe('HistoryFrameQueue', () => {
 		releases.shift()?.();
 		await flush();
 		expect(flow.resume).toHaveBeenCalledTimes(1);
+	});
+
+	it('pauses at the tiny-frame count limit and stays paused until count and bytes are both low', async () => {
+		jest.spyOn(Date, 'now').mockReturnValue(0);
+		const flow = { pause: jest.fn(), resume: jest.fn() };
+		const releases: Array<() => void> = [];
+		const queue = new HistoryFrameQueue(
+			({ rawMessage }) =>
+				rawMessage === ''
+					? undefined
+					: new Promise<void>((resolve) => {
+							releases.push(resolve);
+						}),
+			() => true,
+			flow,
+		);
+		const lowWater = FRAME_HIGH_WATER / 2;
+		queue.push(frame('waiting on accumulator'));
+		queue.pushFront([
+			...Array.from({ length: lowWater - 2 }, () => frame('')),
+			frame('count still above low water'),
+			frame('count at low water'),
+			...Array.from({ length: lowWater - 1 }, () => frame('')),
+		]);
+		expect(queue.size).toBe(FRAME_HIGH_WATER - 1);
+		expect(flow.pause).not.toHaveBeenCalled();
+		queue.push(frame(''));
+		expect(flow.pause).toHaveBeenCalledTimes(1);
+
+		releases.shift()?.();
+		await flush();
+		expect(queue.size).toBe(lowWater + 1);
+		// Bytes are already below their low watermark, but frame objects still fill the queue.
+		expect(flow.resume).not.toHaveBeenCalled();
+		releases.shift()?.();
+		await flush();
+		expect(queue.size).toBe(lowWater);
+		expect(flow.resume).toHaveBeenCalledTimes(1);
+		releases.shift()?.();
+		await flush();
+		expect(queue.size).toBe(0);
 	});
 
 	it('resumes a paused source when cleared', () => {
