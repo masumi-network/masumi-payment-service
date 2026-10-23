@@ -164,7 +164,7 @@ export const purchaseResponseSchema = z
 					.nullable()
 					.optional()
 					.describe(
-						'When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only',
+						'When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it',
 					),
 			})
 			.describe('Next action required for this purchase'),

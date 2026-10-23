@@ -451,7 +451,7 @@ export type Payment = {
          */
         resultHash: string | null;
         /**
-         * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+         * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
          */
         manualActionAcknowledgedAt?: Date | null;
     };
@@ -830,7 +830,7 @@ export type Purchase = {
          */
         errorNote: string | null;
         /**
-         * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+         * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
          */
         manualActionAcknowledgedAt?: Date | null;
     };
@@ -5502,7 +5502,7 @@ export type PostPaymentResponses = {
                  */
                 resultHash: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
@@ -6141,7 +6141,7 @@ export type PostPaymentSubmitResultResponses = {
                  */
                 resultHash: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
@@ -6475,7 +6475,7 @@ export type PostPaymentAuthorizeRefundResponses = {
                  */
                 resultHash: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
@@ -6829,7 +6829,7 @@ export type PostPaymentErrorStateRecoveryResponses = {
                  */
                 resultHash: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
@@ -7182,7 +7182,7 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                  */
                 errorNote: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
@@ -8351,7 +8351,7 @@ export type PostPurchaseErrors = {
                  */
                 errorNote: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
@@ -8610,7 +8610,7 @@ export type PostPurchaseResponses = {
                  */
                 errorNote: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
@@ -9148,7 +9148,7 @@ export type PostPurchaseRequestRefundResponses = {
                  */
                 errorNote: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
@@ -9443,7 +9443,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
                  */
                 errorNote: string | null;
                 /**
-                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
                  */
                 manualActionAcknowledgedAt?: Date | null;
             };
