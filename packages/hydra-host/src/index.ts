@@ -196,23 +196,6 @@ async function main(): Promise<void> {
 		provision: provisionDeps,
 		logger,
 	});
-	// Without this the listen failure surfaces as an unhandled 'error' event and
-	// a raw stack trace. The two ways this fails in production — the port is
-	// taken, or the port is privileged — both have one-line explanations, and a
-	// Host that cannot serve its control plane must exit rather than sit there
-	// supervising nodes nobody can reach.
-	server.on('error', (error: NodeJS.ErrnoException) => {
-		const detail =
-			error.code === 'EADDRINUSE'
-				? `port ${config.listenPort} is already in use; another Hydra Host may still be running`
-				: error.message;
-		logger.error(`[host] control plane could not listen: ${detail}`);
-		void lock.release().finally(() => process.exit(1));
-	});
-	server.listen(config.listenPort, () => {
-		logger.info(`[host] control plane listening on :${config.listenPort}`);
-	});
-
 	// A second listener, not a second path. Redeeming an invite configures and
 	// starts the node that invite reserved — the only thing a counterparty can
 	// cause here, and the reason the node existed at all.
@@ -230,24 +213,18 @@ async function main(): Promise<void> {
 			tickSupervisor('exchange redemption');
 		},
 	});
-	exchangePlane.on('error', (error: NodeJS.ErrnoException) => {
-		const detail = error.code === 'EADDRINUSE' ? `port ${config.exchangePort} is already in use` : error.message;
-		logger.error(`[host] exchange plane could not listen: ${detail}`);
-		void lock.release().finally(() => process.exit(1));
-	});
-	exchangePlane.listen(config.exchangePort, () => {
-		logger.info(`[host] exchange plane listening on :${config.exchangePort}`);
-	});
-
 	const timer = setInterval(() => tickSupervisor('interval'), TICK_INTERVAL_MS);
 
 	let shuttingDown = false;
-	const shutdown = (signal: string): void => {
+	let shutdownExitCode: 0 | 1 = 0;
+	const shutdown = (reason: string, exitCode: 0 | 1 = 0): void => {
+		// A listener failure remains fatal even if a signal already started the drain.
+		if (exitCode === 1) shutdownExitCode = 1;
 		if (shuttingDown) {
 			return;
 		}
 		shuttingDown = true;
-		logger.info(`[host] received ${signal}`);
+		logger.info(`[host] received ${reason}`);
 		clearInterval(timer);
 		server.close();
 		exchangePlane.close();
@@ -258,7 +235,7 @@ async function main(): Promise<void> {
 		// Assigned so the intent is readable, then deliberately left alone.
 		const _guard = setTimeout(() => {
 			logger.error('[host] shutdown exceeded its grace period; exiting');
-			// The lease goes back first, as it does on both listen-error paths.
+			// The lease goes back before the forced exit.
 			// Without it the restarted container cannot acquire the data volume
 			// until HEARTBEAT_STALE_AFTER_MS, so it crash-loops through
 			// `main().catch -> exit(1)` for the whole of that window — a minute of
@@ -277,13 +254,40 @@ async function main(): Promise<void> {
 			.then(async () => {
 				await lock.release();
 				logger.info('[host] all nodes drained; exiting');
-				process.exit(0);
+				process.exit(shutdownExitCode);
 			})
 			.catch((error: unknown) => {
-				logger.error(`[host] shutdown failed: ${(error as Error).message}`);
-				process.exit(1);
+				logger.error(`[host] shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+				return lock
+					.release()
+					.catch((releaseError: unknown) => {
+						const detail = releaseError instanceof Error ? releaseError.message : String(releaseError);
+						logger.error(`[host] lease release failed after shutdown error: ${detail}`);
+					})
+					.finally(() => process.exit(1));
 			});
 	};
+	// Install the common drain path before either listener can fail. Supervisor
+	// boot has adopted or started nodes that must stop before the lease is released.
+	server.on('error', (error: NodeJS.ErrnoException) => {
+		const detail =
+			error.code === 'EADDRINUSE'
+				? `port ${config.listenPort} is already in use; another Hydra Host may still be running`
+				: error.message;
+		logger.error(`[host] control plane could not listen: ${detail}`);
+		shutdown('CONTROL_LISTEN_ERROR', 1);
+	});
+	exchangePlane.on('error', (error: NodeJS.ErrnoException) => {
+		const detail = error.code === 'EADDRINUSE' ? `port ${config.exchangePort} is already in use` : error.message;
+		logger.error(`[host] exchange plane could not listen: ${detail}`);
+		shutdown('EXCHANGE_LISTEN_ERROR', 1);
+	});
+	server.listen(config.listenPort, () => {
+		logger.info(`[host] control plane listening on :${config.listenPort}`);
+	});
+	exchangePlane.listen(config.exchangePort, () => {
+		logger.info(`[host] exchange plane listening on :${config.exchangePort}`);
+	});
 	handleLeaseLoss = (reason: string): void => {
 		logger.error(`[host] data-volume lease lost: ${reason}`);
 		shutdown('LOCK_LOST');
@@ -313,8 +317,7 @@ main().catch((error: unknown) => {
 	// holding it. The restarted container then cannot acquire the volume until
 	// HEARTBEAT_STALE_AFTER_MS and reports "another Hydra Host already holds
 	// /data/host.lock" on every attempt, which is a phantom: there is no second
-	// host, and the real cause is buried. The three other exit paths already
-	// release for exactly this reason; this was the fourth.
+	// host, and the real cause is buried. Release here as on normal shutdown.
 	const held = heldLease.lock;
 	if (held === null) {
 		process.exit(1);
