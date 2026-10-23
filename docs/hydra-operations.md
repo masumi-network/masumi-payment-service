@@ -242,6 +242,15 @@ Admin UI → **Hydra Heads** → **Connect node**. You need the Host's base URL 
 its admin token. The user token is optional; supply it if you want the service
 restricted to node operation.
 
+The service refuses a base URL that is a private, loopback or link-local
+address, or a name that resolves to one, because connecting a Host makes the
+service call that address. An API key with admin rights can connect a Host, and
+it is not an infrastructure operator, so the exception is yours to make and
+not a flag on the request: list the host in `HYDRA_TRUSTED_PRIVATE_HOSTS` (comma
+separated, the same format as `HYDRA_TRUSTED_PLAINTEXT_HOSTS`) in the service's
+environment. A Host on a private network, and a Host on `127.0.0.1` for local
+testing, both need it. A Host already connected keeps working.
+
 The node's hostname lives under **Advanced** and is usually inferred correctly.
 Override it when the Host sits behind a NAT or a load balancer and cannot see
 the address the outside world reaches it on.

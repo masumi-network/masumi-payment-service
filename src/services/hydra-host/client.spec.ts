@@ -159,6 +159,42 @@ describe('forgetting an invite on the Host', () => {
 	});
 });
 
+// A registered address is not always a Host. Whatever answers there used to be
+// copied into the error, which the admin API and the admin UI then showed.
+describe('what a failed Host call repeats of the reply', () => {
+	const failWith = async (body: string, status = 404) => {
+		global.fetch = jest
+			.fn<() => Promise<Response>>()
+			.mockResolvedValue(new Response(body, { status })) as unknown as typeof fetch;
+		return await fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }).then(
+			() => null,
+			(error: Error) => error,
+		);
+	};
+
+	it('does not repeat a reply that is not a Host answer', async () => {
+		const error = await failWith('<html>internal-admin-console</html>');
+
+		expect(error?.message).toContain('failed (404)');
+		expect(error?.message).not.toContain('internal-admin-console');
+	});
+
+	it('does not repeat a JSON reply that is not shaped like a Host error', async () => {
+		const error = await failWith(JSON.stringify({ AccessKeyId: 'AKIAEXAMPLE', Token: 'secret-session' }), 403);
+
+		expect(error?.message).toContain('failed (403)');
+		expect(error?.message).not.toContain('AKIAEXAMPLE');
+		expect(error?.message).not.toContain('secret-session');
+	});
+
+	// These are what an operator acts on: a full Host, a refused peer.
+	it('still repeats the error a Host reports', async () => {
+		const error = await failWith(JSON.stringify({ error: 'all 4 node slots are in use' }), 507);
+
+		expect(error?.message).toContain('failed (507): all 4 node slots are in use');
+	});
+});
+
 describe('Host response size limit', () => {
 	const OVER_LIMIT_BYTES = 4 * 1024 * 1024 + 1;
 	const CHUNK_BYTES = 64 * 1024;
