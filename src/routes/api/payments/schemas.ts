@@ -160,6 +160,13 @@ export const paymentResponseSchema = z
 					.string()
 					.nullable()
 					.describe('SHA256 hash of the result to be submitted (hex string). Null if not applicable'),
+				manualActionAcknowledgedAt: z
+					.date()
+					.nullable()
+					.optional()
+					.describe(
+						'When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Returned by the list endpoint only',
+					),
 			})
 			.describe('Next action required for this payment'),
 		ActionHistory: z

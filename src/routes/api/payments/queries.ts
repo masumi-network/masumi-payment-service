@@ -92,6 +92,7 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 					errorType: true,
 					errorNote: true,
 					resultHash: true,
+					manualActionAcknowledgedAt: true,
 				},
 			},
 			PaymentSource: {
