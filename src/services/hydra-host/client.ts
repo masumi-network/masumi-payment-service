@@ -16,6 +16,7 @@ import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/o
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
 import { normalizeReleaseInfo, type ReleaseInfo } from '@/services/release/release-info';
+import { fetchHydraHost } from './transport';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -93,10 +94,9 @@ async function request(
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 	try {
-		const response = await fetch(joinUrl(baseUrl, path, transport), {
+		const response = await fetchHydraHost(joinUrl(baseUrl, path, transport), {
 			method: init.method ?? 'GET',
 			headers,
-			redirect: 'error',
 			signal: controller.signal,
 			...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
 		});

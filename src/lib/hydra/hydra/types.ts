@@ -269,6 +269,7 @@ export type HydraNodeConfig = {
 	 * header only — `node-url.ts` rejects credentials embedded in the URL.
 	 */
 	authToken?: string;
+	guardHostDestination?: boolean;
 	/** Computes history snapshot accumulators; defaults to the event loop. */
 	computeSnapshotAccumulator?: HydraAccumulatorComputer;
 	walletId: string;

@@ -71,16 +71,20 @@ describe('assertHostDestinationAllowed', () => {
 		).resolves.toBeUndefined();
 	});
 
-	// Nothing can connect to a name that resolves to nothing, so there is
-	// nothing to protect, and the probe reports the Host unreachable.
-	it('accepts a name that does not resolve', async () => {
+	it.each(['ENOTFOUND', 'EAI_AGAIN'])('refuses a name when DNS fails with %s', async (code) => {
 		const unresolvable = async (): Promise<Answer[]> => {
-			throw new Error('ENOTFOUND');
+			throw new Error(code);
 		};
 
 		await expect(
 			assertHostDestinationAllowed('https://hydra.example.com', { trustedHosts: [], resolve: unresolvable }),
-		).resolves.toBeUndefined();
+		).rejects.toMatchObject({ statusCode: 400 });
+	});
+
+	it('refuses a name when DNS returns no addresses', async () => {
+		await expect(
+			assertHostDestinationAllowed('https://hydra.example.com', { trustedHosts: [], resolve: answers() }),
+		).rejects.toMatchObject({ statusCode: 400 });
 	});
 
 	describe('a host the operator has listed', () => {
@@ -113,6 +117,26 @@ describe('assertHostDestinationAllowed', () => {
 			await expect(assertHostDestinationAllowed('https://10.0.0.9', { resolve: neverResolved })).rejects.toMatchObject({
 				statusCode: 400,
 			});
+		});
+
+		it('normalizes trailing dots in both the URL and the operator list', async () => {
+			process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = 'Hydra.Internal.';
+			const resolve = jest.fn<(_hostname: string) => Promise<Answer[]>>(answers('10.0.0.8'));
+
+			await expect(assertHostDestinationAllowed('https://hydra.internal.', { resolve })).resolves.toBeUndefined();
+			// Keep the root dot for DNS so resolver search domains cannot change the destination.
+			expect(resolve).toHaveBeenCalledWith('hydra.internal.');
+		});
+
+		it('still refuses an unresolvable host the operator has listed', async () => {
+			await expect(
+				assertHostDestinationAllowed('https://hydra.internal', {
+					trustedHosts: ['hydra.internal'],
+					resolve: async () => {
+						throw new Error('EAI_AGAIN');
+					},
+				}),
+			).rejects.toMatchObject({ statusCode: 400 });
 		});
 	});
 

@@ -1,4 +1,5 @@
 import createHttpError from 'http-errors';
+import { isIP, type LookupFunction } from 'node:net';
 import {
 	isBlockedIpAddress,
 	isPrivateIpLiteral,
@@ -8,8 +9,33 @@ import {
 } from '@masumi/payment-core/ssrf-guard';
 import { getHydraPlaintextHosts } from '@/lib/hydra/hydra/node-url';
 
+type HostDestinationDependencies = {
+	trustedHosts?: string[];
+	resolve?: (hostname: string) => Promise<ResolvedAddress[]>;
+};
+
+const UNRESOLVABLE_HOST_MESSAGE = 'baseUrl hostname could not be resolved to a usable address';
+
+const normalizeHostname = (hostname: string): string =>
+	stripHostnameBrackets(hostname.trim().toLowerCase()).replace(/\.$/, '');
+
+function hostDestinationPolicy(baseUrl: string, deps: HostDestinationDependencies) {
+	const dnsHostname = stripHostnameBrackets(new URL(baseUrl).hostname);
+	const hostname = normalizeHostname(dnsHostname);
+	const trustedHosts = deps.trustedHosts ?? getHydraPlaintextHosts(process.env.HYDRA_TRUSTED_PRIVATE_HOSTS);
+	const isTrusted = trustedHosts.some((trustedHost) => normalizeHostname(trustedHost) === hostname);
+	const refuse = (): never => {
+		throw createHttpError(
+			400,
+			'baseUrl is a private, loopback or link-local address; an operator must list the host in HYDRA_TRUSTED_PRIVATE_HOSTS to register a Host there',
+		);
+	};
+	if (!isTrusted && isPrivateIpLiteral(hostname)) refuse();
+	return { hostname, dnsHostname, isTrusted, refuse };
+}
+
 /**
- * Whether the service may be pointed at this address as a Hydra Host.
+ * Resolve a Hydra Host to the addresses the transport may connect to.
  *
  * Registering a Host makes the service call whatever the address names, with a
  * bearer token the caller chose, and report what came back. Pointed at loopback
@@ -18,39 +44,56 @@ import { getHydraPlaintextHosts } from '@/lib/hydra/hydra/node-url';
  * be a flag on the request: it is the operator's list in
  * `HYDRA_TRUSTED_PRIVATE_HOSTS`, in the format of `HYDRA_TRUSTED_PLAINTEXT_HOSTS`.
  *
- * Every answer a name resolves to is checked: taking only the public member of a
- * mixed set would leave the rest to whichever the resolver returns at connect
- * time. A name that resolves to nothing passes, because nothing can connect to
- * it and the probe reports the Host unreachable.
- *
- * Checked when a Host is registered. A name that resolves to a public address
- * then and to a private one later is not caught here; closing that needs the
- * address pinned at connect time.
+ * Every answer is checked, and the transport must use these answers instead
+ * of resolving the hostname again. Failed or empty DNS answers are refused.
  */
-export async function assertHostDestinationAllowed(
+export async function resolveAllowedHostDestination(
 	baseUrl: string,
-	deps: {
-		trustedHosts?: string[];
-		resolve?: (hostname: string) => Promise<ResolvedAddress[]>;
-	} = {},
-): Promise<void> {
-	const hostname = stripHostnameBrackets(new URL(baseUrl).hostname);
-	const trustedHosts = deps.trustedHosts ?? getHydraPlaintextHosts(process.env.HYDRA_TRUSTED_PRIVATE_HOSTS);
-	if (trustedHosts.includes(hostname)) return;
-
-	const refuse = (): never => {
-		throw createHttpError(
-			400,
-			'baseUrl is a private, loopback or link-local address; an operator must list the host in HYDRA_TRUSTED_PRIVATE_HOSTS to register a Host there',
-		);
-	};
-	if (isPrivateIpLiteral(hostname)) refuse();
+	deps: HostDestinationDependencies = {},
+): Promise<ResolvedAddress[]> {
+	const { hostname, dnsHostname, isTrusted, refuse } = hostDestinationPolicy(baseUrl, deps);
 
 	let answers: ResolvedAddress[];
-	try {
-		answers = await (deps.resolve ?? resolveHostnameAddresses)(hostname);
-	} catch {
-		return;
+	const literalFamily = isIP(hostname);
+	if (literalFamily === 4 || literalFamily === 6) {
+		answers = [{ address: hostname, family: literalFamily }];
+	} else {
+		try {
+			answers = await (deps.resolve ?? resolveHostnameAddresses)(dnsHostname);
+		} catch {
+			throw createHttpError(400, UNRESOLVABLE_HOST_MESSAGE);
+		}
 	}
-	if (answers.some(({ address, family }) => isBlockedIpAddress(address, family))) refuse();
+	if (answers.length === 0) {
+		throw createHttpError(400, UNRESOLVABLE_HOST_MESSAGE);
+	}
+	if (!isTrusted && answers.some(({ address, family }) => isBlockedIpAddress(address, family))) refuse();
+	return answers;
+}
+
+export async function assertHostDestinationAllowed(
+	baseUrl: string,
+	deps: HostDestinationDependencies = {},
+): Promise<void> {
+	await resolveAllowedHostDestination(baseUrl, deps);
+}
+
+/** Recheck DNS for each socket. Literal IPs bypass Node's lookup callback. */
+export function createHydraHostLookup(baseUrl: string, deps: HostDestinationDependencies = {}): LookupFunction {
+	hostDestinationPolicy(baseUrl, deps);
+	return (_hostname, options, callback) => {
+		void resolveAllowedHostDestination(baseUrl, deps).then(
+			(addresses) => {
+				const candidates = options.family ? addresses.filter(({ family }) => family === options.family) : addresses;
+				if (candidates.length === 0) {
+					callback(createHttpError(400, UNRESOLVABLE_HOST_MESSAGE), '');
+				} else if (options.all) {
+					callback(null, candidates);
+				} else {
+					callback(null, candidates[0].address, candidates[0].family);
+				}
+			},
+			(error: Error) => callback(error, ''),
+		);
+	};
 }

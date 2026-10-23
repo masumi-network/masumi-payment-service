@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -22,8 +22,8 @@ beforeAll(async () => {
 const HOST = { baseUrl: 'https://hydra.example.com', encryptedAdminToken: 'token', allowInsecureHttp: false };
 const PARTICIPANT = { hostNodeId: 'node-1', HydraHost: HOST };
 
-const originalFetch = global.fetch;
-let fetchMock: Mock<(url: string, init: RequestInit) => Promise<Response>>;
+const fetchMock = jest.fn<typeof import('./transport').fetchHydraHost>();
+jest.unstable_mockModule('./transport', () => ({ fetchHydraHost: fetchMock }));
 
 function respond(status: number, body: Record<string, string> | null = null) {
 	fetchMock.mockResolvedValue(new Response(body === null ? null : JSON.stringify(body), { status }));
@@ -31,13 +31,8 @@ function respond(status: number, body: Record<string, string> | null = null) {
 
 beforeEach(() => {
 	jest.clearAllMocks();
-	fetchMock = jest.fn<(url: string, init: RequestInit) => Promise<Response>>();
-	global.fetch = fetchMock as unknown as typeof fetch;
+	fetchMock.mockReset();
 	respond(202, { state: 'Removing' });
-});
-
-afterEach(() => {
-	global.fetch = originalFetch;
 });
 
 describe('releaseHostNodeOfFinishedHead', () => {

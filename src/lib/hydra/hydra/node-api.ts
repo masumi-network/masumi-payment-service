@@ -109,6 +109,8 @@ export interface HydraNodeClientConfig {
 	trustLocalNodeSnapshotMetadata?: boolean;
 	/** Bearer token when the node sits behind a Hydra Host; omitted on loopback. */
 	authToken?: string;
+	/** Enforce the operator's Hydra Host destination policy on every connection. */
+	guardHostDestination?: boolean;
 	/** Bounds websocket-open and pinned Greetings authentication. */
 	connectTimeoutMs?: number;
 	/** Bounds every Hydra HTTP request. */
