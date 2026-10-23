@@ -159,6 +159,13 @@ export const purchaseResponseSchema = z
 				requestedAction: z.nativeEnum(PurchasingAction).describe('Next action required for this purchase'),
 				errorType: z.nativeEnum(PurchaseErrorType).nullable().describe('Type of error that occurred, if any'),
 				errorNote: z.string().nullable().describe('Additional details about the error, if any'),
+				manualActionAcknowledgedAt: z
+					.date()
+					.nullable()
+					.optional()
+					.describe(
+						'When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it',
+					),
 			})
 			.describe('Next action required for this purchase'),
 		ActionHistory: z
