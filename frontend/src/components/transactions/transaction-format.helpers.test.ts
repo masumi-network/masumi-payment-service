@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   formatTransactionState,
   getLatestTxHash,
+  hasUnacknowledgedError,
+  isNotPaidInTime,
   isPaymentNeverReceived,
   type Transaction,
 } from './transaction-format.helpers';
@@ -89,7 +91,49 @@ test('formatTransactionState keeps Funds or Datum Invalid when a lock tx was obs
   assert.equal(formatTransactionState(tx), 'Funds or Datum Invalid');
 });
 
-test('formatTransactionState does not relabel purchases', () => {
-  const tx = asStateRow({ type: 'purchase', onChainState: 'FundsOrDatumInvalid' });
-  assert.equal(formatTransactionState(tx), 'Funds or Datum Invalid');
+const asPurchaseRow = (partial: {
+  currentStatus?: string;
+  historyStatuses?: string[];
+}): Transaction =>
+  ({
+    type: 'purchase',
+    onChainState: 'FundsOrDatumInvalid',
+    CurrentTransaction: partial.currentStatus
+      ? { txHash: 'lock-hash', status: partial.currentStatus }
+      : null,
+    TransactionHistory: (partial.historyStatuses ?? []).map((status) => ({
+      createdAt: new Date('2024-01-01T00:00:00Z'),
+      txHash: 'old-hash',
+      status,
+    })),
+  }) as unknown as Transaction;
+
+test('formatTransactionState labels a never-locked timed-out purchase as Not Paid In Time', () => {
+  const tx = asPurchaseRow({});
+  assert.equal(isNotPaidInTime(tx), true);
+  assert.equal(formatTransactionState(tx), 'Not Paid In Time');
+});
+
+test('a purchase whose lock tx never confirmed is still Not Paid In Time', () => {
+  // The lock tx carries a hash, so the payment-side hash check would miss it.
+  const tx = asPurchaseRow({ currentStatus: 'FailedViaTimeout', historyStatuses: ['RolledBack'] });
+  assert.equal(formatTransactionState(tx), 'Not Paid In Time');
+});
+
+test('a purchase with a confirmed invalid lock keeps Funds or Datum Invalid', () => {
+  assert.equal(
+    formatTransactionState(asPurchaseRow({ currentStatus: 'Confirmed' })),
+    'Funds or Datum Invalid',
+  );
+  assert.equal(isNotPaidInTime(asPurchaseRow({ historyStatuses: ['Confirmed'] })), false);
+});
+
+test('hasUnacknowledgedError drops the error highlight once acknowledged', () => {
+  const withNextAction = (manualActionAcknowledgedAt: Date | null | undefined) =>
+    ({
+      NextAction: { errorType: 'Unknown', manualActionAcknowledgedAt },
+    }) as unknown as Transaction;
+  assert.equal(hasUnacknowledgedError(withNextAction(null)), true);
+  assert.equal(hasUnacknowledgedError(withNextAction(undefined)), true);
+  assert.equal(hasUnacknowledgedError(withNextAction(new Date())), false);
 });

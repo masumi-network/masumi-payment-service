@@ -4,7 +4,11 @@ import {
   type ReportFiatCurrencyChoice,
   type ReportFiatMode,
 } from '@/lib/transaction-report/fiat-settings';
-import type { TransactionFilterState } from './TransactionFilters';
+import {
+  NOT_PAID_IN_TIME_STATUS,
+  toServerOnChainState,
+  type TransactionFilterState,
+} from './TransactionFilters';
 
 type ReportBody = PostReportsSummaryData['body'];
 
@@ -122,9 +126,10 @@ export function buildTransactionReportViewDefaults(
 
   return {
     roles: rolesForTransactionType(filters.type ?? tabType),
-    states: filters.status ? [filters.status] : tabState ? [tabState] : [],
+    states: filters.status ? [toServerOnChainState(filters.status)] : tabState ? [tabState] : [],
     hasUnmappedFilters:
       hasSearchFilter ||
+      filters.status === NOT_PAID_IN_TIME_STATUS ||
       activeTab === 'Needs Action' ||
       filters.needsAction ||
       filters.errorType != null,

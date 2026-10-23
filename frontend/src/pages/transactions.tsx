@@ -24,6 +24,7 @@ import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { filterTransactionsClientSide } from '@/lib/client-search/transaction-search';
 import Link from 'next/link';
 import {
+  isNotPaidInTime,
   isTransactionErrorRecoverable,
   isTransactionNeedingAction,
 } from '@/components/transactions/transaction-format.helpers';
@@ -35,6 +36,8 @@ import { TableSelectAllCheckbox } from '@/components/ui/table-select-checkbox';
 import {
   TransactionFilters,
   EMPTY_FILTERS,
+  NOT_PAID_IN_TIME_STATUS,
+  toServerOnChainState,
   type TransactionFilterState,
 } from '@/components/transactions/TransactionFilters';
 import { buildTransactionReportViewDefaults } from '@/components/transactions/download-details.helpers';
@@ -77,7 +80,7 @@ export default function Transactions() {
 
     // Explicit filters override the tab defaults (errorType is client-side only).
     if (filters.type) params.transactionType = filters.type;
-    if (filters.status) params.filterOnChainState = filters.status;
+    if (filters.status) params.filterOnChainState = toServerOnChainState(filters.status);
     if (filters.needsAction) params.filterNeedsManualAction = true;
 
     // Trimmed to match the backend's own normalizeSearchQuery, so a stray
@@ -194,11 +197,17 @@ export default function Transactions() {
     void refetchTabCounts();
   }, [refetchTransactions, refetchTabCounts]);
 
-  // Error type has no server-side param, so narrow it client-side. Pagination-limited.
+  // Error type and Not Paid In Time have no server-side param, so narrow them
+  // client-side. Pagination-limited.
   const visibleTransactions = useMemo(() => {
-    if (!filters.errorType) return displayTransactions;
-    return displayTransactions.filter((tx) => tx.NextAction?.errorType === filters.errorType);
-  }, [displayTransactions, filters.errorType]);
+    const isNotPaidInTimeFilter = filters.status === NOT_PAID_IN_TIME_STATUS;
+    if (!filters.errorType && !isNotPaidInTimeFilter) return displayTransactions;
+    return displayTransactions.filter(
+      (tx) =>
+        (!filters.errorType || tx.NextAction?.errorType === filters.errorType) &&
+        (!isNotPaidInTimeFilter || isNotPaidInTime(tx)),
+    );
+  }, [displayTransactions, filters.errorType, filters.status]);
 
   const selectableIds = useMemo(
     () => visibleTransactions.map((tx) => tx.id).filter((id): id is string => Boolean(id)),

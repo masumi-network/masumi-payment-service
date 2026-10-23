@@ -103,11 +103,41 @@ export const isPaymentNeverReceived = (transaction: Transaction): boolean =>
 
 export const NO_PAYMENT_RECEIVED_LABEL = 'No Payment Received';
 
-/** On-chain state label for a row, with the never-locked payment timeout called out. */
+/**
+ * A purchase the timeout job invalidated because its funds were never locked
+ * before payByTime. Unlike payments, a hash alone does not rule this out: a
+ * lock tx can be submitted and never confirm. A real invalid lock is always
+ * recorded as a Confirmed transaction.
+ */
+export const isPurchaseNeverLocked = (transaction: Transaction): boolean =>
+  transaction.type === 'purchase' &&
+  transaction.onChainState === 'FundsOrDatumInvalid' &&
+  transaction.CurrentTransaction?.status !== 'Confirmed' &&
+  !(transaction.TransactionHistory ?? []).some((tx) => tx.status === 'Confirmed');
+
+export const NOT_PAID_IN_TIME_LABEL = 'Not Paid In Time';
+
+/** Payment or purchase whose funds were never locked before payByTime. */
+export const isNotPaidInTime = (transaction: Transaction): boolean =>
+  isPaymentNeverReceived(transaction) || isPurchaseNeverLocked(transaction);
+
+/** Label for a never-locked row, or null when the on-chain state label applies. */
+export const getNotPaidInTimeLabel = (transaction: Transaction): string | null => {
+  if (isPaymentNeverReceived(transaction)) return NO_PAYMENT_RECEIVED_LABEL;
+  if (isPurchaseNeverLocked(transaction)) return NOT_PAID_IN_TIME_LABEL;
+  return null;
+};
+
+/** On-chain state label for a row, with the never-locked timeout called out. */
 export const formatTransactionState = (transaction: Transaction): string =>
-  isPaymentNeverReceived(transaction)
-    ? NO_PAYMENT_RECEIVED_LABEL
-    : formatOnChainState(transaction.onChainState);
+  getNotPaidInTimeLabel(transaction) ?? formatOnChainState(transaction.onChainState);
+
+/**
+ * Whether the row gets the error highlight. An operator acknowledgement hides
+ * the error from Needs Action, so the row drops the red background too.
+ */
+export const hasUnacknowledgedError = (transaction: Transaction): boolean =>
+  !!transaction.NextAction?.errorType && !transaction.NextAction.manualActionAcknowledgedAt;
 
 /** Human-readable label for a `NextAction.requestedAction` value (covers both payment and purchase actions). */
 export const formatRequestedAction = (action: string | null | undefined): string => {
