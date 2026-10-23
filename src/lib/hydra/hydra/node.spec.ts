@@ -489,6 +489,29 @@ describe('HydraNode', () => {
 	});
 
 	describe('status change processing', () => {
+		it.each(['PeerConnected', 'PeerDisconnected', 'FutureNotification'])(
+			'ignores a forged Idle on %s after an authenticated Open session',
+			async (tag) => {
+				const { node, historyConnection, liveConnection } = await startSignedNode();
+				for (const frame of signedHistoryChain().frames) historyConnection.emit('message', JSON.stringify(frame));
+				finishHistoryReplay(historyConnection);
+				const statuses: HydraHeadStatus[] = [];
+				node.on(HydraNodeEvent.StatusChange, (data) => statuses.push((data as { status: HydraHeadStatus }).status));
+
+				liveConnection.emit('message', JSON.stringify({ tag, headStatus: 'Idle' }));
+
+				expect(node.status).toBe(HydraHeadStatus.Open);
+				expect(statuses).toEqual([]);
+				expect(node.hasVerifiedPinnedSessions).toBe(true);
+				expect(liveConnection.invalidate).not.toHaveBeenCalled();
+
+				// Unrelated frames stay compatible, and later lifecycle frames still apply.
+				liveConnection.emit('message', JSON.stringify({ tag: 'HeadIsClosed', headId: HEAD_ID_A }));
+				expect(statuses).toEqual([HydraHeadStatus.Closed]);
+				expect(node.status).toBe(HydraHeadStatus.Closed);
+			},
+		);
+
 		it('emits StatusChange with Open when HeadIsOpen received', () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();
