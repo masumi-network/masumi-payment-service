@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { Prisma } from '@/generated/prisma/client';
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
@@ -223,6 +224,25 @@ beforeEach(() => {
 });
 
 describe('executeHydraDecommit request outcomes', () => {
+	// The row's reason is shown in the withdrawal list. A database error's own
+	// message carries the invocation, an absolute server path and a code excerpt.
+	it('records no database detail as the reason a withdrawal failed', async () => {
+		mockFetchAddressUTxOs.mockRejectedValue(
+			new Prisma.PrismaClientKnownRequestError(
+				'Invalid `tx.hydraDecommit.update()` invocation in /Users/dev/masumi/src/execute.ts:204:42 out of range for type bigint',
+				{ code: 'P2020', clientVersion: '7.8.0' },
+			),
+		);
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toBeDefined();
+
+		expect(mockDecommitUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: { status: 'Failed', failureReason: 'the database rejected the write (P2020)' },
+			}),
+		);
+	});
+
 	// Only an answer from the node proves it never took the request.
 	it('marks the withdrawal Failed when the node answers with a rejection', async () => {
 		mockDecommitCall.mockRejectedValue(new Error('DecommitInvalid: nope'));

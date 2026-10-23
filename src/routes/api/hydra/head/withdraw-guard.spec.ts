@@ -52,9 +52,10 @@ jest.unstable_mockModule('@/services/hydra-decommit/execute', () => ({ executeHy
 
 let listWithdrawalsGet: { handler: (args: { input: unknown }) => Promise<unknown> };
 let withdrawHeadPost: { handler: (args: { input: unknown }) => Promise<unknown> };
+let withdrawInput: { safeParse: (input: unknown) => { success: boolean } };
 
 beforeAll(async () => {
-	({ withdrawHeadPost, listWithdrawalsGet } = (await import('./withdraw')) as never);
+	({ withdrawHeadPost, listWithdrawalsGet, withdrawInput } = (await import('./withdraw')) as never);
 });
 
 beforeEach(() => {
@@ -99,6 +100,19 @@ describe('withdrawHeadPost pre-flight', () => {
 		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({ statusCode: 400 });
 		expect(mockAssertReady).not.toHaveBeenCalled();
 		expect(mockExecute).not.toHaveBeenCalled();
+	});
+});
+
+describe('withdraw amount limits', () => {
+	const unit = 'ab'.repeat(30);
+
+	it.each([
+		['the largest lovelace amount a BigInt column holds', { lovelace: '9223372036854775807' }, true],
+		['one more than that', { lovelace: '9223372036854775808' }, false],
+		['the largest token amount', { assetUnit: unit, assetAmount: '18446744073709551615' }, true],
+		['one more than that', { assetUnit: unit, assetAmount: '18446744073709551616' }, false],
+	])('reads %s', (_label, amount, accepted) => {
+		expect(withdrawInput.safeParse({ headId: 'head-1', ...amount }).success).toBe(accepted);
 	});
 });
 

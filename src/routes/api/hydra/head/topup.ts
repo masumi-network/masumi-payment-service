@@ -10,7 +10,14 @@ import { executeHydraTopup } from '@/services/hydra-topup/execute';
 import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 import { recoverHydraDeposit } from '@/services/hydra-topup/recover';
 import { DEFAULT_PERIODS } from '@/services/hydra-invite/provisioning';
-import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
+import {
+	DATABASE_AMOUNT_MESSAGE,
+	HYDRA_QUANTITY_MESSAGE,
+	MAX_DATABASE_BIGINT,
+	POSITIVE_BASE_UNIT_AMOUNT,
+	POSITIVE_BASE_UNIT_AMOUNT_MESSAGE,
+	withinHydraQuantity,
+} from '@/routes/api/hydra/head/amounts';
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { newestFirstOrder } from '@/routes/api/hydra/head/newest-first-cursor';
@@ -30,6 +37,7 @@ export const topupInput = z.object({
 	exactAmount: z
 		.string()
 		.regex(POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE)
+		.refine(withinHydraQuantity, HYDRA_QUANTITY_MESSAGE)
 		.optional()
 		.describe(
 			'Exact top-up amount (base unit) of assetUnit (or lovelace). Pre-splits a dedicated L1 UTxO first, then commits it — adds an L1 confirmation wait.',
@@ -307,6 +315,11 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 				400,
 				`exactAmount must be at least ${MIN_CARVE_LOVELACE} lovelace: a smaller top-up cannot be carved into its own UTxO`,
 			);
+		}
+		// Lovelace is written to a BigInt column, which a token amount never is, and
+		// without an asset unit the schema cannot tell which this is.
+		if (exact && exact.unit === 'lovelace' && exact.amount > MAX_DATABASE_BIGINT) {
+			throw createHttpError(400, `exactAmount: ${DATABASE_AMOUNT_MESSAGE}`);
 		}
 
 		// Detached deliberately. A rejection here is logged rather than returned
