@@ -35,7 +35,12 @@ import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context'
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
 import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
-import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
+import {
+	DATABASE_AMOUNT_MESSAGE,
+	POSITIVE_BASE_UNIT_AMOUNT,
+	POSITIVE_BASE_UNIT_AMOUNT_MESSAGE,
+	withinDatabaseAmount,
+} from '@/routes/api/hydra/head/amounts';
 import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 
 // --- Lifecycle: POST commit (local participant only) ---
@@ -45,6 +50,7 @@ export const commitInput = z.object({
 	lovelace: z
 		.string()
 		.regex(POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE)
+		.refine(withinDatabaseAmount, DATABASE_AMOUNT_MESSAGE)
 		.describe(
 			"How much to put into the head. A dedicated UTxO of exactly this amount is carved on L1 first and only that is committed, so the rest of the wallet — its other ADA, its stablecoins, an agent's registry NFT — stays on L1 and spendable. Costs one L1 confirmation before the deposit is built.",
 		),

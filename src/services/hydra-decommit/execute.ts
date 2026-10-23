@@ -46,6 +46,7 @@ import {
 	HYDRA_HOST_PAUSED_MESSAGE,
 	isHydraHeadOnPausedHostLocked,
 } from '@/services/hydra-host/pause';
+import { describeErrorForOperator } from '@/services/hydra-head-error/operator-message';
 import { staleWithdrawal } from './stale';
 import { countLiveInHeadEscrows } from './live-escrows';
 import {
@@ -701,7 +702,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			await prisma.hydraDecommit
 				.updateMany({
 					where: { id: preparingId, status: HydraDecommitStatus.Preparing },
-					data: { status: HydraDecommitStatus.Failed, failureReason: errorMessage(error).slice(0, 500) },
+					data: { status: HydraDecommitStatus.Failed, failureReason: describeErrorForOperator(error).slice(0, 500) },
 				})
 				.catch((markError: unknown) => {
 					logger.error(`[HydraDecommit] could not fail the preparing withdrawal ${preparingId}`, { error: markError });

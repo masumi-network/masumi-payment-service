@@ -2,6 +2,7 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
 import { LowBalanceStatus } from '@/generated/prisma/client';
+import { DATABASE_AMOUNT_MESSAGE, withinDatabaseAmount } from '@/routes/api/hydra/head/amounts';
 import {
 	deleteHydraLowBalanceRule,
 	listHydraLowBalanceRules,
@@ -11,6 +12,7 @@ import {
 const amountString = z
 	.string()
 	.regex(/^\d+$/, 'Must be a non-negative integer in the asset base unit')
+	.refine(withinDatabaseAmount, DATABASE_AMOUNT_MESSAGE)
 	.describe('Amount in the asset base unit (lovelace for ADA)');
 
 function parseBigInt(value: string, label: string): bigint {
