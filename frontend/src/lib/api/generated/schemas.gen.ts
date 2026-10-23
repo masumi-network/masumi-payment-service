@@ -727,6 +727,12 @@ export const PaymentSchema = {
                     type: 'string',
                     nullable: true,
                     description: 'SHA256 hash of the result to be submitted (hex string). Null if not applicable'
+                },
+                manualActionAcknowledgedAt: {
+                    type: 'string',
+                    nullable: true,
+                    format: 'date-time',
+                    description: 'When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it'
                 }
             },
             required: [
@@ -1446,6 +1452,12 @@ export const PurchaseSchema = {
                     type: 'string',
                     nullable: true,
                     description: 'Additional details about the error, if any'
+                },
+                manualActionAcknowledgedAt: {
+                    type: 'string',
+                    nullable: true,
+                    format: 'date-time',
+                    description: 'When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it'
                 }
             },
             required: [

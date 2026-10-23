@@ -15,7 +15,14 @@ import {
 import { staleWithdrawal } from '@/services/hydra-decommit/stale';
 import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
-import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
+import {
+	DATABASE_AMOUNT_MESSAGE,
+	HYDRA_QUANTITY_MESSAGE,
+	POSITIVE_BASE_UNIT_AMOUNT,
+	POSITIVE_BASE_UNIT_AMOUNT_MESSAGE,
+	withinDatabaseAmount,
+	withinHydraQuantity,
+} from '@/routes/api/hydra/head/amounts';
 import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 import { newestFirstOrder } from '@/routes/api/hydra/head/newest-first-cursor';
 
@@ -24,6 +31,7 @@ export const withdrawInput = z.object({
 	lovelace: z
 		.string()
 		.regex(POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE)
+		.refine(withinDatabaseAmount, DATABASE_AMOUNT_MESSAGE)
 		.optional()
 		.describe(
 			'Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second.',
@@ -38,6 +46,7 @@ export const withdrawInput = z.object({
 	assetAmount: z
 		.string()
 		.regex(POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE)
+		.refine(withinHydraQuantity, HYDRA_QUANTITY_MESSAGE)
 		.optional()
 		.describe("How much of assetUnit to withdraw, in that asset's own smallest unit."),
 	drain: z

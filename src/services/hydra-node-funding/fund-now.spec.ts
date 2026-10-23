@@ -11,6 +11,7 @@ const mockReadLovelaceAt = jest.fn() as AnyMock;
 // The claim is one serializable transaction now, so the mock has to offer the
 // same client inside it.
 const transactionClient = {
+	hydraLocalParticipant: { findUnique: mockFindParticipant },
 	walletFundTransfer: { findFirst: mockFindTransfer, create: mockCreateTransfer },
 };
 

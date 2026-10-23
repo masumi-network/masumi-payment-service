@@ -450,6 +450,10 @@ export type Payment = {
          * SHA256 hash of the result to be submitted (hex string). Null if not applicable
          */
         resultHash: string | null;
+        /**
+         * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+         */
+        manualActionAcknowledgedAt?: Date | null;
     };
     /**
      * Historical list of all actions for this payment. Null if includeHistory is false
@@ -825,6 +829,10 @@ export type Purchase = {
          * Additional details about the error, if any
          */
         errorNote: string | null;
+        /**
+         * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+         */
+        manualActionAcknowledgedAt?: Date | null;
     };
     /**
      * Historical list of all actions for this purchase. Null if includeHistory is false
@@ -5493,6 +5501,10 @@ export type PostPaymentResponses = {
                  * SHA256 hash of the result to be submitted (hex string). Null if not applicable
                  */
                 resultHash: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this payment. Null if no transaction in progress
@@ -6128,6 +6140,10 @@ export type PostPaymentSubmitResultResponses = {
                  * SHA256 hash of the result to be submitted (hex string). Null if not applicable
                  */
                 resultHash: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this payment. Null if no transaction in progress
@@ -6458,6 +6474,10 @@ export type PostPaymentAuthorizeRefundResponses = {
                  * SHA256 hash of the result to be submitted (hex string). Null if not applicable
                  */
                 resultHash: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this payment. Null if no transaction in progress
@@ -6808,6 +6828,10 @@ export type PostPaymentErrorStateRecoveryResponses = {
                  * SHA256 hash of the result to be submitted (hex string). Null if not applicable
                  */
                 resultHash: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this payment. Null if no transaction in progress
@@ -7157,6 +7181,10 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -8322,6 +8350,10 @@ export type PostPurchaseErrors = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -8577,6 +8609,10 @@ export type PostPurchaseResponses = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -9111,6 +9147,10 @@ export type PostPurchaseRequestRefundResponses = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -9402,6 +9442,10 @@ export type PostPurchaseCancelRefundRequestResponses = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
