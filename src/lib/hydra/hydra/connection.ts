@@ -7,6 +7,7 @@ import { hydraAuthHeaders } from './auth';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraProtocolError, HydraTransportError } from './errors';
 import { MAX_HYDRA_WS_FRAME_BYTES } from './schemas';
+import { createHydraHostLookup } from '@/services/hydra-host/destination';
 
 const SEND_TIMEOUT_MS = 5000;
 const SEND_RETRY_INTERVAL_MS = 100;
@@ -85,7 +86,11 @@ export class Connection extends EventEmitter {
 	 */
 	private readonly _authHeaders: Record<string, string>;
 
-	constructor(url: string, authToken?: string) {
+	constructor(
+		url: string,
+		authToken?: string,
+		private readonly _guardHostDestination = false,
+	) {
 		super();
 		this._url = url;
 		this._authHeaders = hydraAuthHeaders(authToken);
@@ -105,6 +110,7 @@ export class Connection extends EventEmitter {
 		const websocket = new WebSocket(toWebSocketUrl(this._url), {
 			maxPayload: MAX_HYDRA_WS_FRAME_BYTES,
 			perMessageDeflate: false,
+			...(this._guardHostDestination ? { lookup: createHydraHostLookup(this._url), agent: false } : {}),
 			...(Object.keys(this._authHeaders).length === 0 ? {} : { headers: this._authHeaders }),
 		});
 		this._websocket = websocket;

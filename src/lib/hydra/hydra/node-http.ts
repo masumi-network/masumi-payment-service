@@ -12,16 +12,24 @@ import { stringifyHydraJson } from './json';
 import { HydraProtocolError, HydraTransportAmbiguousError, HydraTransportError } from './errors';
 import { HydraHttpResponseError, handleHttpResponse } from './node-http-response';
 import { MAX_HYDRA_WS_FRAME_BYTES } from './schemas';
+import { fetchHydraHost } from '@/services/hydra-host/transport';
 
 export class HydraHttpClient {
 	private readonly _httpUrl: string;
 	private readonly _authHeaders: Record<string, string>;
 	private readonly _timeoutMs: number;
+	private readonly _guardHostDestination: boolean;
 
-	constructor(config: { httpUrl: string; authHeaders: Record<string, string>; timeoutMs: number }) {
+	constructor(config: {
+		httpUrl: string;
+		authHeaders: Record<string, string>;
+		timeoutMs: number;
+		guardHostDestination?: boolean;
+	}) {
 		this._httpUrl = config.httpUrl;
 		this._authHeaders = config.authHeaders;
 		this._timeoutMs = config.timeoutMs;
+		this._guardHostDestination = config.guardHostDestination === true;
 	}
 
 	async get<T = unknown>(url: string): Promise<T> {
@@ -57,7 +65,8 @@ export class HydraHttpClient {
 		}, this._timeoutMs);
 		timeout.unref?.();
 		try {
-			const response = await fetch(this._httpUrl + url, {
+			const request = this._guardHostDestination ? fetchHydraHost : fetch;
+			const response = await request(this._httpUrl + url, {
 				method,
 				headers: { 'Content-Type': 'application/json', ...this._authHeaders },
 				redirect: 'error',

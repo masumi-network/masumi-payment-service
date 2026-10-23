@@ -14876,7 +14876,7 @@ export type PostHydraHeadWithdrawErrors = {
      */
     404: unknown;
     /**
-     * Head not open, disabled, not yet identified on chain, or its node is still catching up
+     * Head not open, disabled, not yet identified on chain, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy
      */
     409: unknown;
     /**

@@ -3,6 +3,7 @@ import { z } from '@masumi/payment-core/zod';
 import { HydraScriptLanguage, HydraTransactionType } from './types';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './snapshot-limits';
+import { EXPECTED_UTXO_COST_PER_BYTE } from './params-drift';
 
 export const MAX_HYDRA_WS_FRAME_BYTES = 4 * 1024 * 1024;
 // Mainnet's maxTxSize is normally 16 KiB. Allow protocol-parameter headroom,
@@ -570,7 +571,8 @@ const executionUnitsSchema = z.looseObject({
 });
 
 export const hydraProtocolParametersSchema = z.looseObject({
-	utxoCostPerByte: boundedProtocolIntegerSchema,
+	// A node response must not set the cost used to spend the seller's wallet.
+	utxoCostPerByte: z.literal(EXPECTED_UTXO_COST_PER_BYTE),
 	collateralPercentage: boundedProtocolIntegerSchema,
 	maxBlockExecutionUnits: executionUnitsSchema,
 	maxBlockHeaderSize: boundedProtocolIntegerSchema,

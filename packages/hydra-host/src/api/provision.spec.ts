@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PortAllocator } from '../registry/ports.js';
 import { NodeRegistryStore } from '../registry/store.js';
+import { peerTargetRejection } from '../peer-target-policy.js';
 import { acknowledgeEscrow, mayDiscloseSecrets, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 
 const LAYOUT = { peerStart: 5001, apiStart: 4001, monitoringStart: 6001, capacity: 4 };
@@ -238,24 +239,32 @@ describe('acknowledgeEscrow', () => {
 		).rejects.toMatchObject({ status: 409 });
 	});
 
-	it('refuses a peer address the target policy rejects before persisting it', async () => {
+	it.each([
+		['127.0.0.1', /non-public address/],
+		['2606:4700:4700::1111', /does not resolve to an IPv4 address/],
+	])('refuses peer DNS result %s before persisting peers or key files', async (address, reason) => {
 		const { record } = await provisionNode(REQUEST, deps);
 		const policyDeps = {
 			...deps,
-			checkPeerTarget: async () => 'peer host 127.0.0.1 resolves to non-public address 127.0.0.1',
+			checkPeerTarget: async (advertise: string) =>
+				await peerTargetRejection(advertise, {
+					allowPrivate: false,
+					resolve: async () => [{ address, family: address.includes(':') ? 6 : 4 }],
+				}),
 		};
 
 		await expect(
 			setPeers(
 				record.nodeId,
-				[{ advertise: '127.0.0.1:8443', hydraVerificationKey: '5820aa', cardanoVerificationKey: '5820bb' }],
+				[{ advertise: 'peer.example.com:5001', hydraVerificationKey: '5820aa', cardanoVerificationKey: '5820bb' }],
 				policyDeps,
 			),
 		).rejects.toMatchObject({
 			status: 400,
-			message: expect.stringMatching(/non-public address/),
+			message: expect.stringMatching(reason),
 		});
 		expect((await deps.store.read(record.nodeId))?.peers).toEqual([]);
+		expect(await fs.readdir(path.join(deps.store.nodeDir(record.nodeId), 'peers'))).toEqual([]);
 	});
 
 	it('404s for an unknown node', async () => {

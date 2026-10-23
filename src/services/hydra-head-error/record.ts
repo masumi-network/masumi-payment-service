@@ -10,6 +10,7 @@
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { describeErrorForOperator } from './operator-message';
 
 /** Resolves false when the row could not be written. A failed write is logged, never thrown. */
 export async function recordHeadError(
@@ -20,7 +21,7 @@ export async function recordHeadError(
 	clientInput: string,
 ): Promise<boolean> {
 	try {
-		const errorMessage = error instanceof Error ? error.message : String(error);
+		const errorMessage = describeErrorForOperator(error);
 		await prisma.hydraHeadError.create({
 			data: {
 				hydraHeadId,

@@ -51,9 +51,10 @@ jest.unstable_mockModule('@/services/hydra-topup/pre-split', () => ({
 }));
 
 let commitHeadPost: { handler: (args: { input: unknown; options: unknown }) => Promise<unknown> };
+let commitInput: { safeParse: (input: unknown) => { success: boolean } };
 
 beforeAll(async () => {
-	({ commitHeadPost } = (await import('./commit')) as never);
+	({ commitHeadPost, commitInput } = (await import('./commit')) as never);
 });
 
 beforeEach(() => {
@@ -96,5 +97,14 @@ describe('commitHeadPost status guard', () => {
 			commitHeadPost.handler({ input: { headId: 'head-1', lovelace: '10000000' }, options: {} }),
 		).rejects.toMatchObject({ status: 409 });
 		expect(mockCarve).not.toHaveBeenCalled();
+	});
+});
+
+describe('commit amount limit', () => {
+	it.each([
+		['the largest amount a BigInt column holds', '9223372036854775807', true],
+		['one more than that', '9223372036854775808', false],
+	])('reads %s', (_label, lovelace, accepted) => {
+		expect(commitInput.safeParse({ headId: 'head-1', lovelace }).success).toBe(accepted);
 	});
 });

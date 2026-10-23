@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
 	HydraHeadStatus,
+	OnChainState,
 	PaymentAction,
 	PurchasingAction,
 	TransactionLayer,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { HydraTransactionRejectedError, HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
+import {
+	HydraTransactionRejectedError,
+	HydraTransportAmbiguousError,
+	HydraTransportError,
+} from '@/lib/hydra/hydra/errors';
 
 type Action = {
 	id: string;
@@ -24,6 +29,10 @@ type State = {
 	actionHistory: Set<string>;
 	transactionHistory: Set<string>;
 	status: TransactionStatus | null;
+	intendedTxHash: string | null;
+	invalidHereafterSlot: bigint | null;
+	inputRefs: string[];
+	rejectedByHeadReason: string | null;
 };
 type RequestUpdate = {
 	where: { nextActionId?: string; currentTransactionId?: string };
@@ -38,6 +47,9 @@ const intendedTxHash = 'a'.repeat(64);
 const leaseTime = new Date('2026-08-19T10:00:00Z');
 let state: State;
 let sequence = 0;
+let requestKind: 'payment' | 'purchase';
+// A different reservation on this head can have the same intended body hash.
+let collidingReservationReason: string | null;
 
 function changeHistory(history: Set<string>, mutation?: { connect?: { id: string }; disconnect?: { id: string } }) {
 	if (mutation?.disconnect) history.delete(mutation.disconnect.id);
@@ -75,8 +87,29 @@ async function updateRequest({ where, data }: RequestUpdate) {
 const transactionClient = {
 	$queryRaw: async () => [{ status: HydraHeadStatus.Open, isEnabled: true, isClosing: false, initTxHash: 'head-init' }],
 	transaction: {
-		create: async () => {
+		findUnique: async () => {
+			const request = {
+				id: 'request-1',
+				nextActionId: state.nextActionId,
+				NextAction: state.actions.get(state.nextActionId),
+			};
+			return {
+				status: state.status,
+				txHash: null,
+				l2ReleaseNudgeTx: null,
+				PurchaseRequestCurrent: requestKind === 'purchase' ? [request] : [],
+				PaymentRequestCurrent: requestKind === 'payment' ? [request] : [],
+			};
+		},
+		create: async ({
+			data,
+		}: {
+			data: { intendedTxHash: string; invalidHereafterSlot: bigint; l2ReservationInputRefs: string[] };
+		}) => {
 			state.status = TransactionStatus.Pending;
+			state.intendedTxHash = data.intendedTxHash;
+			state.invalidHereafterSlot = data.invalidHereafterSlot;
+			state.inputRefs = data.l2ReservationInputRefs;
 			return { id: 'reservation-1' };
 		},
 		update: async ({ data }: { data: { status: TransactionStatus } }) => {
@@ -108,6 +141,29 @@ const transactionClient = {
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
+		transaction: {
+			updateMany: async ({
+				where,
+				data,
+			}: {
+				where: { id?: string; status: TransactionStatus };
+				data: { l2RejectedByHeadReason: string };
+			}) => {
+				let count = 0;
+				if ((where.id === undefined || where.id === 'reservation-1') && where.status === state.status) {
+					state.rejectedByHeadReason = data.l2RejectedByHeadReason;
+					count += 1;
+				}
+				if (
+					(where.id === undefined || where.id === 'colliding-reservation') &&
+					where.status === TransactionStatus.Pending
+				) {
+					collidingReservationReason = data.l2RejectedByHeadReason;
+					count += 1;
+				}
+				return { count };
+			},
+		},
 		$transaction: async (callback: (tx: typeof transactionClient) => Promise<unknown>) => {
 			const before = structuredClone(state);
 			try {
@@ -125,8 +181,11 @@ jest.unstable_mockModule('@masumi/payment-core/db-retry', () => ({
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
-jest.unstable_mockModule('@meshsdk/core', () => ({ resolveTxHash: () => intendedTxHash }));
+const mesh = await import('@meshsdk/core');
+jest.unstable_mockModule('@meshsdk/core', () => ({ ...mesh, resolveTxHash: () => intendedTxHash }));
+const evidence = await import('@/services/hydra-connection-manager/hydra-transaction-evidence');
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-transaction-evidence', () => ({
+	...evidence,
 	requireHydraValidityUpperSlot: () => 123n,
 	requireHydraInputRefs: () => [`${'e'.repeat(64)}#0`],
 }));
@@ -142,12 +201,16 @@ jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
 const transitions = await import('@/services/shared/transition-writer');
 jest.unstable_mockModule('@/services/shared', () => transitions);
 const { submitReservedL2Action } = await import('.');
+const { prisma } = await import('@masumi/payment-core/db');
+const { releaseRejectedL2Reservation } = await import('../hydra-reconcile/l2-reservation-release');
+const { observationHasValidLineage } = await import('@/services/hydra-connection-manager/hydra-datum-guards');
 const { writePaymentErrorTransition, writePurchaseErrorTransition } =
 	await import('@/services/shared/error-transition');
 const rotation = await import('../l2-queue-rotation');
 
 beforeEach(() => {
 	sequence = 0;
+	collidingReservationReason = null;
 	state = {
 		nextActionId: 'original-requested',
 		currentTransactionId: 'escrow-tx',
@@ -157,12 +220,35 @@ beforeEach(() => {
 		actionHistory: new Set(),
 		transactionHistory: new Set(),
 		status: null,
+		intendedTxHash: null,
+		invalidHereafterSlot: null,
+		inputRefs: [],
+		rejectedByHeadReason: null,
 	};
 	rotation.clearL2Deferrals();
 });
 
 const cases = [
 	['payment', PaymentAction.SubmitResultRequested, PaymentAction.SubmitResultInitiated, writePaymentErrorTransition],
+	['payment', PaymentAction.WithdrawRequested, PaymentAction.WithdrawInitiated, writePaymentErrorTransition],
+	[
+		'payment',
+		PaymentAction.AuthorizeRefundRequested,
+		PaymentAction.AuthorizeRefundInitiated,
+		writePaymentErrorTransition,
+	],
+	[
+		'purchase',
+		PurchasingAction.SetRefundRequestedRequested,
+		PurchasingAction.SetRefundRequestedInitiated,
+		writePurchaseErrorTransition,
+	],
+	[
+		'purchase',
+		PurchasingAction.AuthorizeWithdrawalRequested,
+		PurchasingAction.AuthorizeWithdrawalInitiated,
+		writePurchaseErrorTransition,
+	],
 	[
 		'purchase',
 		PurchasingAction.WithdrawRefundRequested,
@@ -171,7 +257,7 @@ const cases = [
 	],
 ] as const;
 
-describe.each(cases)('%s L2 safe rollback', (kind, retryAction, initiatedAction, writeFailure) => {
+describe.each(cases)('%s %s L2 safe rollback', (kind, retryAction, initiatedAction, writeFailure) => {
 	function params(submitTx: () => Promise<string>) {
 		return {
 			requestKind: kind,
@@ -192,6 +278,7 @@ describe.each(cases)('%s L2 safe rollback', (kind, retryAction, initiatedAction,
 	}
 
 	beforeEach(() => {
+		requestKind = kind;
 		state.actions.set('original-requested', {
 			id: 'original-requested',
 			requestedAction: retryAction,
@@ -200,14 +287,112 @@ describe.each(cases)('%s L2 safe rollback', (kind, retryAction, initiatedAction,
 		});
 	});
 
+	it('keeps rejected-body lineage across restart and refuses a replacement reservation', async () => {
+		const submitTx = jest.fn(async (): Promise<string> => {
+			throw new HydraTransactionRejectedError('rejected after dispatch');
+		});
+		const submission = params(submitTx);
+		const outcome = await submitReservedL2Action(submission);
+		expect(outcome).toMatchObject({ status: 'ambiguous', phase: 'submit', intendedTxHash });
+		expect(state.status).toBe(TransactionStatus.Pending);
+		expect(state.currentTransactionId).toBe('reservation-1');
+		expect(state.pendingTransactionId).toBe('reservation-1');
+		expect(state.actions.get(state.nextActionId)?.requestedAction).toBe(initiatedAction);
+		expect(state.intendedTxHash).toBe(intendedTxHash);
+		expect(state.invalidHereafterSlot).toBe(123n);
+		expect(state.inputRefs).toEqual([`${'e'.repeat(64)}#0`]);
+		expect(state.rejectedByHeadReason).toBe('rejected after dispatch');
+		expect(collidingReservationReason).toBeNull();
+		// A new process has only persisted state, with no in-memory submit outcome.
+		state = structuredClone(state);
+		await expect(submitReservedL2Action(submission)).rejects.toThrow(/not exclusively available/);
+		expect(submitTx).toHaveBeenCalledTimes(1);
+		const accepts = (txId: string) =>
+			observationHasValidLineage({
+				hydraHeadId: 'head-1',
+				txId,
+				observedState: OnChainState.ResultSubmitted,
+				currentState: OnChainState.FundsLocked,
+				requestLayer: TransactionLayer.L2,
+				currentHydraUtxoTxHash: 'escrow-tx',
+				currentHydraUtxoOutputIndex: 0,
+				observedOutputReference: { txHash: txId, outputIndex: 0 },
+				currentTransaction: {
+					txHash: null,
+					intendedTxHash: state.intendedTxHash,
+					status: state.status!,
+					layer: TransactionLayer.L2,
+					hydraHeadId: 'head-1',
+				},
+				transactionHistory: [],
+				initialLockSignerVkey: 'buyer',
+				transactionEvidence: {
+					txHash: txId,
+					validityLowerSlot: 0n,
+					validityUpperSlot: 123n,
+					inputs: [{ txHash: 'escrow-tx', outputIndex: 0, bodyIndex: 0 }],
+					spends: [],
+					outputs: [],
+					signerVkeys: [],
+					requiredSignerVkeys: [],
+				},
+			});
+		expect(accepts(intendedTxHash)).toBe(true);
+		expect(accepts('b'.repeat(64))).toBe(false);
+	});
+
+	it('restores action state through the release helper with an explicit operator override', async () => {
+		await submitReservedL2Action(
+			params(async () => {
+				throw new HydraTransactionRejectedError('genuine rejection');
+			}),
+		);
+		expect(state.status).toBe(TransactionStatus.Pending);
+		state = structuredClone(state);
+		// This exercises only the restoration helper. The operator API's admission
+		// checks are covered by operator-l2-reservation-release.spec.ts.
+		await expect(
+			releaseRejectedL2Reservation(
+				{
+					id: 'reservation-1',
+					l2ReservationPreviousTransactionId: 'escrow-tx',
+					l2ReservationPreviousLayer: TransactionLayer.L2,
+					l2ReservationPreviousSmartContractWalletId: null,
+					l2ReservationPreviousBuyerReturnAddress: null,
+					l2ReservationPreviousCollateralReturn: null,
+				},
+				prisma,
+				'operator',
+			),
+		).resolves.toBe(true);
+		expect(state.status).toBe(TransactionStatus.RolledBack);
+		expect(state.currentTransactionId).toBe('escrow-tx');
+		expect(state.actions.get(state.nextActionId)?.requestedAction).toBe(retryAction);
+		expect(state.pendingTransactionId).toBeNull();
+	});
+
+	it('leaves a racing confirmation intact when the submitter subsequently receives rejection', async () => {
+		const outcome = await submitReservedL2Action(
+			params(async () => {
+				state.status = TransactionStatus.Confirmed;
+				throw new HydraTransactionRejectedError('late rejection');
+			}),
+		);
+		expect(outcome.status).toBe('ambiguous');
+		expect(state.status).toBe(TransactionStatus.Confirmed);
+		expect(state.currentTransactionId).toBe('reservation-1');
+		expect(state.rejectedByHeadReason).toBeNull();
+		expect(collidingReservationReason).toBeNull();
+	});
+
 	it('restores exact action data and lets exhaustion park that action', async () => {
 		const original = structuredClone(state.actions.get('original-requested'));
 		const result = await submitReservedL2Action(
 			params(async () => {
-				throw new HydraTransactionRejectedError('rejected');
+				throw new HydraTransportError('not dispatched');
 			}),
 		);
-		expect(result.status).toBe('definitively-rejected');
+		expect(result.status).toBe('not-dispatched');
 		expect(state.nextActionId).toBe('original-requested');
 		expect(state.actions.get('original-requested')).toEqual(original);
 		expect([...state.actionHistory]).toEqual(['action-1']);
@@ -232,7 +417,7 @@ describe.each(cases)('%s L2 safe rollback', (kind, retryAction, initiatedAction,
 
 	it('holds the reservation if supplied retry metadata does not match the original action', async () => {
 		const submission = params(async () => {
-			throw new HydraTransactionRejectedError('rejected');
+			throw new HydraTransportError('not dispatched');
 		});
 		submission.retryActionData = kind === 'payment' ? { resultHash: 'e'.repeat(64) } : { submittedTxHash: 'different' };
 		const original = structuredClone(state.actions.get('original-requested'));
@@ -256,11 +441,11 @@ describe.each(cases)('%s L2 safe rollback', (kind, retryAction, initiatedAction,
 		expect(state.pendingTransactionId).toBe('reservation-1');
 	});
 
-	it('does not restore over changed request ownership during rejection', async () => {
+	it('does not restore over changed request ownership after a command was not dispatched', async () => {
 		const outcome = await submitReservedL2Action(
 			params(async () => {
 				state.nextActionId = 'new-owner-initiated';
-				throw new HydraTransactionRejectedError('rejected');
+				throw new HydraTransportError('not dispatched');
 			}),
 		);
 		expect(outcome).toMatchObject({ status: 'ambiguous', phase: 'rollback' });

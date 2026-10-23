@@ -23,7 +23,7 @@ import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
-import { authenticate } from './auth.js';
+import { authenticate, authenticateNode, type AuthResult } from './auth.js';
 import { nonceLogRef } from './nonce-log-ref.js';
 import { isHostApiError, HostApiError } from './http-error.js';
 import { renderHostLandingPage, renderNotFoundPage, wantsHtmlDocument } from './landing.js';
@@ -155,6 +155,21 @@ export function createControlPlane(deps: ServerDeps): Server {
 	// Bound once so every response reports the guard this host actually enforces.
 	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
+	// Said once, not on every call: the proxy sees one for each request a service
+	// makes. It is the signal that a service is still on the credential that
+	// reaches every node on this Host.
+	let hasWarnedHostWideUserToken = false;
+	const authenticateForNode = (header: string | undefined, nodeId: string): AuthResult => {
+		const auth = authenticateNode(header, tokens, nodeId, { acceptHostWideUserToken: config.acceptHostWideUserToken });
+		if (auth.ok && auth.hostWideUserToken === true && !hasWarnedHostWideUserToken) {
+			hasWarnedHostWideUserToken = true;
+			logger.warn(
+				'[api] a request used the Host-wide user token on a node route; it reaches every node on this Host. ' +
+					'Move the payment service to node tokens, then set HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN=false',
+			);
+		}
+		return auth;
+	};
 	const tickSupervisor = (): void => {
 		void supervisor.tick().catch((error: unknown) => {
 			logger.error(`[api] supervisor tick failed: ${(error as Error).message}`);
@@ -245,7 +260,10 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			// The forget route carries a nonce that may still be redeemable.
 			const logPath = route.nonce === undefined ? pathname : pathname.replace(route.nonce, nonceLogRef(route.nonce));
-			const auth = authenticate(request.headers.authorization, tokens, route.tier);
+			const auth =
+				route.tier === 'user' && route.nodeId !== undefined
+					? authenticateForNode(request.headers.authorization, route.nodeId)
+					: authenticate(request.headers.authorization, tokens, route.tier);
 			if (!auth.ok) {
 				// Never echo the presented credential, and never say which token
 				// would have worked.
@@ -316,7 +334,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 				return;
 			}
 
-			const auth = authenticate(request.headers.authorization, tokens, 'user');
+			const auth = authenticateForNode(request.headers.authorization, target.nodeId);
 			if (!auth.ok) {
 				rejectUpgrade(auth.status, auth.status === 403 ? 'Forbidden' : 'Unauthorized');
 				return;
@@ -621,7 +639,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 			return;
 		}
 
-		const auth = authenticate(request.headers.authorization, tokens, 'user');
+		const auth = authenticateForNode(request.headers.authorization, target.nodeId);
 		if (!auth.ok) {
 			send(response, auth.status, { error: auth.message });
 			return;

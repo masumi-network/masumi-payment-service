@@ -479,6 +479,39 @@ the unparseable input must still satisfy some validator path of its own to
 be spent, so including it is a tx-builder mistake whose blast radius stays
 local.
 
+### Hash-only datums are outside the service payment path
+
+**VERIFIED:** V2 lock builders attach inline datums with
+`txOutInlineDatumValue` (`packages/payment-source-v2/src/services/purchases/batch-payments/l2-lock-execute.ts:265`
+and `packages/payment-source-v2/src/services/purchases/x402-build/service.ts:183`).
+L1 intake skips outputs with no `inline_datum`
+(`src/services/transactions/tx-sync/tx/index.ts:61-75`). The L1 service
+parser returns `type: 'Invalid'` for a spent contract input without one
+(`src/services/transactions/tx-sync/util/index.ts:319-323`). Hydra confirmation
+and live reconciliation require `plutusData`
+(`src/services/hydra-connection-manager/head-tx-confirmed.ts:185-204` and
+`packages/payment-source-v2/src/services/hydra-reconcile/index.ts:254-258`).
+Hydra UTxO matching also skips an output without `plutusData`
+(`packages/payment-source-v2/src/services/utxo-matching.ts:66-104`).
+The Hydra codec stores `dataHash` separately from `plutusData`
+(`src/lib/hydra/hydra/codec.ts:89-116`). These payment paths do not register
+hash-only outputs as valid locks.
+
+**INFERRED:** ADA sent directly to the script address without an inline V2
+payment datum is not a service-recognized payment and may become stranded.
+
+**VERIFIED:** The validator includes only inline datums in its
+`reference_signature` input dedupe
+(`validators/vested_pay.ak:178-195`). In `SubmitResult`, it finds a
+continuation by payment identity, then checks that output against each input
+value (`validators/vested_pay.ak:657-691`).
+
+**INFERRED:** A custom integration that credits hash-only locks must assess
+same-identity multi-input spending. The builder-local conclusion above
+assumes service-recognized inline locks; it does not cover custom hash-only
+locks. Supporting hash-only locks through a validator change would change
+the script address and require a deployment and locked-funds migration plan.
+
 ## Example Scripts
 
 Install dependencies, generate local test wallets, and fund the buyer/admin wallets on the selected network:

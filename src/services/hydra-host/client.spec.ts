@@ -1,17 +1,25 @@
-import { afterEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { logger } from '@masumi/payment-core/logger';
-import { HydraHostRequestError, fetchHostCapabilities, forgetHostInvite, provisionNodeOnHost } from './client';
+const transportMock = jest.fn<typeof import('./transport').fetchHydraHost>();
+jest.unstable_mockModule('./transport', () => ({ fetchHydraHost: transportMock }));
 
-const originalFetch = global.fetch;
+let HydraHostRequestError: typeof import('./client').HydraHostRequestError;
+let fetchHostCapabilities: typeof import('./client').fetchHostCapabilities;
+let forgetHostInvite: typeof import('./client').forgetHostInvite;
+let provisionNodeOnHost: typeof import('./client').provisionNodeOnHost;
+
+beforeAll(async () => {
+	({ HydraHostRequestError, fetchHostCapabilities, forgetHostInvite, provisionNodeOnHost } = await import('./client'));
+});
 
 afterEach(() => {
-	global.fetch = originalFetch;
+	transportMock.mockReset();
 });
 
 describe('Hydra Host transport security', () => {
 	it('does not send a bearer token to a stored remote plaintext URL', async () => {
 		const fetchMock = jest.fn<() => Promise<Response>>();
-		global.fetch = fetchMock as unknown as typeof fetch;
+		transportMock.mockImplementation(fetchMock);
 
 		await expect(
 			fetchHostCapabilities('http://10.0.0.8:4000', 'admin-token', { allowInsecureHttp: false }),
@@ -31,7 +39,7 @@ describe('Hydra Host transport security', () => {
 				{ status: 200, headers: { 'Content-Type': 'application/json' } },
 			),
 		);
-		global.fetch = fetchMock as unknown as typeof fetch;
+		transportMock.mockImplementation(fetchMock);
 
 		await expect(
 			fetchHostCapabilities('http://10.0.0.8:4000', 'admin-token', { allowInsecureHttp: true }),
@@ -48,31 +56,33 @@ describe('Hydra Host transport security', () => {
 				.fn<() => Promise<Response>>()
 				.mockResolvedValue(
 					new Response(JSON.stringify({ hydraVersion: '0.20.0', network: 'Preprod', ...body }), { status: 200 }),
-				) as unknown as typeof fetch;
+				);
 
-		global.fetch = respond({ release: { version: '0.29.0-5-gabc1234', commit: 'abc1234' } });
+		transportMock.mockImplementation(respond({ release: { version: '0.29.0-5-gabc1234', commit: 'abc1234' } }));
 		await expect(
 			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
 		).resolves.toMatchObject({ release: { version: '0.29.0-5-gabc1234', commit: 'abc1234' } });
 
-		global.fetch = respond({});
+		transportMock.mockImplementation(respond({}));
 		await expect(
 			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
 		).resolves.toMatchObject({ release: { version: null, commit: null } });
 	});
 
 	it('rejects an insecure public Exchange Plane URL reported by the Host', async () => {
-		global.fetch = jest.fn<() => Promise<Response>>().mockResolvedValue(
-			new Response(
-				JSON.stringify({
-					hydraVersion: '0.20.0',
-					network: 'Preprod',
-					exchangeUrl: 'http://exchange.example.com:8444/exchange',
-					nodeSlots: { used: 0, capacity: 2 },
-				}),
-				{ status: 200, headers: { 'Content-Type': 'application/json' } },
+		transportMock.mockImplementation(
+			jest.fn<() => Promise<Response>>().mockResolvedValue(
+				new Response(
+					JSON.stringify({
+						hydraVersion: '0.20.0',
+						network: 'Preprod',
+						exchangeUrl: 'http://exchange.example.com:8444/exchange',
+						nodeSlots: { used: 0, capacity: 2 },
+					}),
+					{ status: 200, headers: { 'Content-Type': 'application/json' } },
+				),
 			),
-		) as unknown as typeof fetch;
+		);
 
 		await expect(
 			fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }),
@@ -105,7 +115,7 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 	// Hosts of a head disagree, no top-up can be co-signed, and both sides still
 	// render usableFrom and absorbBy normally.
 	it('warns when the effective activation is not the one asked for', async () => {
-		global.fetch = jest.fn<() => Promise<Response>>().mockResolvedValue(hostResponse(777)) as unknown as typeof fetch;
+		transportMock.mockImplementation(jest.fn<() => Promise<Response>>().mockResolvedValue(hostResponse(777)));
 		const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
 
 		await provisionNodeOnHost(
@@ -127,7 +137,7 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 	});
 
 	it('stays quiet when the Host honoured the request', async () => {
-		global.fetch = jest.fn<() => Promise<Response>>().mockResolvedValue(hostResponse(900)) as unknown as typeof fetch;
+		transportMock.mockImplementation(jest.fn<() => Promise<Response>>().mockResolvedValue(hostResponse(900)));
 		const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
 
 		await provisionNodeOnHost(
@@ -147,7 +157,7 @@ describe('forgetting an invite on the Host', () => {
 		const fetchMock = jest
 			.fn<(input: string | URL | Request) => Promise<Response>>()
 			.mockResolvedValue(new Response(JSON.stringify({ error: 'boom' }), { status: 500 }));
-		global.fetch = fetchMock as unknown as typeof fetch;
+		transportMock.mockImplementation(fetchMock);
 
 		const failure = forgetHostInvite('https://hydra.example.com', 'admin-token', 'nonce123456', {
 			allowInsecureHttp: false,
@@ -156,6 +166,42 @@ describe('forgetting an invite on the Host', () => {
 		await expect(failure).rejects.toThrow('DELETE /v1/invites/sha256:575140b1803e on the hydra host failed (500)');
 		await expect(failure).rejects.not.toThrow(/nonce123456/);
 		expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://hydra.example.com/v1/invites/nonce123456');
+	});
+});
+
+// A registered address is not always a Host. Whatever answers there used to be
+// copied into the error, which the admin API and the admin UI then showed.
+describe('what a failed Host call repeats of the reply', () => {
+	const failWith = async (body: string, status = 404) => {
+		transportMock.mockImplementation(
+			jest.fn<() => Promise<Response>>().mockResolvedValue(new Response(body, { status })),
+		);
+		return await fetchHostCapabilities('https://hydra.example.com', 'admin-token', { allowInsecureHttp: false }).then(
+			() => null,
+			(error: Error) => error,
+		);
+	};
+
+	it('does not repeat a reply that is not a Host answer', async () => {
+		const error = await failWith('<html>internal-admin-console</html>');
+
+		expect(error?.message).toContain('failed (404)');
+		expect(error?.message).not.toContain('internal-admin-console');
+	});
+
+	it('does not repeat a JSON reply that is not shaped like a Host error', async () => {
+		const error = await failWith(JSON.stringify({ AccessKeyId: 'AKIAEXAMPLE', Token: 'secret-session' }), 403);
+
+		expect(error?.message).toContain('failed (403)');
+		expect(error?.message).not.toContain('AKIAEXAMPLE');
+		expect(error?.message).not.toContain('secret-session');
+	});
+
+	// These are what an operator acts on: a full Host, a refused peer.
+	it('still repeats the error a Host reports', async () => {
+		const error = await failWith(JSON.stringify({ error: 'all 4 node slots are in use' }), 507);
+
+		expect(error?.message).toContain('failed (507): all 4 node slots are in use');
 	});
 });
 
@@ -187,9 +233,9 @@ describe('Host response size limit', () => {
 
 	it.each([200, 500])('stops reading a %i body at the byte limit', async (status) => {
 		const { stream, stats } = oversizedBody();
-		global.fetch = jest
-			.fn<() => Promise<Response>>()
-			.mockResolvedValue(new Response(stream, { status })) as unknown as typeof fetch;
+		transportMock.mockImplementation(
+			jest.fn<() => Promise<Response>>().mockResolvedValue(new Response(stream, { status })),
+		);
 
 		const error = await fetchHostCapabilities('https://hydra.example.com', 'admin-token', {
 			allowInsecureHttp: false,
@@ -206,11 +252,11 @@ describe('Host response size limit', () => {
 
 describe('Host error detail', () => {
 	it('truncates a long error body before it reaches the message', async () => {
-		global.fetch = jest
-			.fn<() => Promise<Response>>()
-			.mockResolvedValue(
-				new Response(JSON.stringify({ error: 'x'.repeat(100_000) }), { status: 500 }),
-			) as unknown as typeof fetch;
+		transportMock.mockImplementation(
+			jest
+				.fn<() => Promise<Response>>()
+				.mockResolvedValue(new Response(JSON.stringify({ error: 'x'.repeat(100_000) }), { status: 500 })),
+		);
 
 		const error = await fetchHostCapabilities('https://hydra.example.com', 'admin-token', {
 			allowInsecureHttp: false,

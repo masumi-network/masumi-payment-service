@@ -3,6 +3,12 @@ import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
+import { nodeCardanoAddress } from '@/services/hydra-node-funding/node-address';
+import {
+	captureNodeFundingBaseline,
+	hasUnsettledNodeFunding,
+	type NodeFundingBaseline,
+} from '@/services/hydra-node-funding/transfer-history';
 import { releaseHostNodeOfFinishedHead } from '@/services/hydra-host/release-node';
 import { Network, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
@@ -221,6 +227,8 @@ export async function deleteHydraRelation(id: string): Promise<void> {
 					LocalParticipant: {
 						select: {
 							id: true,
+							cardanoVkey: true,
+							Wallet: { select: { PaymentSource: { select: { network: true } } } },
 							hostNodeId: true,
 							HydraHost: { select: { baseUrl: true, encryptedAdminToken: true, allowInsecureHttp: true } },
 						},
@@ -232,6 +240,17 @@ export async function deleteHydraRelation(id: string): Promise<void> {
 	if (!deletionPlan) throw createHttpError(404, 'Hydra relation not found');
 	// Before quiesce, which disconnects the heads a recovery would need.
 	await assertNoUnrecoveredHydraDeposits(deletionPlan.Heads.map(({ id: headId }) => headId));
+	const fundingBaselines = new Map<string, NodeFundingBaseline>();
+	for (const { LocalParticipant } of deletionPlan.Heads) {
+		if (!LocalParticipant) continue;
+		fundingBaselines.set(
+			LocalParticipant.id,
+			await captureNodeFundingBaseline(
+				prisma,
+				nodeCardanoAddress(LocalParticipant.cardanoVkey, LocalParticipant.Wallet.PaymentSource.network),
+			),
+		);
+	}
 	await sweepRelationNodeFunds(deletionPlan.Heads);
 	await quiesceHydraHeadsForDeletion(deletionPlan.Heads.map(({ id: headId }) => headId));
 	// Quiesce has proven every head is finished. Their nodes go back to the Host
@@ -276,7 +295,7 @@ export async function deleteHydraRelation(id: string): Promise<void> {
 											},
 										},
 									},
-									LocalParticipant: { select: { hydraSecretKeyId: true } },
+									LocalParticipant: { select: { id: true, hydraSecretKeyId: true } },
 									RemoteParticipants: { select: { hydraVerificationKeyId: true } },
 								},
 							},
@@ -311,6 +330,16 @@ export async function deleteHydraRelation(id: string): Promise<void> {
 						);
 					}
 
+					for (const { LocalParticipant } of relation.Heads) {
+						if (!LocalParticipant) continue;
+						const funding = fundingBaselines.get(LocalParticipant.id);
+						if (!funding || (await hasUnsettledNodeFunding(tx, funding))) {
+							throw createHttpError(
+								409,
+								'Cannot delete: node funding changed or remains in flight; retry once it settles',
+							);
+						}
+					}
 					const secretKeyIds = relation.Heads.flatMap(({ LocalParticipant }) =>
 						LocalParticipant ? [LocalParticipant.hydraSecretKeyId] : [],
 					);
