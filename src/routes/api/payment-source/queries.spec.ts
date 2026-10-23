@@ -17,6 +17,15 @@ describe('buildPaymentSourceListNetworkFilter', () => {
 				networkLimit: [Network.Preprod, Network.Mainnet],
 				filterNetwork: Network.Preprod,
 			}),
-		).toBe(Network.Preprod);
+		).toEqual({ in: [Network.Preprod] });
+	});
+
+	it('does not widen access when filterNetwork is outside the key limit', () => {
+		expect(
+			buildPaymentSourceListNetworkFilter({
+				networkLimit: [Network.Preprod],
+				filterNetwork: Network.Mainnet,
+			}),
+		).toEqual({ in: [] });
 	});
 });

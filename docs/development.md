@@ -91,6 +91,12 @@ before the cursor is applied — a match beyond the first page is still returned
 particular query: **clients must drop the cursor and restart from the first page whenever `searchQuery` changes.**
 Reusing a cursor from an unfiltered listing against a narrowed search points at a row the new filter may exclude.
 
+### Network filter and cursors
+
+GET `/payment-source` accepts optional `filterNetwork`. The network filter is part of the `where` clause before the
+cursor is applied. **Clients must omit `cursorId` whenever `filterNetwork` changes** (including when adding or removing
+the filter). Reusing a cursor from another network slice can skip rows in the new result set.
+
 ## Testing
 
 This project uses Jest as the testing framework. Here's how you can run tests:

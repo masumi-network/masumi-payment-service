@@ -10,11 +10,12 @@ export type PaymentSourceListQueryInput = z.infer<typeof paymentSourceSchemaInpu
 export function buildPaymentSourceListNetworkFilter(params: {
 	networkLimit: AuthContext['networkLimit'];
 	filterNetwork?: Network;
-}): Network | { in: Network[] } {
-	if (params.filterNetwork != null) {
-		return params.filterNetwork;
-	}
-	return { in: params.networkLimit };
+}): { in: Network[] } {
+	// Optional single-network filter, still bounded by the key's networkLimit (same as payment-source-extended).
+	const networks = params.filterNetwork
+		? params.networkLimit.filter((allowed) => allowed === params.filterNetwork)
+		: params.networkLimit;
+	return { in: networks };
 }
 
 export async function getPaymentSourcesForQuery(
