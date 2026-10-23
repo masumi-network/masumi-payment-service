@@ -76,8 +76,10 @@ export function purchaseL2ActionRetry(action: PurchasingAction | undefined): Pur
 export async function releaseRejectedL2Reservation(
 	reservation: ReleasableL2Reservation,
 	database: typeof prisma,
-	proof: 'head-rejection' | 'spent-by-release-nudge' | 'operator',
+	proof: 'spent-by-release-nudge' | 'operator',
 ): Promise<boolean> {
+	if (proof !== 'spent-by-release-nudge' && proof !== 'operator') return false;
+
 	try {
 		return await database.$transaction(
 			async (tx) => {
@@ -89,7 +91,6 @@ export async function releaseRejectedL2Reservation(
 					select: {
 						status: true,
 						txHash: true,
-						l2RejectedByHeadAt: true,
 						l2ReleaseNudgeTx: true,
 						PurchaseRequestCurrent: {
 							select: { id: true, nextActionId: true, NextAction: { select: { requestedAction: true } } },
@@ -109,7 +110,6 @@ export async function releaseRejectedL2Reservation(
 					// A TxValid row (txHash set) may already be paired with the seller's
 					// PaymentRequest, which this helper does not restore. Keep those manual.
 					current.txHash != null ||
-					(proof === 'head-rejection' && current.l2RejectedByHeadAt == null) ||
 					// The proof holds only for the nudge it was read from. A nudge
 					// recorded after the decision may still be in flight; freeing the
 					// wallet now would let a new lock select its inputs.
