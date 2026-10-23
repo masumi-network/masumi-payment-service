@@ -16,6 +16,20 @@ afterEach(() => {
 });
 
 describe('head clock probe transport', () => {
+	it('refuses an untrusted private Host before opening a clock probe', async () => {
+		const previous = process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '';
+		try {
+			await expect(probeHeadCurrentSlot('ws://127.0.0.1:4001', 'head-1', undefined, true)).rejects.toMatchObject({
+				statusCode: 400,
+			});
+			expect(WebSocketMock).not.toHaveBeenCalled();
+		} finally {
+			if (previous === undefined) delete process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+			else process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = previous;
+		}
+	});
+
 	it('limits frames before allocation and disables compression', async () => {
 		const result = probeHeadCurrentSlot('ws://localhost:4001', 'head-1');
 		expect(WebSocketMock).toHaveBeenCalledWith('ws://localhost:4001?history=no', {

@@ -400,57 +400,117 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 	// and records no head error. The reason is what tells a node still starting
 	// from a wrong URL or token.
 	describe('when the node probe fails', () => {
-		const probeTimeoutMs = (HydraConnectionManager as unknown as { PROBE_TIMEOUT_MS: number }).PROBE_TIMEOUT_MS;
-		const realFetch = globalThis.fetch;
-		// Runs after a test timeout too, so a hung probe cannot leave later tests on fake timers or a mocked fetch.
-		afterEach(() => {
-			jest.useRealTimers();
-			globalThis.fetch = realFetch;
+		const previousTrustedHosts = process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+		const servers: Server[] = [];
+		const listen = async (server: Server): Promise<string> => {
+			servers.push(server);
+			await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+			return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+		};
+		const configuredAt = (url: string) => {
+			const head = connectableConfiguredHead();
+			head.LocalParticipant.nodeHttpUrl = url;
+			head.LocalParticipant.nodeUrl = url.replace(/^http/, 'ws');
+			return head;
+		};
+		beforeEach(() => {
+			process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
+		});
+		afterEach(async () => {
+			if (previousTrustedHosts === undefined) delete process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+			else process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = previousTrustedHosts;
+			await Promise.all(
+				servers.splice(0).map(
+					(server) =>
+						new Promise<void>((resolve) => {
+							server.closeAllConnections();
+							server.close(() => resolve());
+						}),
+				),
+			);
 		});
 
-		it('keeps the fetch error, where the socket error sits, as the cause', async () => {
+		it('keeps the refused socket error as the cause', async () => {
 			const manager = new HydraConnectionManager();
-			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-			const refused = Object.assign(new TypeError('fetch failed'), {
-				cause: Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' }),
-			});
-			jest.spyOn(globalThis, 'fetch').mockRejectedValue(refused);
+			const server = createServer();
+			const url = await listen(server);
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+			mockHydraHeadFindUnique.mockResolvedValue(configuredAt(url));
 
 			const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
 			expect(error).toBeInstanceOf(HydraTransportError);
 			// A node that is down must not read as one too slow to answer.
 			expect((error as Error).message).toContain('unreachable for head head-1');
-			expect((error as HydraTransportError).cause).toBe(refused);
+			expect((error as HydraTransportError).cause).toMatchObject({ code: 'ECONNREFUSED' });
 			expect(manager.isConnected('head-1')).toBe(false);
 		});
 
 		// A node too slow to answer and a node that is down need different fixes.
 		it('says the probe timed out', async () => {
-			const manager = new HydraConnectionManager();
-			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-			jest.spyOn(globalThis, 'fetch').mockImplementation(
-				(_url, init) =>
-					new Promise((_resolve, reject) => {
-						init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
-					}),
-			);
-			jest.useFakeTimers();
-
-			const pendingConnect = manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
-			await jest.advanceTimersByTimeAsync(probeTimeoutMs);
-			const error = await pendingConnect;
+			const manager = new HydraConnectionManager() as unknown as {
+				probeNode: (id: string, url: string, token: string | undefined, timeoutMs: number) => Promise<void>;
+			};
+			const url = await listen(createServer(() => undefined));
+			const probeTimeoutMs = 50;
+			const error = await manager
+				.probeNode('head-1', url, undefined, probeTimeoutMs)
+				.catch((caught: unknown) => caught);
 			expect(error).toBeInstanceOf(HydraTransportError);
 			expect((error as Error).message).toContain(`did not answer within ${probeTimeoutMs}ms`);
 		});
 
 		it('names the status a node answered with', async () => {
 			const manager = new HydraConnectionManager();
-			mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
-			jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }));
+			const url = await listen(createServer((_request, reply) => reply.writeHead(401).end()));
+			mockHydraHeadFindUnique.mockResolvedValue(configuredAt(url));
 
 			const error = await manager.connect({ id: 'head-1' }).catch((caught: unknown) => caught);
 			expect(error).toBeInstanceOf(HydraTransportError);
 			expect((error as Error).message).toContain('answered the probe with HTTP 401');
+		});
+
+		it('refuses an untrusted private Host before its runtime probe sends a request', async () => {
+			let hits = 0;
+			const url = await listen(
+				createServer((_request, reply) => {
+					hits += 1;
+					reply.writeHead(200).end();
+				}),
+			);
+			process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '';
+			mockHydraHeadFindUnique.mockResolvedValue(configuredAt(url));
+			const manager = new HydraConnectionManager();
+			await expect(manager.connect({ id: 'head-1' })).rejects.toMatchObject({ cause: { statusCode: 400 } });
+			expect(hits).toBe(0);
+			expect(mockHydraHeadUpdate).not.toHaveBeenCalled();
+		});
+
+		it('keeps later runtime requests guarded after the initial probe succeeds', async () => {
+			let hits = 0;
+			const url = await listen(
+				createServer((_request, reply) => {
+					hits += 1;
+					reply.writeHead(200).end('{}');
+				}),
+			);
+			process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '';
+			mockHydraHeadFindUnique.mockResolvedValue(configuredAt(url));
+			const manager = new HydraConnectionManager();
+			const probeSpy = jest
+				.spyOn(manager as unknown as { probeNode: () => Promise<void> }, 'probeNode')
+				.mockResolvedValue(undefined);
+			const connectSpy = jest.spyOn(CustomHydraHead.prototype, 'connect').mockImplementation(async function (
+				this: CustomHydraHead,
+			) {
+				await this.mainNode.get('/head');
+			});
+			try {
+				await expect(manager.connect({ id: 'head-1' })).rejects.toMatchObject({ cause: { statusCode: 400 } });
+				expect(hits).toBe(0);
+			} finally {
+				probeSpy.mockRestore();
+				connectSpy.mockRestore();
+			}
 		});
 
 		// Real servers: the redirect mode is a runtime behavior, and CI runs the production Node.

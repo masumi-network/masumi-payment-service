@@ -8,6 +8,8 @@ import {
 } from './node-history-frame-queue';
 
 const NO_FLOW = { pause: () => undefined, resume: () => undefined };
+// Independent queue capacity requirement, including frames with no payload bytes.
+const FRAME_HIGH_WATER = 4096;
 
 const flush = async () => {
 	await new Promise((resolve) => setImmediate(resolve));
@@ -76,6 +78,43 @@ describe('HistoryFrameQueue', () => {
 		queue.push(frame('b'));
 		await flush();
 		expect(seen).toEqual(['a', 'b']);
+	});
+
+	it('prepends 150,000 frames without argument spreading and preserves order and pass tags', async () => {
+		const pass = 7;
+		const frames = Array.from({ length: 150_000 }, (_, index) => frame(String(index), pass));
+		const seen: string[] = [];
+		let release: () => void = () => undefined;
+		let finish: () => void = () => undefined;
+		const finished = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const queue = new HistoryFrameQueue(
+			({ rawMessage }) => {
+				seen.push(rawMessage);
+				if (rawMessage === 'wait') {
+					return new Promise<void>((resolve) => {
+						release = resolve;
+					});
+				}
+				if (rawMessage === 'tail') finish();
+				return undefined;
+			},
+			(candidate) => candidate.pass === pass,
+			NO_FLOW,
+		);
+		queue.push(frame('wait', pass));
+		queue.push(frame('already queued', pass));
+		expect(() => queue.pushFront(frames)).not.toThrow();
+		queue.pushFront([frame('stale', 0), frame('priority', pass)]);
+		queue.push(frame('tail', pass));
+		expect(queue.size).toBe(frames.length + 4);
+		expect(seen).toEqual(['wait']);
+
+		release();
+		await finished;
+		expect(seen).toEqual(['wait', 'priority', ...frames.map(({ rawMessage }) => rawMessage), 'already queued', 'tail']);
+		expect(queue.size).toBe(0);
 	});
 
 	it('yields to the event loop once a slice has spent its budget', async () => {
@@ -159,6 +198,47 @@ describe('HistoryFrameQueue', () => {
 		expect(flow.resume).toHaveBeenCalledTimes(1);
 	});
 
+	it('pauses at the tiny-frame count limit and stays paused until count and bytes are both low', async () => {
+		jest.spyOn(Date, 'now').mockReturnValue(0);
+		const flow = { pause: jest.fn(), resume: jest.fn() };
+		const releases: Array<() => void> = [];
+		const queue = new HistoryFrameQueue(
+			({ rawMessage }) =>
+				rawMessage === ''
+					? undefined
+					: new Promise<void>((resolve) => {
+							releases.push(resolve);
+						}),
+			() => true,
+			flow,
+		);
+		const lowWater = FRAME_HIGH_WATER / 2;
+		queue.push(frame('waiting on accumulator'));
+		queue.pushFront([
+			...Array.from({ length: lowWater - 2 }, () => frame('')),
+			frame('count still above low water'),
+			frame('count at low water'),
+			...Array.from({ length: lowWater - 1 }, () => frame('')),
+		]);
+		expect(queue.size).toBe(FRAME_HIGH_WATER - 1);
+		expect(flow.pause).not.toHaveBeenCalled();
+		queue.push(frame(''));
+		expect(flow.pause).toHaveBeenCalledTimes(1);
+
+		releases.shift()?.();
+		await flush();
+		expect(queue.size).toBe(lowWater + 1);
+		// Bytes are already below their low watermark, but frame objects still fill the queue.
+		expect(flow.resume).not.toHaveBeenCalled();
+		releases.shift()?.();
+		await flush();
+		expect(queue.size).toBe(lowWater);
+		expect(flow.resume).toHaveBeenCalledTimes(1);
+		releases.shift()?.();
+		await flush();
+		expect(queue.size).toBe(0);
+	});
+
 	it('resumes a paused source when cleared', () => {
 		const flow = { pause: jest.fn(), resume: jest.fn() };
 		const queue = new HistoryFrameQueue(
@@ -167,7 +247,8 @@ describe('HistoryFrameQueue', () => {
 			flow,
 		);
 		const half = 'x'.repeat(HISTORY_REPLAY_QUEUE_HIGH_WATER / 2);
-		for (let index = 0; index < 4; index += 1) queue.push(frame(half));
+		queue.push(frame('wait'));
+		queue.pushFront([frame(half), frame(half), frame(half)]);
 		expect(flow.pause).toHaveBeenCalledTimes(1);
 		queue.clear();
 		expect(flow.resume).toHaveBeenCalledTimes(1);

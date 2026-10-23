@@ -54,9 +54,10 @@ jest.unstable_mockModule('@/services/hydra-topup/recover', () => ({ recoverHydra
 
 let listTopupsGet: { handler: (args: { input: unknown }) => Promise<unknown> };
 let topupHeadPost: { handler: (args: { input: unknown }) => Promise<unknown> };
+let topupInput: { safeParse: (input: unknown) => { success: boolean } };
 
 beforeAll(async () => {
-	({ topupHeadPost, listTopupsGet } = (await import('./topup')) as never);
+	({ topupHeadPost, listTopupsGet, topupInput } = (await import('./topup')) as never);
 });
 
 beforeEach(() => {
@@ -73,6 +74,39 @@ beforeEach(() => {
 });
 
 const input = { headId: 'head-1', assetFilter: 'all', exactAmount: '50000000' };
+
+describe('topup amount limits', () => {
+	const unit = 'ab'.repeat(30);
+
+	// A token amount is held as text, so only the ledger's own limit applies.
+	it.each([
+		['the largest token amount', '18446744073709551615', true],
+		['one more than that', '18446744073709551616', false],
+	])('reads %s', (_label, exactAmount, accepted) => {
+		expect(topupInput.safeParse({ headId: 'head-1', assetUnit: unit, exactAmount }).success).toBe(accepted);
+	});
+
+	// Lovelace lands in a BigInt column, and with no asset named the schema cannot
+	// tell it from a token amount, so the handler holds it to the column's limit.
+	it('refuses an exact lovelace amount the database cannot hold, before starting anything', async () => {
+		await expect(
+			topupHeadPost.handler({ input: { headId: 'head-1', exactAmount: '9223372036854775808' } }),
+		).rejects.toMatchObject({ statusCode: 400 });
+		expect(mockExecute).not.toHaveBeenCalled();
+	});
+
+	it('accepts the largest exact lovelace amount the database holds', async () => {
+		await expect(
+			topupHeadPost.handler({ input: { headId: 'head-1', exactAmount: '9223372036854775807' } }),
+		).resolves.toMatchObject({ accepted: true });
+	});
+
+	it('accepts the same amount of a token, which the database never holds', async () => {
+		await expect(
+			topupHeadPost.handler({ input: { headId: 'head-1', assetUnit: unit, exactAmount: '9223372036854775808' } }),
+		).resolves.toMatchObject({ accepted: true });
+	});
+});
 
 describe('topupHeadPost pre-flight', () => {
 	it('accepts once the head, the session and the node all answer', async () => {

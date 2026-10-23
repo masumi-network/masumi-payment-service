@@ -87,6 +87,7 @@ export async function getPurchasesForQuery(
 					requestedAction: true,
 					errorType: true,
 					errorNote: true,
+					manualActionAcknowledgedAt: true,
 				},
 			},
 			CurrentTransaction: {

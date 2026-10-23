@@ -741,6 +741,12 @@
                                 "type": "string",
                                 "nullable": true,
                                 "description": "SHA256 hash of the result to be submitted (hex string). Null if not applicable"
+                            },
+                            "manualActionAcknowledgedAt": {
+                                "type": "string",
+                                "nullable": true,
+                                "format": "date-time",
+                                "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                             }
                         },
                         "required": [
@@ -1459,6 +1465,12 @@
                                 "type": "string",
                                 "nullable": true,
                                 "description": "Additional details about the error, if any"
+                            },
+                            "manualActionAcknowledgedAt": {
+                                "type": "string",
+                                "nullable": true,
+                                "format": "date-time",
+                                "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                             }
                         },
                         "required": [
@@ -11438,6 +11450,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "SHA256 hash of the result to be submitted (hex string). Null if not applicable"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -13044,6 +13062,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "SHA256 hash of the result to be submitted (hex string). Null if not applicable"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -13693,6 +13717,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "SHA256 hash of the result to be submitted (hex string). Null if not applicable"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -14369,6 +14399,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "SHA256 hash of the result to be submitted (hex string). Null if not applicable"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -15063,6 +15099,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Additional details about the error, if any"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -17951,6 +17993,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Additional details about the error, if any"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -18555,6 +18603,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Additional details about the error, if any"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -19745,6 +19799,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Additional details about the error, if any"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -20390,6 +20450,12 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Additional details about the error, if any"
+                                                        },
+                                                        "manualActionAcknowledgedAt": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time",
+                                                            "description": "When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it"
                                                         }
                                                     },
                                                     "required": [
@@ -35106,7 +35172,7 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head not open, disabled, not yet identified on chain, or its node is still catching up"
+                        "description": "Head not open, disabled, not yet identified on chain, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy"
                     },
                     "502": {
                         "description": "No live connection to the head"

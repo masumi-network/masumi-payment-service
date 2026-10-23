@@ -78,12 +78,14 @@ beforeEach(() => {
 
 /**
  * The reservation exists so an accepted-but-unreported lock can never be retried
- * from different inputs. Releasing it is safe only once the head has refused the
- * body and the body can no longer be included by anyone.
+ * from different inputs. A verified input nudge or an operator decision can
+ * release it. A head rejection alone cannot prove that the body was not accepted.
  */
 describe('releaseRejectedL2Reservation', () => {
 	it('rolls the transaction back, frees the wallet and returns the request', async () => {
-		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection')).resolves.toBe(true);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'spent-by-release-nudge')).resolves.toBe(
+			true,
+		);
 
 		expect(mockTransactionUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: TransactionStatus.RolledBack }) }),
@@ -101,15 +103,18 @@ describe('releaseRejectedL2Reservation', () => {
 	it('does nothing once the transaction has a hash', async () => {
 		mockFindUnique.mockResolvedValue(pendingRejected({ txHash: 'a'.repeat(64) }));
 
-		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection')).resolves.toBe(false);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'spent-by-release-nudge')).resolves.toBe(
+			false,
+		);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it('does nothing when the head never refused the body', async () => {
-		mockFindUnique.mockResolvedValue(pendingRejected({ l2RejectedByHeadAt: null }));
-
-		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection')).resolves.toBe(false);
+	it('does not release on a head rejection alone', async () => {
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection' as never)).resolves.toBe(
+			false,
+		);
+		expect(mockFindUnique).not.toHaveBeenCalled();
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 	});
 
@@ -170,7 +175,9 @@ describe('releaseRejectedL2Reservation', () => {
 	it('does nothing when the reservation is no longer pending', async () => {
 		mockFindUnique.mockResolvedValue(pendingRejected({ status: TransactionStatus.Confirmed }));
 
-		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'head-rejection')).resolves.toBe(false);
+		await expect(releaseRejectedL2Reservation(reservation, prisma as never, 'spent-by-release-nudge')).resolves.toBe(
+			false,
+		);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
 	});
 
@@ -178,7 +185,7 @@ describe('releaseRejectedL2Reservation', () => {
 		await releaseRejectedL2Reservation(
 			{ ...reservation, l2ReservationPreviousSmartContractWalletId: 'wallet-before' },
 			prisma as never,
-			'head-rejection',
+			'spent-by-release-nudge',
 		);
 
 		expect(mockPurchaseUpdate).toHaveBeenCalledWith(

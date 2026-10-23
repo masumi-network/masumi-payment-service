@@ -19,7 +19,14 @@ const participant = {
 	Wallet: { PaymentSource: { network: Network.Preprod, PaymentSourceConfig: { rpcProviderApiKey: 'key' } } },
 };
 const transactionClient = {
-	hydraLocalParticipant: { findUnique: mockFindSettings },
+	hydraLocalParticipant: {
+		findUnique: async (args: object) => {
+			const settings = await mockFindSettings(args);
+			return settings === null
+				? null
+				: { ...settings, hydraHeadId: 'head', HydraHead: { status: 'Open', retiredAt: null } };
+		},
+	},
 	walletFundTransfer: { findFirst: mockFindTransfer, create: mockCreateTransfer, aggregate: mockAggregate },
 };
 const mockTransaction =
@@ -82,6 +89,14 @@ beforeEach(() => {
 // Settled transfers no longer trigger findFirst; history still counts them for the cap.
 // These unit tests verify the transaction query shape, not database concurrency.
 describe('optional automatic node funding limits', () => {
+	it.each([429, 500])('skips a balance lookup with status %s even when its message mentions 404', async (status) => {
+		mockReadBalance.mockRejectedValue({ status_code: status, message: 'Unexpected upstream response: 404' });
+
+		await expect(cycle()).resolves.toEqual({ checked: 1, funded: 0, skipped: 0 });
+		expect(mockTransaction).not.toHaveBeenCalled();
+		expect(mockCreateTransfer).not.toHaveBeenCalled();
+	});
+
 	it('keeps unlimited nodes funded after repeated settled transfers', async () => {
 		for (let attempt = 0; attempt < 4; attempt += 1) {
 			await expect(cycle()).resolves.toMatchObject({ funded: 1 });
@@ -157,7 +172,7 @@ describe('optional automatic node funding limits', () => {
 	it('lets manual requests bypass automatic settings and history', async () => {
 		mockFindSettings.mockResolvedValue({ autoFund: false, automaticFundingLimitLovelace: 0n });
 		await expect(fundNow('participant-1')).resolves.toMatchObject({ outcome: 'sent' });
-		expect(mockFindSettings).not.toHaveBeenCalled();
+		expect(mockFindSettings).toHaveBeenCalledTimes(1);
 		expect(mockAggregate).not.toHaveBeenCalled();
 		expect(mockCreateTransfer).toHaveBeenCalledTimes(1);
 	});

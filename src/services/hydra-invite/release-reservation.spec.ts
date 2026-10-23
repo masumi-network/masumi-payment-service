@@ -20,7 +20,13 @@ const mockRemoveHostNode = jest.fn() as AnyMock;
 const mockWithdrawNodeFunds = jest.fn() as AnyMock;
 
 const tx = {
-	hydraLocalParticipant: { findMany: mockParticipantFindMany, deleteMany: mockParticipantDeleteMany },
+	hydraLocalParticipant: {
+		findMany: mockParticipantFindMany,
+		findUnique: async () => ({ hydraHeadId: null, hydraSecretKeyId: 'key-1' }),
+		deleteMany: mockParticipantDeleteMany,
+	},
+	hydraHeadInvite: { findFirst: async () => null },
+	walletFundTransfer: { findFirst: async () => null },
 	hydraSecretKey: { deleteMany: mockSecretDeleteMany },
 };
 
@@ -29,9 +35,15 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		hydraLocalParticipant: { findMany: mockParticipantFindMany },
 		hydraHeadInvite: { findMany: mockInviteFindMany },
 		hydraHost: { findUnique: mockHostFindUnique },
+		walletFundTransfer: { findMany: async () => [] },
 		$transaction: (run: (client: typeof tx) => Promise<unknown>) => run(tx),
 	},
 }));
+
+jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
+	withSerializableSlotRetry: async (operation: () => Promise<unknown>) => operation(),
+}));
+jest.unstable_mockModule('@/services/hydra-node-funding/node-address', () => ({ nodeCardanoAddress: () => 'addr' }));
 
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	removeHostNode: mockRemoveHostNode,
@@ -68,6 +80,12 @@ beforeAll(async () => {
 
 const RESERVATION = { hydraHostId: 'host-1', hostNodeId: 'node-1' };
 const HOST = { baseUrl: 'https://host.example', encryptedAdminToken: 'token', allowInsecureHttp: false };
+const PARTICIPANT = {
+	id: 'participant-1',
+	hydraSecretKeyId: 'key-1',
+	cardanoVkey: 'vkey',
+	Wallet: { PaymentSource: { network: 'Preprod' } },
+};
 
 function sweep(code: string) {
 	return { address: 'addr', balanceLovelace: '0', txHash: null, reason: null, code };
@@ -75,7 +93,7 @@ function sweep(code: string) {
 
 beforeEach(() => {
 	jest.clearAllMocks();
-	mockParticipantFindMany.mockResolvedValue([{ id: 'participant-1', hydraSecretKeyId: 'key-1' }]);
+	mockParticipantFindMany.mockResolvedValue([PARTICIPANT]);
 	mockInviteFindMany.mockResolvedValue([]);
 	mockWithdrawNodeFunds.mockResolvedValue(sweep('dust'));
 	mockHostFindUnique.mockResolvedValue(HOST);
@@ -145,8 +163,8 @@ describe('releaseReservedParticipants', () => {
 
 	it('releases only the nodes it could settle', async () => {
 		mockParticipantFindMany.mockResolvedValue([
-			{ id: 'participant-1', hydraSecretKeyId: 'key-1' },
-			{ id: 'participant-2', hydraSecretKeyId: 'key-2' },
+			PARTICIPANT,
+			{ ...PARTICIPANT, id: 'participant-2', hydraSecretKeyId: 'key-2' },
 		]);
 		mockWithdrawNodeFunds.mockImplementation((id: string) =>
 			Promise.resolve(sweep(id === 'participant-1' ? 'dust' : 'chain-unreadable')),

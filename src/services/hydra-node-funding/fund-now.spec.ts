@@ -11,14 +11,18 @@ const mockReadLovelaceAt = jest.fn() as AnyMock;
 // The claim is one serializable transaction now, so the mock has to offer the
 // same client inside it.
 const transactionClient = {
+	hydraLocalParticipant: { findUnique: mockFindParticipant },
 	walletFundTransfer: { findFirst: mockFindTransfer, create: mockCreateTransfer },
 };
+const mockTransaction = jest.fn(
+	async (run: (tx: typeof transactionClient) => Promise<unknown>) => await run(transactionClient),
+);
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraLocalParticipant: { findUniqueOrThrow: mockFindParticipant, findMany: jest.fn() },
 		walletFundTransfer: { findFirst: mockFindTransfer, create: mockCreateTransfer },
-		$transaction: async (run: (tx: typeof transactionClient) => Promise<unknown>) => await run(transactionClient),
+		$transaction: mockTransaction,
 	},
 }));
 
@@ -77,6 +81,43 @@ beforeEach(() => {
  * paid 10 ADA twice.
  */
 describe('fundHydraNodeNow', () => {
+	it.each([
+		['a rate limit', Object.assign(new Error('too many requests'), { status_code: 429 })],
+		['a server failure', Object.assign(new Error('backend unavailable'), { status_code: 500 })],
+		['a transport failure', new Error('fetch failed')],
+		['a rate limit mentioning 404', { status_code: 429, message: 'Too many requests; upstream returned 404' }],
+		['a server failure mentioning 404', { status_code: 500, message: 'Unexpected upstream response: 404' }],
+	])('fails before claiming funds when the balance lookup encounters %s', async (_label, error) => {
+		mockReadLovelaceAt.mockRejectedValue(error);
+
+		await expect(fundHydraNodeNow('participant-1')).rejects.toMatchObject({
+			status: 503,
+			message: expect.stringMatching(/balance/),
+		});
+		expect(mockTransaction).not.toHaveBeenCalled();
+		expect(mockFindTransfer).not.toHaveBeenCalled();
+		expect(mockCreateTransfer).not.toHaveBeenCalled();
+	});
+
+	it('funds a verified empty address when Blockfrost returns 404', async () => {
+		mockReadLovelaceAt.mockRejectedValue({
+			status_code: 404,
+			error: 'Not Found',
+			message: 'The requested component has not been found.',
+		});
+
+		await expect(fundHydraNodeNow('participant-1')).resolves.toEqual({
+			address: 'addr_test1_node',
+			balanceLovelace: '0',
+			transferredLovelace: NODE_TARGET_LOVELACE.toString(),
+			outcome: 'sent',
+		});
+		expect(mockCreateTransfer).toHaveBeenCalledTimes(1);
+		expect(mockCreateTransfer).toHaveBeenCalledWith({
+			data: { hotWalletId: 'wallet-1', toAddress: 'addr_test1_node', lovelaceAmount: NODE_TARGET_LOVELACE },
+		});
+	});
+
 	it('funds an empty node', async () => {
 		const result = await fundHydraNodeNow('participant-1');
 

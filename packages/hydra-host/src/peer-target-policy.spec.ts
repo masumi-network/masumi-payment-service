@@ -47,12 +47,25 @@ describe('peerTargetRejection', () => {
 		}
 	});
 
-	it('rejects a name when any resolved address is private', async () => {
+	it.each([
+		['203.0.114.7', '192.168.0.9'],
+		['203.0.114.7', 'fd00::1'],
+		['192.168.0.9', '2606:4700:4700::1111'],
+	])('rejects mixed public and private records: %s, %s', async (first, second) => {
 		const rejection = await peerTargetRejection('peer.example.com:5001', {
 			allowPrivate: false,
-			resolve: resolvesTo('203.0.114.7', '192.168.0.9'),
+			resolve: resolvesTo(first, second),
 		});
-		expect(rejection).toMatch(/192\.168\.0\.9/);
+		expect(rejection).toMatch(/non-public address/);
+	});
+
+	it('rejects an AAAA-only public name that the IPv4 peer firewall cannot open', async () => {
+		expect(
+			await peerTargetRejection('ipv6-only.example.com:5001', {
+				allowPrivate: false,
+				resolve: resolvesTo('2606:4700:4700::1111', '2001:4860:4860::8888'),
+			}),
+		).toMatch(/does not resolve to an IPv4 address/);
 	});
 
 	it('rejects a name that does not resolve', async () => {
@@ -67,21 +80,27 @@ describe('peerTargetRejection', () => {
 		);
 	});
 
-	it('accepts a name that resolves only to public addresses', async () => {
-		expect(
-			await peerTargetRejection('peer.example.com:5001', {
-				allowPrivate: false,
-				resolve: resolvesTo('203.0.114.7', '2606:4700:4700::1111'),
-			}),
-		).toBeNull();
-	});
+	it.each([['203.0.114.7'], ['203.0.114.7', '2606:4700:4700::1111'], ['2606:4700:4700::1111', '203.0.114.7']])(
+		'accepts public records with an IPv4 address: %j',
+		async (...addresses) => {
+			expect(
+				await peerTargetRejection('peer.example.com:5001', {
+					allowPrivate: false,
+					resolve: resolvesTo(...addresses),
+				}),
+			).toBeNull();
+		},
+	);
 
-	it('allows private peers only when the operator opts in, without resolving', async () => {
-		const resolve = async () => {
-			throw new Error('must not resolve');
-		};
-		expect(await peerTargetRejection('10.0.0.5:5001', { allowPrivate: true, resolve })).toBeNull();
-	});
+	it.each(['10.0.0.5:5001', 'private-peer.example.com:5001'])(
+		'preserves the private-peer opt-in DNS bypass for %s',
+		async (advertise) => {
+			const resolve = async () => {
+				throw new Error('must not resolve');
+			};
+			expect(await peerTargetRejection(advertise, { allowPrivate: true, resolve })).toBeNull();
+		},
+	);
 
 	it('still rejects a malformed address when private peers are allowed', async () => {
 		expect(await peerTargetRejection('10.0.0.5', { allowPrivate: true, resolve: resolvesTo('10.0.0.5') })).toMatch(

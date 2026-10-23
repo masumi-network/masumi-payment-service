@@ -11,10 +11,13 @@
  */
 
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { deriveNodeToken } from './node-token.js';
 
 export type Tier = 'admin' | 'user';
 
-export type AuthResult = { ok: true; tier: Tier } | { ok: false; status: 401 | 403; message: string };
+export type AuthResult =
+	| { ok: true; tier: Tier; hostWideUserToken?: true }
+	| { ok: false; status: 401 | 403; message: string };
 
 function digest(value: string): Buffer {
 	return createHash('sha256').update(value, 'utf8').digest();
@@ -59,4 +62,42 @@ export function authenticate(header: string | undefined | null, tokens: TokenSet
 		return { ok: false, status: 403, message: 'this operation requires the admin token' };
 	}
 	return { ok: true, tier: isAdmin ? 'admin' : 'user' };
+}
+
+/**
+ * Resolve the caller's tier on a route that belongs to one node.
+ *
+ * What opens the node is the token derived for it, from either Host token (see
+ * `deriveNodeToken`), so a leaked credential reaches that node and no other. The
+ * admin token still opens everything. The Host-wide user token reaches every
+ * node, so it is accepted only while `acceptHostWideUserToken` is on, and the
+ * result says when it was the one presented. Every comparison runs whatever was
+ * presented.
+ */
+export function authenticateNode(
+	header: string | undefined | null,
+	tokens: TokenSet,
+	nodeId: string,
+	options: { acceptHostWideUserToken: boolean },
+): AuthResult {
+	const presented = parseBearer(header);
+	if (presented === null) {
+		return { ok: false, status: 401, message: 'missing or malformed Authorization header' };
+	}
+
+	const isAdmin = constantTimeEquals(presented, tokens.adminToken);
+	const isUserNodeToken = constantTimeEquals(presented, deriveNodeToken(tokens.userToken, nodeId));
+	const isAdminNodeToken = constantTimeEquals(presented, deriveNodeToken(tokens.adminToken, nodeId));
+	const isHostWideUser = constantTimeEquals(presented, tokens.userToken);
+
+	if (isAdmin) {
+		return { ok: true, tier: 'admin' };
+	}
+	if (isUserNodeToken || isAdminNodeToken) {
+		return { ok: true, tier: 'user' };
+	}
+	if (isHostWideUser && options.acceptHostWideUserToken) {
+		return { ok: true, tier: 'user', hostWideUserToken: true };
+	}
+	return { ok: false, status: 401, message: 'invalid token' };
 }

@@ -65,6 +65,13 @@ export const EXPECTED_COST_MODEL_LENGTHS: ReadonlyMap<string, number> = new Map(
  */
 export const EXPECTED_MAX_TX_SIZE = 15_000;
 
+/**
+ * Independent pin from packages/hydra-host/params/preprod.json. The protocol
+ * response schema requires this value before a builder can use the head's cost.
+ * protocol-parameters-security.spec.ts checks every shipped network file.
+ */
+export const EXPECTED_UTXO_COST_PER_BYTE = 4310;
+
 export const EXPECTED_TX_EXECUTION_UNITS = { memory: 16_500_000, steps: 10_000_000_000 } as const;
 
 /** The L2 ledger charges nothing; a non-zero value costs real value no one collects. */

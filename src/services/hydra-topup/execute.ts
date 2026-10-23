@@ -32,10 +32,7 @@ import {
 } from '@/services/hydra-host/pause';
 import { PREPARING_STALE_AFTER_MS } from './stale';
 import { lockOpenHydraHeadForDeposit } from '@/utils/hydra/deposit-admission';
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+import { describeErrorForOperator } from '@/services/hydra-head-error/operator-message';
 
 export type ExecuteHydraTopupParams = {
 	headId: string;
@@ -149,7 +146,10 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			verifiedHead = await verifyPersistedHydraHeadOnChain(head.id);
 		} catch (verificationError) {
 			if (createHttpError.isHttpError(verificationError)) throw verificationError;
-			throw createHttpError(502, `Refusing to sign for an unverified Hydra head: ${errorMessage(verificationError)}`);
+			throw createHttpError(
+				502,
+				`Refusing to sign for an unverified Hydra head: ${describeErrorForOperator(verificationError)}`,
+			);
 		}
 
 		const hotWallet = await prisma.hotWallet.findUniqueOrThrow({

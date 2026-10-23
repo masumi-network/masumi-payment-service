@@ -99,8 +99,17 @@ describe('CustomHydraHead', () => {
 			const { HydraNode } = (await import('./node')) as unknown as {
 				HydraNode: jest.Mock<(config: HydraNodeConfig) => unknown>;
 			};
-			new CustomHydraHead([{ httpUrl: 'http://localhost:4001', walletId: 'wallet-a', authToken: 'host-user-token' }]);
-			expect(HydraNode).toHaveBeenCalledWith(expect.objectContaining({ authToken: 'host-user-token' }));
+			new CustomHydraHead([
+				{
+					httpUrl: 'http://localhost:4001',
+					walletId: 'wallet-a',
+					authToken: 'host-user-token',
+					guardHostDestination: true,
+				},
+			]);
+			expect(HydraNode).toHaveBeenCalledWith(
+				expect.objectContaining({ authToken: 'host-user-token', guardHostDestination: true }),
+			);
 		});
 
 		it('leaves the auth token absent for a node with none', async () => {

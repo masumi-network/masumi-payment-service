@@ -35,6 +35,7 @@ import { HydraNode } from '@/lib/hydra/hydra/node';
 import { applyDecommitOutcome } from '@/services/hydra-decommit/settle';
 import { type HydraDatumApplyOutcome } from './hydra-datum-sync';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
+import { fetchHydraHost } from '@/services/hydra-host/transport';
 import { createWorkerAccumulatorComputer } from '@/lib/hydra/hydra/snapshot-accumulator-worker-client';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 import { convertNetwork } from '@/utils/converter/network-convert';
@@ -272,6 +273,7 @@ export class HydraConnectionManager {
 			// confirmed CBOR list. This opt-in names the remaining local-node trust.
 			trustLocalNodeSnapshotMetadata: true,
 			authToken: nodeAuthToken,
+			guardHostDestination: true,
 			computeSnapshotAccumulator: snapshotAccumulator,
 		};
 
@@ -357,7 +359,7 @@ export class HydraConnectionManager {
 		if (!slotConfig) return;
 		const refresh = async (): Promise<void> => {
 			try {
-				const currentSlot = await probeHeadCurrentSlot(wsUrl, expectedHeadId, authToken);
+				const currentSlot = await probeHeadCurrentSlot(wsUrl, expectedHeadId, authToken, true);
 				if (currentSlot == null) return;
 				const chainTimeMs = slotConfig.zeroTime + (currentSlot - slotConfig.zeroSlot) * slotConfig.slotLength;
 				node.applyObservedHeadClock(chainTimeMs, currentSlot);
@@ -491,10 +493,9 @@ export class HydraConnectionManager {
 		const timeout = setTimeout(() => controller.abort(), timeoutMs);
 		let response: Response;
 		try {
-			response = await fetch(buildHydraHttpEndpoint(httpUrl, 'protocol-parameters'), {
+			response = await fetchHydraHost(buildHydraHttpEndpoint(httpUrl, 'protocol-parameters'), {
 				signal: controller.signal,
 				headers,
-				// Not followed, so the token never goes to another host, and a redirect reads as the status it answered.
 				redirect: 'manual',
 			});
 		} catch (error) {

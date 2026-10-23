@@ -22,6 +22,8 @@ import { connectPreviousAction, createNextPaymentAction, createNextPurchaseActio
 import { LOOKUP_DEFERRED_PREFIX } from '../lookup-defer';
 import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from '@/services/hydra-decommit/stale';
 
+const MAX_L2_REJECTION_REASON_LENGTH = 500;
+
 export type ReservedL2SubmissionOutcome =
 	| { status: 'accepted'; intendedTxHash: string; txHash: string }
 	| { status: 'accepted-db-pending'; intendedTxHash: string; txHash: string; error: unknown }
@@ -30,8 +32,13 @@ export type ReservedL2SubmissionOutcome =
 			phase: 'submit' | 'hash-mismatch' | 'rollback';
 			intendedTxHash: string;
 			error: unknown;
-			rejectionError?: HydraTransactionRejectedError | HydraTransportError;
+			rejectionError?: HydraTransportError;
 	  }
+	/**
+	 * @deprecated Compatibility discriminator for the six existing action callers.
+	 * executeReservedL2Submission never emits it. A node rejection returns
+	 * `ambiguous`; legacy checks must not authorize release on TxInvalid.
+	 */
 	| { status: 'definitively-rejected'; intendedTxHash: string; error: HydraTransactionRejectedError }
 	/**
 	 * The command never left this process, so there is no transaction to
@@ -141,10 +148,10 @@ type ReservedL2SubmissionCallbacks<TReservation> = {
 /**
  * Submit an L2 transaction without ever losing ownership of an ambiguous body.
  *
- * The durable reservation always precedes NewTx. Only hydra-node's explicit,
- * transaction-specific rejection permits rollback; every transport/protocol or
- * post-accept database failure leaves the reservation Pending for confirmed-CBOR
- * reconciliation.
+ * The durable reservation always precedes NewTx. Only a command that never
+ * reached the transport permits immediate rollback. A node rejection cannot
+ * exclude earlier acceptance of the same body, so it retains the reservation
+ * for confirmed-CBOR reconciliation or explicit recovery.
  */
 export async function executeReservedL2Submission<TReservation>(
 	callbacks: ReservedL2SubmissionCallbacks<TReservation>,
@@ -162,13 +169,9 @@ export async function executeReservedL2Submission<TReservation>(
 	try {
 		txHash = await callbacks.submit(callbacks.signedTx);
 	} catch (error) {
-		// Two errors permit rollback, for opposite reasons. A rejection is the head
-		// judging this exact body and refusing it. A transport error is the
-		// command never reaching the socket at all: the class is raised only while
-		// `wasQueued` is false — the provider was withdrawn, or the transport
-		// closed or timed out before any byte was handed over — and its own
-		// contract says retrying is safe. Everything else, including
-		// `HydraTransportAmbiguousError`, stays held for reconciliation.
+		// A transport error means the command never reached the socket. The class
+		// is raised only while `wasQueued` is false, so retrying is safe. All other
+		// errors stay held for reconciliation. TxInvalid can follow earlier acceptance.
 		//
 		// Treating a never-sent command as ambiguous was not a harmless excess of
 		// caution: nothing reconciles a transaction that does not exist. The
@@ -176,12 +179,10 @@ export async function executeReservedL2Submission<TReservation>(
 		// stayed in its `*Initiated` action, and the head's final handoff refused
 		// to complete for every request in that head, because it counts pending L2
 		// transactions and this one could never reach zero.
-		if (error instanceof HydraTransactionRejectedError || error instanceof HydraTransportError) {
+		if (error instanceof HydraTransportError) {
 			try {
 				await callbacks.rollback(reservation, intendedTxHash);
-				return error instanceof HydraTransportError
-					? { status: 'not-dispatched', intendedTxHash, error }
-					: { status: 'definitively-rejected', intendedTxHash, error };
+				return { status: 'not-dispatched', intendedTxHash, error };
 			} catch (rollbackError) {
 				return {
 					status: 'ambiguous',
@@ -293,10 +294,14 @@ export async function submitReservedL2Action(
 	if (!(params.walletLockedAt instanceof Date) || !Number.isFinite(params.walletLockedAt.getTime())) {
 		throw new Error(`L2 wallet ${params.walletId} has no valid scheduler lease for ${params.operation}`);
 	}
+	let reservedTransactionId: string | undefined;
 	const outcome = await executeReservedL2Submission<L2ActionReservation>({
 		signedTx: params.signedTx,
-		reserve: async (intendedTxHash, invalidHereafterSlot, inputRefs) =>
-			await reserveL2Action(params, intendedTxHash, invalidHereafterSlot, inputRefs),
+		reserve: async (intendedTxHash, invalidHereafterSlot, inputRefs) => {
+			const reservation = await reserveL2Action(params, intendedTxHash, invalidHereafterSlot, inputRefs);
+			reservedTransactionId = reservation.transactionId;
+			return reservation;
+		},
 		submit: params.submitTx,
 		finalize: async (reservation, txHash, intendedTxHash) =>
 			await finalizeL2Action(params, reservation, txHash, intendedTxHash),
@@ -310,10 +315,36 @@ export async function submitReservedL2Action(
 		hydraHeadId: params.hydraHeadId,
 		intendedTxHash: outcome.intendedTxHash,
 	};
+	if (
+		outcome.status === 'ambiguous' &&
+		outcome.error instanceof HydraTransactionRejectedError &&
+		reservedTransactionId !== undefined
+	) {
+		try {
+			// Diagnostic only. Persist it for reviewed recovery after a restart;
+			// a rejection never authorizes release or overwrites confirmation.
+			await prisma.transaction.updateMany({
+				where: {
+					id: reservedTransactionId,
+					intendedTxHash: outcome.intendedTxHash,
+					hydraHeadId: params.hydraHeadId,
+					status: TransactionStatus.Pending,
+					l2RejectedByHeadAt: null,
+				},
+				data: {
+					l2RejectedByHeadAt: new Date(),
+					l2RejectedByHeadReason: outcome.error.message.slice(0, MAX_L2_REJECTION_REASON_LENGTH),
+				},
+			});
+		} catch (error) {
+			logger.warn('L2 rejection diagnostic could not be persisted; reservation retained', { ...context, error });
+		}
+	}
 	if (outcome.status === 'accepted') {
 		logger.info('L2 action submitted to head', { ...context, txHash: outcome.txHash });
 	} else if (outcome.status === 'definitively-rejected') {
-		logger.warn('L2 action explicitly rejected; matching reservation rolled back', {
+		// Compatibility only. The current executor never returns this status.
+		logger.warn('Legacy L2 definitive-rejection outcome', {
 			...context,
 			error: outcome.error,
 		});

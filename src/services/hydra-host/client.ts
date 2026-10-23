@@ -16,6 +16,7 @@ import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/o
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from '@/services/hydra-invite/nonce-log-ref';
 import { normalizeReleaseInfo, type ReleaseInfo } from '@/services/release/release-info';
+import { fetchHydraHost } from './transport';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -93,10 +94,9 @@ async function request(
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 	try {
-		const response = await fetch(joinUrl(baseUrl, path, transport), {
+		const response = await fetchHydraHost(joinUrl(baseUrl, path, transport), {
 			method: init.method ?? 'GET',
 			headers,
-			redirect: 'error',
 			signal: controller.signal,
 			...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
 		});
@@ -107,11 +107,15 @@ async function request(
 		const parsed: unknown = text.length === 0 ? null : safeParse(text);
 
 		if (!response.ok) {
-			// Truncated: callers log this message on every poll, and the body
-			// came from the Host, so its size is the Host's choice up to the read cap.
-			const detail = truncateError(isPlainObject(parsed) ? (getOwnString(parsed, 'error') ?? text) : text);
+			// Only the `error` a Host reports, which is what an operator acts on (a
+			// full Host, a refused peer). Anything else at this address is not the
+			// Host's to say: a registered address can be a service that was never a
+			// Host, and its reply would be shown to whoever asked. Truncated, because
+			// callers log this message on every poll.
+			const reported = isPlainObject(parsed) ? getOwnString(parsed, 'error') : undefined;
+			const detail = reported === undefined ? '' : `: ${truncateError(reported)}`;
 			throw new HydraHostRequestError(
-				`${init.method ?? 'GET'} ${init.logPath ?? path} on the hydra host failed (${response.status}): ${detail}`,
+				`${init.method ?? 'GET'} ${init.logPath ?? path} on the hydra host failed (${response.status})${detail}`,
 				response.status,
 			);
 		}
