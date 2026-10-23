@@ -38,6 +38,7 @@ const logger: SupervisorLogger = {
 /** Published before startup I/O so every fatal exit uses the same bounded cleanup. */
 const cleanup: { shutdown: ((reason: string, exitCode?: 0 | 1) => void) | null } = { shutdown: null };
 
+/** Start the Host with bounded shutdown handlers registered before startup I/O. */
 async function main(): Promise<void> {
 	// Shutdown requests before acquisition and the registry read finish must wait:
 	// cleanup needs the lease and a supervisor that can find surviving children.
@@ -205,8 +206,12 @@ async function main(): Promise<void> {
 	// hydra-node SIGTERMed, the record left saying Draining, and no log line.
 	const bootKeepAlive = setInterval(() => {}, 60_000);
 	try {
-		startupWork = supervisor.boot();
+		startupWork = supervisor.boot({ reconcile: false });
 		await startupWork;
+		startupWork = undefined;
+		// Shutdown already waits for the supervisor's tick and drains other nodes
+		// in parallel. Holding it behind boot's first tick adds two drain rounds.
+		if (!shuttingDown) await supervisor.tick();
 	} finally {
 		startupWork = undefined;
 		clearInterval(bootKeepAlive);
