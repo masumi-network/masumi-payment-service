@@ -79,6 +79,39 @@ describe('Connection', () => {
 		expect(MockWebSocket.mock.calls[0]?.[0]).toBe('ws://localhost:4001');
 	});
 
+	it('refuses an untrusted private Host before opening a socket', async () => {
+		const previous = process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '';
+		const conn = new Connection('ws://127.0.0.1:4001', undefined, true);
+		connections.add(conn);
+		try {
+			await expect(conn.connect()).rejects.toMatchObject({ statusCode: 400 });
+			expect(MockWebSocket).not.toHaveBeenCalled();
+		} finally {
+			if (previous === undefined) delete process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+			else process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = previous;
+		}
+	});
+
+	it('checks Host trust again when a failed socket reconnects', async () => {
+		jest.useFakeTimers();
+		const previous = process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
+		const conn = new Connection('ws://127.0.0.1:4001', undefined, true);
+		connections.add(conn);
+		try {
+			await conn.connect();
+			currentWsMock.emit('open');
+			delete process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+			currentWsMock.emit('error', new Error('the public Host disconnected'));
+			await jest.advanceTimersByTimeAsync(1100);
+			expect(MockWebSocket).toHaveBeenCalledTimes(1);
+		} finally {
+			if (previous === undefined) delete process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
+			else process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = previous;
+		}
+	});
+
 	it('passes a pre-allocation frame limit to transports that support maxPayload', async () => {
 		const conn = createConnection();
 		await conn.connect();

@@ -159,12 +159,13 @@ export class HydraNode extends EventEmitter {
 		super();
 		this._httpUrl = config.httpUrl;
 		this._wsUrl = config.wsUrl ?? config.httpUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+		const { authToken: token, guardHostDestination: guardHost } = config;
 		// Evidence-only history socket: replay never feeds lifecycle status or command
 		// listeners (they could regress head state or run handlers out of order), except
 		// its verdict on a held headless Idle. Build the live socket last so test
 		// harnesses that capture the latest Connection still exercise live events.
-		this._historyConnection = new Connection(withHistorySetting(this._wsUrl, true), config.authToken);
-		this._connection = new Connection(withHistorySetting(this._wsUrl, false), config.authToken);
+		this._historyConnection = new Connection(withHistorySetting(this._wsUrl, true), token, guardHost);
+		this._connection = new Connection(withHistorySetting(this._wsUrl, false), token, guardHost);
 		this._connectTimeoutMs = config.connectTimeoutMs ?? HydraNode.CONNECTION_TIMEOUT_MS;
 		this._commandTimeoutMs = config.commandTimeoutMs ?? HydraNode.COMMAND_RESPONSE_TIMEOUT_MS;
 		const httpTimeoutMs = config.httpTimeoutMs ?? HydraNode.HTTP_TIMEOUT_MS;
@@ -188,6 +189,7 @@ export class HydraNode extends EventEmitter {
 			httpUrl: this._httpUrl,
 			authHeaders: hydraAuthHeaders(config.authToken),
 			timeoutMs: httpTimeoutMs,
+			guardHostDestination: guardHost,
 		});
 		this._ledger = new ConfirmedTransactionLedger({
 			maxUnreconciledTransactions,

@@ -16,6 +16,7 @@ import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
 import { fetchHostCapabilities, truncateError, type HostCapabilities } from './client';
 import { expectedHostCapabilitiesForNetwork } from './compatibility';
+import { assertHostDestinationAllowed } from './destination';
 import { listHostIncompatibilities, oneLine } from './placement';
 import { describeRelease, type DescribedRelease } from '@/services/release/release-info';
 
@@ -262,6 +263,7 @@ export async function registerHydraHost(input: {
 	adminToken: string;
 }): Promise<PublicHydraHost> {
 	const baseUrl = normalizeHostBaseUrl(input.baseUrl, input.allowInsecureHttp);
+	await assertHostDestinationAllowed(baseUrl);
 	const allowInsecureHttp = new URL(baseUrl).protocol === 'http:' && input.allowInsecureHttp;
 	if (allowInsecureHttp) {
 		logger.warn(
