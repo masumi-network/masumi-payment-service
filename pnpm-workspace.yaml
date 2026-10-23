@@ -43,7 +43,7 @@ overrides:
   hono: 4.13.7
   http-cache-semantics: 4.3.0
   immutable: 5.1.8
-  ip-address: 10.7.1
+  ip-address: 10.7.4
   js-yaml: 4.3.2
   libsodium-sumo: 0.7.15
   libsodium-wrappers-sumo: 0.7.15
