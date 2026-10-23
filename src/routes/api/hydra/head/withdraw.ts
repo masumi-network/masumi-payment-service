@@ -5,6 +5,14 @@ import { logger } from '@masumi/payment-core/logger';
 import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { executeHydraDecommit } from '@/services/hydra-decommit/execute';
+import { countLiveInHeadEscrows } from '@/services/hydra-decommit/live-escrows';
+import {
+	activeWithdrawalRefusal,
+	claimableWalletWhere,
+	liveEscrowsRefusal,
+	WALLET_BUSY_MESSAGE,
+} from '@/services/hydra-decommit/refusals';
+import { staleWithdrawal } from '@/services/hydra-decommit/stale';
 import { assertHydraHeadHostNotPaused } from '@/services/hydra-host/pause';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
@@ -202,7 +210,12 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 		// two an operator hits on a head that is otherwise healthy.
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
-			select: { isEnabled: true, status: true, headIdentifier: true, LocalParticipant: { select: { id: true } } },
+			select: {
+				isEnabled: true,
+				status: true,
+				headIdentifier: true,
+				LocalParticipant: { select: { id: true, walletId: true } },
+			},
 		});
 		if (!head) throw createHttpError(404, 'Hydra head not found');
 		if (!head.isEnabled) throw createHttpError(409, 'Cannot withdraw from a disabled Hydra head');
@@ -221,6 +234,30 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 		// still needs the head to sign and a node that is catching up will not.
 		// Decided in milliseconds, and the operator is the one who can act on it.
 		await assertNodeReadyForDeposit(head.LocalParticipant.id);
+
+		// The refusals the executor decides inside its slot claim, read the same
+		// way and worded by the same helpers. A stale row is not one of them: the
+		// executor expires it itself, a Pending one only on the node's word.
+		const active = await prisma.hydraDecommit.findFirst({
+			where: {
+				hydraLocalParticipantId: head.LocalParticipant.id,
+				status: {
+					in: [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending, HydraDecommitStatus.Approved],
+				},
+			},
+			orderBy: { createdAt: 'desc' },
+		});
+		if (active !== null && staleWithdrawal(active, Date.now(), false) === null) {
+			throw createHttpError(409, activeWithdrawalRefusal(active, false));
+		}
+		if (input.drain === true) {
+			const liveEscrows = await countLiveInHeadEscrows(prisma, input.headId);
+			if (liveEscrows > 0) throw createHttpError(409, liveEscrowsRefusal(liveEscrows));
+		}
+		const claimableWallets = await prisma.hotWallet.count({
+			where: { id: head.LocalParticipant.walletId, ...claimableWalletWhere },
+		});
+		if (claimableWallets === 0) throw createHttpError(409, WALLET_BUSY_MESSAGE);
 
 		void executeHydraDecommit({
 			headId: input.headId,

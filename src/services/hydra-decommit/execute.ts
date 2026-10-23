@@ -48,6 +48,7 @@ import {
 } from '@/services/hydra-host/pause';
 import { staleWithdrawal } from './stale';
 import { countLiveInHeadEscrows } from './live-escrows';
+import { activeWithdrawalRefusal, claimableWalletWhere, liveEscrowsRefusal, WALLET_BUSY_MESSAGE } from './refusals';
 import {
 	assertSendableInHead,
 	errorMessage,
@@ -291,23 +292,11 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 						// wrote.
 						const claimedAt = new Date();
 						const walletClaim = await tx.hotWallet.updateMany({
-							where: {
-								id: localParticipant.walletId,
-								deletedAt: null,
-								lockedAt: null,
-								pendingTransactionId: null,
-								lockPurpose: null,
-							},
+							where: { id: localParticipant.walletId, ...claimableWalletWhere },
 							data: { lockedAt: claimedAt },
 						});
 						if (walletClaim.count !== 1) {
-							throw Object.assign(
-								createHttpError(
-									409,
-									'This wallet is busy with another transaction, such as a pending payment or an earlier withdrawal; retry once it has settled',
-								),
-								{ [WALLET_BUSY]: true },
-							);
+							throw Object.assign(createHttpError(409, WALLET_BUSY_MESSAGE), { [WALLET_BUSY]: true });
 						}
 
 						if (params.drain === true) {
@@ -346,24 +335,11 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			claim = await claimSlot(true);
 		}
 
-		if (!claim.claimed && 'liveEscrows' in claim) {
-			throw createHttpError(
-				409,
-				`Cannot withdraw the collateral while escrows are still live or pending in this head (${claim.liveEscrows} found). ` +
-					'Without collateral they could not be settled, and closing the head would be the only way to recover them. ' +
-					'Settle them first, or withdraw an amount instead.',
-			);
+		if (!claim.claimed && claim.liveEscrows !== undefined) {
+			throw createHttpError(409, liveEscrowsRefusal(claim.liveEscrows));
 		}
 		if (!claim.claimed) {
-			throw createHttpError(
-				409,
-				claim.active.status === HydraDecommitStatus.Approved
-					? 'A prior withdrawal has left the head and is still settling on L1'
-					: claim.askNode
-						? `A prior withdrawal (${claim.active.decommitTxId ?? claim.active.id}) never settled, and the node did not ` +
-							'confirm it holds no withdrawal, so it cannot be given up on yet; retry once the node answers'
-						: 'A withdrawal from this head is already in progress',
-			);
+			throw createHttpError(409, activeWithdrawalRefusal(claim.active, claim.askNode));
 		}
 		preparingId = claim.id;
 		walletLockedAt = claim.walletLockedAt;
