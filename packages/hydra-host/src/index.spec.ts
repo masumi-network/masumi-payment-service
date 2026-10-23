@@ -207,6 +207,47 @@ async function loseLease(): Promise<void> {
 }
 
 describe('Host startup failure shutdown', () => {
+	it('starts shutdown drains while the initial reconciliation tick is still pending', async () => {
+		const { NodeRegistryStore } = await import('./registry/store.js');
+		const list = NodeRegistryStore.prototype.list;
+		let resumeTick: () => void = () => undefined;
+		const heldTick = new Promise<void>((resolve) => {
+			resumeTick = resolve;
+		});
+		let reportSignal: () => void = () => undefined;
+		const signaled = new Promise<void>((resolve) => {
+			reportSignal = resolve;
+		});
+		let lists = 0;
+		jest.spyOn(NodeRegistryStore.prototype, 'list').mockImplementation(async function (
+			this: InstanceType<typeof NodeRegistryStore>,
+		) {
+			const records = await list.call(this);
+			lists += 1;
+			// Outer startup, process adoption, then the initial reconciliation tick.
+			if (lists === 3) {
+				process.emit('SIGTERM');
+				reportSignal();
+				await heldTick;
+			}
+			return records;
+		});
+		await import('./index.js');
+		await signaled;
+		try {
+			expect(shutdown).toHaveBeenCalledTimes(1);
+			await drainStarted;
+			expect(servers).toHaveLength(0);
+			expect(release).not.toHaveBeenCalled();
+		} finally {
+			resumeTick();
+			await drainStarted;
+			releaseDrain();
+			await exitReached;
+		}
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:0']);
+	});
+
 	it('starts bounded SIGTERM cleanup during boot without recovery or listeners', async () => {
 		const { ExchangeStore } = await import('./registry/exchange-store.js');
 		const recovery = jest.spyOn(ExchangeStore.prototype, 'listInvites');

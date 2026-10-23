@@ -96,7 +96,7 @@ export class Supervisor {
 		this.stopped = true;
 	}
 
-	async boot(): Promise<void> {
+	async boot(options: { reconcile?: boolean } = {}): Promise<void> {
 		const records = await this.store.list();
 		this.logger.info(`[supervisor] loaded ${records.length} node record(s) from ${this.config.dataDir}`);
 		for (const record of records) {
@@ -201,7 +201,7 @@ export class Supervisor {
 				}));
 			}
 		}
-		await this.tick();
+		if (options.reconcile !== false) await this.tick();
 	}
 
 	async tick(): Promise<void> {

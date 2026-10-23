@@ -205,8 +205,12 @@ async function main(): Promise<void> {
 	// hydra-node SIGTERMed, the record left saying Draining, and no log line.
 	const bootKeepAlive = setInterval(() => {}, 60_000);
 	try {
-		startupWork = supervisor.boot();
+		startupWork = supervisor.boot({ reconcile: false });
 		await startupWork;
+		startupWork = undefined;
+		// Shutdown already waits for the supervisor's tick and drains other nodes
+		// in parallel. Holding it behind boot's first tick adds two drain rounds.
+		if (!shuttingDown) await supervisor.tick();
 	} finally {
 		startupWork = undefined;
 		clearInterval(bootKeepAlive);
