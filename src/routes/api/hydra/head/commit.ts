@@ -27,13 +27,14 @@ import {
 } from '@/services/hydra-commit-reconciliation';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
+import { describeErrorForOperator } from '@/services/hydra-head-error/operator-message';
 import { carveExactUtxo, HydraPreSplitError } from '@/services/hydra-topup/pre-split';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
-import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
+import { assertNodeReadyForDeposit, verifyPersistedHydraHeadOnChain } from './index';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 import {
 	DATABASE_AMOUNT_MESSAGE,
@@ -144,7 +145,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				if (createHttpError.isHttpError(verificationError)) throw verificationError;
 				throw createHttpError(
 					502,
-					`Refusing to sign for an unverified Hydra head: ${getErrorMessage(verificationError)}`,
+					`Refusing to sign for an unverified Hydra head: ${describeErrorForOperator(verificationError)}`,
 				);
 			}
 			// Load the local participant's hot wallet + its L1 provider so we can
