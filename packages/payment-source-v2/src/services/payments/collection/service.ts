@@ -1188,11 +1188,9 @@ async function processL2Collection(
 		submitTx: async (transaction) => await hydraProvider.submitTx(transaction),
 	});
 
-	// False for both outcomes that rolled the request back: the head judged this
-	// exact body and refused it, or the command never reached the socket. Either
-	// way the request is unchanged and immediately eligible again, and rebuilding
-	// the identical body next tick produces the identical answer. The caller
-	// stands it down so the rest of this wallet's queue can move.
+	// Only a never-dispatched command rolls back now. Keep the legacy outcome
+	// check for compatibility; the executor never emits it. A node rejection
+	// stays ambiguous and keeps the reservation for reconciliation.
 	return outcome.status !== 'definitively-rejected' && outcome.status !== 'not-dispatched';
 }
 

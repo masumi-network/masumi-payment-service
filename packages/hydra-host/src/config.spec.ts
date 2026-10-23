@@ -31,6 +31,16 @@ describe('loadHostConfig', () => {
 		expect(loadHostConfig(env({ HYDRA_HOST_AUTO_SIDELOAD: 'true' })).allowAutoSideLoad).toBe(true);
 	});
 
+	// On by default so a service that has not moved to node tokens keeps working;
+	// turned off once every service has.
+	it('accepts the Host-wide user token on node routes unless told otherwise', () => {
+		expect(loadHostConfig(env()).acceptHostWideUserToken).toBe(true);
+		expect(loadHostConfig(env({ HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN: 'false' })).acceptHostWideUserToken).toBe(
+			false,
+		);
+		expect(loadHostConfig(env({ HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN: 'true' })).acceptHostWideUserToken).toBe(true);
+	});
+
 	it('parses HYDRA_HOST_SCRIPTS_TX_IDS as a trimmed, lowercased list', () => {
 		const a = 'b88df0c62f9734f0a6dba0faa7636ed51699cbe21706ce4a9736684daf418d67';
 		const b = '40AB074125B4734939CD45A00B2CFE1B20D679B2A1C52D6472ACA193F637A2BC';

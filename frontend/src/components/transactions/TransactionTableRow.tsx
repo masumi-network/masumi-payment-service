@@ -15,9 +15,9 @@ import { TransactionRowActionsMenu } from '@/components/transactions/Transaction
 import {
   formatStatus,
   getLatestTxHash,
+  getNotPaidInTimeLabel,
   getStatusColor,
-  isPaymentNeverReceived,
-  NO_PAYMENT_RECEIVED_LABEL,
+  hasUnacknowledgedError,
   type Transaction,
 } from '@/components/transactions/transaction-format.helpers';
 
@@ -64,6 +64,8 @@ export function TransactionTableRow({
   onAcknowledge,
 }: TransactionTableRowProps) {
   const hasTxError = !!transaction.NextAction?.errorType;
+  const isErrorHighlighted = hasUnacknowledgedError(transaction);
+  const notPaidInTimeLabel = getNotPaidInTimeLabel(transaction);
   const displayTxHash = getLatestTxHash(transaction);
 
   return (
@@ -71,9 +73,11 @@ export function TransactionTableRow({
       className={cn(
         'group border-b last:border-b-0 animate-fade-in opacity-0',
         'cursor-pointer',
-        hasTxError ? 'transaction-row-error' : 'hover:bg-row-hover',
+        isErrorHighlighted ? 'transaction-row-error' : 'hover:bg-row-hover',
         isSelected &&
-          (hasTxError ? 'transaction-row-selected' : 'transaction-row-selected bg-row-hover'),
+          (isErrorHighlighted
+            ? 'transaction-row-selected'
+            : 'transaction-row-selected bg-row-hover'),
       )}
       style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
       onClick={onOpen}
@@ -155,8 +159,8 @@ export function TransactionTableRow({
               <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
               {formatStatus(transaction.onChainState)}
             </span>
-          ) : isPaymentNeverReceived(transaction) ? (
-            NO_PAYMENT_RECEIVED_LABEL
+          ) : notPaidInTimeLabel ? (
+            notPaidInTimeLabel
           ) : (
             formatStatus(transaction.onChainState)
           )}
@@ -172,7 +176,7 @@ export function TransactionTableRow({
         className={
           isSelected
             ? tableActionsCellCompactSelectedClass
-            : hasTxError
+            : isErrorHighlighted
               ? tableActionsCellCompactDestructiveClass
               : tableActionsCellCompactClass
         }

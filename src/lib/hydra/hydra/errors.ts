@@ -1,8 +1,8 @@
 /**
- * hydra-node reported that a NewTx command was invalid. Non-locking escrow
- * actions may release their reservation because every retry spends the same
- * unique prior script UTxO. Initial value locks must still fail closed: this
- * response is not proof that their wallet inputs remain unspent.
+ * hydra-node reported that a NewTx command was invalid. This does not exclude
+ * earlier acceptance of the same body or a withheld signed snapshot. Initial
+ * locks and non-locking escrow actions must preserve their reserved lineage.
+ * Rejection alone never authorizes rollback; reconcile the intended hash.
  */
 export class HydraTransactionRejectedError extends Error {
 	constructor(message: string) {

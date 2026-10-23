@@ -10,7 +10,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
-import { HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -18,6 +18,8 @@ const EARLIER_COMMIT_TX_HASH = 'b'.repeat(64);
 const RETRY_TOKEN = 'retry-token';
 
 const mockFindParticipant = jest.fn() as AnyMock;
+const mockCreateHeadError = jest.fn() as AnyMock;
+const mockVerifyPersistedHydraHeadOnChain = jest.fn() as AnyMock;
 const mockUpdateParticipant = jest.fn() as AnyMock;
 const mockReconcile = jest.fn() as AnyMock;
 const mockRelease = jest.fn() as AnyMock;
@@ -56,15 +58,12 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			})),
 		},
 		hydraLocalParticipant: { findUnique: mockFindParticipant, updateMany: mockUpdateParticipant },
+		hydraHeadError: { create: mockCreateHeadError },
 	},
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
-
-jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
-	recordHeadError: jest.fn(async () => undefined),
 }));
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
@@ -73,8 +72,8 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 
 jest.unstable_mockModule('./index', () => ({
 	assertNodeReadyForDeposit: jest.fn(async () => undefined),
-	verifyPersistedHydraHeadOnChain: jest.fn(async () => ({})),
-	getErrorMessage: (error: unknown) => String(error),
+	verifyPersistedHydraHeadOnChain: mockVerifyPersistedHydraHeadOnChain,
+	getErrorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)),
 }));
 
 jest.unstable_mockModule('@/utils/db/hot-wallet-lock', () => ({
@@ -96,6 +95,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockCreateHeadError.mockResolvedValue({});
+	mockVerifyPersistedHydraHeadOnChain.mockResolvedValue({});
 	// The earlier commit is still unresolved on L1, so the retry is refused.
 	mockReconcile.mockResolvedValue('pending');
 	mockFindParticipant.mockResolvedValue({
@@ -134,5 +135,43 @@ describe('commitHeadPost refused retry', () => {
 		await retryCommit();
 
 		expect(mockRelease).toHaveBeenCalledWith('wallet-1', RETRY_TOKEN);
+	});
+});
+
+describe('commitHeadPost verification errors', () => {
+	const verificationFailures = [
+		{
+			label: 'a database failure',
+			error: new Prisma.PrismaClientKnownRequestError(
+				'Invalid `prisma.hydraHead.findUnique()` invocation in /srv/masumi/src/routes/api/hydra/head/index.ts:327:36: connection timeout',
+				{ code: 'P2024', clientVersion: '7.8.0' },
+			),
+			reason: 'the database rejected the write (P2024)',
+		},
+		{
+			label: 'an ordinary verification failure',
+			error: new Error('the observed head has different participants'),
+			reason: 'the observed head has different participants',
+		},
+	];
+
+	it.each(verificationFailures)('reports and records a safe reason for $label', async ({ error, reason }) => {
+		mockVerifyPersistedHydraHeadOnChain.mockRejectedValueOnce(error);
+		const message = `Refusing to sign for an unverified Hydra head: ${reason}`;
+
+		await expect(
+			commitHeadPost.handler({ input: { headId: 'head-1', lovelace: '10000000' }, options: {} }),
+		).rejects.toMatchObject({ status: 502, message });
+
+		expect(mockCreateHeadError).toHaveBeenCalledWith({
+			data: {
+				hydraHeadId: 'head-1',
+				errorType: 'CommandFailed',
+				errorMessage: message,
+				headStatus: 'Open',
+				clientInput: 'Commit',
+				errorAt: expect.any(Date),
+			},
+		});
 	});
 });

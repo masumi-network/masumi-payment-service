@@ -50,17 +50,18 @@ describe('executeReservedL2Submission', () => {
 		expect(callbacks.rollback).not.toHaveBeenCalled();
 	});
 
-	it('rolls back only an explicit hydra-node rejection', async () => {
+	it('retains an explicit node rejection because the body may have been accepted earlier', async () => {
 		const callbacks = makeCallbacks();
 		const rejection = new HydraTransactionRejectedError('invalid transaction');
 		callbacks.submit.mockRejectedValue(rejection);
 
 		await expect(executeReservedL2Submission(callbacks)).resolves.toEqual({
-			status: 'definitively-rejected',
+			status: 'ambiguous',
+			phase: 'submit',
 			intendedTxHash,
 			error: rejection,
 		});
-		expect(callbacks.rollback).toHaveBeenCalledWith({ id: 'reservation-1' }, intendedTxHash);
+		expect(callbacks.rollback).not.toHaveBeenCalled();
 		expect(callbacks.finalize).not.toHaveBeenCalled();
 	});
 
@@ -145,7 +146,7 @@ describe('executeReservedL2Submission', () => {
 		expect(callbacks.rollback).not.toHaveBeenCalled();
 	});
 
-	it('retains the reservation when explicit-rejection rollback fails', async () => {
+	it('does not need rollback availability when the node rejects a dispatched body', async () => {
 		const callbacks = makeCallbacks();
 		const rejection = new HydraTransactionRejectedError('invalid transaction');
 		const rollbackError = new Error('database unavailable');
@@ -154,11 +155,11 @@ describe('executeReservedL2Submission', () => {
 
 		await expect(executeReservedL2Submission(callbacks)).resolves.toEqual({
 			status: 'ambiguous',
-			phase: 'rollback',
+			phase: 'submit',
 			intendedTxHash,
-			error: rollbackError,
-			rejectionError: rejection,
+			error: rejection,
 		});
+		expect(callbacks.rollback).not.toHaveBeenCalled();
 		expect(callbacks.finalize).not.toHaveBeenCalled();
 	});
 

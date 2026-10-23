@@ -8,7 +8,7 @@ import {
   toggleReportFilterValue,
   toggleReportWalletSelection,
 } from './download-details.helpers';
-import { EMPTY_FILTERS } from './TransactionFilters';
+import { EMPTY_FILTERS, NOT_PAID_IN_TIME_STATUS } from './TransactionFilters';
 
 test('maps payment and state view filters to seller report defaults', () => {
   assert.deepEqual(
@@ -32,6 +32,21 @@ test('maps payment and purchase tabs to seller and buyer roles', () => {
   assert.deepEqual(buildTransactionReportViewDefaults('Purchases', EMPTY_FILTERS, false).roles, [
     'Buyer',
   ]);
+});
+
+test('maps Not Paid In Time to its on-chain state and marks it unmapped', () => {
+  assert.deepEqual(
+    buildTransactionReportViewDefaults(
+      'All',
+      { ...EMPTY_FILTERS, status: NOT_PAID_IN_TIME_STATUS },
+      false,
+    ),
+    {
+      roles: ['Buyer', 'Seller'],
+      states: ['FundsOrDatumInvalid'],
+      hasUnmappedFilters: true,
+    },
+  );
 });
 
 test('marks search and action-only filters as unmapped report filters', () => {

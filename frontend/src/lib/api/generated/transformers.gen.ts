@@ -127,6 +127,9 @@ const paymentSchemaResponseTransformer = (data: any) => {
     data.nextActionLastChangedAt = new Date(data.nextActionLastChangedAt);
     data.onChainStateOrResultLastChangedAt = new Date(data.onChainStateOrResultLastChangedAt);
     data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.nextActionOrOnChainStateOrResultLastChangedAt);
+    if (data.NextAction.manualActionAcknowledgedAt) {
+        data.NextAction.manualActionAcknowledgedAt = new Date(data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.ActionHistory) {
         data.ActionHistory = data.ActionHistory.map((item: any) => {
             item.createdAt = new Date(item.createdAt);
@@ -162,6 +165,9 @@ export const postPaymentResponseTransformer = async (data: any): Promise<PostPay
     data.data.nextActionLastChangedAt = new Date(data.data.nextActionLastChangedAt);
     data.data.onChainStateOrResultLastChangedAt = new Date(data.data.onChainStateOrResultLastChangedAt);
     data.data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.data.nextActionOrOnChainStateOrResultLastChangedAt);
+    if (data.data.NextAction.manualActionAcknowledgedAt) {
+        data.data.NextAction.manualActionAcknowledgedAt = new Date(data.data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.data.CurrentTransaction) {
         data.data.CurrentTransaction.createdAt = new Date(data.data.CurrentTransaction.createdAt);
         data.data.CurrentTransaction.updatedAt = new Date(data.data.CurrentTransaction.updatedAt);
@@ -193,6 +199,9 @@ export const postPaymentSubmitResultResponseTransformer = async (data: any): Pro
     data.data.nextActionLastChangedAt = new Date(data.data.nextActionLastChangedAt);
     data.data.onChainStateOrResultLastChangedAt = new Date(data.data.onChainStateOrResultLastChangedAt);
     data.data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.data.nextActionOrOnChainStateOrResultLastChangedAt);
+    if (data.data.NextAction.manualActionAcknowledgedAt) {
+        data.data.NextAction.manualActionAcknowledgedAt = new Date(data.data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.data.CurrentTransaction) {
         data.data.CurrentTransaction.createdAt = new Date(data.data.CurrentTransaction.createdAt);
         data.data.CurrentTransaction.updatedAt = new Date(data.data.CurrentTransaction.updatedAt);
@@ -209,6 +218,9 @@ export const postPaymentAuthorizeRefundResponseTransformer = async (data: any): 
     data.data.nextActionLastChangedAt = new Date(data.data.nextActionLastChangedAt);
     data.data.onChainStateOrResultLastChangedAt = new Date(data.data.onChainStateOrResultLastChangedAt);
     data.data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.data.nextActionOrOnChainStateOrResultLastChangedAt);
+    if (data.data.NextAction.manualActionAcknowledgedAt) {
+        data.data.NextAction.manualActionAcknowledgedAt = new Date(data.data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.data.CurrentTransaction) {
         data.data.CurrentTransaction.createdAt = new Date(data.data.CurrentTransaction.createdAt);
         data.data.CurrentTransaction.updatedAt = new Date(data.data.CurrentTransaction.updatedAt);
@@ -225,6 +237,9 @@ export const postPaymentErrorStateRecoveryResponseTransformer = async (data: any
     data.data.nextActionLastChangedAt = new Date(data.data.nextActionLastChangedAt);
     data.data.onChainStateOrResultLastChangedAt = new Date(data.data.onChainStateOrResultLastChangedAt);
     data.data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.data.nextActionOrOnChainStateOrResultLastChangedAt);
+    if (data.data.NextAction.manualActionAcknowledgedAt) {
+        data.data.NextAction.manualActionAcknowledgedAt = new Date(data.data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.data.CurrentTransaction) {
         data.data.CurrentTransaction.createdAt = new Date(data.data.CurrentTransaction.createdAt);
         data.data.CurrentTransaction.updatedAt = new Date(data.data.CurrentTransaction.updatedAt);
@@ -241,6 +256,9 @@ export const postPurchaseErrorStateRecoveryResponseTransformer = async (data: an
     data.data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.data.nextActionOrOnChainStateOrResultLastChangedAt);
     data.data.nextActionLastChangedAt = new Date(data.data.nextActionLastChangedAt);
     data.data.onChainStateOrResultLastChangedAt = new Date(data.data.onChainStateOrResultLastChangedAt);
+    if (data.data.NextAction.manualActionAcknowledgedAt) {
+        data.data.NextAction.manualActionAcknowledgedAt = new Date(data.data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.data.CurrentTransaction) {
         data.data.CurrentTransaction.createdAt = new Date(data.data.CurrentTransaction.createdAt);
         data.data.CurrentTransaction.updatedAt = new Date(data.data.CurrentTransaction.updatedAt);
@@ -278,6 +296,9 @@ const purchaseSchemaResponseTransformer = (data: any) => {
     data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.nextActionOrOnChainStateOrResultLastChangedAt);
     data.nextActionLastChangedAt = new Date(data.nextActionLastChangedAt);
     data.onChainStateOrResultLastChangedAt = new Date(data.onChainStateOrResultLastChangedAt);
+    if (data.NextAction.manualActionAcknowledgedAt) {
+        data.NextAction.manualActionAcknowledgedAt = new Date(data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.ActionHistory) {
         data.ActionHistory = data.ActionHistory.map((item: any) => {
             item.createdAt = new Date(item.createdAt);
@@ -313,6 +334,9 @@ export const postPurchaseResponseTransformer = async (data: any): Promise<PostPu
     data.data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.data.nextActionOrOnChainStateOrResultLastChangedAt);
     data.data.nextActionLastChangedAt = new Date(data.data.nextActionLastChangedAt);
     data.data.onChainStateOrResultLastChangedAt = new Date(data.data.onChainStateOrResultLastChangedAt);
+    if (data.data.NextAction.manualActionAcknowledgedAt) {
+        data.data.NextAction.manualActionAcknowledgedAt = new Date(data.data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.data.CurrentTransaction) {
         data.data.CurrentTransaction.createdAt = new Date(data.data.CurrentTransaction.createdAt);
         data.data.CurrentTransaction.updatedAt = new Date(data.data.CurrentTransaction.updatedAt);
@@ -344,6 +368,9 @@ export const postPurchaseRequestRefundResponseTransformer = async (data: any): P
     data.data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.data.nextActionOrOnChainStateOrResultLastChangedAt);
     data.data.nextActionLastChangedAt = new Date(data.data.nextActionLastChangedAt);
     data.data.onChainStateOrResultLastChangedAt = new Date(data.data.onChainStateOrResultLastChangedAt);
+    if (data.data.NextAction.manualActionAcknowledgedAt) {
+        data.data.NextAction.manualActionAcknowledgedAt = new Date(data.data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.data.CurrentTransaction) {
         data.data.CurrentTransaction.createdAt = new Date(data.data.CurrentTransaction.createdAt);
         data.data.CurrentTransaction.updatedAt = new Date(data.data.CurrentTransaction.updatedAt);
@@ -360,6 +387,9 @@ export const postPurchaseCancelRefundRequestResponseTransformer = async (data: a
     data.data.nextActionOrOnChainStateOrResultLastChangedAt = new Date(data.data.nextActionOrOnChainStateOrResultLastChangedAt);
     data.data.nextActionLastChangedAt = new Date(data.data.nextActionLastChangedAt);
     data.data.onChainStateOrResultLastChangedAt = new Date(data.data.onChainStateOrResultLastChangedAt);
+    if (data.data.NextAction.manualActionAcknowledgedAt) {
+        data.data.NextAction.manualActionAcknowledgedAt = new Date(data.data.NextAction.manualActionAcknowledgedAt);
+    }
     if (data.data.CurrentTransaction) {
         data.data.CurrentTransaction.createdAt = new Date(data.data.CurrentTransaction.createdAt);
         data.data.CurrentTransaction.updatedAt = new Date(data.data.CurrentTransaction.updatedAt);

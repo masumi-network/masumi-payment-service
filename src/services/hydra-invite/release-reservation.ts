@@ -20,8 +20,15 @@
 
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { HydraInviteStatus } from '@/generated/prisma/client';
+import { HydraInviteStatus, type Network, Prisma } from '@/generated/prisma/client';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
+import { nodeCardanoAddress } from '@/services/hydra-node-funding/node-address';
+import {
+	captureNodeFundingBaseline,
+	hasUnsettledNodeFunding,
+	type NodeFundingBaseline,
+} from '@/services/hydra-node-funding/transfer-history';
 import { decrypt } from '@/utils/security/encryption';
 import { removeHostNode } from '@/services/hydra-host/client';
 import { isHostNodeGone } from '@/services/hydra-host/node-gone';
@@ -72,20 +79,28 @@ export async function canRemoveReservedHostNode(hydraHostId: string, hostNodeId:
  * A failure here is reported as "not settled" rather than thrown: one node
  * whose chain query failed must not stop the rest of a sweep.
  */
-async function settleNodeFunds(localParticipantId: string): Promise<boolean> {
+async function settleNodeFunds(
+	localParticipantId: string,
+	cardanoVkey: string,
+	network: Network,
+): Promise<NodeFundingBaseline | null> {
 	try {
+		const address = nodeCardanoAddress(cardanoVkey, network);
+		// Capture before chain reads. A transfer that appears during settlement
+		// invalidates its balance evidence even if Host work outlasts the recent window.
+		const funding = await captureNodeFundingBaseline(prisma, address);
 		const outcome = await withdrawNodeFunds(localParticipantId);
 		if (outcome.code === 'swept') {
 			logger.info(
 				`hydra: swept ${outcome.balanceLovelace} lovelace from released node ${localParticipantId} in ${outcome.txHash}`,
 			);
 		}
-		return SETTLED_CODES.has(outcome.code);
+		return SETTLED_CODES.has(outcome.code) ? funding : null;
 	} catch (error) {
 		logger.warn(
 			`hydra: could not sweep the node of participant ${localParticipantId} before releasing it: ${(error as Error).message}`,
 		);
-		return false;
+		return null;
 	}
 }
 
@@ -106,17 +121,27 @@ export async function releaseReservedParticipants(input: {
 }): Promise<ReservationRelease> {
 	const reserved = await prisma.hydraLocalParticipant.findMany({
 		where: { hydraHostId: input.hydraHostId, hostNodeId: input.hostNodeId, hydraHeadId: null },
-		select: { id: true, hydraSecretKeyId: true },
+		select: {
+			id: true,
+			hydraSecretKeyId: true,
+			cardanoVkey: true,
+			Wallet: { select: { PaymentSource: { select: { network: true } } } },
+		},
 	});
 	if (reserved.length === 0) {
 		return { released: 0, retained: 0 };
 	}
 
-	const settled: Array<{ id: string; hydraSecretKeyId: string }> = [];
+	const settled: Array<{ id: string; hydraSecretKeyId: string } & NodeFundingBaseline> = [];
 	let retained = 0;
 	for (const participant of reserved) {
-		if (await settleNodeFunds(participant.id)) {
-			settled.push(participant);
+		const funding = await settleNodeFunds(
+			participant.id,
+			participant.cardanoVkey,
+			participant.Wallet.PaymentSource.network,
+		);
+		if (funding !== null) {
+			settled.push({ id: participant.id, hydraSecretKeyId: participant.hydraSecretKeyId, ...funding });
 		} else {
 			retained += 1;
 			logger.warn(
@@ -167,13 +192,42 @@ export async function releaseReservedParticipants(input: {
 		return { released: 0, retained: retained + settled.length };
 	}
 
-	await prisma.$transaction(async (tx) => {
-		// Participants first: the key rows are the parents, and the foreign key is
-		// `onDelete: Restrict`, so deleting them the other way round fails.
-		await tx.hydraLocalParticipant.deleteMany({ where: { id: { in: settled.map((row) => row.id) } } });
-		await tx.hydraSecretKey.deleteMany({ where: { id: { in: settled.map((row) => row.hydraSecretKeyId) } } });
-	});
-	return { released: settled.length, retained };
+	const released = await withSerializableSlotRetry(() =>
+		prisma.$transaction(
+			async (tx) => {
+				const liveInvite = await tx.hydraHeadInvite.findFirst({
+					where: {
+						...input,
+						status: { in: [HydraInviteStatus.Issued, HydraInviteStatus.Redeemed, HydraInviteStatus.Started] },
+					},
+					select: { id: true },
+				});
+				if (liveInvite !== null) return 0;
+
+				let deleted = 0;
+				for (const participant of settled) {
+					const current = await tx.hydraLocalParticipant.findUnique({
+						where: { id: participant.id },
+						select: { hydraHeadId: true, hydraSecretKeyId: true },
+					});
+					if (
+						current === null ||
+						current.hydraHeadId !== null ||
+						current.hydraSecretKeyId !== participant.hydraSecretKeyId
+					)
+						continue;
+					if (await hasUnsettledNodeFunding(tx, participant)) continue;
+					// The participant references its key with onDelete: Restrict.
+					await tx.hydraLocalParticipant.deleteMany({ where: { id: { in: [participant.id] } } });
+					await tx.hydraSecretKey.deleteMany({ where: { id: { in: [participant.hydraSecretKeyId] } } });
+					deleted += 1;
+				}
+				return deleted;
+			},
+			{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+		),
+	);
+	return { released, retained: retained + settled.length - released };
 }
 
 /**

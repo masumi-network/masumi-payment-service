@@ -107,6 +107,16 @@ a head. `HYDRA_HOST_PUBLIC_HOST` is a bare hostname or IP with no scheme, port
 or path; the Host refuses to start otherwise, because that value becomes each
 node's advertise identity and must not change for a head's lifetime.
 
+A node's health and its API are opened by a token derived for that node,
+`HMAC-SHA256(key = a Host token, "masumi-hydra-host/node-token/v1:" + nodeId)` in
+hex, so a credential that leaks reaches that node and no other. Either Host
+token works as the key. The user token itself reaches every node on the Host,
+Close and Fanout included, and the Host accepts it on those routes while
+`HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN` is `true`, which is the default so that
+a service not yet on node tokens keeps working. The Host logs the first time a
+request uses it. Set the variable to `false` once none does. Upgrade the Hosts
+before the payment service: an older Host knows only the Host-wide token.
+
 `HYDRA_HOST_PUBLIC_EXCHANGE_URL` is the full URL that signed invites give to
 counterparties. It must end in `/exchange`. It must use HTTPS unless it points
 to loopback. Set `HYDRA_HOST_EXCHANGE_TRUST_PROXY=true` only when a trusted
@@ -241,6 +251,20 @@ secret.
 Admin UI → **Hydra Heads** → **Connect node**. You need the Host's base URL and
 its admin token. The user token is optional; supply it if you want the service
 restricted to node operation.
+
+The service refuses a base URL that is a private, loopback or link-local
+address, or a name that resolves to one, because connecting a Host makes the
+service call that address. An API key with admin rights can connect a Host, and
+it is not an infrastructure operator, so the exception is yours to make and
+not a flag on the request: list the host in `HYDRA_TRUSTED_PRIVATE_HOSTS` (comma
+separated, the same format as `HYDRA_TRUSTED_PLAINTEXT_HOSTS`) in the service's
+environment. A Host on a private network, and a Host on `127.0.0.1` for local
+testing, both need it. VERIFIED: DNS is checked for each Host request and each
+runtime socket, including reconnects. Connections use only the checked address
+set, while TLS still verifies the original hostname
+(`src/services/hydra-host/transport.ts:38`, `src/services/hydra-host/destination.ts:82`).
+Failed DNS lookups are refused. Existing private Hosts also
+need this setting before the service next connects to them.
 
 The node's hostname lives under **Advanced** and is usually inferred correctly.
 Override it when the Host sits behind a NAT or a load balancer and cannot see
