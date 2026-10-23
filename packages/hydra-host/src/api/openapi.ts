@@ -147,7 +147,7 @@ const PROXY_DESCRIPTION =
 	'GET: /head, /snapshot, /snapshot/utxo, /snapshot/last-seen, /commits, /protocol-parameters; ' +
 	'POST: /snapshot, /commit, /decommit, /transaction, /cardano-transaction; ' +
 	'DELETE: /commits/{txId}. WebSocket upgrades on the same prefix carry the head’s event stream. ' +
-	'Requires the user token.';
+	'Requires the token derived for that node (or, while the Host still allows it, the Host-wide user token).';
 
 type ParameterObject = {
 	name: string;
@@ -216,7 +216,7 @@ export function buildOpenApiDocument(): OpenApiDocument {
 			version: 'v1',
 			description:
 				'Token-gated API that provisions and supervises hydra-node processes. ' +
-				'Two bearer tiers: the admin token operates nodes and invites; the user token reads health and uses the node-API proxy. ' +
+				'Two bearer tiers: the admin token operates nodes and invites; the user tier reads health and uses the node-API proxy, with a token derived for the node or, while the Host allows it, the Host-wide user token. ' +
 				'The Exchange Plane (invite redemption between Hosts) is a separate listener and is not described here.',
 		},
 		components: {

@@ -106,6 +106,16 @@ export type HostConfig = {
 	 * "Stranded snapshot rounds" in docs/hydra-operations.md.
 	 */
 	allowAutoSideLoad: boolean;
+	/**
+	 * Accept the Host-wide user token on a node's routes (its health and its API
+	 * proxy), where a token derived for that node is what belongs.
+	 *
+	 * On by default, so a payment service that has not moved to node tokens keeps
+	 * working. That token reaches every node on this Host, Close and Fanout
+	 * included, so turn this off once no service presents it; the Host logs the
+	 * first time one does.
+	 */
+	acceptHostWideUserToken: boolean;
 	/** The project release this image was built from. See release.ts. */
 	release: ReleaseInfo;
 };
@@ -322,6 +332,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		allowPrivatePeers: optional(env, 'HYDRA_HOST_ALLOW_PRIVATE_PEERS', 'false') === 'true',
 		requirePeerFirewallRefresh: optional(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', 'false') === 'true',
 		allowAutoSideLoad: optional(env, 'HYDRA_HOST_AUTO_SIDELOAD', 'false') === 'true',
+		acceptHostWideUserToken: optional(env, 'HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN', 'true') !== 'false',
 		release: readReleaseInfo(env),
 	};
 }

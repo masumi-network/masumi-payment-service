@@ -107,6 +107,16 @@ a head. `HYDRA_HOST_PUBLIC_HOST` is a bare hostname or IP with no scheme, port
 or path; the Host refuses to start otherwise, because that value becomes each
 node's advertise identity and must not change for a head's lifetime.
 
+A node's health and its API are opened by a token derived for that node,
+`HMAC-SHA256(key = a Host token, "masumi-hydra-host/node-token/v1:" + nodeId)` in
+hex, so a credential that leaks reaches that node and no other. Either Host
+token works as the key. The user token itself reaches every node on the Host,
+Close and Fanout included, and the Host accepts it on those routes while
+`HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN` is `true`, which is the default so that
+a service not yet on node tokens keeps working. The Host logs the first time a
+request uses it. Set the variable to `false` once none does. Upgrade the Hosts
+before the payment service: an older Host knows only the Host-wide token.
+
 `HYDRA_HOST_PUBLIC_EXCHANGE_URL` is the full URL that signed invites give to
 counterparties. It must end in `/exchange`. It must use HTTPS unless it points
 to loopback. Set `HYDRA_HOST_EXCHANGE_TRUST_PROXY=true` only when a trusted

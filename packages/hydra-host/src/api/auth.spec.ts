@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
-import { authenticate, parseBearer } from './auth.js';
+import { authenticate, authenticateNode, parseBearer } from './auth.js';
+import { deriveNodeToken } from './node-token.js';
 
 const TOKENS = { adminToken: 'a'.repeat(40), userToken: 'u'.repeat(40) };
 
@@ -58,5 +59,64 @@ describe('authenticate', () => {
 
 	it('does not accept a prefix of a valid token', () => {
 		expect(authenticate(`Bearer ${TOKENS.adminToken.slice(0, 39)}`, TOKENS, 'admin')).toMatchObject({ ok: false });
+	});
+});
+
+describe('authenticateNode', () => {
+	const WIDE = { acceptHostWideUserToken: true };
+	const STRICT = { acceptHostWideUserToken: false };
+	const bearer = (token: string) => `Bearer ${token}`;
+
+	it('accepts the token derived from the user token for that node', () => {
+		const token = deriveNodeToken(TOKENS.userToken, 'node-1');
+		expect(authenticateNode(bearer(token), TOKENS, 'node-1', STRICT)).toEqual({ ok: true, tier: 'user' });
+	});
+
+	// A service registered with no user token keeps the admin token in its runtime
+	// slot. It derives from that, so the admin token itself never travels.
+	it('accepts the token derived from the admin token for that node', () => {
+		const token = deriveNodeToken(TOKENS.adminToken, 'node-1');
+		expect(authenticateNode(bearer(token), TOKENS, 'node-1', STRICT)).toEqual({ ok: true, tier: 'user' });
+	});
+
+	it.each([
+		['user', TOKENS.userToken],
+		['admin', TOKENS.adminToken],
+	])('refuses a token derived from the %s token for another node', (_label, secret) => {
+		const token = deriveNodeToken(secret, 'node-2');
+		expect(authenticateNode(bearer(token), TOKENS, 'node-1', WIDE)).toMatchObject({ ok: false, status: 401 });
+	});
+
+	it('still treats the admin token as admin', () => {
+		expect(authenticateNode(bearer(TOKENS.adminToken), TOKENS, 'node-1', STRICT)).toEqual({ ok: true, tier: 'admin' });
+	});
+
+	// The credential that reaches every node, kept working while services move
+	// off it, and flagged so the Host can say it is still being used.
+	it('accepts the Host-wide user token only while that is allowed, and flags it', () => {
+		expect(authenticateNode(bearer(TOKENS.userToken), TOKENS, 'node-1', WIDE)).toEqual({
+			ok: true,
+			tier: 'user',
+			hostWideUserToken: true,
+		});
+		expect(authenticateNode(bearer(TOKENS.userToken), TOKENS, 'node-1', STRICT)).toMatchObject({
+			ok: false,
+			status: 401,
+		});
+	});
+
+	it('does not flag a node token as the Host-wide one', () => {
+		const token = deriveNodeToken(TOKENS.userToken, 'node-1');
+		expect(authenticateNode(bearer(token), TOKENS, 'node-1', WIDE)).not.toHaveProperty('hostWideUserToken');
+	});
+
+	it('rejects a missing, malformed or unknown credential with 401', () => {
+		expect(authenticateNode(undefined, TOKENS, 'node-1', WIDE)).toMatchObject({ ok: false, status: 401 });
+		expect(authenticateNode('Basic abc', TOKENS, 'node-1', WIDE)).toMatchObject({ ok: false, status: 401 });
+		expect(authenticateNode(bearer('nope'), TOKENS, 'node-1', WIDE)).toMatchObject({ ok: false, status: 401 });
+	});
+
+	it('handles credentials of any length without throwing', () => {
+		expect(() => authenticateNode(bearer('x'.repeat(5000)), TOKENS, 'node-1', WIDE)).not.toThrow();
 	});
 });

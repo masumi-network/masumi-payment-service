@@ -134,6 +134,11 @@ async function main(): Promise<void> {
 	if (config.requirePeerFirewallRefresh) {
 		logger.info('[host] provisioning waits for the first acknowledged hydra-peer-firewall refresh');
 	}
+	if (config.acceptHostWideUserToken) {
+		logger.warn(
+			'[host] the Host-wide user token still opens every node on this Host; set HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN=false once every payment service presents node tokens',
+		);
+	}
 
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
 	startup.supervisor = supervisor;
