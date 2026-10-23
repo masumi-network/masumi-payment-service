@@ -35172,7 +35172,7 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head not open, disabled, not yet identified on chain, or its node is still catching up"
+                        "description": "Head not open, disabled, not yet identified on chain, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy"
                     },
                     "502": {
                         "description": "No live connection to the head"

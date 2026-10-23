@@ -7,16 +7,26 @@
  * chain history, both answered `accepted: true`. The UI then toasted
  * "Withdrawal started. It appears below" and pointed at a list that stayed
  * empty forever — no `HydraDecommit` row, no head error, one log line.
+ *
+ * The three refusals the executor decides inside its slot claim have the same
+ * problem: a withdrawal already in progress, a collateral drain with escrows
+ * still live, and a wallet another transaction holds. Each answered
+ * `accepted: true` and was refused a moment later, with the reason in the head's
+ * error list, or in a log alone for the wallet.
  */
 
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
-import { HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
+import { PENDING_STALE_AFTER_MS, PREPARING_STALE_AFTER_MS } from '@/services/hydra-decommit/stale';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindHead = jest.fn() as AnyMock;
 const mockFindWithdrawals = jest.fn() as AnyMock;
+const mockFindActive = jest.fn() as AnyMock;
+const mockWalletCount = jest.fn() as AnyMock;
+const mockCountLiveEscrows = jest.fn() as AnyMock;
 const mockGetHead = jest.fn() as AnyMock;
 const mockAssertReady = jest.fn() as AnyMock;
 const mockExecute = jest.fn() as AnyMock;
@@ -33,7 +43,11 @@ jest.unstable_mockModule('@masumi/payment-core/auth', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hydraHead: { findUnique: mockFindHead }, hydraDecommit: { findMany: mockFindWithdrawals } },
+	prisma: {
+		hydraHead: { findUnique: mockFindHead },
+		hydraDecommit: { findMany: mockFindWithdrawals, findFirst: mockFindActive },
+		hotWallet: { count: mockWalletCount },
+	},
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -50,6 +64,10 @@ jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
 
 jest.unstable_mockModule('@/services/hydra-decommit/execute', () => ({ executeHydraDecommit: mockExecute }));
 
+jest.unstable_mockModule('@/services/hydra-decommit/live-escrows', () => ({
+	countLiveInHeadEscrows: mockCountLiveEscrows,
+}));
+
 let listWithdrawalsGet: { handler: (args: { input: unknown }) => Promise<unknown> };
 let withdrawHeadPost: { handler: (args: { input: unknown }) => Promise<unknown> };
 let withdrawInput: { safeParse: (input: unknown) => { success: boolean } };
@@ -64,11 +82,14 @@ beforeEach(() => {
 		isEnabled: true,
 		status: HydraHeadStatus.Open,
 		headIdentifier: 'a'.repeat(64),
-		LocalParticipant: { id: 'participant-1' },
+		LocalParticipant: { id: 'participant-1', walletId: 'wallet-1' },
 	});
 	mockGetHead.mockReturnValue({});
 	mockAssertReady.mockResolvedValue(undefined);
 	mockExecute.mockResolvedValue({ decommitId: 'decommit-1' });
+	mockFindActive.mockResolvedValue(null);
+	mockCountLiveEscrows.mockResolvedValue(0);
+	mockWalletCount.mockResolvedValue(1);
 });
 
 const input = { headId: 'head-1', lovelace: '10000000', drain: false };
@@ -99,6 +120,96 @@ describe('withdrawHeadPost pre-flight', () => {
 
 		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({ statusCode: 400 });
 		expect(mockAssertReady).not.toHaveBeenCalled();
+		expect(mockExecute).not.toHaveBeenCalled();
+	});
+});
+
+describe('withdrawHeadPost slot refusals', () => {
+	const ago = (ms: number) => new Date(Date.now() - ms);
+	const active = (overrides: Record<string, unknown>) => ({
+		id: 'decommit-0',
+		status: HydraDecommitStatus.Preparing,
+		decommitTxId: null,
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		...overrides,
+	});
+
+	it('refuses while a withdrawal from this participant is in progress', async () => {
+		mockFindActive.mockResolvedValue(active({}));
+
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('already in progress'),
+		});
+		expect(mockFindActive).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ hydraLocalParticipantId: 'participant-1' }),
+			}),
+		);
+		expect(mockExecute).not.toHaveBeenCalled();
+	});
+
+	it('refuses while a prior withdrawal is still settling on L1', async () => {
+		mockFindActive.mockResolvedValue(active({ status: HydraDecommitStatus.Approved }));
+
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('still settling on L1'),
+		});
+		expect(mockExecute).not.toHaveBeenCalled();
+	});
+
+	// The executor expires these itself, and the Pending one only on the node's
+	// word, so refusing them here would block a withdrawal that works today.
+	it.each([
+		['a Preparing row nothing resolved', { createdAt: ago(PREPARING_STALE_AFTER_MS + 1000) }],
+		[
+			'an old Pending row the node must be asked about',
+			{ status: HydraDecommitStatus.Pending, updatedAt: ago(PENDING_STALE_AFTER_MS + 1000) },
+		],
+	])('still accepts over %s', async (_label, overrides) => {
+		mockFindActive.mockResolvedValue(active(overrides));
+
+		await expect(withdrawHeadPost.handler({ input })).resolves.toMatchObject({ accepted: true });
+		expect(mockExecute).toHaveBeenCalled();
+	});
+
+	it('refuses a collateral drain while escrows are still live, naming how many', async () => {
+		mockCountLiveEscrows.mockResolvedValue(2);
+
+		await expect(withdrawHeadPost.handler({ input: { ...input, drain: true } })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('(2 found)'),
+		});
+		expect(mockCountLiveEscrows).toHaveBeenCalledWith(expect.anything(), 'head-1');
+		expect(mockExecute).not.toHaveBeenCalled();
+	});
+
+	it('accepts a collateral drain once no escrow is live', async () => {
+		await expect(withdrawHeadPost.handler({ input: { ...input, drain: true } })).resolves.toMatchObject({
+			accepted: true,
+		});
+		expect(mockExecute).toHaveBeenCalled();
+	});
+
+	it('counts no escrows for a withdrawal that leaves the collateral alone', async () => {
+		mockCountLiveEscrows.mockResolvedValue(2);
+
+		await expect(withdrawHeadPost.handler({ input })).resolves.toMatchObject({ accepted: true });
+		expect(mockCountLiveEscrows).not.toHaveBeenCalled();
+	});
+
+	it('refuses while another transaction holds the wallet', async () => {
+		mockWalletCount.mockResolvedValue(0);
+
+		await expect(withdrawHeadPost.handler({ input })).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('wallet is busy'),
+		});
+		expect(mockWalletCount).toHaveBeenCalledWith({
+			where: { id: 'wallet-1', deletedAt: null, lockedAt: null, pendingTransactionId: null, lockPurpose: null },
+		});
 		expect(mockExecute).not.toHaveBeenCalled();
 	});
 });

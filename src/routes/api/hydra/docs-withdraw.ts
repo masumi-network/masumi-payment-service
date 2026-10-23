@@ -34,13 +34,14 @@ export function registerHydraWithdrawPaths({ registry, apiKeyAuth }: SwaggerRegi
 			// What the withdrawal itself gets wrong — nothing eligible, less eligible
 			// than was asked for, a node that refuses the request — is reported
 			// against the withdrawal row, because it is decided after this answers.
-			// These are the refusals a caller can actually receive.
+			// These are the refusals a caller can receive in the answer.
 			400: {
 				description:
 					'Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant',
 			},
 			409: {
-				description: 'Head not open, disabled, not yet identified on chain, or its node is still catching up',
+				description:
+					'Head not open, disabled, not yet identified on chain, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy',
 			},
 			502: { description: 'No live connection to the head' },
 		},
