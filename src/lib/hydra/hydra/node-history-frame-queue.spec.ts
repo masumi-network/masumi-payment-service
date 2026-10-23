@@ -80,6 +80,43 @@ describe('HistoryFrameQueue', () => {
 		expect(seen).toEqual(['a', 'b']);
 	});
 
+	it('prepends 150,000 frames without argument spreading and preserves order and pass tags', async () => {
+		const pass = 7;
+		const frames = Array.from({ length: 150_000 }, (_, index) => frame(String(index), pass));
+		const seen: string[] = [];
+		let release: () => void = () => undefined;
+		let finish: () => void = () => undefined;
+		const finished = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const queue = new HistoryFrameQueue(
+			({ rawMessage }) => {
+				seen.push(rawMessage);
+				if (rawMessage === 'wait') {
+					return new Promise<void>((resolve) => {
+						release = resolve;
+					});
+				}
+				if (rawMessage === 'tail') finish();
+				return undefined;
+			},
+			(candidate) => candidate.pass === pass,
+			NO_FLOW,
+		);
+		queue.push(frame('wait', pass));
+		queue.push(frame('already queued', pass));
+		expect(() => queue.pushFront(frames)).not.toThrow();
+		queue.pushFront([frame('stale', 0), frame('priority', pass)]);
+		queue.push(frame('tail', pass));
+		expect(queue.size).toBe(frames.length + 4);
+		expect(seen).toEqual(['wait']);
+
+		release();
+		await finished;
+		expect(seen).toEqual(['wait', 'priority', ...frames.map(({ rawMessage }) => rawMessage), 'already queued', 'tail']);
+		expect(queue.size).toBe(0);
+	});
+
 	it('yields to the event loop once a slice has spent its budget', async () => {
 		let clockMs = 0;
 		jest.spyOn(Date, 'now').mockImplementation(() => clockMs);
@@ -210,7 +247,8 @@ describe('HistoryFrameQueue', () => {
 			flow,
 		);
 		const half = 'x'.repeat(HISTORY_REPLAY_QUEUE_HIGH_WATER / 2);
-		for (let index = 0; index < 4; index += 1) queue.push(frame(half));
+		queue.push(frame('wait'));
+		queue.pushFront([frame(half), frame(half), frame(half)]);
 		expect(flow.pause).toHaveBeenCalledTimes(1);
 		queue.clear();
 		expect(flow.resume).toHaveBeenCalledTimes(1);
