@@ -40,7 +40,7 @@ overrides:
   flatted: 3.4.4
   form-data: 4.0.6
   handlebars: 4.7.10
-  hono: 4.13.7
+  hono: 4.13.11
   http-cache-semantics: 4.3.0
   immutable: 5.1.8
   ip-address: 10.7.4
