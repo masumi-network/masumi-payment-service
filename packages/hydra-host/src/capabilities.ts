@@ -47,6 +47,12 @@ export type Capabilities = {
 	exchangePort: number;
 	/** Public URL reported verbatim from validated Host configuration. */
 	exchangeUrl: string;
+	/**
+	 * This Host opens a node's routes to a token derived for that node. A service
+	 * that sends one needs a Host that says so: an older Host knows only the
+	 * Host-wide token and would refuse it.
+	 */
+	nodeScopedTokens: boolean;
 };
 
 export type CapabilitiesDeps = {
@@ -110,6 +116,7 @@ export async function readCapabilities(deps: CapabilitiesDeps): Promise<Capabili
 		network: deps.network,
 		exchangePort: deps.exchangePort,
 		exchangeUrl: deps.exchangeUrl,
+		nodeScopedTokens: true,
 		nodeSlots: deps.slots(),
 	};
 }
