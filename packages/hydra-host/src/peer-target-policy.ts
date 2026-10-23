@@ -5,7 +5,8 @@
  * from the control plane, and becomes a `--peer` argument. Without a policy a
  * redeemer can name `127.0.0.1:8443` or `169.254.169.254:80` and make the node
  * open outbound peer-protocol connections into the Host's own network. So by
- * default every address the name resolves to must be globally routable.
+ * default every address the name resolves to must be globally routable, and
+ * at least one must be IPv4 for the IPv4 listener and peer firewall.
  * Deployments that run peers on a private network opt out explicitly with
  * `HYDRA_HOST_ALLOW_PRIVATE_PEERS=true`.
  *
@@ -100,6 +101,9 @@ export async function peerTargetRejection(
 	const blocked = addresses.find(({ address }) => !isPublicPeerIp(address));
 	if (blocked !== undefined) {
 		return `peer host ${parsed.host} resolves to non-public address ${blocked.address}; set HYDRA_HOST_ALLOW_PRIVATE_PEERS=true to allow private peers`;
+	}
+	if (!addresses.some(({ address }) => isIP(address) === 4)) {
+		return `peer host ${parsed.host} does not resolve to an IPv4 address`;
 	}
 	return null;
 }
