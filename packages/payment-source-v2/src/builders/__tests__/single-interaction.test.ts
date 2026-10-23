@@ -267,7 +267,7 @@ describe('V2 single-item smart-contract input selection', () => {
 });
 
 it.each(['CollectCompleted', 'CollectRefund'] as const)(
-	'funds undersized Hydra %s outputs before coin selection',
+	'funds undersized Hydra %s collection without increasing buyer collateral',
 	async (type) => {
 		const provider = { fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })) };
 		const collateral = createUtxo('collateral', '5000000');
@@ -287,7 +287,7 @@ it.each(['CollectCompleted', 'CollectRefund'] as const)(
 			[collateral, funding],
 			{ collectAssets: assets, collectionAddress: 'addr_test1_seller' },
 			null,
-			{ lovelace: 1n, address: 'addr_test1_buyer', txHash: 'contract', outputIndex: 0 },
+			{ lovelace: 1_500_000n, address: 'addr_test1_buyer', txHash: 'contract', outputIndex: 0 },
 			100,
 			200,
 			true,
@@ -300,7 +300,7 @@ it.each(['CollectCompleted', 'CollectRefund'] as const)(
 			{ unit: 'lovelace', quantity: '1400000' },
 			assets[1],
 		]);
-		expect(builder.txOut).toHaveBeenCalledWith('addr_test1_buyer', [{ unit: 'lovelace', quantity: '1400000' }]);
+		expect(builder.txOut).toHaveBeenCalledWith('addr_test1_buyer', [{ unit: 'lovelace', quantity: '1500000' }]);
 		expect(builder.selectUtxosFrom).toHaveBeenCalledWith([funding]);
 		expect(builder.setFee).toHaveBeenCalledWith('0');
 		expect(builder.setTotalCollateral).toHaveBeenCalledWith('0');

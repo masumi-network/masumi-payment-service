@@ -16,6 +16,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import WebSocket, { type RawData } from 'ws';
+import { createHydraHostLookup } from '@/services/hydra-host/destination';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { HydraHeadUpdateInput } from '@/generated/prisma/models';
 import { MAX_HYDRA_WS_FRAME_BYTES } from '@/lib/hydra/hydra/schemas';
@@ -244,6 +245,7 @@ export function probeHeadCurrentSlot(
 	wsUrl: string,
 	expectedHeadId: string | null,
 	authToken?: string,
+	guardHostDestination = false,
 ): Promise<number | null> {
 	return new Promise<number | null>((resolve) => {
 		let settled = false;
@@ -262,6 +264,7 @@ export function probeHeadCurrentSlot(
 		const socket = new WebSocket(`${wsUrl}?history=no`, {
 			maxPayload: MAX_HYDRA_WS_FRAME_BYTES,
 			perMessageDeflate: false,
+			...(guardHostDestination ? { lookup: createHydraHostLookup(wsUrl), agent: false } : {}),
 			...(Object.keys(authHeaders).length === 0 ? {} : { headers: authHeaders }),
 		});
 		const timeout = setTimeout(() => finish(null), 8000);

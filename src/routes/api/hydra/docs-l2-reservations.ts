@@ -5,11 +5,15 @@ import {
 	l2ReservationsOutput,
 	releaseL2ReservationInput,
 	releaseL2ReservationOutput,
+	reapplyL2ReservationInput,
+	reapplyL2ReservationOutput,
+	stalledReleaseOutput,
 } from '@/routes/api/hydra/head/l2-reservations';
 
 const HEAD_ID = 'cuid_v2_auto_generated';
 const TRANSACTION_ID = 'cuid_v2_auto_generated';
 const PURCHASE_ID = 'cuid_v2_auto_generated';
+const PAYMENT_ID = 'cuid_v2_auto_generated';
 const TAG = ['hydra'];
 const TX_ID = 'dc3edee5c3eb0b5b50809ec9fa41fb590818412383da4f03cbf645fb0c1728e7';
 const NUDGE_TX_ID = '5f2e1c7a9b3d4e6f8a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f';
@@ -91,6 +95,68 @@ export function registerHydraL2ReservationPaths({ registry, apiKeyAuth }: Swagge
 					'Head not open or closing, the row changed since it was read, the body is not provably expired or shows confirmed, or a request on it is in an action that cannot be restored',
 			},
 			502: { description: 'No live connection to the head' },
+		},
+	});
+	registry.registerPath({
+		method: 'get',
+		path: '/hydra/head/l2-reservations/stalled-release',
+		summary: "Show the released L2 reservation the head's replay is held on. (admin access required)",
+		description:
+			"When a reservation was released (on its input proof or by an admin) and its body later confirmed in a snapshot anyway, the head's replay holds on that body with stall reason `replay-apply-retry`. This returns that reservation, or null. `reapplicable` says whether the re-apply endpoint will accept it now.",
+		tags: TAG,
+		security: secured,
+		request: { query: l2ReservationsInput },
+		responses: {
+			200: successResponse('Stalled release', stalledReleaseOutput, {
+				headId: HEAD_ID,
+				reservation: {
+					transactionId: TRANSACTION_ID,
+					updatedAt: UPDATED_AT,
+					intendedTxHash: TX_ID,
+					releasedBy: 'operator',
+					releasedAt: UPDATED_AT,
+					kind: 'action',
+					purchaseRequestIds: [],
+					paymentRequestIds: [PAYMENT_ID],
+					reapplicable: true,
+					blockedReason: null,
+				},
+			}),
+			...unauthorized,
+			404: { description: 'Hydra head not found' },
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/head/l2-reservations/reapply',
+		summary: 'Re-apply a released L2 reservation whose body confirmed. (admin access required)',
+		description:
+			"Undoes the release of an action reservation: the row goes back to Pending and each request back to the reservation and its in-flight action, so the head's next replay pass applies the body the normal way. Refused for an initial lock (its purchase went back to locking and may be locked again), and unless replay is held on this body, our node shows it confirmed and spending the escrow output each request points at, each request is still where the release left it, and the row is unchanged since `expectedUpdatedAt`.",
+		tags: TAG,
+		security: secured,
+		request: {
+			body: {
+				content: {
+					'application/json': {
+						schema: reapplyL2ReservationInput.openapi({
+							example: { headId: HEAD_ID, transactionId: TRANSACTION_ID, expectedUpdatedAt: UPDATED_AT },
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Reservation re-applied', reapplyL2ReservationOutput, {
+				transactionId: TRANSACTION_ID,
+				purchaseRequestIds: [],
+				paymentRequestIds: [PAYMENT_ID],
+			}),
+			...unauthorized,
+			404: { description: 'Hydra head not found' },
+			409: {
+				description:
+					'Replay is not held on this released reservation, the row changed, it is an initial lock, or a check on the node or the requests failed',
+			},
 		},
 	});
 }

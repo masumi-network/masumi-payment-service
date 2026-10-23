@@ -14,8 +14,9 @@
  * before it left — so nothing overtakes a waiting frame.
  *
  * While frames wait, the socket keeps delivering them, and a history is
- * hundreds of megabytes of full UTxO sets. Above a high-water mark the queue
- * pauses the socket, and resumes it once it has worked down to half.
+ * hundreds of megabytes of full UTxO sets or many tiny frames. At the frame
+ * limit or above the byte limit the queue pauses the socket, and resumes it
+ * once both have worked down to half.
  */
 
 export const HISTORY_REPLAY_YIELD_BUDGET_MS = 50;
@@ -33,11 +34,16 @@ export const historyReplayYieldSettings = { budgetMs: HISTORY_REPLAY_YIELD_BUDGE
  * above which the socket is paused. Four maximum-size frames.
  */
 export const HISTORY_REPLAY_QUEUE_HIGH_WATER = 16 * 1024 * 1024;
+/** Bound per-frame memory even when payloads are empty, matching pre-pin capacity. */
+export const HISTORY_REPLAY_QUEUE_FRAME_HIGH_WATER = 4096;
 
 export type QueuedHistoryFrame = { rawMessage: string; pass: number };
 
 export class HistoryFrameQueue {
+	/** Append new arrivals here; move each once to the front stack when needed. */
 	private readonly frames: QueuedHistoryFrame[] = [];
+	/** Oldest frame on top. Prepending pushes in reverse order without shifting the queue. */
+	private readonly frontFrames: QueuedHistoryFrame[] = [];
 	/** True while frames are worked, or while the queue waits to resume. */
 	private draining = false;
 	private queuedLength = 0;
@@ -53,7 +59,7 @@ export class HistoryFrameQueue {
 	) {}
 
 	get size(): number {
-		return this.frames.length;
+		return this.frames.length + this.frontFrames.length;
 	}
 
 	push(frame: QueuedHistoryFrame): void {
@@ -63,13 +69,16 @@ export class HistoryFrameQueue {
 
 	/** Queue frames that arrived before everything already queued. */
 	pushFront(frames: readonly QueuedHistoryFrame[]): void {
-		this.frames.unshift(...frames);
+		for (let index = frames.length - 1; index >= 0; index -= 1) this.frontFrames.push(frames[index]);
 		this.added(frames);
 	}
 
 	private added(frames: readonly QueuedHistoryFrame[]): void {
 		for (const { rawMessage } of frames) this.queuedLength += rawMessage.length;
-		if (!this.paused && this.queuedLength > HISTORY_REPLAY_QUEUE_HIGH_WATER) {
+		if (
+			!this.paused &&
+			(this.queuedLength > HISTORY_REPLAY_QUEUE_HIGH_WATER || this.size >= HISTORY_REPLAY_QUEUE_FRAME_HIGH_WATER)
+		) {
 			this.paused = true;
 			this.flow.pause();
 		}
@@ -78,7 +87,11 @@ export class HistoryFrameQueue {
 
 	private removed(frame: QueuedHistoryFrame): void {
 		this.queuedLength -= frame.rawMessage.length;
-		if (this.paused && this.queuedLength <= HISTORY_REPLAY_QUEUE_HIGH_WATER / 2) {
+		if (
+			this.paused &&
+			this.queuedLength <= HISTORY_REPLAY_QUEUE_HIGH_WATER / 2 &&
+			this.size <= HISTORY_REPLAY_QUEUE_FRAME_HIGH_WATER / 2
+		) {
 			this.paused = false;
 			this.flow.resume();
 		}
@@ -90,6 +103,7 @@ export class HistoryFrameQueue {
 	 */
 	clear(): void {
 		this.frames.length = 0;
+		this.frontFrames.length = 0;
 		this.queuedLength = 0;
 		if (this.paused) {
 			this.paused = false;
@@ -101,12 +115,15 @@ export class HistoryFrameQueue {
 		if (this.draining) return;
 		this.draining = true;
 		const sliceStartedAtMs = Date.now();
-		while (this.frames.length > 0) {
+		while (this.size > 0) {
 			if (Date.now() - sliceStartedAtMs >= historyReplayYieldSettings.budgetMs) {
 				setImmediate(() => this.resume());
 				return;
 			}
-			const frame = this.frames.shift() as QueuedHistoryFrame;
+			if (this.frontFrames.length === 0) {
+				while (this.frames.length > 0) this.frontFrames.push(this.frames.pop() as QueuedHistoryFrame);
+			}
+			const frame = this.frontFrames.pop() as QueuedHistoryFrame;
 			this.removed(frame);
 			if (!this.isFrameLive(frame)) continue;
 			const waiting = this.processFrame(frame);

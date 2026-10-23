@@ -6,11 +6,17 @@ import {
 	type Output,
 	type UTxO,
 } from '@meshsdk/core';
+import createHttpError from 'http-errors';
 
 type Reference = { txHash: string; outputIndex: number };
 
 /** Fund the serialized output, including its reference datum, before coin selection. */
-export function addMinimumAdaOutput(builder: MeshTxBuilder, output: Output, coinsPerUtxoSize: number): void {
+export function addMinimumAdaOutput(
+	builder: MeshTxBuilder,
+	output: Output,
+	coinsPerUtxoSize: number,
+	maximumLovelace?: bigint,
+): void {
 	if (!Number.isSafeInteger(coinsPerUtxoSize) || coinsPerUtxoSize < 0) {
 		throw new Error('Invalid coinsPerUtxoSize for withdrawal output');
 	}
@@ -21,6 +27,11 @@ export function addMinimumAdaOutput(builder: MeshTxBuilder, output: Output, coin
 		if (BigInt(ada.quantity) < minimum) ada.quantity = minimum.toString();
 	} else {
 		amount.push({ unit: 'lovelace', quantity: minimum.toString() });
+	}
+	if (maximumLovelace !== undefined && BigInt(ada?.quantity ?? minimum) > maximumLovelace) {
+		// The validator accepts excess collateral. Refuse before coin selection
+		// can pay that excess from the seller's wallet, on L1 or L2.
+		throw createHttpError(422, 'Buyer collateral return cannot exceed contractual collateral to meet minimum ADA');
 	}
 	builder.txOut(output.address, amount);
 	if (output.datum) builder.txOutInlineDatumValue(output.datum.data.content, output.datum.data.type);
@@ -79,6 +90,7 @@ export function addWithdrawalOutputs(
 				datum: datum(collateralReturn),
 			},
 			coinsPerUtxoSize,
+			collateralReturn.lovelace,
 		);
 }
 

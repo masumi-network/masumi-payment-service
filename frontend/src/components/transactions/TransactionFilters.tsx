@@ -14,9 +14,21 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { ON_CHAIN_STATES, type OnChainStateFilter } from '@/lib/hooks/useTransactions';
 
+/**
+ * Status option for payments and purchases never locked before payByTime. No
+ * server param exists: it queries FundsOrDatumInvalid and narrows client-side.
+ */
+export const NOT_PAID_IN_TIME_STATUS = 'NotPaidInTime';
+
+export type TransactionStatusFilter = OnChainStateFilter | typeof NOT_PAID_IN_TIME_STATUS;
+
+/** On-chain state to send as filterOnChainState for a status filter. */
+export const toServerOnChainState = (status: TransactionStatusFilter): OnChainStateFilter =>
+  status === NOT_PAID_IN_TIME_STATUS ? 'FundsOrDatumInvalid' : status;
+
 export type TransactionFilterState = {
-  /** On-chain state — applied server-side via filterOnChainState. */
-  status: OnChainStateFilter | null;
+  /** On-chain state — applied server-side via filterOnChainState (Not Paid In Time also client-side). */
+  status: TransactionStatusFilter | null;
   /** Transaction type — applied server-side via transactionType. */
   type: 'payment' | 'purchase' | null;
   /** Recorded NextAction error type — applied client-side (no server param). */
@@ -111,10 +123,13 @@ type TransactionFiltersProps = {
   onChange: (filters: TransactionFilterState) => void;
 };
 
-const STATUS_OPTIONS: FilterMenuOption[] = ON_CHAIN_STATES.map((state) => ({
-  value: state,
-  label: humanize(state),
-}));
+const STATUS_OPTIONS: FilterMenuOption[] = [
+  ...ON_CHAIN_STATES.map((state) => ({
+    value: state,
+    label: humanize(state),
+  })),
+  { value: NOT_PAID_IN_TIME_STATUS, label: 'Not Paid In Time' },
+];
 
 const TYPE_OPTIONS: FilterMenuOption[] = [
   { value: 'payment', label: 'Payment' },
@@ -167,7 +182,7 @@ export function TransactionFilters({ filters, onChange }: TransactionFiltersProp
           onChange={(status) =>
             onChange({
               ...filters,
-              status: status as OnChainStateFilter | null,
+              status: status as TransactionStatusFilter | null,
             })
           }
         />

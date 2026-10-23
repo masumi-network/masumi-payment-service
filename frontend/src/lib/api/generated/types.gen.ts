@@ -450,6 +450,10 @@ export type Payment = {
          * SHA256 hash of the result to be submitted (hex string). Null if not applicable
          */
         resultHash: string | null;
+        /**
+         * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+         */
+        manualActionAcknowledgedAt?: Date | null;
     };
     /**
      * Historical list of all actions for this payment. Null if includeHistory is false
@@ -825,6 +829,10 @@ export type Purchase = {
          * Additional details about the error, if any
          */
         errorNote: string | null;
+        /**
+         * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+         */
+        manualActionAcknowledgedAt?: Date | null;
     };
     /**
      * Historical list of all actions for this purchase. Null if includeHistory is false
@@ -5497,6 +5505,10 @@ export type PostPaymentResponses = {
                  * SHA256 hash of the result to be submitted (hex string). Null if not applicable
                  */
                 resultHash: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this payment. Null if no transaction in progress
@@ -6132,6 +6144,10 @@ export type PostPaymentSubmitResultResponses = {
                  * SHA256 hash of the result to be submitted (hex string). Null if not applicable
                  */
                 resultHash: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this payment. Null if no transaction in progress
@@ -6462,6 +6478,10 @@ export type PostPaymentAuthorizeRefundResponses = {
                  * SHA256 hash of the result to be submitted (hex string). Null if not applicable
                  */
                 resultHash: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this payment. Null if no transaction in progress
@@ -6812,6 +6832,10 @@ export type PostPaymentErrorStateRecoveryResponses = {
                  * SHA256 hash of the result to be submitted (hex string). Null if not applicable
                  */
                 resultHash: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this payment. Null if no transaction in progress
@@ -7161,6 +7185,10 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -8330,6 +8358,10 @@ export type PostPurchaseErrors = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -8585,6 +8617,10 @@ export type PostPurchaseResponses = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -9119,6 +9155,10 @@ export type PostPurchaseRequestRefundResponses = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -9410,6 +9450,10 @@ export type PostPurchaseCancelRefundRequestResponses = {
                  * Additional details about the error, if any
                  */
                 errorNote: string | null;
+                /**
+                 * When an operator acknowledged this action and hid it from Needs Action. Null if not acknowledged. Omitted by endpoints that do not load it
+                 */
+                manualActionAcknowledgedAt?: Date | null;
             };
             /**
              * Current active transaction for this purchase. Null if no transaction in progress
@@ -14840,7 +14884,7 @@ export type PostHydraHeadWithdrawErrors = {
      */
     404: unknown;
     /**
-     * Head not open, disabled, not yet identified on chain, or its node is still catching up
+     * Head not open, disabled, not yet identified on chain, or its node is still catching up; a withdrawal is already in progress or still settling; `drain` while escrows are still live; or the wallet is busy
      */
     409: unknown;
     /**
@@ -15165,7 +15209,7 @@ export type GetHydraHeadL2ReservationsResponses = {
                 releaseNudgeTxHash: string | null;
                 rejectedByHeadReason: string | null;
                 /**
-                 * Whether an admin may release it now
+                 * Whether an admin may release it now. The release also re-reads the node's snapshot round and UTxO set, and can still refuse.
                  */
                 releasable: boolean;
                 /**
@@ -15243,6 +15287,133 @@ export type PostHydraHeadL2ReservationsReleaseResponses = {
 };
 
 export type PostHydraHeadL2ReservationsReleaseResponse = PostHydraHeadL2ReservationsReleaseResponses[keyof PostHydraHeadL2ReservationsReleaseResponses];
+
+export type GetHydraHeadL2ReservationsStalledReleaseData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head to inspect
+         */
+        headId: string;
+    };
+    url: '/hydra/head/l2-reservations/stalled-release';
+};
+
+export type GetHydraHeadL2ReservationsStalledReleaseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadL2ReservationsStalledReleaseResponses = {
+    /**
+     * Stalled release
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            /**
+             * Null when replay is not held on a released reservation
+             */
+            reservation: {
+                transactionId: string;
+                /**
+                 * Send it back to re-apply; the call is refused if the row changed
+                 */
+                updatedAt: string;
+                /**
+                 * Hash of the released body that confirmed in the head
+                 */
+                intendedTxHash: string;
+                /**
+                 * Who released the reservation
+                 */
+                releasedBy: 'input-proof' | 'operator';
+                releasedAt: string;
+                /**
+                 * An initial lock, or an action on an existing escrow
+                 */
+                kind: 'initial-lock' | 'action';
+                purchaseRequestIds: Array<string>;
+                paymentRequestIds: Array<string>;
+                /**
+                 * Whether an admin may re-apply it now
+                 */
+                reapplicable: boolean;
+                /**
+                 * Why it cannot be re-applied now
+                 */
+                blockedReason: string | null;
+            } | null;
+        };
+    };
+};
+
+export type GetHydraHeadL2ReservationsStalledReleaseResponse = GetHydraHeadL2ReservationsStalledReleaseResponses[keyof GetHydraHeadL2ReservationsStalledReleaseResponses];
+
+export type PostHydraHeadL2ReservationsReapplyData = {
+    body?: {
+        /**
+         * The Hydra head whose replay is held
+         */
+        headId: string;
+        /**
+         * The released reservation to re-apply
+         */
+        transactionId: string;
+        /**
+         * updatedAt from GET /hydra/head/l2-reservations/stalled-release
+         */
+        expectedUpdatedAt: Date;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/l2-reservations/reapply';
+};
+
+export type PostHydraHeadL2ReservationsReapplyErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Replay is not held on this released reservation, the row changed, it is an initial lock, or a check on the node or the requests failed
+     */
+    409: unknown;
+};
+
+export type PostHydraHeadL2ReservationsReapplyResponses = {
+    /**
+     * Reservation re-applied
+     */
+    200: {
+        status: 'success';
+        data: {
+            transactionId: string;
+            /**
+             * Purchases put back on the reservation
+             */
+            purchaseRequestIds: Array<string>;
+            /**
+             * Payments put back on the reservation
+             */
+            paymentRequestIds: Array<string>;
+        };
+    };
+};
+
+export type PostHydraHeadL2ReservationsReapplyResponse = PostHydraHeadL2ReservationsReapplyResponses[keyof PostHydraHeadL2ReservationsReapplyResponses];
 
 export type GetHydraHostPauseData = {
     body?: never;

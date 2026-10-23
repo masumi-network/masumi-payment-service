@@ -26,7 +26,9 @@ import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import type { UTxO } from '@meshsdk/core';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
+import { fetchHydraSnapshotRound, type HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
 import { readHydraSignedTransactionShape } from '@/lib/hydra/hydra/signed-transaction-shape';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
@@ -222,6 +224,43 @@ export async function listHeldL2Reservations(
 }
 
 /**
+ * Why the node's own snapshot state says the body may have applied, or null.
+ *
+ * "Our node shows no confirmation" is not enough: on 2026-10-22 the history
+ * stream went silent while the head clock stayed fresh, and a released
+ * withdrawal later confirmed. So this reads the node directly, never replay.
+ *
+ * - A snapshot round in flight may confirm the body: our node can have signed
+ *   it before expiry, and collecting signatures does not re-check validity.
+ * - An output reference is spent at most once, so one body input still in the
+ *   snapshot our node confirmed proves the body is not in that snapshot. When
+ *   every input is gone, the body itself may have spent them. A row with no
+ *   recorded inputs has nothing to check.
+ *
+ * `last-seen` is read first, so a round that confirms between the two reads
+ * shows up in the UTxO set instead of slipping past both.
+ */
+async function bodyMayHaveAppliedReason(node: HydraNode, inputRefs: readonly string[]): Promise<string | null> {
+	let round: HydraSnapshotRound;
+	let utxos: UTxO[];
+	try {
+		round = await fetchHydraSnapshotRound(node);
+		utxos = inputRefs.length === 0 ? [] : await node.snapshotUTxO();
+	} catch (error) {
+		logger.warn('[HydraReconcile] could not read the head snapshot for an operator release', { error });
+		throw createHttpError(502, 'Could not read the head snapshot to check the body inputs');
+	}
+	if (round.inFlight) {
+		return `A snapshot round is in flight (${round.tag}) and may confirm this body; retry once it settles`;
+	}
+	if (inputRefs.length === 0) return null;
+	// Same shape as `requireHydraInputRefs`, which recorded the refs.
+	const live = new Set(utxos.map((utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase()));
+	if (inputRefs.some((reference) => live.has(reference))) return null;
+	return 'Every input of this body is already spent in the head, so the body may have applied; check the head history before releasing';
+}
+
+/**
  * Release one expired L2 reservation on an admin's decision. Re-checks every
  * precondition against live state; the caller only says which row it reviewed.
  */
@@ -250,6 +289,8 @@ export async function releaseHeldL2Reservation(params: {
 	const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(head.HydraRelation.network));
 	const held = toHeld(row, node, slotConfig, nowMs, head.isClosing);
 	if (!held.releasable) throw createHttpError(409, held.blockedReason ?? 'The reservation cannot be released now');
+	const mayHaveApplied = await bodyMayHaveAppliedReason(node, row.l2ReservationInputRefs);
+	if (mayHaveApplied) throw createHttpError(409, mayHaveApplied);
 
 	// The checks above awaited the database. The session must still be the one
 	// they read, or a reconnect could have replayed a confirmation of the body.

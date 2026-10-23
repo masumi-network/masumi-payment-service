@@ -125,7 +125,63 @@ COMMIT;
 ```
 
 `l2ReleasedByInputProofAt` makes replay halt if the body ever confirms later.
-That is an invariant breach and needs investigation, not a retry.
+`l2ReleasedByOperatorAt` (the admin release) does the same. The head then shows
+`reconciliationStalledReason = 'replay-apply-retry'` on that body, and the log
+says `released L2 reservation confirmed in a snapshot; holding replay`.
+
+Correction: this section used to call every such confirmation an invariant
+breach that needs investigation. That is true for an input-proof release and
+for an initial lock. It was too strict for an admin release of an action. The
+admin release cannot prove the body dead, so the body can still confirm (the
+mainnet incident of 2026-10-22 on head `f6ec7beb…a7622cae`, withdraw
+`35f9b589…`). Then the escrow output it spends is gone, no retry of the action
+can confirm, and the request still points at that output.
+
+For that case, use the admin re-apply instead of SQL:
+
+1. `GET /api/v1/hydra/head/l2-reservations/stalled-release?headId=<head-id>`
+   returns the released row replay holds on, with `reapplicable` and
+   `blockedReason`. The head's Overview tab shows the same thing in the stall
+   notice, with a Re-apply button.
+2. `POST /api/v1/hydra/head/l2-reservations/reapply` with `headId`,
+   `transactionId` and `expectedUpdatedAt` (the `updatedAt` from step 1).
+
+The re-apply is the exact inverse of the release's action branch, in one
+serializable transaction. The row goes back to `Pending` with its release stamp
+cleared, and each request goes back to the row as its `CurrentTransaction` and
+to its in-flight action (for example `WithdrawRequested` back to
+`WithdrawInitiated`). The next replay pass then applies the body the normal way
+and clears the stall. The request never sits in its retry action, so the
+batcher cannot build a second retry in between.
+
+The server refuses the re-apply unless all of these hold:
+
+- Replay holds on this body with `replay-apply-retry`.
+- The row is `RolledBack` with `l2ReleasedByOperatorAt` set, has no `txHash`,
+  no recorded on-chain states, and no wallet points at it.
+- Our node shows the body confirmed, and the body spends the escrow output each
+  request points at.
+- Each request is still where the release left it: `CurrentTransaction` is the
+  escrow the reservation replaced. The in-flight action the release replaced
+  is the oldest one created since the reservation, and it must be the
+  in-flight form of the action the row recorded in
+  `l2ReservationPreviousActionId`. Every action created after it (history and
+  the current one) is either its retry (same result hash) or the
+  `WaitingForManualAction` parking that the failed retries against the spent
+  escrow output end in. A retry in flight is refused; wait until it settles. A
+  request that was ever recovered to any other action since the release is
+  refused too, even when that action was later rolled back.
+- The server runs these checks again inside the write transaction.
+- The row is unchanged since `expectedUpdatedAt`.
+
+Two cases are always refused, and they are still invariant breaches that need
+investigation, not a retry:
+
+- An initial lock. Its release sent the purchase back to locking and overwrote
+  the purchase fields the body's datum was built from, and the purchase may
+  already be locked a second time.
+- A release on the input proof. That proof says the body can never confirm, so
+  a confirmation means the proof failed.
 
 If the paired PaymentRequest was stamped by the reservation
 (`l2ReservationPeerPreviousLayer` is set), restore its `layer` from that column

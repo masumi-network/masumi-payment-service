@@ -78,10 +78,6 @@ export class Supervisor {
 	}
 
 	/**
-	 * Rebuild in-memory state from the volume and start everything that should be
-	 * running. This is what makes a container restart recover on its own.
-	 */
-	/**
 	 * Stop taking on new work, without draining.
 	 *
 	 * `shutdown` sets the same flag, but it can only run once the host has finished
@@ -96,7 +92,11 @@ export class Supervisor {
 		this.stopped = true;
 	}
 
-	async boot(): Promise<void> {
+	/**
+	 * Adopt persisted node processes, then reconcile unless the caller disables it.
+	 * @param options.reconcile Set false to let the caller start the first tick separately.
+	 */
+	async boot(options: { reconcile?: boolean } = {}): Promise<void> {
 		const records = await this.store.list();
 		this.logger.info(`[supervisor] loaded ${records.length} node record(s) from ${this.config.dataDir}`);
 		for (const record of records) {
@@ -201,7 +201,7 @@ export class Supervisor {
 				}));
 			}
 		}
-		await this.tick();
+		if (options.reconcile !== false) await this.tick();
 	}
 
 	async tick(): Promise<void> {

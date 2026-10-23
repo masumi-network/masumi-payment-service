@@ -2,6 +2,8 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
+import { nodeCardanoAddress } from '@/services/hydra-node-funding/node-address';
+import { captureNodeFundingBaseline, hasUnsettledNodeFunding } from '@/services/hydra-node-funding/transfer-history';
 import { releaseHostNodeOfFinishedHead } from '@/services/hydra-host/release-node';
 import { decrypt } from '@/utils/security/encryption';
 import createHttpError from 'http-errors';
@@ -154,6 +156,8 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 		where: { id },
 		select: {
 			hydraHeadId: true,
+			cardanoVkey: true,
+			Wallet: { select: { PaymentSource: { select: { network: true } } } },
 			HydraHead: { select: { hydraRelationId: true } },
 			hostNodeId: true,
 			HydraHost: { select: { baseUrl: true, encryptedAdminToken: true, allowInsecureHttp: true } },
@@ -163,6 +167,10 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 	if ((deletionPlan.hydraHeadId == null) !== (deletionPlan.HydraHead == null)) {
 		throw createHttpError(409, 'Cannot delete: participant head relation is inconsistent');
 	}
+	const funding = await captureNodeFundingBaseline(
+		prisma,
+		nodeCardanoAddress(deletionPlan.cardanoVkey, deletionPlan.Wallet.PaymentSource.network),
+	);
 	// Before quiesce and before the sweep below, both of which take away what a
 	// recovery needs: quiesce disconnects the head, and the sweep empties the key
 	// that pays for the recovery transaction.
@@ -300,6 +308,12 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 						throw createHttpError(409, 'Cannot delete: participant head cleanup is not complete');
 					}
 
+					if (await hasUnsettledNodeFunding(tx, funding)) {
+						throw createHttpError(
+							409,
+							'Cannot delete: node funding changed or remains in flight; retry once it settles',
+						);
+					}
 					const deleted = await tx.hydraLocalParticipant.deleteMany({
 						where: {
 							id,

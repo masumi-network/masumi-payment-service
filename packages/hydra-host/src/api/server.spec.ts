@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import { request as httpRequest, type Server } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,6 +11,7 @@ import type { Supervisor } from '../supervisor/supervisor.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
+import { deriveNodeToken } from './node-token.js';
 
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
@@ -675,5 +676,156 @@ describe('control plane with HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH set', () =
 		expect((await applied('0b6f3c1e-2d4a-4f5b-9c8d-7e6f5a4b3c2d.0')).status).toBe(409);
 		expect((await applied(7)).status).toBe(400);
 		expect((await provision('idem-refused')).status).toBe(503);
+	});
+});
+
+describe('node-scoped credentials', () => {
+	let strictServer: Server;
+	let strictUrl: string;
+
+	beforeEach(async () => {
+		const config = { ...loadHostConfig(env), dataDir, acceptHostWideUserToken: false };
+		const ports = new PortAllocator(config.ports);
+		strictServer = createControlPlane({
+			config,
+			store: new NodeRegistryStore(dataDir),
+			exchange: new ExchangeStore(dataDir),
+			ports,
+			supervisor: { tick: async () => undefined } as unknown as Supervisor,
+			provision: {
+				store: new NodeRegistryStore(dataDir),
+				ports,
+				advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
+				checkPeerTarget: async () => null,
+				newNodeId: () => 'unused',
+				now: () => new Date('2026-07-28T12:00:00.000Z'),
+			},
+			logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+		});
+		await new Promise<void>((resolve) => strictServer.listen(0, '127.0.0.1', resolve));
+		strictUrl = `http://127.0.0.1:${(strictServer.address() as AddressInfo).port}`;
+	});
+
+	afterEach(async () => {
+		await new Promise<void>((resolve) => strictServer.close(() => resolve()));
+	});
+
+	async function provisionNodes(): Promise<{ first: string; second: string }> {
+		const first = (await (await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-1' })).json()) as {
+			nodeId: string;
+		};
+		const second = (await (await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-2' })).json()) as {
+			nodeId: string;
+		};
+		return { first: first.nodeId, second: second.nodeId };
+	}
+
+	/** The status of a WebSocket upgrade, which a refusal answers as a plain response. */
+	function upgradeStatus(base: string, nodeId: string, token: string): Promise<number> {
+		return new Promise((resolve, reject) => {
+			const request = httpRequest(`${base}/v1/nodes/${nodeId}/api/`, {
+				headers: {
+					Authorization: `Bearer ${token}`,
+					Connection: 'Upgrade',
+					Upgrade: 'websocket',
+					'Sec-WebSocket-Version': '13',
+					'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+				},
+			});
+			request.on('response', (response) => {
+				response.resume();
+				resolve(response.statusCode ?? 0);
+			});
+			request.on('upgrade', (_response, socket) => {
+				socket.destroy();
+				resolve(101);
+			});
+			request.on('error', reject);
+			request.end();
+		});
+	}
+
+	// What each surface answers once the credential is accepted. A node still
+	// waiting on its escrow acknowledgement takes no commands, so the proxy
+	// answers 409 after authenticating; a refused credential never gets that far.
+	const surfaces: Array<{
+		name: string;
+		accepted: number;
+		status: (base: string, nodeId: string, token: string) => Promise<number>;
+	}> = [
+		{
+			name: 'node health',
+			accepted: 200,
+			status: async (base, nodeId, token) =>
+				(await fetch(`${base}/v1/nodes/${nodeId}/health`, { headers: { Authorization: `Bearer ${token}` } })).status,
+		},
+		{
+			name: 'the node API over HTTP',
+			accepted: 409,
+			status: async (base, nodeId, token) =>
+				(await fetch(`${base}/v1/nodes/${nodeId}/api/head`, { headers: { Authorization: `Bearer ${token}` } })).status,
+		},
+		{ name: 'the node API over WebSocket', accepted: 409, status: upgradeStatus },
+	];
+
+	describe.each(surfaces)('$name', ({ accepted, status }) => {
+		it('accepts the token derived from the user token for that node', async () => {
+			const { first } = await provisionNodes();
+
+			expect(await status(baseUrl, first, deriveNodeToken(USER, first))).toBe(accepted);
+			expect(await status(strictUrl, first, deriveNodeToken(USER, first))).toBe(accepted);
+		});
+
+		it('accepts the token derived from the admin token for that node', async () => {
+			const { first } = await provisionNodes();
+
+			expect(await status(strictUrl, first, deriveNodeToken(ADMIN, first))).toBe(accepted);
+		});
+
+		it('refuses the token derived for another node', async () => {
+			const { first, second } = await provisionNodes();
+
+			expect(await status(baseUrl, first, deriveNodeToken(USER, second))).toBe(401);
+			expect(await status(strictUrl, first, deriveNodeToken(ADMIN, second))).toBe(401);
+		});
+
+		it('keeps accepting the Host-wide user token while that is allowed', async () => {
+			const { first } = await provisionNodes();
+
+			expect(await status(baseUrl, first, USER)).toBe(accepted);
+		});
+
+		it('refuses the Host-wide user token once that is switched off', async () => {
+			const { first } = await provisionNodes();
+
+			expect(await status(strictUrl, first, USER)).toBe(401);
+		});
+	});
+
+	// So an operator can tell when no service is left on the credential that
+	// reaches every node, and turn it off.
+	it('says once that the Host-wide user token is still being used, and not for node tokens', async () => {
+		const { first } = await provisionNodes();
+		const health = (token: string) => call('GET', `/v1/nodes/${first}/health`, { token });
+
+		await health(deriveNodeToken(USER, first));
+		expect(warnings.filter((message) => message.includes('Host-wide user token'))).toHaveLength(0);
+
+		await health(USER);
+		await health(USER);
+		expect(warnings.filter((message) => message.includes('Host-wide user token'))).toHaveLength(1);
+	});
+
+	it('advertises that it accepts node tokens', async () => {
+		const capabilities = await call('GET', '/v1/capabilities', { token: ADMIN });
+
+		expect(((await capabilities.json()) as { nodeScopedTokens: boolean }).nodeScopedTokens).toBe(true);
+	});
+
+	it('does not let a node token reach an admin route', async () => {
+		const { first } = await provisionNodes();
+
+		expect((await call('GET', `/v1/nodes/${first}`, { token: deriveNodeToken(USER, first) })).status).toBe(401);
+		expect((await call('POST', `/v1/nodes/${first}/stop`, { token: deriveNodeToken(ADMIN, first) })).status).toBe(401);
 	});
 });
