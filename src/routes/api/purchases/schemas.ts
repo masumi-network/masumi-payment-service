@@ -378,6 +378,12 @@ export const createPurchaseInitSchemaInput = z
 			.describe(
 				'Seller layer override copied from the payment response. For V2, a non-null value is part of the signed payment terms and cannot be changed or omitted without invalidating the identifier. V1 accepts only the redundant "L1" value for response round-tripping. Omit or pass null when the seller selected automatic routing.',
 			),
+		developerTestIntent: z
+			.boolean()
+			.optional()
+			.describe(
+				'When true, marks a Developers dashboard test action. Mainnet is rejected server-side; omit for normal production purchases.',
+			),
 	})
 	.refine(
 		(value) => value.buyerReturnAddress == null || isCardanoAddressForNetwork(value.buyerReturnAddress, value.network),

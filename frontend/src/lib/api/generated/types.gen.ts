@@ -5346,6 +5346,10 @@ export type PostPaymentData = {
          * Optional seller layer override. For V2 this choice is signed into the purchase terms: "Hydra" requires an open head, "L1" forces L1, and a conflict with the buyer's forceLayer is rejected. Hydra is not supported for V1. Omit for automatic routing.
          */
         forceLayer?: 'L1' | 'Hydra';
+        /**
+         * When true, marks a Developers dashboard test action. Mainnet is rejected server-side; omit for normal production payments.
+         */
+        developerTestIntent?: boolean;
     };
     path?: never;
     query?: never;
@@ -8197,6 +8201,10 @@ export type PostPurchaseData = {
          * Seller layer override copied from the payment response. For V2, a non-null value is part of the signed payment terms and cannot be changed or omitted without invalidating the identifier. V1 accepts only the redundant "L1" value for response round-tripping. Omit or pass null when the seller selected automatic routing.
          */
         paymentForceLayer?: 'L1' | 'Hydra' | null;
+        /**
+         * When true, marks a Developers dashboard test action. Mainnet is rejected server-side; omit for normal production purchases.
+         */
+        developerTestIntent?: boolean;
     };
     path?: never;
     query?: never;

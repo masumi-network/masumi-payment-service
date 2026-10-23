@@ -422,6 +422,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setStatus(null);
 
         const requestBody = {
+          developerTestIntent: true,
           blockchainIdentifier: data.blockchainIdentifier,
           network: network,
           inputHash: data.inputHash,
