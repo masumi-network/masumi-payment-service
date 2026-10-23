@@ -103,17 +103,26 @@ export const isPaymentNeverReceived = (transaction: Transaction): boolean =>
 
 export const NO_PAYMENT_RECEIVED_LABEL = 'No Payment Received';
 
+type ObservableTx = { status: TxStatus; newOnChainState: string | null };
+
+/**
+ * Whether tx-sync observed this tx on chain. Observation writes
+ * newOnChainState and keeps it when a reorg later marks the tx RolledBack,
+ * while a submitted lock that never confirmed has neither.
+ */
+const isObservedOnChain = (tx: ObservableTx | null | undefined): boolean =>
+  !!tx && (tx.status === 'Confirmed' || tx.newOnChainState != null);
+
 /**
  * A purchase the timeout job invalidated because its funds were never locked
  * before payByTime. Unlike payments, a hash alone does not rule this out: a
- * lock tx can be submitted and never confirm. A real invalid lock is always
- * recorded as a Confirmed transaction.
+ * lock tx can be submitted and never confirm.
  */
 export const isPurchaseNeverLocked = (transaction: Transaction): boolean =>
   transaction.type === 'purchase' &&
   transaction.onChainState === 'FundsOrDatumInvalid' &&
-  transaction.CurrentTransaction?.status !== 'Confirmed' &&
-  !(transaction.TransactionHistory ?? []).some((tx) => tx.status === 'Confirmed');
+  !isObservedOnChain(transaction.CurrentTransaction) &&
+  !(transaction.TransactionHistory ?? []).some(isObservedOnChain);
 
 export const NOT_PAID_IN_TIME_LABEL = 'Not Paid In Time';
 

@@ -93,13 +93,18 @@ test('formatTransactionState keeps Funds or Datum Invalid when a lock tx was obs
 
 const asPurchaseRow = (partial: {
   currentStatus?: string;
+  currentNewOnChainState?: string | null;
   historyStatuses?: string[];
 }): Transaction =>
   ({
     type: 'purchase',
     onChainState: 'FundsOrDatumInvalid',
     CurrentTransaction: partial.currentStatus
-      ? { txHash: 'lock-hash', status: partial.currentStatus }
+      ? {
+          txHash: 'lock-hash',
+          status: partial.currentStatus,
+          newOnChainState: partial.currentNewOnChainState ?? null,
+        }
       : null,
     TransactionHistory: (partial.historyStatuses ?? []).map((status) => ({
       createdAt: new Date('2024-01-01T00:00:00Z'),
@@ -126,6 +131,16 @@ test('a purchase with a confirmed invalid lock keeps Funds or Datum Invalid', ()
     'Funds or Datum Invalid',
   );
   assert.equal(isNotPaidInTime(asPurchaseRow({ historyStatuses: ['Confirmed'] })), false);
+});
+
+test('a purchase whose observed invalid lock was rolled back keeps Funds or Datum Invalid', () => {
+  // A reorg marks the observed lock RolledBack but leaves newOnChainState set;
+  // the funds may still be locked on chain.
+  const tx = asPurchaseRow({
+    currentStatus: 'RolledBack',
+    currentNewOnChainState: 'FundsOrDatumInvalid',
+  });
+  assert.equal(formatTransactionState(tx), 'Funds or Datum Invalid');
 });
 
 test('hasUnacknowledgedError drops the error highlight once acknowledged', () => {
