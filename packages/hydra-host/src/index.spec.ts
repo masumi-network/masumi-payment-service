@@ -29,6 +29,7 @@ let exit: jest.SpiedFunction<typeof process.exit>;
 let timeouts: jest.SpiedFunction<typeof setTimeout>;
 let intervals: jest.SpiedFunction<typeof setInterval>;
 let store: InstanceType<typeof import('./registry/store.js').NodeRegistryStore>;
+let ready: Promise<void>;
 
 beforeEach(async () => {
 	jest.resetModules();
@@ -143,7 +144,7 @@ beforeEach(async () => {
 		return releaseLease.call(this);
 	});
 	let listening: () => void;
-	const ready = new Promise<void>((resolve) => {
+	ready = new Promise<void>((resolve) => {
 		listening = resolve;
 	});
 	jest.spyOn(Server.prototype, 'listen').mockImplementation(function (this: Server) {
@@ -151,13 +152,6 @@ beforeEach(async () => {
 		if (servers.length === 2) listening();
 		return this;
 	});
-	await import('./index.js');
-	await Promise.race([
-		ready,
-		exitReached.then(() => {
-			throw new Error(`Host startup failed: ${jest.mocked(console.error).mock.calls.flat().join(' ')}`);
-		}),
-	]);
 });
 
 afterEach(async () => {
@@ -186,7 +180,276 @@ function listenerError(index: number): void {
 	servers[index].emit('error', Object.assign(new Error('address in use'), { code: 'EADDRINUSE' }));
 }
 
+async function startListening(): Promise<void> {
+	await import('./index.js');
+	await Promise.race([
+		ready,
+		exitReached.then(() => {
+			throw new Error(`Host startup failed: ${jest.mocked(console.error).mock.calls.flat().join(' ')}`);
+		}),
+	]);
+}
+
+async function loseLease(): Promise<void> {
+	const ownerPath = path.join(dataDir, 'host.lock', 'owner.json');
+	const owner = JSON.parse(await fs.readFile(ownerPath, 'utf8')) as { ownerToken: string };
+	await fs.writeFile(ownerPath, JSON.stringify({ ...owner, ownerToken: 'replacement-owner' }));
+	const lost = new Promise<void>((resolve) => {
+		jest.mocked(console.error).mockImplementation((message) => {
+			if (String(message).includes('data-volume lease lost')) resolve();
+		});
+	});
+	const { HEARTBEAT_INTERVAL_MS } = await import('./registry/host-lock.js');
+	const heartbeat = intervals.mock.calls.find(([, delay]) => delay === HEARTBEAT_INTERVAL_MS);
+	if (!heartbeat) throw new Error('lease heartbeat was not installed');
+	heartbeat[0]();
+	await lost;
+}
+
+describe('Host startup failure shutdown', () => {
+	it('starts bounded SIGTERM cleanup during boot without recovery or listeners', async () => {
+		const { ExchangeStore } = await import('./registry/exchange-store.js');
+		const recovery = jest.spyOn(ExchangeStore.prototype, 'listInvites');
+		let resumeBoot: () => void = () => undefined;
+		const heldBoot = new Promise<void>((resolve) => {
+			resumeBoot = resolve;
+		});
+		let reportSignal: () => void = () => undefined;
+		const signaled = new Promise<void>((resolve) => {
+			reportSignal = resolve;
+		});
+		jest.mocked(globalThis.fetch).mockImplementationOnce(async () => {
+			process.emit('SIGTERM');
+			reportSignal();
+			await heldBoot;
+			throw new Error('node API is still starting');
+		});
+		await import('./index.js');
+		await signaled;
+		try {
+			// The grace clock must already run while the boot probe is pending.
+			const guardIndex = timeouts.mock.calls.findIndex(([, delay]) => delay === GRACE_MS);
+			expect(guardIndex).toBeGreaterThanOrEqual(0);
+			const guard = timeouts.mock.results[guardIndex];
+			expect(guard.type).toBe('return');
+			if (guard.type === 'return') expect(guard.value.hasRef()).toBe(true);
+			expect(release).not.toHaveBeenCalled();
+			expect(exit).not.toHaveBeenCalled();
+		} finally {
+			resumeBoot();
+			// Let old startup finish too, so a red assertion cannot leak work.
+			await Promise.race([ready, drainStarted]);
+		}
+		expect(recovery).not.toHaveBeenCalled();
+		expect(servers).toHaveLength(0);
+		expect(shutdown).toHaveBeenCalledTimes(1);
+		await drainStarted;
+		expect(child.signalCode).toBeNull();
+		expect(release).not.toHaveBeenCalled();
+		releaseDrain();
+		await exitReached;
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:0']);
+		expect(release).toHaveBeenCalledTimes(1);
+		expect(exit).toHaveBeenCalledTimes(1);
+		expect(await store.read('node-1')).toMatchObject({ state: 'Stopped', lastStopUndrained: false });
+	});
+
+	it.each(['lease acquisition', 'registry read'])(
+		'defers SIGTERM only until %s permits safe cleanup',
+		async (phase) => {
+			const { Supervisor } = await import('./supervisor/supervisor.js');
+			const { HostLock } = await import('./registry/host-lock.js');
+			const { NodeRegistryStore } = await import('./registry/store.js');
+			const { ExchangeStore } = await import('./registry/exchange-store.js');
+			const boot = jest.spyOn(Supervisor.prototype, 'boot');
+			const recovery = jest.spyOn(ExchangeStore.prototype, 'listInvites');
+			if (phase === 'lease acquisition') {
+				const acquire = HostLock.prototype.acquire;
+				jest.spyOn(HostLock.prototype, 'acquire').mockImplementationOnce(async function (
+					this: InstanceType<typeof HostLock>,
+				) {
+					process.emit('SIGTERM');
+					await acquire.call(this);
+				});
+			} else {
+				const list = NodeRegistryStore.prototype.list;
+				jest.spyOn(NodeRegistryStore.prototype, 'list').mockImplementationOnce(async function (
+					this: InstanceType<typeof NodeRegistryStore>,
+				) {
+					process.emit('SIGTERM');
+					return await list.call(this);
+				});
+			}
+			await import('./index.js');
+			await Promise.race([ready, drainStarted]);
+			expect(boot).not.toHaveBeenCalled();
+			expect(recovery).not.toHaveBeenCalled();
+			expect(servers).toHaveLength(0);
+			expect(shutdown).toHaveBeenCalledTimes(1);
+			expect(release).not.toHaveBeenCalled();
+			releaseDrain();
+			await exitReached;
+			expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:0']);
+		},
+	);
+
+	it.each([false, true])('drains on lease loss during the registry read with pending SIGTERM=%s', async (signal) => {
+		const { NodeRegistryStore } = await import('./registry/store.js');
+		const list = NodeRegistryStore.prototype.list;
+		jest.spyOn(NodeRegistryStore.prototype, 'list').mockImplementationOnce(async function (
+			this: InstanceType<typeof NodeRegistryStore>,
+		) {
+			const records = await list.call(this);
+			if (signal) process.emit('SIGTERM');
+			await loseLease();
+			return records;
+		});
+		await import('./index.js');
+		await Promise.race([drainStarted, exitReached]);
+		expect(shutdown).toHaveBeenCalledTimes(1);
+		expect(servers).toHaveLength(0);
+		expect(release).not.toHaveBeenCalled();
+		releaseDrain();
+		await exitReached;
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
+		expect(release).toHaveBeenCalledTimes(1);
+		expect(exit).toHaveBeenCalledTimes(1);
+		expect(await fs.readFile(path.join(dataDir, 'host.lock', 'owner.json'), 'utf8')).toContain('replacement-owner');
+	});
+
+	it.each(['boot failure', 'lease loss'])('keeps %s fatal when SIGTERM starts cleanup during boot', async (failure) => {
+		if (failure === 'boot failure') {
+			const rename = fs.rename;
+			let rejected = false;
+			jest.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+				if (!rejected && String(to).endsWith('/node.json')) {
+					rejected = true;
+					throw new Error('registry write failed after SIGTERM');
+				}
+				await rename(from, to);
+			});
+		}
+		jest.mocked(globalThis.fetch).mockImplementationOnce(async () => {
+			process.emit('SIGTERM');
+			if (failure === 'lease loss') await loseLease();
+			throw new Error('node API is still starting');
+		});
+		await import('./index.js');
+		await drainStarted;
+		expect(shutdown).toHaveBeenCalledTimes(1);
+		expect(servers).toHaveLength(0);
+		expect(release).not.toHaveBeenCalled();
+		releaseDrain();
+		await exitReached;
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
+		expect(release).toHaveBeenCalledTimes(1);
+		expect(exit).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(['partial boot', 'listener construction'])(
+		'drains after %s fails before either listener starts',
+		async (failure) => {
+			if (failure === 'partial boot') {
+				const rename = fs.rename;
+				let rejected = false;
+				jest.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+					if (!rejected && String(to).endsWith('/node.json')) {
+						rejected = true;
+						throw new Error('registry write failed after process adoption');
+					}
+					await rename(from, to);
+				});
+			} else {
+				jest.spyOn(Server.prototype, 'on').mockImplementationOnce(() => {
+					throw new Error('listener construction failed after boot');
+				});
+			}
+			await import('./index.js');
+			await Promise.race([drainStarted, exitReached]);
+			expect(shutdown).toHaveBeenCalledTimes(1);
+			expect(release).not.toHaveBeenCalled();
+			expect(exit).not.toHaveBeenCalled();
+			expect(servers).toHaveLength(0);
+			const guard = timeouts.mock.results[timeouts.mock.calls.findIndex(([, delay]) => delay === GRACE_MS)];
+			expect(guard.type).toBe('return');
+			if (guard.type === 'return') expect(guard.value.hasRef()).toBe(true);
+			releaseDrain();
+			await exitReached;
+			expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
+			expect(await store.read('node-1')).toMatchObject({ state: 'Stopped', lastStopUndrained: false });
+		},
+	);
+
+	it('drains on lease loss during boot and never proceeds to listeners', async () => {
+		jest.mocked(globalThis.fetch).mockImplementationOnce(async () => {
+			await loseLease();
+			throw new Error('node API is still starting');
+		});
+		await import('./index.js');
+		// The old host continues boot after its mocked exit. Wait for that work
+		// too, so a failing assertion cannot leave startup running after teardown.
+		await Promise.race([ready, drainStarted]);
+		expect(shutdown).toHaveBeenCalledTimes(1);
+		expect(release).not.toHaveBeenCalled();
+		expect(exit).not.toHaveBeenCalled();
+		expect(servers).toHaveLength(0);
+		releaseDrain();
+		await exitReached;
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
+		expect(await fs.readFile(path.join(dataDir, 'host.lock', 'owner.json'), 'utf8')).toContain('replacement-owner');
+	});
+
+	it('bounds the wait for in-flight boot before starting one drain', async () => {
+		let resumeBoot: () => void = () => undefined;
+		const heldBoot = new Promise<void>((resolve) => {
+			resumeBoot = resolve;
+		});
+		let reportLoss: () => void = () => undefined;
+		const reported = new Promise<void>((resolve) => {
+			reportLoss = resolve;
+		});
+		jest.mocked(globalThis.fetch).mockImplementationOnce(async () => {
+			await loseLease();
+			reportLoss();
+			await heldBoot;
+			throw new Error('node API is still starting');
+		});
+		await import('./index.js');
+		await reported;
+		try {
+			expect(shutdown).not.toHaveBeenCalled();
+			expect(release).not.toHaveBeenCalled();
+			expect(exit).not.toHaveBeenCalled();
+			const guard = timeouts.mock.results[timeouts.mock.calls.findIndex(([, delay]) => delay === GRACE_MS)];
+			expect(guard.type).toBe('return');
+			if (guard.type === 'return') expect(guard.value.hasRef()).toBe(true);
+			// A second shutdown request while boot is settling must not add a drain.
+			process.emit('SIGTERM');
+		} finally {
+			resumeBoot();
+			await Promise.race([ready, drainStarted]);
+		}
+		expect(shutdown).toHaveBeenCalledTimes(1);
+		expect(servers).toHaveLength(0);
+		releaseDrain();
+		await exitReached;
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
+		expect(release).toHaveBeenCalledTimes(1);
+		expect(exit).toHaveBeenCalledTimes(1);
+	});
+});
+
 describe('Host listener failure shutdown', () => {
+	beforeEach(startListening);
+
+	it('treats active lease loss as a failure after draining', async () => {
+		await loseLease();
+		await drainStarted;
+		expect(release).not.toHaveBeenCalled();
+		releaseDrain();
+		await exitReached;
+		expect(events).toEqual(['drain', 'child-exit', 'release', 'exit:1']);
+	});
 	it('logs a failed lease release after a rejected drain and still exits nonzero', async () => {
 		shutdown.mockRejectedValueOnce(new Error('drain failed'));
 		jest.spyOn(fs, 'writeFile').mockRejectedValueOnce(new Error('release storage failure'));

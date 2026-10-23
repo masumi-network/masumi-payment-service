@@ -35,38 +35,86 @@ const logger: SupervisorLogger = {
 	error: (message) => console.error(`${new Date().toISOString()} [error] ${message}`),
 };
 
-/**
- * The acquired data-volume lease, published for the top-level failure handler.
- *
- * The heartbeat keeps it fresh from the moment `acquire()` returns, so a
- * failure after that point exits still holding it — and the restarted container
- * then reports a second host that does not exist for the whole staleness
- * window instead of the real cause.
- */
-const heldLease: { lock: HostLock | null } = { lock: null };
+/** Published before startup I/O so every fatal exit uses the same bounded cleanup. */
+const cleanup: { shutdown: ((reason: string, exitCode?: 0 | 1) => void) | null } = { shutdown: null };
 
 async function main(): Promise<void> {
-	// Installed before anything can spawn a hydra-node. `supervisor.boot()` below
-	// adopts and starts nodes, and until the real handlers exist a signal there
-	// took the default disposition: the host died instantly and whatever boot had
-	// just spawned kept running undrained, holding its peer port past the only
-	// process that knew how to drain it. Recorded rather than acted on, because
-	// there is no supervisor to drain through yet; the real handler replays it.
-	// Held on an object rather than in a `let`, so the read after the handlers are
-	// swapped is not narrowed to `never` by flow analysis that cannot see the
-	// closures below run.
-	// `supervisor` is filled in as soon as it exists, so a signal arriving during
-	// the long part of startup stops the boot where it is rather than being merely
-	// recorded and waited out.
-	const startup: { signal: string | null; supervisor: Supervisor | null } = { signal: null, supervisor: null };
-	const recordSignal = (signal: string): void => {
-		startup.signal ??= signal;
+	// Shutdown requests before acquisition and the registry read finish must wait:
+	// cleanup needs the lease and a supervisor that can find surviving children.
+	// Once those exist, the same handler starts bounded cleanup immediately.
+	const startup: {
+		shutdownReason: string | null;
+		supervisor: Supervisor | null;
+		lock?: HostLock;
+		server?: ReturnType<typeof createControlPlane>;
+		exchangePlane?: ReturnType<typeof createExchangePlane>;
+		timer?: ReturnType<typeof setInterval>;
+	} = { shutdownReason: null, supervisor: null };
+	let startupWork: Promise<void> | undefined;
+	let shuttingDown = false;
+	let shutdownExitCode: 0 | 1 = 0;
+	const shutdown = (reason: string, exitCode: 0 | 1 = 0): void => {
+		// A failure remains fatal even if a signal already started the drain.
+		if (exitCode === 1) shutdownExitCode = 1;
+		if (shuttingDown) {
+			return;
+		}
+		shuttingDown = true;
+		logger.info(`[host] received ${reason}`);
 		startup.supervisor?.beginShutdown();
+		clearInterval(startup.timer);
+		startup.server?.close();
+		startup.exchangePlane?.close();
+
+		// Bound the drain so a stuck node cannot hold the container open past the
+		// platform's own kill timeout; losing the race just means the next boot
+		// checks for a stranded round.
+		// Assigned so the intent is readable, then deliberately left alone.
+		const _guard = setTimeout(() => {
+			logger.error('[host] shutdown exceeded its grace period; exiting');
+			// The lease goes back before the forced exit.
+			// Without it the restarted container cannot acquire the data volume
+			// until HEARTBEAT_STALE_AFTER_MS, so it crash-loops through
+			// `main().catch -> exit(1)` for the whole of that window — a minute of
+			// no supervisor on top of a shutdown that already failed to drain.
+			void Promise.resolve()
+				.then(() => startup.lock?.release())
+				.catch(() => undefined)
+				.finally(() => process.exit(1));
+		}, SHUTDOWN_GRACE_MS);
+		// Deliberately NOT unref'd. This timer's only job is to force a non-zero
+		// exit, and an unref'd one lets an otherwise-idle loop exit 0 first — which
+		// reports a shutdown that never drained as a clean one.
+
+		// Boot can still be adopting a process, and recovery can still be writing
+		// its peer files. Stop new work now, then let that work settle before
+		// taking the final drain list. The referenced guard bounds this wait too.
+		const drain = () => startup.supervisor?.shutdown() ?? Promise.resolve();
+		void (startupWork ? startupWork.catch(() => undefined).then(drain) : drain())
+			.then(async () => {
+				await startup.lock?.release();
+				logger.info('[host] shutdown cleanup complete; exiting');
+				process.exit(shutdownExitCode);
+			})
+			.catch((error: unknown) => {
+				logger.error(`[host] shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+				return Promise.resolve()
+					.then(() => startup.lock?.release())
+					.catch((releaseError: unknown) => {
+						const detail = releaseError instanceof Error ? releaseError.message : String(releaseError);
+						logger.error(`[host] lease release failed after shutdown error: ${detail}`);
+					})
+					.finally(() => process.exit(1));
+			});
 	};
-	const deferSigterm = (): void => recordSignal('SIGTERM');
-	const deferSigint = (): void => recordSignal('SIGINT');
-	process.on('SIGTERM', deferSigterm);
-	process.on('SIGINT', deferSigint);
+	cleanup.shutdown = shutdown;
+	const requestShutdown = (reason: string, exitCode: 0 | 1 = 0): void => {
+		if (exitCode === 1) shutdownExitCode = 1;
+		startup.shutdownReason ??= reason;
+		if (startup.supervisor !== null) shutdown(reason, exitCode);
+	};
+	process.on('SIGTERM', () => requestShutdown('SIGTERM'));
+	process.on('SIGINT', () => requestShutdown('SIGINT'));
 
 	const config = loadHostConfig();
 
@@ -102,13 +150,12 @@ async function main(): Promise<void> {
 	// Refuse to boot if another Host already owns this volume: both would spawn a
 	// process per node, giving duplicate hydra-nodes and two etcd members
 	// claiming one participant identity.
-	let handleLeaseLoss = (reason: string): void => {
-		logger.error(`[host] data-volume lease lost during startup: ${reason}`);
-		process.exit(1);
-	};
-	const lock = new HostLock(config.dataDir, os.hostname(), Date.now, (reason) => handleLeaseLoss(reason));
-	await lock.acquire();
-	heldLease.lock = lock;
+	startup.lock = new HostLock(config.dataDir, os.hostname(), Date.now, (reason) => {
+		logger.error(`[host] data-volume lease lost: ${reason}`);
+		requestShutdown('LOCK_LOST', 1);
+	});
+	await startup.lock.acquire();
+	if (shuttingDown) return;
 
 	const store = new NodeRegistryStore(config.dataDir);
 	const exchange = new ExchangeStore(config.dataDir);
@@ -116,6 +163,7 @@ async function main(): Promise<void> {
 	// Port allocation is rebuilt from the durable registry rather than kept in
 	// memory, so a restart cannot reissue a live node's peer port.
 	const existing = await store.list();
+	if (shuttingDown) return;
 	const allocator = new PortAllocator(
 		config.ports,
 		existing.map((record) => record.peerPort),
@@ -137,9 +185,10 @@ async function main(): Promise<void> {
 
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
 	startup.supervisor = supervisor;
-	// A signal that landed before the supervisor existed still has to reach it.
-	if (startup.signal !== null) {
-		supervisor.beginShutdown();
+	// Drain surviving children without entering boot after an earlier request.
+	if (startup.shutdownReason !== null) {
+		shutdown(startup.shutdownReason, shutdownExitCode);
+		return;
 	}
 	// A ref'd handle for the length of the boot. Every wait the supervisor and
 	// the process manager use is unref'd on purpose (a stray timer must never
@@ -151,10 +200,13 @@ async function main(): Promise<void> {
 	// hydra-node SIGTERMed, the record left saying Draining, and no log line.
 	const bootKeepAlive = setInterval(() => {}, 60_000);
 	try {
-		await supervisor.boot();
+		startupWork = supervisor.boot();
+		await startupWork;
 	} finally {
+		startupWork = undefined;
 		clearInterval(bootKeepAlive);
 	}
+	if (shuttingDown) return;
 
 	const checkPeerTarget = async (advertise: string): Promise<string | null> =>
 		await peerTargetRejection(advertise, {
@@ -185,9 +237,15 @@ async function main(): Promise<void> {
 				logger.error(`[host] supervisor tick from ${source} failed: ${(error as Error).message}`);
 			});
 	};
-	await recoverRedemptions();
+	try {
+		startupWork = recoverRedemptions();
+		await startupWork;
+	} finally {
+		startupWork = undefined;
+	}
+	if (shuttingDown) return;
 
-	const server = createControlPlane({
+	startup.server = createControlPlane({
 		config,
 		store,
 		exchange,
@@ -199,7 +257,7 @@ async function main(): Promise<void> {
 	// A second listener, not a second path. Redeeming an invite configures and
 	// starts the node that invite reserved — the only thing a counterparty can
 	// cause here, and the reason the node existed at all.
-	const exchangePlane = createExchangePlane({
+	startup.exchangePlane = createExchangePlane({
 		store: exchange,
 		logger,
 		trustProxy: config.exchangeTrustProxy,
@@ -213,63 +271,11 @@ async function main(): Promise<void> {
 			tickSupervisor('exchange redemption');
 		},
 	});
-	const timer = setInterval(() => tickSupervisor('interval'), TICK_INTERVAL_MS);
+	startup.timer = setInterval(() => tickSupervisor('interval'), TICK_INTERVAL_MS);
 
-	let shuttingDown = false;
-	let shutdownExitCode: 0 | 1 = 0;
-	const shutdown = (reason: string, exitCode: 0 | 1 = 0): void => {
-		// A listener failure remains fatal even if a signal already started the drain.
-		if (exitCode === 1) shutdownExitCode = 1;
-		if (shuttingDown) {
-			return;
-		}
-		shuttingDown = true;
-		logger.info(`[host] received ${reason}`);
-		clearInterval(timer);
-		server.close();
-		exchangePlane.close();
-
-		// Bound the drain so a stuck node cannot hold the container open past the
-		// platform's own kill timeout; losing the race just means the next boot
-		// checks for a stranded round.
-		// Assigned so the intent is readable, then deliberately left alone.
-		const _guard = setTimeout(() => {
-			logger.error('[host] shutdown exceeded its grace period; exiting');
-			// The lease goes back before the forced exit.
-			// Without it the restarted container cannot acquire the data volume
-			// until HEARTBEAT_STALE_AFTER_MS, so it crash-loops through
-			// `main().catch -> exit(1)` for the whole of that window — a minute of
-			// no supervisor on top of a shutdown that already failed to drain.
-			void lock
-				.release()
-				.catch(() => undefined)
-				.finally(() => process.exit(1));
-		}, SHUTDOWN_GRACE_MS);
-		// Deliberately NOT unref'd. This timer's only job is to force a non-zero
-		// exit, and an unref'd one lets an otherwise-idle loop exit 0 first — which
-		// reports a shutdown that never drained as a clean one.
-
-		void supervisor
-			.shutdown()
-			.then(async () => {
-				await lock.release();
-				logger.info('[host] all nodes drained; exiting');
-				process.exit(shutdownExitCode);
-			})
-			.catch((error: unknown) => {
-				logger.error(`[host] shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
-				return lock
-					.release()
-					.catch((releaseError: unknown) => {
-						const detail = releaseError instanceof Error ? releaseError.message : String(releaseError);
-						logger.error(`[host] lease release failed after shutdown error: ${detail}`);
-					})
-					.finally(() => process.exit(1));
-			});
-	};
 	// Install the common drain path before either listener can fail. Supervisor
 	// boot has adopted or started nodes that must stop before the lease is released.
-	server.on('error', (error: NodeJS.ErrnoException) => {
+	startup.server.on('error', (error: NodeJS.ErrnoException) => {
 		const detail =
 			error.code === 'EADDRINUSE'
 				? `port ${config.listenPort} is already in use; another Hydra Host may still be running`
@@ -277,50 +283,24 @@ async function main(): Promise<void> {
 		logger.error(`[host] control plane could not listen: ${detail}`);
 		shutdown('CONTROL_LISTEN_ERROR', 1);
 	});
-	exchangePlane.on('error', (error: NodeJS.ErrnoException) => {
+	startup.exchangePlane.on('error', (error: NodeJS.ErrnoException) => {
 		const detail = error.code === 'EADDRINUSE' ? `port ${config.exchangePort} is already in use` : error.message;
 		logger.error(`[host] exchange plane could not listen: ${detail}`);
 		shutdown('EXCHANGE_LISTEN_ERROR', 1);
 	});
-	server.listen(config.listenPort, () => {
+	startup.server.listen(config.listenPort, () => {
 		logger.info(`[host] control plane listening on :${config.listenPort}`);
 	});
-	exchangePlane.listen(config.exchangePort, () => {
+	startup.exchangePlane.listen(config.exchangePort, () => {
 		logger.info(`[host] exchange plane listening on :${config.exchangePort}`);
 	});
-	handleLeaseLoss = (reason: string): void => {
-		logger.error(`[host] data-volume lease lost: ${reason}`);
-		shutdown('LOCK_LOST');
-	};
-
-	// Added before the deferred ones are removed, not after. `process.off` of the
-	// last listener for a signal restores the OS default disposition, so the two
-	// statements in the other order leave a window — however short — in which
-	// SIGTERM kills the host outright with every node undrained. A transient
-	// double registration is harmless: `shuttingDown` makes the second call a
-	// no-op, and the deferred recorder only writes to `startup`.
-	process.on('SIGTERM', () => shutdown('SIGTERM'));
-	process.on('SIGINT', () => shutdown('SIGINT'));
-	process.off('SIGTERM', deferSigterm);
-	process.off('SIGINT', deferSigint);
-	if (startup.signal !== null) {
-		logger.info(`[host] ${startup.signal} arrived during startup; draining now`);
-		shutdown(startup.signal);
-	}
 }
 
 main().catch((error: unknown) => {
-	logger.error(`[host] failed to start: ${(error as Error).message}`);
-	// The lease outlives this process unless it is handed back, and the heartbeat
-	// keeps it fresh from the moment `acquire()` returns — so a failure AFTER
-	// that point (a damaged node.json, any registry I/O error) exits still
-	// holding it. The restarted container then cannot acquire the volume until
-	// HEARTBEAT_STALE_AFTER_MS and reports "another Hydra Host already holds
-	// /data/host.lock" on every attempt, which is a phantom: there is no second
-	// host, and the real cause is buried. Release here as on normal shutdown.
-	const held = heldLease.lock;
-	if (held === null) {
+	logger.error(`[host] failed to start: ${error instanceof Error ? error.message : String(error)}`);
+	if (cleanup.shutdown === null) {
 		process.exit(1);
+	} else {
+		cleanup.shutdown('STARTUP_ERROR', 1);
 	}
-	void held.release().finally(() => process.exit(1));
 });
