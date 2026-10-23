@@ -1,6 +1,14 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
-import { HydraHeadStatus, HydraTopupStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import {
+	HydraHeadStatus,
+	HydraTopupStatus,
+	Network,
+	Prisma,
+	TransactionLayer,
+	TransactionStatus,
+} from '@/generated/prisma/client';
+import { nodeCardanoAddress } from '@/services/hydra-node-funding/node-address';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -18,6 +26,35 @@ const mockQuiesceHydraHeadsForDeletion = jest.fn() as AnyMock;
 const mockAssertNoUnrecoveredHydraDeposits = jest.fn() as AnyMock;
 const mockWithdrawNodeFunds = jest.fn() as AnyMock;
 const mockReleaseHostNodeOfFinishedHead = jest.fn() as AnyMock;
+const mockFindConfirmedTransfers = jest.fn() as AnyMock;
+const mockFindIncomingTransfer = jest.fn() as AnyMock;
+
+type FundingTransfer = {
+	id: string;
+	toAddress: string;
+	status: TransactionStatus;
+	createdAt: Date;
+	lastCheckedAt: Date | null;
+};
+let transfers: FundingTransfer[];
+
+// Database boundary: evaluate the transfer predicates, rather than returning a
+// transfer regardless of whether the query would find it in PostgreSQL.
+function matchesFunding(row: FundingTransfer, where: Prisma.WalletFundTransferWhereInput): boolean {
+	if (where.toAddress && where.toAddress !== row.toAddress) return false;
+	if (where.status && where.status !== row.status) return false;
+	if (where.id && typeof where.id === 'object' && Array.isArray(where.id.notIn) && where.id.notIn.includes(row.id))
+		return false;
+	if (where.lastCheckedAt === null && row.lastCheckedAt !== null) return false;
+	for (const field of ['createdAt', 'lastCheckedAt'] as const) {
+		const filter = where[field];
+		if (filter && typeof filter === 'object' && 'gte' in filter && filter.gte instanceof Date) {
+			const value = row[field];
+			if (value === null || value < filter.gte) return false;
+		}
+	}
+	return !where.OR || where.OR.some((clause) => matchesFunding(row, clause));
+}
 
 const unrecoveredHydraTopupWhere = {
 	depositTxHash: { not: null },
@@ -44,6 +81,7 @@ const reconciledFinalHeadFilter = {
 
 const transactionClient = {
 	$queryRaw: mockQueryRaw,
+	walletFundTransfer: { findFirst: mockFindIncomingTransfer },
 	hydraLocalParticipant: { findUnique: mockFindLocal, deleteMany: mockDeleteLocal },
 	hydraSecretKey: { delete: mockDeleteSecret },
 	hydraRemoteParticipant: { findUnique: mockFindRemote, deleteMany: mockDeleteRemote },
@@ -56,6 +94,7 @@ jest.unstable_mockModule('@masumi/payment-core/auth', () => ({
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
+		walletFundTransfer: { findMany: mockFindConfirmedTransfers },
 		hydraLocalParticipant: { findUnique: mockFindLocalPlan },
 		hydraRemoteParticipant: { findUnique: mockFindRemotePlan },
 		$transaction: mockTransaction,
@@ -99,9 +138,15 @@ let deleteHydraLocalParticipant: typeof import('./index').deleteHydraLocalPartic
 let deleteHydraRemoteParticipant: typeof import('./index').deleteHydraRemoteParticipant;
 
 const HOST = { baseUrl: 'https://host.example', encryptedAdminToken: 'token', allowInsecureHttp: false };
+const FUNDING_IDENTITY = {
+	cardanoVkey: '11'.repeat(28),
+	Wallet: { PaymentSource: { network: Network.Preprod } },
+};
+const NODE_ADDRESS = nodeCardanoAddress(FUNDING_IDENTITY.cardanoVkey, Network.Preprod);
 
 function assignedDeletionPlan() {
 	return {
+		...FUNDING_IDENTITY,
 		hydraHeadId: 'head-1',
 		HydraHead: { hydraRelationId: 'relation-1' },
 		hostNodeId: 'node-1',
@@ -140,7 +185,15 @@ beforeEach(() => {
 	mockTransaction.mockImplementation(
 		async (operation: (tx: typeof transactionClient) => Promise<unknown>) => await operation(transactionClient),
 	);
-	mockFindLocalPlan.mockResolvedValue({ hydraHeadId: null, HydraHead: null });
+	mockFindLocalPlan.mockResolvedValue({ ...FUNDING_IDENTITY, hydraHeadId: null, HydraHead: null });
+	transfers = [];
+	mockFindConfirmedTransfers.mockImplementation(async ({ where }: { where: Prisma.WalletFundTransferWhereInput }) =>
+		transfers.filter((row) => matchesFunding(row, where)),
+	);
+	mockFindIncomingTransfer.mockImplementation(
+		async ({ where }: { where: Prisma.WalletFundTransferWhereInput }) =>
+			transfers.find((row) => matchesFunding(row, where)) ?? null,
+	);
 	mockFindRemotePlan.mockResolvedValue({ hydraHeadId: null, HydraHead: null });
 	mockQueryRaw.mockImplementation(async (query: unknown) => {
 		const sql = prismaQueryText(query);
@@ -167,6 +220,63 @@ beforeEach(() => {
 });
 
 describe('deleteHydraLocalParticipant', () => {
+	it.each([
+		{ status: TransactionStatus.Pending, hostDelayMs: 0 },
+		{ status: TransactionStatus.Confirmed, hostDelayMs: 0 },
+		// Host work can outlast the recent-confirmation window. New IDs still block cleanup.
+		{ status: TransactionStatus.Confirmed, hostDelayMs: 16 * 60 * 1000 },
+	])(
+		'keeps the participant and signer when funding becomes $status during $hostDelayMs ms of Host removal',
+		async ({ status, hostDelayMs }) => {
+			mockFindLocalPlan.mockResolvedValue(assignedDeletionPlan());
+			mockFindLocal.mockResolvedValue(finalHeadParticipant());
+			const startedAtMs = Date.now();
+			const clock = jest.spyOn(Date, 'now').mockReturnValue(startedAtMs);
+			// The indexer still reports dust. Funding arrives only after that chain read.
+			mockReleaseHostNodeOfFinishedHead.mockImplementation(async () => {
+				transfers.push({
+					id: 'late-funding',
+					toAddress: NODE_ADDRESS,
+					status,
+					createdAt: new Date(startedAtMs),
+					lastCheckedAt: status === TransactionStatus.Confirmed ? new Date(startedAtMs) : null,
+				});
+				clock.mockReturnValue(startedAtMs + hostDelayMs);
+			});
+
+			try {
+				await expect(deleteHydraLocalParticipant('local-1')).rejects.toMatchObject({ statusCode: 409 });
+				expect(mockDeleteLocal).not.toHaveBeenCalled();
+				expect(mockDeleteSecret).not.toHaveBeenCalled();
+				expect(mockFindConfirmedTransfers.mock.invocationCallOrder[0]).toBeLessThan(
+					mockWithdrawNodeFunds.mock.invocationCallOrder[0] ?? 0,
+				);
+			} finally {
+				clock.mockRestore();
+			}
+		},
+	);
+
+	it.each([false, true])('only deletes after an existing confirmation is settled (recent: %s)', async (recent) => {
+		mockFindLocalPlan.mockResolvedValue(assignedDeletionPlan());
+		mockFindLocal.mockResolvedValue(finalHeadParticipant());
+		transfers.push({
+			id: 'earlier-funding',
+			toAddress: NODE_ADDRESS,
+			status: TransactionStatus.Confirmed,
+			createdAt: new Date(0),
+			lastCheckedAt: recent ? new Date() : new Date(0),
+		});
+		if (recent) {
+			await expect(deleteHydraLocalParticipant('local-1')).rejects.toMatchObject({ statusCode: 409 });
+			expect(mockDeleteLocal).not.toHaveBeenCalled();
+			expect(mockDeleteSecret).not.toHaveBeenCalled();
+		} else {
+			await expect(deleteHydraLocalParticipant('local-1')).resolves.toBeUndefined();
+			expect(mockDeleteSecret).toHaveBeenCalled();
+		}
+	});
+
 	it.each(Object.values(HydraHeadStatus).filter((status) => status !== HydraHeadStatus.Final))(
 		'rejects participant deletion while its head is %s',
 		async (status) => {

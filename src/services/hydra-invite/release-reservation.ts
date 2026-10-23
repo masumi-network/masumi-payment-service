@@ -20,11 +20,15 @@
 
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { HydraInviteStatus, type Network, Prisma, TransactionStatus } from '@/generated/prisma/client';
+import { HydraInviteStatus, type Network, Prisma } from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
 import { nodeCardanoAddress } from '@/services/hydra-node-funding/node-address';
-import { recentlySentTo } from '@/services/hydra-node-funding/transfer-history';
+import {
+	captureNodeFundingBaseline,
+	hasUnsettledNodeFunding,
+	type NodeFundingBaseline,
+} from '@/services/hydra-node-funding/transfer-history';
 import { decrypt } from '@/utils/security/encryption';
 import { removeHostNode } from '@/services/hydra-host/client';
 import { isHostNodeGone } from '@/services/hydra-host/node-gone';
@@ -75,28 +79,23 @@ export async function canRemoveReservedHostNode(hydraHostId: string, hostNodeId:
  * A failure here is reported as "not settled" rather than thrown: one node
  * whose chain query failed must not stop the rest of a sweep.
  */
-type SettledFunding = { address: string; confirmedTransferIds: string[] };
-
 async function settleNodeFunds(
 	localParticipantId: string,
 	cardanoVkey: string,
 	network: Network,
-): Promise<SettledFunding | null> {
+): Promise<NodeFundingBaseline | null> {
 	try {
 		const address = nodeCardanoAddress(cardanoVkey, network);
 		// Capture before chain reads. A transfer that appears during settlement
 		// invalidates its balance evidence even if Host work outlasts the recent window.
-		const confirmed = await prisma.walletFundTransfer.findMany({
-			where: { toAddress: address, status: TransactionStatus.Confirmed },
-			select: { id: true },
-		});
+		const funding = await captureNodeFundingBaseline(prisma, address);
 		const outcome = await withdrawNodeFunds(localParticipantId);
 		if (outcome.code === 'swept') {
 			logger.info(
 				`hydra: swept ${outcome.balanceLovelace} lovelace from released node ${localParticipantId} in ${outcome.txHash}`,
 			);
 		}
-		return SETTLED_CODES.has(outcome.code) ? { address, confirmedTransferIds: confirmed.map((row) => row.id) } : null;
+		return SETTLED_CODES.has(outcome.code) ? funding : null;
 	} catch (error) {
 		logger.warn(
 			`hydra: could not sweep the node of participant ${localParticipantId} before releasing it: ${(error as Error).message}`,
@@ -133,7 +132,7 @@ export async function releaseReservedParticipants(input: {
 		return { released: 0, retained: 0 };
 	}
 
-	const settled: Array<{ id: string; hydraSecretKeyId: string } & SettledFunding> = [];
+	const settled: Array<{ id: string; hydraSecretKeyId: string } & NodeFundingBaseline> = [];
 	let retained = 0;
 	for (const participant of reserved) {
 		const funding = await settleNodeFunds(
@@ -217,20 +216,7 @@ export async function releaseReservedParticipants(input: {
 						current.hydraSecretKeyId !== participant.hydraSecretKeyId
 					)
 						continue;
-					// Funding reads the participant and writes transfer history in its own
-					// Serializable transaction. These reads plus deletion close both
-					// commit orders across replicas. Retry rechecks all guards.
-					const incoming = await tx.walletFundTransfer.findFirst({
-						where: {
-							toAddress: participant.address,
-							OR: [
-								...recentlySentTo().OR,
-								{ status: TransactionStatus.Confirmed, id: { notIn: participant.confirmedTransferIds } },
-							],
-						},
-						select: { id: true },
-					});
-					if (incoming !== null) continue;
+					if (await hasUnsettledNodeFunding(tx, participant)) continue;
 					// The participant references its key with onDelete: Restrict.
 					await tx.hydraLocalParticipant.deleteMany({ where: { id: { in: [participant.id] } } });
 					await tx.hydraSecretKey.deleteMany({ where: { id: { in: [participant.hydraSecretKeyId] } } });

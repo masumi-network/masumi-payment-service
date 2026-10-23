@@ -1,4 +1,42 @@
-import { TransactionStatus } from '@/generated/prisma/client';
+import { type Prisma, TransactionStatus } from '@/generated/prisma/client';
+
+export type NodeFundingBaseline = { address: string; confirmedTransferIds: string[] };
+type FundingHistoryReader = Pick<Prisma.TransactionClient, 'walletFundTransfer'>;
+
+/** Capture before chain reads so a later confirmation cannot inherit stale balance evidence. */
+export async function captureNodeFundingBaseline(
+	db: FundingHistoryReader,
+	address: string,
+): Promise<NodeFundingBaseline> {
+	const confirmed = await db.walletFundTransfer.findMany({
+		where: { toAddress: address, status: TransactionStatus.Confirmed },
+		select: { id: true },
+	});
+	return { address, confirmedTransferIds: confirmed.map(({ id }) => id) };
+}
+
+/**
+ * Read inside the Serializable transaction that deletes the participant and key.
+ * Funding reads that participant before inserting a transfer. These reciprocal
+ * reads and writes preserve SSI conflicts across replicas for overlapping claims.
+ * A retry must recheck this guard against the same baseline.
+ */
+export async function hasUnsettledNodeFunding(
+	tx: FundingHistoryReader,
+	baseline: NodeFundingBaseline,
+): Promise<boolean> {
+	const incoming = await tx.walletFundTransfer.findFirst({
+		where: {
+			toAddress: baseline.address,
+			OR: [
+				...recentlySentTo().OR,
+				{ status: TransactionStatus.Confirmed, id: { notIn: baseline.confirmedTransferIds } },
+			],
+		},
+		select: { id: true },
+	});
+	return incoming !== null;
+}
 
 /**
  * How long a transfer counts as still in flight after it stops being Pending.
