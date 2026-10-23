@@ -232,7 +232,10 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 			await verifyPersistedHydraHeadOnChain(head.id);
 		} catch (verificationError) {
 			if (createHttpError.isHttpError(verificationError)) throw verificationError;
-			throw createHttpError(502, `Refusing to sign for an unverified Hydra head: ${errorMessage(verificationError)}`);
+			throw createHttpError(
+				502,
+				`Refusing to sign for an unverified Hydra head: ${describeErrorForOperator(verificationError)}`,
+			);
 		}
 
 		// One withdrawal per participant at a time. The head itself only tracks one

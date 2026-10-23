@@ -10,6 +10,8 @@ const mockDecommitUpdate = jest.fn() as AnyMock;
 const mockDecommitCreate = jest.fn() as AnyMock;
 const mockDecommitFindFirst = jest.fn() as AnyMock;
 const mockHeadFindUnique = jest.fn() as AnyMock;
+const mockCreateHeadError = jest.fn() as AnyMock;
+const mockVerifyPersistedHydraHeadOnChain = jest.fn() as AnyMock;
 const mockSignTx = jest.fn() as AnyMock;
 const mockHeadUpdate = jest.fn() as AnyMock;
 const mockDecommitCall = jest.fn() as AnyMock;
@@ -53,6 +55,7 @@ jest.unstable_mockModule('@/services/hydra-host/pause', () => ({
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHead: { findUnique: mockHeadFindUnique, update: mockHeadUpdate },
+		hydraHeadError: { create: mockCreateHeadError },
 		hotWallet: { updateMany: mockWalletRelease },
 		hydraDecommit: {
 			findFirst: mockDecommitFindFirst,
@@ -92,7 +95,7 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 const mockRecordHeadError = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
-	verifyPersistedHydraHeadOnChain: async () => ({ headIdentifier: 'ab'.repeat(28) }),
+	verifyPersistedHydraHeadOnChain: mockVerifyPersistedHydraHeadOnChain,
 	recordHeadError: mockRecordHeadError,
 	// A withdrawal needs a node that is answering and caught up, the same as a
 	// deposit does. Ready here; the refusal itself is covered where the guard lives.
@@ -162,6 +165,9 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 	Transaction: class {},
 }));
 
+const { recordHeadError } = await import('@/services/hydra-head-error/record');
+mockRecordHeadError.mockImplementation(recordHeadError);
+
 const { HydraTransportAmbiguousError } = await import('@/lib/hydra/hydra/errors');
 const { executeHydraDecommit } = await import('./execute');
 const { PENDING_EXPIRED_REASON } = await import('./stale');
@@ -184,6 +190,8 @@ const HEAD = {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockCreateHeadError.mockResolvedValue({});
+	mockVerifyPersistedHydraHeadOnChain.mockResolvedValue({ headIdentifier: 'ab'.repeat(28) });
 	mockHeadFindUnique.mockResolvedValue(HEAD);
 	mockDecommitFindFirst.mockResolvedValue(null);
 	mockDecommitCreate.mockResolvedValue({ id: 'decommit-1' });
@@ -982,5 +990,41 @@ describe('executeHydraDecommit and the wallet lock', () => {
 		mockWalletRelease.mockRejectedValue(new Error('database is gone'));
 
 		await expect(executeHydraDecommit({ headId: 'head-1' })).resolves.toMatchObject({ decommitId: 'decommit-1' });
+	});
+});
+
+describe('executeHydraDecommit verification errors', () => {
+	const verificationFailures = [
+		{
+			label: 'a database failure',
+			error: new Prisma.PrismaClientKnownRequestError(
+				'Invalid `prisma.hydraHead.findUnique()` invocation in /srv/masumi/src/routes/api/hydra/head/index.ts:327:36: connection timeout',
+				{ code: 'P2024', clientVersion: '7.8.0' },
+			),
+			reason: 'the database rejected the write (P2024)',
+		},
+		{
+			label: 'an ordinary verification failure',
+			error: new Error('the observed head has different participants'),
+			reason: 'the observed head has different participants',
+		},
+	];
+
+	it.each(verificationFailures)('reports and records a safe reason for $label', async ({ error, reason }) => {
+		mockVerifyPersistedHydraHeadOnChain.mockRejectedValueOnce(error);
+		const message = `Refusing to sign for an unverified Hydra head: ${reason}`;
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toMatchObject({ status: 502, message });
+
+		expect(mockCreateHeadError).toHaveBeenCalledWith({
+			data: {
+				hydraHeadId: 'head-1',
+				errorType: 'CommandFailed',
+				errorMessage: message,
+				headStatus: 'Open',
+				clientInput: 'Decommit',
+				errorAt: expect.any(Date),
+			},
+		});
 	});
 });

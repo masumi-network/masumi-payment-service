@@ -21,10 +21,12 @@
 
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import { Prisma } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindUniqueHead = jest.fn() as AnyMock;
+const mockCreateHeadError = jest.fn() as AnyMock;
 const mockFindUniqueOrThrowHotWallet = jest.fn() as AnyMock;
 const mockUpdateManyTopup = jest.fn() as AnyMock;
 const mockFindFirstTopup = jest.fn() as AnyMock;
@@ -75,6 +77,7 @@ jest.unstable_mockModule('@/utils/hydra/deposit-admission', () => ({
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHead: { findUnique: mockFindUniqueHead, update: mockUpdateHead },
+		hydraHeadError: { create: mockCreateHeadError },
 		hotWallet: { findUniqueOrThrow: mockFindUniqueOrThrowHotWallet },
 		hydraTopup: {
 			updateMany: mockUpdateManyTopup,
@@ -147,6 +150,8 @@ jest.unstable_mockModule('@/utils/db/hot-wallet-lock', () => ({
 let executeHydraTopup: typeof import('./execute').executeHydraTopup;
 
 beforeAll(async () => {
+	const { recordHeadError } = await import('@/services/hydra-head-error/record');
+	mockRecordHeadError.mockImplementation(recordHeadError);
 	({ executeHydraTopup } = await import('./execute'));
 });
 
@@ -157,6 +162,7 @@ const TOPUP_ID = 'topup-1';
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockCreateHeadError.mockResolvedValue({});
 
 	mockFindUniqueHead.mockResolvedValue({
 		id: HEAD_ID,
@@ -321,5 +327,44 @@ describe('executeHydraTopup wallet release ownership', () => {
 		await executeHydraTopup({ headId: HEAD_ID, filter: 'all' });
 
 		expect(mockReleaseHotWalletAfterL1).not.toHaveBeenCalled();
+	});
+});
+
+describe('executeHydraTopup verification errors', () => {
+	const verificationFailures = [
+		{
+			label: 'a database failure',
+			error: new Prisma.PrismaClientKnownRequestError(
+				'Invalid `prisma.hydraHead.findUnique()` invocation in /srv/masumi/src/routes/api/hydra/head/index.ts:327:36: connection timeout',
+				{ code: 'P2024', clientVersion: '7.8.0' },
+			),
+			reason: 'the database rejected the write (P2024)',
+		},
+		{
+			label: 'an ordinary verification failure',
+			error: new Error('the observed head has different participants'),
+			reason: 'the observed head has different participants',
+		},
+	];
+
+	it.each(verificationFailures)('reports and records a safe reason for $label', async ({ error, reason }) => {
+		mockVerifyPersistedHydraHeadOnChain.mockRejectedValueOnce(error);
+		const message = `Refusing to sign for an unverified Hydra head: ${reason}`;
+
+		await expect(executeHydraTopup({ headId: 'head-1', filter: 'all' })).rejects.toMatchObject({
+			status: 502,
+			message,
+		});
+
+		expect(mockCreateHeadError).toHaveBeenCalledWith({
+			data: {
+				hydraHeadId: 'head-1',
+				errorType: 'CommandFailed',
+				errorMessage: message,
+				headStatus: 'Open',
+				clientInput: 'Topup',
+				errorAt: expect.any(Date),
+			},
+		});
 	});
 });
