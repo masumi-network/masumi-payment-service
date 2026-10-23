@@ -183,13 +183,10 @@ export type NodeFundingOutcome = {
 	skipped: number;
 };
 
-/** Blockfrost signals an unused address with a 404 on the error object itself. */
+/** A supplied Blockfrost status is authoritative. Only message-only errors use the legacy fallback. */
 export function isNotFound(error: unknown): boolean {
-	if (typeof error === 'object' && error !== null) {
-		const status = (error as { status_code?: unknown }).status_code;
-		if (status === 404) {
-			return true;
-		}
+	if (typeof error === 'object' && error !== null && 'status_code' in error) {
+		return error.status_code === 404;
 	}
 	return /\b404\b/.test((error as Error)?.message ?? '');
 }
@@ -407,9 +404,14 @@ export async function fundHydraNodeNow(
 
 	const network = participant.Wallet.PaymentSource.network;
 	const address = nodeCardanoAddress(participant.cardanoVkey, network);
-	const balance =
-		(await readLovelaceAt(address, network, participant.Wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey)) ??
-		0n;
+	const balance = await readLovelaceAt(
+		address,
+		network,
+		participant.Wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+	);
+	if (balance === null) {
+		throw createHttpError(503, 'Could not verify the Hydra node balance; no funding transfer was queued. Retry later.');
+	}
 
 	if (balance >= NODE_MINIMUM_LOVELACE) {
 		return { address, balanceLovelace: balance.toString(), transferredLovelace: null, outcome: 'sufficient' };
