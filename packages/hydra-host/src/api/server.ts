@@ -22,6 +22,7 @@ import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRe
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
+import { PeerResolverUnavailableError } from '../peer-dns.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate, authenticateNode, type AuthResult } from './auth.js';
 import { nonceLogRef } from './nonce-log-ref.js';
@@ -278,6 +279,12 @@ export function createControlPlane(deps: ServerDeps): Server {
 			try {
 				await handle(route.kind, route.nodeId, route.nonce, request, response);
 			} catch (error) {
+				if (error instanceof PeerResolverUnavailableError) {
+					logger.warn(`[api] ${method} ${logPath} refused: ${error.message}`);
+					response.setHeader('Retry-After', '1');
+					send(response, 503, { error: 'peer resolver is temporarily unavailable' });
+					return;
+				}
 				if (isHostApiError(error)) {
 					send(response, error.status, { error: error.message });
 					return;
