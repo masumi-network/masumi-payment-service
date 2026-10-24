@@ -5,11 +5,25 @@ jest.unstable_mockModule('./transport', () => ({ fetchHydraHost: transportMock }
 
 let HydraHostRequestError: typeof import('./client').HydraHostRequestError;
 let fetchHostCapabilities: typeof import('./client').fetchHostCapabilities;
+let fetchHostNodeHealth: typeof import('./client').fetchHostNodeHealth;
 let forgetHostInvite: typeof import('./client').forgetHostInvite;
 let provisionNodeOnHost: typeof import('./client').provisionNodeOnHost;
 
 beforeAll(async () => {
-	({ HydraHostRequestError, fetchHostCapabilities, forgetHostInvite, provisionNodeOnHost } = await import('./client'));
+	({ HydraHostRequestError, fetchHostCapabilities, fetchHostNodeHealth, forgetHostInvite, provisionNodeOnHost } =
+		await import('./client'));
+});
+
+describe('Hydra Host node health freshness', () => {
+	it('treats a Host without the freshness field as unverified', async () => {
+		transportMock.mockResolvedValueOnce(
+			new Response(JSON.stringify({ state: 'Running', usable: true, chainSynced: true }), { status: 200 }),
+		);
+
+		await expect(
+			fetchHostNodeHealth('https://hydra.example.com', 'user-token', 'node-1', { allowInsecureHttp: false }),
+		).resolves.toMatchObject({ usable: true, chainSynced: true, observationFresh: false });
+	});
 });
 
 afterEach(() => {

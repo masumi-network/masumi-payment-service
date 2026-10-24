@@ -17,7 +17,7 @@ const PARTICIPANT = { id: 'p1', hostNodeId: 'n1', HydraHost: { baseUrl: 'http://
 
 async function stateFor(health: Record<string, unknown>) {
 	mockFindUnique.mockResolvedValue(PARTICIPANT);
-	mockFetchHealth.mockResolvedValue(health);
+	mockFetchHealth.mockResolvedValue({ observationFresh: true, ...health });
 	return await readParticipantNodeState('p1');
 }
 
@@ -27,6 +27,25 @@ describe('readParticipantNodeState', () => {
 
 		expect(state.isReady).toBe(true);
 		expect(state.reason).toBeNull();
+	});
+
+	it('does not treat a stale or old-Host health response as ready', async () => {
+		const state = await stateFor({ usable: true, state: 'Running', chainSynced: true, observationFresh: false });
+
+		expect(state).toMatchObject({ isReady: false, chainSynced: true, observationFresh: false });
+		expect(state.reason).toContain('not checked');
+	});
+
+	it('keeps the last unsynced reading for a possibly parked Init', async () => {
+		const state = await stateFor({
+			usable: false,
+			state: 'Running',
+			chainSynced: false,
+			driftSeconds: 90,
+			observationFresh: false,
+		});
+
+		expect(state).toMatchObject({ isReady: false, chainSynced: false, driftSeconds: 90, observationFresh: false });
 	});
 
 	/**
