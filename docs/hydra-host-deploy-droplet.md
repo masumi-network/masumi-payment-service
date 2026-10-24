@@ -483,11 +483,12 @@ production host-network launch only. A bridge-network deployment needs its own
 outbound control.
 
 VERIFIED (`packages/hydra-host/scripts/hydra-peer-egress:86`): the script renders
-an output rule for uid `10001`. It allows replies to inbound connections and permits only
-the configured loopback node API and derived etcd client ports, then drops
-host-local and non-public IPv4 and IPv6 destinations. It has no exception for
-the control plane on `8443`. An exact Docker DNS listener can use TCP and UDP
-port `53`. The Host refuses peer advertisements on that port and on the local
+an output rule for uid `10001`. It allows replies to inbound connections and
+permits the configured loopback node API, derived etcd client ports, and exact
+Docker DNS servers on TCP and UDP port `53`. It then drops host-local and
+non-public IPv4 and IPv6 destinations. Other public destinations follow the
+base accept policy. It has no exception for the control plane on `8443`.
+The Host refuses peer advertisements on DNS port `53` and on the local
 API and etcd client ranges (`packages/hydra-host/src/peer-target-policy.ts:76`).
 The `fib daddr type local` rule covers addresses assigned to this machine.
 INFERRED: a floating IP or external load balancer may route back to the machine
