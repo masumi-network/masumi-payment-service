@@ -166,6 +166,12 @@ describe('validateL2InitialLock', () => {
 		expect(result.errorNote).toContain('Token counts do not match');
 	});
 
+	it('accepts a fully funded lock with duplicate requested token rows', () => {
+		const funds = [...expectedFunds, { unit: 'policy.tok', amount: 4n }, { unit: 'policy.tok', amount: 6n }];
+		const locked = [...outputAmounts, { unit: 'policy.tok', quantity: '10' }];
+		expect(validateL2InitialLock(decoded, funds, locked, 999n)).toEqual({ valid: true, errorNote: null });
+	});
+
 	it('does not mutate the caller-supplied arrays', () => {
 		const funds = [{ unit: 'lovelace', amount: 10_000_000n }];
 		const out = [{ unit: 'lovelace', quantity: '10000000' }];
