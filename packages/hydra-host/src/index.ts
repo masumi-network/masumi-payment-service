@@ -9,7 +9,6 @@
 
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { lookup } from 'node:dns/promises';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
 import { createExchangePlane } from './api/exchange-server.js';
@@ -17,6 +16,7 @@ import { redemptionNetwork, verifyRedemptionSignature } from './registry/redempt
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
 import { assertStoredPeerEgressCompatibility, peerTargetRejection } from './peer-target-policy.js';
+import { createBoundedPeerResolver } from './peer-dns.js';
 import { assertPeerEgressAttestation } from './peer-egress-attestation.js';
 import { describeUnsettleableLedgerParams } from './ledger-params.js';
 import { assertExecutablesAvailable } from './preflight.js';
@@ -225,11 +225,14 @@ async function main(): Promise<void> {
 	}
 	if (shuttingDown) return;
 
-	const checkPeerTarget = async (advertise: string): Promise<string | null> =>
+	const resolvePeerHostname = createBoundedPeerResolver();
+	const checkPeerTarget = async (advertise: string, signal?: AbortSignal, owner?: string): Promise<string | null> =>
 		await peerTargetRejection(advertise, {
 			allowPrivate: config.allowPrivatePeers,
 			egressPortLayout: config.requirePeerEgressFirewall ? config.ports : undefined,
-			resolve: async (hostname) => await lookup(hostname, { all: true, verbatim: true }),
+			resolve: resolvePeerHostname,
+			signal,
+			owner,
 		});
 
 	const provisionDeps = {

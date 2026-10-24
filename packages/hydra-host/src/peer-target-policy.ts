@@ -20,6 +20,7 @@
 import { BlockList, isIP } from 'node:net';
 import { parsePeerAdvertise } from './peer-address.js';
 import type { PeerHostnameResolver } from './api/peer-allowlist.js';
+import { PeerResolverUnavailableError } from './peer-dns.js';
 import { derivedEtcdClientPort, type PortLayout } from './registry/ports.js';
 
 /** IANA special-purpose ranges that are not globally reachable. */
@@ -70,7 +71,7 @@ export function isPublicPeerIp(address: string): boolean {
 	return family === 4 ? !nonPublicIpv4.check(address, 'ipv4') : !nonPublicIpv6.check(address, 'ipv6');
 }
 
-export type PeerTargetCheck = (advertise: string) => Promise<string | null>;
+export type PeerTargetCheck = (advertise: string, signal?: AbortSignal, owner?: string) => Promise<string | null>;
 
 /** Every local egress exception must be unusable as a counterparty peer port. */
 export function peerEgressPortRejection(advertise: string, ports: PortLayout): string | null {
@@ -130,7 +131,13 @@ export function assertStoredPeerEgressCompatibility(
  */
 export async function peerTargetRejection(
 	advertise: string,
-	options: { allowPrivate: boolean; resolve: PeerHostnameResolver; egressPortLayout?: PortLayout },
+	options: {
+		allowPrivate: boolean;
+		resolve: PeerHostnameResolver;
+		egressPortLayout?: PortLayout;
+		signal?: AbortSignal;
+		owner?: string;
+	},
 ): Promise<string | null> {
 	const parsed = parsePeerAdvertise(advertise);
 	if (parsed === null) {
@@ -146,8 +153,9 @@ export async function peerTargetRejection(
 
 	let addresses: ReadonlyArray<{ address: string }>;
 	try {
-		addresses = await options.resolve(parsed.host);
+		addresses = await options.resolve(parsed.host, options.signal, options.owner);
 	} catch (error) {
+		if (error instanceof PeerResolverUnavailableError) throw error;
 		return `peer host ${parsed.host} does not resolve: ${(error as Error).message}`;
 	}
 	if (addresses.length === 0) {
