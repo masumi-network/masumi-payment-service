@@ -550,6 +550,14 @@ export async function verifyPriorHydraFanouts(hydraRelationId: string): Promise<
  */
 export async function assertNodeReadyForDeposit(localParticipantId: string): Promise<void> {
 	const node = await readParticipantNodeState(localParticipantId);
+	// The shared status reader stays advisory for the UI. An L1 deposit needs
+	// positive chain-sync evidence because it has an on-chain expiry deadline.
+	if (node.chainSynced !== true) {
+		throw createHttpError(
+			node.chainSynced === null ? 503 : 409,
+			node.reason ?? 'The Hydra Host has not confirmed this node is caught up with the chain. Retry before depositing.',
+		);
+	}
 	if (!node.isReady) {
 		throw createHttpError(
 			409,
