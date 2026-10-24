@@ -1,0 +1,62 @@
+diff --git a/v3/types.cjs b/v3/types.cjs
+index 11ed4dfc4745f9af1f1501874576b78b77d294ef..7844db958a8c6d2d33435c1ca2a6eb16ac732bdf 100644
+--- a/v3/types.cjs
++++ b/v3/types.cjs
+@@ -1791,6 +1791,8 @@ class ZodArray extends ZodType {
+                     message: def.exactLength.message,
+                 });
+                 status.dirty();
++                if (tooBig)
++                    return parseUtil_js_1.INVALID;
+             }
+         }
+         if (def.minLength !== null) {
+@@ -1816,7 +1818,7 @@ class ZodArray extends ZodType {
+                     exact: false,
+                     message: def.maxLength.message,
+                 });
+-                status.dirty();
++                return parseUtil_js_1.INVALID;
+             }
+         }
+         if (ctx.common.async) {
+@@ -2843,7 +2845,7 @@ class ZodSet extends ZodType {
+                     exact: false,
+                     message: def.maxSize.message,
+                 });
+-                status.dirty();
++                return parseUtil_js_1.INVALID;
+             }
+         }
+         const valueType = this._def.valueType;
+diff --git a/v3/types.js b/v3/types.js
+index 40b11c0f01b2af54e0ed48e198607bd8836d9a63..1d265ef76fe6b834a097b3dde23d2ada9fb4fa47 100644
+--- a/v3/types.js
++++ b/v3/types.js
+@@ -1770,6 +1770,8 @@ export class ZodArray extends ZodType {
+                     message: def.exactLength.message,
+                 });
+                 status.dirty();
++                if (tooBig)
++                    return INVALID;
+             }
+         }
+         if (def.minLength !== null) {
+@@ -1795,7 +1797,7 @@ export class ZodArray extends ZodType {
+                     exact: false,
+                     message: def.maxLength.message,
+                 });
+-                status.dirty();
++                return INVALID;
+             }
+         }
+         if (ctx.common.async) {
+@@ -2814,7 +2816,7 @@ export class ZodSet extends ZodType {
+                     exact: false,
+                     message: def.maxSize.message,
+                 });
+-                status.dirty();
++                return INVALID;
+             }
+         }
+         const valueType = this._def.valueType;

@@ -32,6 +32,7 @@ import {
 	type ExchangeSignature,
 } from '../registry/exchange-types.js';
 import type { PeerTargetCheck } from '../peer-target-policy.js';
+import { PeerResolverUnavailableError } from '../peer-dns.js';
 import type { SupervisorLogger } from '../supervisor/supervisor.js';
 
 /** Smaller than the control plane's: an invite is a few hundred bytes. */
@@ -40,6 +41,8 @@ const DEFAULT_MAX_IN_FLIGHT = 16;
 const DEFAULT_MAX_BODY_READERS = 32;
 const DEFAULT_MAX_BODY_READERS_PER_SOURCE = 4;
 const DEFAULT_BODY_TIMEOUT_MS = 5_000;
+/** Leave room for getaddrinfo to finish, while freeing Exchange capacity promptly. */
+const DEFAULT_PEER_CHECK_TIMEOUT_MS = 2_000;
 /**
  * Body deadline for a request past the shared budget. A redemption is a few
  * hundred bytes and arrives at once, so this costs a real redeemer nothing,
@@ -233,12 +236,55 @@ export type ExchangeDeps = {
 		maxBodyReaders?: number;
 		maxBodyReadersPerSource?: number;
 		bodyTimeoutMs?: number;
+		peerCheckTimeoutMs?: number;
 	};
 };
 
 function send(response: ServerResponse, status: number, body: unknown): void {
 	response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
 	response.end(JSON.stringify(body ?? null));
+}
+
+type PeerCheckResult =
+	| { kind: 'checked'; rejection: string | null }
+	| { kind: 'timeout' }
+	| { kind: 'closed' }
+	| { kind: 'unavailable' };
+
+async function checkPeerWithDeadline(
+	checkPeerTarget: PeerTargetCheck,
+	advertise: string,
+	owner: string,
+	response: ServerResponse,
+	timeoutMs: number,
+): Promise<PeerCheckResult> {
+	if (response.destroyed) return { kind: 'closed' };
+	const controller = new AbortController();
+	let stop!: (result: PeerCheckResult) => void;
+	const stopped = new Promise<PeerCheckResult>((resolve) => (stop = resolve));
+	const onClose = () => {
+		stop({ kind: 'closed' });
+		controller.abort();
+	};
+	const timer = setTimeout(() => {
+		stop({ kind: 'timeout' });
+		controller.abort();
+	}, timeoutMs);
+	response.once('close', onClose);
+	try {
+		return await Promise.race([
+			Promise.resolve()
+				.then(async () => await checkPeerTarget(advertise, controller.signal, owner))
+				.then((rejection): PeerCheckResult => ({ kind: 'checked', rejection })),
+			stopped,
+		]);
+	} catch (error) {
+		if (error instanceof PeerResolverUnavailableError) return { kind: 'unavailable' };
+		throw error;
+	} finally {
+		clearTimeout(timer);
+		response.off('close', onClose);
+	}
 }
 
 async function readBody(request: IncomingMessage, timeoutMs: number): Promise<unknown> {
@@ -291,7 +337,9 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	const maxBodyReaders = deps.limits?.maxBodyReaders ?? DEFAULT_MAX_BODY_READERS;
 	const maxBodyReadersPerSource = deps.limits?.maxBodyReadersPerSource ?? DEFAULT_MAX_BODY_READERS_PER_SOURCE;
 	const bodyTimeoutMs = deps.limits?.bodyTimeoutMs ?? DEFAULT_BODY_TIMEOUT_MS;
+	const peerCheckTimeoutMs = deps.limits?.peerCheckTimeoutMs ?? DEFAULT_PEER_CHECK_TIMEOUT_MS;
 	let inFlight = 0;
+	const checkingNonces = new Set<string>();
 	let bodyReaders = 0;
 	const bodyReadersBySource = new Map<string, number>();
 	// Per source rather than one shared counter: a single abusive caller must not
@@ -436,19 +484,23 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		}
 		inFlight += 1;
 		try {
-			// Before the store, not after: a refused signature must leave the nonce
-			// open for the real redeemer. Says nothing about whether the nonce
-			// exists, so it is not counted toward the disclosure budget below.
-			if (!(await verifyRedemption(body.nonce, body.redeemer, body.signature))) {
-				logger.warn('[exchange] redemption refused (401 signature does not verify)');
-				send(response, 401, { error: 'signature does not verify' });
-				return;
-			}
-			// After the signature check, so a 401 stays independent of the nonce, as
-			// it is within budget. An unknown, spent or expired nonce all get the same
-			// 429 after the same work, so nothing here tells whether a nonce exists.
+			// Past the shared budget, only an open invite can reach the costly
+			// signature check. All other nonces receive the same refusal.
 			if (overBudget && !(await isOpenInvite(body.nonce))) {
 				refuseOverBudget(response);
+				return;
+			}
+			// Before the store, not after: a refused signature must leave the nonce
+			// open for the real redeemer. Within budget, the 401 does not depend
+			// on whether the nonce exists. Past budget, a bad signature receives
+			// the same 429 as an unknown, spent or expired nonce.
+			if (!(await verifyRedemption(body.nonce, body.redeemer, body.signature))) {
+				if (overBudget) {
+					refuseOverBudget(response);
+					return;
+				}
+				logger.warn('[exchange] redemption refused (401 signature does not verify)');
+				send(response, 401, { error: 'signature does not verify' });
 				return;
 			}
 			// Only for an invite that is still open. A valid signature proves only
@@ -474,9 +526,42 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 					send(response, 503, { error: 'the reserved node is stopped; retry later', code: HOST_UNAVAILABLE_CODE });
 					return;
 				}
-				const peerRejection = await checkPeerTarget(body.redeemer.advertise);
-				if (peerRejection !== null) {
-					logger.warn(`[exchange] redemption refused (400 ${peerRejection})`);
+				// One signed invite must not occupy every in-flight slot while its
+				// getaddrinfo call stalls. The underlying lookup remains capped until
+				// it settles, even after this request times out or disconnects.
+				if (checkingNonces.has(body.nonce)) {
+					response.setHeader('Retry-After', '1');
+					send(response, 503, { error: 'exchange is busy', code: HOST_UNAVAILABLE_CODE });
+					return;
+				}
+				checkingNonces.add(body.nonce);
+				let peerCheck: PeerCheckResult;
+				try {
+					peerCheck = await checkPeerWithDeadline(
+						checkPeerTarget,
+						body.redeemer.advertise,
+						body.nonce,
+						response,
+						peerCheckTimeoutMs,
+					);
+				} finally {
+					checkingNonces.delete(body.nonce);
+				}
+				if (peerCheck.kind === 'closed') return;
+				if (peerCheck.kind === 'timeout' || peerCheck.kind === 'unavailable') {
+					logger.warn('[exchange] redemption refused (503 peer address check temporarily unavailable)');
+					response.setHeader('Retry-After', '1');
+					send(response, 503, {
+						error:
+							peerCheck.kind === 'timeout'
+								? 'peer address check timed out; retry later'
+								: 'peer address check temporarily unavailable; retry later',
+						code: HOST_UNAVAILABLE_CODE,
+					});
+					return;
+				}
+				if (peerCheck.rejection !== null) {
+					logger.warn(`[exchange] redemption refused (400 ${peerCheck.rejection})`);
 					send(response, 400, { error: 'peer address is not allowed' });
 					return;
 				}

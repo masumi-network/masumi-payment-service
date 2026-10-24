@@ -12,6 +12,7 @@ import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 import { deriveNodeToken } from './node-token.js';
+import { PeerResolverUnavailableError } from '../peer-dns.js';
 
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
@@ -38,11 +39,13 @@ let server: Server;
 let baseUrl: string;
 let counter: number;
 let warnings: string[];
+let checkPeerTarget: ProvisionDeps['checkPeerTarget'];
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-api-'));
 	counter = 0;
 	warnings = [];
+	checkPeerTarget = async () => null;
 	const config = { ...loadHostConfig(env), dataDir };
 	const store = new NodeRegistryStore(dataDir);
 	const ports = new PortAllocator(config.ports);
@@ -50,7 +53,7 @@ beforeEach(async () => {
 		store,
 		ports,
 		advertiseFor: (peerPort) => `hydra1.example.com:${peerPort}`,
-		checkPeerTarget: async () => null,
+		checkPeerTarget: async (...args) => await checkPeerTarget(...args),
 		newNodeId: () => `node-${++counter}`,
 		now: () => new Date('2026-07-28T12:00:00.000Z'),
 	};
@@ -101,6 +104,19 @@ const call = (
 };
 
 describe('control plane auth', () => {
+	it('returns 503 for a temporary peer resolver failure', async () => {
+		checkPeerTarget = async () => {
+			throw new PeerResolverUnavailableError('peer resolver is busy');
+		};
+		const response = await call('POST', '/v1/peers/check', {
+			token: ADMIN,
+			body: { advertise: 'peer.example.com:5001' },
+		});
+		expect(response.status).toBe(503);
+		expect(response.headers.get('retry-after')).toBe('1');
+		expect(await response.json()).toEqual({ error: 'peer resolver is temporarily unavailable' });
+	});
+
 	it('rejects an unauthenticated request', async () => {
 		expect((await call('GET', '/v1/nodes')).status).toBe(401);
 	});

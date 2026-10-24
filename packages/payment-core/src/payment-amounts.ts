@@ -1,5 +1,11 @@
 import { CONSTANTS } from './config';
 
+/** ADA uses an empty unit; native asset units are hexadecimal strings. */
+export function canonicalPaymentUnit(unit: string) {
+	const lowercaseUnit = unit.toLowerCase();
+	return lowercaseUnit === 'lovelace' ? '' : lowercaseUnit;
+}
+
 /**
  * Does the value actually locked at the script address satisfy what the request
  * asked for (per-asset amounts) AND keep the collateral-return within bounds?
@@ -10,8 +16,8 @@ import { CONSTANTS } from './config';
  * (`src/utils/logic/l2-datum-validation`) share ONE implementation. Do not fork
  * it — the L1/L2 money-safety guarantee must be identical.
  *
- * NOTE: mutates `x.unit`/`y.unit` in place (normalises 'lovelace' → '') — callers
- * that must not mutate their inputs should pass copies.
+ * Duplicate rows for the same asset are summed before comparison. Input rows
+ * are not changed.
  */
 export function checkPaymentAmountsMatch(
 	expectedAmounts: Array<{ unit: string; amount: bigint }>,
@@ -24,6 +30,24 @@ export function checkPaymentAmountsMatch(
 	if (collateralReturn > 0n && collateralReturn < CONSTANTS.MIN_COLLATERAL_LOVELACE) {
 		return false;
 	}
+	const expectedByUnit = new Map<string, bigint>();
+	for (const { unit, amount } of expectedAmounts) {
+		const canonicalUnit = canonicalPaymentUnit(unit);
+		expectedByUnit.set(canonicalUnit, (expectedByUnit.get(canonicalUnit) ?? 0n) + amount);
+	}
+
+	const actualByUnit = new Map<string, bigint>();
+	for (const { unit, quantity } of actualAmounts) {
+		let parsedQuantity: bigint;
+		try {
+			parsedQuantity = BigInt(quantity);
+		} catch {
+			return false;
+		}
+		const canonicalUnit = canonicalPaymentUnit(unit);
+		actualByUnit.set(canonicalUnit, (actualByUnit.get(canonicalUnit) ?? 0n) + parsedQuantity);
+	}
+
 	// Bound the collateral against the actually-locked lovelace unconditionally.
 	// Every seller spend path is gated on-chain by
 	// `lovelace_of(input) >= collateral_return_lovelace` (SubmitResult / Withdraw
@@ -32,28 +56,20 @@ export function checkPaymentAmountsMatch(
 	// per-asset check below only enforces this when the request carries a
 	// lovelace line item; a token-only request would otherwise skip it, letting a
 	// malicious buyer lock such a datum and defraud the seller of their work.
-	const lockedLovelace = actualAmounts
-		.filter((y) => y.unit === '' || y.unit.toLowerCase() == 'lovelace')
-		.reduce((sum, y) => sum + BigInt(y.quantity), 0n);
+	const lockedLovelace = actualByUnit.get('') ?? 0n;
 	if (collateralReturn > lockedLovelace) {
 		return false;
 	}
-	return expectedAmounts.every((x) => {
-		if (x.unit.toLowerCase() == 'lovelace') {
-			x.unit = '';
+	for (const [unit, expectedAmount] of expectedByUnit) {
+		const actualAmount = actualByUnit.get(unit);
+		if (actualAmount == null) return false;
+		// Allow ADA overpayment to cover the minimum UTxO requirement.
+		if (unit === '') {
+			if (expectedAmount > actualAmount - collateralReturn) return false;
+		} else if (expectedAmount !== actualAmount) {
+			// Native assets must match exactly.
+			return false;
 		}
-		const existingAmount = actualAmounts.find((y) => {
-			if (y.unit.toLowerCase() == 'lovelace') {
-				y.unit = '';
-			}
-			return y.unit == x.unit;
-		});
-		if (existingAmount == null) return false;
-		//allow for some overpayment to handle min lovelace requirements
-		if (x.unit == '') {
-			return x.amount <= BigInt(existingAmount.quantity) - collateralReturn;
-		}
-		//require exact match for non-lovelace amounts
-		return x.amount == BigInt(existingAmount.quantity);
-	});
+	}
+	return true;
 }

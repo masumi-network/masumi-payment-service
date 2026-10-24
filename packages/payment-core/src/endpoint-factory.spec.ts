@@ -2,6 +2,7 @@ import { describe, expect, it, jest } from '@jest/globals';
 import type { Response } from 'express';
 import createHttpError from 'http-errors';
 import { sendEndpointError } from './endpoint-factory';
+import { z } from './zod';
 
 function send(error: Error) {
 	const logError = jest.fn();
@@ -27,4 +28,10 @@ describe('sendEndpointError logging', () => {
 	it('does not log a 4xx', () => {
 		expect(send(createHttpError(404, 'Hydra head not found'))).not.toHaveBeenCalled();
 	});
+});
+
+it('keeps express-zod-api brand metadata after Zod initializes schemas', () => {
+	const brand = Symbol('payment');
+	const schema = z.object({ id: z.string() }).brand(brand);
+	expect(schema._zod.bag.brand).toBe(brand);
 });

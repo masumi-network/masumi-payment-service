@@ -11,7 +11,11 @@ import {
 	TransactionStatus,
 	WalletType,
 } from '@/generated/prisma/client';
-import { checkPaymentAmountsMatch, ExtractOnChainTransactionDataOutput } from '@/services/transactions/tx-sync/util';
+import {
+	canonicalPaymentUnit,
+	checkPaymentAmountsMatch,
+	ExtractOnChainTransactionDataOutput,
+} from '@/services/transactions/tx-sync/util';
 import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
@@ -300,9 +304,13 @@ export async function updateInitialPaymentTransaction(
 						newState = OnChainState.FundsOrDatumInvalid;
 						errorNote.push(errorMessage);
 					}
-					const paymentCountMatches =
-						dbEntry.RequestedFunds.filter((x) => x.unit != '').length ==
-						output.amount.filter((x) => x.unit != '').length;
+					const requestedTokenUnits = new Set(
+						dbEntry.RequestedFunds.map((x) => canonicalPaymentUnit(x.unit)).filter((unit) => unit !== ''),
+					);
+					const lockedTokenUnits = new Set(
+						output.amount.map((x) => canonicalPaymentUnit(x.unit)).filter((unit) => unit !== ''),
+					);
+					const paymentCountMatches = requestedTokenUnits.size === lockedTokenUnits.size;
 					if (paymentCountMatches == false) {
 						const errorMessage = 'Token counts do not match. This likely is a spoofing attempt.';
 						logger.warn(errorMessage, {

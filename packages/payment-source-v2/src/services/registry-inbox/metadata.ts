@@ -1,5 +1,6 @@
 import { z } from '@masumi/payment-core/zod';
-import { metadataToString } from '@/utils/converter/metadata-string-convert';
+import { cleanMetadata, metadataToString, stringToMetadata } from '@/utils/converter/metadata-string-convert';
+import type { RegistryMetadata } from '@/services/registry/shared';
 import { isReservedInboxSlug, normalizeInboxSlug } from '@/utils/inbox-slug';
 
 const METADATA_VERSION = 1;
@@ -109,4 +110,20 @@ export function parseInboxAgentRegistrationMetadata(
 	} catch {
 		return null;
 	}
+}
+
+export function buildInboxAgentMetadata(request: {
+	name: string;
+	description: string | null;
+	agentSlug: string;
+	metadataVersion: number;
+}): RegistryMetadata {
+	const metadata = {
+		type: INBOX_AGENT_REGISTRATION_METADATA_TYPE,
+		name: stringToMetadata(request.name),
+		description: stringToMetadata(request.description),
+		agentslug: stringToMetadata(request.agentSlug),
+		metadata_version: request.metadataVersion.toString(),
+	};
+	return cleanMetadata(metadata) as RegistryMetadata;
 }

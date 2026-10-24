@@ -22,6 +22,7 @@ import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRe
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
+import { PeerResolverUnavailableError } from '../peer-dns.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate, authenticateNode, type AuthResult } from './auth.js';
 import { nonceLogRef } from './nonce-log-ref.js';
@@ -39,6 +40,9 @@ import { matchRoute } from './routes.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
+// The supervisor checks every 15 seconds. Four missed ticks make a cached
+// chain observation too old to authorize a deposit with an on-chain deadline.
+const MAX_HEALTH_OBSERVATION_AGE_MS = 60_000;
 
 export type ServerDeps = {
 	config: HostConfig;
@@ -275,6 +279,12 @@ export function createControlPlane(deps: ServerDeps): Server {
 			try {
 				await handle(route.kind, route.nodeId, route.nonce, request, response);
 			} catch (error) {
+				if (error instanceof PeerResolverUnavailableError) {
+					logger.warn(`[api] ${method} ${logPath} refused: ${error.message}`);
+					response.setHeader('Retry-After', '1');
+					send(response, 503, { error: 'peer resolver is temporarily unavailable' });
+					return;
+				}
 				if (isHostApiError(error)) {
 					send(response, error.status, { error: error.message });
 					return;
@@ -594,15 +604,22 @@ export function createControlPlane(deps: ServerDeps): Server {
 					send(response, 404, { error: 'no such node' });
 					return;
 				}
+				const checkedAt = record.lastObservation?.checkedAt;
+				const observationAgeMs = checkedAt === undefined ? Number.NaN : Date.now() - Date.parse(checkedAt);
+				const observationFresh =
+					Number.isFinite(observationAgeMs) &&
+					observationAgeMs >= 0 &&
+					observationAgeMs <= MAX_HEALTH_OBSERVATION_AGE_MS;
 				// `usable` is the question this endpoint exists to answer, and the
 				// state alone cannot answer it: the supervisor's last probe is what
-				// knows whether the node is still responding. `lastCheckedAt` lets a
-				// caller distinguish "not usable" from "nobody has looked lately".
+				// knows whether the node is still responding. A stale observation
+				// cannot establish current readiness for an L1 deposit.
 				send(response, 200, {
 					nodeId: record.nodeId,
 					state: record.state,
 					desired: record.desired,
-					usable: isUsable(record),
+					usable: observationFresh && isUsable(record),
+					observationFresh,
 					responsive: record.lastObservation?.responsive ?? null,
 					chainSynced: record.lastObservation?.chainSynced ?? null,
 					driftSeconds: record.lastObservation?.driftSeconds ?? null,

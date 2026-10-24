@@ -207,6 +207,17 @@ async function loseLease(): Promise<void> {
 }
 
 describe('Host startup failure shutdown', () => {
+	it('does not adopt or launch a stored node without the required egress firewall receipt', async () => {
+		process.env.HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL = 'true';
+		const { Supervisor } = await import('./supervisor/supervisor.js');
+		const boot = jest.spyOn(Supervisor.prototype, 'boot');
+		await import('./index.js');
+		await exitReached;
+		expect(boot).not.toHaveBeenCalled();
+		expect(servers).toHaveLength(0);
+		expect(jest.mocked(console.error).mock.calls.flat().join(' ')).toContain('peer egress firewall attestation');
+	});
+
 	it('starts shutdown drains while the initial reconciliation tick is still pending', async () => {
 		const { NodeRegistryStore } = await import('./registry/store.js');
 		const list = NodeRegistryStore.prototype.list;

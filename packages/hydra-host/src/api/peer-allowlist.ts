@@ -62,7 +62,11 @@ export type ResolvedPeerAllowlist = Omit<PeerAllowlist, 'rules'> & {
 	rules: ResolvedPeerAllowRule[];
 };
 
-export type PeerHostnameResolver = (hostname: string) => Promise<ReadonlyArray<{ address: string; family: number }>>;
+export type PeerHostnameResolver = (
+	hostname: string,
+	signal?: AbortSignal,
+	owner?: string,
+) => Promise<ReadonlyArray<{ address: string; family: number }>>;
 
 const defaultResolver: PeerHostnameResolver = async (hostname) => await lookup(hostname, { all: true, verbatim: true });
 

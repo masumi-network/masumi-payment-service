@@ -383,7 +383,9 @@ export type HostNodeHealth = {
 	restartRequested: boolean;
 	usable: boolean;
 	responsive: boolean;
-	chainSynced: boolean;
+	chainSynced: boolean | null;
+	/** False when the Host has no recent supervisor observation, including older Hosts that omit the field. */
+	observationFresh: boolean;
 	/** How far behind the chain the node is, in seconds. Null when unknown. */
 	driftSeconds: number | null;
 };
@@ -412,7 +414,9 @@ export async function fetchHostNodeHealth(
 		restartRequested: getOwnValue(body, 'restartRequested') === true,
 		usable: getOwnValue(body, 'usable') === true,
 		responsive: getOwnValue(body, 'responsive') === true,
-		chainSynced: getOwnValue(body, 'chainSynced') === true,
+		chainSynced:
+			typeof getOwnValue(body, 'chainSynced') === 'boolean' ? (getOwnValue(body, 'chainSynced') as boolean) : null,
+		observationFresh: getOwnValue(body, 'observationFresh') === true,
 		driftSeconds:
 			typeof getOwnValue(body, 'driftSeconds') === 'number' ? (getOwnValue(body, 'driftSeconds') as number) : null,
 	};

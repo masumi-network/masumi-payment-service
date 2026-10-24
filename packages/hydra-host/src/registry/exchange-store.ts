@@ -21,6 +21,7 @@ import type { ExchangeMaterial, ExchangeSignature, InviteRecord } from './exchan
 import type { NodeRegistryStore } from './store.js';
 
 const EXCHANGE_FILE = 'exchange.json';
+const EXCHANGE_FILE_MODE = 0o600;
 /**
  * How long an unredeemed invite is kept after it expires.
  *
@@ -108,6 +109,8 @@ export class ExchangeStore {
 			return { invites: this.state.invites.map(copyInvite) };
 		}
 		try {
+			// Older native Host runs could leave open invite nonces in a 0644 file.
+			await fs.chmod(this.file, EXCHANGE_FILE_MODE);
 			this.state = parseState(await fs.readFile(this.file, 'utf8'));
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -120,8 +123,8 @@ export class ExchangeStore {
 	}
 
 	private async write(state: ExchangeState): Promise<void> {
-		await fs.mkdir(path.dirname(this.file), { recursive: true });
-		await writeFileAtomic(this.file, `${JSON.stringify(state, null, 2)}\n`);
+		await fs.mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
+		await writeFileAtomic(this.file, `${JSON.stringify(state, null, 2)}\n`, { mode: EXCHANGE_FILE_MODE });
 		// Publish only durable changes. Copies also keep caller-owned records
 		// and redemption results from changing the cache after the write.
 		this.state = { invites: state.invites.map(copyInvite) };

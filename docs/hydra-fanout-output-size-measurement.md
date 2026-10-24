@@ -67,6 +67,13 @@ sent, so the reservation it would release stays held. A Host on params above
 15,000 refuses every node not yet acked and peered. The payment service
 refuses to Init a head on a node above 15,000.
 
+Correction, 2026-10-24 (VERIFIED): The 14,000-byte L1 statement above
+describes the old code. The V2 L1 batch paths that used that cap now check
+the complete signed transaction against the chain's `maxTxSize`. Registry mint
+peels tail items until a signed prefix fits. Evidence:
+`packages/payment-source-v2/src/builders/batch-helpers.ts:348-373` and
+`packages/payment-source-v2/src/services/registry/register/signed-batch.ts:13-37`.
+
 `packages/hydra-host/src/ledger-params.spec.ts` fails if the shipped value
 plus the measured 917-byte envelope reaches L1's limit.
 

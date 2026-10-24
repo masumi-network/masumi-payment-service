@@ -86,6 +86,8 @@ export type HostConfig = {
 	 * only for deployments whose peers really live on a private network.
 	 */
 	allowPrivatePeers: boolean;
+	/** Require a fresh host-firewall attestation and reject its local exception ports as peer ports. */
+	requirePeerEgressFirewall: boolean;
 	/**
 	 * Hold a released peer port until `hydra-peer-firewall refresh` acknowledges
 	 * a ruleset without its previous peers. See `PortAllocator`.
@@ -163,6 +165,14 @@ function required(env: EnvSource, key: string): string {
 function optional(env: EnvSource, key: string, fallback: string): string {
 	const value = env.get(key)?.trim();
 	return value === undefined || value.length === 0 ? fallback : value;
+}
+
+function strictBoolean(env: EnvSource, key: string, fallback: boolean): boolean {
+	const value = env.get(key)?.trim();
+	if (value === undefined) return fallback;
+	if (value === 'true') return true;
+	if (value === 'false') return false;
+	throw new ConfigError(`${key} must be true or false`);
 }
 
 /**
@@ -272,6 +282,19 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		capacity: integer(env, 'HYDRA_HOST_PEER_PORT_COUNT', 32),
 	};
 	validatePortLayout(ports);
+	const peerEgressFirewallSetting = optional(
+		env,
+		'HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL',
+		env.get('NODE_ENV') === 'production' ? 'true' : 'false',
+	);
+	if (peerEgressFirewallSetting !== 'true' && peerEgressFirewallSetting !== 'false') {
+		throw new ConfigError('HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL must be true or false');
+	}
+	const requirePeerEgressFirewall = peerEgressFirewallSetting === 'true';
+	const allowPrivatePeers = optional(env, 'HYDRA_HOST_ALLOW_PRIVATE_PEERS', 'false') === 'true';
+	if (requirePeerEgressFirewall && allowPrivatePeers) {
+		throw new ConfigError('HYDRA_HOST_ALLOW_PRIVATE_PEERS=true is incompatible with the peer egress firewall');
+	}
 
 	const defaultUnsyncedPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS', 1800);
 	const defaultDepositPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', 300);
@@ -329,10 +352,11 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		drainTimeoutMs: positiveInteger(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),
 		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',
 		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
-		allowPrivatePeers: optional(env, 'HYDRA_HOST_ALLOW_PRIVATE_PEERS', 'false') === 'true',
-		requirePeerFirewallRefresh: optional(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', 'false') === 'true',
+		allowPrivatePeers,
+		requirePeerEgressFirewall,
+		requirePeerFirewallRefresh: strictBoolean(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', false),
 		allowAutoSideLoad: optional(env, 'HYDRA_HOST_AUTO_SIDELOAD', 'false') === 'true',
-		acceptHostWideUserToken: optional(env, 'HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN', 'true') !== 'false',
+		acceptHostWideUserToken: strictBoolean(env, 'HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN', true),
 		release: readReleaseInfo(env),
 	};
 }

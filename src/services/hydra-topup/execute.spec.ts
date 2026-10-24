@@ -241,13 +241,15 @@ describe('executeHydraTopup — DepositTooLarge draft refusal', () => {
 });
 
 describe('executeHydraTopup wallet release ownership', () => {
+	const signedDeposit = {
+		txId: 'b'.repeat(64),
+		invalidHereafterSlot: 1_000n,
+		signedCommitTx: 'signed-deposit',
+		committedValue: new Map([['lovelace', 5_000_000n]]),
+	};
+
 	beforeEach(() => {
-		mockBuildValidatedHydraCommit.mockResolvedValue({
-			txId: 'b'.repeat(64),
-			invalidHereafterSlot: 1_000n,
-			signedCommitTx: 'signed-deposit',
-			committedValue: new Map([['lovelace', 5_000_000n]]),
-		});
+		mockBuildValidatedHydraCommit.mockResolvedValue(signedDeposit);
 		mockReserveAndSubmitHydraTopup.mockImplementation(
 			async (reservation: { topupId: string }, submit: () => Promise<unknown>) => ({
 				topupId: reservation.topupId,
@@ -255,6 +257,41 @@ describe('executeHydraTopup wallet release ownership', () => {
 			}),
 		);
 		mockInterpretCardanoTxSubmitResult.mockReturnValue({ ok: true });
+	});
+
+	it('refuses a deposit when chain sync is lost while the draft is built', async () => {
+		const cardanoTransaction = jest.fn();
+		const noLongerReady = Object.assign(new Error('chain observation is stale'), { status: 503 });
+		mockGetHead.mockReturnValue({ cardanoTransaction });
+		mockBuildValidatedHydraCommit.mockImplementation(async () => {
+			mockAssertNodeReadyForDeposit.mockRejectedValue(noLongerReady);
+			return signedDeposit;
+		});
+
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all' })).rejects.toBe(noLongerReady);
+
+		expect(mockAssertNodeReadyForDeposit).toHaveBeenCalledTimes(2);
+		expect(mockReserveAndSubmitHydraTopup).not.toHaveBeenCalled();
+		expect(cardanoTransaction).not.toHaveBeenCalled();
+		expect(mockUpdateManyTopup).toHaveBeenCalledWith({
+			where: { id: TOPUP_ID, status: 'Preparing' },
+			data: { status: 'Failed' },
+		});
+	});
+
+	it('refuses a deposit when chain sync is lost during reservation', async () => {
+		const cardanoTransaction = jest.fn();
+		const noLongerReady = Object.assign(new Error('chain observation is stale'), { status: 503 });
+		mockGetHead.mockReturnValue({ cardanoTransaction });
+		mockReserveAndSubmitHydraTopup.mockImplementation(async (_reservation: unknown, submit: () => Promise<unknown>) => {
+			mockAssertNodeReadyForDeposit.mockRejectedValueOnce(noLongerReady);
+			return await submit();
+		});
+
+		await expect(executeHydraTopup({ headId: HEAD_ID, filter: 'all' })).rejects.toBe(noLongerReady);
+
+		expect(mockAssertNodeReadyForDeposit).toHaveBeenCalledTimes(3);
+		expect(cardanoTransaction).not.toHaveBeenCalled();
 	});
 
 	it('does not release a newer claim after the scheduler wins reconciliation', async () => {

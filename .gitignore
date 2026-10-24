@@ -64,6 +64,8 @@ hydra-l2-flow/.seller.json
 # Hydra native run (large binaries + runtime state)
 hydra-l2-flow/.bin/
 hydra-l2-flow/.native-state/
+# Project ID file used by docs/hydra-host-native-mode.md
+/blockfrost.txt
 
 # Hydra preprod run (local binaries, secrets, logs + runtime state)
 hydra-l2-flow/preprod/bin/

@@ -9,14 +9,15 @@
 
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { lookup } from 'node:dns/promises';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
 import { createExchangePlane } from './api/exchange-server.js';
 import { redemptionNetwork, verifyRedemptionSignature } from './registry/redemption-signature.js';
 import { createRedemptionRecovery } from './api/redemption-recovery.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
-import { peerTargetRejection } from './peer-target-policy.js';
+import { assertStoredPeerEgressCompatibility, peerTargetRejection } from './peer-target-policy.js';
+import { createBoundedPeerResolver } from './peer-dns.js';
+import { assertPeerEgressAttestation } from './peer-egress-attestation.js';
 import { describeUnsettleableLedgerParams } from './ledger-params.js';
 import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
@@ -118,6 +119,9 @@ async function main(): Promise<void> {
 	process.on('SIGINT', () => requestShutdown('SIGINT'));
 
 	const config = loadHostConfig();
+	// The host process cannot read its machine's nft table from the container.
+	// The root-owned bind mount records a rule verified just before Docker start.
+	if (config.requirePeerEgressFirewall) assertPeerEgressAttestation(config.ports);
 
 	// Fail fast on a missing ledger params file. Only networks with a reviewed
 	// base are generated, so a network we have not validated surfaces here with a
@@ -165,6 +169,9 @@ async function main(): Promise<void> {
 	// memory, so a restart cannot reissue a live node's peer port.
 	const existing = await store.list();
 	if (shuttingDown) return;
+	if (config.requirePeerEgressFirewall) {
+		assertStoredPeerEgressCompatibility(existing, config.ports);
+	}
 	const allocator = new PortAllocator(
 		config.ports,
 		existing.map((record) => record.peerPort),
@@ -218,10 +225,14 @@ async function main(): Promise<void> {
 	}
 	if (shuttingDown) return;
 
-	const checkPeerTarget = async (advertise: string): Promise<string | null> =>
+	const resolvePeerHostname = createBoundedPeerResolver();
+	const checkPeerTarget = async (advertise: string, signal?: AbortSignal, owner?: string): Promise<string | null> =>
 		await peerTargetRejection(advertise, {
 			allowPrivate: config.allowPrivatePeers,
-			resolve: async (hostname) => await lookup(hostname, { all: true, verbatim: true }),
+			egressPortLayout: config.requirePeerEgressFirewall ? config.ports : undefined,
+			resolve: resolvePeerHostname,
+			signal,
+			owner,
 		});
 
 	const provisionDeps = {

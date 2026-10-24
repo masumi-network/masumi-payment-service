@@ -75,7 +75,7 @@ services:
       # A node's routes also open to a token derived for that node, which reaches
       # only that node. Set this to false once no payment service sends the user
       # token itself; the Host logs the first time one does.
-      HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN: ${HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN:-true}
+      HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN: ${HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN-true}
 
       # A path inside the container, not the project id. It is handed to
       # hydra-node as --blockfrost, which reads the file itself.
@@ -109,6 +109,9 @@ services:
       # Peers must resolve to public addresses unless this is true. Set it only
       # when the counterparties' nodes really sit on a private network.
       HYDRA_HOST_ALLOW_PRIVATE_PEERS: ${HYDRA_HOST_ALLOW_PRIVATE_PEERS:-false}
+      # This Compose file is a local bridge-network test rig. Production uses
+      # the host-network UID rule and a fresh host firewall attestation.
+      HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL: 'false'
       # Off unless you accept the risk. After a crash the Host can side-load a
       # node's last confirmed snapshot to clear a stranded round, but that
       # discards the round, and if a counterparty already confirmed it, the node
