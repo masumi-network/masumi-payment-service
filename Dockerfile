@@ -1,4 +1,4 @@
-FROM node:20-slim AS backend-builder
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS backend-builder
 RUN apt-get update -y && apt-get install -y openssl
 RUN npm install -g pnpm
 # Build backend step
@@ -25,7 +25,7 @@ RUN pnpm run swagger-json
 #RUN pnpm run prisma:migrate
 
 # Frontend build step
-FROM node:20-slim AS frontend-builder
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS frontend-builder
 RUN npm install -g pnpm
 WORKDIR /usr/src/app
 COPY package.json pnpm-workspace.yaml ./
@@ -54,7 +54,7 @@ RUN pnpm run build
 
 
 # Final stage
-FROM node:20-slim AS runner
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS runner
 RUN apt-get update -y && apt-get install -y openssl
 RUN npm install -g pnpm
 WORKDIR /usr/src/app
