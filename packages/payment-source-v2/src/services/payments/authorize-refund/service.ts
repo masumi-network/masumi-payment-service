@@ -2,414 +2,69 @@ import {
 	OnChainState,
 	PaymentAction,
 	PaymentSourceType,
-	Prisma,
 	TransactionLayer,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { prisma } from '@masumi/payment-core/db';
-import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
-import { resolveTxHash } from '@meshsdk/core';
-import { deserializeDatum, UTxO } from '@meshsdk/core';
-import type { LanguageVersion } from '@meshsdk/core';
-import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
+import { convertNetwork } from '@/utils/converter/network-convert';
+import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
+import { getCachedChainProtocolParameters, withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { prisma } from '@masumi/payment-core/db';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
-import { SmartContractState } from '@/utils/generator/contract-generator';
-import { convertNetwork } from '@/utils/converter/network-convert';
-import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
-import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
-import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
-import { headClockBehindCooldownMs, resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
-import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
-import { findMatchingPaymentUtxo } from '../../utxo-matching';
-import { advancedRetry, delayErrorResolver } from 'advanced-retry';
-import { pickCollateralUtxo, sortAndLimitUtxos } from '@/utils/utxo';
-import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
+import type { LanguageVersion } from '@meshsdk/core';
+import { resolveTxHash } from '@meshsdk/core';
+import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
+import { asV2Provider } from '../../provider-cast';
 // V2-pinned single-item builder. MUST NOT use the root V1-mesh generator
 // (@/utils/generator/transaction-generator) — that bundles the V1 cost models
 // and CBOR serializer, which produce a script-data-hash the ledger rejects for
 // V2 scripts (PPViewHashesDontMatch). See docs/adr/0005.
-import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '../../../builders/single-interaction';
 import {
 	connectExistingNextPaymentAction,
 	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPaymentAction,
-	createPendingTransaction,
-	createTxWindow,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
 	safeDeleteOrphanNextPaymentAction,
 } from '@/services/shared';
-import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
-import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
+import { getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
 import {
 	assertNoCollateralOverlap,
-	assertTxSizeWithinLimit,
+	assertSignedL1TxSizeWithinProtocolLimit,
 	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
-	type TxWindowBounds,
-	WALLET_SPLITTER_LOVELACE,
 } from '../../../builders/batch-helpers';
 import {
-	type BatchInteractionItem,
 	generateMasumiSmartContractBatchInteractionTransactionAutomaticFees,
+	type BatchInteractionItem,
 } from '../../../builders/batch-interaction';
-import { COLLATERAL_RESERVE_LOVELACE, ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
-import { submitReservedL2Action } from '../../l2-submission';
-import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
-import {
-	NO_PROGRESS_NOTE,
-	clearL2RequestAttempts,
-	deferredL2RequestIds,
-	standDownL2Request,
-} from '../../l2-queue-rotation';
-import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
+import { isLookupDeferred } from '../../lookup-defer';
+import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+
+import { runAuthorizeRefundL2Pass } from './l2';
+import {
+	fallbackToSingleItems,
+	markRequestFailed,
+	unlockHotWallet,
+	validateAndBuildItem,
+	type PaymentRequestWithRelations,
+	type PaymentSourceWithRelations,
+	type ValidatedAuthorizeRefundItem,
+} from './single';
 
 // V2 authorize-refund sizing. Same Aiken validator as submit-result; per-input
 // budget is similar so 6 fits well within protocol max-ex-units with headroom.
 const AUTHORIZE_REFUND_BATCH_SIZE = 7;
 
-type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
-	include: {
-		PaymentRequests: {
-			include: {
-				NextAction: true;
-				CurrentTransaction: true;
-				RequestedFunds: true;
-				BuyerWallet: true;
-				SmartContractWallet: {
-					include: {
-						Secret: true;
-					};
-				};
-			};
-		};
-		AdminWallets: true;
-		FeeReceiverNetworkWallet: true;
-		PaymentSourceConfig: true;
-	};
-}>;
-
-type PaymentRequestWithRelations = PaymentSourceWithRelations['PaymentRequests'][number];
-
-type ValidatedAuthorizeRefundItem = {
-	request: PaymentRequestWithRelations;
-	smartContractUtxo: UTxO;
-	decodedContract: DecodedV1ContractDatum;
-	newInlineDatum: ReturnType<typeof createDatumFromDecodedContractV2>['value'];
-	window: TxWindowBounds;
-};
-
-// LOOKUP_DEFERRED_PREFIX / isLookupDeferred imported from ../../lookup-defer.
-// Rationale (see lookup-defer.ts): batch services throw with the sentinel
-// prefix to signal "skip this item, leave it in *Requested for the next tick"
-// rather than parking in WaitingForManualAction. Authority for terminal
-// transitions belongs to tx-sync; action services should never short-circuit
-// chain-state inference based on a transient blockfrost miss.
-
-// `fetchUTxOsWithDeferOnEmpty` is imported from ../../utxo-fetch-helpers — see
-// that file for the retry/backoff rationale.
-
 const mutex = new Mutex();
-
-function validatePaymentRequestFields(request: {
-	payByTime: bigint | null;
-	collateralReturnLovelace: bigint | null;
-	CurrentTransaction: { txHash: string | null } | null;
-}): void {
-	if (request.payByTime == null) {
-		throw new Error('Pay by time is null, this is deprecated');
-	}
-	if (request.collateralReturnLovelace == null) {
-		throw new Error('Collateral return lovelace is null, this is deprecated');
-	}
-	if (request.CurrentTransaction?.txHash == null) {
-		throw new Error('No transaction hash found');
-	}
-}
-
-const markRequestFailed = makePaymentRequestFailureMarker({
-	logMessage: 'Error authorizing V2 refund',
-	errorNotePrefix: 'Authorizing refund failed: ',
-});
-
-const unlockHotWallet = makeHotWalletUnlocker('authorize-refund');
-
-async function validateAndBuildItem(
-	request: PaymentRequestWithRelations,
-	paymentContract: PaymentSourceWithRelations,
-	blockchainProvider: BlockfrostProvider,
-	network: 'mainnet' | 'preprod',
-	smartContractAddress: string,
-): Promise<ValidatedAuthorizeRefundItem> {
-	validatePaymentRequestFields(request);
-	const txHash = request.CurrentTransaction!.txHash!;
-	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
-	if (!utxo) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
-	}
-	const utxoDatum = utxo.output.plutusData;
-	if (!utxoDatum) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} No datum found in UTXO`);
-	}
-	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
-	if (decodedContract == null) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
-	}
-	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
-		constrainBeforeMs: decodedContract.sellerCooldownTime,
-	});
-	const datum = createDatumFromDecodedContractV2({
-		decodedContract,
-		buyerAddress: decodedContract.buyerAddress,
-		sellerAddress: decodedContract.sellerAddress,
-		blockchainIdentifier: request.blockchainIdentifier,
-		resultHash: null,
-		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
-		newCooldownTimeBuyer: BigInt(0),
-		state: SmartContractState.RefundAuthorized,
-	});
-	return {
-		request,
-		smartContractUtxo: utxo,
-		decodedContract,
-		newInlineDatum: datum.value,
-		window: { invalidBefore, invalidAfter },
-	};
-}
-
-async function processSinglePaymentRequest(
-	request: PaymentRequestWithRelations,
-	paymentContract: PaymentSourceWithRelations,
-	blockchainProvider: BlockfrostProvider,
-	network: 'mainnet' | 'preprod',
-): Promise<boolean> {
-	validatePaymentRequestFields(request);
-	const walletSession = await loadHotWalletSession({
-		network: paymentContract.network,
-		rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-		encryptedMnemonic: request.SmartContractWallet!.Secret.encryptedMnemonic,
-		hotWalletId: request.SmartContractWallet!.id,
-	});
-	const { wallet, utxos, address } = walletSession;
-	if (utxos.length === 0) {
-		// AuthorizeRefund has no on-chain time gate (Aiken accepts
-		// state == FundsLocked or ResultSubmitted with no must_end_before),
-		// so an empty wallet is purely transient until the funder cron tops
-		// up. Defer so the request stays queued instead of being parked in
-		// WaitingForManualAction.
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} wallet has no UTXOs; awaiting topup, retry next tick`);
-	}
-
-	// Same collateral-readiness gate as the batch path. Throw the
-	// LOOKUP_DEFERRED sentinel when we are NOT ready so the
-	// `fallbackToSingleItems` catch arm in this service routes the item
-	// back to the queue (via the `info`-level defer log) instead of
-	// calling markRequestFailed. The prep tx already locks the wallet
-	// through its shared Tx row; we just need the caller to bail out
-	// without consuming the slot.
-	const collateralCheck = await ensureCollateralReady({
-		walletDbId: request.SmartContractWallet!.id,
-		walletAddress: address,
-		meshWallet: wallet,
-		utxos,
-		blockchainProvider,
-		network,
-		serviceLabel: 'authorize-refund-single',
-	});
-	if (collateralCheck.status !== 'ready') {
-		throw new Error(
-			`${LOOKUP_DEFERRED_PREFIX} wallet not collateral-ready (${collateralCheck.status}); retry next tick`,
-		);
-	}
-
-	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
-	const txHash = request.CurrentTransaction!.txHash!;
-	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
-	if (!utxo) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
-	}
-
-	const utxoDatum = utxo.output.plutusData;
-	if (!utxoDatum) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} No datum found in UTXO`);
-	}
-	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
-	if (decodedContract == null) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
-	}
-	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
-		constrainBeforeMs: decodedContract.sellerCooldownTime,
-	});
-	const datum = createDatumFromDecodedContractV2({
-		decodedContract,
-		buyerAddress: decodedContract.buyerAddress,
-		sellerAddress: decodedContract.sellerAddress,
-		blockchainIdentifier: request.blockchainIdentifier,
-		resultHash: null,
-		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
-		newCooldownTimeBuyer: BigInt(0),
-		state: SmartContractState.RefundAuthorized,
-	});
-	const collateralUtxo = pickBatchCollateral(utxos, [utxo.input]);
-	if (collateralUtxo == null) {
-		throw new Error('Collateral UTXO not found');
-	}
-	const unsignedTx = await withMeshCostModelLock(
-		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-		async () =>
-			await generateMasumiSmartContractInteractionTransactionAutomaticFees(
-				'AuthorizeRefund',
-				// V2-pinned builder expects the V2 mesh provider type; cast the shared
-				// (V1-resolved) instance — identical runtime object. See provider-cast.ts.
-				asV2Provider(blockchainProvider),
-				network,
-				script,
-				address,
-				utxo,
-				collateralUtxo,
-				utxos,
-				datum.value,
-				invalidBefore,
-				invalidAfter,
-				paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-				// V2 single-item fallback: emit a 5-ADA self-send splitter output so
-				// the wallet retains 3 UTxOs after this tx confirms (collateral +
-				// change + splitter), giving a 1-UTxO buffer above the 2-UTxO
-				// `ensureCollateralReady` floor. Without it the shared generator
-				// would force-consume every walletUtxo (it does
-				// `for (utxo of walletUtxos) txBuilder.txIn(...)`) and leave
-				// the wallet at exactly 2 UTxOs — viable for the next tx but with
-				// zero margin against consolidation or phase-2 failure.
-				WALLET_SPLITTER_LOVELACE,
-			),
-	);
-	const signedTx = await wallet.signTx(unsignedTx);
-
-	// Submit FIRST, then write DB. Previous order (DB row → submitTx) left an
-	// orphan Pending Transaction row holding BlocksWallet → wallet whenever
-	// submitTx threw: the wallet stayed locked via HotWallet.pendingTransactionId
-	// until wallet-timeouts swept it minutes later. With submit-first, a
-	// pre-submit throw leaves NO Tx row to clean up; the caller's catch arm
-	// (markRequestFailed) is responsible for clearing lockedAt. A post-submit
-	// throw leaves the Tx row in place (it points at a real on-chain tx) per
-	// the user's "do NOT revert after successful submit" constraint.
-	const newTxHash = await wallet.submitTx(signedTx);
-	// Divergence check — parity with this service's batch path. submitTx's
-	// returned hash must equal the deterministic resolveTxHash(signedTx); a
-	// mismatch signals a Mesh/Cardano serialization bug. We keep newTxHash (it
-	// is the hash the node accepted and what tx-sync will observe), but log
-	// loudly so single-item submits are investigable like the batch path.
-	const intendedTxHash = resolveTxHash(signedTx);
-	if (newTxHash !== intendedTxHash) {
-		logger.error('V2 authorize-refund single-item: node returned divergent txHash — investigate', {
-			intendedTxHash,
-			nodeTxHash: newTxHash,
-		});
-	}
-	// Non-fatal: the tx is already on-chain. A projection failure must NOT
-	// propagate to advancedRetry and rebuild+resubmit an already-broadcast tx.
-	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
-	} catch (projectionError) {
-		logger.warn('V2 authorize-refund single-item: post-submit balance projection failed (non-fatal)', {
-			txHash: newTxHash,
-			error: projectionError instanceof Error ? projectionError.message : String(projectionError),
-		});
-	}
-	// retryOnSerializationConflict — see #24 note in V2 collection:
-	// post-submit conflict bubbling to advancedRetry would re-submit.
-	await retryOnSerializationConflict(
-		() =>
-			prisma.paymentRequest.update({
-				where: { id: request.id },
-				data: {
-					...connectPreviousAction(request.nextActionId),
-					...createNextPaymentAction(PaymentAction.AuthorizeRefundInitiated),
-					...createPendingTransaction(request.SmartContractWallet!.id, newTxHash),
-					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-				},
-			}),
-		{ label: 'v2-authorize-refund-single-post-submit' },
-	);
-
-	logger.debug(`Created V2 authorize-refund transaction:
-              Tx ID: ${newTxHash}
-              View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
-              Smart Contract Address: ${smartContractAddress}
-          `);
-	return true;
-}
-
-async function fallbackToSingleItems(
-	requests: PaymentRequestWithRelations[],
-	paymentContract: PaymentSourceWithRelations,
-	blockchainProvider: BlockfrostProvider,
-	network: 'mainnet' | 'preprod',
-): Promise<void> {
-	// Process AT MOST ONE item, not all N. Submitting the first item
-	// creates a PendingTransaction that locks the hot wallet, so any
-	// subsequent item in this tick would just race the wallet lock and
-	// fail. The remaining items stay in their queued state — next
-	// scheduler tick (after tx-sync clears the lock) re-picks them up
-	// and batches them again. The fallback exists purely so a single
-	// bad item (invalid datum, expired window, etc.) does not block the
-	// rest forever; it is NOT a parallel retry path. In the happy path
-	// the batch builder above handles everything in one tx and this
-	// function never runs.
-	if (requests.length === 0) return;
-	const request = requests[0];
-	try {
-		await advancedRetry({
-			errorResolvers: [
-				delayErrorResolver({
-					configuration: {
-						maxRetries: 5,
-						backoffMultiplier: 5,
-						initialDelayMs: 500,
-						maxDelayMs: 7500,
-					},
-				}),
-			],
-			operation: async () => {
-				const ok = await processSinglePaymentRequest(request, paymentContract, blockchainProvider, network);
-				if (!ok) throw new Error('processSingle returned false');
-				return ok;
-			},
-		});
-	} catch (error) {
-		if (isLookupDeferred(error)) {
-			// Same defer-to-tx-sync semantics as the batch validation pass:
-			// chain lookup miss is NOT a per-item failure; leave the request
-			// queued and let tx-sync drive any terminal transition.
-			logger.info(
-				`Deferring V2 single-item fallback (chain lookup not ready); request ${request.id} stays queued for tx-sync to reconcile`,
-				{ error: error instanceof Error ? error.message : error },
-			);
-		} else {
-			await markRequestFailed(request, error);
-		}
-	}
-	// requests[1..] are intentionally left untouched — they remain in
-	// their `*Requested` state and the next tick (after the wallet
-	// unlocks) will batch them again. Do NOT call markRequestFailed on
-	// them here: a batch build failure caused by a transient issue
-	// (network blip, blockfrost lag, cost-model sync race) is not a
-	// per-item failure and the items deserve another chance.
-}
 
 async function processWalletBatch(
 	requests: PaymentRequestWithRelations[],
@@ -637,7 +292,6 @@ async function processWalletBatch(
 					paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 				),
 		);
-		assertTxSizeWithinLimit(unsignedTx, 'v2-authorize-refund-batch');
 	} catch (batchError) {
 		logger.warn('V2 authorize-refund batch build failed; falling back to single-item [batch-fallback]', {
 			error:
@@ -659,8 +313,12 @@ async function processWalletBatch(
 	let signedTx: string;
 	try {
 		signedTx = await meshWallet.signTx(unsignedTx);
+		const protocolParameters =
+			getCachedChainProtocolParameters(paymentContract.PaymentSourceConfig.rpcProviderApiKey) ??
+			(await blockchainProvider.fetchProtocolParameters(Number.NaN));
+		assertSignedL1TxSizeWithinProtocolLimit(signedTx, protocolParameters, 'v2-authorize-refund-batch');
 	} catch (signError) {
-		logger.warn('V2 authorize-refund batch sign failed; falling back to single-item [batch-fallback]', {
+		logger.warn('V2 authorize-refund batch sign or size check failed; falling back to single-item [batch-fallback]', {
 			error:
 				signError instanceof Error
 					? { message: signError.message, stack: signError.stack, name: signError.name }
@@ -967,154 +625,6 @@ async function processWalletBatch(
 	}
 }
 
-/**
- * Hydra L2 single-item authorize-refund (in-head). Spends the contract UTxO in
- * the head and writes the RefundAuthorized continuation, mirroring
- * `processL2SubmitResult`. Mesh 102 via `asV2Provider`; submit is synchronous to
- * the head. Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
- */
-async function processL2AuthorizeRefund(
-	request: PaymentRequestWithRelations,
-	paymentContract: PaymentSourceWithRelations,
-	network: 'mainnet' | 'preprod',
-): Promise<boolean> {
-	const headId = request.CurrentTransaction?.hydraHeadId;
-	if (headId == null) {
-		throw new Error('L2 authorize-refund: request has no hydraHeadId on CurrentTransaction');
-	}
-	const hydraProvider = getHydraConnectionManager().getProvider(headId);
-	if (!hydraProvider) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} no active Hydra provider for head ${headId}; retry next tick`);
-	}
-	validatePaymentRequestFields(request);
-
-	// Wallet loaded only for signing key + address; spendable set is the head
-	// snapshot below.
-	const walletSession = await loadHotWalletSession({
-		network: paymentContract.network,
-		rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-		encryptedMnemonic: request.SmartContractWallet!.Secret.encryptedMnemonic,
-		hotWalletId: request.SmartContractWallet!.id,
-	});
-	const { wallet, address } = walletSession;
-
-	const headWalletUtxos = hydraProvider.spendableUTxOs(await hydraProvider.fetchAddressUTxOs(address));
-	if (headWalletUtxos.length === 0) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no UTxOs in head ${headId}; retry next tick`);
-	}
-
-	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
-	const txHash = request.CurrentTransaction?.txHash;
-	if (txHash == null) {
-		throw new Error('L2 authorize-refund: CurrentTransaction has no txHash');
-	}
-
-	const utxoByHash = await hydraProvider.fetchUTxOs(txHash);
-	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
-	if (!utxo) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 contract UTXO not found in head`);
-	}
-	const utxoDatum = utxo.output.plutusData;
-	if (!utxoDatum) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 no datum found in UTXO`);
-	}
-	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
-	if (decodedContract == null) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 invalid datum`);
-	}
-
-	// L2: anchor the validity window to the head's clock (env devnet override or
-	// live head Tick/SyncedStatusReport); the head's ledger clock can lag L1
-	// wall-clock by more than the default window buffers.
-	const l2WindowOptions = resolveHydraL2WindowOptions(hydraProvider);
-	const headBehindMs = headClockBehindCooldownMs(l2WindowOptions, decodedContract.sellerCooldownTime);
-	if (headBehindMs > 0) {
-		throw new Error(
-			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the seller cooldown; retry next tick`,
-		);
-	}
-	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
-		constrainBeforeMs: decodedContract.sellerCooldownTime,
-		...l2WindowOptions,
-	});
-	const datum = createDatumFromDecodedContractV2({
-		decodedContract,
-		buyerAddress: decodedContract.buyerAddress,
-		sellerAddress: decodedContract.sellerAddress,
-		blockchainIdentifier: request.blockchainIdentifier,
-		resultHash: null,
-		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
-		newCooldownTimeBuyer: BigInt(0),
-		state: SmartContractState.RefundAuthorized,
-	});
-
-	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);
-	// Collateral is chosen the way every other rail chooses it: by value, with a
-	// floor. `limitedUtxos[0]` is ordered by asset count and has no floor at all,
-	// so the buyer's own lock change — pure ADA, sitting at the 2 ADA minimum —
-	// won whenever its reference sorted first. The builder declares 3 ADA of
-	// total collateral regardless, which makes the collateral-return output
-	// negative: the head refuses the body, every retry rebuilds the same one, and
-	// that escrow can no longer be collected, refunded or authorized in the head.
-	const collateralUtxo = pickCollateralUtxo(headWalletUtxos, COLLATERAL_RESERVE_LOVELACE);
-	if (collateralUtxo == null) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no collateral UTxO of at least 5 ADA in head`);
-	}
-
-	// Bridge the (root, 96) Hydra provider into the V2 (102) builder seam; pass
-	// it as both the source provider and the L2 build provider (isHydra path,
-	// skips Blockfrost fee evaluation).
-	const hydraV2Provider = asV2Provider(hydraProvider);
-	// Patch the V2 mesh line's bundled Plutus cost-model arrays from the HEAD's
-	// protocol parameters before building (no Blockfrost evaluator on L2). Without
-	// the head's cost models the in-head script-data-hash won't match and the head
-	// rejects with PPViewHashesDontMatch. Arrays are process-global + shared with
-	// L1, so hold the per-payment-source mesh lock across sync + build + sign;
-	// submitTx stays outside. See docs/adr/0005.
-	const headCostModels = await hydraProvider.fetchRawCostModels();
-	const signedTx = await withMeshCostModelLock(paymentContract.PaymentSourceConfig.rpcProviderApiKey, async () => {
-		await syncMeshCostModelsFromHeadV2(headCostModels);
-		const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
-			'AuthorizeRefund',
-			hydraV2Provider,
-			network,
-			script,
-			address,
-			utxo,
-			collateralUtxo,
-			limitedUtxos,
-			datum.value,
-			invalidBefore,
-			invalidAfter,
-			undefined, // rpcApiKey — no chain cost-model sync on L2
-			undefined, // walletSplitterLovelace — L1-only convention
-			hydraV2Provider,
-		);
-		return await wallet.signTx(unsignedTx);
-	});
-
-	const outcome = await submitReservedL2Action({
-		requestKind: 'payment',
-		operation: 'authorize-refund',
-		requestId: request.id,
-		nextActionId: request.nextActionId,
-		previousTransactionId: request.CurrentTransaction!.id,
-		walletId: request.SmartContractWallet!.id,
-		walletLockedAt: request.SmartContractWallet!.lockedAt!,
-		hydraHeadId: headId,
-		signedTx,
-		initiatedAction: PaymentAction.AuthorizeRefundInitiated,
-		retryAction: PaymentAction.AuthorizeRefundRequested,
-		submitTx: async (transaction) => await hydraProvider.submitTx(transaction),
-	});
-
-	// Only a never-dispatched command rolls back now. Keep the legacy outcome
-	// check for compatibility; the executor never emits it. A node rejection
-	// stays ambiguous and keeps the reservation for reconciliation.
-	return outcome.status !== 'definitively-rejected' && outcome.status !== 'not-dispatched';
-}
-
 function groupRequestsByWallet(requests: PaymentRequestWithRelations[]): Map<string, PaymentRequestWithRelations[]> {
 	const byWallet = new Map<string, PaymentRequestWithRelations[]>();
 	for (const request of requests) {
@@ -1124,67 +634,6 @@ function groupRequestsByWallet(requests: PaymentRequestWithRelations[]): Map<str
 		byWallet.set(request.SmartContractWallet.id, list);
 	}
 	return byWallet;
-}
-
-/** The L2 portion of the AuthorizeRefund cycle, shared by the timer and the on-demand run. */
-async function runAuthorizeRefundL2Pass(): Promise<void> {
-	// --- Hydra L2: dedicated single-item head path ---
-	// L2 spends the contract UTxO in the head; in-head timing windows differ
-	// from L1. Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
-	const l2PaymentContracts = await lockAndQueryPayments({
-		paymentStatus: PaymentAction.AuthorizeRefundRequested,
-		onChainState: { in: [OnChainState.Disputed, OnChainState.RefundRequested] },
-		// One wallet can own only one durable L2 reservation at a time.
-		maxBatchSize: 1,
-		paymentSourceType: PaymentSourceType.Web3CardanoV2,
-		layer: TransactionLayer.L2,
-		// A request that just deferred stands aside for a moment so the rest of
-		// its wallet's queue can move.
-		excludeRequestIds: deferredL2RequestIds(),
-	});
-	await Promise.allSettled(
-		l2PaymentContracts.map(async (paymentContract) => {
-			if (paymentContract.PaymentRequests.length === 0) return;
-			const network = convertNetwork(paymentContract.network);
-			await Promise.allSettled(
-				paymentContract.PaymentRequests.map(async (request) => {
-					try {
-						const progressed = await processL2AuthorizeRefund(request, paymentContract, network);
-						if (progressed) {
-							clearL2RequestAttempts(request.id);
-						} else {
-							// Rolled back rather than thrown, so the deferral in the catch
-							// arm below never saw it. Without this the same request is the
-							// oldest eligible row on this wallet every tick, is refused
-							// again, and every escrow behind it runs out its deadlines.
-							await standDownL2Request(request.id, () =>
-								markRequestFailed(request, new Error(NO_PROGRESS_NOTE), { unlockWallet: false }),
-							);
-						}
-					} catch (error) {
-						if (isLookupDeferred(error)) {
-							logger.info('L2 authorize-refund deferred to next tick', { requestId: request.id, error });
-						} else {
-							logger.error('L2 authorize-refund failed', { requestId: request.id, error });
-						}
-						// Stood down for a cooldown, whichever it was. This pass takes the
-						// oldest eligible request per wallet, so one that fails every tick —
-						// a request carrying an unresolved terminal hash never matches its
-						// UTxO again — would be picked forever while every other escrow on
-						// that wallet waited behind it. The stand-down grows each time, and
-						// a request that never gets past it is parked for an operator
-						// rather than retried until its deadline passes.
-						await standDownL2Request(request.id, () => markRequestFailed(request, error, { unlockWallet: false }));
-						await unlockHotWalletIfNoPendingTransaction(
-							request.SmartContractWallet!.id,
-							'authorize-refund-l2-pre-reservation',
-							request.SmartContractWallet!.lockedAt!,
-						);
-					}
-				}),
-			);
-		}),
-	);
 }
 
 /**

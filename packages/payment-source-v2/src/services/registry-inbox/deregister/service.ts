@@ -7,6 +7,7 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryInboxAgentRegistrationRequests } from '@/utils/db/lock-and-query-inbox-agent-registration-request';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
+import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -29,7 +30,7 @@ import {
 } from '@/services/registry/shared';
 import {
 	assertNoCollateralOverlap,
-	assertTxSizeWithinLimit,
+	assertSignedL1TxSizeWithinProtocolLimit,
 	pickBatchCollateral,
 	shrinkBatchToFit,
 	WALLET_SPLITTER_LOVELACE,
@@ -458,7 +459,6 @@ export async function deRegisterInboxAgentV2() {
 						walletUtxos,
 						paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 					);
-					assertTxSizeWithinLimit(unsignedTx, 'v2-inbox-batch-deregister');
 				} catch (batchError) {
 					logger.warn(
 						'V2 inbox deregister batch build failed; falling back to single-item processing [batch-fallback]',
@@ -477,9 +477,13 @@ export async function deRegisterInboxAgentV2() {
 				let signedTx: string;
 				try {
 					signedTx = await wallet.signTx(unsignedTx);
+					const protocolParameters =
+						getCachedChainProtocolParameters(paymentSource.PaymentSourceConfig.rpcProviderApiKey) ??
+						(await blockchainProvider.fetchProtocolParameters(Number.NaN));
+					assertSignedL1TxSizeWithinProtocolLimit(signedTx, protocolParameters, 'v2-inbox-batch-deregister');
 				} catch (signError) {
 					logger.warn(
-						'V2 inbox deregister batch sign failed; falling back to single-item processing [batch-fallback]',
+						'V2 inbox deregister batch sign or size check failed; falling back to single-item processing [batch-fallback]',
 						{
 							error:
 								signError instanceof Error

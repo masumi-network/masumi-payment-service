@@ -1,0 +1,26 @@
+diff --git a/v4/core/util.cjs b/v4/core/util.cjs
+index 7db65e0cada986f911868d1c0464fe2adee1fb66..abc4e5e002ba12e019328534f1518b0435c97b80 100644
+--- a/v4/core/util.cjs
++++ b/v4/core/util.cjs
+@@ -840,6 +840,8 @@ function derived(computes, table) {
+     return table;
+ }
+ function defineBound(proto, key, fn) {
++    if (Object.getOwnPropertyDescriptor(proto, key)?.configurable === false)
++        return;
+     Object.defineProperty(proto, key, {
+         configurable: true,
+         get() {
+diff --git a/v4/core/util.js b/v4/core/util.js
+index b53c7a0ae51b9ad0e49f7262f282b01c67671681..87db8a0d9ebb8d985d430f2847e01d0732411c90 100644
+--- a/v4/core/util.js
++++ b/v4/core/util.js
+@@ -768,6 +768,8 @@ export /*@__NO_SIDE_EFFECTS__*/ function derived(computes, table) {
+     return table;
+ }
+ function defineBound(proto, key, fn) {
++    if (Object.getOwnPropertyDescriptor(proto, key)?.configurable === false)
++        return;
+     Object.defineProperty(proto, key, {
+         configurable: true,
+         get() {

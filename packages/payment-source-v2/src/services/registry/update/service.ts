@@ -7,6 +7,7 @@ import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
+import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
@@ -26,7 +27,7 @@ import {
 	resolveRegistryFundingLovelace,
 } from '@/services/registry/shared';
 import {
-	assertTxSizeWithinLimit,
+	assertSignedL1TxSizeWithinProtocolLimit,
 	pickBatchCollateral,
 	WALLET_SPLITTER_LOVELACE,
 } from '../../../builders/batch-helpers';
@@ -453,7 +454,6 @@ async function processBatchUpdate(
 			spendableUtxos,
 			rpcApiKey,
 		);
-		assertTxSizeWithinLimit(unsignedTx, 'v2-registry-batch-update');
 	} catch (buildError) {
 		logger.error('V2 update batch build failed; marking batch failed [batch-fallback]', {
 			error: buildError instanceof Error ? { message: buildError.message, name: buildError.name } : buildError,
@@ -466,8 +466,11 @@ async function processBatchUpdate(
 	let signedTx: string;
 	try {
 		signedTx = await wallet.signTx(unsignedTx, true);
+		const protocolParameters =
+			getCachedChainProtocolParameters(rpcApiKey) ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
+		assertSignedL1TxSizeWithinProtocolLimit(signedTx, protocolParameters, 'v2-registry-batch-update');
 	} catch (signError) {
-		logger.error('V2 update batch sign failed; marking batch failed [batch-fallback]', {
+		logger.error('V2 update batch sign or size check failed; marking batch failed [batch-fallback]', {
 			error: signError instanceof Error ? { message: signError.message, name: signError.name } : signError,
 			batchSize: validated.length,
 		});
