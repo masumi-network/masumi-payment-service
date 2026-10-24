@@ -161,6 +161,50 @@ describe('checkPaymentAmountsMatch', () => {
 		expect(checkPaymentAmountsMatch(expected, actual, COLLATERAL)).toBe(true);
 	});
 
+	it('rejects duplicate ADA requests when the total exceeds the output after collateral', () => {
+		const expected = [
+			{ unit: '', amount: 6_000_000n },
+			{ unit: 'lovelace', amount: 6_000_000n },
+		];
+		const actual = [{ unit: 'lovelace', quantity: '13000000' }];
+		expect(checkPaymentAmountsMatch(expected, actual, COLLATERAL)).toBe(false);
+	});
+
+	it('sums duplicate ADA output rows before comparing the requested amount', () => {
+		const expected = [{ unit: '', amount: 10_000_000n }];
+		const actual = [
+			{ unit: '', quantity: '4000000' },
+			{ unit: 'lovelace', quantity: '6000000' },
+		];
+		expect(checkPaymentAmountsMatch(expected, actual, 0n)).toBe(true);
+	});
+
+	it('rejects duplicate token requests when their total exceeds the output', () => {
+		const expected = [
+			{ unit: TOKEN, amount: 5n },
+			{ unit: TOKEN, amount: 5n },
+		];
+		const actual = [{ unit: TOKEN, quantity: '5' }];
+		expect(checkPaymentAmountsMatch(expected, actual, 0n)).toBe(false);
+	});
+
+	it('sums token output rows using the canonical asset unit', () => {
+		const expected = [{ unit: TOKEN.toUpperCase(), amount: 10n }];
+		const actual = [
+			{ unit: TOKEN, quantity: '4' },
+			{ unit: TOKEN.toUpperCase(), quantity: '6' },
+		];
+		expect(checkPaymentAmountsMatch(expected, actual, 0n)).toBe(true);
+	});
+
+	it('does not change the requested or locked amount rows', () => {
+		const expected = [{ unit: 'lovelace', amount: 1_000_000n }];
+		const actual = [{ unit: 'lovelace', quantity: '1000000' }];
+		expect(checkPaymentAmountsMatch(expected, actual, 0n)).toBe(true);
+		expect(expected).toEqual([{ unit: 'lovelace', amount: 1_000_000n }]);
+		expect(actual).toEqual([{ unit: 'lovelace', quantity: '1000000' }]);
+	});
+
 	it('rejects negative collateral and sub-minimum collateral', () => {
 		const expected = [{ unit: TOKEN, amount: 100n }];
 		const actual = [
