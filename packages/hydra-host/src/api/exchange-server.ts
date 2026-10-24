@@ -436,19 +436,23 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		}
 		inFlight += 1;
 		try {
-			// Before the store, not after: a refused signature must leave the nonce
-			// open for the real redeemer. Says nothing about whether the nonce
-			// exists, so it is not counted toward the disclosure budget below.
-			if (!(await verifyRedemption(body.nonce, body.redeemer, body.signature))) {
-				logger.warn('[exchange] redemption refused (401 signature does not verify)');
-				send(response, 401, { error: 'signature does not verify' });
-				return;
-			}
-			// After the signature check, so a 401 stays independent of the nonce, as
-			// it is within budget. An unknown, spent or expired nonce all get the same
-			// 429 after the same work, so nothing here tells whether a nonce exists.
+			// Past the shared budget, only an open invite can reach the costly
+			// signature check. All other nonces receive the same refusal.
 			if (overBudget && !(await isOpenInvite(body.nonce))) {
 				refuseOverBudget(response);
+				return;
+			}
+			// Before the store, not after: a refused signature must leave the nonce
+			// open for the real redeemer. Within budget, the 401 does not depend
+			// on whether the nonce exists. Past budget, a bad signature receives
+			// the same 429 as an unknown, spent or expired nonce.
+			if (!(await verifyRedemption(body.nonce, body.redeemer, body.signature))) {
+				if (overBudget) {
+					refuseOverBudget(response);
+					return;
+				}
+				logger.warn('[exchange] redemption refused (401 signature does not verify)');
+				send(response, 401, { error: 'signature does not verify' });
 				return;
 			}
 			// Only for an invite that is still open. A valid signature proves only

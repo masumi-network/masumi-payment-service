@@ -77,7 +77,7 @@ export function calculateValueChange(
 // Moved to payment-core so the L1 verifier and the L2 in-head datum validator
 // (`src/utils/logic/l2-datum-validation`) share ONE implementation. Re-exported
 // here so existing `@/services/transactions/tx-sync/util` importers are unchanged.
-export { checkPaymentAmountsMatch } from '@masumi/payment-core/payment-amounts';
+export { canonicalPaymentUnit, checkPaymentAmountsMatch } from '@masumi/payment-core/payment-amounts';
 
 // `tx.fees` is the WHOLE tx fee. With multi-redeemer batches, each per-entry
 // `updateTransaction` call shouldn't book the whole-tx fee — it should book

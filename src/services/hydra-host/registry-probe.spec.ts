@@ -14,19 +14,26 @@ import type { HostCapabilities } from './client';
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindUnique = jest.fn() as AnyMock;
+const mockFindUniqueOrThrow = jest.fn() as AnyMock;
+const mockQueryRaw = jest.fn() as AnyMock;
 const mockUpdate = jest.fn() as AnyMock;
 const mockFetchCapabilities = jest.fn() as AnyMock;
+let onTransactionCommit: (() => void) | null = null;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraHost: { findUnique: mockFindUnique },
-		$transaction: async (run: (tx: unknown) => Promise<unknown>) =>
-			await run({
+		$transaction: async (run: (tx: unknown) => Promise<unknown>) => {
+			const result = await run({
+				$queryRaw: mockQueryRaw,
 				hydraHost: {
-					findUniqueOrThrow: async () => ({ status: HydraHostStatus.Active }),
+					findUniqueOrThrow: mockFindUniqueOrThrow,
 					update: mockUpdate,
 				},
-			}),
+			});
+			onTransactionCommit?.();
+			return result;
+		},
 	},
 }));
 
@@ -72,6 +79,9 @@ function capabilities(overrides: Partial<HostCapabilities> = {}): HostCapabiliti
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	onTransactionCommit = null;
+	mockFindUniqueOrThrow.mockResolvedValue({ status: HydraHostStatus.Active });
+	mockQueryRaw.mockResolvedValue([{ status: HydraHostStatus.Active }]);
 	mockFindUnique.mockResolvedValue({
 		id: 'host-1',
 		network: Network.Mainnet,
@@ -98,7 +108,42 @@ beforeEach(() => {
 	}));
 });
 
+function prismaQueryText(query: unknown): string {
+	return ((query as { strings?: readonly string[] } | undefined)?.strings ?? []).join(' ');
+}
+
 describe('refreshHydraHostCapabilities', () => {
+	it('preserves an operator disable that races with a successful probe write', async () => {
+		let persistedStatus: HydraHostStatus = HydraHostStatus.Active;
+		const disableHost = () => {
+			persistedStatus = HydraHostStatus.Disabled;
+		};
+		mockFetchCapabilities.mockResolvedValue(capabilities());
+		mockFindUniqueOrThrow.mockImplementation(async () => {
+			const observedStatus = persistedStatus;
+			// A plain read does not block the operator's PATCH before the probe update.
+			disableHost();
+			return { status: observedStatus };
+		});
+		mockQueryRaw.mockImplementation(async (query: unknown) => {
+			expect(prismaQueryText(query)).toContain('FOR UPDATE');
+			const observedStatus = persistedStatus;
+			// A locked read makes the same PATCH wait until the probe commits.
+			onTransactionCommit = disableHost;
+			return [{ status: observedStatus }];
+		});
+		const updateRow = mockUpdate.getMockImplementation();
+		mockUpdate.mockImplementation(async (args: { data: Record<string, unknown> }) => {
+			const { data } = args;
+			persistedStatus = data.status as HydraHostStatus;
+			return await updateRow?.(args);
+		});
+
+		await refreshHydraHostCapabilities('host-1');
+
+		expect(persistedStatus).toBe(HydraHostStatus.Disabled);
+	});
+
 	it('keeps a full host Active', async () => {
 		mockFetchCapabilities.mockResolvedValue(capabilities({ nodeSlots: { used: 1, capacity: 1 } }));
 

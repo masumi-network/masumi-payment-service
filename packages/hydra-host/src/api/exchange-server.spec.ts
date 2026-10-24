@@ -552,12 +552,12 @@ describe('total request budget', () => {
 		await new Promise<void>((resolve) => limited.close(() => resolve()));
 	});
 
-	const from = (source: string, body = '{}') =>
-		fetch(url, { method: 'POST', headers: { Connection: 'close', 'X-Forwarded-For': source }, body }).then(
-			(response) => response.status,
-		);
-	const redeem = (source: string, nonce: string) =>
-		from(source, JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }));
+	const fromResponse = (source: string, body = '{}') =>
+		fetch(url, { method: 'POST', headers: { Connection: 'close', 'X-Forwarded-For': source }, body });
+	const from = (source: string, body = '{}') => fromResponse(source, body).then((response) => response.status);
+	const redeemResponse = (source: string, nonce: string) =>
+		fromResponse(source, JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }));
+	const redeem = (source: string, nonce: string) => redeemResponse(source, nonce).then((response) => response.status);
 
 	it('stops a flood from many distinct addresses, then still serves a redemption', async () => {
 		const statuses: number[] = [];
@@ -608,12 +608,33 @@ describe('total request budget', () => {
 		expect(await from('198.51.100.30', '{}')).toBe(429);
 	});
 
-	it('past the budget, still refuses a bad signature with 401 whatever the nonce', async () => {
+	it('past the budget, skips signature checks for unknown nonces but redeems an open invite', async () => {
 		for (let index = 1; index <= 5; index += 1) {
 			await from(`198.51.100.${index}`);
 		}
+		await issue('nonce-open');
+		verifyRedemption.mockClear();
+
+		const unknown = await redeemResponse('203.0.113.9', 'nonce-unknown');
+		const unknownRefusal = {
+			status: unknown.status,
+			body: await unknown.text(),
+			retryAfter: unknown.headers.get('retry-after'),
+		};
+		expect(unknownRefusal.status).toBe(429);
+		expect(verifyRedemption).not.toHaveBeenCalled();
+
 		verifyRedemption.mockResolvedValueOnce(false);
-		expect(await redeem('203.0.113.9', 'nonce-unknown')).toBe(401);
+		const badSignature = await redeemResponse('203.0.113.10', 'nonce-open');
+		expect({
+			status: badSignature.status,
+			body: await badSignature.text(),
+			retryAfter: badSignature.headers.get('retry-after'),
+		}).toEqual(unknownRefusal);
+		expect(verifyRedemption).toHaveBeenCalledTimes(1);
+
+		expect(await redeem('203.0.113.11', 'nonce-open')).toBe(200);
+		expect(verifyRedemption).toHaveBeenCalledTimes(2);
 	});
 
 	it('does not let one source spend the shared budget', async () => {

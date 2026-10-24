@@ -545,7 +545,7 @@ describe('admission while a stop or restart is pending', () => {
 		await store.update('node-1', (current) => ({
 			...current,
 			lastObservation: {
-				checkedAt: '2026-07-28T11:05:00.000Z',
+				checkedAt: new Date().toISOString(),
 				responsive: true,
 				chainSynced: true,
 				drift: 'Healthy',
@@ -554,13 +554,43 @@ describe('admission while a stop or restart is pending', () => {
 		}));
 	});
 
+	it('does not treat a stale chain observation as fresh or usable', async () => {
+		const staleAt = new Date(Date.now() - 5 * 60_000).toISOString();
+		await store.update('node-1', (current) => ({
+			...current,
+			lastObservation: { ...current.lastObservation!, checkedAt: staleAt },
+		}));
+
+		const health = await (await call('GET', '/v1/nodes/node-1/health', USER)).json();
+		expect(health).toMatchObject({
+			usable: false,
+			chainSynced: true,
+			observationFresh: false,
+			lastCheckedAt: staleAt,
+		});
+	});
+
+	it.each([
+		['invalid', () => 'not-a-timestamp'],
+		['future', () => new Date(Date.now() + 5 * 60_000).toISOString()],
+	])('does not trust an %s chain observation time', async (_label, checkedAt) => {
+		await store.update('node-1', (current) => ({
+			...current,
+			lastObservation: { ...current.lastObservation!, checkedAt: checkedAt() },
+		}));
+
+		const health = await (await call('GET', '/v1/nodes/node-1/health', USER)).json();
+		expect(health).toMatchObject({ usable: false, chainSynced: true, observationFresh: false });
+	});
+
 	it.each([
 		['stop', 'stopping'],
 		['restart', 'restarting'],
 	])('refuses new requests on every gate as soon as %s is requested', async (action, reason) => {
-		expect(((await (await call('GET', '/v1/nodes/node-1/health', USER)).json()) as { usable: boolean }).usable).toBe(
-			true,
-		);
+		expect(await (await call('GET', '/v1/nodes/node-1/health', USER)).json()).toMatchObject({
+			usable: true,
+			observationFresh: true,
+		});
 
 		expect((await call('POST', `/v1/nodes/node-1/${action}`, ADMIN)).status).toBe(202);
 		expect(tickCalls).toBeGreaterThan(0);

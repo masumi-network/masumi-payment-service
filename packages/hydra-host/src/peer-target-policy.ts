@@ -20,6 +20,7 @@
 import { BlockList, isIP } from 'node:net';
 import { parsePeerAdvertise } from './peer-address.js';
 import type { PeerHostnameResolver } from './api/peer-allowlist.js';
+import { derivedEtcdClientPort, type PortLayout } from './registry/ports.js';
 
 /** IANA special-purpose ranges that are not globally reachable. */
 const NON_PUBLIC_IPV4: Array<[string, number]> = [
@@ -71,6 +72,56 @@ export function isPublicPeerIp(address: string): boolean {
 
 export type PeerTargetCheck = (advertise: string) => Promise<string | null>;
 
+/** Every local egress exception must be unusable as a counterparty peer port. */
+export function peerEgressPortRejection(advertise: string, ports: PortLayout): string | null {
+	const parsed = parsePeerAdvertise(advertise);
+	if (parsed === null) {
+		return `invalid peer advertise address: ${JSON.stringify(advertise)}`;
+	}
+	const { port } = parsed;
+	const apiEnd = ports.apiStart + ports.capacity - 1;
+	const etcdStart = derivedEtcdClientPort(ports.peerStart);
+	const etcdEnd = etcdStart + ports.capacity - 1;
+	if (port === 53 || (port >= ports.apiStart && port <= apiEnd) || (port >= etcdStart && port <= etcdEnd)) {
+		return `peer port ${port} overlaps a local outbound firewall exception; use another peer port`;
+	}
+	return null;
+}
+
+/** Refuse a restart that would cut off a stored node or dial peers through a local exception. */
+export function assertStoredPeerEgressCompatibility(
+	records: ReadonlyArray<{
+		nodeId: string;
+		apiPort: number;
+		peerPort: number;
+		peers: ReadonlyArray<{ advertise: string }>;
+	}>,
+	ports: PortLayout,
+): void {
+	const apiEnd = ports.apiStart + ports.capacity - 1;
+	const etcdStart = derivedEtcdClientPort(ports.peerStart);
+	const etcdEnd = etcdStart + ports.capacity - 1;
+	for (const record of records) {
+		if (record.apiPort < ports.apiStart || record.apiPort > apiEnd) {
+			throw new Error(
+				`stored node ${record.nodeId} uses API port ${record.apiPort} outside outbound exception ${ports.apiStart}-${apiEnd}; keep its original port layout`,
+			);
+		}
+		const etcdPort = derivedEtcdClientPort(record.peerPort);
+		if (etcdPort < etcdStart || etcdPort > etcdEnd) {
+			throw new Error(
+				`stored node ${record.nodeId} uses etcd client port ${etcdPort} outside outbound exception ${etcdStart}-${etcdEnd}; keep its original port layout`,
+			);
+		}
+		for (const peer of record.peers) {
+			const rejection = peerEgressPortRejection(peer.advertise, ports);
+			if (rejection !== null) {
+				throw new Error(`stored node ${record.nodeId} has ${rejection}; inspect existing heads before enabling egress`);
+			}
+		}
+	}
+}
+
 /**
  * Returns why `advertise` may not be dialled, or `null` when it may.
  *
@@ -79,11 +130,15 @@ export type PeerTargetCheck = (advertise: string) => Promise<string | null>;
  */
 export async function peerTargetRejection(
 	advertise: string,
-	options: { allowPrivate: boolean; resolve: PeerHostnameResolver },
+	options: { allowPrivate: boolean; resolve: PeerHostnameResolver; egressPortLayout?: PortLayout },
 ): Promise<string | null> {
 	const parsed = parsePeerAdvertise(advertise);
 	if (parsed === null) {
 		return `invalid peer advertise address: ${JSON.stringify(advertise)}`;
+	}
+	if (options.egressPortLayout !== undefined) {
+		const rejection = peerEgressPortRejection(advertise, options.egressPortLayout);
+		if (rejection !== null) return rejection;
 	}
 	if (options.allowPrivate) {
 		return null;

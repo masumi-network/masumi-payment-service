@@ -26,9 +26,32 @@ describe('loadHostConfig', () => {
 		expect(config.listenPort).toBe(8443);
 		expect(config.hydraScriptsTxIds).toEqual([]);
 		expect(config.allowPrivatePeers).toBe(false);
+		expect(config.requirePeerEgressFirewall).toBe(false);
 		expect(loadHostConfig(env({ HYDRA_HOST_ALLOW_PRIVATE_PEERS: 'true' })).allowPrivatePeers).toBe(true);
 		expect(config.allowAutoSideLoad).toBe(false);
 		expect(loadHostConfig(env({ HYDRA_HOST_AUTO_SIDELOAD: 'true' })).allowAutoSideLoad).toBe(true);
+	});
+
+	it('refuses private peers when the host-network egress gate is required', () => {
+		expect(loadHostConfig(env({ HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL: 'true' })).requirePeerEgressFirewall).toBe(
+			true,
+		);
+		expect(loadHostConfig(env({ NODE_ENV: 'production' })).requirePeerEgressFirewall).toBe(true);
+		expect(
+			loadHostConfig(env({ NODE_ENV: 'production', HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL: 'false' }))
+				.requirePeerEgressFirewall,
+		).toBe(false);
+		expect(() =>
+			loadHostConfig(env({ NODE_ENV: 'production', HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL: 'tru' })),
+		).toThrow(/HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL must be true or false/);
+		expect(() =>
+			loadHostConfig(
+				env({
+					HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL: 'true',
+					HYDRA_HOST_ALLOW_PRIVATE_PEERS: 'true',
+				}),
+			),
+		).toThrow(/incompatible/);
 	});
 
 	// On by default so a service that has not moved to node tokens keeps working;

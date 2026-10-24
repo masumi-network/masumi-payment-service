@@ -623,8 +623,9 @@ describe('initHeadPost, when the node refuses Init because it is behind', () => 
 		);
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({ statusCode: 503 });
 
-		// Drift is readable again: the earlier Init is still held.
-		mockReadNodeState.mockResolvedValue(behind);
+		// A stale observation still reports the last unsynced reading. The
+		// earlier Init remains held while the node cannot be checked again.
+		mockReadNodeState.mockResolvedValue({ ...behind, observationFresh: false });
 		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
 			statusCode: 409,
 			message: expect.stringMatching(/earlier Init is still waiting/),

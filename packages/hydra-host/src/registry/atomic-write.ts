@@ -28,7 +28,11 @@ export async function fsyncDir(dir: string): Promise<void> {
 
 let tempCounter = 0;
 
-export async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
+export async function writeFileAtomic(
+	filePath: string,
+	contents: string,
+	options: { mode?: number } = {},
+): Promise<void> {
 	const dir = path.dirname(filePath);
 	// The temp name must be unique per write. A shared name lets two concurrent
 	// writers race: the first rename consumes the file and the second fails with
@@ -37,7 +41,9 @@ export async function writeFileAtomic(filePath: string, contents: string): Promi
 	const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${tempCounter++}.tmp`);
 	let handle: FileHandle | undefined;
 	try {
-		handle = await fs.open(tmp, 'w');
+		handle = await fs.open(tmp, 'w', options.mode);
+		// A temp file left by an older write can exist with broader permissions.
+		if (options.mode !== undefined) await handle.chmod(options.mode);
 		await handle.writeFile(contents, 'utf8');
 		await handle.sync();
 	} finally {
