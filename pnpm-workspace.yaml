@@ -26,7 +26,7 @@ overrides:
   ajv@>=8 <9: 8.18.0
   baseline-browser-mapping: 2.11.0
   bn.js: 5.2.3
-  body-parser: 2.3.0
+  body-parser: 2.4.0
   brace-expansion@>=1 <2: 1.1.21
   brace-expansion@>=2 <3: 2.1.7
   brace-expansion@>=5 <6: 5.0.12
