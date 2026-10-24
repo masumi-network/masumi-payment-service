@@ -8,7 +8,7 @@ import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
-import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { getCachedChainProtocolParameters, withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import {
 	connectExistingNextPaymentAction,
 	connectExistingTransaction,
@@ -20,7 +20,7 @@ import {
 } from '@/services/shared';
 import {
 	assertNoCollateralOverlap,
-	assertTxSizeWithinLimit,
+	assertSignedL1TxSizeWithinProtocolLimit,
 	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
@@ -193,8 +193,8 @@ export async function processWalletBatch(
 		utxos,
 		validated.map((v) => v.smartContractUtxo.input),
 	);
-	// Constraints applied progressively: validity-window intersection then
-	// no-collateral-overlap. tx-size is checked after the build pass.
+	// Apply the validity window and collateral constraints before building.
+	// Check the complete signed transaction size after signing.
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
 		const window = intersectTxWindows(subset.map((v) => v.window));
 		if (window == null) {
@@ -277,7 +277,6 @@ export async function processWalletBatch(
 					paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 				),
 		);
-		assertTxSizeWithinLimit(unsignedTx, 'v2-submit-result-batch');
 	} catch (batchError) {
 		logger.warn('V2 submit-result batch build failed; falling back to single-item [batch-fallback]', {
 			error:
@@ -299,8 +298,14 @@ export async function processWalletBatch(
 	let signedTx: string;
 	try {
 		signedTx = await meshWallet.signTx(unsignedTx);
+		// L1 limits the complete signed CBOR. The 14 KB unsigned margin can
+		// reject a transaction that fits the chain's current maxTxSize.
+		const protocolParameters =
+			getCachedChainProtocolParameters(paymentContract.PaymentSourceConfig.rpcProviderApiKey) ??
+			(await blockchainProvider.fetchProtocolParameters(Number.NaN));
+		assertSignedL1TxSizeWithinProtocolLimit(signedTx, protocolParameters, 'v2-submit-result-batch');
 	} catch (signError) {
-		logger.warn('V2 submit-result batch sign failed; falling back to single-item [batch-fallback]', {
+		logger.warn('V2 submit-result batch sign or size check failed; falling back to single-item [batch-fallback]', {
 			error:
 				signError instanceof Error
 					? { message: signError.message, stack: signError.stack, name: signError.name }

@@ -399,3 +399,25 @@ export function assertTxSizeWithinLimit(unsignedTxHex: string, label: string): v
 export function isTxSizeWithinLimit(unsignedTxHex: string): boolean {
 	return Math.floor(unsignedTxHex.length / 2) <= MAX_SAFE_TX_BYTES;
 }
+
+/** Check the complete signed L1 transaction against the chain's protocol limit. */
+export function assertSignedL1TxSizeWithinProtocolLimit(
+	signedTxHex: string,
+	protocolParameters: unknown,
+	label: string,
+): void {
+	const maxTxSize =
+		protocolParameters != null && typeof protocolParameters === 'object' && 'maxTxSize' in protocolParameters
+			? protocolParameters.maxTxSize
+			: undefined;
+	if (typeof maxTxSize !== 'number' || !Number.isSafeInteger(maxTxSize) || maxTxSize <= 0) {
+		throw new Error(`${label}: L1 protocol parameters have no valid maxTxSize`);
+	}
+	const sizeBytes = signedTxHex.length / 2;
+	if (!Number.isInteger(sizeBytes)) {
+		throw new Error(`${label}: signed tx hex has an odd length`);
+	}
+	if (sizeBytes > maxTxSize) {
+		throw new Error(`${label}: signed tx size ${sizeBytes} bytes exceeds L1 maxTxSize (${maxTxSize})`);
+	}
+}

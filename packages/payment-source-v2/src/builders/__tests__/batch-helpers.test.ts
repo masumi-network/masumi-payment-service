@@ -1,6 +1,7 @@
 import type { UTxO } from '@meshsdk/core';
 import {
 	assertNoCollateralOverlap,
+	assertSignedL1TxSizeWithinProtocolLimit,
 	assertTxSizeWithinLimit,
 	computeCollateralFromExUnits,
 	getSpendableWalletUtxos,
@@ -460,6 +461,51 @@ describe('assertTxSizeWithinLimit', () => {
 
 	it('exports MAX_SAFE_TX_BYTES as 14_000', () => {
 		expect(MAX_SAFE_TX_BYTES).toBe(14_000);
+	});
+});
+
+describe('assertSignedL1TxSizeWithinProtocolLimit', () => {
+	const l1MaxTxSizeBytes = 16_384;
+	// CI measured 14,261 unsigned bytes. A near-sized local Mesh tx gained 106 signed bytes.
+	const ciUnsignedTxBytes = 14_261;
+	const measuredWitnessGrowthBytes = 106;
+	const signedCandidateBytes = ciUnsignedTxBytes + measuredWitnessGrowthBytes;
+	const protocolParameters = { maxTxSize: l1MaxTxSizeBytes };
+
+	it('accepts a signed transaction near the CI candidate size', () => {
+		const signedTxHex = '0'.repeat(signedCandidateBytes * 2);
+
+		expect(() =>
+			assertSignedL1TxSizeWithinProtocolLimit(signedTxHex, protocolParameters, 'batch-interaction'),
+		).not.toThrow();
+	});
+
+	it('accepts a signed transaction exactly at the L1 protocol limit', () => {
+		const signedTxHex = '0'.repeat(l1MaxTxSizeBytes * 2);
+
+		expect(() =>
+			assertSignedL1TxSizeWithinProtocolLimit(signedTxHex, protocolParameters, 'batch-interaction'),
+		).not.toThrow();
+	});
+
+	it('rejects a signed transaction one byte above the L1 protocol limit', () => {
+		const signedTxHex = '0'.repeat((l1MaxTxSizeBytes + 1) * 2);
+
+		expect(() => assertSignedL1TxSizeWithinProtocolLimit(signedTxHex, protocolParameters, 'batch-interaction')).toThrow(
+			/signed tx size .* exceeds L1 maxTxSize/,
+		);
+	});
+
+	it.each([
+		['missing', undefined],
+		['empty', {}],
+		['zero', { maxTxSize: 0 }],
+		['fractional', { maxTxSize: l1MaxTxSizeBytes + 0.5 }],
+		['non-numeric', { maxTxSize: String(l1MaxTxSizeBytes) }],
+	])('fails closed when maxTxSize is %s', (_case, invalidProtocolParameters) => {
+		expect(() => assertSignedL1TxSizeWithinProtocolLimit('00', invalidProtocolParameters, 'batch-interaction')).toThrow(
+			/batch-interaction: L1 protocol parameters have no valid maxTxSize/,
+		);
 	});
 });
 
