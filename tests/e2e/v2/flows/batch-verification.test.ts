@@ -20,7 +20,8 @@
  * TEST_PAYMENT_SOURCE_TYPE, the whole suite is `describe.skip`-ed.
  */
 
-import { Network, PaymentSourceType } from '@/generated/prisma/enums';
+import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/enums';
+import { cleanupDB, prisma } from '@masumi/payment-core/db';
 import { validateTestWallets } from '../../fixtures/testWallets';
 import {
 	allWithAbortOnFailure,
@@ -45,6 +46,8 @@ class FatalPollError extends Error {
 	}
 }
 
+class WalletNotReadyError extends Error {}
+
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
 const envFilter = process.env.TEST_PAYMENT_SOURCE_TYPE as PaymentSourceType | undefined;
 // V2-only suite. Skip when the workflow pinned this jest invocation to V1.
@@ -52,6 +55,7 @@ const describeFn = envFilter && envFilter !== PaymentSourceType.Web3CardanoV2 ? 
 
 const BATCH_SIZE = 3;
 const BATCH_PHASE_TIMEOUT_MS = 10 * 60 * 1000;
+const WALLET_CLAIM_POLL_MS = 1000;
 
 /** Sleep helper. We use this to space out scheduler polls. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -219,6 +223,75 @@ function assertAllEqual<T>(values: Array<T | null | undefined>, label: string): 
 	return first;
 }
 
+/**
+ * Keep the scheduler off these wallets until every API action in the burst has
+ * committed. A timer tick between API calls otherwise claims a partial batch.
+ */
+async function submitActionsAsOneBatch<T>(
+	walletIds: string[],
+	label: string,
+	actions: Array<() => Promise<T>>,
+): Promise<T[]> {
+	const ids = [...new Set(walletIds)].sort();
+	if (ids.length === 0) throw new Error(`${label}: no wallet to hold for the batch test`);
+	const deadline = Date.now() + BATCH_PHASE_TIMEOUT_MS;
+	let claimedAt: Date | null = null;
+	while (Date.now() < deadline) {
+		const attemptedAt = new Date();
+		try {
+			await prisma.$transaction(async (tx) => {
+				const { count } = await tx.hotWallet.updateMany({
+					where: {
+						id: { in: ids },
+						lockedAt: null,
+						pendingTransactionId: null,
+						pendingSwapTransactionId: null,
+						lockPurpose: null,
+						deletedAt: null,
+					},
+					data: { lockedAt: attemptedAt },
+				});
+				if (count !== ids.length) throw new WalletNotReadyError();
+			});
+			claimedAt = attemptedAt;
+			break;
+		} catch (error) {
+			if (!(error instanceof WalletNotReadyError)) throw error;
+		}
+		await sleep(WALLET_CLAIM_POLL_MS);
+	}
+	if (claimedAt == null) {
+		throw new Error(`${label}: wallets ${ids.join(', ')} did not become available for the batch test`);
+	}
+
+	try {
+		// Promise.all can reject before its siblings finish. Keep the lock until
+		// all requests have either committed or failed.
+		const results = await Promise.allSettled(actions.map((action) => Promise.resolve().then(action)));
+		const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+		if (failure) throw failure.reason;
+		return results.map((result) => {
+			if (result.status === 'rejected') throw result.reason;
+			return result.value;
+		});
+	} finally {
+		const { count } = await prisma.hotWallet.updateMany({
+			where: {
+				id: { in: ids },
+				lockedAt: claimedAt,
+				pendingTransactionId: null,
+				pendingSwapTransactionId: null,
+				lockPurpose: null,
+				deletedAt: null,
+			},
+			data: { lockedAt: null },
+		});
+		if (count !== ids.length) {
+			throw new Error(`${label}: a wallet test lock changed before release (${count}/${ids.length} released)`);
+		}
+	}
+}
+
 describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 	const blockchainIdentifiers: string[] = [];
 
@@ -245,6 +318,10 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			walletValidation.errors.forEach((error) => console.error(`  - ${error}`));
 			throw new Error('V2 test wallets are not properly configured.');
 		}
+	});
+
+	afterAll(async () => {
+		await cleanupDB();
 	});
 
 	test(
@@ -294,15 +371,26 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 				console.log(`✅ Created payment ${i + 1}/${BATCH_SIZE}: ${payment.blockchainIdentifier.substring(0, 50)}…`);
 			}
 
-			// Purchases are created near-simultaneously (in parallel) on purpose.
-			// The buyer funds-lock batches only the purchases that are already
-			// visible when the scheduler claims the (single) purchasing wallet.
-			// Creating them sequentially can spread their createdAt across the
-			// settle window so a tick locks the wallet on a partial set, leaving
-			// the stragglers unbatched. Firing the POSTs together keeps all
-			// BATCH_SIZE within one settle window so they land in one tx.
-			const purchases = await Promise.all(payments.map((payment) => createPurchase(payment, agent)));
+			// Hold every purchasing wallet for this source while all purchase
+			// requests commit. Otherwise a scheduler tick can claim a partial set.
+			const paymentSourceId = assertAllEqual(
+				payments.map((payment) => payment.response.PaymentSource.id),
+				'payment source ID',
+			);
+			const purchasingWallets = await prisma.hotWallet.findMany({
+				where: { paymentSourceId, type: HotWalletType.Purchasing, deletedAt: null },
+				select: { id: true },
+			});
+			const purchases = await submitActionsAsOneBatch(
+				purchasingWallets.map((wallet) => wallet.id),
+				'create-purchase',
+				payments.map((payment) => () => createPurchase(payment, agent)),
+			);
 			purchases.forEach((_, i) => console.log(`✅ Created purchase ${i + 1}/${BATCH_SIZE}`));
+			const sellingWalletId = assertAllEqual(
+				payments.map((payment) => payment.response.SmartContractWallet?.id),
+				'selling wallet ID',
+			);
 
 			console.log('⏳ Waiting for initial FundsLockingInitiated on every purchase…');
 			const fundsLockingTxHashes = await allWithAbortOnFailure(
@@ -347,9 +435,11 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			// Phase 2: submit-result × N → expect single batched tx.
 			// ============================================================
 			console.log(`📋 Submitting ${BATCH_SIZE} results within scheduler window…`);
-			// Fire API calls in parallel so they all land in the same scheduler
-			// tick window (CHECK_SUBMIT_RESULT_INTERVAL=15s by default).
-			await Promise.all(payments.map((p) => submitResult(p.blockchainIdentifier, testNetwork)));
+			await submitActionsAsOneBatch(
+				[sellingWalletId],
+				'submit-result',
+				payments.map((p) => () => submitResult(p.blockchainIdentifier, testNetwork)),
+			);
 
 			console.log('⏳ Waiting for SubmitResultInitiated on every payment (proves the scheduler picked them up)…');
 			const submitResultTxHashes = await allWithAbortOnFailure(
@@ -390,8 +480,22 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			// ============================================================
 			// Phase 3: request-refund × N → expect single batched tx.
 			// ============================================================
+			// The purchasing wallet is assigned during funds lock, after createPurchase.
+			const purchasingWalletId = assertAllEqual(
+				await Promise.all(
+					purchases.map(async (purchase) => {
+						const current = await fetchPurchaseByBlockchainIdentifier(purchase.blockchainIdentifier, testNetwork);
+						return current?.SmartContractWallet?.id;
+					}),
+				),
+				'purchasing wallet ID',
+			);
 			console.log(`💸 Requesting ${BATCH_SIZE} refunds within scheduler window…`);
-			await Promise.all(payments.map((p) => requestRefund(p.blockchainIdentifier, testNetwork)));
+			await submitActionsAsOneBatch(
+				[purchasingWalletId],
+				'request-refund',
+				payments.map((p) => () => requestRefund(p.blockchainIdentifier, testNetwork)),
+			);
 
 			console.log('⏳ Waiting for SetRefundRequestedInitiated on every purchase…');
 			const requestRefundTxHashes = await allWithAbortOnFailure(
@@ -433,7 +537,11 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			// Phase 4: authorize-refund × N → expect single batched tx.
 			// ============================================================
 			console.log(`👨‍💼 Authorizing ${BATCH_SIZE} refunds within scheduler window…`);
-			await Promise.all(payments.map((p) => authorizeRefund(p.blockchainIdentifier, testNetwork)));
+			await submitActionsAsOneBatch(
+				[sellingWalletId],
+				'authorize-refund',
+				payments.map((p) => () => authorizeRefund(p.blockchainIdentifier, testNetwork)),
+			);
 
 			console.log('⏳ Waiting for AuthorizeRefundInitiated on every payment…');
 			const authorizeRefundTxHashes = await allWithAbortOnFailure(
