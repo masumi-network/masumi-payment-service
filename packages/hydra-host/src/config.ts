@@ -167,6 +167,14 @@ function optional(env: EnvSource, key: string, fallback: string): string {
 	return value === undefined || value.length === 0 ? fallback : value;
 }
 
+function strictBoolean(env: EnvSource, key: string, fallback: boolean): boolean {
+	const value = env.get(key)?.trim();
+	if (value === undefined) return fallback;
+	if (value === 'true') return true;
+	if (value === 'false') return false;
+	throw new ConfigError(`${key} must be true or false`);
+}
+
 /**
  * A whole number that has to be above zero to mean anything.
  *
@@ -346,9 +354,9 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
 		allowPrivatePeers,
 		requirePeerEgressFirewall,
-		requirePeerFirewallRefresh: optional(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', 'false') === 'true',
+		requirePeerFirewallRefresh: strictBoolean(env, 'HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH', false),
 		allowAutoSideLoad: optional(env, 'HYDRA_HOST_AUTO_SIDELOAD', 'false') === 'true',
-		acceptHostWideUserToken: optional(env, 'HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN', 'true') !== 'false',
+		acceptHostWideUserToken: strictBoolean(env, 'HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN', true),
 		release: readReleaseInfo(env),
 	};
 }
