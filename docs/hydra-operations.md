@@ -143,8 +143,12 @@ loopback, private, link-local or other non-public address, both on
 invite open. Set `HYDRA_HOST_ALLOW_PRIVATE_PEERS=true` only when the peers really
 run on a private network. The check resolves the name once, and `hydra-node` resolves
 it again on every reconnect, so a counterparty that controls its DNS can rebind
-it later. Block egress from the Host to private, link-local and metadata
-addresses as well.
+it later. VERIFIED (`packages/hydra-host/scripts/hydra-peer-egress:86`): the
+documented host-network deployment blocks new outbound connections from Hydra's
+uid to host-local, private, link-local and metadata addresses. Its local
+exceptions cover only the node API, etcd client and configured DNS ports. See
+[hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md#outbound-peer-connections)
+for the startup gate and rollout checks.
 
 ### Stranded snapshot rounds
 
