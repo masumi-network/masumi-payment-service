@@ -39,6 +39,35 @@ afterEach(async () => {
 });
 
 describe('exchange persistence failures', () => {
+	it('keeps the exchange log and its temporary write private under a normal umask', async () => {
+		const file = path.join(directory, 'exchange.json');
+		await fs.chmod(directory, 0o755);
+		const originalRename = fs.rename.bind(fs);
+		const originalUmask = process.umask(0o022);
+		const temporaryModes: number[] = [];
+		jest.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+			if (to === file) temporaryModes.push((await fs.stat(from)).mode & 0o777);
+			await originalRename(from, to);
+		});
+		try {
+			await store.registerInvite({ ...invite, nonce: 'nonce-two' });
+			expect(temporaryModes).toEqual([0o600]);
+			expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+		} finally {
+			process.umask(originalUmask);
+		}
+	});
+
+	it('restricts an existing exchange log before loading its open nonces', async () => {
+		const file = path.join(directory, 'exchange.json');
+		await fs.chmod(directory, 0o755);
+		await fs.chmod(file, 0o644);
+
+		await new ExchangeStore(directory).listInvites();
+
+		expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+	});
+
 	it('keeps a failed registration invisible and permits its retry', async () => {
 		const next = { ...invite, nonce: 'nonce-two' };
 		jest.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('injected rename failure'));
