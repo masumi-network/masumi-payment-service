@@ -22,6 +22,7 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import type { NodeRecord } from '../registry/types.js';
 import { isPeerHostname, parsePeerAdvertise } from '../peer-address.js';
+import { isPublicPeerIp } from '../peer-target-policy.js';
 
 export type PeerAllowRule = {
 	nodeId: string;
@@ -118,6 +119,7 @@ export function buildPeerAllowlist(records: NodeRecord[], peerRange: { start: nu
 /** Resolve configured peer names without ever passing those names to nftables. */
 export async function resolvePeerAllowlist(
 	allowlist: PeerAllowlist,
+	allowPrivatePeers: boolean,
 	resolve: PeerHostnameResolver = defaultResolver,
 ): Promise<ResolvedPeerAllowlist> {
 	const rules = await Promise.all(
@@ -126,13 +128,13 @@ export async function resolvePeerAllowlist(
 			const resolutionErrors: Array<{ host: string; reason: string }> = [];
 
 			for (const host of rule.allowedHosts) {
-				if (isIP(host) === 4) {
-					addresses.add(host);
-					continue;
-				}
-
 				try {
-					const results = await resolve(host);
+					const results = isIP(host) === 4 ? [{ address: host, family: 4 }] : await resolve(host);
+					const blocked = allowPrivatePeers ? undefined : results.find(({ address }) => !isPublicPeerIp(address));
+					if (blocked !== undefined) {
+						resolutionErrors.push({ host, reason: `resolves to non-public address ${blocked.address}` });
+						continue;
+					}
 					const ipv4 = results.map((entry) => entry.address).filter((address) => isIP(address) === 4);
 					if (ipv4.length === 0) {
 						resolutionErrors.push({ host, reason: 'did not resolve to an IPv4 address' });
