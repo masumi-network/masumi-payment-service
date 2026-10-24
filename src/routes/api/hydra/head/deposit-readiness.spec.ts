@@ -36,6 +36,20 @@ describe('assertNodeReadyForDeposit', () => {
 			reason: null,
 			chainSynced: null,
 			driftSeconds: null,
+			observationFresh: false,
+		});
+
+		await expect(assertNodeReadyForDeposit('participant-1')).rejects.toMatchObject({ status: 503 });
+	});
+
+	it('refuses a deposit when the last chain-sync observation is stale', async () => {
+		mockReadNodeState.mockResolvedValueOnce({
+			state: 'Running',
+			isReady: true,
+			reason: null,
+			chainSynced: true,
+			driftSeconds: 0,
+			observationFresh: false,
 		});
 
 		await expect(assertNodeReadyForDeposit('participant-1')).rejects.toMatchObject({ status: 503 });
@@ -48,6 +62,7 @@ describe('assertNodeReadyForDeposit', () => {
 			reason: null,
 			chainSynced: true,
 			driftSeconds: 0,
+			observationFresh: true,
 		});
 
 		await expect(assertNodeReadyForDeposit('participant-1')).resolves.toBeUndefined();

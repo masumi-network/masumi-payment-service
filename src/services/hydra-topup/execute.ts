@@ -338,6 +338,9 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		for (const [unit, quantity] of validatedDraft.committedValue) {
 			if (unit !== 'lovelace') committedAssets[unit] = quantity.toString();
 		}
+		// A carve may have waited five minutes for L1 confirmation. Refuse a
+		// stale node before binding this signed deposit to a pending reservation.
+		await assertNodeReadyForDeposit(localParticipant.id);
 
 		let submitResult: unknown;
 		let topupId: string;
@@ -356,6 +359,8 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					// Promotion succeeded before this callback. Transfer ownership before
 					// submission can throw or race the scheduled reconciliation.
 					walletReleaseTransferred = true;
+					// A slow reservation can outlive even the second health check.
+					await assertNodeReadyForDeposit(localParticipant.id);
 					return await hydraHead.cardanoTransaction(
 						{ type: HydraTransactionType.TxConwayEra, description: '', cborHex: validatedDraft.signedCommitTx },
 						localParticipant.walletId,

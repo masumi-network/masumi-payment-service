@@ -286,6 +286,9 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			}
 			const signedCommitTx = validatedDraft.signedCommitTx;
 			const commitTxHash = validatedDraft.txId;
+			// The carve and draft can outlive a healthy supervisor observation.
+			// Check again before reserving, so a known refusal creates no pending commit.
+			await assertNodeReadyForDeposit(localParticipant.id);
 
 			// Submit the signed commit tx through the hydra-node connected to the
 			// head's L1. Promotion still requires independent Blockfrost evidence;
@@ -301,15 +304,18 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 						invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
 						walletClaimToken,
 					},
-					async () =>
-						await hydraHead.cardanoTransaction(
+					async () => {
+						// The reservation transaction can also wait on a row lock.
+						await assertNodeReadyForDeposit(localParticipant.id);
+						return await hydraHead.cardanoTransaction(
 							{
 								type: HydraTransactionType.TxConwayEra,
 								description: '',
 								cborHex: signedCommitTx,
 							},
 							localParticipant.walletId,
-						),
+						);
+					},
 				);
 			} catch (error) {
 				if (error instanceof HydraCommitReservationConflictError) {

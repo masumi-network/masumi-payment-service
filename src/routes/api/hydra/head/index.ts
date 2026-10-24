@@ -552,6 +552,12 @@ export async function assertNodeReadyForDeposit(localParticipantId: string): Pro
 	const node = await readParticipantNodeState(localParticipantId);
 	// The shared status reader stays advisory for the UI. An L1 deposit needs
 	// positive chain-sync evidence because it has an on-chain expiry deadline.
+	if (!node.observationFresh) {
+		throw createHttpError(
+			503,
+			node.reason ?? 'The Hydra Host has not checked this node recently. Retry before depositing.',
+		);
+	}
 	if (node.chainSynced !== true) {
 		throw createHttpError(
 			node.chainSynced === null ? 503 : 409,
