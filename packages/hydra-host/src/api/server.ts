@@ -452,7 +452,10 @@ export function createControlPlane(deps: ServerDeps): Server {
 				// Taken before the registry is read, never after: see
 				// `PortAllocator.peerFirewallGeneration`.
 				const generation = ports.peerFirewallGeneration();
-				const allowlist = await resolvePeerAllowlist(buildPeerAllowlist(await store.list(), range));
+				const allowlist = await resolvePeerAllowlist(
+					buildPeerAllowlist(await store.list(), range),
+					config.allowPrivatePeers,
+				);
 				send(response, 200, {
 					...allowlist,
 					peerRange: range,

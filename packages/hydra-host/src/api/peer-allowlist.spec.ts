@@ -86,25 +86,26 @@ describe('buildPeerAllowlist', () => {
 
 describe('renderNftables', () => {
 	const resolveTestAddresses = async (host: string) => [
-		{ address: host === 'them.example.com' ? '203.0.113.10' : '203.0.113.11', family: 4 },
+		{ address: host === 'them.example.com' ? '8.8.8.8' : '1.1.1.1', family: 4 },
 	];
 
 	it('accepts the resolved peer and drops the rest of the range', async () => {
 		const ruleset = renderNftables(
 			await resolvePeerAllowlist(
 				buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE),
+				false,
 				resolveTestAddresses,
 			),
 			RANGE,
 		);
-		expect(ruleset).toContain('tcp dport 5001 ip saddr { 203.0.113.10 } accept');
+		expect(ruleset).toContain('tcp dport 5001 ip saddr { 8.8.8.8 } accept');
 		expect(ruleset).not.toContain('them.example.com } accept');
 		expect(ruleset).toContain('tcp dport 5001-5004 drop');
 	});
 
 	it('renders a one-port range as a single port, not a zero-size interval', async () => {
 		const one = { start: 5001, count: 1 };
-		const ruleset = renderNftables(await resolvePeerAllowlist(buildPeerAllowlist([], one)), one);
+		const ruleset = renderNftables(await resolvePeerAllowlist(buildPeerAllowlist([], one), false), one);
 		expect(ruleset).toContain('\t\ttcp dport 5001 drop');
 		expect(ruleset).not.toContain('5001-5001');
 	});
@@ -113,6 +114,7 @@ describe('renderNftables', () => {
 		const ruleset = renderNftables(
 			await resolvePeerAllowlist(
 				buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE),
+				false,
 				resolveTestAddresses,
 			),
 			RANGE,
@@ -125,7 +127,7 @@ describe('renderNftables', () => {
 
 	it('replaces all rules from a previous application in one batch', async () => {
 		const ruleset = renderNftables(
-			await resolvePeerAllowlist(buildPeerAllowlist([node({ peers: [] })], RANGE), resolveTestAddresses),
+			await resolvePeerAllowlist(buildPeerAllowlist([node({ peers: [] })], RANGE), false, resolveTestAddresses),
 			RANGE,
 		);
 		expect(ruleset.indexOf('add table inet hydra_peer')).toBeLessThan(ruleset.indexOf('flush table inet hydra_peer'));
@@ -135,7 +137,7 @@ describe('renderNftables', () => {
 	// A node removed between two applications must not leave its port open.
 	it('emits no accept for an unpeered node', async () => {
 		const ruleset = renderNftables(
-			await resolvePeerAllowlist(buildPeerAllowlist([node({ peers: [] })], RANGE), resolveTestAddresses),
+			await resolvePeerAllowlist(buildPeerAllowlist([node({ peers: [] })], RANGE), false, resolveTestAddresses),
 			RANGE,
 		);
 		expect(ruleset).not.toContain('accept\n');
@@ -145,6 +147,7 @@ describe('renderNftables', () => {
 	it('closes a rule when DNS resolution fails', async () => {
 		const allowlist = await resolvePeerAllowlist(
 			buildPeerAllowlist([node({ peers: [peer('missing.example.com:5101')] })], RANGE),
+			false,
 			async () => {
 				throw new Error('ENOTFOUND');
 			},
@@ -153,9 +156,52 @@ describe('renderNftables', () => {
 		expect(renderNftables(allowlist, RANGE)).not.toContain('missing.example.com } accept');
 	});
 
+	it('closes a peer port when a refreshed DNS answer includes a private address', async () => {
+		const peerAllowlist = buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE);
+		let addresses = [{ address: '8.8.8.8', family: 4 }];
+		const resolveAddresses = async () => addresses;
+		const initial = await resolvePeerAllowlist(peerAllowlist, false, resolveAddresses);
+		expect(initial.rules[0].allowedIpv4Addresses).toEqual(['8.8.8.8']);
+
+		addresses = [
+			{ address: '8.8.8.8', family: 4 },
+			{ address: '10.0.0.7', family: 4 },
+		];
+		const refreshed = await resolvePeerAllowlist(peerAllowlist, false, resolveAddresses);
+		expect(refreshed.rules[0]).toMatchObject({ closed: true, allowedIpv4Addresses: [] });
+		expect(refreshed.rules[0].resolutionErrors[0].reason).toContain('10.0.0.7');
+		expect(renderNftables(refreshed, RANGE)).not.toContain('tcp dport 5001 ip saddr');
+	});
+
+	it('closes a peer port when a DNS answer includes a private IPv6 address', async () => {
+		const allowlist = await resolvePeerAllowlist(
+			buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE),
+			false,
+			async () => [
+				{ address: '8.8.8.8', family: 4 },
+				{ address: 'fd00::1', family: 6 },
+			],
+		);
+		expect(allowlist.rules[0]).toMatchObject({ closed: true, allowedIpv4Addresses: [] });
+		expect(allowlist.rules[0].resolutionErrors[0].reason).toContain('fd00::1');
+	});
+
+	it('applies the private-peer opt-in to DNS answers and IP literals', async () => {
+		const dnsAllowlist = buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE);
+		const resolved = await resolvePeerAllowlist(dnsAllowlist, true, async () => [{ address: '10.0.0.7', family: 4 }]);
+		expect(resolved.rules[0]).toMatchObject({ closed: false, allowedIpv4Addresses: ['10.0.0.7'] });
+
+		const literalAllowlist = buildPeerAllowlist([node({ peers: [peer('10.0.0.7:5101')] })], RANGE);
+		const rejected = await resolvePeerAllowlist(literalAllowlist, false);
+		expect(rejected.rules[0]).toMatchObject({ closed: true, allowedIpv4Addresses: [] });
+		const permitted = await resolvePeerAllowlist(literalAllowlist, true);
+		expect(permitted.rules[0]).toMatchObject({ closed: false, allowedIpv4Addresses: ['10.0.0.7'] });
+	});
+
 	it('never interprets a hostname-shaped nftables interval as an address', async () => {
 		const allowlist = await resolvePeerAllowlist(
 			buildPeerAllowlist([node({ peers: [peer('0.0.0.0-255.255.255.255:5101')] })], RANGE),
+			false,
 			async () => {
 				throw new Error('ENOTFOUND');
 			},
@@ -196,11 +242,12 @@ describe('renderNftables', () => {
 				],
 				RANGE,
 			),
+			false,
 			resolveTestAddresses,
 		);
 		expect(allowlist.outOfRange).toEqual([{ nodeId: 'n9', peerPort: 5009 }]);
 		const ruleset = renderNftables(allowlist, RANGE);
-		expect(ruleset).toContain('tcp dport 5001 ip saddr { 203.0.113.10 } accept');
+		expect(ruleset).toContain('tcp dport 5001 ip saddr { 8.8.8.8 } accept');
 		expect(ruleset).not.toContain('5009');
 	});
 });
