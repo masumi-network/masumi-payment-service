@@ -75,7 +75,7 @@ services:
       # A node's routes also open to a token derived for that node, which reaches
       # only that node. Set this to false once no payment service sends the user
       # token itself; the Host logs the first time one does.
-      HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN: ${HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN:-true}
+      HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN: ${HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN-true}
 
       # A path inside the container, not the project id. It is handed to
       # hydra-node as --blockfrost, which reads the file itself.

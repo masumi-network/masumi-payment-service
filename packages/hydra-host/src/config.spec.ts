@@ -64,6 +64,29 @@ describe('loadHostConfig', () => {
 		expect(loadHostConfig(env({ HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN: 'true' })).acceptHostWideUserToken).toBe(true);
 	});
 
+	it('rejects a misspelled Host-wide token setting instead of leaving the token enabled', () => {
+		for (const value of ['False', '']) {
+			expect(() => loadHostConfig(env({ HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN: value }))).toThrow(
+				/HYDRA_HOST_ACCEPT_HOST_WIDE_USER_TOKEN must be true or false/,
+			);
+		}
+	});
+
+	it('rejects a misspelled peer firewall refresh setting instead of disabling the gate', () => {
+		expect(loadHostConfig(env()).requirePeerFirewallRefresh).toBe(false);
+		expect(loadHostConfig(env({ HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH: 'true' })).requirePeerFirewallRefresh).toBe(
+			true,
+		);
+		expect(loadHostConfig(env({ HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH: 'false' })).requirePeerFirewallRefresh).toBe(
+			false,
+		);
+		for (const value of ['True', '']) {
+			expect(() => loadHostConfig(env({ HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH: value }))).toThrow(
+				/HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH must be true or false/,
+			);
+		}
+	});
+
 	it('parses HYDRA_HOST_SCRIPTS_TX_IDS as a trimmed, lowercased list', () => {
 		const a = 'b88df0c62f9734f0a6dba0faa7636ed51699cbe21706ce4a9736684daf418d67';
 		const b = '40AB074125B4734939CD45A00B2CFE1B20D679B2A1C52D6472ACA193F637A2BC';
