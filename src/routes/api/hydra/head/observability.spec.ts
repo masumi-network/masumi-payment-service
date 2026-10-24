@@ -70,7 +70,13 @@ beforeEach(() => {
 		hostNodeId: 'node-1',
 		HydraHost: { baseUrl: 'https://host.invalid', encryptedUserToken: encrypt('test-hydra-token') },
 	});
-	mockFetchHealth.mockResolvedValue({ usable: true, state: 'Running', chainSynced: true, driftSeconds: 0 });
+	mockFetchHealth.mockResolvedValue({
+		usable: true,
+		state: 'Running',
+		chainSynced: true,
+		driftSeconds: 0,
+		observationFresh: true,
+	});
 });
 
 describe('open head connection readiness', () => {
