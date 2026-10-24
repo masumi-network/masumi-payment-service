@@ -55,6 +55,7 @@ overrides:
   ws@>=7 <8: 7.5.11
   ws@>=8 <9: 8.21.1
   yaml: 2.8.3
+  zod@>=4 <5: 4.6.6
 
 patchedDependencies:
   '@sundaeswap/core':
@@ -63,6 +64,12 @@ patchedDependencies:
   http-cache-semantics@4.3.0:
     hash: 31ee930f09fb2810d6093b14bf15373eb06d0a4ea391a2fed254a3dd8b7b9549
     path: patches/http-cache-semantics@4.3.0.patch
+  zod@3.25.76:
+    hash: 50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f
+    path: patches/zod@3.25.76.patch
+  zod@4.6.6:
+    hash: c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2
+    path: patches/zod@4.6.6.patch
 
 importers:
 
@@ -70,7 +77,7 @@ importers:
     dependencies:
       '@asteasolutions/zod-to-openapi':
         specifier: 8.4.0
-        version: 8.4.0(zod@4.3.5)
+        version: 8.4.0(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
       '@blockfrost/blockfrost-js':
         specifier: 6.1.1
         version: 6.1.1
@@ -190,7 +197,7 @@ importers:
         version: 5.2.1
       express-zod-api:
         specifier: 26.3.1
-        version: 26.3.1(@types/express@5.0.6)(@types/http-errors@2.0.5)(@types/node@25.9.2)(express@5.2.1)(http-errors@2.0.1)(typescript@5.8.3)(zod@4.3.5)
+        version: 26.3.1(@types/express@5.0.6)(@types/http-errors@2.0.5)(@types/node@25.9.2)(express@5.2.1)(http-errors@2.0.1)(typescript@5.8.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
       fflate:
         specifier: 0.8.3
         version: 0.8.3
@@ -231,8 +238,8 @@ importers:
         specifier: 8.21.1
         version: 8.21.1
       zod:
-        specifier: 4.3.5
-        version: 4.3.5
+        specifier: 4.6.6
+        version: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
     devDependencies:
       '@commitlint/cli':
         specifier: 20.3.1
@@ -445,8 +452,8 @@ importers:
         specifier: 1.0.7
         version: 1.0.7(tailwindcss@4.3.0)
       zod:
-        specifier: 4.3.5
-        version: 4.3.5
+        specifier: 4.6.6
+        version: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
     devDependencies:
       '@tailwindcss/postcss':
         specifier: 4.3.0
@@ -514,7 +521,7 @@ importers:
     dependencies:
       '@asteasolutions/zod-to-openapi':
         specifier: '*'
-        version: 8.4.0(zod@4.3.5)
+        version: 8.4.0(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
       '@meshsdk/core-cst':
         specifier: 1.9.0-beta.90
         version: 1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
@@ -538,7 +545,7 @@ importers:
         version: 17.4.2
       express-zod-api:
         specifier: 26.3.1
-        version: 26.3.1(@types/express@5.0.6)(@types/http-errors@2.0.5)(@types/node@25.9.2)(express@5.2.1)(http-errors@2.0.1)(typescript@5.8.3)(zod@4.3.5)
+        version: 26.3.1(@types/express@5.0.6)(@types/http-errors@2.0.5)(@types/node@25.9.2)(express@5.2.1)(http-errors@2.0.1)(typescript@5.8.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
       http-errors:
         specifier: '*'
         version: 2.0.1
@@ -555,8 +562,8 @@ importers:
         specifier: '*'
         version: 3.17.0
       zod:
-        specifier: '*'
-        version: 4.3.5
+        specifier: 4.6.6
+        version: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
     devDependencies:
       '@jest/globals':
         specifier: 30.4.1
@@ -614,7 +621,7 @@ importers:
         version: 2.0.1
       viem:
         specifier: 2.52.2
-        version: 2.52.2(typescript@5.9.3)(zod@4.4.3)
+        version: 2.52.2(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
 
 packages:
 
@@ -628,7 +635,7 @@ packages:
   '@asteasolutions/zod-to-openapi@8.4.0':
     resolution: {integrity: sha512-Ckp971tmTw4pnv+o7iK85ldBHBKk6gxMaoNyLn3c2Th/fKoTG8G3jdYuOanpdGqwlDB0z01FOjry2d32lfTqrA==}
     peerDependencies:
-      zod: ^4.0.0
+      zod: 4.6.6
 
   '@babel/code-frame@7.28.6':
     resolution: {integrity: sha512-JYgintcMjRiCvS8mMECzaEn+m3PfoQiyqukOMCCVQtoJGYJw8j/8LBJEiqkHLkfwCcs74E3pbAUFNg7d9VNJ+Q==}
@@ -1501,7 +1508,7 @@ packages:
     resolution: {integrity: sha512-XWde6CYRSg7ijErfgBRnx1sANS4f3izlFS/6NjtIKdJit3LnUZjyUFLFcbhShfJzQsIJIwPMFyxAknhqYojYKg==}
     engines: {node: ^20.19.0 || ^22.12.0 || ^24.0.0}
     peerDependencies:
-      zod: ^4.1.13
+      zod: 4.6.6
 
   '@faker-js/faker@5.5.3':
     resolution: {integrity: sha512-R11tGE6yIFwqpaIqcfkcg7AICXzFg14+5h5v0TfF/9+RMDL6jhzCy/pxHVOfbALGdtVYdt6JdR21tuxEgl34dw==}
@@ -4524,7 +4531,7 @@ packages:
     resolution: {integrity: sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg==}
     peerDependencies:
       typescript: '>=5.0.4'
-      zod: ^3.22.0 || ^4.0.0
+      zod: 4.6.6
     peerDependenciesMeta:
       typescript:
         optional: true
@@ -5665,7 +5672,7 @@ packages:
       express-fileupload: ^1.5.0
       http-errors: ^2.0.1
       typescript: ^5.1.3
-      zod: ^4.1.13
+      zod: 4.6.6
     peerDependenciesMeta:
       '@types/compression':
         optional: true
@@ -8736,16 +8743,13 @@ packages:
     resolution: {integrity: sha512-Q6/nZLe6jxuU80qb/4uJ4t5v2VEZ44lzQjPDhYJNztRQ4wyWc6VF3D3Kb/fAuPetZQnhS3hnajCf9CsWesghLQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
+      zod: 4.6.6
 
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.3.5:
-    resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
-
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
 snapshots:
 
@@ -8753,10 +8757,10 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@asteasolutions/zod-to-openapi@8.4.0(zod@4.3.5)':
+  '@asteasolutions/zod-to-openapi@8.4.0(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))':
     dependencies:
       openapi3-ts: 4.6.0
-      zod: 4.3.5
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
 
   '@babel/code-frame@7.28.6':
     dependencies:
@@ -9837,10 +9841,10 @@ snapshots:
 
   '@exodus/schemasafe@1.3.0': {}
 
-  '@express-zod-api/zod-plugin@3.0.0(zod@4.3.5)':
+  '@express-zod-api/zod-plugin@3.0.0(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))':
     dependencies:
       ramda: 0.32.0
-      zod: 4.3.5
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
 
   '@faker-js/faker@5.5.3': {}
 
@@ -12772,11 +12776,11 @@ snapshots:
       '@noble/hashes': 1.8.0
       apg-js: 4.4.0
 
-  '@signinwithethereum/siwe@4.2.0(viem@2.52.2(typescript@5.9.3)(zod@4.4.3))':
+  '@signinwithethereum/siwe@4.2.0(viem@2.52.2(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)))':
     dependencies:
       '@signinwithethereum/siwe-parser': 4.2.0
     optionalDependencies:
-      viem: 2.52.2(typescript@5.9.3)(zod@4.4.3)
+      viem: 2.52.2(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
 
   '@simplewebauthn/browser@13.2.2': {}
 
@@ -13443,13 +13447,13 @@ snapshots:
 
   '@x402/core@2.14.0':
     dependencies:
-      zod: 3.25.76
+      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
 
   '@x402/evm@2.14.0(typescript@5.9.3)':
     dependencies:
       '@x402/core': 2.14.0
-      viem: 2.52.2(typescript@5.9.3)(zod@3.25.76)
-      zod: 3.25.76
+      viem: 2.52.2(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
+      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
     transitivePeerDependencies:
       - bufferutil
       - typescript
@@ -13459,13 +13463,13 @@ snapshots:
     dependencies:
       '@noble/curves': 1.9.0
       '@scure/base': 1.2.6
-      '@signinwithethereum/siwe': 4.2.0(viem@2.52.2(typescript@5.9.3)(zod@4.4.3))
+      '@signinwithethereum/siwe': 4.2.0(viem@2.52.2(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)))
       '@x402/core': 2.14.0
       ajv: 8.18.0
       jose: 5.10.0
       tweetnacl: 1.0.3
-      viem: 2.52.2(typescript@5.9.3)(zod@3.25.76)
-      zod: 3.25.76
+      viem: 2.52.2(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
+      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
     transitivePeerDependencies:
       - bufferutil
       - ethers
@@ -13484,15 +13488,15 @@ snapshots:
       jsonparse: 1.3.1
       through: 2.3.8
 
-  abitype@1.2.3(typescript@5.9.3)(zod@3.25.76):
+  abitype@1.2.3(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)):
     optionalDependencies:
       typescript: 5.9.3
-      zod: 3.25.76
+      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
 
-  abitype@1.2.3(typescript@5.9.3)(zod@4.4.3):
+  abitype@1.2.3(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     optionalDependencies:
       typescript: 5.9.3
-      zod: 4.4.3
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
 
   abort-error@1.0.1: {}
 
@@ -14687,8 +14691,8 @@ snapshots:
       '@babel/parser': 7.29.7
       eslint: 9.39.2(jiti@2.7.0)
       hermes-parser: 0.25.1
-      zod: 4.3.5
-      zod-validation-error: 4.0.2(zod@4.3.5)
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
+      zod-validation-error: 4.0.2(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
     transitivePeerDependencies:
       - supports-color
 
@@ -14875,9 +14879,9 @@ snapshots:
       jest-mock: 30.4.1
       jest-util: 30.4.1
 
-  express-zod-api@26.3.1(@types/express@5.0.6)(@types/http-errors@2.0.5)(@types/node@25.9.2)(express@5.2.1)(http-errors@2.0.1)(typescript@5.8.3)(zod@4.3.5):
+  express-zod-api@26.3.1(@types/express@5.0.6)(@types/http-errors@2.0.5)(@types/node@25.9.2)(express@5.2.1)(http-errors@2.0.1)(typescript@5.8.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     dependencies:
-      '@express-zod-api/zod-plugin': 3.0.0(zod@4.3.5)
+      '@express-zod-api/zod-plugin': 3.0.0(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
       ansis: 4.2.0
       express: 5.2.1
       http-errors: 2.0.1
@@ -14885,7 +14889,7 @@ snapshots:
       openapi3-ts: 4.5.0
       ramda: 0.32.0
       typescript: 5.8.3
-      zod: 4.3.5
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
     optionalDependencies:
       '@types/express': 5.0.6
       '@types/http-errors': 2.0.5
@@ -16120,7 +16124,7 @@ snapshots:
       typescript: 5.8.3
       unbash: 2.2.0
       yaml: 2.8.3
-      zod: 4.3.5
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
 
   kuler@2.0.0: {}
 
@@ -16297,7 +16301,7 @@ snapshots:
       react-hook-form: 7.78.0(react@19.2.7)
       tailwind-merge: 2.6.1
       tailwindcss: 4.3.0
-      zod: 3.25.76
+      zod: 3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)
     transitivePeerDependencies:
       - monaco-editor
 
@@ -16673,7 +16677,7 @@ snapshots:
       object-keys: 1.1.1
       safe-push-apply: 1.0.0
 
-  ox@0.14.29(typescript@5.9.3)(zod@3.25.76):
+  ox@0.14.29(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/ciphers': 1.3.0
@@ -16681,14 +16685,14 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
     transitivePeerDependencies:
       - zod
 
-  ox@0.14.29(typescript@5.9.3)(zod@4.4.3):
+  ox@0.14.29(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/ciphers': 1.3.0
@@ -16696,7 +16700,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.4.3)
+      abitype: 1.2.3(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
@@ -18110,15 +18114,15 @@ snapshots:
       d3-time: 3.1.0
       d3-timer: 3.0.1
 
-  viem@2.52.2(typescript@5.9.3)(zod@3.25.76):
+  viem@2.52.2(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f)):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
       isows: 1.0.7(ws@8.21.1)
-      ox: 0.14.29(typescript@5.9.3)(zod@3.25.76)
+      ox: 0.14.29(typescript@5.9.3)(zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f))
       ws: 8.21.1
     optionalDependencies:
       typescript: 5.9.3
@@ -18127,15 +18131,15 @@ snapshots:
       - utf-8-validate
       - zod
 
-  viem@2.52.2(typescript@5.9.3)(zod@4.4.3):
+  viem@2.52.2(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.4.3)
+      abitype: 1.2.3(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
       isows: 1.0.7(ws@8.21.1)
-      ox: 0.14.29(typescript@5.9.3)(zod@4.4.3)
+      ox: 0.14.29(typescript@5.9.3)(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2))
       ws: 8.21.1
     optionalDependencies:
       typescript: 5.9.3
@@ -18338,13 +18342,10 @@ snapshots:
       grammex: 3.1.12
       graphmatch: 1.1.1
 
-  zod-validation-error@4.0.2(zod@4.3.5):
+  zod-validation-error@4.0.2(zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)):
     dependencies:
-      zod: 4.3.5
+      zod: 4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2)
 
-  zod@3.25.76: {}
+  zod@3.25.76(patch_hash=50c75861b36acd9d4572adc5cc66effa8a791088dbdad1951297c52ba7df797f): {}
 
-  zod@4.3.5: {}
-
-  zod@4.4.3:
-    optional: true
+  zod@4.6.6(patch_hash=c415c8d532148e3d191cd43b7450e5d309fce1e93077b7a985eccd9d69dbc5a2): {}

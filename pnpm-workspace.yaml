@@ -69,7 +69,10 @@ overrides:
   ws@>=7 <8: 7.5.11
   ws@>=8 <9: 8.21.1
   yaml: 2.8.3
+  zod@>=4 <5: 4.6.6
 
 patchedDependencies:
   '@sundaeswap/core': patches/@sundaeswap__core.patch
   http-cache-semantics@4.3.0: patches/http-cache-semantics@4.3.0.patch
+  zod@3.25.76: patches/zod@3.25.76.patch
+  zod@4.6.6: patches/zod@4.6.6.patch
