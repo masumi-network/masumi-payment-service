@@ -64,7 +64,7 @@ overrides:
   sharp: 0.35.5
   smol-toml: 1.9.1
   source-map-js: 1.2.2
-  undici: 6.28.1
+  undici: 6.29.1
   valibot: 1.4.2
   ws@>=7 <8: 7.5.11
   ws@>=8 <9: 8.21.1
