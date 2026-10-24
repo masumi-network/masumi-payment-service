@@ -43,6 +43,7 @@ overrides:
   picomatch@>=2 <3: 2.3.2
   picomatch@>=4 <5: 4.0.7
   postcss: 8.5.23
+  postman-collection>@faker-js/faker: 10.5.0
   postman-collection>uuid: 11.1.1
   protobufjs: 7.6.5
   proxy-addr: 2.0.8
@@ -63,6 +64,9 @@ patchedDependencies:
   http-cache-semantics@4.3.0:
     hash: 31ee930f09fb2810d6093b14bf15373eb06d0a4ea391a2fed254a3dd8b7b9549
     path: patches/http-cache-semantics@4.3.0.patch
+  postman-collection@5.2.0:
+    hash: b95ff398c80011fb6e23b2c680f0b8e4dae43fe98a2a71517721375d4eb613f4
+    path: patches/postman-collection@5.2.0.patch
 
 importers:
 
@@ -1503,9 +1507,9 @@ packages:
     peerDependencies:
       zod: ^4.1.13
 
-  '@faker-js/faker@5.5.3':
-    resolution: {integrity: sha512-R11tGE6yIFwqpaIqcfkcg7AICXzFg14+5h5v0TfF/9+RMDL6jhzCy/pxHVOfbALGdtVYdt6JdR21tuxEgl34dw==}
-    deprecated: Please update to a newer version.
+  '@faker-js/faker@10.5.0':
+    resolution: {integrity: sha512-bsxD8WLS5lIj7aaoCx1YJkktqYj5vlBUE6HWzu2Q51ksrGJ0H737ECCKlFU7Yf8Br45z9t99frBp/J7kzbMPAg==}
+    engines: {node: ^20.19.0 || ^22.13.0 || ^23.5.0 || >=24.0.0, npm: '>=10'}
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -9846,7 +9850,7 @@ snapshots:
       ramda: 0.32.0
       zod: 4.3.5
 
-  '@faker-js/faker@5.5.3': {}
+  '@faker-js/faker@10.5.0': {}
 
   '@floating-ui/core@1.7.5':
     dependencies:
@@ -16652,7 +16656,7 @@ snapshots:
       oas-resolver-browser: 2.5.6
       object-hash: 3.0.0
       path-browserify: 1.0.1
-      postman-collection: 5.2.0
+      postman-collection: 5.2.0(patch_hash=b95ff398c80011fb6e23b2c680f0b8e4dae43fe98a2a71517721375d4eb613f4)
       swagger2openapi: 7.0.8
       yaml: 2.8.3
     transitivePeerDependencies:
@@ -16940,9 +16944,9 @@ snapshots:
 
   postgres@3.4.7: {}
 
-  postman-collection@5.2.0:
+  postman-collection@5.2.0(patch_hash=b95ff398c80011fb6e23b2c680f0b8e4dae43fe98a2a71517721375d4eb613f4):
     dependencies:
-      '@faker-js/faker': 5.5.3
+      '@faker-js/faker': 10.5.0
       file-type: 3.9.0
       http-reasons: 0.1.0
       iconv-lite: 0.6.3

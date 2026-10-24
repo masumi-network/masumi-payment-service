@@ -1,0 +1,67 @@
+diff --git a/lib/superstring/dynamic-variables.js b/lib/superstring/dynamic-variables.js
+index 83424a3b19f797ed0272aceef06f759959440393..950c3f493d1702f65bc5285198edbb1b78b9d975 100644
+--- a/lib/superstring/dynamic-variables.js
++++ b/lib/superstring/dynamic-variables.js
+@@ -1,2 +1,2 @@
+-var faker = require('@faker-js/faker/locale/en'),
++var faker = require('./faker-compat'),
+     uuid = require('uuid'),
+diff --git a/lib/superstring/faker-compat.js b/lib/superstring/faker-compat.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..701c5a1ac4894d6694032b78704970257b5206c8
+--- /dev/null
++++ b/lib/superstring/faker-compat.js
+@@ -0,0 +1,53 @@
++'use strict';
++
++// Postman Collection 5.2.0 uses Faker 5 names. The patched dependency is Faker 10.5.0.
++
++var faker = require('@faker-js/faker/locale/en').faker,
++    extend = function (module, aliases) {
++        return Object.assign(Object.create(module), aliases);
++    },
++    image = extend(faker.image, { imageUrl: faker.image.url });
++
++['abstract', 'animals', 'business', 'cats', 'city', 'food', 'nightlife', 'fashion', 'people', 'nature',
++    'sports', 'transport'].forEach(function (name) {
++    image[name] = faker.image.url;
++});
++
++module.exports = extend(faker, {
++    address: extend(faker.location, { streetName: faker.location.street }),
++    commerce: extend(faker.commerce, {
++        color: faker.color.human
++    }),
++    company: extend(faker.company, {
++        companyName: faker.company.name,
++        companySuffix: function () { return faker.helpers.arrayElement(faker.definitions.company.legal_entity_type); },
++        bs: faker.company.buzzPhrase,
++        bsAdjective: faker.company.buzzAdjective,
++        bsBuzz: faker.company.buzzVerb,
++        bsNoun: faker.company.buzzNoun
++    }),
++    datatype: extend(faker.datatype, {
++        number: faker.number.int,
++        uuid: faker.string.uuid
++    }),
++    finance: extend(faker.finance, {
++        account: function () { return faker.finance.accountNumber(8); },
++        mask: function () { return '**** **** **** ' + faker.string.numeric(4); }
++    }),
++    image: image,
++    internet: extend(faker.internet, {
++        userName: faker.internet.username,
++        color: faker.color.rgb
++    }),
++    name: extend(faker.person, {
++        findName: faker.person.fullName
++    }),
++    phone: extend(faker.phone, {
++        phoneNumberFormat: function () { return faker.phone.number({ style: 'national' }); }
++    }),
++    random: {
++        arrayElement: faker.helpers.arrayElement,
++        word: faker.lorem.word,
++        alphaNumeric: faker.string.alphanumeric
++    }
++});

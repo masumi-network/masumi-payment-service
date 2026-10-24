@@ -57,6 +57,7 @@ overrides:
   picomatch@>=2 <3: 2.3.2
   picomatch@>=4 <5: 4.0.7
   postcss: 8.5.23
+  postman-collection>@faker-js/faker: 10.5.0
   postman-collection>uuid: 11.1.1
   protobufjs: 7.6.5
   proxy-addr: 2.0.8
@@ -73,3 +74,4 @@ overrides:
 patchedDependencies:
   '@sundaeswap/core': patches/@sundaeswap__core.patch
   http-cache-semantics@4.3.0: patches/http-cache-semantics@4.3.0.patch
+  postman-collection@5.2.0: patches/postman-collection@5.2.0.patch
