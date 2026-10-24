@@ -261,6 +261,13 @@ Document all four limits. Build against none of them.
   checked there. Every node must sign each snapshot, so the smaller of the
   two limits should bind what gets confirmed, and a larger tx stalls its
   snapshot as above (INFERRED from the Hydra snapshot protocol, not measured).
+- _Corrected 2026-10-24:_ VERIFIED: The preceding 14,000-byte L1 batch cap
+  describes the old code. The V2 L1 batch paths that used that cap now check
+  complete signed CBOR against the chain's `maxTxSize` before submitting the
+  batch.
+  Registry mint peels tail items until a signed prefix fits. Evidence:
+  `packages/payment-source-v2/src/builders/batch-helpers.ts:348-373` and
+  `packages/payment-source-v2/src/services/registry/register/signed-batch.ts:13-37`.
 - _Original consequence, kept for the record:_ we remain exposed to limit 3
   by construction. It requires a counterparty to
   deliberately park an output with a very large resting datum, costs them its

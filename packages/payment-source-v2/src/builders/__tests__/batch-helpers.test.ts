@@ -2,13 +2,10 @@ import type { UTxO } from '@meshsdk/core';
 import {
 	assertNoCollateralOverlap,
 	assertSignedL1TxSizeWithinProtocolLimit,
-	assertTxSizeWithinLimit,
 	computeCollateralFromExUnits,
 	getSpendableWalletUtxos,
 	getWalletUtxosForSelection,
 	intersectTxWindows,
-	isTxSizeWithinLimit,
-	MAX_SAFE_TX_BYTES,
 	pickBatchCollateral,
 	shrinkBatchToFit,
 	type BatchShrinkReason,
@@ -77,7 +74,6 @@ describe('intersectTxWindows', () => {
 		expect(result).toEqual({ invalidBefore: 200, invalidAfter: 200 });
 	});
 });
-
 describe('pickBatchCollateral', () => {
 	it('returns null when there are no UTxOs', () => {
 		expect(pickBatchCollateral([], [])).toBeNull();
@@ -435,35 +431,6 @@ describe('assertNoCollateralOverlap', () => {
 	});
 });
 
-describe('assertTxSizeWithinLimit', () => {
-	it('does not throw for an empty tx hex', () => {
-		expect(() => assertTxSizeWithinLimit('', 'label')).not.toThrow();
-	});
-
-	it('does not throw exactly at the limit', () => {
-		// 2 hex chars per byte; MAX_SAFE_TX_BYTES bytes = 2 * MAX_SAFE_TX_BYTES chars.
-		const hex = '0'.repeat(MAX_SAFE_TX_BYTES * 2);
-		expect(() => assertTxSizeWithinLimit(hex, 'label')).not.toThrow();
-	});
-
-	it('throws one byte over the limit', () => {
-		const hex = '0'.repeat((MAX_SAFE_TX_BYTES + 1) * 2);
-		expect(() => assertTxSizeWithinLimit(hex, 'batch-mint')).toThrow(/batch-mint/);
-		expect(() => assertTxSizeWithinLimit(hex, 'batch-mint')).toThrow(new RegExp(String(MAX_SAFE_TX_BYTES)));
-	});
-
-	it('includes the label and the actual size in the error message', () => {
-		const overBytes = MAX_SAFE_TX_BYTES + 100;
-		const hex = '0'.repeat(overBytes * 2);
-		expect(() => assertTxSizeWithinLimit(hex, 'my-label')).toThrow(new RegExp(String(overBytes)));
-		expect(() => assertTxSizeWithinLimit(hex, 'my-label')).toThrow(/my-label/);
-	});
-
-	it('exports MAX_SAFE_TX_BYTES as 14_000', () => {
-		expect(MAX_SAFE_TX_BYTES).toBe(14_000);
-	});
-});
-
 describe('assertSignedL1TxSizeWithinProtocolLimit', () => {
 	const l1MaxTxSizeBytes = 16_384;
 	// CI measured 14,261 unsigned bytes. A near-sized local Mesh tx gained 106 signed bytes.
@@ -506,30 +473,5 @@ describe('assertSignedL1TxSizeWithinProtocolLimit', () => {
 		expect(() => assertSignedL1TxSizeWithinProtocolLimit('00', invalidProtocolParameters, 'batch-interaction')).toThrow(
 			/batch-interaction: L1 protocol parameters have no valid maxTxSize/,
 		);
-	});
-});
-
-describe('isTxSizeWithinLimit', () => {
-	it('returns true for an empty tx hex', () => {
-		expect(isTxSizeWithinLimit('')).toBe(true);
-	});
-
-	it('returns true exactly at the limit', () => {
-		const hex = '0'.repeat(MAX_SAFE_TX_BYTES * 2);
-		expect(isTxSizeWithinLimit(hex)).toBe(true);
-	});
-
-	it('returns false one byte over the limit', () => {
-		const hex = '0'.repeat((MAX_SAFE_TX_BYTES + 1) * 2);
-		expect(isTxSizeWithinLimit(hex)).toBe(false);
-	});
-
-	it('agrees with assertTxSizeWithinLimit at the boundary', () => {
-		const atLimit = '0'.repeat(MAX_SAFE_TX_BYTES * 2);
-		const overLimit = '0'.repeat((MAX_SAFE_TX_BYTES + 1) * 2);
-		expect(isTxSizeWithinLimit(atLimit)).toBe(true);
-		expect(() => assertTxSizeWithinLimit(atLimit, 'label')).not.toThrow();
-		expect(isTxSizeWithinLimit(overLimit)).toBe(false);
-		expect(() => assertTxSizeWithinLimit(overLimit, 'label')).toThrow();
 	});
 });

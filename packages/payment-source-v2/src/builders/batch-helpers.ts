@@ -246,8 +246,6 @@ export type BatchShrinkResult<T> = {
  *     (use `intersectTxWindows(...) != null`)
  *   - enough wallet UTxOs for the spending side after reserving collateral
  *     separately (`pickBatchCollateral(...) != null`)
- *   - tx size within `MAX_SAFE_TX_BYTES` after a build pass
- *     (use `assertTxSizeWithinLimit` wrapped in a try/catch)
  *
  * The order of `items` matters — items at the FRONT are kept first. Callers
  * MUST pre-sort by priority (e.g. oldest scheduled first, highest-fee
@@ -318,16 +316,6 @@ export function assertNoCollateralOverlap(
 	}
 }
 
-/**
- * Conway protocol parameter `max_tx_size` is 16384 bytes. We cap at 14_000
- * to leave headroom for witness growth between build-time and sign-time —
- * adding signers, swapping a key witness for a script witness with a larger
- * Plutus program, or any post-build inflation can push a borderline-OK tx
- * over the limit at submit. 14KB is the empirical safe ceiling used across
- * the V1 builders.
- */
-export const MAX_SAFE_TX_BYTES = 14_000;
-
 // Conway phase-1 collateral math moved to `@masumi/payment-core/collateral` so
 // the V1-pinned registry builders in `src/services/registry/shared.ts` can
 // share one implementation with the V2 batch builders (ADR 0005: the module
@@ -356,48 +344,16 @@ export function lovelaceFromUtxo(utxo: UTxO): bigint {
 	return entry != null ? BigInt(entry.quantity) : 0n;
 }
 
-/**
- * Throws if the unsigned tx (hex CBOR) exceeds `MAX_SAFE_TX_BYTES`. Useful
- * as the `predicate` body inside `shrinkBatchToFit` after a build pass:
- *
- * ```ts
- * shrinkBatchToFit(items, (subset) => {
- *   try {
- *     const tx = await buildBatch(subset);
- *     assertTxSizeWithinLimit(tx, 'batch-interaction');
- *     return { ok: true };
- *   } catch {
- *     return { ok: false, reason: 'tx-size' };
- *   }
- * });
- * ```
- *
- * The label is woven into the error message so callers can disambiguate
- * which builder produced the over-sized tx.
- *
- * @param unsignedTxHex Hex-encoded CBOR — each pair of chars is one byte.
- * @param label         Free-form label for diagnostics (e.g. 'batch-mint').
- * @throws Error when `unsignedTxHex.length / 2 > MAX_SAFE_TX_BYTES`.
- */
-export function assertTxSizeWithinLimit(unsignedTxHex: string, label: string): void {
-	const sizeBytes = Math.floor(unsignedTxHex.length / 2);
-	if (sizeBytes > MAX_SAFE_TX_BYTES) {
-		throw new Error(
-			`${label}: unsigned tx size ${sizeBytes} bytes exceeds MAX_SAFE_TX_BYTES (${MAX_SAFE_TX_BYTES}); shrink the batch and retry`,
-		);
+/** Read and validate the current chain limit before selecting an L1 batch size. */
+export function getL1MaxTxSize(protocolParameters: unknown, label: string): number {
+	const maxTxSize =
+		protocolParameters != null && typeof protocolParameters === 'object' && 'maxTxSize' in protocolParameters
+			? protocolParameters.maxTxSize
+			: undefined;
+	if (typeof maxTxSize !== 'number' || !Number.isSafeInteger(maxTxSize) || maxTxSize <= 0) {
+		throw new Error(`${label}: L1 protocol parameters have no valid maxTxSize`);
 	}
-}
-
-/**
- * Non-throwing companion to `assertTxSizeWithinLimit`. Returns `true` when the
- * unsigned tx (hex CBOR) is within `MAX_SAFE_TX_BYTES`. Use this to drive an
- * async size-aware shrink loop where the builder is async and therefore cannot
- * run inside the synchronous `shrinkBatchToFit` predicate.
- *
- * @param unsignedTxHex Hex-encoded CBOR — each pair of chars is one byte.
- */
-export function isTxSizeWithinLimit(unsignedTxHex: string): boolean {
-	return Math.floor(unsignedTxHex.length / 2) <= MAX_SAFE_TX_BYTES;
+	return maxTxSize;
 }
 
 /** Check the complete signed L1 transaction against the chain's protocol limit. */
@@ -406,13 +362,7 @@ export function assertSignedL1TxSizeWithinProtocolLimit(
 	protocolParameters: unknown,
 	label: string,
 ): void {
-	const maxTxSize =
-		protocolParameters != null && typeof protocolParameters === 'object' && 'maxTxSize' in protocolParameters
-			? protocolParameters.maxTxSize
-			: undefined;
-	if (typeof maxTxSize !== 'number' || !Number.isSafeInteger(maxTxSize) || maxTxSize <= 0) {
-		throw new Error(`${label}: L1 protocol parameters have no valid maxTxSize`);
-	}
+	const maxTxSize = getL1MaxTxSize(protocolParameters, label);
 	const sizeBytes = signedTxHex.length / 2;
 	if (!Number.isInteger(sizeBytes)) {
 		throw new Error(`${label}: signed tx hex has an odd length`);
