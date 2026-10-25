@@ -13699,6 +13699,10 @@ export type GetHydraInviteData = {
     path?: never;
     query?: {
         limit?: number;
+        /**
+         * Resume at this invite ID, inclusive
+         */
+        cursorId?: string;
         status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked' | 'Failed';
         /**
          * Filter by Cardano network
