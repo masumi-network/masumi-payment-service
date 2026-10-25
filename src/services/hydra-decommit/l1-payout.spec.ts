@@ -1,4 +1,14 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import {
+	BigNum,
+	ConstrPlutusData,
+	Credential,
+	EnterpriseAddress,
+	PlutusData,
+	PlutusList,
+	ScriptHash,
+} from '@emurgo/cardano-serialization-lib-nodejs';
+import { DEFAULT_HYDRA_HEAD_SCRIPT_HASH, HYDRA_HEAD_V2_ASSET_NAME_HEX } from '@/lib/hydra/hydra/head-init-validation';
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
@@ -10,10 +20,30 @@ const { findDecommitPayoutTx, decommitPayoutSearchBounds } = await import('./l1-
 
 const ADDRESS = 'addr_test1_local';
 const TOKEN = 'a'.repeat(56) + '746f6b656e';
+const HEAD_ID = 'ab'.repeat(28);
+const STATE_TOKEN = `${HEAD_ID}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
+const HEAD_ADDRESS = EnterpriseAddress.new(
+	0,
+	Credential.from_scripthash(ScriptHash.from_hex(DEFAULT_HYDRA_HEAD_SCRIPT_HASH)),
+)
+	.to_address()
+	.to_bech32();
+const OPEN_FIELDS = PlutusList.new();
+OPEN_FIELDS.add(PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.from_str('0'), PlutusList.new())));
+const OPEN_DATUM = PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.from_str('0'), OPEN_FIELDS)).to_hex();
+const CLOSED_DATUM = PlutusData.new_constr_plutus_data(
+	ConstrPlutusData.new(BigNum.from_str('1'), PlutusList.new()),
+).to_hex();
+const STATE_AMOUNT = [{ unit: STATE_TOKEN, quantity: '1' }];
+
+const findPayout = (params: Omit<Parameters<typeof findDecommitPayoutTx>[0], 'headId'>) =>
+	findDecommitPayoutTx({ ...params, headId: HEAD_ID });
 
 function blockfrostWith(
 	txs: Record<string, Array<{ address: string; amount: Array<{ unit: string; quantity: string }> }>>,
 	blockTimes: Record<string, number> = {},
+	hasHeadTransition = true,
+	headDatum = OPEN_DATUM,
 ) {
 	const addressesTransactions = jest.fn() as AnyMock;
 	addressesTransactions.mockImplementation((_address: string, options: { page: number }) =>
@@ -22,11 +52,59 @@ function blockfrostWith(
 		),
 	);
 	const txsUtxos = jest.fn() as AnyMock;
-	txsUtxos.mockImplementation((hash: string) => Promise.resolve({ outputs: txs[hash] ?? [] }));
+	txsUtxos.mockImplementation((hash: string) =>
+		Promise.resolve({
+			inputs: hasHeadTransition ? [{ address: HEAD_ADDRESS, amount: STATE_AMOUNT }] : [],
+			outputs: [
+				...(txs[hash] ?? []),
+				...(hasHeadTransition ? [{ address: HEAD_ADDRESS, amount: STATE_AMOUNT, inline_datum: headDatum }] : []),
+			],
+		}),
+	);
 	return { addressesTransactions, txsUtxos } as never;
 }
 
 describe('findDecommitPayoutTx', () => {
+	it('does not link an unrelated exact-value payment to a finalized decommit', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith({ unrelated: [{ address: ADDRESS, amount }] }, {}, false);
+
+		const found = await findPayout({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBeNull();
+	});
+
+	it('does not link an exact-value transfer in a transaction that closed the head', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith({ close: [{ address: ADDRESS, amount }] }, {}, true, CLOSED_DATUM);
+
+		const found = await findPayout({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBeNull();
+	});
+
+	it('does not link a payout from another head', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith({ otherHead: [{ address: ADDRESS, amount }] });
+
+		const found = await findDecommitPayoutTx({
+			blockfrost,
+			headId: 'cd'.repeat(28),
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBeNull();
+	});
+
 	it('finds the transaction whose output is exactly what left the head', async () => {
 		const blockfrost = blockfrostWith({
 			decoy: [{ address: ADDRESS, amount: [{ unit: 'lovelace', quantity: '9999999' }] }],
@@ -41,7 +119,7 @@ describe('findDecommitPayoutTx', () => {
 			],
 		});
 
-		const found = await findDecommitPayoutTx({
+		const found = await findPayout({
 			blockfrost,
 			address: ADDRESS,
 			expected: { lovelace: 4_829_879n, assets: { [TOKEN]: '1' } },
@@ -65,7 +143,7 @@ describe('findDecommitPayoutTx', () => {
 			],
 		});
 
-		const found = await findDecommitPayoutTx({
+		const found = await findPayout({
 			blockfrost,
 			address: ADDRESS,
 			expected: { lovelace: 2_000_000n, assets: { [TOKEN]: '5' } },
@@ -90,7 +168,7 @@ describe('findDecommitPayoutTx', () => {
 			],
 		});
 
-		const found = await findDecommitPayoutTx({
+		const found = await findPayout({
 			blockfrost,
 			address: ADDRESS,
 			expected: { lovelace: 4_829_879n, assets: { [TOKEN]: '1' } },
@@ -102,7 +180,7 @@ describe('findDecommitPayoutTx', () => {
 	// A payout that has not been seen yet is not a failure: the withdrawal is
 	// still settled, it just has no link on it.
 	it('returns null rather than throwing when nothing matches', async () => {
-		const found = await findDecommitPayoutTx({
+		const found = await findPayout({
 			blockfrost: blockfrostWith({}),
 			address: ADDRESS,
 			expected: { lovelace: 1n, assets: {} },
@@ -129,7 +207,7 @@ describe('findDecommitPayoutTx', () => {
 			{ p3: t3, p2: t2, p1: t1 },
 		);
 
-		const found = await findDecommitPayoutTx({
+		const found = await findPayout({
 			blockfrost,
 			address: ADDRESS,
 			expected: { lovelace: 3_500_000n, assets: {} },
@@ -153,7 +231,7 @@ describe('findDecommitPayoutTx', () => {
 			{ p3: t3, p2: t2, p1: t1 },
 		);
 
-		const found = await findDecommitPayoutTx({
+		const found = await findPayout({
 			blockfrost,
 			address: ADDRESS,
 			expected: { lovelace: 3_500_000n, assets: {} },
@@ -176,11 +254,20 @@ describe('findDecommitPayoutTx', () => {
 		});
 		const txsUtxos = jest.fn() as AnyMock;
 		txsUtxos.mockImplementation((hash: string) =>
-			Promise.resolve({ outputs: hash === 'payout' ? [{ address: ADDRESS, amount }] : [] }),
+			Promise.resolve({
+				inputs: [{ address: HEAD_ADDRESS, amount: STATE_AMOUNT }],
+				outputs:
+					hash === 'payout'
+						? [
+								{ address: ADDRESS, amount },
+								{ address: HEAD_ADDRESS, amount: STATE_AMOUNT, inline_datum: OPEN_DATUM },
+							]
+						: [],
+			}),
 		);
 		const blockfrost = { addressesTransactions, txsUtxos } as never;
 
-		const found = await findDecommitPayoutTx({
+		const found = await findPayout({
 			blockfrost,
 			address: ADDRESS,
 			expected: { lovelace: 3_500_000n, assets: {} },

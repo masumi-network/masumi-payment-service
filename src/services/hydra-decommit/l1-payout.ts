@@ -9,15 +9,15 @@
  * admin UI look like it linked to a chain explorer and then 404.
  *
  * So the L1 transaction has to be observed rather than read off the event. The
- * search is narrow on purpose: the decrement pays the participant's own address
- * an output whose value the head has already told us exactly, within a couple of
- * blocks of the approval. Matching on that value rather than on timing alone
- * means an unrelated payment arriving in the same block cannot be mistaken for
- * the withdrawal.
+ * search is narrow on purpose: the decrement moves this head's state token,
+ * leaves the head Open and pays the participant's own address an output whose
+ * value the head has already told us exactly. Value and timing alone cannot
+ * distinguish an unrelated payment of the same amount.
  */
 
 import type { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { logger } from '@masumi/payment-core/logger';
+import { hasOpenHydraHeadStateTransition } from '@/lib/hydra/hydra/head-init-validation';
 
 /** What the head says landed on L1, as unit to quantity. Lovelace under ''. */
 export type DistributedValue = { lovelace: bigint; assets: Record<string, string> };
@@ -135,8 +135,7 @@ function valuesMatch(
  * transaction not identified" than lose the settlement itself.
  *
  * `notBefore` and `exclude` exist because several identical-amount withdrawals
- * can land minutes apart: matching on value alone, as above, would happily
- * return someone else's payout. `notBefore` discards history from before this
+ * can land minutes apart. `notBefore` discards history from before this
  * withdrawal's own creation, and `exclude` discards hashes already attributed
  * to another row. Among what is left, the OLDEST match wins — the payout
  * closest after creation — not the newest, which is what an unbounded
@@ -148,12 +147,13 @@ function valuesMatch(
  */
 export async function findDecommitPayoutTx(params: {
 	blockfrost: BlockFrostAPI;
+	headId: string;
 	address: string;
 	expected: DistributedValue;
 	notBefore?: Date;
 	exclude?: ReadonlySet<string>;
 }): Promise<string | null> {
-	const { blockfrost, address, expected, notBefore, exclude } = params;
+	const { blockfrost, headId, address, expected, notBefore, exclude } = params;
 	const notBeforeSeconds = notBefore ? Math.floor(notBefore.getTime() / 1000) : undefined;
 
 	let oldestMatch: { tx_hash: string; block_time: number } | null = null;
@@ -173,6 +173,9 @@ export async function findDecommitPayoutTx(params: {
 			if (notBeforeSeconds !== undefined && entry.block_time < notBeforeSeconds) continue;
 			try {
 				const utxos = await blockfrost.txsUtxos(entry.tx_hash);
+				// An exact-value transfer to this wallet is insufficient. A decrement
+				// spends this head's official state output and leaves a new Open one.
+				if (!hasOpenHydraHeadStateTransition(utxos, headId)) continue;
 				const match = utxos.outputs.some(
 					(output) => output.address === address && valuesMatch(output.amount, expected),
 				);

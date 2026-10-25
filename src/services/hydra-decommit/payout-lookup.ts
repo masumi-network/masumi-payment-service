@@ -44,16 +44,22 @@ export async function resolveDecommitPayoutTx(params: {
 	const row = await prisma.hydraDecommit.findUnique({
 		where: { id: decommitId },
 		include: {
+			HydraHead: { select: { headIdentifier: true } },
 			LocalParticipant: {
 				include: { Wallet: { include: { PaymentSource: { include: { PaymentSourceConfig: true } } } } },
 			},
 		},
 	});
 	if (!row || row.l1TxId !== null) return;
+	if (row.HydraHead.headIdentifier === null) {
+		logger.warn(`[HydraDecommit] no head identifier available to verify the payout for ${decommitId}`);
+		return;
+	}
 
 	// Other withdrawals of the same head can pay the same address the same
 	// amount minutes apart (Defect H); bound the search to this row's own
 	// creation and rule out hashes already claimed by a sibling withdrawal.
+	// The chain candidate must also move this head's state token and leave it Open.
 	// See `decommitPayoutSearchBounds` for why the bound is createdAt and not
 	// approvedAt.
 	const siblingPayouts = await prisma.hydraDecommit.findMany({
@@ -72,6 +78,7 @@ export async function resolveDecommitPayoutTx(params: {
 	const blockfrost = getBlockfrostInstance(paymentSource.network, apiKey);
 	const txId = await findDecommitPayoutTx({
 		blockfrost,
+		headId: row.HydraHead.headIdentifier,
 		address: row.destinationAddress,
 		expected: distributed,
 		notBefore,
