@@ -20,6 +20,9 @@ import { revokeHydraInvite, useHydraInvites, type HydraInvite } from '@/lib/hook
 import { HydraInviteDetailsDialog } from '@/components/hydra/HydraInviteDetailsDialog';
 import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
 import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDialog';
+import { ListPager, usePagedList } from '@/components/hydra/ListPager';
+
+const INVITES_PER_VIEW = 10;
 
 function statusTone(status: HydraInvite['status']) {
   if (status === 'Completed') return 'default';
@@ -46,9 +49,17 @@ function describe(invite: HydraInvite): string {
 /** Invite list for the Hydra manage dialog (embedded, no outer card chrome). */
 export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boolean }) {
   const { apiClient, network } = useAppContext();
-  const { invites, refetch, isLoading, isError } = useHydraInvites(
-    network === 'Preprod' || network === 'Mainnet' ? network : undefined,
-  );
+  const {
+    invites,
+    refetch,
+    isLoading,
+    isError,
+    isFetchNextPageError,
+    hasMore,
+    isLoadingMore,
+    loadMore,
+  } = useHydraInvites(network === 'Preprod' || network === 'Mainnet' ? network : undefined);
+  const paged = usePagedList(invites, INVITES_PER_VIEW);
   const [isIssueOpen, setIsIssueOpen] = useState(false);
   const [isRedeemOpen, setIsRedeemOpen] = useState(false);
   const [pendingRevoke, setPendingRevoke] = useState<HydraInvite | null>(null);
@@ -118,42 +129,53 @@ export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boole
             No invites yet. Invite someone to open the first head, or redeem a code they sent you.
           </p>
         ) : (
-          <ul className="divide-y rounded-md border">
-            {invites.map((invite) => (
-              <li
-                key={invite.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
-              >
-                <button
-                  type="button"
-                  className="min-w-0 space-y-1 text-left"
-                  onClick={() => setDetailsInvite(invite)}
+          <>
+            <ul className="divide-y rounded-md border">
+              {paged.items.map((invite) => (
+                <li
+                  key={invite.id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs underline-offset-4 hover:underline">
-                      {invite.nonce.slice(0, 12)}…
-                    </span>
-                    <Badge variant={statusTone(invite.status)}>{invite.status}</Badge>
-                    <Badge variant="outline">{invite.role}</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{describe(invite)}</p>
-                </button>
-
-                <div className="flex items-center gap-1">
-                  <CopyButton value={invite.nonce} />
-                  <Button
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={busyId === invite.id}
+                    className="min-w-0 space-y-1 text-left"
                     onClick={() => setDetailsInvite(invite)}
                   >
-                    Details
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs underline-offset-4 hover:underline">
+                        {invite.nonce.slice(0, 12)}…
+                      </span>
+                      <Badge variant={statusTone(invite.status)}>{invite.status}</Badge>
+                      <Badge variant="outline">{invite.role}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{describe(invite)}</p>
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    <CopyButton value={invite.nonce} />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === invite.id}
+                      onClick={() => setDetailsInvite(invite)}
+                    >
+                      Details
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {isFetchNextPageError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                Could not load older invites.
+                <Button type="button" size="sm" variant="outline" onClick={loadMore}>
+                  Try again
+                </Button>
+              </div>
+            )}
+            <ListPager page={paged} more={{ hasMore, isLoadingMore, loadMore }} />
+          </>
         )}
       </div>
 

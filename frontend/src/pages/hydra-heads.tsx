@@ -74,7 +74,12 @@ export default function HydraHeadsPage() {
   // and "Stop taking new heads" stayed on offer after the node was already
   // draining, so pressing it again re-sent the same request.
   const [detailsHostId, setDetailsHostId] = useState<string | null>(null);
-  const { invites } = useHydraInvites(selectedNetwork);
+  const {
+    invites,
+    hasMore: hasMoreInvites,
+    isLoadingMore: isLoadingMoreInvites,
+    loadMore: loadMoreInvites,
+  } = useHydraInvites(selectedNetwork);
   const inviteCount = invites.length;
   // Read here rather than through the nodes card: the card now lives in a
   // dialog, so leaving the count to it reported zero until the operator happened
@@ -116,12 +121,16 @@ export default function HydraHeadsPage() {
     () =>
       statusTabs.map((tab) => ({
         name: tab,
+        // Older issued invites can still be on the server. Do not show a
+        // precise All count until the operator has loaded every invite page.
         count:
-          heads.filter((head) => matchesStatusTab(head, tab)).length +
-          (tab === 'All' ? issuedInviteCount : 0),
+          tab === 'All' && hasMoreInvites
+            ? null
+            : heads.filter((head) => matchesStatusTab(head, tab)).length +
+              (tab === 'All' ? issuedInviteCount : 0),
         variant: tab === 'Open' && stats.openHeads > 0 ? ('alert' as const) : undefined,
       })),
-    [heads, issuedInviteCount, stats.openHeads],
+    [heads, hasMoreInvites, issuedInviteCount, stats.openHeads],
   );
 
   const filteredHeads = useMemo(() => {
@@ -417,7 +426,8 @@ export default function HydraHeadsPage() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setIsInvitesOpen(true)}>
-                  Manage invites{inviteCount > 0 ? ` (${inviteCount})` : ''}
+                  Manage invites
+                  {inviteCount > 0 ? ` (${inviteCount}${hasMoreInvites ? '+' : ''})` : ''}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -434,6 +444,17 @@ export default function HydraHeadsPage() {
             onOpenHead={(head) => setSelectedHeadId(head.id)}
             onRequestLifecycle={(head, action) => setPendingLifecycleAction({ head, action })}
           />
+          {activeTab === 'All' && hasMoreInvites && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLoadingMoreInvites}
+              onClick={loadMoreInvites}
+            >
+              {isLoadingMoreInvites ? 'Loading older invites…' : 'Load older invites'}
+            </Button>
+          )}
         </div>
       </AnimatedPage>
       <HydraHeadDetailsDialog
