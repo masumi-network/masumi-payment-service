@@ -365,7 +365,7 @@ describe('findDecommitPayoutTx', () => {
 	// Defect H: several identical-amount withdrawals minutes apart all match on
 	// value, so the search must land on the one closest after this withdrawal's
 	// own approval rather than whichever is newest on chain.
-	it('prefers the oldest matching payout at or after notBefore', async () => {
+	it('prefers the oldest matching payout after notBefore', async () => {
 		const t1 = 1_000;
 		const t2 = 2_000;
 		const t3 = 3_000;
@@ -388,6 +388,26 @@ describe('findDecommitPayoutTx', () => {
 		});
 
 		expect(found).toBe(txHash('p2'));
+	});
+
+	it('excludes a prior payout whose block second equals this withdrawal creation second', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith(
+			{
+				current: [{ address: ADDRESS, amount }],
+				prior: [{ address: ADDRESS, amount }],
+			},
+			{ current: 1_020, prior: 1_000 },
+		);
+
+		const found = await findPayout({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+			notBefore: new Date(1_000_500),
+		});
+
+		expect(found).toBe(txHash('current'));
 	});
 
 	it('skips a transaction already attributed to another withdrawal', async () => {

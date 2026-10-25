@@ -197,8 +197,8 @@ function isDecrementOfHead(cbor: string, txHash: string, utxos: IndexedTransacti
  * transaction not identified" than lose the settlement itself.
  *
  * `notBefore` and `exclude` exist because several identical-amount withdrawals
- * can land minutes apart. `notBefore` discards history from before this
- * withdrawal's own creation, and `exclude` discards hashes already attributed
+ * can land minutes apart. `notBefore` discards history through the whole block
+ * second containing this withdrawal's creation, and `exclude` discards hashes already attributed
  * to another row. Among what is left, the OLDEST match wins — the payout
  * closest after creation — not the newest, which is what an unbounded
  * newest-first walk would otherwise hand back. That promise holds only while
@@ -232,7 +232,12 @@ export async function findDecommitPayoutTx(params: {
 
 		for (const entry of history) {
 			if (exclude?.has(entry.tx_hash)) continue;
-			if (notBeforeSeconds !== undefined && entry.block_time < notBeforeSeconds) continue;
+			// Blockfrost reports whole-second slot times. A previous decrement can be
+			// observed and a new withdrawal created within that same second; admitting
+			// the equal slot would let the previous payout win the oldest-match rule.
+			// An equal-second candidate might be genuine, but this timestamp cannot
+			// distinguish it from the prior payout. Leave the link unknown instead.
+			if (notBeforeSeconds !== undefined && entry.block_time <= notBeforeSeconds) continue;
 			try {
 				const utxos = await blockfrost.txsUtxos(entry.tx_hash);
 				// An exact-value transfer to this wallet is insufficient. A decrement
