@@ -72,10 +72,13 @@ async function confirmTransfer(transfer: InFlightTransfer, transactionId: string
 		() =>
 			prisma.$transaction(
 				async (tx) => {
-					await tx.transaction.updateMany({
+					const decision = await tx.transaction.updateMany({
 						where: { id: transactionId, status: TransactionStatus.Pending },
 						data: { txHash, status: TransactionStatus.Confirmed, lastCheckedAt: new Date() },
 					});
+					// A second resolver may have already finalized this Transaction.
+					// Its decision owns the transfer row and funding allowance.
+					if (decision.count !== 1) return;
 					await tx.walletFundTransfer.updateMany({
 						where: { id: transfer.id, transactionId },
 						data: { status: TransactionStatus.Confirmed, txHash, lastCheckedAt: new Date() },
@@ -106,10 +109,11 @@ async function failTransfer(
 		() =>
 			prisma.$transaction(
 				async (tx) => {
-					await tx.transaction.updateMany({
+					const decision = await tx.transaction.updateMany({
 						where: { id: transactionId, status: TransactionStatus.Pending },
 						data: { status: TransactionStatus.RolledBack, lastCheckedAt: new Date() },
 					});
+					if (decision.count !== 1) return;
 					await tx.walletFundTransfer.updateMany({
 						where: { id: transfer.id, transactionId },
 						data: { status: transferStatus, errorNote, lastCheckedAt: new Date() },
@@ -133,14 +137,17 @@ async function mirrorTerminal(
 	txHash: string | null,
 	errorNote: string | null,
 ): Promise<void> {
+	const expectedTransactionStatus =
+		transferStatus === TransactionStatus.Confirmed ? TransactionStatus.Confirmed : TransactionStatus.RolledBack;
 	await retryOnSerializationConflict(
 		() =>
 			prisma.$transaction(
 				async (tx) => {
-					await tx.walletFundTransfer.updateMany({
-						where: { id: transfer.id, transactionId },
+					const mirrored = await tx.walletFundTransfer.updateMany({
+						where: { id: transfer.id, transactionId, Transaction: { is: { status: expectedTransactionStatus } } },
 						data: { status: transferStatus, txHash, errorNote, lastCheckedAt: new Date() },
 					});
+					if (mirrored.count !== 1) return;
 					// Best-effort release in case the shared path advanced the
 					// Transaction but did not clear this wallet's lock.
 					await tx.hotWallet.updateMany({
