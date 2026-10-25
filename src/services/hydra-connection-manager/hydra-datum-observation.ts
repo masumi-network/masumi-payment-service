@@ -145,3 +145,38 @@ export async function releaseBlockedWallet(
 		data: { lockedAt: null, lockPurpose: null },
 	});
 }
+
+/** A signed peer continuation consumed the input reserved by a different local action. */
+export async function settleSupersededHydraReservation(
+	tx: Prisma.TransactionClient,
+	params: {
+		hydraHeadId: string;
+		observedTxId: string;
+		observedTransactionId: string;
+		currentTransaction: {
+			id: string;
+			txHash: string | null;
+			intendedTxHash: string | null;
+			status: TransactionStatus;
+			layer: TransactionLayer;
+			hydraHeadId: string | null;
+			BlocksWallet: { id: string } | null;
+		} | null;
+	},
+): Promise<void> {
+	const { hydraHeadId, observedTxId, observedTransactionId, currentTransaction } = params;
+	if (
+		currentTransaction?.id !== observedTransactionId &&
+		currentTransaction?.status === TransactionStatus.Pending &&
+		currentTransaction.layer === TransactionLayer.L2 &&
+		currentTransaction.hydraHeadId === hydraHeadId &&
+		currentTransaction.txHash !== observedTxId &&
+		currentTransaction.intendedTxHash !== observedTxId
+	) {
+		await tx.transaction.update({
+			where: { id: currentTransaction.id },
+			data: { status: TransactionStatus.RolledBack },
+		});
+	}
+	await releaseBlockedWallet(tx, currentTransaction);
+}

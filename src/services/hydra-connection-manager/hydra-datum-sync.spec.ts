@@ -1674,6 +1674,69 @@ describe('applyDatumStateToLocalRequests', () => {
 		);
 	});
 
+	it.each([null, 'local-result-tx'])(
+		'applies a confirmed peer refund request over a conflicting local reservation with posted hash %s',
+		async (postedHash) => {
+			const reservation = {
+				id: 'local-reservation',
+				txHash: postedHash,
+				intendedTxHash: 'local-result-tx',
+				status: TransactionStatus.Pending,
+				layer: TransactionLayer.L2,
+				hydraHeadId: 'head-1',
+				BlocksWallet: { id: 'seller-wallet' },
+			};
+			mockPaymentFindUnique.mockResolvedValue({
+				...makePaymentRequest(),
+				onChainState: OnChainState.FundsLocked,
+				layer: TransactionLayer.L2,
+				currentHydraUtxoTxHash: 'lock-tx',
+				currentHydraUtxoOutputIndex: 0,
+				currentHydraUtxoValue: [{ unit: 'lovelace', quantity: '10000000' }],
+				currentTransactionId: reservation.id,
+				CurrentTransaction: reservation,
+				BuyerWallet: { walletVkey: 'buyer-vkey', walletAddress: 'addr-buyer' },
+				NextAction: { requestedAction: PaymentAction.SubmitResultInitiated },
+			});
+
+			const outcome = await applyDatumStateToLocalRequests({
+				hydraHeadId: 'head-1',
+				txId: 'peer-refund-tx',
+				paymentSourceId: 'source-1',
+				decoded: {
+					...decodedInitialLock,
+					state: SmartContractState.RefundRequested,
+					buyerCooldownTime: 1_655_769_702_000n,
+				},
+				newOnChainState: OnChainState.RefundRequested,
+				outputAmounts: [{ unit: 'lovelace', quantity: '10000000' }],
+				outputReference: { txHash: 'peer-refund-tx', outputIndex: 0 },
+				transactionEvidence: makeEvidence({
+					txHash: 'peer-refund-tx',
+					inputs: [{ txHash: 'lock-tx', outputIndex: 0, bodyIndex: 0 }],
+					signerVkeys: ['buyer-vkey'],
+				}),
+				confirmationTimeMs: 60,
+				targetSide: 'payment',
+			});
+
+			expect(outcome).toBe('applied');
+			expect(mockTransactionUpdate).toHaveBeenCalledWith({
+				where: { id: reservation.id },
+				data: { status: TransactionStatus.RolledBack },
+			});
+			expect(mockPaymentUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({ onChainState: OnChainState.RefundRequested }),
+				}),
+			);
+			expect(mockHotWalletUpdate).toHaveBeenCalledWith({
+				where: { id: 'seller-wallet', deletedAt: null },
+				data: { lockedAt: null, lockPurpose: null },
+			});
+		},
+	);
+
 	it('keeps an intended-only continuation pending when CBOR spends a sibling output', async () => {
 		const intendedOnlyTransaction = {
 			id: 'intended-only-transaction',
