@@ -27,8 +27,6 @@ const LOCK_DIRECTORY = 'host.lock';
 const TAKEOVER_DIRECTORY = 'host.lock.takeover';
 const OWNER_FILE = 'owner.json';
 
-/** How long a takeover may hold the gate before it is assumed to have died. */
-const TAKEOVER_STALE_AFTER_MS = 30_000;
 /** A takeover is a handful of file operations, so contenders wait it out. */
 const TAKEOVER_RETRY_MS = 25;
 
@@ -190,14 +188,9 @@ export class HostLock {
 			},
 		);
 		if (!taken) {
-			// Held, or left behind by a contender that died mid-takeover. Judged on
-			// real filesystem time rather than the injected clock: this measures how
-			// long ago the directory was made, not the heartbeat freshness the
-			// injected clock exists to simulate.
-			const stat = await fs.stat(this.takeoverPath).catch(() => null);
-			if (stat !== null && Date.now() - stat.mtimeMs > TAKEOVER_STALE_AFTER_MS) {
-				await fs.rm(this.takeoverPath, { recursive: true, force: true });
-			}
+			// Age cannot distinguish a dead contender from a paused one. Removing
+			// its gate would let both run this critical section, and its finally
+			// could remove a successor's gate. Only the creator removes this gate.
 			return null;
 		}
 		try {
@@ -252,7 +245,12 @@ export class HostLock {
 				// file operations, so this waits rather than races it.
 				await new Promise((resolve) => setTimeout(resolve, TAKEOVER_RETRY_MS));
 			}
-			throw new HostLockError(`could not acquire ${this.lockPath}; another contender repeatedly won the lease`);
+			throw new HostLockError(
+				`could not acquire ${this.lockPath}; takeover gate ${this.takeoverPath} remained held. ` +
+					'If a crashed startup left it behind, stop all Hydra Host processes and startup contenders using this volume, ' +
+					'disable their automatic restarts, and verify that none remain before manually removing only the takeover gate. ' +
+					'Never remove it while a Host or contender may still be running',
+			);
 		} finally {
 			if (candidate.length > 0) {
 				await fs.rm(candidate, { recursive: true, force: true });
