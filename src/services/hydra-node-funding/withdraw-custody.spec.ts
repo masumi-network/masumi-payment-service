@@ -19,10 +19,22 @@ const addressUtxos = jest.fn<
 const history = jest.fn<() => Promise<Array<{ tx_hash: string }>>>();
 const confirmation = jest.fn<(params: { txHash: string; requiredConfirmations: number }) => Promise<string>>();
 const complete = jest.fn<() => Promise<string>>();
+const fetchProtocolParameters =
+	jest.fn<() => Promise<{ coinsPerUtxoSize: number; minFeeA: number; minFeeB: number }>>();
+const protocolParams = jest.fn();
 const submit = jest.fn<() => Promise<string>>();
 const txIn = jest.fn();
 const config = { BLOCK_CONFIRMATIONS_THRESHOLD: 0 };
-const builder = { txIn, changeAddress: () => builder, setNetwork: () => builder, complete };
+const builder = {
+	txIn,
+	protocolParams: (params: object) => {
+		protocolParams(params);
+		return builder;
+	},
+	changeAddress: () => builder,
+	setNetwork: () => builder,
+	complete,
+};
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -39,7 +51,7 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value
 jest.unstable_mockModule('./node-address', () => ({ nodeCardanoAddress: () => 'node-address' }));
 jest.unstable_mockModule('./service', () => ({ recentlySentTo: () => ({}) }));
 jest.unstable_mockModule('@/utils/mesh-cost-model-sync', () => ({
-	getCachedBlockfrostProvider: () => ({ fetchAddressUTxOs: utxos }),
+	getCachedBlockfrostProvider: () => ({ fetchAddressUTxOs: utxos, fetchProtocolParameters }),
 }));
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	getBlockfrostInstance: () => ({ addressesTransactions: history, addressesUtxos: addressUtxos }),
@@ -106,7 +118,8 @@ beforeEach(() => {
 	);
 	history.mockResolvedValue([{ tx_hash: 'a'.repeat(64) }]);
 	confirmation.mockResolvedValue('confirmed-valid');
-	complete.mockResolvedValue('unsigned');
+	complete.mockReset().mockResolvedValue('unsigned');
+	fetchProtocolParameters.mockReset().mockResolvedValue({ coinsPerUtxoSize: 4310, minFeeA: 44, minFeeB: 155381 });
 	submit.mockResolvedValue('a'.repeat(64));
 });
 
@@ -118,8 +131,12 @@ it('sweeps native assets below the ADA dust floor with their entire input value'
 
 it('does not report token-bearing dust as settled if its sweep cannot pay fees', async () => {
 	utxos.mockResolvedValue([tokenUtxo]);
-	complete.mockRejectedValueOnce(new Error('insufficient lovelace'));
-	await expect(withdrawNodeFunds('participant')).rejects.toThrow('insufficient lovelace');
+	complete.mockRejectedValueOnce(new Error('InputSelectionError: UTxO Fully Depleted'));
+	expect(await withdrawNodeFunds('participant')).toMatchObject({
+		code: 'insufficient-funds',
+		balanceLovelace: '1500000',
+		reason: expect.stringMatching(/add ADA.*retry/i),
+	});
 	expect(submit).not.toHaveBeenCalled();
 });
 
@@ -215,4 +232,51 @@ it('checks history before accepting an initial UTxO 404 as an unused address', a
 	expect((await withdrawNodeFunds('participant')).code).toBe('dust');
 	expect(addressUtxos).toHaveBeenCalledTimes(1);
 	expect(history).toHaveBeenCalled();
+});
+
+it.each(['1200000', '1500000', '2000000'])(
+	'attempts an ADA-only sweep of %s lovelace instead of releasing its signer',
+	async (quantity) => {
+		utxos.mockResolvedValue([
+			{ ...tokenUtxo, output: { ...tokenUtxo.output, amount: [{ unit: 'lovelace', quantity }] } },
+		]);
+		expect((await withdrawNodeFunds('participant')).code).toBe('swept');
+		expect(protocolParams).toHaveBeenCalledWith({ coinsPerUtxoSize: 4310, minFeeA: 44, minFeeB: 155381 });
+	},
+);
+
+it('retains nonempty inventory when the builder reports insufficient ADA', async () => {
+	utxos.mockResolvedValue([
+		{ ...tokenUtxo, output: { ...tokenUtxo.output, amount: [{ unit: 'lovelace', quantity: '1000000' }] } },
+	]);
+	complete.mockRejectedValueOnce(new Error('InputSelectionError: UTxO Fully Depleted'));
+	expect(await withdrawNodeFunds('participant')).toMatchObject({
+		code: 'insufficient-funds',
+		balanceLovelace: '1000000',
+		reason: expect.stringMatching(/add ADA.*retry/i),
+	});
+	expect(submit).not.toHaveBeenCalled();
+});
+
+it('does not classify an unrelated build failure as insufficient funds', async () => {
+	utxos.mockResolvedValue([tokenUtxo]);
+	complete.mockRejectedValueOnce(new Error('invalid transaction encoding'));
+	await expect(withdrawNodeFunds('participant')).rejects.toThrow('invalid transaction encoding');
+	expect(submit).not.toHaveBeenCalled();
+});
+
+it('retains the signer when current protocol parameters cannot be read', async () => {
+	utxos.mockResolvedValue([tokenUtxo]);
+	fetchProtocolParameters.mockRejectedValueOnce(new Error('provider outage'));
+	expect((await withdrawNodeFunds('participant')).code).toBe('chain-unreadable');
+	expect(complete).not.toHaveBeenCalled();
+	expect(submit).not.toHaveBeenCalled();
+});
+
+it.each([undefined, 0, -1, Number.NaN])('retains the signer when current minimum-output cost is %s', async (value) => {
+	utxos.mockResolvedValue([tokenUtxo]);
+	fetchProtocolParameters.mockResolvedValueOnce({ coinsPerUtxoSize: value as number, minFeeA: 44, minFeeB: 155381 });
+	expect((await withdrawNodeFunds('participant')).code).toBe('chain-unreadable');
+	expect(complete).not.toHaveBeenCalled();
+	expect(submit).not.toHaveBeenCalled();
 });

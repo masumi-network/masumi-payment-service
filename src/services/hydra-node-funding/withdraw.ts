@@ -31,14 +31,7 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getChainErrorStatus, lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { CONFIG } from '@masumi/payment-core/config';
 import { KEY_RELEASE_MIN_CONFIRMATIONS } from './key-release-depth';
-
-/**
- * Below this, sweeping costs more than it returns.
- *
- * The transaction pays its own fee out of the balance being swept, so dust is
- * best left where it is rather than turned into a slightly larger loss.
- */
-export const MINIMUM_WITHDRAWABLE_LOVELACE = 2_000_000n;
+import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
 
 const NODE_UTXO_PAGE_SIZE = 100;
 
@@ -83,8 +76,10 @@ export { KEY_RELEASE_MIN_CONFIRMATIONS } from './key-release-depth';
 export type NodeWithdrawalCode =
 	/** Funds were sent back to the funding wallet. */
 	| 'swept'
-	/** Less than a fee's worth is left, so there is nothing worth moving. */
+	/** The verified address inventory is empty and its latest activity is settled. */
 	| 'dust'
+	/** Funds remain, but cannot cover a sweep's fees and minimum output. */
+	| 'insufficient-funds'
 	/** The head still owes on-chain transactions; its node keeps its fuel. */
 	| 'head-not-final'
 	/** An unredeemed invite still needs this node able to post its Init. */
@@ -221,10 +216,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 		0n,
 	);
 
-	const hasNativeAssets = utxos.some((utxo) =>
-		utxo.output.amount.some((asset) => asset.unit !== 'lovelace' && BigInt(asset.quantity) > 0n),
-	);
-	if (balance <= MINIMUM_WITHDRAWABLE_LOVELACE && !hasNativeAssets) {
+	if (utxos.length === 0) {
 		// An empty UTxO set can reflect a sweep in a shallow block. Check the
 		// latest address activity so this survives restarts without a sweep journal.
 		const rpcProviderApiKey = participant.Wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
@@ -248,13 +240,11 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 						code: 'chain-unsettled',
 					};
 				}
-			} else if (utxos.length > 0) {
-				throw createHttpError(502, 'node UTxOs exist but address history is empty');
 			}
 		} catch (error) {
 			// Only an unused, empty address can have no history. All other
 			// lookup failures keep the signer for a later cleanup attempt.
-			if (getChainErrorStatus(error) !== 404 || utxos.length > 0) {
+			if (getChainErrorStatus(error) !== 404) {
 				return {
 					address,
 					balanceLovelace: balance.toString(),
@@ -268,7 +258,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 			address,
 			balanceLovelace: balance.toString(),
 			txHash: null,
-			reason: `only ${balance} lovelace is left, which would cost more in fees than it returns`,
+			reason: 'the node address has no remaining UTxOs',
 			code: 'dust',
 		};
 	}
@@ -297,6 +287,28 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 		key: { type: 'cli', payment: decrypt(nodeSigningKey) },
 	});
 
+	let protocolParameters: Awaited<ReturnType<typeof provider.fetchProtocolParameters>>;
+	try {
+		protocolParameters = await provider.fetchProtocolParameters(Number.NaN);
+		if (
+			!Number.isSafeInteger(protocolParameters.coinsPerUtxoSize) ||
+			protocolParameters.coinsPerUtxoSize <= 0 ||
+			!Number.isSafeInteger(protocolParameters.minFeeA) ||
+			protocolParameters.minFeeA < 0 ||
+			!Number.isSafeInteger(protocolParameters.minFeeB) ||
+			protocolParameters.minFeeB < 0
+		)
+			throw createHttpError(502, 'Chain returned invalid sweep fee or minimum-output parameters');
+	} catch {
+		return {
+			address,
+			balanceLovelace: balance.toString(),
+			txHash: null,
+			reason: 'the current chain fee and minimum-output parameters could not be verified',
+			code: 'chain-unreadable',
+		};
+	}
+
 	const builder = new MeshTxBuilder({ fetcher: provider, submitter: provider, verbose: false });
 	for (const utxo of utxos) {
 		builder.txIn(utxo.input.txHash, utxo.input.outputIndex, utxo.output.amount, utxo.output.address);
@@ -304,10 +316,24 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 
 	// Everything lands as change at the funding wallet, which is what makes this
 	// a sweep rather than a payment leaving a remainder behind.
-	const unsignedTx = await builder
-		.changeAddress(participant.Wallet.walletAddress)
-		.setNetwork(convertNetwork(network))
-		.complete();
+	let unsignedTx: string;
+	try {
+		unsignedTx = await builder
+			.changeAddress(participant.Wallet.walletAddress)
+			.setNetwork(convertNetwork(network))
+			.protocolParams(protocolParameters)
+			.complete();
+	} catch (error) {
+		if (!isInsufficientBalanceBuildError(error)) throw error;
+		return {
+			address,
+			balanceLovelace: balance.toString(),
+			txHash: null,
+			reason:
+				'the remaining funds cannot cover the sweep fee and minimum output. Add ADA to this node address and retry',
+			code: 'insufficient-funds',
+		};
+	}
 
 	const signedTx = await signer.signTx(unsignedTx, true);
 	// Same types-only bridge as the fund-transfer builder: V1 mesh types this as

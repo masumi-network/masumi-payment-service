@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { HydraHeadStatus } from '@/generated/prisma/client';
-import { MINIMUM_WITHDRAWABLE_LOVELACE, reasonHeadIsNotDone } from './withdraw';
+import { reasonHeadIsNotDone } from './withdraw';
 
 /**
  * Sweeping a node's fuel early is the expensive mistake, not sweeping it late.
@@ -35,13 +35,5 @@ describe('reasonHeadIsNotDone', () => {
 	// every sense except that nobody has paid for the fanout yet.
 	it('names what the node still has to pay for', () => {
 		expect(reasonHeadIsNotDone(HydraHeadStatus.FanoutPossible)).toMatch(/fanning out/);
-	});
-});
-
-describe('the dust floor', () => {
-	// The sweep pays its own fee out of what it sweeps, so below this it turns a
-	// small loss into a slightly larger one.
-	it('is above a typical transaction fee', () => {
-		expect(MINIMUM_WITHDRAWABLE_LOVELACE).toBeGreaterThan(1_000_000n);
 	});
 });
