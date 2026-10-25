@@ -18,6 +18,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { writeFileAtomic } from '../registry/atomic-write.js';
 import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
 import type { PeerTargetCheck } from '../peer-target-policy.js';
@@ -201,10 +202,10 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
 		const cardano = generateCardanoKeyPair();
 
 		await Promise.all([
-			fs.writeFile(path.join(keysDir, 'hydra.sk'), serializeEnvelope(hydra.signingKey), { mode: 0o600 }),
-			fs.writeFile(path.join(keysDir, 'hydra.vk'), serializeEnvelope(hydra.verificationKey), { mode: 0o600 }),
-			fs.writeFile(path.join(keysDir, 'cardano.sk'), serializeEnvelope(cardano.signingKey), { mode: 0o600 }),
-			fs.writeFile(path.join(keysDir, 'cardano.vk'), serializeEnvelope(cardano.verificationKey), { mode: 0o600 }),
+			writeFileAtomic(path.join(keysDir, 'hydra.sk'), serializeEnvelope(hydra.signingKey), { mode: 0o600 }),
+			writeFileAtomic(path.join(keysDir, 'hydra.vk'), serializeEnvelope(hydra.verificationKey), { mode: 0o600 }),
+			writeFileAtomic(path.join(keysDir, 'cardano.sk'), serializeEnvelope(cardano.signingKey), { mode: 0o600 }),
+			writeFileAtomic(path.join(keysDir, 'cardano.vk'), serializeEnvelope(cardano.verificationKey), { mode: 0o600 }),
 		]);
 
 		const createdAt = deps.now().toISOString();
@@ -365,21 +366,23 @@ export async function setPeers(
 				written.add(hydraKeyFile);
 				written.add(cardanoKeyFile);
 				return [
-					fs.writeFile(
+					writeFileAtomic(
 						path.join(peersDir, hydraKeyFile),
 						serializeEnvelope({
 							type: 'HydraVerificationKey_ed25519',
 							description: '',
 							cborHex: peer.hydraVerificationKey,
 						}),
+						{ mode: 0o600 },
 					),
-					fs.writeFile(
+					writeFileAtomic(
 						path.join(peersDir, cardanoKeyFile),
 						serializeEnvelope({
 							type: 'PaymentVerificationKeyShelley_ed25519',
 							description: 'Payment Verification Key',
 							cborHex: peer.cardanoVerificationKey,
 						}),
+						{ mode: 0o600 },
 					),
 				];
 			}),
