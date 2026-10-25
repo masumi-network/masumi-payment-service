@@ -157,7 +157,7 @@ function HydraTopupList({
       await resync('hydra', 'wallets');
       toast[result.requested ? 'success' : 'info'](
         result.requested
-          ? 'Recovery posted. Funds return once it confirms.'
+          ? 'The node accepted the recovery request. Check L1 for confirmation.'
           : (result.reason ?? 'Nothing to recover'),
       );
       await refetch();
@@ -338,21 +338,30 @@ function HydraTopupList({
                   isRecoverable &&
                   (topup.recoveryRequestedAt != null ? (
                     <span className="text-xs text-muted-foreground">
-                      Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}.
-                      Waiting for it on chain.
+                      Recovery request accepted{' '}
+                      {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}. Check L1 for
+                      confirmation.
                     </span>
                   ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={recoveringId === topup.id}
-                      onClick={() => void handleRecover(topup.id)}
-                      title="Ask the node to return this deposit, if the head never took it"
-                    >
-                      {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
-                      Recover
-                    </Button>
+                    <>
+                      {topup.recoveryResponseUnknownAt != null && (
+                        <span className="text-xs text-amber-700 dark:text-amber-400">
+                          The node did not answer the recovery request. It may have posted a
+                          transaction. Check L1 before retrying.
+                        </span>
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={recoveringId === topup.id}
+                        onClick={() => void handleRecover(topup.id)}
+                        title="Ask the node to return this deposit, if the head never took it"
+                      >
+                        {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
+                        {topup.recoveryResponseUnknownAt != null ? 'Retry recovery' : 'Recover'}
+                      </Button>
+                    </>
                   ))}
                 {topup.status === 'Failed' &&
                   Object.keys(topup.committedAssets ?? {}).length === 0 && (
