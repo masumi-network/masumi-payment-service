@@ -12,7 +12,11 @@
 import { describe, expect, it, afterEach } from '@jest/globals';
 import { createServer, type Server } from 'node:http';
 
+import { NodeResponseError } from './errors.js';
 import { NodeClient } from './node-client.js';
+
+/** One byte beyond the payment service's established Hydra HTTP response cap. */
+const OVERSIZED_NODE_RESPONSE_BYTES = 4 * 1024 * 1024 + 1;
 
 const servers: Server[] = [];
 
@@ -60,5 +64,15 @@ describe('NodeClient probe budget', () => {
 		});
 
 		await expect(new NodeClient(port).isResponsive()).resolves.toBe(true);
+	});
+
+	it('refuses a streamed snapshot larger than the response limit', async () => {
+		const oversizedSnapshot = JSON.stringify({ payload: 'x'.repeat(OVERSIZED_NODE_RESPONSE_BYTES) });
+		const port = await listen((_request, response) => {
+			response.writeHead(200, { 'content-type': 'application/json' });
+			response.end(oversizedSnapshot);
+		});
+
+		await expect(new NodeClient(port).fetchConfirmedSnapshot()).rejects.toBeInstanceOf(NodeResponseError);
 	});
 });
