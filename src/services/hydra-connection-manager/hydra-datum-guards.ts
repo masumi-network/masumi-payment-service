@@ -15,6 +15,7 @@ import { OnChainState, Prisma, TransactionLayer, TransactionStatus } from '@/gen
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { checkPaymentAmountsMatch } from '@masumi/payment-core/payment-amounts';
+import type { L2MintCheck } from '@/lib/hydra/hydra/l2-mint-tally';
 import { type DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { validateL2InitialLock } from '@/utils/logic/l2-datum-validation';
 import {
@@ -143,6 +144,19 @@ export function canonicalExpectedFunds(expectedFunds: Array<{ unit: string; amou
 			quantity: amount.toString(),
 		})),
 	);
+}
+
+/** Require a completed replay with no positive net L2 mint for each requested token. */
+export function requestedHydraTokensAreBacked(
+	expectedFunds: Array<{ unit: string; amount: bigint }>,
+	l2MintCheck: L2MintCheck | undefined,
+): boolean {
+	for (const { unit } of expectedFunds) {
+		const normalizedUnit = unit.toLowerCase();
+		if (normalizedUnit === '' || normalizedUnit === 'lovelace') continue;
+		if (l2MintCheck === undefined || l2MintCheck.unburnedUnits.has(normalizedUnit)) return false;
+	}
+	return true;
 }
 
 export function parsePersistedHydraValue(value: unknown): HydraAmount[] | null {
@@ -490,6 +504,7 @@ export function canAdvanceLegacyHydraReference(params: {
 	newOnChainState: OnChainState;
 	decoded: DecodedV1ContractDatum;
 	expectedFunds: Array<{ unit: string; amount: bigint }>;
+	l2MintCheck: L2MintCheck | undefined;
 	outputAmounts: Array<{ unit: string; quantity: string }>;
 	transactionEvidence: HydraTransactionEvidence | null;
 	confirmationTimeMs: number | null;
@@ -501,6 +516,7 @@ export function canAdvanceLegacyHydraReference(params: {
 		newOnChainState,
 		decoded,
 		expectedFunds,
+		l2MintCheck,
 		outputAmounts,
 		transactionEvidence,
 		confirmationTimeMs,
@@ -509,6 +525,7 @@ export function canAdvanceLegacyHydraReference(params: {
 	if (currentHydraUtxoTxHash == null && currentHydraUtxoOutputIndex == null) {
 		return (
 			newOnChainState === OnChainState.FundsLocked &&
+			requestedHydraTokensAreBacked(expectedFunds, l2MintCheck) &&
 			confirmationTimeMs != null &&
 			signedValidityUpperBoundTimeMs != null &&
 			signedValidityUpperBoundTimeMs <= BigInt(decoded.payByTime) &&

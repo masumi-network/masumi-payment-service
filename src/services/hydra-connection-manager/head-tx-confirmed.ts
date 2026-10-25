@@ -117,6 +117,8 @@ async function syncHydraDatumStateFromConfirmedTx(
 		let hasApplied = false;
 		let hasRetry = false;
 		const provider = host.getProvider(hydraHeadId);
+		const node = host.getNode(hydraHeadId);
+		const l2MintCheck = node?.l2MintCheck;
 
 		const hydraHead = await prisma.hydraHead.findUnique({
 			where: { id: hydraHeadId },
@@ -142,8 +144,7 @@ async function syncHydraDatumStateFromConfirmedTx(
 
 		const paymentSource = hydraHead.HydraRelation.LocalHotWallet.PaymentSource;
 		const network = paymentSource.network === Network.Mainnet ? 'mainnet' : 'preprod';
-		const resolvedConfirmedTransaction =
-			confirmedTransaction ?? host.getNode(hydraHeadId)?.getConfirmedTransaction(txId) ?? null;
+		const resolvedConfirmedTransaction = confirmedTransaction ?? node?.getConfirmedTransaction(txId) ?? null;
 		const transactionEvidence = resolvedConfirmedTransaction
 			? parseHydraTransactionEvidence(resolvedConfirmedTransaction.cborHex)
 			: null;
@@ -269,6 +270,7 @@ async function syncHydraDatumStateFromConfirmedTx(
 				outputReference: decodedOutput.output.input,
 				transactionEvidence,
 				confirmationTimeMs,
+				l2MintCheck,
 			});
 			hasApplied ||= datumOutcome === 'applied';
 			hasRetry ||= datumOutcome === 'retry';
