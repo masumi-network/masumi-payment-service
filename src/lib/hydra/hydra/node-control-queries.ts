@@ -309,25 +309,20 @@ export async function fetchHydraClosedHeadFacts(
  * never snapshot-confirmed. Refusing costs a retry: the decommit request goes
  * over this same HTTP API.
  *
- * A response over the byte limit is `[]` instead. It stays over on every
- * retry, and `/head` carries the whole snapshot more than once, so refusing on
- * it would block every withdrawal and consolidation from a large head. Same
- * reason `extractPendingDecommitRefs` clears on a shape it does not recognise.
- * Invalid JSON throws the same error class and clears too; a working node does
- * not send it. So does the persistence-rotation latch `HydraNode.get` throws
- * before any request, which is harmless: it also rejects every `post` and
- * `newTx`, so nothing reaches the head.
+ * A response over the byte limit or invalid JSON is also unknown. It can keep
+ * a large head from withdrawing until the response can be read, but admitting
+ * a new split without checking would let it become TxValid and then stall
+ * without a confirmed snapshot.
  */
 export async function fetchHydraPendingDecommitRefs(transport: HydraQueryTransport): Promise<string[] | undefined> {
 	try {
 		return extractPendingDecommitRefs(await transport.get('/head'));
 	} catch (error) {
-		const isUnusableAnswer = error instanceof HydraProtocolError;
 		logger.warn('[HydraNode] Could not read the head state for a pending decommit', {
 			error: protocolErrorToString(error),
-			treatedAs: isUnusableAnswer ? 'nothing pending' : 'unknown',
+			treatedAs: 'unknown',
 		});
-		return isUnusableAnswer ? [] : undefined;
+		return undefined;
 	}
 }
 
