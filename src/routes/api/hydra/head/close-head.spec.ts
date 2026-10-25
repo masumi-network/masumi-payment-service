@@ -266,13 +266,28 @@ describe('Hydra head state convergence', () => {
 		await expect(updateHydraHeadEnabledState('head-1', false)).resolves.toBe(disabledHead);
 
 		expect(mockReleaseClose).toHaveBeenCalledWith({
-			where: { id: 'head-1', retiredAt: null },
+			where: {
+				id: 'head-1',
+				retiredAt: null,
+				status: { notIn: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] },
+			},
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		// The disable write is the only updateMany: the close latch is untouched.
 		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
 	});
+
+	it.each([HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible])(
+		'refuses to disable a %s head while contest monitoring is required',
+		async (status) => {
+			mockFindHead.mockResolvedValue({ ...openHead, status });
+
+			await expect(updateHydraHeadEnabledState('head-1', false)).rejects.toMatchObject({ statusCode: 409 });
+			expect(mockReleaseClose).not.toHaveBeenCalled();
+			expect(mockReconcileEnabledState).not.toHaveBeenCalled();
+		},
+	);
 
 	// Disabling clears the init anchors that a recovery of a retired head
 	// restarts the node from.
