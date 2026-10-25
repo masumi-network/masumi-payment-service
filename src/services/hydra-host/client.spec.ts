@@ -206,6 +206,24 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 });
 
 describe('forgetting an invite on the Host', () => {
+	it('marks an intentional redemption discard in the Host request', async () => {
+		const fetchMock = jest
+			.fn<(input: string | URL | Request) => Promise<Response>>()
+			.mockResolvedValue(new Response(JSON.stringify({ forgotten: true }), { status: 200 }));
+		transportMock.mockImplementation(fetchMock);
+
+		await forgetHostInvite(
+			'https://hydra.example.com',
+			'admin-token',
+			'nonce123456',
+			{ allowInsecureHttp: false },
+			{ discardRedemption: true },
+		);
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+			'https://hydra.example.com/v1/invites/nonce123456?discardRedemption=true',
+		);
+	});
+
 	it('keeps the still-redeemable nonce out of the error message', async () => {
 		const fetchMock = jest
 			.fn<(input: string | URL | Request) => Promise<Response>>()

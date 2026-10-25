@@ -86,7 +86,7 @@ describe('durable redemption recovery', () => {
 		expect(await fs.readFile(path.join(deps.store.nodeDir('node-1'), 'peers/0-hydra.vk'), 'utf8')).toContain(
 			material.hydraVerificationKey,
 		);
-		expect(await restarted.forgetInvite('nonce-pending', deps.store)).toBe(true);
+		expect(await restarted.forgetInvite('nonce-pending', deps.store, { keepReplay: true })).toBe(true);
 	});
 
 	it('retries a transient setup failure and clears the recorded error', async () => {

@@ -271,19 +271,22 @@ export class ExchangeStore {
 	 *
 	 * `keepReplay` is for a redemption the service adopted: the record is reduced
 	 * to the redeemer's public material, so an identical replay is still answered
-	 * after the service no longer needs the signed redemption. Without it, or for
-	 * an invite nobody redeemed, the record is removed, which is what a cancelled
-	 * or revoked invite needs.
+	 * after the service no longer needs the signed redemption. An unredeemed
+	 * invite can be revoked. A redeemed one needs explicit discard, checked in
+	 * this queue so a redemption between listing and revocation is not lost.
 	 */
 	async forgetInvite(
 		nonce: string,
 		nodes?: NodeRegistryStore,
-		options: { keepReplay?: boolean } = {},
+		options: { keepReplay?: boolean; discardRedemption?: boolean } = {},
 	): Promise<boolean> {
 		return await this.enqueue(async () => {
 			const state = await this.read();
 			const invite = state.invites.find((candidate) => candidate.nonce === nonce);
 			const keepReplay = options.keepReplay === true;
+			if (invite !== undefined && invite.redeemedAt !== null && !keepReplay && options.discardRedemption !== true) {
+				return false;
+			}
 			if (keepReplay && invite?.forgottenAt !== undefined) {
 				return true;
 			}
