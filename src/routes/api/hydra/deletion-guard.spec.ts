@@ -6,6 +6,10 @@ type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindMany = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
+const mockTopups = jest.fn() as AnyMock;
+const mockTopupCount = jest.fn() as AnyMock;
+const mockTopupUpdate = jest.fn() as AnyMock;
+const mockTxsCbor = jest.fn() as AnyMock;
 const mockTransaction = jest.fn() as AnyMock;
 const mockQueryRaw = jest.fn() as AnyMock;
 const mockPaymentHandoffCount = jest.fn() as AnyMock;
@@ -29,6 +33,7 @@ const cleanupHydraRelation = {
 };
 
 const transactionClient = {
+	hydraTopup: { count: mockTopupCount },
 	$queryRaw: mockQueryRaw,
 	hydraHead: { findMany: mockFindMany, updateMany: mockUpdateMany },
 	paymentRequest: { count: mockPaymentHandoffCount, findMany: mockPaymentRequests },
@@ -38,6 +43,7 @@ const transactionClient = {
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		$transaction: mockTransaction,
+		hydraTopup: { findMany: mockTopups, count: mockTopupCount, updateMany: mockTopupUpdate },
 	},
 }));
 
@@ -56,6 +62,10 @@ jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
 	lookupConfirmedChainTx: mockLookupConfirmedChainTx,
 }));
 
+jest.unstable_mockModule('@/utils/blockfrost', () => ({
+	getBlockfrostInstance: () => ({ txsCbor: mockTxsCbor }),
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 5 },
 }));
@@ -69,6 +79,10 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockTopups.mockResolvedValue([]);
+	mockTopupCount.mockResolvedValue(0);
+	mockTopupUpdate.mockResolvedValue({ count: 1 });
+	mockTxsCbor.mockRejectedValue(new Error('observer unavailable'));
 	mockTransaction.mockImplementation(
 		async (operation: (tx: typeof transactionClient) => Promise<unknown>) => await operation(transactionClient),
 	);
@@ -350,6 +364,42 @@ describe('quiesceHydraHeadsForDeletion', () => {
 		);
 		expect(mockFindMany.mock.invocationCallOrder[2]).toBeLessThan(
 			mockReconcileEnabledState.mock.invocationCallOrder[1],
+		);
+	});
+});
+
+describe('deposit proof before irreversible cleanup', () => {
+	const terminal = {
+		id: 'topup-1',
+		status: 'Recovered',
+		depositTxHash: 'd'.repeat(64),
+		settlementTxHash: 'c'.repeat(64),
+		HydraHead: { headIdentifier: 'aa'.repeat(28) },
+		LocalParticipant: {
+			Wallet: {
+				PaymentSource: {
+					network: 'Preprod',
+					PaymentSourceConfig: { rpcProviderApiKey: 'project-key' },
+				},
+			},
+		},
+	};
+	it('rejects legacy terminal labels before disconnecting or disabling', async () => {
+		mockTopups.mockResolvedValue([{ ...terminal, settlementTxHash: null }]);
+		await expect(quiesceHydraHeadsForDeletion(['head-1'])).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockDisconnect).not.toHaveBeenCalled();
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+	it('independently rejects unavailable current evidence despite a stored proof', async () => {
+		mockTopups.mockResolvedValue([terminal]);
+		await expect(quiesceHydraHeadsForDeletion(['head-1'])).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockTxsCbor).toHaveBeenCalledWith(terminal.depositTxHash);
+		expect(mockDisconnect).not.toHaveBeenCalled();
+		expect(mockTopupUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ settlementTxHash: terminal.settlementTxHash }),
+				data: { settlementTxHash: null },
+			}),
 		);
 	});
 });

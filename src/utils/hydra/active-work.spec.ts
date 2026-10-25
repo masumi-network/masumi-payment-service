@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { PREPARING_STALE_AFTER_MS } from '@/services/hydra-topup/stale';
-import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
+import { countHydraHeadActiveWork, hasActiveWork, unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
 
 type CountArgs = { where: Record<string, unknown> };
 
@@ -74,9 +74,7 @@ describe('countHydraHeadActiveWork', () => {
 		expect(work.unrecoveredDeposits).toBe(2);
 		expect(calls.hydraTopup.where).toMatchObject({
 			hydraHeadId: 'head-1',
-			OR: expect.arrayContaining([
-				{ depositTxHash: { not: null }, status: { notIn: ['Absorbed', 'Recovered', 'Failed'] } },
-			]) as unknown[],
+			OR: expect.arrayContaining([unrecoveredHydraTopupWhere]) as unknown[],
 		});
 	});
 
@@ -129,7 +127,11 @@ describe('countHydraHeadActiveWork', () => {
 
 		expect(calls.hydraTopup.where).toMatchObject({
 			OR: expect.arrayContaining([
-				expect.objectContaining({ status: { notIn: expect.arrayContaining(['Failed']) as string[] } }),
+				expect.objectContaining({
+					OR: expect.arrayContaining([
+						expect.objectContaining({ status: { notIn: expect.arrayContaining(['Failed']) } }),
+					]),
+				}),
 			]) as unknown[],
 		});
 	});
@@ -169,4 +171,37 @@ describe('hasActiveWork', () => {
 		// The one closing cannot settle, so it has to block the same way.
 		expect(hasActiveWork({ pendingL2Transactions: 0, activeEscrows: 0, unrecoveredDeposits: 1 })).toBe(true);
 	});
+});
+
+// Evaluate the actual query passed to the database against representative rows.
+// This catches an exclusion that accidentally treats historical labels as proof.
+type Filter = {
+	OR?: Filter[];
+	status?: string | { in?: string[]; notIn?: string[] };
+	depositTxHash?: { not: null };
+	settlementTxHash?: null;
+};
+function matchesDeposit(
+	filter: Filter,
+	row: { status: string; depositTxHash: string | null; settlementTxHash: string | null },
+): boolean {
+	if (typeof filter.status === 'string' && filter.status !== row.status) return false;
+	const status = typeof filter.status === 'object' ? filter.status : undefined;
+	return (
+		(filter.OR === undefined || filter.OR.some((clause) => matchesDeposit(clause, row))) &&
+		(status?.in === undefined || status.in.includes(row.status)) &&
+		(status?.notIn === undefined || !status.notIn.includes(row.status)) &&
+		(filter.depositTxHash === undefined || row.depositTxHash !== null) &&
+		(!('settlementTxHash' in filter) || row.settlementTxHash === null)
+	);
+}
+
+it.each(['Absorbed', 'Recovered'])('counts legacy %s as active until its consumer is proven', async (status) => {
+	const { client } = fakeClient({ transactions: 0, payments: 0, purchases: 0 });
+	const row = { status, depositTxHash: 'd'.repeat(64), settlementTxHash: null as string | null };
+	client.hydraTopup.count = (async ({ where }: { where: Filter }) =>
+		matchesDeposit(where, row) ? 1 : 0) as unknown as typeof client.hydraTopup.count;
+	expect((await countHydraHeadActiveWork(client, 'head-1')).unrecoveredDeposits).toBe(1);
+	row.settlementTxHash = 'c'.repeat(64);
+	expect((await countHydraHeadActiveWork(client, 'head-1')).unrecoveredDeposits).toBe(0);
 });

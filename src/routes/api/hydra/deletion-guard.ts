@@ -14,6 +14,7 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { KEY_RELEASE_MIN_CONFIRMATIONS } from '@/services/hydra-node-funding/key-release-depth';
 import { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
+import { assertHydraDepositSettlementsFinal } from '@/services/hydra-topup-reconciliation/settlement-cleanup';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 const settledTerminalStates = [OnChainState.Withdrawn, OnChainState.RefundWithdrawn] as const;
@@ -175,6 +176,9 @@ async function assertHydraHeadsCleanupEligible(
 						}),
 					]);
 					const hasUnsettledRequests = await hasUnsettledHydraRequestState(tx, uniqueHeadIds);
+					const unsafeDeposits = await tx.hydraTopup.count({
+						where: { hydraHeadId: { in: [...uniqueHeadIds] }, ...unrecoveredHydraTopupWhere },
+					});
 					const unsafeHead = heads.find(
 						(head) =>
 							(options.requireDisabled === true && head.isEnabled) ||
@@ -188,7 +192,13 @@ async function assertHydraHeadsCleanupEligible(
 							head.HydraRelation.LocalHotWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey.length === 0 ||
 							head._count.Transactions !== 0,
 					);
-					if (unsafeHead || paymentHandoffs !== 0 || purchaseHandoffs !== 0 || hasUnsettledRequests) {
+					if (
+						unsafeHead ||
+						paymentHandoffs !== 0 ||
+						purchaseHandoffs !== 0 ||
+						hasUnsettledRequests ||
+						unsafeDeposits !== 0
+					) {
 						throw createHttpError(
 							409,
 							'Cannot delete Hydra configuration before fanout is independently confirmed and all L2 handoffs are adopted',
@@ -283,6 +293,7 @@ export async function quiesceHydraHeadsForDeletion(headIds: readonly string[]): 
 
 	// Avoid disconnecting an active/unsafe head merely because an administrator
 	// attempted an invalid deletion.
+	await assertHydraDepositSettlementsFinal(uniqueHeadIds);
 	const cleanupEvidence = await assertHydraHeadsCleanupEligible(uniqueHeadIds, { disable: false });
 	const expectedFanoutTxHashes = new Map(cleanupEvidence.map(({ headId, fanoutTxHash }) => [headId, fanoutTxHash]));
 
@@ -290,6 +301,7 @@ export async function quiesceHydraHeadsForDeletion(headIds: readonly string[]): 
 	try {
 		for (const headId of uniqueHeadIds) await manager.disconnect(headId);
 		await assertHydraFanoutStillFinal(cleanupEvidence);
+		await assertHydraDepositSettlementsFinal(uniqueHeadIds);
 		await assertHydraHeadsCleanupEligible(uniqueHeadIds, { disable: true, expectedFanoutTxHashes });
 		const quiescence = await Promise.allSettled(
 			uniqueHeadIds.map(async (headId) => await manager.reconcileEnabledState(headId)),
@@ -298,6 +310,7 @@ export async function quiesceHydraHeadsForDeletion(headIds: readonly string[]): 
 			(result): result is PromiseRejectedResult => result.status === 'rejected',
 		);
 		if (quiescenceFailure) throw quiescenceFailure.reason;
+		await assertHydraDepositSettlementsFinal(uniqueHeadIds);
 		await assertHydraHeadsCleanupEligible(uniqueHeadIds, {
 			disable: false,
 			expectedFanoutTxHashes,
@@ -342,6 +355,7 @@ export { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
  */
 export async function assertNoUnrecoveredHydraDeposits(headIds: readonly string[]): Promise<void> {
 	if (headIds.length === 0) return;
+	await assertHydraDepositSettlementsFinal(headIds);
 	const unrecovered = await prisma.hydraTopup.count({
 		where: { hydraHeadId: { in: [...headIds] }, ...unrecoveredHydraTopupWhere },
 	});

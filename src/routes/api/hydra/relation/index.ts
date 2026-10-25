@@ -256,8 +256,11 @@ export async function deleteHydraRelation(id: string): Promise<void> {
 	// Quiesce has proven every head is finished. Their nodes go back to the Host
 	// before the rows that name them, so a Host failure keeps them and the delete
 	// can be retried.
-	for (const { LocalParticipant } of deletionPlan.Heads) {
-		if (LocalParticipant) await releaseHostNodeOfFinishedHead(LocalParticipant);
+	for (const { id: headId, LocalParticipant } of deletionPlan.Heads) {
+		if (LocalParticipant) {
+			await assertNoUnrecoveredHydraDeposits([headId]);
+			await releaseHostNodeOfFinishedHead(LocalParticipant);
+		}
 	}
 
 	await withSerializableSlotRetry(

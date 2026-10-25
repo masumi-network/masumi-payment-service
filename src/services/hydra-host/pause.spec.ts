@@ -609,3 +609,20 @@ describe('assertHydraHeadHostNotPaused', () => {
 		await expect(pause.assertHydraHeadHostNotPaused('head-2')).resolves.toBeUndefined();
 	});
 });
+
+it.each(['Absorbed', 'Recovered'])('keeps the Host draining for legacy %s without settlement proof', async (status) => {
+	mockHostFindUnique.mockResolvedValue(hostRow());
+	mockTopupCount.mockImplementation(
+		async ({ where }: { where: { OR: Array<{ status: string | { in: string[] }; settlementTxHash?: null }> } }) =>
+			where.OR.some(
+				(clause) =>
+					(typeof clause.status === 'string' ? clause.status === status : clause.status.in.includes(status)) &&
+					clause.settlementTxHash === null,
+			)
+				? 1
+				: 0,
+	);
+	const state = await pause.advanceHydraHostPause('host-1', { force: false });
+	expect(state.phase).toBe('Draining');
+	expect(mockStopHostNode).not.toHaveBeenCalled();
+});

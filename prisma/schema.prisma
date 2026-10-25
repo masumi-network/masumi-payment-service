@@ -1955,6 +1955,10 @@ model HydraTopup {
 
   status HydraTopupStatus @default(Pending)
 
+  /// Exact Claim/Recover consumer independently confirmed at key-release depth.
+  /// Null for legacy terminal labels until reconciliation proves their settlement.
+  settlementTxHash String?
+
   /// When the node was asked to spend this deposit back to the wallet.
   ///
   /// Recovery leaves no other trace: the deposit keeps its status, because what

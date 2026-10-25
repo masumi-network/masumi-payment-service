@@ -38,6 +38,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
 import { fetchHostNodeHealth, HydraHostRequestError, startHostNode, stopHostNode } from './client';
 import { isHostNodeGone } from './node-gone';
+import { unprovenHydraSettlementWhere } from '@/utils/hydra/active-work';
 import { PREPARING_STALE_AFTER_MS as TOPUP_PREPARING_STALE_AFTER_MS } from '@/services/hydra-topup/stale';
 import {
 	PENDING_STALE_AFTER_MS as DECOMMIT_PENDING_STALE_AFTER_MS,
@@ -154,6 +155,7 @@ async function countInFlight(hostId: string): Promise<HydraHostPauseInFlight> {
 				OR: [
 					{ status: HydraTopupStatus.Preparing, createdAt: { gte: since(TOPUP_PREPARING_STALE_AFTER_MS) } },
 					{ status: { in: [HydraTopupStatus.Pending, HydraTopupStatus.Confirmed] } },
+					unprovenHydraSettlementWhere,
 				],
 			},
 		}),

@@ -215,7 +215,10 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 	// Quiesce has proven the head is finished, so its node can go back to the Host
 	// now that the sweep has emptied it. Before the rows that name it, so a Host
 	// failure keeps them and the delete can be retried.
-	if (deletionPlan.hydraHeadId) await releaseHostNodeOfFinishedHead(deletionPlan);
+	if (deletionPlan.hydraHeadId) {
+		await assertNoUnrecoveredHydraDeposits([deletionPlan.hydraHeadId]);
+		await releaseHostNodeOfFinishedHead(deletionPlan);
+	}
 
 	await withSerializableSlotRetry(
 		() =>
