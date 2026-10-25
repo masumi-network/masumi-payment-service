@@ -43,6 +43,9 @@ const HEAD_ADDRESS = EnterpriseAddress.new(
 )
 	.to_address()
 	.to_bech32();
+const OTHER_SCRIPT_ADDRESS = EnterpriseAddress.new(0, Credential.from_scripthash(ScriptHash.from_hex('ef'.repeat(28))))
+	.to_address()
+	.to_bech32();
 const OPEN_FIELDS = PlutusList.new();
 OPEN_FIELDS.add(PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.from_str('0'), PlutusList.new())));
 const OPEN_DATUM = PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.from_str('0'), OPEN_FIELDS)).to_hex();
@@ -51,10 +54,12 @@ const CLOSED_DATUM = PlutusData.new_constr_plutus_data(
 ).to_hex();
 const STATE_AMOUNT = [{ unit: STATE_TOKEN, quantity: '1' }];
 
-function chainTransaction(label: string, alternative = 1) {
+function chainTransaction(label: string, alternative = 1, otherAlternative?: number) {
 	const headInputHash = createHash('sha256').update(label).digest('hex');
+	const otherInputHash = '00'.repeat(32);
 	const inputs = TransactionInputs.new();
 	inputs.add(TransactionInput.new(TransactionHash.from_hex(headInputHash), 0));
+	if (otherAlternative !== undefined) inputs.add(TransactionInput.new(TransactionHash.from_hex(otherInputHash), 0));
 	const outputs = TransactionOutputs.new();
 	outputs.add(
 		TransactionOutput.new(
@@ -67,18 +72,31 @@ function chainTransaction(label: string, alternative = 1) {
 	);
 	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('200000'));
 	const redeemers = Redeemers.new();
-	redeemers.add(
-		Redeemer.new(
-			RedeemerTag.new_spend(),
-			BigNum.from_str('0'),
-			PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.from_str(String(alternative)), PlutusList.new())),
-			ExUnits.new(BigNum.from_str('1'), BigNum.from_str('1')),
-		),
-	);
+	const bodyInputs = body.inputs();
+	for (let index = 0; index < bodyInputs.len(); index++) {
+		const hash = bodyInputs.get(index).transaction_id().to_hex().toLowerCase();
+		const inputAlternative = hash === headInputHash ? alternative : otherAlternative;
+		if (inputAlternative === undefined) throw new Error('missing test spend redeemer');
+		redeemers.add(
+			Redeemer.new(
+				RedeemerTag.new_spend(),
+				BigNum.from_str(String(index)),
+				PlutusData.new_constr_plutus_data(
+					ConstrPlutusData.new(BigNum.from_str(String(inputAlternative)), PlutusList.new()),
+				),
+				ExUnits.new(BigNum.from_str('1'), BigNum.from_str('1')),
+			),
+		);
+	}
 	const witnesses = TransactionWitnessSet.new();
 	witnesses.set_redeemers(redeemers);
 	const cbor = Transaction.new(body, witnesses).to_hex();
-	return { hash: String(resolveTxHash(cbor)).toLowerCase(), cbor, headInputHash };
+	return {
+		hash: String(resolveTxHash(cbor)).toLowerCase(),
+		cbor,
+		headInputHash,
+		otherInputHash: otherAlternative === undefined ? null : otherInputHash,
+	};
 }
 
 const txHash = (label: string) => chainTransaction(label).hash;
@@ -92,9 +110,13 @@ function blockfrostWith(
 	hasHeadTransition = true,
 	headDatum = OPEN_DATUM,
 	redeemerAlternativeByLabel: Record<string, number> = {},
+	otherRedeemerAlternativeByLabel: Record<string, number> = {},
 ) {
 	const chainByLabel = Object.fromEntries(
-		Object.keys(txs).map((label) => [label, chainTransaction(label, redeemerAlternativeByLabel[label])]),
+		Object.keys(txs).map((label) => [
+			label,
+			chainTransaction(label, redeemerAlternativeByLabel[label], otherRedeemerAlternativeByLabel[label]),
+		]),
 	) as Record<string, ReturnType<typeof chainTransaction>>;
 	const labelByHash = new Map(Object.entries(chainByLabel).map(([label, chain]) => [chain.hash, label]));
 	const addressesTransactions = jest.fn() as AnyMock;
@@ -117,6 +139,16 @@ function blockfrostWith(
 							tx_hash: chainByLabel[labelByHash.get(hash)!].headInputHash,
 							output_index: 0,
 						},
+						...(chainByLabel[labelByHash.get(hash)!].otherInputHash === null
+							? []
+							: [
+									{
+										address: OTHER_SCRIPT_ADDRESS,
+										amount: [{ unit: 'lovelace', quantity: '2000000' }],
+										tx_hash: chainByLabel[labelByHash.get(hash)!].otherInputHash,
+										output_index: 0,
+									},
+								]),
 					]
 				: [],
 			outputs: [
@@ -162,6 +194,26 @@ describe('findDecommitPayoutTx', () => {
 		const blockfrost = blockfrostWith({ increment: [{ address: ADDRESS, amount }] }, {}, true, OPEN_DATUM, {
 			increment: 0,
 		});
+
+		const found = await findPayout({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBeNull();
+	});
+
+	it('binds Decrement to this head input when another script input also has a redeemer', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith(
+			{ mixed: [{ address: ADDRESS, amount }] },
+			{},
+			true,
+			OPEN_DATUM,
+			{ mixed: 0 },
+			{ mixed: 1 },
+		);
 
 		const found = await findPayout({
 			blockfrost,
