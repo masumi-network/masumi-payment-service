@@ -25,7 +25,6 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTransportAmbiguousError } from '@/lib/hydra';
-import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import { extractCommitNotSettled } from '@/lib/hydra/hydra/head-output-tx';
 import { fetchHydraSnapshotRound, type HydraSnapshotRound } from '@/lib/hydra/hydra/node-control-queries';
 import { hydraConfirmedSnapshotSchema } from '@/lib/hydra/hydra/schemas';
@@ -171,30 +170,23 @@ async function assertStillOwned(
  * depends on deposit state that the node's HTTP API does not report, so this
  * refuses every case.
  *
- * `GET /head` carries the snapshot more than once, so a large head can outgrow
- * the byte limit for good. An answer the client cannot use, such as one over
- * the byte limit, lets the reset go ahead as it did before this check:
- * refusing would block the only live recovery for that head.
+ * If the response is unreadable or malformed, the deposit check has not run.
+ * Refuse the reset and leave the node available for an operator to close.
  */
 async function assertCommitSettled(node: HydraNode, hydraHeadId: string): Promise<void> {
 	let headState: unknown;
 	try {
 		headState = await node.get('/head');
 	} catch (error) {
-		if (!(error instanceof HydraProtocolError)) {
-			logger.warn('[HydraSnapshotRound] could not read the head state', {
-				hydraHeadId,
-				error: error instanceof Error ? error.message : 'Unknown error',
-			});
-			throw createHttpError(502, 'Could not read the head state from the Hydra node');
-		}
-		logger.warn('[HydraSnapshotRound] could not use the head state; resetting without the deposit check', {
+		logger.warn('[HydraSnapshotRound] could not read the head state', {
 			hydraHeadId,
-			error: error.message,
+			error: error instanceof Error ? error.message : 'Unknown error',
 		});
-		return;
+		throw createHttpError(502, 'Could not read the head state from the Hydra node');
 	}
-	if (extractCommitNotSettled(headState)) {
+	const isCommitNotSettled = extractCommitNotSettled(headState);
+	if (isCommitNotSettled === null) throw createHttpError(502, 'Could not verify the Hydra head deposit state');
+	if (isCommitNotSettled) {
 		throw createHttpError(
 			409,
 			'The confirmed snapshot holds a deposit that the chain has not settled yet, and a reset now can stall the head again at the next deposit. Wait until the head absorbs the deposit, then retry. If the deposit passes its deadline first, close the head',

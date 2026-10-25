@@ -269,25 +269,32 @@ export function extractDecommitInFlight(headState: unknown): boolean | undefined
  * carries a different deposit (`ReqSnCommitNotSettled`). The version moves on
  * when the node observes the increment on chain.
  *
- * False for any state that cannot show it, so a caller only refuses on
- * positive evidence.
+ * Null for a state that cannot show whether the commit has settled.
  */
-export function extractCommitNotSettled(headState: unknown): boolean {
-	if (!isPlainObject(headState)) return false;
+export function extractCommitNotSettled(headState: unknown): boolean | null {
+	if (!isPlainObject(headState)) return null;
+	if (getOwnValue(headState, 'tag') !== 'Open') return null;
 	const state = getOwnPlainObject(headState, 'contents') ?? headState;
 	const coordinatedHeadState = getOwnPlainObject(state, 'coordinatedHeadState');
-	if (coordinatedHeadState === undefined) return false;
+	if (coordinatedHeadState === undefined) return null;
 	const confirmedSnapshot = getOwnPlainObject(coordinatedHeadState, 'confirmedSnapshot');
-	if (confirmedSnapshot === undefined) return false;
+	if (confirmedSnapshot === undefined) return null;
 	const snapshot = getOwnPlainObject(confirmedSnapshot, 'snapshot');
-	if (snapshot === undefined) return false;
-	const utxoToCommit = getOwnPlainObject(snapshot, 'utxoToCommit');
-	if (utxoToCommit === undefined) return false;
+	if (snapshot === undefined) {
+		return getOwnValue(confirmedSnapshot, 'tag') === 'InitialSnapshot' &&
+			getOwnValue(coordinatedHeadState, 'version') === 0
+			? false
+			: null;
+	}
 	const version = getOwnValue(coordinatedHeadState, 'version');
 	const snapshotVersion = getOwnValue(snapshot, 'version');
-	if (typeof version !== 'number' || typeof snapshotVersion !== 'number') {
-		logger.warn('[HydraNode] Head state holds a commit but no numeric version pair; treating the commit as settled');
-		return false;
+	if (!Number.isSafeInteger(version) || !Number.isSafeInteger(snapshotVersion)) return null;
+	if ((version as number) < 0 || (snapshotVersion as number) < 0 || (version as number) < (snapshotVersion as number)) {
+		return null;
 	}
+	const commitValue = getOwnValue(snapshot, 'utxoToCommit');
+	if (commitValue === null) return false;
+	const utxoToCommit = getOwnPlainObject(snapshot, 'utxoToCommit');
+	if (utxoToCommit === undefined) return null;
 	return version === snapshotVersion;
 }

@@ -361,9 +361,16 @@ describe('extractCommitNotSettled', () => {
 				contents: { coordinatedHeadState: { version: 0, confirmedSnapshot: { tag: 'InitialSnapshot' } } },
 			},
 		],
-		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
 	])('reports nothing unsettled when %s', (_label, state) => {
 		expect(extractCommitNotSettled(state)).toBe(false);
+	});
+
+	it.each([
+		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
+		['the head state has no confirmed snapshot', { tag: 'Open' }],
+		['the node reports Closed while the row remains Open', { ...commitHeadState(null), tag: 'Closed' }],
+	])('reports unknown settlement when %s', (_label, state) => {
+		expect(extractCommitNotSettled(state)).toBeNull();
 	});
 });
 
