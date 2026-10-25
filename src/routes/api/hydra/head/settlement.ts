@@ -26,7 +26,7 @@ import {
 } from '@/lib/hydra';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
-import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
+import { assertHydraCommitRecoveryRecorded, countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
 import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
 
 import { fanoutsInFlight } from './fanout-in-flight';
@@ -70,6 +70,7 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 
 					// Counted by the same function the readiness endpoint uses, so what
 					// the dialog offered and what this admits agree.
+					await assertHydraCommitRecoveryRecorded(tx, headId);
 					const activeWork = await countHydraHeadActiveWork(tx, headId);
 					// Refused by default, but never forbidden. Closing with live escrows
 					// fans them out to L1, where they stay collectible against the same
