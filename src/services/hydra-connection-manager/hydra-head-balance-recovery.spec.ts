@@ -58,14 +58,23 @@ describe('recovered deposit balance', () => {
 
 	it('identifies the exact recovered input without labelling its sibling', async () => {
 		fetchUtxos.mockResolvedValue([utxo(splitHash, 0), utxo(splitHash, 1)]);
-		expect(await getOwnInHeadBalance('head')).toMatchObject({ unbackedLovelace: '9000000', hasUnbackedUtxos: true });
+		expect(await getOwnInHeadBalance('head')).toMatchObject({
+			unbackedLovelace: '9000000',
+			hasUnbackedUtxos: true,
+			balance: [{ unit: '', quantity: '18000000' }],
+			spendableBalance: [{ unit: '', quantity: '9000000' }],
+		});
 	});
 
 	it('identifies recovered whole-UTxO deposits without a split transaction', async () => {
 		findRecovered.mockResolvedValue([{ depositTxHash: depositHash, splitTxHash: null }]);
 		txsUtxos.mockResolvedValue({ inputs: [{ address, tx_hash: originalHash, output_index: 2 }] });
 		fetchUtxos.mockResolvedValue([utxo(originalHash, 2)]);
-		expect(await getOwnInHeadBalance('head')).toMatchObject({ unbackedLovelace: '9000000', hasUnbackedUtxos: true });
+		expect(await getOwnInHeadBalance('head')).toMatchObject({
+			unbackedLovelace: '9000000',
+			hasUnbackedUtxos: true,
+			spendableBalance: [],
+		});
 	});
 
 	it('excludes collateral and reference inputs, which were not committed', async () => {
@@ -82,6 +91,12 @@ describe('recovered deposit balance', () => {
 
 	it('reports an unavailable recovery check instead of a clean balance', async () => {
 		txsUtxos.mockRejectedValueOnce(new Error('chain unavailable'));
+		fetchUtxos.mockResolvedValue([utxo(originalHash, 2)]);
+		await expect(getOwnInHeadBalance('head')).rejects.toMatchObject({ status: 502 });
+	});
+
+	it('does not report a spendable balance when a recovered row has no deposit hash', async () => {
+		findRecovered.mockResolvedValue([{ depositTxHash: null, splitTxHash: null }]);
 		fetchUtxos.mockResolvedValue([utxo(originalHash, 2)]);
 		await expect(getOwnInHeadBalance('head')).rejects.toMatchObject({ status: 502 });
 	});

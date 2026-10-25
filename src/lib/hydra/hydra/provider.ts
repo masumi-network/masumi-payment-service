@@ -23,18 +23,22 @@ import { describeUnits, l2TokenRisk, type L2MintCheck } from './l2-mint-tally';
 export class HydraProvider implements IFetcher, ISubmitter {
 	private readonly _node: IHydraNode;
 	private readonly _isSubmissionAllowed: () => boolean;
+	private readonly _getRecoveredInputRefs: () => Promise<ReadonlySet<string>>;
 
 	constructor({
 		node,
 		autoConnect = true,
 		isSubmissionAllowed = () => true,
+		getRecoveredInputRefs,
 	}: {
 		node: IHydraNode;
 		autoConnect?: boolean;
 		isSubmissionAllowed?: () => boolean;
+		getRecoveredInputRefs: () => Promise<ReadonlySet<string>>;
 	}) {
 		this._node = node;
 		this._isSubmissionAllowed = isSubmissionAllowed;
+		this._getRecoveredInputRefs = getRecoveredInputRefs;
 
 		if (autoConnect) {
 			const connection = this._node.connect();
@@ -114,20 +118,29 @@ export class HydraProvider implements IFetcher, ISubmitter {
 		return this._node.l2MintCheck;
 	}
 
+	async getRecoveredInputRefs(): Promise<ReadonlySet<string>> {
+		return this._getRecoveredInputRefs();
+	}
+
 	/**
 	 * The UTxOs our own transactions may spend. Leaves out any UTxO holding a
-	 * token minted in the head and not burned, which can never leave the head
-	 * and would carry that token into our change, and any token UTxO the replay
-	 * has not checked yet (see `l2TokenRisk`). Filter inputs through this before
-	 * selecting them; `fetchAddressUTxOs` stays the full view for balances and
-	 * escrow lookups.
+	 * token minted in the head and not burned, any token UTxO the replay has
+	 * not checked yet (see `l2TokenRisk`), and any input whose deposit was
+	 * recovered on L1. Filter inputs through this before selecting them;
+	 * `fetchAddressUTxOs` stays the full view for balances and escrow lookups.
 	 */
-	spendableUTxOs<T extends Parameters<typeof l2TokenRisk>[0]>(utxos: readonly T[]): T[] {
+	async spendableUTxOs<T extends Parameters<typeof l2TokenRisk>[0]>(utxos: readonly T[]): Promise<T[]> {
+		const recoveredRefs = await this.getRecoveredInputRefs();
 		const check = this._node.l2MintCheck;
-		const spendable = utxos.filter((utxo) => l2TokenRisk(utxo, check) === null);
+		const spendable = utxos.filter(
+			(utxo) =>
+				!recoveredRefs.has(`${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase()) &&
+				l2TokenRisk(utxo, check) === null,
+		);
 		if (spendable.length !== utxos.length) {
-			logger.warn('[HydraProvider] Leaving in-head token UTxOs that are L2-minted or not yet checked out of spending', {
+			logger.warn('[HydraProvider] Leaving unsafe in-head UTxOs out of spending', {
 				excludedCount: utxos.length - spendable.length,
+				recoveredInputCount: recoveredRefs.size,
 				unburnedUnits:
 					check === undefined ? 'unknown until history replay completes' : describeUnits(check.unburnedUnits),
 			});

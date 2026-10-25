@@ -32,6 +32,19 @@ const ALL_CHECKED: L2MintCheck = {
 };
 
 describe('selectDecommittableUtxos', () => {
+	it('excludes recovered input refs but keeps a sibling output from the same transaction', () => {
+		const recovered = utxo('a'.repeat(64), 20_000_000n);
+		const sibling = { ...utxo('a'.repeat(64), 8_000_000n), input: { txHash: 'a'.repeat(64), outputIndex: 1 } };
+		const result = selectDecommittableUtxos({
+			utxos: [recovered, sibling],
+			recoveredRefs: new Set([`${'a'.repeat(64)}#0`]),
+			pendingIncrementRefs: NO_PENDING,
+			l2MintCheck: ALL_CHECKED,
+			drain: true,
+		});
+		expect(result.eligible).toEqual([sibling]);
+		expect(result.excluded.get(`${'a'.repeat(64)}#0`)).toContain('recovered');
+	});
 	// The failure this exists to prevent: withdraw the last collateral-sized UTxO
 	// and every future script spend in the head fails, while the balance still
 	// looks healthy because the escrows themselves are untouched.
