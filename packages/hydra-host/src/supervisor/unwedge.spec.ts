@@ -21,7 +21,7 @@ function options(overrides: Partial<UnwedgeOptions> = {}): UnwedgeOptions {
 const DEPOSIT = { [`${'dd'.repeat(32)}#0`]: {} };
 
 /** `GET /head` while Open, with the confirmed snapshot at version 3 holding `utxoToCommit`. */
-function headHolding(utxoToCommit: unknown, version: number): unknown {
+function headHolding(utxoToCommit: unknown, version: number) {
 	return {
 		tag: 'Open',
 		contents: {
