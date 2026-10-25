@@ -35,7 +35,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { TxLink } from '@/components/hydra/TxLink';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { hydraAssetDecimals, parseHydraAssetAmount } from './asset-amount';
+import { hydraAssetDecimals, parseHydraAssetAmount, retryTopupAdaAmount } from './asset-amount';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { DepositPeriodHint } from '@/components/hydra/hydra-hints';
@@ -596,9 +596,9 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
           // filling `0` put the form in a state that rejects on submit with
           // "Enter how much tADA to move into the head", which reads as a bug in
           // the retry rather than a deposit that never had an amount.
-          const committedLovelace = Number(failed.committedLovelace ?? 0);
-          if (Number.isFinite(committedLovelace) && committedLovelace > 0) {
-            setAmount((committedLovelace / 1_000_000).toString());
+          const retryAmount = retryTopupAdaAmount(failed.committedLovelace);
+          if (retryAmount !== null) {
+            setAmount(retryAmount);
             toast.info('Amount filled in. Press Add funds to try the deposit again.');
             return;
           }
