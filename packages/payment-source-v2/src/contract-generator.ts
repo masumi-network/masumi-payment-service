@@ -4,16 +4,20 @@
 // the exact serializer behavior of these versions. V2 intentionally uses a
 // newer mesh line than V1; do not unify with the V1 pin. See
 // docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
-import { mPubKeyAddress, type Data, type PlutusScript } from '@meshsdk/core';
+import { type Data, type PlutusScript } from '@meshsdk/core';
 import {
-	AddressType,
+	Address,
+	BaseAddress,
+	type Credential,
+	EnterpriseAddress,
+	PointerAddress,
+} from '@emurgo/cardano-serialization-lib-nodejs';
+import {
 	applyParamsToScript,
 	deserializePlutusScript,
-	deserializeAddress,
 	normalizePlutusScript,
 	resolvePaymentKeyHash,
 	resolvePlutusScriptAddress,
-	resolveStakeKeyHash,
 } from '@meshsdk/core-cst';
 import { convertNetworkToId, SmartContractState, validateHexString } from '@masumi/payment-core';
 import paymentPlutusV2 from '../../../smart-contracts/payment-v2/plutus.json';
@@ -117,29 +121,55 @@ export function getRegistryScriptV2(network: Network) {
 	return Promise.resolve({ script, policyId, smartContractAddress });
 }
 
-function getPubKeyAddressDatum(address: string, fieldName: string) {
-	const parsedAddress = deserializeAddress(address);
-	const addressType = parsedAddress.getType();
-	// The vested_pay validator only reads the payment credential of datum
-	// addresses (`address_to_verification_key`); payouts compare the full
-	// address, stake part included, exactly as encoded here. Enterprise
-	// (stake-less) pubkey addresses are therefore spendable — mesh encodes the
-	// omitted stake credential as Plutus `None` (`Constr 1 []`), which the
-	// decoder in src/utils/converter/string-datum-convert already handles.
-	// Script payment credentials stay rejected: every spending redeemer does
-	// `expect Some(vk) = address_to_verification_key(...)`, so a script
-	// participant would permanently brick the escrow.
-	if (addressType === AddressType.EnterpriseKey) {
-		return mPubKeyAddress(resolvePaymentKeyHash(address));
-	}
-	if (addressType !== AddressType.BasePaymentKeyStakeKey) {
-		throw new Error(`${fieldName} must be a Cardano base or enterprise address with a payment key credential`);
-	}
-
-	return mPubKeyAddress(resolvePaymentKeyHash(address), resolveStakeKeyHash(address));
+function credentialDatum(credential: Credential) {
+	const keyHash = credential.to_keyhash();
+	return {
+		alternative: keyHash ? 0 : 1,
+		fields: [(keyHash ?? credential.to_scripthash()!).to_hex()],
+	};
 }
 
-function getOptionalPubKeyAddressDatum(address: string | null | undefined, fieldName: string) {
+function getAddressDatum(address: string, fieldName: string, requiresPaymentKey: boolean) {
+	const parsedAddress = Address.from_bech32(address);
+	// CSL can normalize out-of-range pointer indices. Never encode a different payout address.
+	if (parsedAddress.to_bech32().toLowerCase() !== address.toLowerCase()) {
+		throw new Error(`${fieldName} must round-trip without changing the address`);
+	}
+	const base = BaseAddress.from_address(parsedAddress);
+	const enterprise = EnterpriseAddress.from_address(parsedAddress);
+	const pointer = PointerAddress.from_address(parsedAddress);
+	const paymentCredential = base?.payment_cred() ?? enterprise?.payment_cred() ?? pointer?.payment_cred();
+	if (!paymentCredential || (requiresPaymentKey && !paymentCredential.to_keyhash())) {
+		throw new Error(`${fieldName} must be a Cardano base or enterprise address with a payment key credential`);
+	}
+	let stake: Data = { alternative: 1, fields: [] };
+	if (base) {
+		stake = { alternative: 0, fields: [{ alternative: 0, fields: [credentialDatum(base.stake_cred())] }] };
+	} else if (pointer) {
+		const stakePointer = pointer.stake_pointer();
+		stake = {
+			alternative: 0,
+			fields: [
+				{
+					alternative: 1,
+					fields: [
+						BigInt(stakePointer.slot_bignum().to_str()),
+						BigInt(stakePointer.tx_index_bignum().to_str()),
+						BigInt(stakePointer.cert_index_bignum().to_str()),
+					],
+				},
+			],
+		};
+	}
+	return { alternative: 0, fields: [credentialDatum(paymentCredential), stake] };
+}
+
+function getPubKeyAddressDatum(address: string, fieldName: string) {
+	// Spending redeemers require verification keys for buyer and seller principals.
+	return getAddressDatum(address, fieldName, true);
+}
+
+function getOptionalAddressDatum(address: string | null | undefined, fieldName: string) {
 	if (address == null || address === '') {
 		return {
 			alternative: 1,
@@ -149,7 +179,7 @@ function getOptionalPubKeyAddressDatum(address: string | null | undefined, field
 
 	return {
 		alternative: 0,
-		fields: [getPubKeyAddressDatum(address, fieldName)],
+		fields: [getAddressDatum(address, fieldName, false)],
 	};
 }
 
@@ -279,9 +309,9 @@ export function getDatumV2({
 			alternative: 0,
 			fields: [
 				getPubKeyAddressDatum(buyerAddress, 'buyerAddress'),
-				getOptionalPubKeyAddressDatum(buyerReturnAddress, 'buyerReturnAddress'),
+				getOptionalAddressDatum(buyerReturnAddress, 'buyerReturnAddress'),
 				getPubKeyAddressDatum(sellerAddress, 'sellerAddress'),
-				getOptionalPubKeyAddressDatum(sellerReturnAddress, 'sellerReturnAddress'),
+				getOptionalAddressDatum(sellerReturnAddress, 'sellerReturnAddress'),
 				referenceKey,
 				referenceSignature,
 				sellerNonce,
