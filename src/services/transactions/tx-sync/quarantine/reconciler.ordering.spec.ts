@@ -10,6 +10,7 @@ const mockGetExtended = jest.fn() as AnyMock;
 const mockProcess = jest.fn() as AnyMock;
 const mockMarkNeedsOperator = jest.fn() as AnyMock;
 const mockRelease = jest.fn() as AnyMock;
+const mockDefer = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: { txSyncQuarantine: { findMany: mockFindMany } },
@@ -41,7 +42,7 @@ jest.unstable_mockModule('./index', () => ({
 	claimQuarantinedTransaction: mockClaim,
 	compareQuarantineChainPosition: (left: { blockHeight: number }, right: { blockHeight: number }) =>
 		left.blockHeight - right.blockHeight,
-	deferClaimedQuarantine: jest.fn(),
+	deferClaimedQuarantine: mockDefer,
 	errorToText: (error: unknown) => (error instanceof Error ? error.message : String(error)),
 	fenceQuarantineClaimWrite: jest.fn(),
 	getQuarantineHealth: jest.fn(async () => ({ pending: 0, needsOperator: 0, oldestPendingAgeMs: null })),
@@ -53,6 +54,7 @@ jest.unstable_mockModule('./index', () => ({
 }));
 
 const { reconcileQuarantinedTransactions } = await import('./reconciler');
+const { PendingFanoutHandoffError } = await import('../tx/pending-fanout-handoff');
 
 function quarantineEntry(id: string, txHash: string, paymentSourceId = 'source-1') {
 	return {
@@ -205,6 +207,26 @@ describe('reconcileQuarantinedTransactions ordering', () => {
 		await reconcileQuarantinedTransactions();
 
 		expect(mockRelease).toHaveBeenCalledWith(claim);
+		expect(mockRecordAttempt).not.toHaveBeenCalled();
+		expect(mockMarkNeedsOperator).not.toHaveBeenCalled();
+	});
+
+	it('waits for a fanout handoff without consuming an operator retry attempt', async () => {
+		const entry = quarantineEntry('entry-a', 'tx-a');
+		const claim = {
+			id: entry.id,
+			paymentSourceId: entry.paymentSourceId,
+			processingLeaseId: 'lease-a',
+			txSyncFenceVersion: 2,
+		};
+		mockFindMany.mockResolvedValue([entry]);
+		mockClaim.mockResolvedValueOnce(claim);
+		mockGetExtended.mockResolvedValueOnce({ txData: [{ block: { confirmations: 10 } }], failures: [] });
+		mockProcess.mockRejectedValueOnce(new PendingFanoutHandoffError('head-1'));
+
+		await reconcileQuarantinedTransactions();
+
+		expect(mockDefer).toHaveBeenCalledWith(claim, expect.any(Date));
 		expect(mockRecordAttempt).not.toHaveBeenCalled();
 		expect(mockMarkNeedsOperator).not.toHaveBeenCalled();
 	});

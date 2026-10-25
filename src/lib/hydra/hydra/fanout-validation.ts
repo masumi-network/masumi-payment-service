@@ -10,7 +10,7 @@ import {
 import { serializeCardanoTransactionOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './schemas';
 
-type FanoutChainInput = {
+export type FanoutChainInput = {
 	tx_hash: string;
 	output_index: number;
 	address: string;
@@ -97,7 +97,7 @@ const MAX_FANOUT_CHAIN_OBSERVER_MS = 120_000;
  * solely in the transaction body — there is no indexed UTxO row for it yet, so
  * its tokens cannot be read the way an input's are.
  */
-function serializeCardanoOutputAmounts(output: TransactionOutput): Array<{ unit: string; quantity: string }> {
+export function serializeCardanoOutputAmounts(output: TransactionOutput): Array<{ unit: string; quantity: string }> {
 	const amounts: Array<{ unit: string; quantity: string }> = [];
 	const value = output.amount();
 	amounts.push({ unit: 'lovelace', quantity: value.coin().to_str() });
@@ -150,7 +150,7 @@ function normalizeHex(value: string, length: number, label: string): string {
 	return normalized;
 }
 
-function paymentScriptHash(address: string): string | null {
+export function paymentScriptHash(address: string): string | null {
 	try {
 		return Address.from_bech32(address).payment_cred()?.to_scripthash()?.to_hex().toLowerCase() ?? null;
 	} catch {
@@ -158,7 +158,7 @@ function paymentScriptHash(address: string): string | null {
 	}
 }
 
-function headPolicyAmounts(
+export function headPolicyAmounts(
 	amounts: ReadonlyArray<{ unit: string; quantity: string }>,
 	headId: string,
 ): Map<string, bigint> {
@@ -177,7 +177,7 @@ function headPolicyAmounts(
 	return result;
 }
 
-function mintPolicyAmounts(transaction: Transaction, headId: string): Map<string, bigint> {
+export function mintPolicyAmounts(transaction: Transaction, headId: string): Map<string, bigint> {
 	const mint = transaction.body().mint();
 	if (!mint) return new Map();
 	const result = new Map<string, bigint>();
@@ -206,7 +206,7 @@ function mintPolicyAmounts(transaction: Transaction, headId: string): Map<string
 	return result;
 }
 
-function hasExactTokenSet(
+export function hasExactTokenSet(
 	actual: ReadonlyMap<string, bigint>,
 	expectedUnits: ReadonlySet<string>,
 	expectedQuantity: bigint,
@@ -218,6 +218,21 @@ function hasExactTokenSet(
 	);
 }
 
+export function boundHeadInputs(
+	inputs: readonly FanoutChainInput[],
+	headId: string,
+	expectedUnits: ReadonlySet<string>,
+	acceptedHeadScriptHashes: ReadonlySet<string>,
+): FanoutChainInput[] {
+	return inputs.filter(
+		(input) =>
+			input.collateral !== true &&
+			input.reference !== true &&
+			acceptedHeadScriptHashes.has(paymentScriptHash(input.address) ?? '') &&
+			hasExactTokenSet(headPolicyAmounts(input.amount, headId), expectedUnits, 1n),
+	);
+}
+
 /** The one spending input that is the bound head output, carrying the exact head token set. */
 function findBoundHeadInput(
 	inputs: readonly FanoutChainInput[],
@@ -225,18 +240,12 @@ function findBoundHeadInput(
 	expectedUnits: ReadonlySet<string>,
 	acceptedHeadScriptHashes: ReadonlySet<string>,
 ): FanoutChainInput {
-	const headInputs = inputs.filter(
-		(input) =>
-			input.collateral !== true &&
-			input.reference !== true &&
-			acceptedHeadScriptHashes.has(paymentScriptHash(input.address) ?? '') &&
-			hasExactTokenSet(headPolicyAmounts(input.amount, headId), expectedUnits, 1n),
-	);
+	const headInputs = boundHeadInputs(inputs, headId, expectedUnits, acceptedHeadScriptHashes);
 	if (headInputs.length !== 1) fail('Hydra fanout did not consume exactly one bound official vHead token output');
 	return headInputs[0];
 }
 
-function expectedHeadUnits(headId: string, participantVkeys: readonly string[]): Set<string> {
+export function expectedHeadUnits(headId: string, participantVkeys: readonly string[]): Set<string> {
 	return new Set([`${headId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`, ...participantVkeys.map((vkey) => `${headId}${vkey}`)]);
 }
 

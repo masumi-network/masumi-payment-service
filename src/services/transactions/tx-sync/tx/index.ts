@@ -27,6 +27,7 @@ import type { UpdateTransactionInput } from './types';
 import { verifyRequestFieldsAgainstDatum, v2ReturnAddressesMatch } from './datum-verification';
 import { updateInitialPurchaseTransaction } from './initial-purchase';
 import { updateInitialPaymentTransaction } from './initial-payment';
+import { deferSpendUntilFanoutHandoff } from './pending-fanout-handoff';
 
 export type { UpdateTransactionInput } from './types';
 export { updateRolledBackTransaction } from './rolled-back';
@@ -242,6 +243,24 @@ export async function updateTransaction(
 			txHash: tx.tx.tx_hash,
 		});
 	}
+	// Partial fanout outputs can be spent on L1 before the Final handoff moves
+	// their request rows from L2. A hash mismatch then means "wait for handoff",
+	// not "discard this confirmed spend and advance the source checkpoint".
+	// The scanner quarantines the thrown error and replays the transaction.
+	if (!inputTxHashMatchPaymentRequest)
+		await deferSpendUntilFanoutHandoff(
+			paymentRequest,
+			entry.valueInput,
+			paymentContract.smartContractAddress,
+			blockfrost,
+		);
+	if (!inputTxHashMatchPurchasingRequest)
+		await deferSpendUntilFanoutHandoff(
+			purchasingRequest,
+			entry.valueInput,
+			paymentContract.smartContractAddress,
+			blockfrost,
+		);
 
 	let sellerWithdrawn: Array<{
 		unit: string;
