@@ -34256,7 +34256,7 @@
             },
             "patch": {
                 "summary": "Enable or disable a Hydra head. (admin access required)",
-                "description": "Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it; disabling quarantines it (drops its InitTx admission).",
+                "description": "Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it. Disabling drops its InitTx admission. A Closed or FanoutPossible head cannot be disabled while contest monitoring is required.",
                 "tags": [
                     "hydra"
                 ],
@@ -34330,6 +34330,9 @@
                     },
                     "404": {
                         "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "The head is retired or requires contest monitoring"
                     },
                     "502": {
                         "description": "On-chain verification failed"
