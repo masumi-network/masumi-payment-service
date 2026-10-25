@@ -31,13 +31,12 @@ export type ReplayedCloseNode = Pick<HydraNode, 'status' | 'closedSnapshotNumber
  * is written.
  *
  * The caller has checked that the history pass is complete and bound to this
- * head. The write changes no status, so it cannot look like a regression, and
- * it only raises the number on a row that is still enabled, closed and not
- * handed off. While the head is Closed, its deadline moves too, only to a
- * later time, because each contest extends it. Past Closed the deadline has
- * passed, and nothing compares against its time any more.
+ * head. A higher replayed number records a missed contest. A lower number
+ * records an offline rollback while the live head and durable row share a
+ * closed-family status. When still Closed, that compare-and-set also restores
+ * the current deadline. Past Closed, the deadline has passed.
  *
- * Returns true when it raised the row. The caller then ends this pass, so the
+ * Returns true when it changed the row. The caller then ends this pass, so the
  * next pass reads the new number.
  */
 export async function recordReplayedCloseSnapshot(
@@ -61,9 +60,33 @@ export async function recordReplayedCloseSnapshot(
 		return false;
 	}
 	headsWithoutReplayedClose.delete(hydraHeadId);
-	if (closedSnapshotNumber <= latestSnapshotNumber) return false;
+	if (closedSnapshotNumber === latestSnapshotNumber) return false;
 	// A live status outside the closed family means a rollback undid the close.
 	if (!CLOSED_HEAD_STATUSES.includes(node.status)) return false;
+	if (closedSnapshotNumber < latestSnapshotNumber) {
+		// A replayed lower close is a rollback. The exact status and prior
+		// snapshot fence the write against a concurrent live observation.
+		const observedStatus = node.status;
+		let deadline: Date | undefined;
+		if (observedStatus === HydraHeadStatus.Closed) {
+			const facts = await node.fetchClosedHeadFacts();
+			if (!facts) return false;
+			deadline = new Date(facts.contestationDeadline);
+			if (!Number.isFinite(deadline.getTime())) return false;
+		}
+		if (node.closedSnapshotNumber !== closedSnapshotNumber || node.status !== observedStatus) return false;
+		const restored = await prisma.hydraHead.updateMany({
+			where: {
+				id: hydraHeadId,
+				isEnabled: true,
+				status: observedStatus,
+				reconciliationCompletedAt: null,
+				latestSnapshotNumber,
+			},
+			data: { latestSnapshotNumber: closedSnapshotNumber, ...(deadline ? { contestationDeadline: deadline } : {}) },
+		});
+		return restored.count === 1;
+	}
 
 	// The deadline goes first, and a head state the node did not return holds the
 	// raise: once the snapshot is current, no later pass tries the deadline again.

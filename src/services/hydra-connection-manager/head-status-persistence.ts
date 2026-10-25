@@ -57,7 +57,7 @@ export async function persistHeadStatus(
 	ownerEpoch: bigint,
 	data: StatusChangeData,
 ): Promise<void> {
-	const { status, headId, contestationDeadline, snapshotNumber } = data;
+	const { status, headId, contestationDeadline, snapshotNumber, chainEvent } = data;
 	logger.info(`[HydraConnectionManager] Head ${hydraHeadId} status changed to ${status}`, {
 		headId,
 		contestationDeadline,
@@ -203,6 +203,14 @@ export async function persistHeadStatus(
 			}
 			const now = new Date();
 			const updateData: HydraHeadUpdateInput = { status, latestActivityAt: now };
+			const isLiveClosedChainEvent =
+				status === HydraHeadStatus.Closed &&
+				current.status === HydraHeadStatus.Closed &&
+				(chainEvent === 'HeadIsClosed' || chainEvent === 'HeadIsContested');
+			const hasClosedSnapshotRollback =
+				isLiveClosedChainEvent && snapshotNumber != null && BigInt(snapshotNumber) < current.latestSnapshotNumber;
+			const hasValidRollbackDeadline =
+				contestationDeadline != null && Number.isFinite(new Date(contestationDeadline).getTime());
 			/** Set when this frame is the one that moves the head into Closed. */
 			let isClosingTransition = false;
 			/**
@@ -234,15 +242,23 @@ export async function persistHeadStatus(
 						contestationDeadline,
 					});
 				} else if (
+					hasClosedSnapshotRollback ||
 					current.contestationDeadline == null ||
 					parsedDeadline.getTime() > current.contestationDeadline.getTime()
 				) {
-					// A contest extends the contestation period: the deadline only moves later.
+					// A contest extends the deadline. A live L1 rollback may restore an
+					// earlier Close and its earlier deadline with the lower snapshot.
 					updateData.contestationDeadline = parsedDeadline;
 				}
 			}
-			if (snapshotNumber != null && BigInt(snapshotNumber) > current.latestSnapshotNumber) {
-				updateData.latestSnapshotNumber = BigInt(snapshotNumber);
+			if (snapshotNumber != null) {
+				const observedSnapshot = BigInt(snapshotNumber);
+				if (
+					observedSnapshot > current.latestSnapshotNumber ||
+					(isLiveClosedChainEvent && (!hasClosedSnapshotRollback || hasValidRollbackDeadline))
+				) {
+					updateData.latestSnapshotNumber = observedSnapshot;
+				}
 			}
 			if (status === HydraHeadStatus.Open && current.openedAt == null) updateData.openedAt = now;
 			else if (status === HydraHeadStatus.Closed && current.closedAt == null) {
