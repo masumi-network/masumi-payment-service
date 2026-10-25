@@ -16,6 +16,8 @@ import createHttpError from 'http-errors';
 import { logger } from '@masumi/payment-core/logger';
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const RESOLVE_TIMEOUT_MS = 5_000;
+const MAX_PENDING_EXCHANGE_LOOKUPS = 16;
 const MAX_ERROR_RESPONSE_BYTES = 4 * 1024;
 /**
  * 503 is the only refusal worth retrying in place: the Host answers it before
@@ -59,6 +61,8 @@ export type ExchangeClientDeps = {
 	resolve?: ExchangeResolver;
 	send?: (url: URL, target: ResolvedExchangeTarget, body: Buffer) => Promise<ExchangeRequestResult>;
 	sleep?: (ms: number) => Promise<void>;
+	resolveDeadlineMs?: number;
+	requestDeadlineMs?: number;
 };
 
 const blockedIpv4 = new BlockList();
@@ -140,20 +144,65 @@ export function assertExchangeTransportAllowed(rawUrl: string, transport: Exchan
 	return url;
 }
 
-const defaultResolver: ExchangeResolver = async (hostname) => await lookup(hostname, { all: true, verbatim: true });
+/** A timed-out getaddrinfo cannot be cancelled, so bound and share unfinished jobs. */
+export function createBoundedExchangeResolver(
+	lookupHost: ExchangeResolver = async (hostname) => await lookup(hostname, { all: true, verbatim: true }),
+	maxPending = MAX_PENDING_EXCHANGE_LOOKUPS,
+): ExchangeResolver {
+	const pending = new Map<string, Promise<ReadonlyArray<{ address: string; family: number }>>>();
+	return async (hostname) => {
+		const key = hostname.toLowerCase();
+		let result = pending.get(key);
+		if (result === undefined) {
+			if (pending.size >= maxPending) throw new Error('counterparty exchange resolver is busy');
+			const started = Promise.resolve().then(async () => await lookupHost(hostname));
+			pending.set(key, started);
+			void started.then(
+				() => pending.delete(key),
+				() => pending.delete(key),
+			);
+			result = started;
+		}
+		return await result;
+	};
+}
+
+const defaultResolver = createBoundedExchangeResolver();
+
+async function resolveBeforeDeadline(
+	resolve: ExchangeResolver,
+	hostname: string,
+	deadlineMs: number,
+): Promise<ReadonlyArray<{ address: string; family: number }>> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			resolve(hostname),
+			new Promise<never>((_resolve, reject) => {
+				timer = setTimeout(() => reject(new Error('counterparty exchange lookup timed out')), deadlineMs);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
 
 /** Resolve every answer, reject special-use results, then select a pinned IP. */
 export async function resolveExchangeTarget(
 	rawUrl: string,
 	transport: ExchangeTransportOptions,
 	resolve: ExchangeResolver = defaultResolver,
+	resolveDeadlineMs = RESOLVE_TIMEOUT_MS,
 ): Promise<{ url: URL; target: ResolvedExchangeTarget }> {
 	const url = assertExchangeTransportAllowed(rawUrl, transport);
 	const hostname = withoutIpv6Brackets(url.hostname);
 	const literalFamily = isIP(hostname);
 	let answers: ReadonlyArray<{ address: string; family: number }>;
 	try {
-		answers = literalFamily === 0 ? await resolve(hostname) : [{ address: hostname, family: literalFamily }];
+		answers =
+			literalFamily === 0
+				? await resolveBeforeDeadline(resolve, hostname, resolveDeadlineMs)
+				: [{ address: hostname, family: literalFamily }];
 	} catch (error) {
 		throw createHttpError(502, `the counterparty exchange hostname could not be resolved: ${(error as Error).message}`);
 	}
@@ -190,8 +239,21 @@ export async function inspectExchangeNetwork(rawUrl: string): Promise<{ usesPriv
 	return { usesPrivateNetwork: target.isPrivate };
 }
 
-function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffer): Promise<ExchangeRequestResult> {
+function sendPinnedRequest(
+	url: URL,
+	target: ResolvedExchangeTarget,
+	body: Buffer,
+	deadlineMs = REQUEST_TIMEOUT_MS,
+): Promise<ExchangeRequestResult> {
 	return new Promise((resolve, reject) => {
+		const complete = (result: ExchangeRequestResult): void => {
+			clearTimeout(deadline);
+			resolve(result);
+		};
+		const fail = (error: Error): void => {
+			clearTimeout(deadline);
+			reject(error);
+		};
 		const originalHostname = withoutIpv6Brackets(url.hostname);
 		const options: RequestOptions = {
 			protocol: url.protocol,
@@ -215,7 +277,7 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
 				// Acceptance needs only the status. Close the unused body so an active
 				// peer cannot retain this socket by streaming past the inactivity timeout.
 				response.destroy();
-				resolve({ status, detail: '' });
+				complete({ status, detail: '' });
 				return;
 			}
 
@@ -229,11 +291,15 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
 				}
 				chunks.push(chunk);
 			});
-			response.on('end', () => resolve({ status, detail: Buffer.concat(chunks).toString('utf8') }));
-			response.on('error', reject);
+			response.on('end', () => complete({ status, detail: Buffer.concat(chunks).toString('utf8') }));
+			response.on('error', fail);
 		});
 		request.setTimeout(REQUEST_TIMEOUT_MS, () => request.destroy(new Error('request timed out')));
-		request.on('error', reject);
+		const deadline = setTimeout(
+			() => request.destroy(new Error('counterparty exchange request deadline exceeded')),
+			deadlineMs,
+		);
+		request.on('error', fail);
 		request.end(body);
 	});
 }
@@ -316,7 +382,7 @@ async function attempt(
 	let url: URL;
 	let target: ResolvedExchangeTarget;
 	try {
-		({ url, target } = await resolveExchangeTarget(rawUrl, transport, deps.resolve));
+		({ url, target } = await resolveExchangeTarget(rawUrl, transport, deps.resolve, deps.resolveDeadlineMs));
 	} catch (error) {
 		if (createHttpError.isHttpError(error)) return { kind: 'not-sent', error };
 		throw error;
@@ -331,7 +397,10 @@ async function attempt(
 
 	let earlierMayHaveLanded = false;
 	try {
-		const send = deps.send ?? sendPinnedRequest;
+		const send =
+			deps.send ??
+			((url: URL, target: ResolvedExchangeTarget, body: Buffer) =>
+				sendPinnedRequest(url, target, body, deps.requestDeadlineMs));
 		const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 		const payload = Buffer.from(JSON.stringify(body));
 		let result = await send(url, target, payload);

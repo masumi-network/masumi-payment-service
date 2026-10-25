@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import {
 	attemptFailure,
 	attemptRedemption,
+	createBoundedExchangeResolver,
 	isPrivateOrSpecialAddress,
 	resolveExchangeTarget,
 	type ExchangeClientDeps,
@@ -30,6 +31,79 @@ const redemption: RedemptionBody = {
 };
 
 const PUBLIC_DNS = async () => [{ address: '93.184.216.34', family: 4 }];
+
+it('stops before sending when DNS never answers', async () => {
+	const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>();
+	const outcome = await attemptRedemption(
+		'https://issuer.example/exchange',
+		redemption,
+		{ allowInsecureHttp: false, allowPrivateNetwork: false },
+		{ resolve: async () => await new Promise(() => undefined), resolveDeadlineMs: 20, send },
+	);
+	expect(outcome).toMatchObject({ kind: 'not-sent', error: { status: 502 } });
+	expect(send).not.toHaveBeenCalled();
+});
+
+it('caps unresolved DNS jobs after callers time out', async () => {
+	let release!: (addresses: Array<{ address: string; family: number }>) => void;
+	const lookup = jest.fn(
+		async (_hostname: string) =>
+			await new Promise<Array<{ address: string; family: number }>>((resolve) => {
+				release = resolve;
+			}),
+	);
+	const resolver = createBoundedExchangeResolver(lookup, 1);
+	const transport = { allowInsecureHttp: false, allowPrivateNetwork: false };
+	await expect(resolveExchangeTarget('https://first.example/exchange', transport, resolver, 20)).rejects.toThrow(
+		/timed out/,
+	);
+	await expect(resolveExchangeTarget('https://second.example/exchange', transport, resolver, 20)).rejects.toThrow(
+		/busy/,
+	);
+	expect(lookup).toHaveBeenCalledTimes(1);
+	release([{ address: '93.184.216.34', family: 4 }]);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	await expect(resolveExchangeTarget('https://second.example/exchange', transport, resolver, 20)).rejects.toThrow(
+		/timed out/,
+	);
+	expect(lookup).toHaveBeenCalledTimes(2);
+});
+
+it('closes a response that keeps sending error-body bytes forever', async () => {
+	let reportClosed: () => void = () => undefined;
+	const closed = new Promise<void>((resolve) => {
+		reportClosed = resolve;
+	});
+	const server = createServer((request, response) => {
+		request.resume();
+		response.writeHead(400);
+		response.flushHeaders();
+		const stream = setInterval(() => response.write('x'), 10);
+		response.once('close', () => {
+			clearInterval(stream);
+			reportClosed();
+		});
+	});
+	try {
+		server.listen(0, '127.0.0.1');
+		await once(server, 'listening');
+		const { port } = server.address() as AddressInfo;
+		const result = await attemptRedemption(
+			`http://127.0.0.1:${port}/exchange`,
+			redemption,
+			{
+				allowInsecureHttp: true,
+				allowPrivateNetwork: true,
+			},
+			{ requestDeadlineMs: 100 },
+		);
+		expect(result).toMatchObject({ kind: 'unknown' });
+		await closed;
+	} finally {
+		server.closeAllConnections();
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	}
+});
 
 it('accepts successful headers and closes an unfinished response body', async () => {
 	const CONNECTION_CLOSE_DEADLINE_MS = 1_000;
