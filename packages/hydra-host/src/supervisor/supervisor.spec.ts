@@ -14,7 +14,7 @@
  * these tests are about.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -115,6 +115,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	jest.restoreAllMocks();
 	for (const child of spawned.splice(0)) {
 		child.kill('SIGKILL');
 	}
@@ -539,3 +540,75 @@ describe('Supervisor restart requests', () => {
 		await supervisor.shutdown();
 	});
 });
+
+it('keeps registry, pid and persistence when an adopted process cannot be signalled during removal', async () => {
+	const record = makeRecord({ desired: 'Stopped', removalRequested: true });
+	await store.write(record);
+	const child = spawnNodeLike(store.nodeDir(record.nodeId));
+	await store.update(record.nodeId, (current) => ({ ...current, pid: child.pid }));
+	const kill = process.kill.bind(process);
+	jest.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+		if (pid === child.pid && signal === 'SIGTERM')
+			throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+		return kill(pid, signal);
+	});
+	await supervisor.boot();
+	const after = await store.read(record.nodeId);
+	expect(after?.state).toBe('Failed');
+	expect(after?.pid).toBe(child.pid);
+	expect(after?.removalRequested).toBe(false);
+	expect(after?.failureReason).toMatch(/could not be confirmed stopped|EPERM/);
+	expect((await fs.stat(store.nodeDir(record.nodeId))).isDirectory()).toBe(true);
+	expect(child.exitCode).toBeNull();
+	expect(child.killed).toBe(false);
+});
+
+it.each(['stop', 'restart', 'remove'] as const)(
+	'preserves a live persisted pid with initially unreadable identity during %s',
+	async (intent) => {
+		const pid = 987654;
+		await store.write(
+			makeRecord({
+				pid,
+				desired: intent === 'restart' ? 'Running' : 'Stopped',
+				restartRequested: intent === 'restart',
+				removalRequested: intent === 'remove',
+				peers: [
+					{
+						advertise: 'hydra2.example.com:5001',
+						hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+						cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+					},
+				],
+			}),
+		);
+		const read = fs.readFile.bind(fs);
+		jest
+			.spyOn(fs, 'readFile')
+			.mockImplementation(((file: Parameters<typeof fs.readFile>[0], options: Parameters<typeof fs.readFile>[1]) =>
+				file === `/proc/${pid}/cmdline` ? Promise.resolve('') : read(file, options)) as typeof fs.readFile);
+		const list = fs.readdir.bind(fs);
+		jest
+			.spyOn(fs, 'readdir')
+			.mockImplementation(((file: Parameters<typeof fs.readdir>[0], options: Parameters<typeof fs.readdir>[1]) =>
+				file === '/proc' ? Promise.resolve([String(pid)]) : list(file, options)) as typeof fs.readdir);
+		const realKill = process.kill.bind(process);
+		const signals: Array<string | number | undefined> = [];
+		jest.spyOn(process, 'kill').mockImplementation((target, signal) => {
+			if (target === pid) {
+				signals.push(signal);
+				return true;
+			}
+			return realKill(target, signal);
+		});
+		await supervisor.boot();
+		const after = await store.read('node-1');
+		expect(after?.pid).toBe(pid);
+		expect(after?.state).toBe('Failed');
+		expect(after?.startAttempts).toBe(0);
+		expect(after?.failureReason).toMatch(/identity|confirmed stopped/);
+		expect((await fs.stat(store.nodeDir('node-1'))).isDirectory()).toBe(true);
+		expect(signals.length).toBeGreaterThan(0);
+		expect(signals.every((signal) => signal === 0)).toBe(true);
+	},
+);
