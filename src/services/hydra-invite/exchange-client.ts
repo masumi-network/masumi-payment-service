@@ -212,7 +212,9 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
 		const request = (url.protocol === 'https:' ? https.request : http.request)(options, (response) => {
 			const status = response.statusCode ?? 502;
 			if (status >= 200 && status < 300) {
-				response.resume();
+				// Acceptance needs only the status. Close the unused body so an active
+				// peer cannot retain this socket by streaming past the inactivity timeout.
+				response.destroy();
 				resolve({ status, detail: '' });
 				return;
 			}
