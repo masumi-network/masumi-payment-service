@@ -83,6 +83,10 @@ model HydraHead {
   /// on every attach, so a flapping session hid a stuck latch from it forever.
   closingSince DateTime?
 
+  /// Unique identity of the Close admission. Fences delayed refusal evidence
+  /// even when two admissions share the same millisecond timestamp.
+  closeAdmissionId String? @db.VarChar(32)
+
   /// Set when a withdrawal starts to drain the local participant's collateral.
   ///
   /// Taken under the head row lock that new L2 escrow reservations also take,
