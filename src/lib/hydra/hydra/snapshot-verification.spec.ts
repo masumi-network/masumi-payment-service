@@ -24,6 +24,7 @@ import {
 	doesHydraTransactionTransitionReachSnapshot,
 	hydraSnapshotSignableBytes,
 	resolveVerifiedHydraFanoutReference,
+	resolveVerifiedHydraFanoutReferences,
 	serializeHydraSnapshotOutput,
 	verifyHydraSnapshot,
 	type HydraSnapshotVerificationFrame,
@@ -512,6 +513,19 @@ describe('Hydra 2.3 snapshot verification', () => {
 		};
 
 		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(false);
+	});
+
+	it('accepts an empty observed fanout map for an empty signed final snapshot', () => {
+		const snapshot = {
+			headId: HEAD_ID,
+			number: 9,
+			version: 0,
+			outputs: new Map<string, string>(),
+			outputMultiset: new Map<string, number>(),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+		expect(resolveVerifiedHydraFanoutReferences(snapshot, new Map())).toEqual([]);
 	});
 
 	it('maps a unique producer-CBOR output to its exact observed L1 fanout reference', () => {
