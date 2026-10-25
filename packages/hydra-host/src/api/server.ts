@@ -601,6 +601,18 @@ export function createControlPlane(deps: ServerDeps): Server {
 				return;
 			}
 
+			case 'removeUnclaimedNode': {
+				const record = await exchange.removeUnclaimedNode(
+					nodeId ?? '',
+					async () => await requestRemoval(store, nodeId ?? '', { force: false }),
+				);
+				if (record === null) throw new HostApiError('an invite has claimed this node', 409);
+				closeNodeSockets(record.nodeId);
+				tickSupervisor();
+				send(response, 202, publicNode(record));
+				return;
+			}
+
 			case 'nodeHealth': {
 				const record = await store.read(nodeId ?? '');
 				if (record === null) {

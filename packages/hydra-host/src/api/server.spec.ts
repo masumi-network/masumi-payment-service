@@ -336,6 +336,23 @@ describe('lifecycle guards over HTTP', () => {
 		expect((await call('DELETE', `/v1/nodes/${nodeId}`, { token: ADMIN })).status).toBe(202);
 	});
 
+	it('keeps an invite node when orphan cleanup requires it to be unclaimed', async () => {
+		const nodeId = await provisionAndAck('idem-claimed');
+		const nonce = 'nonce-claimed';
+		expect(
+			(
+				await call('POST', '/v1/invites', {
+					token: ADMIN,
+					body: { nonce, hostNodeId: nodeId, expiresAt: Date.now() + 60_000 },
+				})
+			).status,
+		).toBe(201);
+
+		expect((await call('DELETE', `/v1/nodes/${nodeId}/remove-unclaimed`, { token: ADMIN })).status).toBe(409);
+		expect((await call('DELETE', `/v1/invites/${nonce}`, { token: ADMIN })).status).toBe(200);
+		expect((await call('DELETE', `/v1/nodes/${nodeId}/remove-unclaimed`, { token: ADMIN })).status).toBe(202);
+	});
+
 	it('deletes a never-acknowledged node without force', async () => {
 		const created = (await (
 			await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-unacked' })
