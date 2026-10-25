@@ -8,10 +8,9 @@
  * each one is written defensively — replay means the same event can be seen more
  * than once, and a restart means they can be seen out of order.
  *
- * The ordering rule is the only subtle part: Approved is when the value leaves
- * the head, Finalized is when L1 has it. A Finalized seen without its Approved
- * still implies the approval happened, but an Approved seen after a Finalized is
- * a replay and must not undo it.
+ * Approved is when the value leaves the head, Finalized is when L1 has it.
+ * An anonymous Finalized event can settle only a row whose approval was already
+ * recorded. Its timestamp alone cannot identify an unsent local withdrawal.
  */
 
 import { Mutex } from 'async-mutex';
@@ -49,8 +48,8 @@ type DecommitOutcomeParams = {
 	hydraHeadId: string;
 	/**
 	 * Absent on finalization, which the head reports without one. The row is
-	 * then matched by head, open status and observedAt, which is unambiguous
-	 * because a participant may only have one withdrawal in flight at a time.
+	 * then matched by head, approved status and observedAt. A pending local row
+	 * may not have been sent when a peer's finalization arrives.
 	 * Without observedAt as well, the finalization is ignored.
 	 */
 	decommitTxId?: string;
@@ -158,7 +157,7 @@ async function applyDecommitOutcomeInOrder(params: DecommitOutcomeParams): Promi
  *
  * Split out because it is the one transition the head reports anonymously.
  * DecommitFinalized carries no transaction id, so the row is found by head and
- * open status; the id it does not carry is then looked up on chain, because the
+ * recorded Approved status; the id it does not carry is then looked up on chain, because the
  * in-head decommit id is not a transaction any explorer has ever seen.
  */
 async function finalizeDecommit(params: {
@@ -170,7 +169,7 @@ async function finalizeDecommit(params: {
 }): Promise<boolean> {
 	const { hydraHeadId, decommitTxId, distributed, observedAt, now } = params;
 
-	// An anonymous finalization is attributed by head and age alone. Without a
+	// An anonymous finalization is attributed by head, approval, and age. Without a
 	// time the age filter has nothing to compare, so a replayed finalization
 	// from an earlier withdrawal would settle the one open today. The frame
 	// parser already turns a missing or unparseable timestamp into undefined.
@@ -186,7 +185,7 @@ async function finalizeDecommit(params: {
 			hydraHeadId,
 			AND: [
 				decommitTxId === undefined
-					? { status: { in: OPEN_STATUSES } }
+					? { status: HydraDecommitStatus.Approved }
 					: { decommitTxId, OR: [{ status: { in: OPEN_STATUSES } }, EXPIRED] },
 				// A head replays its entire history on every reconnection, so a
 				// finalization from weeks ago arrives again alongside today's pending
@@ -197,12 +196,9 @@ async function finalizeDecommit(params: {
 				// cannot precede the approval it follows, so this excludes a withdrawal
 				// that was merely requested in the seconds before the replayed event.
 				//
-				// A row whose approval was never written falls back to its creation
-				// time. `approvedAt: { lte: … }` does not match NULL, so a withdrawal
-				// whose DecommitApproved was missed — the frame arrived while the socket
-				// was down, or its write failed — could never be finalized at all: the
-				// row stayed open, the funds were already on L1, and every later
-				// withdrawal by that participant was refused as one already in flight.
+				// An Approved row may have a null approval time after an expired row
+				// was revived by a replayed approval with no timestamp. Its creation
+				// time still bounds the anonymous finalization in that case.
 				...(observedAt === undefined
 					? []
 					: [{ OR: [{ approvedAt: { lte: observedAt } }, { approvedAt: null, createdAt: { lte: observedAt } }] }]),
@@ -225,9 +221,8 @@ async function finalizeDecommit(params: {
 	const [row] = open;
 	if (!row) return false;
 
-	// Stamp the approval too when it was never seen — a replay that starts
-	// mid-history, or a restart between the two events, would otherwise leave a
-	// finalized withdrawal claiming it was never approved.
+	// Stamp an absent approval time too. An Approved row can lack that time after
+	// an expired row was revived by a replayed approval without a timestamp.
 	await prisma.hydraDecommit.update({
 		where: { id: row.id },
 		data: {

@@ -126,6 +126,17 @@ describe('applyDecommitOutcome', () => {
 		expect(mockUpdate.mock.calls[0]![0].data.status).toBe('Finalized');
 	});
 
+	it('does not attribute an anonymous finalization to a withdrawal that has no approval', async () => {
+		mockFindMany.mockImplementationOnce(async ({ where }: { where: { AND: Array<{ status: unknown }> } }) =>
+			where.AND[0].status === 'Approved' ? [] : [OPEN_ROW],
+		);
+
+		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT })).toBe(
+			false,
+		);
+		expect(mockUpdate).not.toHaveBeenCalled();
+	});
+
 	// A head replays its whole history on every reconnection, so a finalization
 	// from an earlier withdrawal arrives again beside today's pending one. Without
 	// the age filter the old event marks the new withdrawal paid out while its
@@ -145,11 +156,11 @@ describe('applyDecommitOutcome', () => {
 		]);
 	});
 
-	// The row the stamping branch below was written for: approved but never
-	// recorded as approved, which is what a missed frame or a failed write leaves.
-	it('attributes a finalization to a withdrawal whose approval was never written', async () => {
+	// An expired row revived by an approval frame without a timestamp is Approved
+	// with no approvedAt. Its creation time remains a safe lower bound.
+	it('attributes a finalization to an Approved withdrawal with no approval time', async () => {
 		const observedAt = new Date('2026-08-05T22:37:49.553Z');
-		mockFindMany.mockResolvedValue([{ ...OPEN_ROW, approvedAt: null }]);
+		mockFindMany.mockResolvedValue([{ ...OPEN_ROW, status: 'Approved', approvedAt: null }]);
 
 		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt })).toBe(true);
 		expect(mockUpdate.mock.calls[0]![0].data.status).toBe('Finalized');
@@ -313,6 +324,6 @@ describe('applyDecommitOutcome on an expired withdrawal', () => {
 	it('never attributes an unnamed finalization to an expired row', async () => {
 		await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt: OBSERVED_AT });
 
-		expect(findClauses()[0]).toEqual({ status: { in: ['Preparing', 'Pending', 'Approved'] } });
+		expect(findClauses()[0]).toEqual({ status: 'Approved' });
 	});
 });

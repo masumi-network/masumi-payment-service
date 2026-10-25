@@ -160,8 +160,8 @@ export interface DecommitDistributedValue {
 export interface DecommitSettledData {
 	/**
 	 * Absent on finalization: DecommitFinalized does not carry one. The row is
-	 * then found by head and open status instead, which is sound because a
-	 * participant may only have one withdrawal in flight at a time.
+	 * then found by head and recorded Approved status. A Pending local row may
+	 * never have been sent, so head and event time alone do not identify it.
 	 */
 	decommitTxId?: string;
 	outcome: HydraDecommitOutcome;
