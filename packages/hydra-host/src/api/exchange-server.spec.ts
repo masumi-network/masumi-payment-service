@@ -730,6 +730,16 @@ describe('total request budget', () => {
 		fromResponse(source, JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }));
 	const redeem = (source: string, nonce: string) => redeemResponse(source, nonce).then((response) => response.status);
 
+	it('serves an open invite after a shared proxy address reaches its source limit', async () => {
+		const source = '198.51.100.10';
+		expect(await from(source)).toBe(400);
+		expect(await from(source)).toBe(400);
+		await issue('nonce-shared-proxy');
+
+		expect(await redeem(source, 'nonce-shared-proxy')).toBe(200);
+		expect(await redeem(source, 'nonce-unknown')).toBe(429);
+	});
+
 	it('stops a flood from many distinct addresses, then still serves a redemption', async () => {
 		const statuses: number[] = [];
 		// Each address sends once, far under its own limit of 2, so only the
