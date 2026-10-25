@@ -260,6 +260,33 @@ function verify(
 	});
 }
 
+function longFanoutChain() {
+	const partialSteps: BuiltFanout[] = [];
+	for (let index = 0; index < 65; index += 1) {
+		const previous = partialSteps[partialSteps.length - 1];
+		partialSteps.push(
+			buildFanout({
+				continuingHead: true,
+				burns: [],
+				outputCount: 1,
+				headInput: previous ? { txHash: previous.txHash, index: 0 } : undefined,
+			}),
+		);
+	}
+	const lastPartial = partialSteps[partialSteps.length - 1];
+	const terminal = buildFanout({ headInput: { txHash: lastPartial.txHash, index: 0 } });
+	const value = fixture({ chain: [...partialSteps, terminal] });
+	const inHeadReferences = new Set<string>();
+	const finalizedOutputs = new Map<string, string>();
+	partialSteps.forEach((step, index) => {
+		const reference = `${'aa'.repeat(32)}#${index}`;
+		inHeadReferences.add(reference);
+		finalizedOutputs.set(reference, serializeCardanoTransactionOutput(step.outputs[0]));
+	});
+	finalizedOutputs.set(`${terminal.txHash}#0`, serializeCardanoTransactionOutput(terminal.outputs[0]));
+	return { value, inHeadReferences, finalizedOutputs };
+}
+
 describe('verifyHydraFanoutOnChain', () => {
 	it('accepts one fully bound, confirmed official fanout transaction', async () => {
 		const value = fixture();
@@ -288,6 +315,11 @@ describe('verifyHydraFanoutOnChain', () => {
 	// (hydra-node 2.2.0). Rejecting that outright left every escrow in such a
 	// head marked L2 against a head that no longer existed.
 	describe('partial fanout chains', () => {
+		it('verifies a 66-step chain that remains within the observer budget', async () => {
+			const chain = longFanoutChain();
+			await expect(verify(chain.value)).resolves.toHaveLength(66);
+		});
+
 		/** Two partial steps, then the step that burns the head tokens. */
 		function chainFixture() {
 			const first = buildFanout({ outputCount: 2, continuingHead: true, burns: [] });
@@ -530,6 +562,58 @@ describe('verifyHydraFanoutOnChain', () => {
 // output). Handing those keys to the verifier looked up L2 tx ids on L1.
 describe('bindFinalizedFanoutToL1Chain', () => {
 	const inHeadKey = (index: number) => `${'aa'.repeat(32)}#${index}`;
+	it('rejects an indexed head input that loops back to the same L1 step', async () => {
+		const partial = buildFanout({ continuingHead: true, burns: [] });
+		const value = fixture({ fanout: partial });
+		value.observer.txsUtxos = jest.fn(async () => ({
+			hash: partial.txHash,
+			inputs: [
+				{
+					tx_hash: partial.txHash,
+					output_index: 0,
+					address: HEAD_ADDRESS,
+					amount: [
+						{ unit: 'lovelace', quantity: '5000000' },
+						{ unit: STATE_UNIT, quantity: '1' },
+						{ unit: LOCAL_UNIT, quantity: '1' },
+						{ unit: REMOTE_UNIT, quantity: '1' },
+					],
+				},
+			],
+		}));
+		await expect(
+			bindFinalizedFanoutToL1Chain({
+				observer: value.observer,
+				headId: HEAD_ID,
+				participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				finalizedOutputs: new Map([
+					[inHeadKey(0), 'missing'],
+					[`${partial.txHash}#1`, 'reported'],
+				]),
+				inHeadReferences: new Set([inHeadKey(0)]),
+			}),
+		).rejects.toThrow('revisited an L1 transaction');
+	});
+
+	it('binds all outputs across more than 64 partial steps', async () => {
+		const chain = longFanoutChain();
+		const bound = await bindFinalizedFanoutToL1Chain({
+			observer: chain.value.observer,
+			headId: HEAD_ID,
+			participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+			finalizedOutputs: chain.finalizedOutputs,
+			inHeadReferences: chain.inHeadReferences,
+		});
+		expect(bound.size).toBe(66);
+		await expect(
+			verify(chain.value, {
+				references: [...bound].map(([reference, serializedOutput]) => {
+					const [txHash, outputIndex] = reference.split('#');
+					return { txHash, outputIndex: Number(outputIndex), snapshotNumber: 7, serializedOutput };
+				}),
+			}),
+		).resolves.toHaveLength(66);
+	});
 
 	function partialChain() {
 		const first = buildFanout({ continuingHead: true, burns: [], outputCount: 2, change: {} });
