@@ -598,9 +598,9 @@ export class HydraConnectionManager {
 			this.runL2PassesNow(hydraHeadId);
 		});
 
-		// A withdrawal's outcome. The request that asked for it returned long ago —
-		// possibly in a process that has since restarted — so this is the only place
-		// its record is ever completed.
+		// Approval and finalization can arrive after the request returned or after
+		// a restart. Rejection events also arrive here, but cannot identify which
+		// participant submitted the rejected transaction.
 		head.mainNode.on(HydraNodeEvent.DecommitSettled, (data: DecommitSettledData) => {
 			void applyDecommitOutcome({
 				hydraHeadId,

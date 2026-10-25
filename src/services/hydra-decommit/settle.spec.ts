@@ -20,7 +20,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 }));
 
 const { applyDecommitOutcome } = await import('./settle');
-const { PENDING_EXPIRED_REASON, PENDING_EXPIRED_REASONS } = await import('./stale');
+const { PENDING_EXPIRED_REASONS } = await import('./stale');
 
 const HEAD = 'head-1';
 const TX = 'a'.repeat(64);
@@ -36,12 +36,6 @@ beforeEach(() => {
 	mockUpdate.mockResolvedValue(OPEN_ROW);
 	mockResolvePayout.mockResolvedValue(undefined);
 });
-
-/** The open statuses the call was made with, whatever shape it took. */
-function statusFilter(callIndex = 0): string[] {
-	const where = mockUpdateMany.mock.calls[callIndex]![0].where;
-	return where.OR?.[0]?.status?.in ?? where.status?.in ?? [];
-}
 
 /** The finalization lookup's clauses, which are ANDed together. */
 function findClauses(callIndex = 0): any[] {
@@ -62,30 +56,24 @@ describe('applyDecommitOutcome', () => {
 		expect(call.where.decommitTxId).toBe(TX);
 	});
 
-	// The point of no return. A refusal arriving after the head has signed the
-	// removal would otherwise report money as still in the head when it is not.
-	it('never lets a late refusal undo an approval', async () => {
-		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'invalid', reason: 'too late' });
+	// A peer can send a different witness set for the same transaction body.
+	// The body hash matches our pending row, but the peer's rejected submission
+	// says nothing about whether the locally signed one will be approved.
+	it('does not fail a local withdrawal when a same-id submission is rejected', async () => {
+		expect(
+			await applyDecommitOutcome({
+				hydraHeadId: HEAD,
+				decommitTxId: TX,
+				outcome: 'invalid',
+				reason: 'ValueNotConservedUTxO',
+			}),
+		).toBe(false);
 
-		expect(statusFilter()).toEqual(['Preparing', 'Pending']);
-		expect(statusFilter()).not.toContain('Approved');
-	});
-
-	it('keeps the head’s own wording when it refuses', async () => {
-		await applyDecommitOutcome({
-			hydraHeadId: HEAD,
-			decommitTxId: TX,
-			outcome: 'invalid',
-			reason: 'ValueNotConservedUTxO',
-		});
-
-		expect(mockUpdateMany.mock.calls[0]![0].data.failureReason).toBe('ValueNotConservedUTxO');
-	});
-
-	it('falls back to a plain reason when the node gave none', async () => {
-		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'invalid' });
-
-		expect(mockUpdateMany.mock.calls[0]![0].data.failureReason).toContain('refused');
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(mockUpdate).not.toHaveBeenCalled();
+		expect(mockFindMany).not.toHaveBeenCalled();
+		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'approved' })).toBe(true);
+		expect(mockUpdateMany.mock.calls[0]![0].data.status).toBe('Approved');
 	});
 
 	// A replay starting mid-history, or a restart between the two events, would
@@ -280,31 +268,6 @@ describe('applyDecommitOutcome on an expired withdrawal', () => {
 		releaseApproval({ count: 1 });
 		await Promise.all([approval, finalization]);
 		expect(mockFindMany).toHaveBeenCalledTimes(1);
-	});
-
-	it('lets a late refusal of the same transaction record the head’s reason', async () => {
-		await applyDecommitOutcome({
-			hydraHeadId: HEAD,
-			decommitTxId: TX,
-			outcome: 'invalid',
-			reason: 'DecommitTxInvalid',
-		});
-
-		const call = mockUpdateMany.mock.calls[0]![0];
-		expect(call.where.OR).toContainEqual(EXPIRED_CLAUSE);
-		expect(call.data.failureReason).toBe('DecommitTxInvalid');
-	});
-
-	// A refusal from the node or the head is final. Only the expiry marker opens
-	// a Failed row, so a real failure can never be turned into an approval.
-	it('reopens only rows failed by expiry, never a real failure', async () => {
-		await applyDecommitOutcome({ hydraHeadId: HEAD, decommitTxId: TX, outcome: 'invalid' });
-
-		const failedClauses = mockUpdateMany.mock.calls[0]![0].where.OR.filter((clause: any) => clause.status === 'Failed');
-		expect(failedClauses).toEqual([EXPIRED_CLAUSE]);
-		expect(PENDING_EXPIRED_REASONS).toContain(PENDING_EXPIRED_REASON);
-		// Rows expired before the node was asked carry the older wording.
-		expect(PENDING_EXPIRED_REASONS).toContain('the head never answered the withdrawal request');
 	});
 
 	it('finalizes an expired row when the finalization names it, and clears the expiry', async () => {

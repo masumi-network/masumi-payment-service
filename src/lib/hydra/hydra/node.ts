@@ -572,7 +572,8 @@ export class HydraNode extends EventEmitter {
 	 * Every output leaves — there is no change staying behind — so a partial
 	 * withdrawal has to split the amount off inside the head first. A 200 here
 	 * means the node accepted the request, not that the head agreed: that arrives
-	 * later as DecommitApproved, or does not, as DecommitInvalid.
+	 * later as DecommitApproved. DecommitInvalid is also broadcast for peer
+	 * submissions, so it cannot identify the outcome of this request.
 	 */
 	async decommit(transaction: HydraTransaction) {
 		assertL2TxWithinMaxSize(transaction.cborHex);
