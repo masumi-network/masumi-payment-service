@@ -6,8 +6,23 @@ import {
 	EnterpriseAddress,
 	PlutusData,
 	PlutusList,
+	Redeemer,
+	RedeemerTag,
+	Redeemers,
 	ScriptHash,
+	Transaction,
+	TransactionBody,
+	TransactionHash,
+	TransactionInput,
+	TransactionInputs,
+	TransactionOutput,
+	TransactionOutputs,
+	TransactionWitnessSet,
+	Value,
+	ExUnits,
 } from '@emurgo/cardano-serialization-lib-nodejs';
+import { resolveTxHash } from '@meshsdk/core';
+import { createHash } from 'node:crypto';
 import { DEFAULT_HYDRA_HEAD_SCRIPT_HASH, HYDRA_HEAD_V2_ASSET_NAME_HEX } from '@/lib/hydra/hydra/head-init-validation';
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
@@ -36,6 +51,38 @@ const CLOSED_DATUM = PlutusData.new_constr_plutus_data(
 ).to_hex();
 const STATE_AMOUNT = [{ unit: STATE_TOKEN, quantity: '1' }];
 
+function chainTransaction(label: string, alternative = 1) {
+	const headInputHash = createHash('sha256').update(label).digest('hex');
+	const inputs = TransactionInputs.new();
+	inputs.add(TransactionInput.new(TransactionHash.from_hex(headInputHash), 0));
+	const outputs = TransactionOutputs.new();
+	outputs.add(
+		TransactionOutput.new(
+			EnterpriseAddress.new(
+				0,
+				Credential.from_scripthash(ScriptHash.from_hex(DEFAULT_HYDRA_HEAD_SCRIPT_HASH)),
+			).to_address(),
+			Value.new(BigNum.from_str('2000000')),
+		),
+	);
+	const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('200000'));
+	const redeemers = Redeemers.new();
+	redeemers.add(
+		Redeemer.new(
+			RedeemerTag.new_spend(),
+			BigNum.from_str('0'),
+			PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.from_str(String(alternative)), PlutusList.new())),
+			ExUnits.new(BigNum.from_str('1'), BigNum.from_str('1')),
+		),
+	);
+	const witnesses = TransactionWitnessSet.new();
+	witnesses.set_redeemers(redeemers);
+	const cbor = Transaction.new(body, witnesses).to_hex();
+	return { hash: String(resolveTxHash(cbor)).toLowerCase(), cbor, headInputHash };
+}
+
+const txHash = (label: string) => chainTransaction(label).hash;
+
 const findPayout = (params: Omit<Parameters<typeof findDecommitPayoutTx>[0], 'headId'>) =>
 	findDecommitPayoutTx({ ...params, headId: HEAD_ID });
 
@@ -44,24 +91,43 @@ function blockfrostWith(
 	blockTimes: Record<string, number> = {},
 	hasHeadTransition = true,
 	headDatum = OPEN_DATUM,
+	redeemerAlternativeByLabel: Record<string, number> = {},
 ) {
+	const chainByLabel = Object.fromEntries(
+		Object.keys(txs).map((label) => [label, chainTransaction(label, redeemerAlternativeByLabel[label])]),
+	) as Record<string, ReturnType<typeof chainTransaction>>;
+	const labelByHash = new Map(Object.entries(chainByLabel).map(([label, chain]) => [chain.hash, label]));
 	const addressesTransactions = jest.fn() as AnyMock;
 	addressesTransactions.mockImplementation((_address: string, options: { page: number }) =>
 		Promise.resolve(
-			options.page === 1 ? Object.keys(txs).map((tx_hash) => ({ tx_hash, block_time: blockTimes[tx_hash] ?? 0 })) : [],
+			options.page === 1
+				? Object.keys(txs).map((label) => ({ tx_hash: chainByLabel[label].hash, block_time: blockTimes[label] ?? 0 }))
+				: [],
 		),
 	);
 	const txsUtxos = jest.fn() as AnyMock;
 	txsUtxos.mockImplementation((hash: string) =>
 		Promise.resolve({
-			inputs: hasHeadTransition ? [{ address: HEAD_ADDRESS, amount: STATE_AMOUNT }] : [],
+			hash,
+			inputs: hasHeadTransition
+				? [
+						{
+							address: HEAD_ADDRESS,
+							amount: STATE_AMOUNT,
+							tx_hash: chainByLabel[labelByHash.get(hash)!].headInputHash,
+							output_index: 0,
+						},
+					]
+				: [],
 			outputs: [
-				...(txs[hash] ?? []),
+				...(txs[labelByHash.get(hash)!] ?? []),
 				...(hasHeadTransition ? [{ address: HEAD_ADDRESS, amount: STATE_AMOUNT, inline_datum: headDatum }] : []),
 			],
 		}),
 	);
-	return { addressesTransactions, txsUtxos } as never;
+	const txsCbor = jest.fn() as AnyMock;
+	txsCbor.mockImplementation((hash: string) => Promise.resolve({ cbor: chainByLabel[labelByHash.get(hash)!].cbor }));
+	return { addressesTransactions, txsUtxos, txsCbor } as never;
 }
 
 describe('findDecommitPayoutTx', () => {
@@ -84,6 +150,61 @@ describe('findDecommitPayoutTx', () => {
 
 		const found = await findPayout({
 			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBeNull();
+	});
+
+	it('does not link an exact-value transfer accompanying an Increment transition', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith({ increment: [{ address: ADDRESS, amount }] }, {}, true, OPEN_DATUM, {
+			increment: 0,
+		});
+
+		const found = await findPayout({
+			blockfrost,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBeNull();
+	});
+
+	it('does not link a payout when the indexed head input differs from the CBOR input', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith({ payout: [{ address: ADDRESS, amount }] }) as unknown as {
+			addressesTransactions: AnyMock;
+			txsUtxos: AnyMock;
+			txsCbor: AnyMock;
+		};
+		const indexed = await blockfrost.txsUtxos(txHash('payout'));
+		blockfrost.txsUtxos.mockResolvedValue({
+			...indexed,
+			inputs: [{ ...indexed.inputs[0], tx_hash: 'ff'.repeat(32) }],
+		});
+
+		const found = await findPayout({
+			blockfrost: blockfrost as never,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+		});
+
+		expect(found).toBeNull();
+	});
+
+	it('does not link a payout when the transaction CBOR has a different hash', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith({ payout: [{ address: ADDRESS, amount }] }) as unknown as {
+			addressesTransactions: AnyMock;
+			txsUtxos: AnyMock;
+			txsCbor: AnyMock;
+		};
+		blockfrost.txsCbor.mockResolvedValue({ cbor: chainTransaction('other').cbor });
+
+		const found = await findPayout({
+			blockfrost: blockfrost as never,
 			address: ADDRESS,
 			expected: { lovelace: 3_500_000n, assets: {} },
 		});
@@ -125,7 +246,7 @@ describe('findDecommitPayoutTx', () => {
 			expected: { lovelace: 4_829_879n, assets: { [TOKEN]: '1' } },
 		});
 
-		expect(found).toBe('payout');
+		expect(found).toBe(txHash('payout'));
 	});
 
 	// The units come from two different sources — the head's own report and
@@ -149,7 +270,7 @@ describe('findDecommitPayoutTx', () => {
 			expected: { lovelace: 2_000_000n, assets: { [TOKEN]: '5' } },
 		});
 
-		expect(found).toBe('payout');
+		expect(found).toBe(txHash('payout'));
 	});
 
 	// An output carrying the same token plus something else is a different
@@ -214,7 +335,7 @@ describe('findDecommitPayoutTx', () => {
 			notBefore: new Date(((t1 + t2) / 2) * 1000),
 		});
 
-		expect(found).toBe('p2');
+		expect(found).toBe(txHash('p2'));
 	});
 
 	it('skips a transaction already attributed to another withdrawal', async () => {
@@ -236,10 +357,10 @@ describe('findDecommitPayoutTx', () => {
 			address: ADDRESS,
 			expected: { lovelace: 3_500_000n, assets: {} },
 			notBefore: new Date(((t1 + t2) / 2) * 1000),
-			exclude: new Set(['p2']),
+			exclude: new Set([txHash('p2')]),
 		});
 
-		expect(found).toBe('p3');
+		expect(found).toBe(txHash('p3'));
 	});
 
 	// A match already in hand from an earlier page must survive a later page's
@@ -247,17 +368,19 @@ describe('findDecommitPayoutTx', () => {
 	// OLDEST one), so a failure on page 2 must not throw away what page 1 found.
 	it('keeps a match found on page 1 when page 2 fails to load', async () => {
 		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const chain = chainTransaction('payout');
 		const addressesTransactions = jest.fn() as AnyMock;
 		addressesTransactions.mockImplementation((_address: string, options: { page: number }) => {
-			if (options.page === 1) return Promise.resolve([{ tx_hash: 'payout', block_time: 1_000 }]);
+			if (options.page === 1) return Promise.resolve([{ tx_hash: chain.hash, block_time: 1_000 }]);
 			return Promise.reject(new Error('blockfrost unavailable'));
 		});
 		const txsUtxos = jest.fn() as AnyMock;
 		txsUtxos.mockImplementation((hash: string) =>
 			Promise.resolve({
-				inputs: [{ address: HEAD_ADDRESS, amount: STATE_AMOUNT }],
+				hash,
+				inputs: [{ address: HEAD_ADDRESS, amount: STATE_AMOUNT, tx_hash: chain.headInputHash, output_index: 0 }],
 				outputs:
-					hash === 'payout'
+					hash === chain.hash
 						? [
 								{ address: ADDRESS, amount },
 								{ address: HEAD_ADDRESS, amount: STATE_AMOUNT, inline_datum: OPEN_DATUM },
@@ -265,7 +388,9 @@ describe('findDecommitPayoutTx', () => {
 						: [],
 			}),
 		);
-		const blockfrost = { addressesTransactions, txsUtxos } as never;
+		const txsCbor = jest.fn() as AnyMock;
+		txsCbor.mockResolvedValue({ cbor: chain.cbor });
+		const blockfrost = { addressesTransactions, txsUtxos, txsCbor } as never;
 
 		const found = await findPayout({
 			blockfrost,
@@ -273,7 +398,7 @@ describe('findDecommitPayoutTx', () => {
 			expected: { lovelace: 3_500_000n, assets: {} },
 		});
 
-		expect(found).toBe('payout');
+		expect(found).toBe(chain.hash);
 	});
 });
 

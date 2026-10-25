@@ -16,8 +16,14 @@
  */
 
 import type { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import { Address, RedeemerTagKind, Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { resolveTxHash } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
-import { hasOpenHydraHeadStateTransition } from '@/lib/hydra/hydra/head-init-validation';
+import {
+	HYDRA_HEAD_V2_ASSET_NAME_HEX,
+	hasOpenHydraHeadStateTransition,
+	knownHydraHeadScriptHashes,
+} from '@/lib/hydra/hydra/head-init-validation';
 
 /** What the head says landed on L1, as unit to quantity. Lovelace under ''. */
 export type DistributedValue = { lovelace: bigint; assets: Record<string, string> };
@@ -83,6 +89,8 @@ export function decommitPayoutSearchBounds(
  */
 const MAX_PAGES = 2;
 const PAGE_SIZE = 20;
+/** Hydra HeadState.Input: Increment = 0, Decrement = 1. */
+const HYDRA_DECREMENT_REDEEMER_CONSTRUCTOR = 1n;
 
 /** Native assets only, keyed by lower-cased unit, with lovelace pulled out. */
 function normalizeAssets(amount: ReadonlyArray<{ unit: string; quantity: string }>): {
@@ -124,6 +132,60 @@ function valuesMatch(
 		if (seen.assets.get(unit) !== quantity) return false;
 	}
 	return true;
+}
+
+type IndexedTransaction = Awaited<ReturnType<BlockFrostAPI['txsUtxos']>>;
+
+/** Match this head's indexed state input to its actual L1 spending redeemer. */
+function isDecrementOfHead(cbor: string, txHash: string, utxos: IndexedTransaction, headId: string): boolean {
+	if (utxos.hash.toLowerCase() !== txHash.toLowerCase()) return false;
+	let transaction: Transaction;
+	try {
+		transaction = Transaction.from_hex(cbor);
+		if (!transaction.is_valid() || String(resolveTxHash(cbor)).toLowerCase() !== txHash.toLowerCase()) return false;
+	} catch {
+		return false;
+	}
+	const stateUnit = `${headId.toLowerCase()}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
+	const acceptedHashes = knownHydraHeadScriptHashes();
+	const headInputs = utxos.inputs.filter((input) => {
+		if (input.collateral || input.reference) return false;
+		try {
+			const hash = Address.from_bech32(input.address).payment_cred()?.to_scripthash()?.to_hex().toLowerCase();
+			return (
+				acceptedHashes.has(hash ?? '') &&
+				input.amount.some(({ unit, quantity }) => unit.toLowerCase() === stateUnit && quantity === '1')
+			);
+		} catch {
+			return false;
+		}
+	});
+	if (headInputs.length !== 1) return false;
+	const headInput = headInputs[0];
+	const bodyInputs = transaction.body().inputs();
+	let inputIndex = -1;
+	for (let index = 0; index < bodyInputs.len(); index++) {
+		const input = bodyInputs.get(index);
+		if (
+			input.transaction_id().to_hex().toLowerCase() === headInput.tx_hash.toLowerCase() &&
+			input.index() === headInput.output_index
+		) {
+			inputIndex = index;
+			break;
+		}
+	}
+	if (inputIndex < 0) return false;
+	const redeemers = transaction.witness_set().redeemers();
+	if (!redeemers) return false;
+	for (let index = 0; index < redeemers.len(); index++) {
+		const redeemer = redeemers.get(index);
+		if (redeemer.tag().kind() !== RedeemerTagKind.Spend || BigInt(redeemer.index().to_str()) !== BigInt(inputIndex)) {
+			continue;
+		}
+		const input = redeemer.data().as_constr_plutus_data();
+		return input !== undefined && BigInt(input.alternative().to_str()) === HYDRA_DECREMENT_REDEEMER_CONSTRUCTOR;
+	}
+	return false;
 }
 
 /**
@@ -179,7 +241,10 @@ export async function findDecommitPayoutTx(params: {
 				const match = utxos.outputs.some(
 					(output) => output.address === address && valuesMatch(output.amount, expected),
 				);
-				if (match && (oldestMatch === null || entry.block_time < oldestMatch.block_time)) {
+				if (!match) continue;
+				const { cbor } = await blockfrost.txsCbor(entry.tx_hash);
+				if (!isDecrementOfHead(cbor, entry.tx_hash, utxos, headId)) continue;
+				if (oldestMatch === null || entry.block_time < oldestMatch.block_time) {
 					oldestMatch = entry;
 				}
 			} catch (error) {
