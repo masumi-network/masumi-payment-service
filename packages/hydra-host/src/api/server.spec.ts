@@ -12,7 +12,8 @@ import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 import { deriveNodeToken } from './node-token.js';
-import { PeerResolverUnavailableError } from '../peer-dns.js';
+import { createBoundedPeerResolver, PeerResolverUnavailableError } from '../peer-dns.js';
+import type { PeerHostnameResolver } from './peer-allowlist.js';
 
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
@@ -40,12 +41,14 @@ let baseUrl: string;
 let counter: number;
 let warnings: string[];
 let checkPeerTarget: ProvisionDeps['checkPeerTarget'];
+let resolvePeerHostname: PeerHostnameResolver;
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-api-'));
 	counter = 0;
 	warnings = [];
 	checkPeerTarget = async () => null;
+	resolvePeerHostname = async () => [{ address: '8.8.8.8', family: 4 }];
 	const config = { ...loadHostConfig(env), dataDir };
 	const store = new NodeRegistryStore(dataDir);
 	const ports = new PortAllocator(config.ports);
@@ -67,6 +70,7 @@ beforeEach(async () => {
 		ports,
 		supervisor,
 		provision,
+		resolvePeerHostname: async (...args) => await resolvePeerHostname(...args),
 		logger: {
 			info: () => undefined,
 			warn: (message: string) => {
@@ -77,6 +81,36 @@ beforeEach(async () => {
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+describe('peer firewall refresh', () => {
+	it('bounds a stalled hostname lookup and closes the affected peer port', async () => {
+		const created = (await (await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'dns-stall' })).json()) as {
+			nodeId: string;
+		};
+		expect((await call('PATCH', `/v1/nodes/${created.nodeId}`, { token: ADMIN, body: { peers: [PEER] } })).status).toBe(
+			200,
+		);
+		let lookupCalls = 0;
+		resolvePeerHostname = createBoundedPeerResolver(
+			async () => {
+				lookupCalls += 1;
+				return await new Promise<readonly { address: string; family: number }[]>(() => undefined);
+			},
+			{ maxPending: 1, timeoutMs: 20 },
+		);
+
+		const response = await call('GET', '/v1/peer-allowlist', { token: ADMIN });
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as {
+			rules: Array<{ nodeId: string; closed: boolean; resolutionErrors: Array<{ reason: string }> }>;
+		};
+		expect(lookupCalls).toBe(1);
+		expect(body.rules.find((rule) => rule.nodeId === created.nodeId)).toMatchObject({
+			closed: true,
+			resolutionErrors: [{ reason: 'peer lookup timed out' }],
+		});
+	});
 });
 
 afterEach(async () => {

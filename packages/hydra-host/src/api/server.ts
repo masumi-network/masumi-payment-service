@@ -22,7 +22,7 @@ import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRe
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
-import { PeerResolverUnavailableError } from '../peer-dns.js';
+import { createBoundedPeerResolver, PeerResolverUnavailableError } from '../peer-dns.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate, authenticateNode, type AuthResult } from './auth.js';
 import { nonceLogRef } from './nonce-log-ref.js';
@@ -33,7 +33,12 @@ import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { buildProxyQuery, isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
-import { buildPeerAllowlist, renderNftables, resolvePeerAllowlist } from './peer-allowlist.js';
+import {
+	buildPeerAllowlist,
+	renderNftables,
+	resolvePeerAllowlist,
+	type PeerHostnameResolver,
+} from './peer-allowlist.js';
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
@@ -51,6 +56,7 @@ export type ServerDeps = {
 	ports: PortAllocator;
 	supervisor: Supervisor;
 	provision: ProvisionDeps;
+	resolvePeerHostname?: PeerHostnameResolver;
 	logger: SupervisorLogger;
 };
 
@@ -156,6 +162,7 @@ function readPeers(body: unknown): PeerRecord[] {
 
 export function createControlPlane(deps: ServerDeps): Server {
 	const { config, store, exchange, ports, supervisor, provision, logger } = deps;
+	const resolvePeerHostname = deps.resolvePeerHostname ?? createBoundedPeerResolver();
 	// Bound once so every response reports the guard this host actually enforces.
 	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
@@ -455,6 +462,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 				const allowlist = await resolvePeerAllowlist(
 					buildPeerAllowlist(await store.list(), range),
 					config.allowPrivatePeers,
+					resolvePeerHostname,
 				);
 				send(response, 200, {
 					...allowlist,
