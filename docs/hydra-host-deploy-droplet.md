@@ -710,6 +710,18 @@ VERIFIED (`packages/hydra-host/src/registry/host-lock.spec.ts`, test
 `does not reclaim a paused contender gate and replace the successor lease`): a
 paused acquisition keeps its gate even when the directory timestamp is old.
 
+VERIFIED (`packages/hydra-host/src/registry/host-lock.ts`, `readHolder`): unreadable
+or malformed existing lease evidence blocks startup. This includes missing owner
+metadata, missing or invalid directory heartbeats, and filesystem access errors.
+Only an absent `host.lock` is treated as no lease. Valid legacy single-file leases
+still follow their heartbeat expiry; damaged legacy files no longer permit takeover.
+Future acquisition or heartbeat times keep the lease live because clock skew does
+not establish that its owner stopped.
+
+If startup cannot verify a lease, stop every Host and contender that can access the
+volume before repairing its permissions or metadata. Keep the lease intact while
+any owner may still be running.
+
 A head is pinned to its Host for life. Persistence is not relocatable, so
 placement happens once at provisioning and the head stays there. Process,
 container and droplet restarts recover on their own from the intact volume. Only
