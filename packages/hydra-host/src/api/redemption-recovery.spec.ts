@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ExchangeStore } from '../registry/exchange-store.js';
 import { NodeRegistryStore } from '../registry/store.js';
+import { peerKeyDirectory } from '../registry/peer-key-directory.js';
 import { PortAllocator } from '../registry/ports.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 import { createRedemptionRecovery } from './redemption-recovery.js';
@@ -83,9 +84,12 @@ describe('durable redemption recovery', () => {
 			},
 		]);
 		expect(node?.desired).toBe('Running');
-		expect(await fs.readFile(path.join(deps.store.nodeDir('node-1'), 'peers/0-hydra.vk'), 'utf8')).toContain(
-			material.hydraVerificationKey,
-		);
+		expect(
+			await fs.readFile(
+				path.join(peerKeyDirectory(deps.store.nodeDir('node-1'), node?.peerKeysGeneration), '0-hydra.vk'),
+				'utf8',
+			),
+		).toContain(material.hydraVerificationKey);
 		expect(await restarted.forgetInvite('nonce-pending', deps.store, { keepReplay: true })).toBe(true);
 	});
 

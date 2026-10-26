@@ -109,6 +109,11 @@ describe('NodeRegistryStore', () => {
 		await expect(store.read('node-1')).rejects.toThrow(/missing a usable peerPort/);
 	});
 
+	it('rejects a peer key generation that could escape the node directory', async () => {
+		await store.write(record({ peerKeysGeneration: '../outside' }));
+		await expect(store.read('node-1')).rejects.toThrow(/invalid peerKeysGeneration/);
+	});
+
 	it('refuses a nodeId that would escape the nodes directory', () => {
 		expect(() => store.nodeDir('../escape')).toThrow(RegistryError);
 		expect(() => store.nodeDir('a/b')).toThrow(RegistryError);

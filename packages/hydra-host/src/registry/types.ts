@@ -97,6 +97,8 @@ export type NodeRecord = {
 
 	/** Empty until the cross-org handshake completes; a node cannot start without peers. */
 	peers: PeerRecord[];
+	/** Directory under peers/ selected with this peer set; absent in older records. */
+	peerKeysGeneration?: string;
 
 	contestationPeriodSeconds: number;
 	depositPeriodSeconds: number;
