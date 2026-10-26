@@ -42,14 +42,10 @@ import {
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
+import { applyControlPlaneLimits } from './server-limits.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
-// Preserve the default 32-slot Host's budget of eight control sockets per
-// Head as operators raise its supported node capacity. A fixed cap can refuse
-// a live session for a valid Head before its peer ports are exhausted.
-const CONTROL_CONNECTIONS_PER_HEAD = 8;
-const MIN_CONTROL_CONNECTIONS = 256;
 // The supervisor checks every 15 seconds. Four missed ticks make a cached
 // chain observation too old to authorize a deposit with an on-chain deadline.
 const MAX_HEALTH_OBSERVATION_AGE_MS = 60_000;
@@ -331,14 +327,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 		});
 	});
 
-	// Bound how long a connection may occupy the control plane. It normally sits
-	// behind a load balancer, but the peer plane is public and there is no reason
-	// to assume this port never will be. Proxied WebSockets opt out of this
-	// per-socket, since a quiet head is legitimately silent for long stretches.
-	server.headersTimeout = 15_000;
-	server.requestTimeout = 30_000;
-	server.keepAliveTimeout = 10_000;
-	server.maxConnections = Math.max(MIN_CONTROL_CONNECTIONS, config.ports.capacity * CONTROL_CONNECTIONS_PER_HEAD);
+	// Proxied node traffic opts out of the idle timeout per socket, since a quiet
+	// head is legitimately silent for long stretches.
+	applyControlPlaneLimits(server, config.ports.capacity, (message) => logger.warn(message));
 
 	// WebSocket upgrades never reach the request handler, so they are
 	// authenticated and authorised here on their own path.
@@ -711,6 +702,8 @@ export function createControlPlane(deps: ServerDeps): Server {
 			return;
 		}
 
+		// Only an authenticated caller gets here, and a node may take its time.
+		request.socket.setTimeout(0);
 		proxyHttp(request, response, record.apiPort, target.subPath, query, (message) => logger.error(`[api] ${message}`));
 	}
 

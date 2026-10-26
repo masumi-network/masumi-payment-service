@@ -648,17 +648,28 @@ Do not put both planes behind one public load balancer. A load balancer firewall
 applies to the load balancer, not to one forwarding rule. Making its Exchange
 Plane rule public would also make the Control Plane listener public.
 
+Keeping ACME state out of the image means the container has exactly one thing
+needing durable storage.
+
+The peer plane bypasses the load balancer entirely. It has no TLS upstream, and
+per-head dynamic TCP ports behind a managed load balancer are unworkable, so
+peer ports sit directly on the droplet IP under the allow-list above.
+
 ### Control Plane traffic limits
 
-VERIFIED (`packages/hydra-host/src/api/server.ts:47-53,336-342`): the Host caps
-JSON request bodies at 256 KiB and bounds header and request read time. Its
-control socket cap is the greater of 256 and eight times
-`HYDRA_HOST_PEER_PORT_COUNT`. The default 32 Head slots get 256 sockets. A Host
-configured for more Heads gets a larger finite cap. This formula is a guard,
-not a measured capacity claim. VERIFIED
-(`packages/hydra-host/src/api/proxy.ts:95-147,199-233`): the node proxy streams
-HTTP bodies and tunnels WebSocket frames. The Host socket cap does not bound
-request rate or proxy byte volume.
+VERIFIED (`packages/hydra-host/src/api/server.ts`,
+`packages/hydra-host/src/api/server-limits.ts`): the Host caps JSON request
+bodies at 256 KiB and bounds header and request read time. It closes a socket
+that moves no bytes for 60 seconds. Authenticated node proxy requests and
+proxied WebSockets opt out of that idle timeout. Its control socket cap is the
+greater of 256 and eight times `HYDRA_HOST_PEER_PORT_COUNT`. The default 32
+Head slots get 256 sockets. A Host configured for more Heads gets a larger
+finite cap. This formula is a guard, not a measured capacity claim. When the
+cap refuses a connection, the Host logs `control plane is at its N-connection
+cap`, at most once a minute. VERIFIED (`packages/hydra-host/src/api/proxy.ts`):
+the node proxy streams HTTP bodies and tunnels WebSocket frames. Only an
+authenticated caller reaches it. The Host does not bound request rate, proxy byte
+volume, or WebSocket message size.
 
 The Control Plane ingress must enforce these limits before forwarding to port
 `8443`:
@@ -676,14 +687,13 @@ The Control Plane ingress must enforce these limits before forwarding to port
 - **WebSocket messages:** Cap each reassembled client-to-Host message, including
   fragmented frames. Do not apply that cap to the Host-to-client history replay.
   Close an over-limit client message before it reaches a node.
-- **Idle HTTP responses:** Close idle ordinary HTTP responses after a finite
-  period. Preserve long-running node streams and quiet upgraded WebSockets.
 
 Record the numeric limits in the ingress configuration. Size the proxy body,
 WebSocket message, rate, and burst limits from a staging run with the maximum
-configured Heads and a full `?history=yes` replay. If the load balancer cannot
-enforce a rule, put a capable ingress between it and the Host. Keep the backend
-firewall restricted to that ingress.
+configured Heads and a full `?history=yes` replay. Do not assume the load
+balancer from section 5 enforces any of these rules. Check each rule against
+its current documentation. If it cannot enforce a rule, put a capable ingress
+between it and the Host. Keep the backend firewall restricted to that ingress.
 
 Before production, verify the ingress rejects an over-rate request with `429`,
 an oversized proxied body before it reaches the node, and an oversized client
@@ -691,13 +701,6 @@ WebSocket message before it reaches the node. Hold connections up to the chosen
 cap and confirm that the next one is refused. Then confirm normal provisioning,
 node transactions, and full history replay still complete. This checks both
 the limits and the capacity left for valid traffic.
-
-Keeping ACME state out of the image means the container has exactly one thing
-needing durable storage.
-
-The peer plane bypasses the load balancer entirely. It has no TLS upstream, and
-per-head dynamic TCP ports behind a managed load balancer are unworkable, so
-peer ports sit directly on the droplet IP under the allow-list above.
 
 ## 6. Health
 

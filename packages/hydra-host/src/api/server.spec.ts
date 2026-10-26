@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import type { AddressInfo } from 'node:net';
+import { connect, type AddressInfo, type Socket } from 'node:net';
 import { request as httpRequest, type Server } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -117,6 +117,20 @@ describe('peer firewall refresh', () => {
 	});
 });
 
+function countConnections(target: Server): Promise<number> {
+	return new Promise((resolve, reject) =>
+		target.getConnections((error, count) => (error ? reject(error) : resolve(count))),
+	);
+}
+
+async function waitFor(condition: () => Promise<boolean>): Promise<void> {
+	for (let attempt = 0; attempt < 100; attempt += 1) {
+		if (await condition()) return;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error('condition not met');
+}
+
 afterEach(async () => {
 	await new Promise<void>((resolve) => server.close(() => resolve()));
 	await fs.rm(dataDir, { recursive: true, force: true });
@@ -228,10 +242,28 @@ describe('control plane auth', () => {
 });
 
 describe('the landing page and browser 404', () => {
-	it('sets a finite control-plane connection budget', async () => {
-		expect(server.maxConnections).toBeGreaterThan(0);
-		expect(server.maxConnections).toBeLessThanOrEqual(256);
-		expect((await fetch(`${baseUrl}/openapi.json`)).status).toBe(200);
+	it('refuses a connection past the cap and says so in the log', async () => {
+		const { port } = server.address() as AddressInfo;
+		const open = (): Promise<Socket> =>
+			new Promise((resolve, reject) => {
+				const socket = connect(port, '127.0.0.1', () => resolve(socket));
+				socket.on('error', reject);
+			});
+		const held: Socket[] = [];
+		try {
+			for (let index = 0; index < server.maxConnections; index += 1) held.push(await open());
+			await waitFor(async () => (await countConnections(server)) === server.maxConnections);
+
+			const refused = await open();
+			held.push(refused);
+			let isRefusedClosed = false;
+			refused.once('close', () => (isRefusedClosed = true)).resume();
+			await waitFor(async () => isRefusedClosed);
+
+			expect(warnings.some((warning) => warning.includes('connection cap'))).toBe(true);
+		} finally {
+			for (const socket of held) socket.destroy();
+		}
 	});
 
 	it('leaves connection headroom at the largest supported Head capacity', () => {
