@@ -102,7 +102,10 @@ export function resolveNodeAuthToken(
 	return deriveHostNodeToken(secret, nodeId);
 }
 
-export async function loadValidatedHeadConfiguration(hydraHeadId: string): Promise<LoadedHeadConfiguration> {
+export async function loadValidatedHeadConfiguration(
+	hydraHeadId: string,
+	options: { readOnlyContestObserver?: boolean } = {},
+): Promise<LoadedHeadConfiguration> {
 	const configuredHead = await prisma.hydraHead.findUnique({
 		where: { id: hydraHeadId },
 		include: headConfigurationInclude,
@@ -110,11 +113,18 @@ export async function loadValidatedHeadConfiguration(hydraHeadId: string): Promi
 	if (!configuredHead) {
 		throw new Error(`Hydra head ${hydraHeadId} not found`);
 	}
-	if (configuredHead.isEnabled !== true) {
+	if (configuredHead.isEnabled !== true && !options.readOnlyContestObserver) {
 		throw new Error(`Hydra head ${hydraHeadId} is disabled`);
 	}
-	if (configuredHead.initTxHash == null && !HYDRA_PRE_INIT_STATUSES.has(configuredHead.status)) {
+	if (
+		configuredHead.initTxHash == null &&
+		!HYDRA_PRE_INIT_STATUSES.has(configuredHead.status) &&
+		!options.readOnlyContestObserver
+	) {
 		throw new Error(`Hydra head ${hydraHeadId} has not passed independent InitTx verification`);
+	}
+	if (options.readOnlyContestObserver && configuredHead.headIdentifier == null) {
+		throw new Error(`Hydra head ${hydraHeadId} has no pinned identifier for contest observation`);
 	}
 	if (!configuredHead.LocalParticipant) {
 		throw new Error('No local participant provided');
