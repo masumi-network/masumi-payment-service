@@ -1,5 +1,5 @@
 /// The newest snapshot every head party signed, as history replay verified it.
-/// Kept as JSON equal to what hydra-node serves on `GET /snapshot`, so it
+/// Kept as JSON equivalent to what hydra-node serves on `GET /snapshot`, so it
 /// survives the loss of the node's own persistence. It is evidence, and the
 /// input a contest needs. A stock hydra-node 2.3.0 restored after storage
 /// loss did not accept it by side-load (`SideLoadSvNumberInvalid`).

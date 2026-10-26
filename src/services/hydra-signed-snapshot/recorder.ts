@@ -22,8 +22,18 @@ const NO_STORED_SNAPSHOT = -1n;
 /** Prisma's foreign-key violation: the head row is gone, so no write can succeed. */
 const PRISMA_FOREIGN_KEY_VIOLATION = 'P2003';
 
+type SignedSnapshotRow = { snapshotNumber: bigint; snapshotVersion: bigint; confirmedSnapshot: string };
+
 function snapshotNumberOf(payload: HydraConfirmedSnapshotPayload): bigint {
 	return BigInt(payload.snapshot.number);
+}
+
+function toRow(payload: HydraConfirmedSnapshotPayload): SignedSnapshotRow {
+	return {
+		snapshotNumber: snapshotNumberOf(payload),
+		snapshotVersion: BigInt(payload.snapshot.version),
+		confirmedSnapshot: stringifyHydraJson(payload),
+	};
 }
 
 async function readStoredNumber(database: SignedSnapshotDatabase, hydraHeadId: string): Promise<bigint> {
@@ -35,7 +45,7 @@ async function readStoredNumber(database: SignedSnapshotDatabase, hydraHeadId: s
 }
 
 /**
- * Store `payload` unless the stored snapshot is already as new, and return the
+ * Store `data` unless the stored snapshot is already as new, and return the
  * stored number. Every write is conditioned on a lower stored number, so two
  * instances or two nodes of one head can never replace a newer snapshot with
  * an older one.
@@ -43,14 +53,9 @@ async function readStoredNumber(database: SignedSnapshotDatabase, hydraHeadId: s
 async function storeIfNewer(
 	database: SignedSnapshotDatabase,
 	hydraHeadId: string,
-	payload: HydraConfirmedSnapshotPayload,
+	data: SignedSnapshotRow,
 ): Promise<bigint> {
-	const snapshotNumber = snapshotNumberOf(payload);
-	const data = {
-		snapshotNumber,
-		snapshotVersion: BigInt(payload.snapshot.version),
-		confirmedSnapshot: stringifyHydraJson(payload),
-	};
+	const { snapshotNumber } = data;
 	const replaceOlder = () =>
 		database.hydraHeadSignedSnapshot.updateMany({
 			where: { hydraHeadId, snapshotNumber: { lt: snapshotNumber } },
@@ -93,10 +98,23 @@ export function createSignedSnapshotRecorder(
 		while (pending) {
 			const payload = pending;
 			pending = null;
+			let row: SignedSnapshotRow;
+			try {
+				row = toRow(payload);
+			} catch (error) {
+				// No retry can fix a payload that does not serialize. Drop it, so it
+				// does not hold back the next one.
+				logger.warn('[HydraSignedSnapshot] dropped a signed snapshot that cannot be serialized', {
+					hydraHeadId,
+					snapshotNumber: payload.snapshot.number,
+					error: error instanceof Error ? error.message : 'Unknown error',
+				});
+				continue;
+			}
 			try {
 				storedNumber ??= await readStoredNumber(database, hydraHeadId);
-				if (snapshotNumberOf(payload) <= storedNumber) continue;
-				storedNumber = await storeIfNewer(database, hydraHeadId, payload);
+				if (row.snapshotNumber <= storedNumber) continue;
+				storedNumber = await storeIfNewer(database, hydraHeadId, row);
 			} catch (error) {
 				const isHeadGone = (error as { code?: string } | null)?.code === PRISMA_FOREIGN_KEY_VIOLATION;
 				logger.warn('[HydraSignedSnapshot] could not store the signed snapshot', {

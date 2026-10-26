@@ -116,7 +116,7 @@ describe('createSignedSnapshotRecorder', () => {
 
 	// Every reconnect replays the history from the start.
 	it('writes nothing while a replay re-delivers snapshots already stored', async () => {
-		const { database, rows, updateMany, createMany } = createDatabase();
+		const { database, rows, updateMany, createMany, findUnique } = createDatabase();
 		rows.set(HEAD_ID, { hydraHeadId: HEAD_ID, snapshotNumber: 9n, snapshotVersion: 0n, confirmedSnapshot: 'x' });
 		const record = createSignedSnapshotRecorder(HEAD_ID, database);
 
@@ -127,6 +127,7 @@ describe('createSignedSnapshotRecorder', () => {
 
 		expect(updateMany).not.toHaveBeenCalled();
 		expect(createMany).not.toHaveBeenCalled();
+		expect(findUnique).toHaveBeenCalledTimes(1);
 		record(payload(10));
 		await settle();
 		expect(rows.get(HEAD_ID)?.snapshotNumber).toBe(10n);
@@ -229,5 +230,38 @@ describe('createSignedSnapshotRecorder', () => {
 		await settle();
 
 		expect(rows.get(HEAD_ID)?.snapshotNumber).toBe(6n);
+	});
+
+	it('retries when the first read of the stored number fails', async () => {
+		jest.useFakeTimers();
+		const { database, rows, findUnique } = createDatabase();
+		rows.set(HEAD_ID, { hydraHeadId: HEAD_ID, snapshotNumber: 9n, snapshotVersion: 0n, confirmedSnapshot: 'x' });
+		findUnique.mockRejectedValueOnce(new Error('database unavailable'));
+		const record = createSignedSnapshotRecorder(HEAD_ID, database);
+
+		record(payload(5));
+		await settle();
+		record(payload(11));
+		jest.advanceTimersByTime(SIGNED_SNAPSHOT_RETRY_MS);
+		await settle();
+
+		expect(findUnique).toHaveBeenCalledTimes(2);
+		expect(rows.get(HEAD_ID)?.snapshotNumber).toBe(11n);
+	});
+
+	it('drops a snapshot that cannot be serialized instead of retrying it', async () => {
+		jest.useFakeTimers();
+		const { database, rows } = createDatabase();
+		const record = createSignedSnapshotRecorder(HEAD_ID, database);
+		const cyclic = payload(3);
+		(cyclic.snapshot.confirmed as unknown as object[]).push(cyclic);
+
+		record(cyclic);
+		await settle();
+
+		expect(jest.getTimerCount()).toBe(0);
+		record(payload(2));
+		await settle();
+		expect(rows.get(HEAD_ID)?.snapshotNumber).toBe(2n);
 	});
 });
