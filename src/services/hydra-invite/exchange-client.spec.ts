@@ -1,4 +1,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import {
 	attemptFailure,
 	attemptRedemption,
@@ -27,6 +30,51 @@ const redemption: RedemptionBody = {
 };
 
 const PUBLIC_DNS = async () => [{ address: '93.184.216.34', family: 4 }];
+
+it('accepts successful headers and closes an unfinished response body', async () => {
+	const CONNECTION_CLOSE_DEADLINE_MS = 1_000;
+	const BODY_CHUNK_INTERVAL_MS = 10;
+	let reportClosed: () => void = () => undefined;
+	const connectionClosed = new Promise<void>((resolve) => {
+		reportClosed = resolve;
+	});
+	const server = createServer((request, response) => {
+		request.resume();
+		response.writeHead(200, { 'Content-Type': 'application/json' });
+		response.flushHeaders();
+		// An active peer can keep an inactivity timeout from ever firing.
+		const stream = setInterval(() => response.write(' '), BODY_CHUNK_INTERVAL_MS);
+		response.once('close', () => {
+			clearInterval(stream);
+			reportClosed();
+		});
+	});
+	let deadline: ReturnType<typeof setTimeout> | undefined;
+	try {
+		server.listen(0, '127.0.0.1');
+		await once(server, 'listening');
+		const { port } = server.address() as AddressInfo;
+		await expect(
+			attemptRedemption(`http://127.0.0.1:${port}/exchange`, redemption, {
+				allowInsecureHttp: true,
+				allowPrivateNetwork: true,
+			}),
+		).resolves.toEqual({ kind: 'accepted' });
+		await Promise.race([
+			connectionClosed,
+			new Promise<never>((_resolve, reject) => {
+				deadline = setTimeout(
+					() => reject(new Error('successful Exchange response kept its connection open')),
+					CONNECTION_CLOSE_DEADLINE_MS,
+				);
+			}),
+		]);
+	} finally {
+		clearTimeout(deadline);
+		server.closeAllConnections();
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	}
+});
 
 function successfulDeps(resolve = PUBLIC_DNS) {
 	const send = jest.fn<NonNullable<ExchangeClientDeps['send']>>().mockResolvedValue({ status: 200, detail: '' });
