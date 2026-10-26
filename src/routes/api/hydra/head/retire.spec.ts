@@ -30,9 +30,11 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 }));
 
 let handler: (args: { input: Record<string, unknown> }) => Promise<Record<string, unknown>>;
+let fanoutsInFlight: Set<string>;
 
 beforeAll(async () => {
 	const { retireHeadPost } = await import('./retire');
+	({ fanoutsInFlight } = await import('./fanout-in-flight'));
 	handler = (retireHeadPost as unknown as { handler: typeof handler }).handler;
 });
 
@@ -83,6 +85,7 @@ const fanoutPossible = {
 
 beforeEach(() => {
 	jest.resetAllMocks();
+	fanoutsInFlight.clear();
 	mockFindHead.mockResolvedValue(fanoutPossible);
 	mockReadChain.mockResolvedValue({ state: 'closed', latestTxHash: HEAD_OUTPUT_TX });
 	mockGetNode.mockReturnValue({ get: async () => closedNodeState(REMAINING) });
@@ -90,6 +93,28 @@ beforeEach(() => {
 });
 
 describe('retireHeadPost', () => {
+	it('refuses retirement while a fanout command is in flight', async () => {
+		fanoutsInFlight.add('head-1');
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockReadChain).not.toHaveBeenCalled();
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('reserves the head before chain reads and releases it after retirement', async () => {
+		mockReadChain.mockImplementation(async () => {
+			expect(fanoutsInFlight.has('head-1')).toBe(true);
+			return { state: 'closed', latestTxHash: HEAD_OUTPUT_TX };
+		});
+		await handler({ input });
+		expect(fanoutsInFlight.has('head-1')).toBe(false);
+	});
+
+	it('releases the reservation when the chain read fails', async () => {
+		mockReadChain.mockRejectedValue(new Error('provider unavailable'));
+		await expect(handler({ input })).rejects.toMatchObject({ statusCode: 502 });
+		expect(fanoutsInFlight.has('head-1')).toBe(false);
+	});
+
 	it('retires a head L1 shows closed and keeps what a recovery needs', async () => {
 		await expect(handler({ input })).resolves.toMatchObject({
 			headId: 'head-1',

@@ -182,49 +182,50 @@ export const partialFanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		const node = cm.getNode(head.id);
 		if (!hydraHead || !node) throw createHttpError(502, 'No active connection to Hydra head');
 
-		const fanoutState = await readFanoutHeadState(node);
-		assertNodeAwaitsFanoutSelection(fanoutState, {
-			allowed: input.replaceInProgressSelection === true,
-			flag: 'replaceInProgressSelection',
-		});
-		const remaining = fanoutState.selectable;
-		const selection = selectFanoutOutputs(remaining, input.outputRefs);
-		const selectedCount = Object.keys(selection).length;
-
-		// No await between this check and the add. Thrown before the try: a
-		// refusal is not a failed command.
+		// Reserve before the asynchronous node read. Retirement shares this gate;
+		// otherwise it could commit while the selection is being prepared.
 		if (fanoutsInFlight.has(head.id)) {
 			throw createHttpError(409, 'Hydra head fanout is already in progress');
 		}
 		fanoutsInFlight.add(head.id);
-
 		try {
-			await hydraHead.partialFanout(selection);
-			await cm.flushHeadStatus(head.id);
-			const persistedHead = await prisma.hydraHead.findUnique({
-				where: { id: head.id },
-				select: { status: true },
+			const fanoutState = await readFanoutHeadState(node);
+			assertNodeAwaitsFanoutSelection(fanoutState, {
+				allowed: input.replaceInProgressSelection === true,
+				flag: 'replaceInProgressSelection',
 			});
-			if (!persistedHead) throw createHttpError(404, 'Hydra head not found');
+			const remaining = fanoutState.selectable;
+			const selection = selectFanoutOutputs(remaining, input.outputRefs);
+			const selectedCount = Object.keys(selection).length;
 
-			logger.info(`[HydraAPI] Head ${head.id} partial fanout step completed`, {
-				status: persistedHead.status,
-				selectedCount,
-				remainingCount: Object.keys(remaining).length - selectedCount,
-			});
-			return { headId: head.id, status: persistedHead.status, selectedCount };
-		} catch (error) {
-			// Behind the chain, the node drops the step without posting anything.
-			// Self-resolving, so it gets an actionable answer and no head error.
-			if (error instanceof HydraCommandRefusedUnsyncedError) {
-				throw createHttpError(
-					503,
-					`${error.message}. The step was not posted; send it again once the node has caught up.`,
-					{ expose: true },
-				);
+			try {
+				await hydraHead.partialFanout(selection);
+				await cm.flushHeadStatus(head.id);
+				const persistedHead = await prisma.hydraHead.findUnique({
+					where: { id: head.id },
+					select: { status: true },
+				});
+				if (!persistedHead) throw createHttpError(404, 'Hydra head not found');
+
+				logger.info(`[HydraAPI] Head ${head.id} partial fanout step completed`, {
+					status: persistedHead.status,
+					selectedCount,
+					remainingCount: Object.keys(remaining).length - selectedCount,
+				});
+				return { headId: head.id, status: persistedHead.status, selectedCount };
+			} catch (error) {
+				// Behind the chain, the node drops the step without posting anything.
+				// Self-resolving, so it gets an actionable answer and no head error.
+				if (error instanceof HydraCommandRefusedUnsyncedError) {
+					throw createHttpError(
+						503,
+						`${error.message}. The step was not posted; send it again once the node has caught up.`,
+						{ expose: true },
+					);
+				}
+				await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'PartialFanout');
+				throw error;
 			}
-			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'PartialFanout');
-			throw error;
 		} finally {
 			fanoutsInFlight.delete(head.id);
 		}

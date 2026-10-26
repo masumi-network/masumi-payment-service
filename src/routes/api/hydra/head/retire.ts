@@ -23,6 +23,7 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { HYDRA_HEAD_STATUS_RANK } from '@/services/hydra-connection-manager/head-status-rank';
 
 import { readHeadChainState } from './chain-check';
+import { fanoutsInFlight } from './fanout-in-flight';
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
 import { assertNodeAwaitsFanoutSelection, readFanoutHeadState } from './partial-fanout';
 
@@ -200,65 +201,75 @@ export const retireHeadPost = adminAuthenticatedEndpointFactory.build({
 		) {
 			throw createHttpError(409, 'Cannot retire a Closed head before its contestation deadline has passed');
 		}
-
-		// Independent of the node: a head that L1 shows fanned out or still open
-		// is not stuck, and retiring it would strand a settleable head.
-		assertNodeNotPastStatus(head.id, head.status);
-		const retiredHeadOutputTxHash = await readHeadOutputOnChain(head.id);
-		const remainingUtxo = await readRemainingUtxo(head.id, head.status, {
-			remainingUnknown: input.acknowledgeRemainingUtxoUnknown === true,
-			fanoutStalled: input.acknowledgeFanoutStalled === true,
-		});
-		const remainingUtxoCount = remainingUtxo ? Object.keys(remainingUtxo).length : null;
-		// The node read above can take a while. Read L1 again just before the
-		// write: a fanout that landed meanwhile moves the head output. A fanout
-		// posted but not yet on chain stays invisible here (see ADR 0013).
-		assertNodeNotPastStatus(head.id, head.status);
-		if ((await readHeadOutputOnChain(head.id)) !== retiredHeadOutputTxHash) {
-			throw createHttpError(409, 'The head output moved on L1 while the head was being retired');
+		// Share fanout admission from the first asynchronous chain read through
+		// the durable retirement write. A fanout already on the wire must finish
+		// before retirement, and a new one must wait for the retired state.
+		if (fanoutsInFlight.has(head.id)) {
+			throw createHttpError(409, 'Hydra head fanout or retirement is already in progress');
 		}
+		fanoutsInFlight.add(head.id);
+		try {
+			// Independent of the node: a head that L1 shows fanned out or still open
+			// is not stuck, and retiring it would strand a settleable head.
+			assertNodeNotPastStatus(head.id, head.status);
+			const retiredHeadOutputTxHash = await readHeadOutputOnChain(head.id);
+			const remainingUtxo = await readRemainingUtxo(head.id, head.status, {
+				remainingUnknown: input.acknowledgeRemainingUtxoUnknown === true,
+				fanoutStalled: input.acknowledgeFanoutStalled === true,
+			});
+			const remainingUtxoCount = remainingUtxo ? Object.keys(remainingUtxo).length : null;
+			// The node read above can take a while. Read L1 again just before the
+			// write: a fanout that landed meanwhile moves the head output. A fanout
+			// posted but not yet on chain stays invisible here (see ADR 0013).
+			assertNodeNotPastStatus(head.id, head.status);
+			if ((await readHeadOutputOnChain(head.id)) !== retiredHeadOutputTxHash) {
+				throw createHttpError(409, 'The head output moved on L1 while the head was being retired');
+			}
 
-		const retiredAt = new Date();
-		// Guarded on the status read above, so a head that moved on meanwhile
-		// (for example a fanout that landed) is not retired. The init anchors the
-		// head still has stay: a later recovery restarts the node from them. The
-		// epoch bump fences the old session, so it cannot write to the record.
-		// A Closed head is also guarded on its deadline. One written while the
-		// checks above ran can lie in the future again (a new close after a chain
-		// rollback passes the status guard), and the head may then need contesting.
-		const retired = await prisma.hydraHead.updateMany({
-			where: {
-				id: head.id,
+			const retiredAt = new Date();
+			// Guarded on the status read above, so a head that moved on meanwhile
+			// (for example a fanout that landed) is not retired. The init anchors the
+			// head still has stay: a later recovery restarts the node from them. The
+			// epoch bump fences the old session, so it cannot write to the record.
+			// A Closed head is also guarded on its deadline. One written while the
+			// checks above ran can lie in the future again (a new close after a chain
+			// rollback passes the status guard), and the head may then need contesting.
+			const retired = await prisma.hydraHead.updateMany({
+				where: {
+					id: head.id,
+					status: head.status,
+					retiredAt: null,
+					...(head.status === HydraHeadStatus.Closed ? { contestationDeadline: { lte: retiredAt } } : {}),
+				},
+				data: {
+					isEnabled: false,
+					ownerEpoch: { increment: 1 },
+					retiredAt,
+					retiredReason: input.reason,
+					retiredRemainingUtxo: remainingUtxo ?? Prisma.DbNull,
+					retiredHeadOutputTxHash,
+				},
+			});
+			if (retired.count !== 1) throw createHttpError(409, 'Hydra head changed while it was being retired');
+			// The operator's decision now: automatic recovery must not re-enable it.
+			// Only after the write: a refused retire keeps the head's auto-recovery.
+			forgetHeadFailedClosed(head.id);
+			await getHydraConnectionManager().reconcileEnabledState(head.id);
+
+			logger.warn(`[HydraAPI] Head ${head.id} retired without reaching Final`, {
 				status: head.status,
-				retiredAt: null,
-				...(head.status === HydraHeadStatus.Closed ? { contestationDeadline: { lte: retiredAt } } : {}),
-			},
-			data: {
-				isEnabled: false,
-				ownerEpoch: { increment: 1 },
-				retiredAt,
-				retiredReason: input.reason,
-				retiredRemainingUtxo: remainingUtxo ?? Prisma.DbNull,
 				retiredHeadOutputTxHash,
-			},
-		});
-		if (retired.count !== 1) throw createHttpError(409, 'Hydra head changed while it was being retired');
-		// The operator's decision now: automatic recovery must not re-enable it.
-		// Only after the write: a refused retire keeps the head's auto-recovery.
-		forgetHeadFailedClosed(head.id);
-		await getHydraConnectionManager().reconcileEnabledState(head.id);
-
-		logger.warn(`[HydraAPI] Head ${head.id} retired without reaching Final`, {
-			status: head.status,
-			retiredHeadOutputTxHash,
-			remainingUtxoCount,
-		});
-		return {
-			headId: head.id,
-			status: head.status,
-			retiredAt: retiredAt.toISOString(),
-			retiredHeadOutputTxHash,
-			remainingUtxoCount,
-		};
+				remainingUtxoCount,
+			});
+			return {
+				headId: head.id,
+				status: head.status,
+				retiredAt: retiredAt.toISOString(),
+				retiredHeadOutputTxHash,
+				remainingUtxoCount,
+			};
+		} finally {
+			fanoutsInFlight.delete(head.id);
+		}
 	},
 });
