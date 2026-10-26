@@ -129,6 +129,11 @@ export class ConfigError extends Error {
 	}
 }
 
+/** Give an operator time to detect and contest a stale Close on mainnet. */
+export const MAINNET_MIN_CONTESTATION_PERIOD_SECONDS = 43_200;
+const MAINNET_DEFAULT_CONTESTATION_PERIOD_SECONDS = 5 * 24 * 3600;
+const MAINNET_DEFAULT_DEPOSIT_PERIOD_SECONDS = 1_200;
+
 export type EnvSource = { get(key: string): string | undefined };
 
 export const processEnv: EnvSource = { get: (key) => process.env[key] };
@@ -297,7 +302,21 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 	}
 
 	const defaultUnsyncedPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS', 1800);
-	const defaultDepositPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', 300);
+	const defaultDepositPeriodSeconds = positiveInteger(
+		env,
+		'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS',
+		network === 'mainnet' ? MAINNET_DEFAULT_DEPOSIT_PERIOD_SECONDS : 300,
+	);
+	const defaultContestationPeriodSeconds = positiveInteger(
+		env,
+		'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS',
+		network === 'mainnet' ? MAINNET_DEFAULT_CONTESTATION_PERIOD_SECONDS : 220,
+	);
+	if (network === 'mainnet' && defaultContestationPeriodSeconds < MAINNET_MIN_CONTESTATION_PERIOD_SECONDS) {
+		throw new ConfigError(
+			`mainnet contestation period must be at least ${MAINNET_MIN_CONTESTATION_PERIOD_SECONDS} seconds`,
+		);
+	}
 	// An override, not a default. Thresholds are derived per node from that
 	// node's own unsynced period, because that is the value they have to stay
 	// below and it is per node — a host-wide default that suits an 1800s node
@@ -335,7 +354,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		// so the node burns its whole start budget and lands `Failed` with
 		// "failed to stay up after 5 attempts", while the reason it could never
 		// start only ever reached the log.
-		defaultContestationPeriodSeconds: positiveInteger(env, 'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS', 220),
+		defaultContestationPeriodSeconds,
 		defaultDepositPeriodSeconds,
 		defaultUnsyncedPeriodSeconds,
 		// An override, not a default. Unset means the provision request decides,

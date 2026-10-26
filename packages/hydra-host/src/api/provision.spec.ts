@@ -115,6 +115,14 @@ describe('provisionNode', () => {
 		await expect(provisionNode({ ...REQUEST, idempotencyKey: '  ' }, deps)).rejects.toThrow(/Idempotency-Key/);
 	});
 
+	it('refuses a direct mainnet provision below the dispute-window floor before reserving a node', async () => {
+		await expect(
+			provisionNode({ ...REQUEST, network: 'mainnet', contestationPeriodSeconds: 43_199 }, deps),
+		).rejects.toThrow(/at least 43200 seconds/);
+		expect(await deps.store.list()).toEqual([]);
+		expect(deps.ports.used).toBe(0);
+	});
+
 	it('does not leak a port when provisioning fails', async () => {
 		const failing: ProvisionDeps = {
 			...deps,

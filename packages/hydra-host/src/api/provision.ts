@@ -19,6 +19,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { MAINNET_MIN_CONTESTATION_PERIOD_SECONDS } from '../config.js';
 import { fsyncDir, writeFileAtomic } from '../registry/atomic-write.js';
 import { isPeerKeyGeneration, peerKeyDirectory } from '../registry/peer-key-directory.js';
 import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from '../keys.js';
@@ -127,6 +128,14 @@ export function provisionNode(request: ProvisionRequest, deps: ProvisionDeps): P
 	// well, and its ack is refused anyway.
 	if (deps.ledgerParamsRefusal) {
 		return Promise.reject(new ProvisionError(deps.ledgerParamsRefusal, 409));
+	}
+	if (request.network === 'mainnet' && request.contestationPeriodSeconds < MAINNET_MIN_CONTESTATION_PERIOD_SECONDS) {
+		return Promise.reject(
+			new ProvisionError(
+				`mainnet contestation period must be at least ${MAINNET_MIN_CONTESTATION_PERIOD_SECONDS} seconds`,
+				400,
+			),
+		);
 	}
 	const key = request.idempotencyKey.trim();
 	if (key.length === 0) {

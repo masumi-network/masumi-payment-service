@@ -187,6 +187,22 @@ describe('loadHostConfig', () => {
 			'/opt/hydra/params/mainnet.json',
 		);
 	});
+
+	it('uses production periods for a mainnet Host without period overrides', () => {
+		const config = loadHostConfig(env({ HYDRA_HOST_NETWORK: 'mainnet' }));
+		expect(config.defaultContestationPeriodSeconds).toBe(5 * 24 * 3600);
+		expect(config.defaultDepositPeriodSeconds).toBe(1200);
+	});
+
+	it('refuses an unsafe mainnet contestation default at boot', () => {
+		expect(() =>
+			loadHostConfig(env({ HYDRA_HOST_NETWORK: 'mainnet', HYDRA_HOST_CONTESTATION_PERIOD_SECONDS: '43199' })),
+		).toThrow(/at least 43200 seconds/);
+		expect(
+			loadHostConfig(env({ HYDRA_HOST_NETWORK: 'mainnet', HYDRA_HOST_CONTESTATION_PERIOD_SECONDS: '43200' }))
+				.defaultContestationPeriodSeconds,
+		).toBe(43_200);
+	});
 });
 
 describe('advertiseAddress', () => {
