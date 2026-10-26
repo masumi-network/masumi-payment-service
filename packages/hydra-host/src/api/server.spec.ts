@@ -132,6 +132,8 @@ async function waitFor(condition: () => Promise<boolean>): Promise<void> {
 }
 
 afterEach(async () => {
+	// A failed socket test can leave a connection open, and close waits for it.
+	server.closeAllConnections();
 	await new Promise<void>((resolve) => server.close(() => resolve()));
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
