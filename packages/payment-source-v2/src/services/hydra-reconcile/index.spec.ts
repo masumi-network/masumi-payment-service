@@ -61,6 +61,8 @@ const mockFindNothingToApply =
 
 const FANOUT_TX_HASH = 'f'.repeat(64);
 const HEAD_IDENTIFIER = 'a'.repeat(56);
+const LOCAL_NODE_VKEY = '3'.repeat(56);
+const REMOTE_NODE_VKEY = '4'.repeat(56);
 const HYDRA_OUTPUT_TX_HASH = 'b'.repeat(64);
 const FANOUT_REFERENCE = {
 	txHash: FANOUT_TX_HASH,
@@ -338,6 +340,8 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockHydraHeadFindMany.mockResolvedValue([
 			{
 				id: 'head-1',
+				LocalParticipant: { cardanoVkey: LOCAL_NODE_VKEY },
+				RemoteParticipants: [{ cardanoVkey: REMOTE_NODE_VKEY }],
 				hydraRelationId: 'relation-1',
 				headIdentifier: HEAD_IDENTIFIER,
 				latestSnapshotNumber: 3n,
@@ -421,6 +425,23 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockHydraHeadFindMany.mockClear();
 		mockHydraHeadFindMany.mockResolvedValue([{ ...head, finalizedAt: null }]);
 	}
+
+	it.each([
+		['missing local participant', { LocalParticipant: null }],
+		['missing remote participant', { RemoteParticipants: [] }],
+		[
+			'ambiguous remote participants',
+			{ RemoteParticipants: [{ cardanoVkey: REMOTE_NODE_VKEY }, { cardanoVkey: '5'.repeat(56) }] },
+		],
+	])('keeps the head connected with %s', async (_label, participants) => {
+		const [head] = (await mockHydraHeadFindMany({})) as Array<Record<string, unknown>>;
+		mockHydraHeadFindMany.mockResolvedValue([{ ...head, ...participants }]);
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockVerifyHydraFanout).not.toHaveBeenCalled();
+		expect(mockDisconnect).not.toHaveBeenCalled();
+	});
 
 	it('selects and revalidates only enabled heads with durable init evidence', async () => {
 		await reconcileHydraHeadEscrowStates();
@@ -722,14 +743,19 @@ describe('Hydra live-snapshot reconciliation', () => {
 			expect(mockDisconnect).not.toHaveBeenCalled();
 		});
 
-		it('completes the handoff once the binding is adopted', async () => {
+		it('completes the handoff with node token keys once the binding is adopted', async () => {
 			mockGetFanoutBindingInput.mockReturnValue(bindingInput);
 			mockBindFanout.mockResolvedValue(new Map([[`${FANOUT_TX_HASH}#1`, 'd87980']]));
 			mockAdoptFanoutBinding.mockReturnValue(true);
 
 			await reconcileHydraHeadEscrowStates();
 
-			expect(mockBindFanout).toHaveBeenCalledWith(expect.objectContaining(bindingInput));
+			expect(mockBindFanout).toHaveBeenCalledWith(
+				expect.objectContaining({ ...bindingInput, participantVkeys: [LOCAL_NODE_VKEY, REMOTE_NODE_VKEY] }),
+			);
+			expect(mockVerifyHydraFanout).toHaveBeenCalledWith(
+				expect.objectContaining({ participantVkeys: [LOCAL_NODE_VKEY, REMOTE_NODE_VKEY] }),
+			);
 			expect(mockDisconnect).toHaveBeenCalledWith('head-1');
 		});
 	});
@@ -999,6 +1025,8 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockHydraHeadFindMany.mockResolvedValue([
 			{
 				id: 'head-1',
+				LocalParticipant: { cardanoVkey: LOCAL_NODE_VKEY },
+				RemoteParticipants: [{ cardanoVkey: REMOTE_NODE_VKEY }],
 				hydraRelationId: 'relation-1',
 				headIdentifier: HEAD_IDENTIFIER,
 				latestSnapshotNumber: 3n,
@@ -1033,6 +1061,8 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockHydraHeadFindMany.mockResolvedValue([
 			{
 				id: 'head-1',
+				LocalParticipant: { cardanoVkey: LOCAL_NODE_VKEY },
+				RemoteParticipants: [{ cardanoVkey: REMOTE_NODE_VKEY }],
 				hydraRelationId: 'relation-1',
 				headIdentifier: HEAD_IDENTIFIER,
 				latestSnapshotNumber: 3n,

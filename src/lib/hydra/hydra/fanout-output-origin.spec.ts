@@ -23,6 +23,7 @@ import {
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { resolveTxHash } from '@meshsdk/core';
 import { describe, expect, it, jest } from '@jest/globals';
+import { TransactionLayer } from '@/generated/prisma/client';
 import { DEFAULT_HYDRA_HEAD_SCRIPT_HASH, HYDRA_HEAD_V2_ASSET_NAME_HEX } from './head-init-validation';
 import { isBoundFanoutOutputOrigin } from './fanout-output-origin';
 import type { HydraFanoutChainObserver } from './fanout-validation';
@@ -30,7 +31,15 @@ import type { HydraFanoutChainObserver } from './fanout-validation';
 const HEAD_ID = 'ab'.repeat(28);
 const LOCAL = '11'.repeat(28);
 const REMOTE = '22'.repeat(28);
+const LOCAL_FUNDING_WALLET = '66'.repeat(28);
+const REMOTE_FUNDING_WALLET = '77'.repeat(28);
 const INPUT_HASH = '33'.repeat(32);
+const mockFindHead = jest.fn<(_query: unknown) => Promise<unknown>>();
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
+	prisma: { hydraHead: { findUnique: mockFindHead } },
+}));
+const { deferSpendUntilFanoutHandoff, PendingFanoutHandoffError } =
+	await import('@/services/transactions/tx-sync/tx/pending-fanout-handoff');
 const headAddress = EnterpriseAddress.new(
 	0,
 	Credential.from_scripthash(ScriptHash.from_hex(DEFAULT_HYDRA_HEAD_SCRIPT_HASH)),
@@ -95,6 +104,34 @@ function fixture(inputAddress = headAddress, terminal = false) {
 }
 
 describe('partial fanout output origin', () => {
+	it.each([false, true])('defers a fanout spend with separate funding wallet keys (terminal: %s)', async (terminal) => {
+		const { observer, txHash } = fixture(headAddress, terminal);
+		mockFindHead.mockResolvedValue({
+			headIdentifier: HEAD_ID,
+			LocalParticipant: { cardanoVkey: LOCAL },
+			RemoteParticipants: [{ cardanoVkey: REMOTE }],
+			HydraRelation: {
+				LocalHotWallet: { walletVkey: LOCAL_FUNDING_WALLET },
+				RemoteWallet: { walletVkey: REMOTE_FUNDING_WALLET },
+			},
+		});
+		await expect(
+			deferSpendUntilFanoutHandoff(
+				{
+					layer: TransactionLayer.L2,
+					CurrentTransaction: { layer: TransactionLayer.L2, hydraHeadId: 'head-1' },
+				},
+				{
+					tx_hash: txHash,
+					output_index: terminal ? 0 : 1,
+					amount: [{ unit: 'lovelace', quantity: '5000000' }],
+				},
+				contractAddress,
+				observer as never,
+			),
+		).rejects.toBeInstanceOf(PendingFanoutHandoffError);
+	});
+
 	it('recognizes a spendable output from this head state token', async () => {
 		const { observer, txHash } = fixture();
 		await expect(

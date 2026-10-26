@@ -84,12 +84,13 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	const heads = await prisma.hydraHead.findMany({
 		where: { isEnabled: true, initTxHash: { not: null } },
 		include: {
+			LocalParticipant: { select: { cardanoVkey: true } },
+			RemoteParticipants: { select: { cardanoVkey: true } },
 			HydraRelation: {
 				include: {
 					LocalHotWallet: {
 						include: { PaymentSource: { include: { PaymentSourceConfig: true } } },
 					},
-					RemoteWallet: true,
 				},
 			},
 		},
@@ -104,6 +105,10 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	const connectionManager = getHydraConnectionManager();
 	for (const head of heads) {
 		try {
+			if (head.LocalParticipant == null || head.RemoteParticipants.length !== 1) {
+				logger.warn('[HydraReconcile] Cannot verify head participant token identities', { hydraHeadId: head.id });
+				continue;
+			}
 			await reconcileHead(
 				head.id,
 				head.finalizedAt,
@@ -111,8 +116,8 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 				head.latestSnapshotNumber,
 				head.hydraRelationId,
 				head.headIdentifier,
-				head.HydraRelation.LocalHotWallet.walletVkey,
-				head.HydraRelation.RemoteWallet.walletVkey,
+				head.LocalParticipant.cardanoVkey,
+				head.RemoteParticipants[0].cardanoVkey,
 				head.HydraRelation.LocalHotWallet.PaymentSource,
 				connectionManager,
 				head.reconciliationStalledTxId,
