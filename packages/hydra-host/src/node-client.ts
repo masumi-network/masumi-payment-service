@@ -120,6 +120,7 @@ export class NodeClient {
 			}
 		} finally {
 			clearTimeout(timer);
+			controller.abort();
 		}
 	}
 
