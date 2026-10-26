@@ -147,7 +147,7 @@ export async function resolveExchangeTarget(
 	rawUrl: string,
 	transport: ExchangeTransportOptions,
 	resolve: ExchangeResolver = defaultResolver,
-): Promise<{ url: URL; target: ResolvedExchangeTarget }> {
+): Promise<{ url: URL; target: ResolvedExchangeTarget; usesPrivateNetwork: boolean }> {
 	const url = assertExchangeTransportAllowed(rawUrl, transport);
 	const hostname = withoutIpv6Brackets(url.hostname);
 	const literalFamily = isIP(hostname);
@@ -171,23 +171,28 @@ export async function resolveExchangeTarget(
 
 	// Reject the complete DNS set if any answer is private. Selecting only a
 	// public member of a mixed set would make later resolver ordering a bypass.
-	if (targets.some((target) => target.isPrivate) && !transport.allowPrivateNetwork) {
+	const usesPrivateNetwork = targets.some((target) => target.isPrivate);
+	if (usesPrivateNetwork && !transport.allowPrivateNetwork) {
 		throw createHttpError(
 			400,
 			'the counterparty exchange resolves to a private or special-use address; explicitly confirm ' +
 				'allowPrivateExchangeNetwork to continue',
 		);
 	}
-	return { url, target: targets[0] };
+	return { url, target: targets[0], usesPrivateNetwork };
 }
 
 /** Resolve without connecting, used to show the operator the private-network warning. */
-export async function inspectExchangeNetwork(rawUrl: string): Promise<{ usesPrivateNetwork: boolean }> {
-	const { target } = await resolveExchangeTarget(rawUrl, {
-		allowInsecureHttp: true,
-		allowPrivateNetwork: true,
-	});
-	return { usesPrivateNetwork: target.isPrivate };
+export async function inspectExchangeNetwork(
+	rawUrl: string,
+	resolve: ExchangeResolver = defaultResolver,
+): Promise<{ usesPrivateNetwork: boolean }> {
+	const { usesPrivateNetwork } = await resolveExchangeTarget(
+		rawUrl,
+		{ allowInsecureHttp: true, allowPrivateNetwork: true },
+		resolve,
+	);
+	return { usesPrivateNetwork };
 }
 
 function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffer): Promise<ExchangeRequestResult> {

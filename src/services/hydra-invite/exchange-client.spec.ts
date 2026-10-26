@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import {
 	attemptFailure,
 	attemptRedemption,
+	inspectExchangeNetwork,
 	isPrivateOrSpecialAddress,
 	resolveExchangeTarget,
 	type ExchangeClientDeps,
@@ -147,6 +148,22 @@ describe('Hydra invite exchange transport security', () => {
 				],
 			),
 		).rejects.toThrow(/private or special-use/);
+	});
+
+	it('reports private-network consent when any DNS answer is private', async () => {
+		const resolve = async () => [
+			{ address: '93.184.216.34', family: 4 },
+			{ address: '10.0.0.5', family: 4 },
+		];
+		const result = await resolveExchangeTarget(
+			'https://issuer.example/exchange',
+			{ allowInsecureHttp: false, allowPrivateNetwork: true },
+			resolve,
+		);
+		expect(result).toMatchObject({ usesPrivateNetwork: true });
+		await expect(inspectExchangeNetwork('https://issuer.example/exchange', resolve)).resolves.toEqual({
+			usesPrivateNetwork: true,
+		});
 	});
 
 	it('allows a private secured network only after its separate opt-in', async () => {
