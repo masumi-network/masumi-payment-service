@@ -19,9 +19,10 @@
 # forwarder re-presents it as a local unix socket.
 #
 # Layout (host):
-#   node1/alice : api 127.0.0.1:4001  etcd 127.0.0.1:5001  monitoring 6001
-#   node2/bob   : api 127.0.0.1:4002  etcd 127.0.0.1:5002  monitoring 6002
-#   node3/carol : api 127.0.0.1:4003  etcd 127.0.0.1:5003  monitoring 6003
+#   node1/alice : api 127.0.0.1:4001  etcd 127.0.0.1:5001
+#   node2/bob   : api 127.0.0.1:4002  etcd 127.0.0.1:5002
+#   node3/carol : api 127.0.0.1:4003  etcd 127.0.0.1:5003
+# Monitoring stays off because hydra-node binds metrics to every interface.
 #
 # Usage:
 #   ./hydra-native.sh up        # bridge + 3 native nodes (publish-scripts first if needed)
@@ -219,7 +220,7 @@ publish(){
 # args: idx self-key  vk1 vk2  c-self c-vk1 c-vk2  persistence
 start_node(){
   local idx="$1" sk="$2" vk1="$3" vk2="$4" csk="$5" cvk1="$6" cvk2="$7" persist="$8"
-  local api=$((4000 + idx)) p2p=$((5000 + idx)) mon=$((6000 + idx))
+  local api=$((4000 + idx)) p2p=$((5000 + idx))
   # Same etcd-inode guard as start_node_preprod: hydra-node re-extracts its
   # embedded etcd over the SAME inode on every boot, and on Apple Silicon
   # exec-ing a rewritten Mach-O while the previous etcd is still winding down
@@ -234,7 +235,7 @@ start_node(){
     nohup "$NATIVE_BIN" \
       --node-id "$idx" \
       --api-host 127.0.0.1 --api-port "$api" \
-      --listen "127.0.0.1:$p2p" --monitoring-port "$mon" \
+      --listen "127.0.0.1:$p2p" \
       "${peers[@]}" \
       --hydra-scripts-tx-id "$SCRIPTS_TX_ID" \
       --hydra-signing-key "$sk" \
@@ -260,7 +261,7 @@ start_node(){
 # preprod: 2 parties, blockfrost backend, no socket/bridge/$DEMO
 start_node_preprod(){
   local idx="$1" party="$2"
-  local api=$((4000 + idx)) p2p=$((5000 + idx)) mon=$((6000 + idx))
+  local api=$((4000 + idx)) p2p=$((5000 + idx))
   local other=$(( idx == 1 ? 2 : 1 ))
   local persist="$PREPROD_DIR/$PERSIST_SUBDIR/$party"
   mkdir -p "$persist"
@@ -296,7 +297,7 @@ start_node_preprod(){
   ( "$NATIVE_BIN" \
       --node-id "$idx" \
       --api-host 127.0.0.1 --api-port "$api" \
-      --listen "127.0.0.1:$p2p" --monitoring-port "$mon" \
+      --listen "127.0.0.1:$p2p" \
       --peer "127.0.0.1:$((5000 + other))" \
       "${script_source[@]}" \
       --hydra-signing-key "$PREPROD_DIR/$party-hydra.sk" \
