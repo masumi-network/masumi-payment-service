@@ -6,10 +6,8 @@
  * signed it first. Redeeming is the second, deliberate step.
  *
  * That first step is the only human gate in the whole exchange. A signature
- * proves the invite came from the holder of a wallet; it cannot say whether
- * that wallet is the organisation you meant. So the review screen leads with
- * the registry entries that wallet holds, because "Acme Weather Agent" is a
- * check someone performs and a hex address is one they click past.
+ * proves control of the wallet, but registry names are self-declared. The
+ * operator must enter the full wallet address obtained through a trusted channel.
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -17,7 +15,6 @@ import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, Ticket } from 'lucid
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
-import { CopyButton } from '@/components/ui/copy-button';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -39,7 +36,6 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWallets } from '@/lib/queries/useWallets';
-import { shortenAddress } from '@/lib/utils';
 import { createInvitePreviewGate } from '@/lib/invite-preview-gate';
 import type { ReactNode } from 'react';
 import {
@@ -107,6 +103,7 @@ export function RedeemHydraInviteDialog({
   // operator has opened since.
   const dialogEpochRef = useRef(0);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [expectedIssuerAddress, setExpectedIssuerAddress] = useState('');
   const [allowInsecureExchangeHttp, setAllowInsecureExchangeHttp] = useState(false);
   const [allowPrivateExchangeNetwork, setAllowPrivateExchangeNetwork] = useState(false);
   // Reported at the field rather than as a toast: a message that disappears
@@ -147,6 +144,7 @@ export function RedeemHydraInviteDialog({
       // read in this dialog — a different settle time and dispute window that
       // nobody agreed to.
       setAcceptedTerms(false);
+      setExpectedIssuerAddress('');
       setErrors({});
     }
     onOpenChange(nextOpen);
@@ -165,6 +163,7 @@ export function RedeemHydraInviteDialog({
       // Reading a second invite without closing the dialog replaces the timings
       // the tick referred to, so the tick goes with them.
       setAcceptedTerms(false);
+      setExpectedIssuerAddress('');
       setErrors({});
       const result = await previewHydraInvite(apiClient, { code: ticket.code });
       // Edited, closed, or re-read while this was in flight: these terms belong
@@ -180,6 +179,15 @@ export function RedeemHydraInviteDialog({
   }
 
   async function handleRedeem() {
+    const previewedCode =
+      preview === null ? null : previewGate.acceptedCodeForIssuer(preview.issuerWalletAddress);
+    if (previewedCode === null) {
+      setErrors({
+        issuerAddress:
+          'The expected wallet address must exactly match this invite. Obtain it through a trusted channel.',
+      });
+      return;
+    }
     if (!acceptedTerms) {
       setErrors({ terms: 'Accept the head\u2019s timings before redeeming.' });
       return;
@@ -204,16 +212,12 @@ export function RedeemHydraInviteDialog({
       );
       return;
     }
-    const previewedCode = previewGate.acceptedCode();
-    if (previewedCode === null) {
-      toast.error('Read the invite again before redeeming.');
-      return;
-    }
     const epoch = dialogEpochRef.current;
     setIsLoading(true);
     try {
       const result = await redeemHydraInvite(apiClient, {
         code: previewedCode,
+        expectedIssuerWalletAddress: expectedIssuerAddress.trim(),
         hotWalletId,
         allowInsecureExchangeHttp,
         allowPrivateExchangeNetwork,
@@ -243,7 +247,7 @@ export function RedeemHydraInviteDialog({
             Redeem an invite
           </DialogTitle>
           <DialogDescription>
-            Paste what they sent you. Nothing is created until you have seen who it is from.
+            Paste what they sent you. Check the wallet address and terms before you redeem.
           </DialogDescription>
         </DialogHeader>
 
@@ -288,45 +292,70 @@ export function RedeemHydraInviteDialog({
               </HydraNotice>
             )}
 
-            {/* Identity, not data. The wallet is what the signature proves, but
-                what an operator actually recognises is the agent name, so that
-                leads, the address is truncated with a copy, and the raw asset
-                ids move behind a disclosure where they belong. */}
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold">Who this is from</h3>
+              <h3 className="text-sm font-semibold">Wallet named by the invite</h3>
+              <HydraNotice tone="warn">
+                <p>
+                  A valid signature proves control of this wallet. Registry tokens and their names
+                  are self-declared and do not verify its owner. Compare the full address with the
+                  counterparty through a separate trusted channel. Enter the address you obtained
+                  there, not a copy from this invite.
+                </p>
+              </HydraNotice>
+
+              <div className="rounded-md border bg-muted/10 px-3 py-2">
+                <div>
+                  <p className="text-xs text-muted-foreground">Full wallet address</p>
+                  <p className="break-all font-mono text-xs">{preview.issuerWalletAddress}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="hydra-expected-issuer-address">
+                  Expected wallet address from a trusted channel
+                </Label>
+                <Textarea
+                  id="hydra-expected-issuer-address"
+                  rows={2}
+                  className="font-mono text-xs"
+                  placeholder="Paste the full address you received separately"
+                  value={expectedIssuerAddress}
+                  onChange={(event) => {
+                    previewGate.setExpectedIssuerAddress(event.target.value);
+                    setExpectedIssuerAddress(event.target.value);
+                    setErrors({});
+                  }}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              {errors.issuerAddress && (
+                <p className="text-xs text-destructive">{errors.issuerAddress}</p>
+              )}
 
               {preview.identity.lookupError !== null ? (
                 <p className="text-xs text-muted-foreground">{preview.identity.lookupError}</p>
-              ) : preview.identity.entries.length === 0 ? (
-                <HydraNotice tone="warn">
-                  <p>
-                    This wallet holds no registry entries, so nothing on chain vouches for who it
-                    is. That is normal for a new operator. If you were not expecting it, confirm the
-                    address with them directly.
-                  </p>
-                </HydraNotice>
+              ) : preview.identity.entries.length > 0 ? (
+                <HydraDetailSection
+                  title="Self-declared registry entries"
+                  summary={`${preview.identity.entries.length} held by this wallet`}
+                >
+                  <ul className="divide-y rounded-md border">
+                    {preview.identity.entries.map((entry) => (
+                      <li key={entry.unit} className="px-3 py-2">
+                        <p className="text-sm font-medium">{entry.name ?? entry.assetName}</p>
+                        <p className="break-all font-mono text-xs text-muted-foreground">
+                          {entry.assetName}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </HydraDetailSection>
               ) : (
-                <ul className="divide-y rounded-md border">
-                  {preview.identity.entries.map((entry) => (
-                    <li key={entry.unit} className="px-3 py-2">
-                      <p className="text-sm font-medium">{entry.name ?? entry.assetName}</p>
-                      <p className="truncate font-mono text-xs text-muted-foreground">
-                        {entry.assetName}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-xs text-muted-foreground">
+                  No registry entries found for this wallet.
+                </p>
               )}
-
-              <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/10 px-3 py-2">
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">Wallet</p>
-                  <p className="truncate font-mono text-xs">
-                    {shortenAddress(preview.issuerWalletAddress, 12)}
-                  </p>
-                </div>
-                <CopyButton value={preview.issuerWalletAddress} className="h-7 w-7" />
-              </div>
             </section>
 
             {isInsecureExchangeHttp && (
@@ -515,6 +544,7 @@ export function RedeemHydraInviteDialog({
                   previewGate.invalidate();
                   setPreview(null);
                   setAcceptedTerms(false);
+                  setExpectedIssuerAddress('');
                   setHotWalletId('');
                   setErrors({});
                   setAllowInsecureExchangeHttp(false);

@@ -329,9 +329,13 @@ wallets and all four durations. Neither side can change the terms afterwards.
 4. Send them the code. It is a bearer token: whoever redeems it opens the head
    with you.
 
-**They invite you:** paste the code under **New head → Redeem an invite**, pick
-your wallet, and confirm the terms. **The side that redeems is the side that
-opens the head** — there is nothing to click afterwards.
+**They invite you:** paste the code under **New head → Redeem an invite**.
+Get their full wallet address through a separate trusted channel and enter it
+in the preview. VERIFIED: The mint policy is "intentionally permissionless"
+(`smart-contracts/registry-v2/validators/mint.ak:20`). INFERRED: A registry
+name does not identify the wallet owner. Pick your wallet and confirm the terms.
+**The side that redeems is the side that opens the head**. There is nothing to
+click afterwards.
 
 The head appears as _awaiting counterparty_, then _Initializing_, then _Open_.
 Reaching Open takes a few minutes: it is two on-chain transactions and both

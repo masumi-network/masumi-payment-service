@@ -33002,7 +33002,7 @@
                                                         "entries",
                                                         "lookupError"
                                                     ],
-                                                    "description": "Registry entries held by the issuing wallet, so an operator can recognise who this is"
+                                                    "description": "Unverified, self-declared registry entries held by the issuing wallet"
                                                 }
                                             },
                                             "required": [
@@ -33047,7 +33047,7 @@
         "/hydra/invite/redeem": {
             "post": {
                 "summary": "Redeem a counterparty invite. (admin access required)",
-                "description": "Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.",
+                "description": "Requires an expected issuer wallet address, verifies the invite signature, provisions our node, sends our material to the issuer's Exchange Plane and records the head. The address comparison checks the operator's claim, not how they obtained it. Redemption spends a node and a peer port.",
                 "tags": [
                     "hydra"
                 ],
@@ -33065,6 +33065,11 @@
                                     "code": {
                                         "type": "string",
                                         "minLength": 1
+                                    },
+                                    "expectedIssuerWalletAddress": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Full issuer wallet address obtained through a separate trusted channel"
                                     },
                                     "hotWalletId": {
                                         "type": "string",
@@ -33089,6 +33094,7 @@
                                 },
                                 "required": [
                                     "code",
+                                    "expectedIssuerWalletAddress",
                                     "hotWalletId"
                                 ],
                                 "example": {}
@@ -33141,6 +33147,9 @@
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Expected issuer wallet address is missing or does not match the invite"
                     },
                     "401": {
                         "description": "Unauthorized"
