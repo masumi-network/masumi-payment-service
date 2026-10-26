@@ -480,10 +480,69 @@ describe('findDecommitPayoutTx', () => {
 		expect(found).toBe(txHash('p3'));
 	});
 
-	// A match already in hand from an earlier page must survive a later page's
-	// read failure: the loop now walks on past the first match (to find the
-	// OLDEST one), so a failure on page 2 must not throw away what page 1 found.
-	it('keeps a match found on page 1 when page 2 fails to load', async () => {
+	it('finds an older payout beyond two pages of unrelated wallet transactions', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith({
+			noise: [{ address: ADDRESS, amount: [{ unit: 'lovelace', quantity: '1' }] }],
+			payout: [{ address: ADDRESS, amount }],
+		}) as unknown as { addressesTransactions: AnyMock };
+		blockfrost.addressesTransactions.mockImplementation((_address: string, options: { page: number }) => {
+			if (options.page <= 2) {
+				return Promise.resolve(Array.from({ length: 20 }, () => ({ tx_hash: txHash('noise'), block_time: 3_000 })));
+			}
+			if (options.page === 3) return Promise.resolve([{ tx_hash: txHash('payout'), block_time: 2_000 }]);
+			if (options.page === 4) return Promise.resolve([{ tx_hash: txHash('noise'), block_time: 1_000 }]);
+			throw new Error('history before creation must not be read');
+		});
+
+		const found = await findPayout({
+			blockfrost: blockfrost as never,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+			notBefore: new Date(1_000_500),
+		});
+
+		expect(found).toBe(txHash('payout'));
+		expect(blockfrost.addressesTransactions).toHaveBeenCalledTimes(4);
+	});
+
+	it('uses blockchain order to select the oldest match within one block second', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const found = await findPayout({
+			blockfrost: blockfrostWith(
+				{ newer: [{ address: ADDRESS, amount }], older: [{ address: ADDRESS, amount }] },
+				{ newer: 2_000, older: 2_000 },
+			),
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+			notBefore: new Date(1_000_500),
+		});
+
+		expect(found).toBe(txHash('older'));
+	});
+
+	it('leaves the payout unknown when an older eligible transaction cannot be verified', async () => {
+		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
+		const blockfrost = blockfrostWith(
+			{ newer: [{ address: ADDRESS, amount }], older: [{ address: ADDRESS, amount }] },
+			{ newer: 3_000, older: 2_000 },
+		) as unknown as { txsCbor: AnyMock };
+		blockfrost.txsCbor.mockImplementation((hash: string) => {
+			if (hash === txHash('older')) return Promise.reject(new Error('transaction unavailable'));
+			return Promise.resolve({ cbor: chainTransaction('newer').cbor });
+		});
+
+		const found = await findPayout({
+			blockfrost: blockfrost as never,
+			address: ADDRESS,
+			expected: { lovelace: 3_500_000n, assets: {} },
+			notBefore: new Date(1_000_500),
+		});
+
+		expect(found).toBeNull();
+	});
+
+	it('leaves the payout unknown when an earlier page cannot be read', async () => {
 		const amount = [{ unit: 'lovelace', quantity: '3500000' }];
 		const chain = chainTransaction('payout');
 		const addressesTransactions = jest.fn() as AnyMock;
@@ -515,7 +574,7 @@ describe('findDecommitPayoutTx', () => {
 			expected: { lovelace: 3_500_000n, assets: {} },
 		});
 
-		expect(found).toBe(chain.hash);
+		expect(found).toBeNull();
 	});
 });
 

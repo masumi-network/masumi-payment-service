@@ -203,6 +203,37 @@ describe('alert outbox', () => {
 });
 
 describe('runHydraContestWatch', () => {
+	it('alerts a healthy head while another observer connection is still pending', async () => {
+		mockFindMany.mockResolvedValue([
+			{ id: 'unreachable-head', status: HydraHeadStatus.Open, isEnabled: false, ...empty },
+			{ id: 'contested-head', status: HydraHeadStatus.FanoutPossible, isEnabled: true, ...empty },
+		]);
+		let rejectConnection!: (error: Error) => void;
+		mockReadOnlyNode.mockReturnValue(
+			new Promise((_resolve, reject) => {
+				rejectConnection = reject;
+			}),
+		);
+		mockGetNode.mockReturnValue({
+			status: HydraHeadStatus.FanoutPossible,
+			closedSnapshotNumber: 3n,
+			verifiedSnapshotNumber: 5n,
+		});
+		const running = watch.runHydraContestWatch();
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		try {
+			expect(mockQueue).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ hydraHeadId: 'contested-head' }),
+			);
+			expect(mockReleaseObservers).not.toHaveBeenCalled();
+		} finally {
+			rejectConnection(new Error('observer connection timed out'));
+			await running;
+		}
+		expect(mockReleaseObservers).toHaveBeenCalledWith(new Set(['unreachable-head']));
+	});
+
 	// A node still replaying knows neither number. Treating that as "no gap"
 	// would clear a gap that is still there and re-alert it later.
 	it('leaves a recorded gap alone while the node cannot say', async () => {

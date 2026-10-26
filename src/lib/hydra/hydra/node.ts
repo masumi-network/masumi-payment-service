@@ -196,6 +196,7 @@ export class HydraNode extends EventEmitter {
 			maxUnreconciledTransactions,
 			maxRetainedTransactionCborBytes,
 			reconciledHistoryCursor: config.reconciledHistoryCursor,
+			retainConfirmedTransactions: config.retainConfirmedTransactions,
 		});
 		this._live = new LiveFrameProcessor(this.liveFrameHost(), this);
 		this._replay = new HydraHistoryReplay(
@@ -205,7 +206,6 @@ export class HydraNode extends EventEmitter {
 		);
 		if (config.expectedHeadId) this.pinExpectedHeadId(config.expectedHeadId);
 	}
-
 	/**
 	 * The seams the two frame processors reach shared session state through.
 	 * Getters proxy live fields — both must always see the current pinned head

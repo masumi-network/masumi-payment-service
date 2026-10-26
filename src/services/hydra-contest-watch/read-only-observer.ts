@@ -48,6 +48,7 @@ async function openReadOnlyContestNode(headId: string): Promise<HydraNode> {
 		snapshotVerificationKeys: [localVerificationKey, ...remoteVerificationKeys],
 		expectedNodeVerificationKey: localVerificationKey,
 		trustLocalNodeSnapshotMetadata: true,
+		retainConfirmedTransactions: false,
 		authToken: nodeAuthToken,
 		guardHostDestination: true,
 		computeSnapshotAccumulator: snapshotAccumulator,

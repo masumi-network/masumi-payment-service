@@ -47,6 +47,8 @@ export interface ConfirmedLedgerConfig {
 	maxRetainedTransactionCborBytes: number;
 	/** Durable high-water mark; replay entries at/before it are parsed but not retained. */
 	reconciledHistoryCursor?: { snapshotSequence: number; snapshotTransactionIndex: number };
+	/** Observers can validate confirmations without retaining a reconciliation queue. */
+	retainConfirmedTransactions?: boolean;
 }
 
 export class ConfirmedTransactionLedger {
@@ -61,10 +63,12 @@ export class ConfirmedTransactionLedger {
 	private _reconciledHistoryCursor: { snapshotSequence: number; snapshotTransactionIndex: number } | undefined;
 	private readonly _maxUnreconciledTransactions: number;
 	private readonly _maxRetainedTransactionCborBytes: number;
+	private readonly _retainConfirmedTransactions: boolean;
 
 	constructor(config: ConfirmedLedgerConfig) {
 		this._maxUnreconciledTransactions = config.maxUnreconciledTransactions;
 		this._maxRetainedTransactionCborBytes = config.maxRetainedTransactionCborBytes;
+		this._retainConfirmedTransactions = config.retainConfirmedTransactions !== false;
 		this._reconciledHistoryCursor = config.reconciledHistoryCursor ? { ...config.reconciledHistoryCursor } : undefined;
 	}
 
@@ -224,6 +228,9 @@ export class ConfirmedTransactionLedger {
 		if (new Set(validatedTransactions.map(({ tx }) => tx.txId)).size !== validatedTransactions.length) {
 			throw new HydraProtocolError('SnapshotConfirmed contained duplicate transaction identifiers');
 		}
+		// Contest observers have no payment reconciliation consumer. Keeping this
+		// queue would truncate their replay permanently once its budget fills.
+		if (!this._retainConfirmedTransactions) return { truncated: false };
 
 		for (const { tx, snapshotTransactionIndex, existing, isAfterCursor } of validatedTransactions) {
 			const isCurrentSnapshotProducer = protectedProducerTxIds.has(tx.txId);

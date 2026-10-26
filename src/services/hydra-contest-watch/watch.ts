@@ -199,30 +199,33 @@ export async function runHydraContestWatch(): Promise<void> {
 	});
 	const connectionManager = getHydraConnectionManager();
 	const needsReadOnlyObserver = new Set<string>();
-	for (const head of heads) {
-		try {
-			let node = head.isEnabled ? connectionManager.getNode(head.id) : null;
-			if (!node) {
-				needsReadOnlyObserver.add(head.id);
-				node = await readOnlyContestNode(head.id);
+	// An unavailable observer must not delay alerts for another head's deadline.
+	await Promise.allSettled(
+		heads.map(async (head) => {
+			try {
+				let node = head.isEnabled ? connectionManager.getNode(head.id) : null;
+				if (!node) {
+					needsReadOnlyObserver.add(head.id);
+					node = await readOnlyContestNode(head.id);
+				}
+				// Durable status may still say Open after a lifecycle write failed.
+				// Use the pinned node's observed close status, never that stale row.
+				if (node.status !== HydraHeadStatus.Closed && node.status !== HydraHeadStatus.FanoutPossible) return;
+				const closedSnapshotNumber = node.closedSnapshotNumber;
+				const verifiedSnapshotNumber = node.verifiedSnapshotNumber;
+				if (closedSnapshotNumber === undefined || verifiedSnapshotNumber === undefined) return;
+				await applyContestGapObservation(
+					head,
+					{ status: node.status, closedSnapshotNumber, verifiedSnapshotNumber },
+					new Date(),
+				);
+			} catch (error) {
+				logger.warn('[HydraContestWatch] could not compare the head with the chain', {
+					hydraHeadId: head.id,
+					error: error instanceof Error ? error.message : 'Unknown error',
+				});
 			}
-			// Durable status may still say Open after a lifecycle write failed.
-			// Use the pinned node's observed close status, never that stale row.
-			if (node.status !== HydraHeadStatus.Closed && node.status !== HydraHeadStatus.FanoutPossible) continue;
-			const closedSnapshotNumber = node.closedSnapshotNumber;
-			const verifiedSnapshotNumber = node.verifiedSnapshotNumber;
-			if (closedSnapshotNumber === undefined || verifiedSnapshotNumber === undefined) continue;
-			await applyContestGapObservation(
-				head,
-				{ status: node.status, closedSnapshotNumber, verifiedSnapshotNumber },
-				new Date(),
-			);
-		} catch (error) {
-			logger.warn('[HydraContestWatch] could not compare the head with the chain', {
-				hydraHeadId: head.id,
-				error: error instanceof Error ? error.message : 'Unknown error',
-			});
-		}
-	}
+		}),
+	);
 	await releaseUnusedContestObservers(needsReadOnlyObserver);
 }

@@ -14436,6 +14436,10 @@ export type PatchHydraHeadErrors = {
      */
     404: unknown;
     /**
+     * The head is retired or requires contest monitoring
+     */
+    409: unknown;
+    /**
      * On-chain verification failed
      */
     502: unknown;
