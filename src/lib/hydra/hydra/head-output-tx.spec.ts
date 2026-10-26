@@ -342,7 +342,10 @@ describe('extractCommitNotSettled', () => {
 	const commitHeadState = (utxoToCommit: unknown, version: unknown = 3, snapshotVersion: unknown = 3) => ({
 		tag: 'Open',
 		contents: {
-			coordinatedHeadState: { version, confirmedSnapshot: { snapshot: { version: snapshotVersion, utxoToCommit } } },
+			coordinatedHeadState: {
+				version,
+				confirmedSnapshot: { tag: 'ConfirmedSnapshot', snapshot: { version: snapshotVersion, utxoToCommit } },
+			},
 		},
 	});
 
@@ -361,9 +364,36 @@ describe('extractCommitNotSettled', () => {
 				contents: { coordinatedHeadState: { version: 0, confirmedSnapshot: { tag: 'InitialSnapshot' } } },
 			},
 		],
-		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
 	])('reports nothing unsettled when %s', (_label, state) => {
 		expect(extractCommitNotSettled(state)).toBe(false);
+	});
+
+	it.each([
+		['the versions are not numbers', commitHeadState(COMMIT, '3', 3)],
+		['the head state has no confirmed snapshot', { tag: 'Open' }],
+		['the node reports Closed while the row remains Open', { ...commitHeadState(null), tag: 'Closed' }],
+		[
+			'contents is malformed even when top-level fields look settled',
+			{
+				...commitHeadState(null),
+				contents: [],
+				coordinatedHeadState: commitHeadState(null).contents.coordinatedHeadState,
+			},
+		],
+		[
+			'the snapshot has an unknown tag',
+			{
+				...commitHeadState(null),
+				contents: {
+					coordinatedHeadState: {
+						version: 3,
+						confirmedSnapshot: { tag: 'UnknownSnapshot', snapshot: { version: 3, utxoToCommit: null } },
+					},
+				},
+			},
+		],
+	])('reports unknown settlement when %s', (_label, state) => {
+		expect(extractCommitNotSettled(state)).toBeNull();
 	});
 });
 
