@@ -244,9 +244,15 @@ const hydraHeadUnobservedPayloadSchema = createWebhookPayloadSchema(
 			.nullable()
 			.describe('The stored contestation deadline when the head is already closed, otherwise null'),
 		unobservedSince: z.string().datetime().describe('The first check in this gap that could not observe the node'),
+		reason: z.string().describe('Why the last check could not observe the node'),
+		isNodeSide: z
+			.boolean()
+			.describe(
+				'True when the node itself cannot contest. False when the node may still contest but this service cannot check it.',
+			),
 		checkedAt: z.string().datetime().describe('Timestamp when the gap was evaluated'),
 	}),
-	'Emitted once per gap when the node of an open or closed Hydra head has reported no head state for the grace period. hydra-node contests a close on an older snapshot only while it runs, so restore the node before any contestation deadline passes.',
+	'Emitted once per gap when this service could not observe the node of an open or closed Hydra head for the grace period. The node may be down, not follow the head or the chain, or this service may not have verified its history. hydra-node contests a close on an older snapshot only while it runs, so restore a node that is down before any contestation deadline passes.',
 );
 
 // Union schema for all webhook payloads

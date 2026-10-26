@@ -500,7 +500,21 @@ describe('HydraNode', () => {
 			liveConnection.emit('close', new Error('socket hang up'));
 
 			expect(node.status).toBe(HydraHeadStatus.Open);
+			expect(node.hasVerifiedLiveSession).toBe(false);
 			expect(node.hasVerifiedPinnedSessions).toBe(false);
+		});
+
+		// A replay restart closes only the history socket. It is this service's own
+		// work: the node still runs and contests.
+		it('keeps the live session verified while the history replay starts over', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			for (const frame of signedHistoryChain().frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+
+			historyConnection.emit('close', new Error('replay restarted'));
+
+			expect(node.hasVerifiedPinnedSessions).toBe(false);
+			expect(node.hasVerifiedLiveSession).toBe(true);
 		});
 
 		it.each(['PeerConnected', 'PeerDisconnected', 'FutureNotification'])(

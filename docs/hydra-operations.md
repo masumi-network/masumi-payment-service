@@ -470,10 +470,22 @@ newer one by itself, but only while it runs and follows the chain. When this
 service cannot observe a head's node for five minutes, it records a
 `HeadUnobserved` head error and sends the `HYDRA_HEAD_UNOBSERVED` webhook, once
 per outage. A head with a contestation period under 20 minutes gets a quarter of
-that period instead of five minutes. The error names the cause found at the
-last check. Subscribe to the webhook. When it fires, check the Host and restart
-the node. Do this before the contestation deadline in the webhook passes, or
-within the contestation period if the head is still open.
+that period instead of five minutes. The watch checks about once a minute, so
+the alert can come up to a minute later than that. A restart of this service
+that lasts more than three minutes starts a new outage, which can alert again.
+
+The error and the webhook `reason` name the cause found at the last check.
+`isNodeSide` tells two kinds of cause apart:
+
+- `true`: the node is down, does not follow the head or the chain, or this
+  service could not open a session with it. No contest can happen. Check the
+  Host and restart the node.
+- `false`: the node may still contest, but this service cannot check it. Its
+  replay of the node history failed or has not finished, or the head
+  configuration stopped it. Check this service and its logs.
+
+Subscribe to the webhook. Act before the contestation deadline in the webhook
+passes, or within the contestation period if the head is still open.
 
 A planned Host pause stops the nodes of open heads too, so a pause longer than
 the grace period sends this webhook for each of them. That alert is expected.

@@ -73,7 +73,7 @@ import type { HydraAccumulatorComputer } from './snapshot-accumulator-worker-cli
 import { FinalizedFanoutState, type FinalizedFanoutBindingInput } from './node-finalized-fanout';
 import type { HydraFanoutRemainingUtxo } from './fanout-head-state';
 import * as settlementCommands from './node-settlement-commands';
-import { canonicalHydraHeadIdSchema } from './schemas';
+import { resolvePinnableHeadId } from './node-head-pin';
 import type { VerifiedHydraFanoutReference } from './snapshot-verification';
 import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction } from './types';
 
@@ -363,22 +363,11 @@ export class HydraNode extends EventEmitter {
 	}
 
 	pinExpectedHeadId(headId: string): void {
-		const parsedHeadId = canonicalHydraHeadIdSchema.safeParse(headId);
-		if (!parsedHeadId.success) {
-			throw new HydraProtocolError('Hydra head id must be a 28-byte hexadecimal value');
-		}
-		if (this._expectedHeadId && this._expectedHeadId !== parsedHeadId.data) {
-			throw new HydraProtocolError(
-				`Hydra head id mismatch: expected ${this._expectedHeadId}, received ${parsedHeadId.data}`,
-			);
-		}
-		if (
-			(this._live.liveSessionHeadId && this._live.liveSessionHeadId !== parsedHeadId.data) ||
-			(this._replay.sessionHeadId && this._replay.sessionHeadId !== parsedHeadId.data)
-		) {
-			throw new HydraProtocolError('Hydra head id did not match the already verified websocket sessions');
-		}
-		this._expectedHeadId = parsedHeadId.data;
+		this._expectedHeadId = resolvePinnableHeadId(headId, {
+			expectedHeadId: this._expectedHeadId,
+			liveSessionHeadId: this._live.liveSessionHeadId,
+			replaySessionHeadId: this._replay.sessionHeadId,
+		});
 		this._replay.processBufferedUnpinnedFrames();
 	}
 
@@ -454,17 +443,24 @@ export class HydraNode extends EventEmitter {
 		);
 	}
 
+	/** The live socket has authenticated the pinned head and its parties. History replay may still run. */
+	get hasVerifiedLiveSession(): boolean {
+		return (
+			this._expectedHeadId != null &&
+			this._live.liveSessionHeadId === this._expectedHeadId &&
+			this._partyIdentity.configuredKeyCount === 2 &&
+			this._partyIdentity.hasExpectedNodeKey &&
+			this._partyIdentity.orderedSnapshotVerificationKeys?.length === 2 &&
+			this._live.livePartyIdentityVerified
+		);
+	}
+
 	/** Both evidence sockets have authenticated the same pinned head; never while a headless Idle is held. */
 	get hasVerifiedPinnedSessions(): boolean {
 		return (
 			this._unsupportedPersistenceRotationError == null &&
-			this._expectedHeadId != null &&
-			this._live.liveSessionHeadId === this._expectedHeadId &&
+			this.hasVerifiedLiveSession &&
 			this._replay.sessionHeadId === this._expectedHeadId &&
-			this._partyIdentity.configuredKeyCount === 2 &&
-			this._partyIdentity.hasExpectedNodeKey &&
-			this._partyIdentity.orderedSnapshotVerificationKeys?.length === 2 &&
-			this._live.livePartyIdentityVerified &&
 			this._replay.partyIdentityVerified &&
 			this._replay.verifiedSnapshot?.headId === this._expectedHeadId &&
 			this._replay.isComplete

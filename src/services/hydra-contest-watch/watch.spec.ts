@@ -48,6 +48,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 	getHydraConnectionManager: () => ({ getNode: mockGetNode }),
 }));
 jest.unstable_mockModule('./read-only-observer', () => ({
+	ContestObserverConfigurationError: class extends Error {},
 	readOnlyContestNode: mockReadOnlyNode,
 	releaseUnusedContestObservers: mockReleaseObservers,
 }));
@@ -79,7 +80,9 @@ const empty = {
 };
 /** A node whose live and history sessions are bound to the head and that follows the chain. */
 const liveNode = <T extends object>(fields: T) => ({
+	hasVerifiedLiveSession: true,
 	hasVerifiedPinnedSessions: true,
+	confirmedTransactionHistoryError: undefined,
 	isChainSynced: () => true,
 	...fields,
 });
@@ -348,9 +351,36 @@ describe('runHydraContestWatch', () => {
 		});
 		expect(mockUnobservedQueue).toHaveBeenCalledWith(
 			expect.anything(),
-			expect.objectContaining({ hydraHeadId: 'head-1', unobservedSince: unobservedSince.toISOString() }),
+			expect.objectContaining({
+				hydraHeadId: 'head-1',
+				unobservedSince: unobservedSince.toISOString(),
+				reason: 'this service could not open a session with the node (connect ECONNREFUSED)',
+				isNodeSide: true,
+			}),
 		);
 		expect(mockQueue).not.toHaveBeenCalled();
+	});
+
+	// A bad stored configuration is this service's problem, not a node outage.
+	it('blames the head configuration, not the node, when it stops the observer', async () => {
+		const { ContestObserverConfigurationError } = await import('./read-only-observer');
+		const unobservedSince = new Date(Date.now() - 6 * 60_000);
+		mockFindMany.mockResolvedValue([
+			{
+				id: 'head-1',
+				status: HydraHeadStatus.Open,
+				isEnabled: false,
+				...empty,
+				observationGapSince: unobservedSince,
+				observationCheckedAt: new Date(Date.now() - 60_000),
+			},
+		] as never);
+		mockReadOnlyNode.mockRejectedValue(new ContestObserverConfigurationError('no pinned identifier') as never);
+		await watch.runHydraContestWatch();
+		expect(mockUnobservedQueue).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ reason: expect.stringContaining('head configuration'), isNodeSide: false }),
+		);
 	});
 
 	// HYD-01 review: a lost socket leaves the node's last status in place. Only
@@ -361,7 +391,9 @@ describe('runHydraContestWatch', () => {
 		] as never);
 		mockGetNode.mockReturnValue({
 			status: HydraHeadStatus.Open,
+			hasVerifiedLiveSession: false,
 			hasVerifiedPinnedSessions: false,
+			confirmedTransactionHistoryError: undefined,
 			isChainSynced: () => true,
 		});
 		await watch.runHydraContestWatch();

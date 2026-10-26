@@ -5,6 +5,9 @@ import { HydraNode } from '@/lib/hydra/hydra/node';
 import { createWorkerAccumulatorComputer } from '@/lib/hydra/hydra/snapshot-accumulator-worker-client';
 import { loadValidatedHeadConfiguration } from '@/services/hydra-connection-manager/head-configuration';
 
+/** The head's stored configuration stopped the observer before it reached the node. */
+export class ContestObserverConfigurationError extends Error {}
+
 const snapshotAccumulator = createWorkerAccumulatorComputer();
 const observers = new Map<string, Promise<HydraNode>>();
 
@@ -39,7 +42,9 @@ async function openReadOnlyContestNode(headId: string): Promise<HydraNode> {
 		localVerificationKey,
 		remoteVerificationKeys,
 		reconciledHistoryCursor,
-	} = await loadValidatedHeadConfiguration(headId, { readOnlyContestObserver: true });
+	} = await loadValidatedHeadConfiguration(headId, { readOnlyContestObserver: true }).catch((error: unknown) => {
+		throw new ContestObserverConfigurationError(error instanceof Error ? error.message : 'Unknown error');
+	});
 	const node = new HydraNode({
 		httpUrl: nodeUrls.httpUrl,
 		wsUrl: nodeUrls.wsUrl,

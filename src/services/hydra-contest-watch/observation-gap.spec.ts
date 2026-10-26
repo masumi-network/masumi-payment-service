@@ -56,7 +56,7 @@ const since = (minutes: number): StoredGap => ({
 	observationGapAlertedAt: null,
 	observationCheckedAt: minutesAgo(1),
 });
-const DOWN = 'the node has no verified live session for this head';
+const DOWN = { reason: 'the node has no verified live session for this head', isNodeSide: true };
 const DAY_SECONDS = 86_400n;
 const GRACE_MS = 5 * 60_000;
 
@@ -87,12 +87,20 @@ const head = (stored: StoredGap, contestationPeriod = DAY_SECONDS) => ({
 });
 
 const node = (
-	overrides: Partial<{ status: HydraHeadStatus; hasVerifiedPinnedSessions: boolean; synced?: boolean }>,
+	overrides: Partial<{
+		status: HydraHeadStatus;
+		hasVerifiedLiveSession: boolean;
+		hasVerifiedPinnedSessions: boolean;
+		confirmedTransactionHistoryError: Error;
+		synced?: boolean;
+	}>,
 ) => {
 	const { synced = true, ...rest } = overrides;
 	return {
 		status: HydraHeadStatus.Open,
+		hasVerifiedLiveSession: true,
 		hasVerifiedPinnedSessions: true,
+		confirmedTransactionHistoryError: undefined,
 		isChainSynced: () => synced,
 		...rest,
 	};
@@ -107,21 +115,36 @@ async function tickEveryMinute(minutes: number) {
 	return decision;
 }
 
-describe('nodeUnobservedReason', () => {
+describe('nodeUnobservedCause', () => {
 	it('counts a node that follows the head and the chain as observed', () => {
-		expect(gap.nodeUnobservedReason(node({}))).toBeNull();
-		expect(gap.nodeUnobservedReason(node({ status: HydraHeadStatus.Final }))).toBeNull();
-		expect(gap.nodeUnobservedReason({ ...node({}), isChainSynced: () => undefined })).toBeNull();
+		expect(gap.nodeUnobservedCause(node({}))).toBeNull();
+		expect(gap.nodeUnobservedCause(node({ status: HydraHeadStatus.Final }))).toBeNull();
+		expect(gap.nodeUnobservedCause({ ...node({}), isChainSynced: () => undefined })).toBeNull();
 	});
 
 	// A lost socket leaves the last status in place, so Open alone proves nothing.
 	it('does not count a node whose live session is gone, whatever status it last reported', () => {
-		expect(gap.nodeUnobservedReason(node({ hasVerifiedPinnedSessions: false }))).toBe(DOWN);
+		expect(gap.nodeUnobservedCause(node({ hasVerifiedLiveSession: false, hasVerifiedPinnedSessions: false }))).toEqual(
+			DOWN,
+		);
 	});
 
 	it('does not count a node that lost the head or the chain', () => {
-		expect(gap.nodeUnobservedReason(node({ status: HydraHeadStatus.Idle }))).toContain('Idle');
-		expect(gap.nodeUnobservedReason(node({ synced: false }))).toBe('the node does not follow the chain');
+		expect(gap.nodeUnobservedCause(node({ status: HydraHeadStatus.Idle }))?.reason).toContain('Idle');
+		expect(gap.nodeUnobservedCause(node({ synced: false }))).toEqual({
+			reason: 'the node does not follow the chain',
+			isNodeSide: true,
+		});
+	});
+
+	// The replay is this service's check, not the node's health.
+	it('blames this service, not the node, for a history replay that failed or still runs', () => {
+		const running = gap.nodeUnobservedCause(node({ hasVerifiedPinnedSessions: false }));
+		expect(running).toEqual({ reason: expect.stringContaining('has not finished'), isNodeSide: false });
+		const failed = gap.nodeUnobservedCause(
+			node({ hasVerifiedPinnedSessions: false, confirmedTransactionHistoryError: new Error('log rotated') }),
+		);
+		expect(failed).toEqual({ reason: expect.stringContaining('failed (log rotated)'), isNodeSide: false });
 	});
 });
 
@@ -173,7 +196,7 @@ describe('applyObservationGap', () => {
 			data: expect.objectContaining({
 				hydraHeadId: 'head-1',
 				errorType: HydraErrorType.HeadUnobserved,
-				errorMessage: expect.stringContaining(DOWN),
+				errorMessage: expect.stringMatching(new RegExp(`${DOWN.reason}.*Restore the node`)),
 			}),
 		});
 		expect(mockQueue).toHaveBeenCalledWith(expect.anything(), {
@@ -181,8 +204,19 @@ describe('applyObservationGap', () => {
 			headStatus: HydraHeadStatus.Closed,
 			contestationDeadline: '2026-10-28T12:00:00.000Z',
 			unobservedSince: minutesAgo(6).toISOString(),
+			reason: DOWN.reason,
+			isNodeSide: true,
 			checkedAt: NOW.toISOString(),
 		});
+	});
+
+	it('does not tell the operator to restore a node that this service cannot check', async () => {
+		row = since(6);
+		const cause = { reason: "this service's replay of the node history has not finished", isNodeSide: false };
+		await expect(gap.applyObservationGap(head(row), cause, NOW)).resolves.toBe('alert');
+		const { errorMessage } = (mockErrorCreate.mock.calls[0][0] as { data: { errorMessage: string } }).data;
+		expect(errorMessage).toContain('The node may still contest on its own');
+		expect(errorMessage).not.toContain('Restore the node');
 	});
 
 	it('alerts again on the next tick when the webhook could not be queued', async () => {

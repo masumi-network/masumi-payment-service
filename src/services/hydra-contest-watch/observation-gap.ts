@@ -38,19 +38,50 @@ const OBSERVED_NODE_STATUSES = new Set<HydraHeadStatus>([
 	HydraHeadStatus.Final,
 ]);
 
-export type ObservableNode = Pick<HydraNode, 'status' | 'hasVerifiedPinnedSessions' | 'isChainSynced'>;
+export type ObservableNode = Pick<
+	HydraNode,
+	| 'status'
+	| 'hasVerifiedLiveSession'
+	| 'hasVerifiedPinnedSessions'
+	| 'confirmedTransactionHistoryError'
+	| 'isChainSynced'
+>;
+
+/**
+ * Why this service cannot observe the head. `isNodeSide` is true when the node
+ * itself cannot contest, and false when the node may still contest but this
+ * service cannot check it.
+ */
+export type UnobservedCause = { reason: string; isNodeSide: boolean };
 
 /**
  * Why the node does not count as observed, or null when it does. A lost socket
  * leaves the node's last status in place, so the status alone is not enough:
- * the live and history sessions must still be bound to the head.
+ * the live session must still be bound to the head. The history replay is this
+ * service's own check, so a replay that failed or is still running is reported
+ * apart from a node that is down.
  */
-export function nodeUnobservedReason(node: ObservableNode): string | null {
-	if (!node.hasVerifiedPinnedSessions) return 'the node has no verified live session for this head';
-	if (!OBSERVED_NODE_STATUSES.has(node.status)) return `the node reports the head as ${node.status}`;
-	if (node.isChainSynced() === false) return 'the node does not follow the chain';
+export function nodeUnobservedCause(node: ObservableNode): UnobservedCause | null {
+	if (!node.hasVerifiedLiveSession)
+		return { reason: 'the node has no verified live session for this head', isNodeSide: true };
+	if (!OBSERVED_NODE_STATUSES.has(node.status)) {
+		return { reason: `the node reports the head as ${node.status}`, isNodeSide: true };
+	}
+	if (node.isChainSynced() === false) return { reason: 'the node does not follow the chain', isNodeSide: true };
+	const replayError = node.confirmedTransactionHistoryError;
+	if (replayError) {
+		return { reason: `this service's replay of the node history failed (${replayError.message})`, isNodeSide: false };
+	}
+	if (!node.hasVerifiedPinnedSessions) {
+		return { reason: "this service's replay of the node history has not finished", isNodeSide: false };
+	}
 	return null;
 }
+
+const NODE_SIDE_ADVICE =
+	'hydra-node contests a close on an older snapshot only while it runs and follows the chain. Restore the node before any contestation deadline passes.';
+const SERVICE_SIDE_ADVICE =
+	'The node may still contest on its own, but this service cannot check a close against the newest signed snapshot. Check this service and its logs.';
 
 export function observationGraceMs(contestationPeriodSeconds: bigint): number {
 	const shareMs = (contestationPeriodSeconds * 1000n) / CONTESTATION_PERIOD_GRACE_DIVISOR;
@@ -101,7 +132,7 @@ export type ObservedHead = {
 } & StoredObservationGap;
 
 /**
- * Apply one observation. `unobservedReason` is null when the node is observed.
+ * Apply one observation. `unobservedCause` is null when the node is observed.
  * Every write is conditioned on the gap start it read, so two instances can
  * never overwrite a newer gap or alert twice for one gap. The alert claim, the
  * error row and the webhook commit together: a failed write rolls the claim
@@ -109,13 +140,13 @@ export type ObservedHead = {
  */
 export async function applyObservationGap(
 	head: ObservedHead,
-	unobservedReason: string | null,
+	unobservedCause: UnobservedCause | null,
 	now: Date,
 	database: ObservationGapDatabase = prisma,
 ): Promise<ObservationGapDecision> {
 	const decision = decideObservationGap(
 		head,
-		unobservedReason === null,
+		unobservedCause === null,
 		now,
 		observationGraceMs(head.contestationPeriod),
 	);
@@ -129,6 +160,14 @@ export async function applyObservationGap(
 			});
 			return decision;
 		case 'record':
+			// Not checked for a while: an outage of this service or a slow tick.
+			if (gapSince !== null) {
+				logger.warn('[HydraContestWatch] restarting a stale observation gap', {
+					hydraHeadId: head.id,
+					observationGapSince: gapSince.toISOString(),
+					observationCheckedAt: head.observationCheckedAt?.toISOString() ?? null,
+				});
+			}
 			await database.hydraHead.updateMany({
 				where: readState,
 				data: { observationGapSince: now, observationGapAlertedAt: null, observationCheckedAt: now },
@@ -138,7 +177,8 @@ export async function applyObservationGap(
 			await database.hydraHead.updateMany({ where: readState, data: { observationCheckedAt: now } });
 			return decision;
 		case 'alert': {
-			if (gapSince === null) return 'unchanged';
+			if (gapSince === null || unobservedCause === null) return 'unchanged';
+			const advice = unobservedCause.isNodeSide ? NODE_SIDE_ADVICE : SERVICE_SIDE_ADVICE;
 			const isAnnounced = await database.$transaction(async (tx) => {
 				const claimed = await tx.hydraHead.updateMany({
 					where: { ...readState, observationGapAlertedAt: null },
@@ -149,7 +189,7 @@ export async function applyObservationGap(
 					data: {
 						hydraHeadId: head.id,
 						errorType: HydraErrorType.HeadUnobserved,
-						errorMessage: `This service has not been able to observe the node for this head since ${gapSince.toISOString()}. At the last check, ${unobservedReason}. hydra-node contests a close on an older snapshot only while it runs and follows the chain. Restore the node before any contestation deadline passes.`,
+						errorMessage: `This service has not been able to observe the node for this head since ${gapSince.toISOString()}. At the last check, ${unobservedCause.reason}. ${advice}`,
 						headStatus: head.status,
 						clientInput: 'ContestWatch',
 						errorAt: now,
@@ -160,6 +200,8 @@ export async function applyObservationGap(
 					headStatus: head.status,
 					contestationDeadline: head.contestationDeadline?.toISOString() ?? null,
 					unobservedSince: gapSince.toISOString(),
+					reason: unobservedCause.reason,
+					isNodeSide: unobservedCause.isNodeSide,
 					checkedAt: now.toISOString(),
 				});
 				return true;
@@ -169,7 +211,8 @@ export async function applyObservationGap(
 				hydraHeadId: head.id,
 				headStatus: head.status,
 				unobservedSince: gapSince.toISOString(),
-				reason: unobservedReason,
+				reason: unobservedCause.reason,
+				isNodeSide: unobservedCause.isNodeSide,
 			});
 			return decision;
 		}

@@ -25,7 +25,8 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-const { readOnlyContestNode, releaseUnusedContestObservers } = await import('./read-only-observer');
+const { ContestObserverConfigurationError, readOnlyContestNode, releaseUnusedContestObservers } =
+	await import('./read-only-observer');
 
 beforeEach(() => {
 	jest.clearAllMocks();
@@ -65,9 +66,16 @@ describe('read-only contest observer', () => {
 
 	it('drops a failed connection so the next tick can retry', async () => {
 		mockConnect.mockRejectedValueOnce(new Error('socket unavailable'));
-		await expect(readOnlyContestNode('head-2')).rejects.toThrow('socket unavailable');
+		await expect(readOnlyContestNode('head-2')).rejects.not.toBeInstanceOf(ContestObserverConfigurationError);
 		await readOnlyContestNode('head-2');
 		expect(mockLoad).toHaveBeenCalledTimes(2);
 		await releaseUnusedContestObservers(new Set());
+	});
+
+	// The watch reports this as a service problem, not as a node that is down.
+	it('marks a configuration failure as one, before any socket opens', async () => {
+		mockLoad.mockRejectedValueOnce(new Error('no pinned identifier'));
+		await expect(readOnlyContestNode('head-3')).rejects.toBeInstanceOf(ContestObserverConfigurationError);
+		expect(mockConstruct).not.toHaveBeenCalled();
 	});
 });

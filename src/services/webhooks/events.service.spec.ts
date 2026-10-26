@@ -138,6 +138,8 @@ describe('Hydra webhook payment-source scope', () => {
 			headStatus: 'Closed',
 			contestationDeadline: '2026-10-27T00:00:00.000Z',
 			unobservedSince: '2026-10-26T00:00:00.000Z',
+			reason: 'the node has no verified live session for this head',
+			isNodeSide: true,
 			checkedAt: '2026-10-26T00:05:00.000Z',
 		};
 
