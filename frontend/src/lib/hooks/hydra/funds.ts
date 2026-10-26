@@ -299,7 +299,12 @@ export async function recoverHydraTopup(apiClient: Client, payload: { topupId: s
   const response = await handleApiCall(
     () =>
       apiClient.post<{
-        200: ApiEnvelope<{ depositTxHash: string; requested: boolean; reason: string | null }>;
+        200: ApiEnvelope<{
+          depositTxHash: string | null;
+          requested: boolean;
+          uncertain: boolean;
+          reason: string | null;
+        }>;
       }>({
         responseType: 'json',
         url: '/hydra/head/topup/recover',

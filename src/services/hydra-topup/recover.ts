@@ -28,8 +28,10 @@ import { assertHydraHeadHostNotPaused, assertHydraHeadHostNotStopping } from '@/
 export type DepositRecovery = {
 	/** Null while the top-up is still being prepared and has no deposit yet. */
 	depositTxHash: string | null;
-	/** Null when nothing was posted, with `reason` saying why. */
+	/** True when the node answered the recovery request successfully. */
 	requested: boolean;
+	/** The request may have reached the node, but its response was lost. */
+	uncertain: boolean;
 	reason: string | null;
 };
 
@@ -65,6 +67,7 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 		return {
 			depositTxHash: null,
 			requested: false,
+			uncertain: false,
 			reason: 'this top-up is still being prepared, so nothing has been deposited yet',
 		};
 	}
@@ -76,6 +79,7 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 		return {
 			depositTxHash: topup.depositTxHash,
 			requested: false,
+			uncertain: false,
 			reason: 'the head has already taken this deposit in, so there is nothing at the deposit script to return',
 		};
 	}
@@ -86,6 +90,7 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 		return {
 			depositTxHash: topup.depositTxHash,
 			requested: false,
+			uncertain: false,
 			reason: 'this deposit has not settled yet, so there is nothing to recover',
 		};
 	}
@@ -123,17 +128,16 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	try {
 		await node.delete(`/commits/${topup.depositTxHash}`);
 	} catch (error) {
-		// Building and submitting the recover transaction takes longer than the
-		// HTTP client waits, so a lost response is the normal case rather than a
-		// refusal: the node posts it anyway. Reported as requested, because that
-		// is what happened, with the caller told where to look.
+		// The node may have accepted this request, but the lost response cannot
+		// prove that. Keep the uncertainty visible after a page reload.
 		if (error instanceof HydraTransportAmbiguousError) {
-			logger.info(`hydra: recovery of deposit ${topup.depositTxHash} was requested; the node did not answer in time`);
-			await markRecoveryRequested(topup.id);
+			logger.warn(`hydra: recovery response for deposit ${topup.depositTxHash} is unknown`);
+			await markRecoveryResponseUnknown(topup.id);
 			return {
 				depositTxHash: topup.depositTxHash,
-				requested: true,
-				reason: 'the node took longer than the request window to answer. The recovery is posted; watch the wallet',
+				requested: false,
+				uncertain: true,
+				reason: 'the node did not answer; recovery may have been posted. Check L1 before retrying',
 			};
 		}
 		// A genuine refusal. Before the deadline this is what stops a recovery
@@ -145,7 +149,7 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 
 	logger.info(`hydra: requested recovery of deposit ${topup.depositTxHash} for head ${topup.hydraHeadId}`);
 	await markRecoveryRequested(topup.id);
-	return { depositTxHash: topup.depositTxHash, requested: true, reason: null };
+	return { depositTxHash: topup.depositTxHash, requested: true, uncertain: false, reason: null };
 }
 
 /** How an operator frees a deposit that a signed snapshot still holds. */
@@ -183,6 +187,7 @@ async function refuseAcknowledgedDeposit(
 		return {
 			depositTxHash,
 			requested: false,
+			uncertain: false,
 			reason: `could not check whether the head has acknowledged this deposit (${message}), so it was not recovered`,
 		};
 	}
@@ -199,6 +204,7 @@ async function refuseAcknowledgedDeposit(
 		return {
 			depositTxHash,
 			requested: false,
+			uncertain: false,
 			reason:
 				'the head has acknowledged this deposit in a snapshot it signed and may still absorb it before its deadline. Wait until the head absorbs it or the deadline passes',
 		};
@@ -210,6 +216,7 @@ async function refuseAcknowledgedDeposit(
 	return {
 		depositTxHash,
 		requested: false,
+		uncertain: false,
 		reason: `the head acknowledged this deposit in a snapshot it signed, but ${absorbOutlook}. ${RELEASE_ACKNOWLEDGED_DEPOSIT}`,
 	};
 }
@@ -229,11 +236,23 @@ async function markRecoveryRequested(topupId: string): Promise<void> {
 	try {
 		await prisma.hydraTopup.updateMany({
 			where: { id: topupId, recoveryRequestedAt: null },
-			data: { recoveryRequestedAt: new Date() },
+			data: { recoveryRequestedAt: new Date(), recoveryResponseUnknownAt: null },
 		});
 	} catch (error) {
-		// The recovery is already posted; failing to note it must not turn a
+		// The request was already accepted; failing to note it must not turn a
 		// successful request into an error the caller retries.
 		logger.warn(`hydra: could not record the recovery request for ${topupId}`, { error });
+	}
+}
+
+/** Preserve the first lost response without claiming the node accepted it. */
+async function markRecoveryResponseUnknown(topupId: string): Promise<void> {
+	try {
+		await prisma.hydraTopup.updateMany({
+			where: { id: topupId, recoveryRequestedAt: null, recoveryResponseUnknownAt: null },
+			data: { recoveryResponseUnknownAt: new Date() },
+		});
+	} catch (error) {
+		logger.warn(`hydra: could not record the unknown recovery response for ${topupId}`, { error });
 	}
 }
