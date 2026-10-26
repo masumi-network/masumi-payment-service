@@ -59,6 +59,7 @@ import { computeHydraAccumulatorHash } from './snapshot-accumulator';
 import { HistoryFrameQueue, type QueuedHistoryFrame } from './node-history-frame-queue';
 import { pageClosedBeforeHeadExisted } from './node-history-page';
 import type { HistoryReplayHost } from './node-history-replay-host';
+import { toConfirmedSnapshotPayload } from './signed-snapshot';
 import { HydraTransaction } from './types';
 
 const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
@@ -578,6 +579,7 @@ export class HydraHistoryReplay {
 			accumulator: parsedMessage.snapshot.accumulator,
 			signatures: JSON.stringify(parsedMessage.signatures.multiSignature),
 		};
+		this.host.onSignedSnapshotVerified?.(toConfirmedSnapshotPayload(parsedMessage));
 	}
 
 	private recordHistorySnapshot(

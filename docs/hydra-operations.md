@@ -464,6 +464,14 @@ will show them exactly once before sealing them. Without them you cannot
 recover funds from a head whose service database is gone. The head details
 dialog warns until you do it.
 
+**The newest signed snapshot is kept outside the node.** Each time the service
+verifies that every party signed a snapshot, it stores the newest one for that
+head in `HydraHeadSignedSnapshot`. The row holds the exact `ConfirmedSnapshot`
+JSON that `GET /snapshot` returns. If a node loses its own persistence, this row
+is the evidence of what the head last agreed. It does not make a restored node
+contest by itself: in our hydra-node 2.3.0 test, a node restored after storage
+loss refused a side-load of the stored snapshot (`SideLoadSvNumberInvalid`).
+
 **Closing.** Close from the head's action menu. What is inside the head returns
 to L1 after the dispute window, then fans out, and nothing needs watching in
 between.
