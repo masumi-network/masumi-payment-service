@@ -24,6 +24,13 @@ let failure: 'endpoint-query' | 'delivery-insert' | null;
 
 const database = {
 	hydraHead: {
+		findUnique: async ({ where }: { where: { id: string } }) =>
+			where.id === head.id
+				? {
+						HydraRelation: { localHotWalletId: 'wallet-1', LocalHotWallet: { paymentSourceId: 'source-1' } },
+						LocalParticipant: { id: 'participant-1', walletId: 'wallet-1' },
+					}
+				: null,
 		updateMany: async ({ where, data }: { where: Partial<Head>; data: Partial<Head> }) => {
 			const matches = Object.entries(where).every(([key, value]) => {
 				const stored = head[key as keyof Head];

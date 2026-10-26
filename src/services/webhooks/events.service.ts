@@ -6,6 +6,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { transactionLayerToForceLayerApi } from '@/utils/logic/force-layer';
+import { findHydraHeadPaymentSourceId } from './hydra-source';
 
 type PaymentWebhookEvent = 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_ERROR';
 type PurchaseWebhookEvent = 'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR';
@@ -21,6 +22,20 @@ type HydraHeadPostTxFailedWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_PO
 type HydraHeadContestMissingWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_CONTEST_MISSING'>;
 type PaymentWebhookQueryClient = Pick<Prisma.TransactionClient, 'paymentRequest'>;
 type PurchaseWebhookQueryClient = Pick<Prisma.TransactionClient, 'purchaseRequest'>;
+
+async function getHydraHeadPaymentSourceId(
+	hydraHeadId: string,
+	client: Pick<Prisma.TransactionClient, 'hydraHead'> = prisma,
+	hydraLocalParticipantId?: string,
+): Promise<string> {
+	const paymentSourceId = await findHydraHeadPaymentSourceId(hydraHeadId, client, hydraLocalParticipantId);
+	if (paymentSourceId === null) {
+		// Never queue a Hydra event without a verified source: an undefined selector
+		// would deliver it to endpoints registered for every payment source.
+		throw new Error(`Hydra head ${hydraHeadId} has no matching payment source for its webhook`);
+	}
+	return paymentSourceId;
+}
 
 const publicWebhookTransactionSelect = {
 	id: true,
@@ -398,11 +413,16 @@ class WebhookEventsService {
 
 	async triggerHydraHeadLowBalance(payload: HydraHeadLowBalanceWebhookData): Promise<void> {
 		try {
+			const paymentSourceId = await getHydraHeadPaymentSourceId(
+				payload.hydraHeadId,
+				prisma,
+				payload.hydraLocalParticipantId,
+			);
 			await webhookQueueService.queueWebhook(
 				WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
 				payload,
 				payload.hydraLocalParticipantId,
-				undefined,
+				paymentSourceId,
 			);
 		} catch (error) {
 			logger.error('Failed to trigger HYDRA_HEAD_LOW_BALANCE webhook', {
@@ -417,12 +437,13 @@ class WebhookEventsService {
 		tx: Prisma.TransactionClient,
 		payload: HydraHeadLowBalanceWebhookData,
 	): Promise<void> {
+		const paymentSourceId = await getHydraHeadPaymentSourceId(payload.hydraHeadId, tx, payload.hydraLocalParticipantId);
 		await webhookQueueService.queueWebhookInTransaction(
 			tx,
 			WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
 			payload,
 			payload.hydraLocalParticipantId,
-			undefined,
+			paymentSourceId,
 		);
 	}
 
@@ -430,22 +451,24 @@ class WebhookEventsService {
 		tx: Prisma.TransactionClient,
 		payload: HydraHeadSnapshotRoundStuckWebhookData,
 	): Promise<void> {
+		const paymentSourceId = await getHydraHeadPaymentSourceId(payload.hydraHeadId, tx);
 		await webhookQueueService.queueWebhookInTransaction(
 			tx,
 			WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK,
 			payload,
 			payload.hydraHeadId,
-			undefined,
+			paymentSourceId,
 		);
 	}
 
 	async triggerHydraHeadPostTxFailed(payload: HydraHeadPostTxFailedWebhookData): Promise<void> {
 		try {
+			const paymentSourceId = await getHydraHeadPaymentSourceId(payload.hydraHeadId);
 			await webhookQueueService.queueWebhook(
 				WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
 				payload,
 				payload.hydraHeadId,
-				undefined,
+				paymentSourceId,
 			);
 		} catch (error) {
 			logger.error('Failed to trigger HYDRA_HEAD_POST_TX_FAILED webhook', {
@@ -459,12 +482,13 @@ class WebhookEventsService {
 		tx: Prisma.TransactionClient,
 		payload: HydraHeadContestMissingWebhookData,
 	): Promise<void> {
+		const paymentSourceId = await getHydraHeadPaymentSourceId(payload.hydraHeadId, tx);
 		await webhookQueueService.queueWebhookInTransaction(
 			tx,
 			WebhookEventType.HYDRA_HEAD_CONTEST_MISSING,
 			payload,
 			payload.hydraHeadId,
-			undefined,
+			paymentSourceId,
 		);
 	}
 }
