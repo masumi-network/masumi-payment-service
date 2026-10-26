@@ -236,8 +236,8 @@ type ScriptValueOutput = {
  */
 export type ExtractedTransactionEntry = {
 	redeemerVersion: number;
-	// Position of this redeemer's input in the canonically-sorted tx body
-	// inputs list. Mesh-sdk and the ledger both index `RedeemerTag::Spend`
+	// Position of this redeemer's input in the ledger-sorted input set.
+	// Mesh-sdk and the ledger both index `RedeemerTag::Spend`
 	// against this sort, NOT against off-chain `.txIn()` call order. We store
 	// it so downstream code (e.g. fee allocation by ex_units) can correlate.
 	redeemerIndex: number;
@@ -329,21 +329,25 @@ export function extractOnChainTransactionData(
 			? decodeV2ContractDatum(datum, datumNetwork, paymentContract.smartContractAddress)
 			: decodeV1ContractDatum(datum, datumNetwork);
 
-	// Build a map from "canonical sorted tx body input index" → ScriptValueInput.
-	// Cardano serializes inputs as a sorted set keyed by (tx_id, output_index)
-	// before computing the script_data_hash, and the ledger's Redeemer.index
-	// for `Spend` references THAT sorted position — NOT the order in which
-	// inputs were added off-chain. We use the parsed Transaction body's input
-	// list (which IS the canonical sorted set) as the index reference.
+	// Build a map from ledger-sorted input index to ScriptValueInput. Parsed
+	// CBOR can preserve a different order, while Spend pointers use the input
+	// set sorted by transaction hash bytes and then output index.
 	const bodyInputs = tx.transaction.body().inputs();
-	const scriptInputsByBodyIndex = new Map<number, ScriptValueInput>();
-	for (let i = 0; i < bodyInputs.len(); i++) {
-		const bodyInput = bodyInputs.get(i);
+	const canonicalInputs = Array.from({ length: bodyInputs.len() }, (_unused, index) => bodyInputs.get(index)).sort(
+		(a, b) => {
+			const firstHash = a.transaction_id().to_hex();
+			const secondHash = b.transaction_id().to_hex();
+			return firstHash === secondHash ? a.index() - b.index() : firstHash < secondHash ? -1 : 1;
+		},
+	);
+	const scriptInputsBySpendIndex = new Map<number, ScriptValueInput>();
+	for (let i = 0; i < canonicalInputs.length; i++) {
+		const bodyInput = canonicalInputs[i];
 		const txHash = Buffer.from(bodyInput.transaction_id().to_bytes()).toString('hex');
 		const outputIndex = bodyInput.index();
 		const matched = valueInputs.find((vi) => vi.tx_hash === txHash && vi.output_index === outputIndex);
 		if (matched != null) {
-			scriptInputsByBodyIndex.set(i, matched);
+			scriptInputsBySpendIndex.set(i, matched);
 		}
 	}
 
@@ -369,7 +373,7 @@ export function extractOnChainTransactionData(
 		const redeemer = redeemers.get(i);
 		if (redeemer.tag().kind() !== RedeemerTagKind.Spend) continue;
 		const redeemerIndex = Number(redeemer.index().to_str());
-		const valueInput = scriptInputsByBodyIndex.get(redeemerIndex);
+		const valueInput = scriptInputsBySpendIndex.get(redeemerIndex);
 		if (valueInput == null) continue;
 
 		const decodedInputDatum: unknown = deserializeDatum(valueInput.inline_datum as string);

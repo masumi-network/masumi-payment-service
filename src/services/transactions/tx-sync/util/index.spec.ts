@@ -1,9 +1,127 @@
-import { OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import {
+	BigNum,
+	Credential,
+	EnterpriseAddress,
+	ExUnits,
+	PlutusData,
+	Redeemer,
+	RedeemerTag,
+	Redeemers,
+	ScriptHash,
+	Transaction,
+	TransactionBody,
+	TransactionHash,
+	TransactionInput,
+	TransactionInputs,
+	TransactionOutputs,
+	TransactionWitnessSet,
+} from '@emurgo/cardano-serialization-lib-nodejs';
+import { Constr, Data } from 'lucid-cardano';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import { checkPaymentAmountsMatch, getCardanoFeesBuyer, getCardanoFeesSeller, redeemerToOnChainState } from './index';
+import {
+	checkPaymentAmountsMatch,
+	extractOnChainTransactionData,
+	getCardanoFeesBuyer,
+	getCardanoFeesSeller,
+	redeemerToOnChainState,
+} from './index';
 
 const V1 = PaymentSourceType.Web3CardanoV1;
 const V2 = PaymentSourceType.Web3CardanoV2;
+
+it('pairs a Spend redeemer with the ledger-sorted input when CBOR inputs are unsorted', () => {
+	const contractAddress = EnterpriseAddress.new(0, Credential.from_scripthash(ScriptHash.from_hex('11'.repeat(28))))
+		.to_address()
+		.to_bech32();
+	const principal = (byte: string) => new Constr(0, [new Constr(0, [byte.repeat(28)]), new Constr(1, [])]);
+	const datum = Data.to(
+		new Constr(0, [
+			principal('aa'),
+			principal('bb'),
+			'01'.repeat(16),
+			'02'.repeat(16),
+			'03'.repeat(32),
+			'04'.repeat(16),
+			0n,
+			'',
+			'',
+			1n,
+			2n,
+			3n,
+			4n,
+			0n,
+			0n,
+			new Constr(0, []),
+		]),
+	);
+	const contractInputHash = 'ff'.repeat(32);
+	const walletInputHash = '00'.repeat(32);
+	const inputs = TransactionInputs.new();
+	inputs.add(TransactionInput.new(TransactionHash.from_hex(contractInputHash), 0));
+	inputs.add(TransactionInput.new(TransactionHash.from_hex(walletInputHash), 0));
+	const body = TransactionBody.new(inputs, TransactionOutputs.new(), BigNum.from_str('200000'));
+	const redeemers = Redeemers.new();
+	redeemers.add(
+		Redeemer.new(
+			RedeemerTag.new_spend(),
+			BigNum.from_str('1'),
+			PlutusData.from_hex(Data.to(new Constr(1, []))),
+			ExUnits.new(BigNum.from_str('1'), BigNum.from_str('1')),
+		),
+	);
+	const witnesses = TransactionWitnessSet.new();
+	witnesses.set_redeemers(redeemers);
+	const transaction = Transaction.new(body, witnesses);
+	const indexedInput = {
+		address: contractAddress,
+		amount: [{ unit: 'lovelace', quantity: '2000000' }],
+		tx_hash: contractInputHash,
+		output_index: 0,
+		data_hash: null,
+		inline_datum: datum,
+		reference_script_hash: null,
+		collateral: false,
+	};
+	const indexedOutput = {
+		address: contractAddress,
+		amount: indexedInput.amount,
+		output_index: 0,
+		data_hash: null,
+		inline_datum: datum,
+		collateral: false,
+		reference_script_hash: null,
+	};
+	const result = extractOnChainTransactionData(
+		{
+			blockTime: 0,
+			tx: { tx_hash: 'aa'.repeat(32) },
+			block: { confirmations: 1 },
+			metadata: {
+				fees: 200_000n,
+				block_height: 0,
+				block_time: 0,
+				output_amount: [],
+				utxo_count: 2,
+				withdrawal_count: 0,
+				asset_mint_or_burn_count: 0,
+				redeemer_count: 1,
+				valid_contract: true,
+			},
+			utxos: { hash: 'aa'.repeat(32), inputs: [indexedInput], outputs: [indexedOutput] },
+			transaction,
+		},
+		{ smartContractAddress: contractAddress, network: Network.Preprod, paymentSourceType: V1 },
+	);
+
+	expect(transaction.body().inputs().get(0).transaction_id().to_hex()).toBe(contractInputHash);
+	expect(result.type).toBe('Transaction');
+	if (result.type === 'Transaction') {
+		expect(result.entries).toEqual([
+			expect.objectContaining({ redeemerIndex: 1, redeemerVersion: 1, valueInput: indexedInput }),
+		]);
+	}
+});
 
 describe('getCardanoFeesSeller', () => {
 	// Redeemer alts mirror the Aiken `Action` enum in both
