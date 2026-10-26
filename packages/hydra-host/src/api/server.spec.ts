@@ -440,17 +440,15 @@ describe('lifecycle guards over HTTP', () => {
 		return created.nodeId;
 	};
 
-	/** Point a running node record at a fake node that answers its Nth call after `delaysMs[N]`. */
+	/** Point a running node record at a fake node that answers each API path after its delay, naming the path. */
 	const withSlowNode = async (
 		idempotencyKey: string,
-		delaysMs: number[],
+		delaysMs: Record<string, number>,
 		run: (nodeId: string) => Promise<void>,
 	): Promise<void> => {
-		let calls = 0;
-		const slowNode = createServer((_request, response) => {
-			const answer = calls + 1;
-			setTimeout(() => response.end(`{"answer":${answer}}`), delaysMs[calls] ?? 0);
-			calls = answer;
+		const slowNode = createServer((request, response) => {
+			const { pathname } = new URL(request.url ?? '/', 'http://node');
+			setTimeout(() => response.end(JSON.stringify({ answered: pathname })), delaysMs[pathname] ?? 0);
 		});
 		await new Promise<void>((resolve) => slowNode.listen(0, '127.0.0.1', resolve));
 		try {
@@ -487,43 +485,43 @@ describe('lifecycle guards over HTTP', () => {
 			socket.on('close', () => resolve({ text, closedAfterMs: Date.now() - startedAt }));
 		});
 
-	const proxiedHead = (nodeId: string): string =>
-		`GET /v1/nodes/${nodeId}/api/head HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${ADMIN}\r\n\r\n`;
+	const proxiedGet = (nodeId: string, path: string): string =>
+		`GET /v1/nodes/${nodeId}/api${path} HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${ADMIN}\r\n\r\n`;
 
 	// A node may take longer to answer than the idle timeout allows a caller
 	// who sends nothing. An authenticated proxy request waits for it.
 	it('lets a proxied request outlast the idle timeout while the node answers', async () => {
-		await withSlowNode('idem-slow-node', [400], async (nodeId) => {
+		await withSlowNode('idem-slow-node', { '/head': 400 }, async (nodeId) => {
 			server.timeout = 200;
 
 			const answered = await call('GET', `/v1/nodes/${nodeId}/api/head`, { token: ADMIN });
 
 			expect(answered.status).toBe(200);
-			expect(await answered.text()).toBe('{"answer":1}');
+			expect(await answered.text()).toBe('{"answered":"/head"}');
 		});
 	});
 
 	it('answers a proxied request pipelined behind another one past the idle timeout', async () => {
-		await withSlowNode('idem-pipelined', [300, 900], async (nodeId) => {
+		await withSlowNode('idem-pipelined', { '/head': 300, '/snapshot': 900 }, async (nodeId) => {
 			server.timeout = 200;
 
-			const { text } = await rawExchange(proxiedHead(nodeId).repeat(2), (received) =>
-				received.includes('{"answer":2}'),
-			);
+			const bothAnswered = (received: string) =>
+				received.includes('{"answered":"/head"}') && received.includes('{"answered":"/snapshot"}');
 
-			expect(text).toContain('{"answer":1}');
-			expect(text).toContain('{"answer":2}');
+			const { text } = await rawExchange(proxiedGet(nodeId, '/head') + proxiedGet(nodeId, '/snapshot'), bothAnswered);
+
+			expect(bothAnswered(text)).toBe(true);
 		});
 	});
 
 	it('closes an idle keep-alive socket on the keep-alive timeout after a proxied answer', async () => {
-		await withSlowNode('idem-keep-alive', [0], async (nodeId) => {
+		await withSlowNode('idem-keep-alive', {}, async (nodeId) => {
 			server.keepAliveTimeout = 100;
 			server.timeout = 5_000;
 
-			const { text, closedAfterMs } = await rawExchange(proxiedHead(nodeId));
+			const { text, closedAfterMs } = await rawExchange(proxiedGet(nodeId, '/head'));
 
-			expect(text).toContain('{"answer":1}');
+			expect(text).toContain('{"answered":"/head"}');
 			// Node adds a one-second buffer to the keep-alive timeout.
 			expect(closedAfterMs).toBeLessThan(3_000);
 		});
