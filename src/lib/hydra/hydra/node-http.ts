@@ -14,6 +14,9 @@ import { HydraHttpResponseError, handleHttpResponse } from './node-http-response
 import { MAX_HYDRA_WS_FRAME_BYTES } from './schemas';
 import { fetchHydraHost } from '@/services/hydra-host/transport';
 
+const PRE_DISPATCH_ERROR_HEADER = 'x-hydra-host-proxy-error';
+const NODE_NOT_CONNECTED = 'node-not-connected';
+
 export class HydraHttpClient {
 	private readonly _httpUrl: string;
 	private readonly _authHeaders: Record<string, string>;
@@ -77,6 +80,13 @@ export class HydraHttpClient {
 				return (await handleHttpResponse(response)) as T;
 			} catch (error) {
 				if (error instanceof HydraHttpResponseError) {
+					if (
+						this._guardHostDestination &&
+						error.status === 502 &&
+						response.headers.get(PRE_DISPATCH_ERROR_HEADER) === NODE_NOT_CONNECTED
+					) {
+						throw new HydraTransportError('Hydra Host could not connect to the node before dispatch', { cause: error });
+					}
 					if (method === 'GET' || error.status < 500) throw error;
 					throw new HydraTransportAmbiguousError(
 						`Hydra HTTP POST outcome is ambiguous after a ${error.status} response`,
@@ -93,6 +103,7 @@ export class HydraHttpClient {
 			if (
 				error instanceof HydraHttpResponseError ||
 				error instanceof HydraTransportAmbiguousError ||
+				error instanceof HydraTransportError ||
 				error instanceof HydraProtocolError
 			) {
 				throw error;

@@ -131,11 +131,10 @@ export const listTopupsOutput = z.object({
 			 */
 			absorbBy: z.string().nullable(),
 			/**
-			 * When the node was asked to send this deposit back.
+			 * When a recovery request was sent or may have reached the node.
 			 *
-			 * Set, the deposit is on its way to the wallet and there is nothing left
-			 * to press. Read from the record rather than remembered by the page, so
-			 * a reload does not offer the button again.
+			 * This timestamp is not proof that the node posted a transaction. A reload
+			 * keeps the button hidden until the outcome is checked against L1.
 			 */
 			recoveryRequestedAt: z.string().nullable(),
 		}),
@@ -148,7 +147,7 @@ export const recoverTopupInput = z.object({
 
 export const recoverTopupOutput = z.object({
 	depositTxHash: z.string().nullable(),
-	requested: z.boolean(),
+	requested: z.boolean().describe('True when recovery was requested or its dispatch outcome is unknown'),
 	reason: z.string().nullable(),
 });
 

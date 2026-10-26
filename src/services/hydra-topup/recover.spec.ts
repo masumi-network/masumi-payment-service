@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import { HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -96,6 +97,25 @@ describe('recoverHydraDeposit', () => {
 	it('asks the node to recover a settled deposit', async () => {
 		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({ requested: true });
 		expect(mockNodeDelete).toHaveBeenCalledWith(`/commits/${'aa'.repeat(32)}`);
+	});
+
+	it('keeps recovery available when the Host could not connect to the node', async () => {
+		mockNodeDelete.mockRejectedValue(new HydraTransportError('node was not connected'));
+
+		await expect(recoverHydraDeposit('topup-1')).resolves.toMatchObject({
+			requested: false,
+			reason: expect.stringContaining('try again'),
+		});
+		expect(mockTopupUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('records an ambiguous attempt without claiming it was posted', async () => {
+		mockNodeDelete.mockRejectedValue(new HydraTransportAmbiguousError('no authenticated answer'));
+
+		const result = await recoverHydraDeposit('topup-1');
+		expect(result).toMatchObject({ requested: true, reason: expect.stringContaining('unknown') });
+		expect(result.reason).not.toMatch(/posted/i);
+		expect(mockTopupUpdateMany).toHaveBeenCalledTimes(1);
 	});
 
 	// A recovery is a new L1 transaction from the node.

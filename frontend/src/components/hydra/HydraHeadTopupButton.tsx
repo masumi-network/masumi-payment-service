@@ -155,10 +155,11 @@ function HydraTopupList({
     try {
       const result = await recoverHydraTopup(apiClient, { topupId });
       await resync('hydra', 'wallets');
-      toast[result.requested ? 'success' : 'info'](
-        result.requested
-          ? 'Recovery posted. Funds return once it confirms.'
-          : (result.reason ?? 'Nothing to recover'),
+      toast[result.requested && result.reason === null ? 'success' : 'info'](
+        result.reason ??
+          (result.requested
+            ? 'Recovery requested. Check L1 for confirmation.'
+            : 'Nothing to recover'),
       );
       await refetch();
     } catch (error) {
@@ -338,8 +339,8 @@ function HydraTopupList({
                   isRecoverable &&
                   (topup.recoveryRequestedAt != null ? (
                     <span className="text-xs text-muted-foreground">
-                      Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}.
-                      Waiting for it on chain.
+                      Recovery attempted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}.
+                      Check the wallet and L1 before any retry.
                     </span>
                   ) : (
                     <Button

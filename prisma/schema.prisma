@@ -1703,8 +1703,9 @@ enum HydraTopupStatus {
   Absorbed
   /// The deposit was spent back to the wallet and the funds have arrived.
   ///
-  /// Distinct from asking for a recovery: `recoveryRequestedAt` records the
-  /// request, and this records the outcome. Without it a recovered deposit read
+  /// Distinct from asking for a recovery: `recoveryRequestedAt` records an
+  /// attempt, including one whose dispatch outcome is unknown. This status
+  /// records the confirmed outcome. Without it a recovered deposit read
   /// as "Submitted" forever, because the status describes what the head did
   /// with the deposit and the head never did anything — leaving an operator no
   /// way to tell posted-and-pending from home-and-safe.
@@ -1955,7 +1956,7 @@ model HydraTopup {
 
   status HydraTopupStatus @default(Pending)
 
-  /// When the node was asked to spend this deposit back to the wallet.
+  /// When a recovery request was sent or may have reached the node.
   ///
   /// Recovery leaves no other trace: the deposit keeps its status, because what
   /// it records is what the head did with it, and the head did nothing. Without
@@ -1963,8 +1964,8 @@ model HydraTopup {
   /// second press — which is why it is recorded rather than left to the client
   /// to remember for as long as the page is open.
   ///
-  /// Requested, not completed: the node builds and posts the transaction after
-  /// answering, so the funds arrive later and this only says it was asked.
+  /// Attempted, not completed: a lost response may leave dispatch unknown, and
+  /// even an accepted request needs independent L1 evidence of a posted spend.
   recoveryRequestedAt DateTime?
 
   @@index([hydraLocalParticipantId, status])

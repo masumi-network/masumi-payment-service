@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { HydraHttpClient } from './node-http';
 import { CustomHydraHead } from './custom-head';
+import { HydraTransportAmbiguousError, HydraTransportError } from './errors';
 
 const previousTrustedHosts = process.env.HYDRA_TRUSTED_PRIVATE_HOSTS;
 const servers: Server[] = [];
@@ -24,7 +25,41 @@ async function startNode(): Promise<{ url: string; hits: () => number }> {
 	return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, hits: () => hits };
 }
 
+async function startErrorHost(marker: boolean): Promise<string> {
+	const server = createServer((_request, reply) => {
+		reply.writeHead(502, marker ? { 'X-Hydra-Host-Proxy-Error': 'node-not-connected' } : {});
+		reply.end('{"error":"node is not reachable"}');
+	});
+	servers.push(server);
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
 describe('Host-backed Hydra HTTP destinations', () => {
+	it('treats a Host-marked refused connection as a definite non-dispatch', async () => {
+		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
+		const httpUrl = await startErrorHost(true);
+		const client = new HydraHttpClient({ httpUrl, authHeaders: {}, timeoutMs: 1000, guardHostDestination: true });
+
+		await expect(client.delete(`/commits/${'a'.repeat(64)}`)).rejects.toBeInstanceOf(HydraTransportError);
+	});
+
+	it('keeps an unmarked 502 and a standalone marker ambiguous', async () => {
+		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
+		const unmarkedUrl = await startErrorHost(false);
+		const markedUrl = await startErrorHost(true);
+		const guarded = new HydraHttpClient({
+			httpUrl: unmarkedUrl,
+			authHeaders: {},
+			timeoutMs: 1000,
+			guardHostDestination: true,
+		});
+		const standalone = new HydraHttpClient({ httpUrl: markedUrl, authHeaders: {}, timeoutMs: 1000 });
+
+		await expect(guarded.delete(`/commits/${'a'.repeat(64)}`)).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+		await expect(standalone.delete(`/commits/${'a'.repeat(64)}`)).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+	});
+
 	it('checks the Host policy on each request without changing standalone local clients', async () => {
 		const node = await startNode();
 		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';

@@ -20,7 +20,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { HYDRA_HEAD_STATUS_RANK } from '@/services/hydra-connection-manager/head-status-rank';
-import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
+import { HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { fetchHydraAcknowledgedDeposits, type HydraAcknowledgedDeposit } from '@/lib/hydra/hydra/node-control-queries';
 import { assertHydraHeadHostNotPaused, assertHydraHeadHostNotStopping } from '@/services/hydra-host/pause';
@@ -28,7 +28,7 @@ import { assertHydraHeadHostNotPaused, assertHydraHeadHostNotStopping } from '@/
 export type DepositRecovery = {
 	/** Null while the top-up is still being prepared and has no deposit yet. */
 	depositTxHash: string | null;
-	/** Null when nothing was posted, with `reason` saying why. */
+	/** True when the node was asked or the dispatch outcome is unknown. */
 	requested: boolean;
 	reason: string | null;
 };
@@ -123,17 +123,27 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	try {
 		await node.delete(`/commits/${topup.depositTxHash}`);
 	} catch (error) {
+		if (error instanceof HydraTransportError) {
+			logger.warn(`hydra: recovery of deposit ${topup.depositTxHash} did not reach the node`);
+			return {
+				depositTxHash: topup.depositTxHash,
+				requested: false,
+				reason:
+					'the Host could not connect to the node, so recovery was not requested. Check the connection and try again',
+			};
+		}
 		// Building and submitting the recover transaction takes longer than the
 		// HTTP client waits, so a lost response is the normal case rather than a
-		// refusal: the node posts it anyway. Reported as requested, because that
-		// is what happened, with the caller told where to look.
+		// refusal. Keep the attempt timestamp to prevent a blind second request,
+		// but do not claim that the node posted a transaction.
 		if (error instanceof HydraTransportAmbiguousError) {
-			logger.info(`hydra: recovery of deposit ${topup.depositTxHash} was requested; the node did not answer in time`);
+			logger.info(`hydra: recovery outcome for deposit ${topup.depositTxHash} is unknown; the node did not answer`);
 			await markRecoveryRequested(topup.id);
 			return {
 				depositTxHash: topup.depositTxHash,
 				requested: true,
-				reason: 'the node took longer than the request window to answer. The recovery is posted; watch the wallet',
+				reason:
+					'the node did not confirm the request. The recovery outcome is unknown; check the wallet and L1 before retrying',
 			};
 		}
 		// A genuine refusal. Before the deadline this is what stops a recovery
@@ -232,8 +242,8 @@ async function markRecoveryRequested(topupId: string): Promise<void> {
 			data: { recoveryRequestedAt: new Date() },
 		});
 	} catch (error) {
-		// The recovery is already posted; failing to note it must not turn a
-		// successful request into an error the caller retries.
+		// The request may already have reached the node. Failing to note it must
+		// not turn the attempt into an error that invites a blind retry.
 		logger.warn(`hydra: could not record the recovery request for ${topupId}`, { error });
 	}
 }
