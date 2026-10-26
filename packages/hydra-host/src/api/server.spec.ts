@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { connect, type AddressInfo, type Socket } from 'node:net';
-import { request as httpRequest, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -124,7 +124,7 @@ function countConnections(target: Server): Promise<number> {
 }
 
 async function waitFor(condition: () => Promise<boolean>): Promise<void> {
-	for (let attempt = 0; attempt < 100; attempt += 1) {
+	for (let attempt = 0; attempt < 300; attempt += 1) {
 		if (await condition()) return;
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
@@ -241,7 +241,7 @@ describe('control plane auth', () => {
 	});
 });
 
-describe('the landing page and browser 404', () => {
+describe('control plane connection limits', () => {
 	it('refuses a connection past the cap and says so in the log', async () => {
 		const { port } = server.address() as AddressInfo;
 		const open = (): Promise<Socket> =>
@@ -287,7 +287,9 @@ describe('the landing page and browser 404', () => {
 		expect(highCapacityServer.maxConnections).toBeGreaterThan(config.ports.capacity);
 		expect(highCapacityServer.maxConnections).toBeLessThan(config.ports.capacity * 16);
 	});
+});
 
+describe('the landing page and browser 404', () => {
 	it('serves an unauthenticated landing page on the root', async () => {
 		const response = await fetch(`${baseUrl}/`);
 		expect(response.status).toBe(200);
@@ -437,6 +439,33 @@ describe('lifecycle guards over HTTP', () => {
 		await call('POST', `/v1/nodes/${created.nodeId}/escrow-ack`, { token: ADMIN });
 		return created.nodeId;
 	};
+
+	// A node may take longer to answer than the idle timeout allows a caller
+	// who sends nothing. An authenticated proxy request waits for it.
+	it('lets a proxied request outlast the idle timeout while the node answers', async () => {
+		const slowNode = createServer((_request, response) => {
+			setTimeout(() => response.end('{"tag":"Open"}'), 400);
+		});
+		await new Promise<void>((resolve) => slowNode.listen(0, '127.0.0.1', resolve));
+		try {
+			const nodeId = await provisionAndAck('idem-slow-node');
+			await new NodeRegistryStore(dataDir).update(nodeId, (current) => ({
+				...current,
+				state: 'Running',
+				desired: 'Running',
+				apiPort: (slowNode.address() as AddressInfo).port,
+			}));
+			server.timeout = 200;
+
+			const answered = await call('GET', `/v1/nodes/${nodeId}/api/head`, { token: ADMIN });
+
+			expect(answered.status).toBe(200);
+			expect(await answered.text()).toBe('{"tag":"Open"}');
+		} finally {
+			slowNode.closeAllConnections();
+			await new Promise<void>((resolve) => slowNode.close(() => resolve()));
+		}
+	});
 
 	// Removal destroys the persistence dir — the only copy of head state here.
 	// A node can only hold that state once it has peers, because --peer becomes

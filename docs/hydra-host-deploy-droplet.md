@@ -666,7 +666,7 @@ greater of 256 and eight times `HYDRA_HOST_PEER_PORT_COUNT`. The default 32
 Head slots get 256 sockets. A Host configured for more Heads gets a larger
 finite cap. This formula is a guard, not a measured capacity claim. When the
 cap refuses a connection, the Host logs `control plane is at its N-connection
-cap`, at most once a minute. VERIFIED (`packages/hydra-host/src/api/proxy.ts`):
+cap`, at once and then at most once a minute while drops continue. VERIFIED (`packages/hydra-host/src/api/proxy.ts`):
 the node proxy streams HTTP bodies and tunnels WebSocket frames. Only an
 authenticated caller reaches it. The Host does not bound request rate, proxy byte
 volume, or WebSocket message size.
@@ -675,7 +675,10 @@ The Control Plane ingress must enforce these limits before forwarding to port
 `8443`:
 
 - **Connections:** Set a total cap below the Host's capacity-derived socket
-  cap and a per-source cap. Count WebSocket upgrades for the life of each
+  cap and a per-source cap. Without a per-source cap, one client that keeps
+  opening connections can fill the Host cap, and the Host then drops new
+  service calls and WebSocket reconnects. Alert on the Host's
+  `connection cap` warning. Count WebSocket upgrades for the life of each
   session. Leave room for one live session per Head and normal control
   requests. Check OS file descriptor and memory limits at the chosen cap.
 - **HTTP rate:** Set per-source and total request budgets with a short burst

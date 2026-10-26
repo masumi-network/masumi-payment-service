@@ -23,19 +23,29 @@ export function applyControlPlaneLimits(server: Server, headCapacity: number, wa
 	server.timeout = CONTROL_IDLE_TIMEOUT_MS;
 	server.maxConnections = Math.max(MIN_CONTROL_CONNECTIONS, headCapacity * CONTROL_CONNECTIONS_PER_HEAD);
 
-	// Node drops a connection over the cap without a word. Say so, at most once
-	// a minute, so a flood or an undersized cap shows in the logs.
+	// Node drops a connection over the cap without a word. Say so at once, then
+	// at most once a minute while drops continue, so a flood or an undersized
+	// cap shows in the logs with every drop counted.
 	let droppedSinceWarning = 0;
-	let lastWarnedAt = Number.NEGATIVE_INFINITY;
-	server.on('drop', () => {
-		droppedSinceWarning += 1;
-		const now = Date.now();
-		if (now - lastWarnedAt < DROP_WARNING_INTERVAL_MS) return;
+	let warningTimer: NodeJS.Timeout | null = null;
+	const reportDrops = (): void => {
+		if (droppedSinceWarning === 0) {
+			warningTimer = null;
+			return;
+		}
 		warn(
 			`[api] control plane is at its ${server.maxConnections}-connection cap; ` +
 				`dropped ${droppedSinceWarning} connection(s) since the last warning`,
 		);
-		lastWarnedAt = now;
 		droppedSinceWarning = 0;
+		warningTimer = setTimeout(reportDrops, DROP_WARNING_INTERVAL_MS);
+		warningTimer.unref();
+	};
+	server.on('drop', () => {
+		droppedSinceWarning += 1;
+		if (warningTimer === null) reportDrops();
+	});
+	server.on('close', () => {
+		if (warningTimer !== null) clearTimeout(warningTimer);
 	});
 }
