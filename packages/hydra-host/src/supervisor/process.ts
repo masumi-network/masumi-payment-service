@@ -62,7 +62,7 @@ export function nodeEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.Pr
 }
 
 export type StopResult = {
-	/** True when the process exited on SIGTERM; false when it had to be killed. */
+	/** True for confirmed graceful exit; false for forced or unconfirmed stops. */
 	graceful: boolean;
 	/**
 	 * Whether the process is actually gone.
@@ -74,6 +74,8 @@ export type StopResult = {
 	 * conflating the two removes the files of a node that is still writing them.
 	 */
 	stopped: boolean;
+	/** Why termination could not be established; never authorizes cleanup. */
+	failureReason?: string;
 	exitCode: number | null;
 	signal: NodeJS.Signals | null;
 };
@@ -119,7 +121,7 @@ export function isProcessAlive(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === 'EPERM';
+		return (error as NodeJS.ErrnoException).code !== 'ESRCH';
 	}
 }
 
@@ -142,13 +144,20 @@ export function isProcessAlive(pid: number): boolean {
  * node's own directory, which appears in its argv as `--persistence-dir` and is
  * unique per node, has to be there too.
  */
-export async function isProcessRunningNode(pid: number, binary: string, nodeDir: string): Promise<boolean> {
+async function inspectNodeProcess(
+	pid: number,
+	binary: string,
+	nodeDir: string,
+): Promise<'matching' | 'different' | 'unknown'> {
 	const needle = path.basename(binary);
-	if (needle.length === 0 || nodeDir.length === 0) {
-		return false;
-	}
+	if (needle.length === 0 || nodeDir.length === 0) return 'unknown';
 	const command = await readProcessCommand(pid);
-	return command !== null && command.includes(needle) && command.includes(nodeDir);
+	if (command === null || command.trim().length === 0) return 'unknown';
+	return command.includes(needle) && command.includes(nodeDir) ? 'matching' : 'different';
+}
+
+export async function isProcessRunningNode(pid: number, binary: string, nodeDir: string): Promise<boolean> {
+	return (await inspectNodeProcess(pid, binary, nodeDir)) === 'matching';
 }
 
 /**
@@ -172,7 +181,7 @@ async function readProcessCommand(pid: number): Promise<string | null> {
 		execFile('ps', ['-p', String(pid), '-o', 'command='], { timeout: 5_000 }, (error, stdout) => {
 			resolve(error === null ? stdout : null);
 		});
-	});
+	}).catch(() => null);
 }
 
 /**
@@ -248,7 +257,7 @@ export class NodeProcessManager {
 		if (entry.child === undefined) {
 			return entry.pid !== undefined && isProcessAlive(entry.pid);
 		}
-		return entry.child.exitCode === null && !entry.child.killed;
+		return entry.child.exitCode === null && entry.child.signalCode === null;
 	}
 
 	/**
@@ -269,7 +278,7 @@ export class NodeProcessManager {
 			if (entry.child !== undefined || entry.identity === undefined || entry.pid === undefined) continue;
 			if (
 				isProcessAlive(entry.pid) &&
-				(await isProcessRunningNode(entry.pid, entry.identity.binary, entry.identity.nodeDir))
+				(await inspectNodeProcess(entry.pid, entry.identity.binary, entry.identity.nodeDir)) !== 'different'
 			) {
 				continue;
 			}
@@ -290,15 +299,16 @@ export class NodeProcessManager {
 	/**
 	 * Take responsibility for a hydra-node this host did not spawn.
 	 *
-	 * Returns false when the pid is dead or is not running this node's own
-	 * `binary` out of `nodeDir`, in which case nothing is registered and the
-	 * caller is no worse off than before.
+	 * Returns false only when the pid is gone or identifies a different node.
+	 * A live pid with unreadable identity stays registered conservatively: it
+	 * blocks replacement and cleanup, while stop still refuses to signal until
+	 * the expected identity can be checked.
 	 */
 	async adopt(nodeId: string, pid: number, binary: string, nodeDir: string): Promise<boolean> {
 		if (this.isRunning(nodeId)) {
 			return false;
 		}
-		if (!isProcessAlive(pid) || !(await isProcessRunningNode(pid, binary, nodeDir))) {
+		if (!isProcessAlive(pid) || (await inspectNodeProcess(pid, binary, nodeDir)) === 'different') {
 			return false;
 		}
 		this.running.set(nodeId, { nodeId, pid, startedAtMs: Date.now(), identity: { binary, nodeDir } });
@@ -347,7 +357,10 @@ export class NodeProcessManager {
 		child.once('exit', complete);
 		// spawn errors (notably ENOENT/EACCES) emit `error`; without a listener
 		// EventEmitter throws and terminates the Host.
-		child.once('error', () => complete(null, null));
+		child.on('error', () => {
+			// Spawn failure has no pid. A later signal error does not mean the child exited.
+			if (child.pid === undefined) complete(null, null);
+		});
 
 		return entry;
 	}
@@ -366,36 +379,72 @@ export class NodeProcessManager {
 		}
 
 		const child = entry.child;
+		let onExit!: (code: number | null, signal: NodeJS.Signals | null) => void;
+		let onError!: (error: NodeJS.ErrnoException) => void;
+		const timers: Array<ReturnType<typeof setTimeout>> = [];
 		const exited = new Promise<StopResult>((resolve) => {
-			const settle = (code: number | null, signal: NodeJS.Signals | null): void =>
-				resolve({ graceful: signal !== 'SIGKILL', stopped: true, exitCode: code, signal });
-			child.once('exit', settle);
-			child.once('error', () => settle(null, null));
+			onExit = (code, signal) => resolve({ graceful: signal !== 'SIGKILL', stopped: true, exitCode: code, signal });
+			onError = (error) =>
+				resolve({
+					graceful: false,
+					stopped: child.pid === undefined || !isProcessAlive(child.pid),
+					exitCode: null,
+					signal: null,
+					failureReason: `could not signal process ${String(child.pid)} (${error.code ?? 'unknown error'}); its exit is unconfirmed`,
+				});
+			child.once('exit', onExit);
+			child.once('error', onError);
 		});
 		const after = (ms: number): Promise<null> =>
-			new Promise<null>((resolve) => {
+			new Promise((resolve) => {
 				const timer = setTimeout(() => resolve(null), ms);
 				timer.unref?.();
+				timers.push(timer);
 			});
+		try {
+			try {
+				child.kill('SIGTERM');
+			} catch (error) {
+				return {
+					graceful: false,
+					stopped: false,
+					exitCode: null,
+					signal: null,
+					failureReason: `could not send SIGTERM (${(error as NodeJS.ErrnoException).code ?? 'unknown error'}); process exit is unconfirmed`,
+				};
+			}
 
-		child.kill('SIGTERM');
+			const settled = await Promise.race([exited, after(graceMs)]);
+			if (settled !== null) {
+				return settled;
+			}
 
-		const settled = await Promise.race([exited, after(graceMs)]);
-		if (settled !== null) {
-			return settled;
+			try {
+				child.kill('SIGKILL');
+			} catch (error) {
+				return {
+					graceful: false,
+					stopped: false,
+					exitCode: null,
+					signal: null,
+					failureReason: `could not send SIGKILL (${(error as NodeJS.ErrnoException).code ?? 'unknown error'}); process exit is unconfirmed`,
+				};
+			}
+			// Bounded, like the adopted path beside it. Waiting on the exit event alone
+			// meant a process that does not die — a hydra-node wedged in an
+			// uninterruptible disk wait on the volume its event store lives on — never
+			// resolved this promise. `stop()` is awaited inside the reconcile tick, so
+			// the tick never finishes, its in-progress flag is never cleared, and the
+			// host stops reconciling every OTHER node too; `shutdown()` then never
+			// completes either. An unstoppable process is one node's problem, and it
+			// has to be reported as one.
+			const killed = await Promise.race([exited, after(SIGKILL_WAIT_MS)]);
+			return killed ?? { graceful: false, stopped: false, exitCode: null, signal: 'SIGKILL' };
+		} finally {
+			child.off('exit', onExit);
+			child.off('error', onError);
+			for (const timer of timers) clearTimeout(timer);
 		}
-
-		child.kill('SIGKILL');
-		// Bounded, like the adopted path beside it. Waiting on the exit event alone
-		// meant a process that does not die — a hydra-node wedged in an
-		// uninterruptible disk wait on the volume its event store lives on — never
-		// resolved this promise. `stop()` is awaited inside the reconcile tick, so
-		// the tick never finishes, its in-progress flag is never cleared, and the
-		// host stops reconciling every OTHER node too; `shutdown()` then never
-		// completes either. An unstoppable process is one node's problem, and it
-		// has to be reported as one.
-		const killed = await Promise.race([exited, after(SIGKILL_WAIT_MS)]);
-		return killed ?? { graceful: false, stopped: false, exitCode: null, signal: 'SIGKILL' };
 	}
 
 	/**
@@ -416,12 +465,20 @@ export class NodeProcessManager {
 		// its death goes unobserved and this entry outlives it; once the pid is
 		// reused the signal below would land on whatever inherited the number,
 		// which on this host is most likely a sibling node mid-round.
-		if (
-			entry.identity !== undefined &&
-			!(await isProcessRunningNode(pid, entry.identity.binary, entry.identity.nodeDir))
-		) {
-			this.running.delete(entry.nodeId);
-			return { graceful: true, stopped: true, exitCode: null, signal: null };
+		if (entry.identity !== undefined) {
+			const identity = await inspectNodeProcess(pid, entry.identity.binary, entry.identity.nodeDir);
+			if (identity === 'unknown')
+				return {
+					graceful: false,
+					stopped: false,
+					exitCode: null,
+					signal: null,
+					failureReason: `cannot verify process ${pid} identity; its files and ports remain in use`,
+				};
+			if (identity === 'different') {
+				this.running.delete(entry.nodeId);
+				return { graceful: true, stopped: true, exitCode: null, signal: null };
+			}
 		}
 
 		const waitForExit = async (budgetMs: number): Promise<boolean> => {
@@ -437,10 +494,18 @@ export class NodeProcessManager {
 
 		try {
 			process.kill(pid, 'SIGTERM');
-		} catch {
-			// Already gone between the liveness check and the signal.
-			this.running.delete(entry.nodeId);
-			return { graceful: true, stopped: true, exitCode: null, signal: null };
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+				this.running.delete(entry.nodeId);
+				return { graceful: true, stopped: true, exitCode: null, signal: null };
+			}
+			return {
+				graceful: false,
+				stopped: false,
+				exitCode: null,
+				signal: null,
+				failureReason: `could not send SIGTERM to pid ${pid} (${(error as NodeJS.ErrnoException).code ?? 'unknown error'}); its files and ports remain in use`,
+			};
 		}
 
 		if (await waitForExit(graceMs)) {
@@ -454,21 +519,36 @@ export class NodeProcessManager {
 		// the rest of that window, and `isProcessAlive` answers true for whatever
 		// then holds it — so the escalation could land on the neighbour the
 		// identity field exists to protect.
-		if (
-			entry.identity !== undefined &&
-			!(await isProcessRunningNode(pid, entry.identity.binary, entry.identity.nodeDir))
-		) {
-			this.running.delete(entry.nodeId);
-			return { graceful: true, stopped: true, exitCode: null, signal: 'SIGTERM' };
+		if (entry.identity !== undefined) {
+			const identity = await inspectNodeProcess(pid, entry.identity.binary, entry.identity.nodeDir);
+			if (identity === 'unknown')
+				return {
+					graceful: false,
+					stopped: false,
+					exitCode: null,
+					signal: null,
+					failureReason: `cannot verify process ${pid} identity; its files and ports remain in use`,
+				};
+			if (identity === 'different') {
+				this.running.delete(entry.nodeId);
+				return { graceful: true, stopped: true, exitCode: null, signal: null };
+			}
 		}
 
 		try {
 			process.kill(pid, 'SIGKILL');
-		} catch {
-			// The pid went between the wait and the signal, which is the process
-			// exiting on the SIGTERM it was already sent.
-			this.running.delete(entry.nodeId);
-			return { graceful: false, stopped: true, exitCode: null, signal: 'SIGKILL' };
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+				this.running.delete(entry.nodeId);
+				return { graceful: false, stopped: true, exitCode: null, signal: 'SIGKILL' };
+			}
+			return {
+				graceful: false,
+				stopped: false,
+				exitCode: null,
+				signal: null,
+				failureReason: `could not send SIGKILL to pid ${pid} (${(error as NodeJS.ErrnoException).code ?? 'unknown error'}); its files and ports remain in use`,
+			};
 		}
 
 		const dead = await waitForExit(ADOPTED_SIGKILL_WAIT_MS);
