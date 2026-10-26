@@ -7,10 +7,12 @@ type AnyMock = Mock<(...args: any[]) => any>;
 const mockFindMany = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
 const mockQueue = jest.fn() as AnyMock;
+const mockQueueWatchAlert = jest.fn() as AnyMock;
 const mockErrorCreate = jest.fn() as AnyMock;
 const mockGetNode = jest.fn() as AnyMock;
 const mockReadOnlyNode = jest.fn() as AnyMock;
 const mockReleaseObservers = jest.fn() as AnyMock;
+const mockObserveHeadChain = jest.fn() as AnyMock;
 
 type StoredGap = { contestGapSignature: string | null; contestGapAlertedAt: Date | null };
 /** Head columns a test persists across ticks; a failed transaction restores them. */
@@ -38,8 +40,15 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
-	webhookEventsService: { queueHydraHeadContestMissingInTransaction: mockQueue },
+	webhookEventsService: {
+		queueHydraHeadContestMissingInTransaction: mockQueue,
+		queueHydraHeadContestWatchAlertInTransaction: mockQueueWatchAlert,
+	},
 }));
+jest.unstable_mockModule('@/lib/hydra/hydra/head-init-validation', () => ({
+	observeHydraHeadIsOpenOnChain: mockObserveHeadChain,
+}));
+jest.unstable_mockModule('@/utils/blockfrost', () => ({ getBlockfrostInstance: () => ({}) }));
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({ getNode: mockGetNode }),
 }));
@@ -59,6 +68,7 @@ beforeEach(() => {
 	stored = null;
 	mockUpdateMany.mockResolvedValue({ count: 1 } as never);
 	mockReleaseObservers.mockResolvedValue(undefined);
+	mockObserveHeadChain.mockResolvedValue({ state: 'open', latestTxHash: 'a'.repeat(64) });
 });
 
 const NOW = new Date('2026-10-22T12:00:00.000Z');
@@ -70,6 +80,22 @@ const closedOnThree = {
 	verifiedSnapshotNumber: 5n,
 };
 const recorded = (minutes: number) => ({ ...empty, contestGapSignature: '3<5', contestGapSince: minutesAgo(minutes) });
+const watchHead = () => ({
+	id: 'head-1',
+	status: HydraHeadStatus.Open,
+	isEnabled: true,
+	contestationPeriod: 12n * 60n * 60n,
+	headIdentifier: 'a'.repeat(56),
+	HydraRelation: {
+		network: 'Preprod',
+		LocalHotWallet: { PaymentSource: { PaymentSourceConfig: { rpcProviderApiKey: 'read-only-key' } } },
+	},
+	contestWatchClosedAlertedAt: null,
+	contestWatchIssueSignature: null,
+	contestWatchIssueSince: null,
+	contestWatchIssueAlertedAt: null,
+	...empty,
+});
 
 describe('decideContestGap', () => {
 	it('starts the clock when the chain holds an older snapshot than ours', () => {
@@ -246,7 +272,65 @@ describe('runHydraContestWatch', () => {
 			verifiedSnapshotNumber: 5n,
 		});
 		await watch.runHydraContestWatch();
-		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(mockUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ contestGapSignature: null }) }),
+		);
+	});
+
+	it('alerts on an L1 Close even while the local node is disconnected', async () => {
+		mockFindMany.mockResolvedValue([watchHead()] as never);
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+		mockObserveHeadChain.mockResolvedValue({ state: 'closed', latestTxHash: 'c'.repeat(64) });
+		await watch.runHydraContestWatch();
+		expect(mockQueueWatchAlert).toHaveBeenCalledWith(
+			database,
+			expect.objectContaining({
+				hydraHeadId: 'head-1',
+				reason: 'HEAD_CLOSED',
+				chainState: 'closed',
+				chainTxHash: 'c'.repeat(64),
+			}),
+		);
+	});
+
+	it('alerts when a disconnected node remains unobservable past the bounded grace period', async () => {
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+		mockFindMany.mockResolvedValueOnce([watchHead()] as never).mockResolvedValueOnce([
+			{
+				...watchHead(),
+				contestWatchIssueSignature: 'NODE_UNOBSERVABLE',
+				contestWatchIssueSince: new Date(Date.now() - 6 * 60_000),
+			},
+		] as never);
+		await watch.runHydraContestWatch();
+		expect(mockQueueWatchAlert).not.toHaveBeenCalled();
+		await watch.runHydraContestWatch();
+		expect(mockQueueWatchAlert).toHaveBeenCalledWith(
+			database,
+			expect.objectContaining({ reason: 'NODE_UNOBSERVABLE', unavailableSince: expect.any(String) }),
+		);
+	});
+
+	it('alerts when the independent L1 source fails while the node stays open', async () => {
+		mockObserveHeadChain.mockRejectedValue(new Error('Blockfrost unavailable'));
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Open });
+		mockFindMany.mockResolvedValue([
+			{
+				...watchHead(),
+				contestWatchIssueSignature: 'L1_OBSERVER_UNAVAILABLE',
+				contestWatchIssueSince: new Date(Date.now() - 6 * 60_000),
+			},
+		] as never);
+		await watch.runHydraContestWatch();
+		expect(mockQueueWatchAlert).toHaveBeenCalledWith(
+			database,
+			expect.objectContaining({ reason: 'L1_OBSERVER_UNAVAILABLE', chainState: null }),
+		);
+	});
+
+	it('bounds the outage alert by the contest period and five minutes', () => {
+		expect(watch.watchUnavailableAfterMs(600n)).toBe(60_000);
+		expect(watch.watchUnavailableAfterMs(12n * 60n * 60n)).toBe(300_000);
 	});
 
 	it('compares the chain with the node for a head this instance holds', async () => {

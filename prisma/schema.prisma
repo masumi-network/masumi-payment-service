@@ -1619,6 +1619,7 @@ enum WebhookEventType {
   HYDRA_HEAD_SNAPSHOT_ROUND_STUCK
   HYDRA_HEAD_POST_TX_FAILED
   HYDRA_HEAD_CONTEST_MISSING
+  HYDRA_HEAD_CONTEST_WATCH_ALERT
 }
 
 // Critical is retained for historical rows only: the dispatcher creates
