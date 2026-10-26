@@ -39,6 +39,8 @@ const record: HostInviteRecord = {
 	startError: null,
 };
 const validResponse = { invites: [record], now: NOW };
+// A skipped record whose nonce is readable is still reported as held.
+const HELD = [record.nonce];
 
 beforeAll(async () => {
 	({ fetchHostRedemptions } = await import('./client'));
@@ -75,38 +77,6 @@ describe('Host redemption response validation over HTTP', () => {
 		['a non-object response', null],
 		['a missing invite list', { now: NOW }],
 		['a non-array invite list', { invites: {}, now: NOW }],
-		['a null entry', { invites: [null], now: NOW }],
-		['a malformed entry after a valid record', { invites: [record, null], now: NOW }],
-		['an array entry', { invites: [[]], now: NOW }],
-		['a missing nonce', { invites: [{ ...record, nonce: undefined }], now: NOW }],
-		['an oversized nonce', { invites: [{ ...record, nonce: 'a'.repeat(65) }], now: NOW }],
-		['a missing node id', { invites: [{ ...record, hostNodeId: undefined }], now: NOW }],
-		['a string expiry', { invites: [{ ...record, expiresAt: String(NOW) }], now: NOW }],
-		['an out-of-range expiry', { invites: [{ ...record, expiresAt: 1e16 }], now: NOW }],
-		['a nonnumeric redemption time', { invites: [{ ...record, redeemedAt: {} }], now: NOW }],
-		['a primitive redeemer', { invites: [{ ...record, redeemer: 'wallet' }], now: NOW }],
-		['an array redeemer', { invites: [{ ...record, redeemer: [] }], now: NOW }],
-		['a missing redeemer field', { invites: [{ ...record, redeemer: {} }], now: NOW }],
-		[
-			'a null wallet address',
-			{ invites: [{ ...record, redeemer: { ...record.redeemer, walletAddress: null } }], now: NOW },
-		],
-		[
-			'an oversized exchange URL',
-			{ invites: [{ ...record, redeemer: { ...record.redeemer, exchangeUrl: 'x'.repeat(2049) } }], now: NOW },
-		],
-		['a primitive signature', { invites: [{ ...record, redeemerSignature: 'signature' }], now: NOW }],
-		['an array signature', { invites: [{ ...record, redeemerSignature: [] }], now: NOW }],
-		['a missing signer key', { invites: [{ ...record, redeemerSignature: { signature: 'signature' } }], now: NOW }],
-		[
-			'a null signature field',
-			{ invites: [{ ...record, redeemerSignature: { signature: null, key: 'key' } }], now: NOW },
-		],
-		[
-			'an oversized signature',
-			{ invites: [{ ...record, redeemerSignature: { signature: 'x'.repeat(4097), key: 'key' } }], now: NOW },
-		],
-		['a non-string start error', { invites: [{ ...record, startError: {} }], now: NOW }],
 		['a missing watermark', { invites: [record] }],
 		['a string watermark', { invites: [record], now: String(NOW) }],
 		['an out-of-range watermark', { invites: [record], now: 1e16 }],
@@ -114,16 +84,71 @@ describe('Host redemption response validation over HTTP', () => {
 		await expect(fetchBody(body)).rejects.toBeInstanceOf(HydraProtocolError);
 	});
 
-	it.each(['now', 'expiresAt', 'redeemedAt'])(
-		'rejects a non-finite %s encoded as JSON exponent overflow',
-		async (field) => {
-			process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
-			responseBody = JSON.stringify(validResponse).replace(new RegExp(`"${field}":\\d+`), `"${field}":1e309`);
-			await expect(fetchHostRedemptions(baseUrl, 'admin-token', 0, transport)).rejects.toBeInstanceOf(
-				HydraProtocolError,
-			);
-		},
-	);
+	// One bad record must not block adoption, revoke or the expiry sweep for the whole Host.
+	it.each([
+		['a null entry', { invites: [null], now: NOW }, []],
+		['an array entry', { invites: [[]], now: NOW }, []],
+		['a missing nonce', { invites: [{ ...record, nonce: undefined }], now: NOW }, []],
+		['an oversized nonce', { invites: [{ ...record, nonce: 'a'.repeat(65) }], now: NOW }, []],
+		['a missing node id', { invites: [{ ...record, hostNodeId: undefined }], now: NOW }, HELD],
+		['a string expiry', { invites: [{ ...record, expiresAt: String(NOW) }], now: NOW }, HELD],
+		['an out-of-range expiry', { invites: [{ ...record, expiresAt: 1e16 }], now: NOW }, HELD],
+		['a nonnumeric redemption time', { invites: [{ ...record, redeemedAt: {} }], now: NOW }, HELD],
+		['a primitive redeemer', { invites: [{ ...record, redeemer: 'wallet' }], now: NOW }, HELD],
+		['an array redeemer', { invites: [{ ...record, redeemer: [] }], now: NOW }, HELD],
+		['a missing redeemer field', { invites: [{ ...record, redeemer: {} }], now: NOW }, HELD],
+		[
+			'a null wallet address',
+			{ invites: [{ ...record, redeemer: { ...record.redeemer, walletAddress: null } }], now: NOW },
+			HELD,
+		],
+		[
+			'an oversized exchange URL',
+			{ invites: [{ ...record, redeemer: { ...record.redeemer, exchangeUrl: 'x'.repeat(2049) } }], now: NOW },
+			HELD,
+		],
+		['a primitive signature', { invites: [{ ...record, redeemerSignature: 'signature' }], now: NOW }, HELD],
+		['an array signature', { invites: [{ ...record, redeemerSignature: [] }], now: NOW }, HELD],
+		[
+			'a missing signer key',
+			{ invites: [{ ...record, redeemerSignature: { signature: 'signature' } }], now: NOW },
+			HELD,
+		],
+		[
+			'a null signature field',
+			{ invites: [{ ...record, redeemerSignature: { signature: null, key: 'key' } }], now: NOW },
+			HELD,
+		],
+		[
+			'an oversized signature',
+			{ invites: [{ ...record, redeemerSignature: { signature: 'x'.repeat(4097), key: 'key' } }], now: NOW },
+			HELD,
+		],
+		['a non-string start error', { invites: [{ ...record, startError: {} }], now: NOW }, HELD],
+	])('skips %s and keeps the valid records', async (_scenario, body, unreadableNonces) => {
+		const { invites, now } = body as { invites: unknown[]; now: number };
+		await expect(fetchBody({ invites: [...invites, record], now })).resolves.toEqual({
+			invites: [record],
+			unreadableNonces,
+			now: NOW,
+		});
+	});
+
+	it('rejects a non-finite watermark encoded as JSON exponent overflow', async () => {
+		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
+		responseBody = JSON.stringify(validResponse).replace(/"now":\d+/, '"now":1e309');
+		await expect(fetchHostRedemptions(baseUrl, 'admin-token', 0, transport)).rejects.toBeInstanceOf(HydraProtocolError);
+	});
+
+	it.each(['expiresAt', 'redeemedAt'])('skips a record whose %s overflows to a non-finite number', async (field) => {
+		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
+		responseBody = JSON.stringify(validResponse).replace(new RegExp(`"${field}":\\d+`), `"${field}":1e309`);
+		await expect(fetchHostRedemptions(baseUrl, 'admin-token', 0, transport)).resolves.toEqual({
+			invites: [],
+			unreadableNonces: HELD,
+			now: NOW,
+		});
+	});
 
 	it('accepts redeemed and unredeemed records and additive Host fields', async () => {
 		const unredeemed = {
@@ -137,17 +162,22 @@ describe('Host redemption response validation over HTTP', () => {
 			fetchBody({ invites: [{ ...record, issuedAt: NOW - 10_000 }, unredeemed], now: NOW, extra: true }),
 		).resolves.toEqual({
 			invites: [record, unredeemed],
+			unreadableNonces: [],
 			now: NOW,
 		});
 	});
 
 	it('accepts an empty redemption list', async () => {
-		await expect(fetchBody({ invites: [], now: NOW })).resolves.toEqual({ invites: [], now: NOW });
+		await expect(fetchBody({ invites: [], now: NOW })).resolves.toEqual({
+			invites: [],
+			unreadableNonces: [],
+			now: NOW,
+		});
 	});
 
 	it('continues polling the next Host after a malformed response', async () => {
 		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
-		responseBody = JSON.stringify({ invites: [null], now: NOW });
+		responseBody = JSON.stringify({ invites: null, now: NOW });
 		const encryptedAdminToken = encrypt('admin-token');
 		findHosts.mockResolvedValue([
 			{ id: 'malformed-host', name: 'Malformed', baseUrl, encryptedAdminToken, ...transport, pausedAt: null },
@@ -170,5 +200,31 @@ describe('Host redemption response validation over HTTP', () => {
 		responseBody = JSON.stringify({ invites: [], now: NOW });
 		await expect(pollHydraRedemptions()).resolves.toEqual({ polled: 2, adopted: 0, rejected: 0 });
 		expect(requests).toEqual(['/v1/invites?redeemedSince=0', `/healthy/v1/invites?redeemedSince=${NOW}`]);
+	});
+
+	// No trusted time to hold back to: keep the watermark, still offer the valid record.
+	it('keeps the watermark while the Host lists an unreadable record', async () => {
+		process.env.HYDRA_TRUSTED_PRIVATE_HOSTS = '127.0.0.1';
+		responseBody = JSON.stringify({
+			invites: [{ ...record, nonce: 'nonce-unreadable', redeemer: 'x' }, record],
+			now: NOW,
+		});
+		findHosts.mockResolvedValue([
+			{
+				id: 'unreadable-host',
+				name: 'Unreadable',
+				baseUrl,
+				encryptedAdminToken: encrypt('admin-token'),
+				...transport,
+				pausedAt: null,
+			},
+		]);
+		findInvite.mockResolvedValue(null);
+
+		await pollHydraRedemptions();
+		await pollHydraRedemptions();
+
+		expect(requests).toEqual(['/v1/invites?redeemedSince=0', '/v1/invites?redeemedSince=0']);
+		expect(findInvite).toHaveBeenCalledWith(expect.objectContaining({ where: { nonce: record.nonce } }));
 	});
 });

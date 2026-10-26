@@ -334,7 +334,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 }));
 jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value: string) => value }));
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
-	fetchHostRedemptions: async () => ({ now: Date.now(), invites: [record] }),
+	fetchHostRedemptions: async () => ({ now: Date.now(), invites: [record], unreadableNonces: [] }),
 	forgetHostInvite: forget,
 	removeHostNode: remove,
 	registerInviteOnHost: jest.fn(),

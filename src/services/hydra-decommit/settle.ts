@@ -14,7 +14,7 @@
  */
 
 import { Mutex } from 'async-mutex';
-import { HydraDecommitStatus } from '@/generated/prisma/client';
+import { HydraDecommitStatus, type Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { DecommitDistributedValue, HydraDecommitOutcome } from '@/lib/hydra';
@@ -55,7 +55,7 @@ type DecommitOutcomeParams = {
 	reason?: string;
 	/** What reached L1, when the head said so. Only meaningful on finalization. */
 	distributed?: DecommitDistributedValue;
-	/** When the head produced the event. See finalizeDecommit for why it matters. */
+	/** When the head produced the event. A replay keeps it instead of stamping receipt time. */
 	observedAt?: Date;
 };
 
@@ -143,6 +143,13 @@ async function applyDecommitOutcomeInOrder(params: DecommitOutcomeParams): Promi
 	return false;
 }
 
+/** Postgres compares JSONB objects without key order, so this does too. */
+function isSameAssets(stored: Prisma.JsonValue | null, assets: Record<string, string>): boolean {
+	if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return false;
+	const units = Object.keys(assets);
+	return Object.keys(stored).length === units.length && units.every((unit) => stored[unit] === assets[unit]);
+}
+
 /**
  * Record the node's claim that its L1 decrement was observed.
  *
@@ -177,6 +184,16 @@ async function finalizeDecommit(params: {
 	});
 	const [row] = open;
 	if (!row) return false;
+	// Every history pass repeats this event. A repeat that changes nothing must not
+	// restamp the observation or start a payout scan outside the scheduled pass.
+	if (
+		row.status === HydraDecommitStatus.Approved &&
+		row.l1ObservedAt !== null &&
+		(distributed === undefined ||
+			(row.settledLovelace === distributed.lovelace && isSameAssets(row.settledAssets, distributed.assets)))
+	) {
+		return false;
+	}
 
 	// Stamp an absent approval time too. An Approved row can lack that time after
 	// an expired row was revived by a replayed approval without a timestamp.

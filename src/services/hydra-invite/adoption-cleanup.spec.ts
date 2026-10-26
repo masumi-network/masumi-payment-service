@@ -64,6 +64,7 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	fetchHostRedemptions: async () => ({
 		now: Date.now(),
+		unreadableNonces: [],
 		invites: [
 			{ nonce: 'nonce', hostNodeId: recordHostNodeId, redeemedAt: Date.now(), redeemer: {}, redeemerSignature: {} },
 		],
