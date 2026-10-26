@@ -36,6 +36,7 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
+import { deriveHostNodeToken } from './node-token';
 import { fetchHostNodeHealth, HydraHostRequestError, startHostNode, stopHostNode } from './client';
 import { isHostNodeGone } from './node-gone';
 import { PREPARING_STALE_AFTER_MS as TOPUP_PREPARING_STALE_AFTER_MS } from '@/services/hydra-topup/stale';
@@ -254,11 +255,11 @@ export async function getHydraHostPauseState(hostId: string): Promise<HydraHostP
 
 	// The Host is the only witness of whether a node has actually stopped: the
 	// stop request returns at once, and the drain before it can take minutes.
-	const userToken = decrypt(host.encryptedUserToken);
+	const hostSecret = decrypt(host.encryptedUserToken);
 	const nodes = await Promise.all(
 		host.pausedNodeIds.map(async (nodeId) => {
 			try {
-				const health = await fetchHostNodeHealth(host.baseUrl, userToken, nodeId, {
+				const health = await fetchHostNodeHealth(host.baseUrl, deriveHostNodeToken(hostSecret, nodeId), nodeId, {
 					allowInsecureHttp: host.allowInsecureHttp,
 				});
 				return { nodeId, state: health.state, error: null };
