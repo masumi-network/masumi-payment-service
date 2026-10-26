@@ -33002,7 +33002,7 @@
                                                         "entries",
                                                         "lookupError"
                                                     ],
-                                                    "description": "Registry entries held by the issuing wallet, so an operator can recognise who this is"
+                                                    "description": "Unverified, self-declared registry entries held by the issuing wallet"
                                                 }
                                             },
                                             "required": [
@@ -33047,7 +33047,7 @@
         "/hydra/invite/redeem": {
             "post": {
                 "summary": "Redeem a counterparty invite. (admin access required)",
-                "description": "Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.",
+                "description": "Requires an expected issuer wallet address, verifies the invite signature, provisions our node, sends our material to the issuer's Exchange Plane and records the head. The address comparison checks the operator's claim, not how they obtained it. Redemption spends a node and a peer port.",
                 "tags": [
                     "hydra"
                 ],
@@ -33065,6 +33065,11 @@
                                     "code": {
                                         "type": "string",
                                         "minLength": 1
+                                    },
+                                    "expectedIssuerWalletAddress": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Full issuer wallet address obtained through a separate trusted channel"
                                     },
                                     "hotWalletId": {
                                         "type": "string",
@@ -33089,6 +33094,7 @@
                                 },
                                 "required": [
                                     "code",
+                                    "expectedIssuerWalletAddress",
                                     "hotWalletId"
                                 ],
                                 "example": {}
@@ -33141,6 +33147,9 @@
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Expected issuer wallet address is missing or does not match the invite"
                     },
                     "401": {
                         "description": "Unauthorized"
@@ -37049,7 +37058,7 @@
         "/hydra/head/topup/recover": {
             "post": {
                 "summary": "Recover a deposit the head never absorbed. (admin access required)",
-                "description": "A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.",
+                "description": "A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed. After a prior attempt, the operator must inspect wallet, L1, and mempool and set acknowledgePendingRecoveryRisk. The server checks fresh L1 and node state, but cannot prove the earlier recovery is absent from the mempool.",
                 "tags": [
                     "hydra"
                 ],
@@ -37068,6 +37077,13 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "description": "The deposit to recover"
+                                    },
+                                    "acknowledgePendingRecoveryRisk": {
+                                        "type": "boolean",
+                                        "enum": [
+                                            true
+                                        ],
+                                        "description": "Operator confirms wallet, L1, and mempool checks and accepts that a prior recovery may still be pending. Required to retry an earlier attempt."
                                     }
                                 },
                                 "required": [
@@ -37102,7 +37118,8 @@
                                                     "nullable": true
                                                 },
                                                 "requested": {
-                                                    "type": "boolean"
+                                                    "type": "boolean",
+                                                    "description": "True when recovery was requested or its dispatch outcome is unknown"
                                                 },
                                                 "reason": {
                                                     "type": "string",
@@ -37453,7 +37470,7 @@
             },
             "delete": {
                 "summary": "Clear the recorded errors for a head. (admin access required)",
-                "description": "Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.",
+                "description": "Acknowledges diagnostic errors recorded against a head. Close nonexecution proof rows remain while recovery needs them, then the reaper removes them. The head status and close admission do not change.",
                 "tags": [
                     "hydra"
                 ],

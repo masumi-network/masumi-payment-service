@@ -75,9 +75,9 @@ function recentlyFailedFilters(nowMs: number) {
 }
 
 /** What L1 did with a deposit, decided from the transaction that spent it. */
-type DepositOutcome = 'unspent' | 'recovered' | 'absorbed' | 'unknown';
+export type DepositOutcome = 'unspent' | 'recovered' | 'absorbed' | 'unknown';
 
-async function depositOutcome(params: {
+export async function lookupHydraDepositOutcome(params: {
 	network: Network;
 	rpcProviderApiKey: string;
 	depositTxHash: string;
@@ -98,7 +98,10 @@ async function depositOutcome(params: {
 		const output = utxos.outputs.find((candidate) => candidate.output_index === deposit.outputIndex);
 		if (!output || output.address !== deposit.address) return 'unknown';
 		const consumed = (output as { consumed_by_tx?: string | null }).consumed_by_tx;
-		if (consumed == null) return 'unspent';
+		// Blockfrost's field is optional. An omitted value says nothing about
+		// whether a prior recoverTx is waiting or confirmed.
+		if (consumed === undefined) return 'unknown';
+		if (consumed === null) return 'unspent';
 		const spendingCbor = await blockfrost.txsCbor(consumed);
 		return classifyHydraDepositSpend({ cborHex: spendingCbor.cbor, txHash: consumed, deposit }) ?? 'unknown';
 	} catch (error) {
@@ -171,7 +174,7 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 			const rpcProviderApiKey = candidate.LocalParticipant.Wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
 			if (rpcProviderApiKey == null || candidate.depositTxHash == null) return;
 
-			const outcome = await depositOutcome({
+			const outcome = await lookupHydraDepositOutcome({
 				network: candidate.LocalParticipant.Wallet.PaymentSource.network,
 				rpcProviderApiKey,
 				depositTxHash: candidate.depositTxHash,

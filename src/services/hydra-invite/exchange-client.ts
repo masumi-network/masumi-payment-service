@@ -16,6 +16,11 @@ import createHttpError from 'http-errors';
 import { logger } from '@masumi/payment-core/logger';
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const RESOLVE_TIMEOUT_MS = 5_000;
+/** Bound one Exchange attempt, including DNS, responses, and busy retries. */
+const ATTEMPT_DEADLINE_MS = 40_000;
+const ATTEMPT_DEADLINE_ERROR = 'counterparty exchange attempt deadline exceeded';
+const MAX_PENDING_EXCHANGE_LOOKUPS = 16;
 const MAX_ERROR_RESPONSE_BYTES = 4 * 1024;
 /**
  * 503 is the only refusal worth retrying in place: the Host answers it before
@@ -59,6 +64,9 @@ export type ExchangeClientDeps = {
 	resolve?: ExchangeResolver;
 	send?: (url: URL, target: ResolvedExchangeTarget, body: Buffer) => Promise<ExchangeRequestResult>;
 	sleep?: (ms: number) => Promise<void>;
+	resolveDeadlineMs?: number;
+	requestDeadlineMs?: number;
+	attemptDeadlineMs?: number;
 };
 
 const blockedIpv4 = new BlockList();
@@ -140,20 +148,65 @@ export function assertExchangeTransportAllowed(rawUrl: string, transport: Exchan
 	return url;
 }
 
-const defaultResolver: ExchangeResolver = async (hostname) => await lookup(hostname, { all: true, verbatim: true });
+/** A timed-out getaddrinfo cannot be cancelled, so bound and share unfinished jobs. */
+export function createBoundedExchangeResolver(
+	lookupHost: ExchangeResolver = async (hostname) => await lookup(hostname, { all: true, verbatim: true }),
+	maxPending = MAX_PENDING_EXCHANGE_LOOKUPS,
+): ExchangeResolver {
+	const pending = new Map<string, Promise<ReadonlyArray<{ address: string; family: number }>>>();
+	return async (hostname) => {
+		const key = hostname.toLowerCase();
+		let result = pending.get(key);
+		if (result === undefined) {
+			if (pending.size >= maxPending) throw new Error('counterparty exchange resolver is busy');
+			const started = Promise.resolve().then(async () => await lookupHost(hostname));
+			pending.set(key, started);
+			void started.then(
+				() => pending.delete(key),
+				() => pending.delete(key),
+			);
+			result = started;
+		}
+		return await result;
+	};
+}
+
+const defaultResolver = createBoundedExchangeResolver();
+
+async function resolveBeforeDeadline(
+	resolve: ExchangeResolver,
+	hostname: string,
+	deadlineMs: number,
+): Promise<ReadonlyArray<{ address: string; family: number }>> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			resolve(hostname),
+			new Promise<never>((_resolve, reject) => {
+				timer = setTimeout(() => reject(new Error('counterparty exchange lookup timed out')), deadlineMs);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
 
 /** Resolve every answer, reject special-use results, then select a pinned IP. */
 export async function resolveExchangeTarget(
 	rawUrl: string,
 	transport: ExchangeTransportOptions,
 	resolve: ExchangeResolver = defaultResolver,
-): Promise<{ url: URL; target: ResolvedExchangeTarget }> {
+	resolveDeadlineMs = RESOLVE_TIMEOUT_MS,
+): Promise<{ url: URL; target: ResolvedExchangeTarget; usesPrivateNetwork: boolean }> {
 	const url = assertExchangeTransportAllowed(rawUrl, transport);
 	const hostname = withoutIpv6Brackets(url.hostname);
 	const literalFamily = isIP(hostname);
 	let answers: ReadonlyArray<{ address: string; family: number }>;
 	try {
-		answers = literalFamily === 0 ? await resolve(hostname) : [{ address: hostname, family: literalFamily }];
+		answers =
+			literalFamily === 0
+				? await resolveBeforeDeadline(resolve, hostname, resolveDeadlineMs)
+				: [{ address: hostname, family: literalFamily }];
 	} catch (error) {
 		throw createHttpError(502, `the counterparty exchange hostname could not be resolved: ${(error as Error).message}`);
 	}
@@ -171,27 +224,45 @@ export async function resolveExchangeTarget(
 
 	// Reject the complete DNS set if any answer is private. Selecting only a
 	// public member of a mixed set would make later resolver ordering a bypass.
-	if (targets.some((target) => target.isPrivate) && !transport.allowPrivateNetwork) {
+	const usesPrivateNetwork = targets.some((target) => target.isPrivate);
+	if (usesPrivateNetwork && !transport.allowPrivateNetwork) {
 		throw createHttpError(
 			400,
 			'the counterparty exchange resolves to a private or special-use address; explicitly confirm ' +
 				'allowPrivateExchangeNetwork to continue',
 		);
 	}
-	return { url, target: targets[0] };
+	return { url, target: targets[0], usesPrivateNetwork };
 }
 
 /** Resolve without connecting, used to show the operator the private-network warning. */
-export async function inspectExchangeNetwork(rawUrl: string): Promise<{ usesPrivateNetwork: boolean }> {
-	const { target } = await resolveExchangeTarget(rawUrl, {
-		allowInsecureHttp: true,
-		allowPrivateNetwork: true,
-	});
-	return { usesPrivateNetwork: target.isPrivate };
+export async function inspectExchangeNetwork(
+	rawUrl: string,
+	resolve: ExchangeResolver = defaultResolver,
+): Promise<{ usesPrivateNetwork: boolean }> {
+	const { usesPrivateNetwork } = await resolveExchangeTarget(
+		rawUrl,
+		{ allowInsecureHttp: true, allowPrivateNetwork: true },
+		resolve,
+	);
+	return { usesPrivateNetwork };
 }
 
-function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffer): Promise<ExchangeRequestResult> {
+function sendPinnedRequest(
+	url: URL,
+	target: ResolvedExchangeTarget,
+	body: Buffer,
+	deadlineMs = REQUEST_TIMEOUT_MS,
+): Promise<ExchangeRequestResult> {
 	return new Promise((resolve, reject) => {
+		const complete = (result: ExchangeRequestResult): void => {
+			clearTimeout(deadline);
+			resolve(result);
+		};
+		const fail = (error: Error): void => {
+			clearTimeout(deadline);
+			reject(error);
+		};
 		const originalHostname = withoutIpv6Brackets(url.hostname);
 		const options: RequestOptions = {
 			protocol: url.protocol,
@@ -215,7 +286,7 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
 				// Acceptance needs only the status. Close the unused body so an active
 				// peer cannot retain this socket by streaming past the inactivity timeout.
 				response.destroy();
-				resolve({ status, detail: '' });
+				complete({ status, detail: '' });
 				return;
 			}
 
@@ -229,11 +300,15 @@ function sendPinnedRequest(url: URL, target: ResolvedExchangeTarget, body: Buffe
 				}
 				chunks.push(chunk);
 			});
-			response.on('end', () => resolve({ status, detail: Buffer.concat(chunks).toString('utf8') }));
-			response.on('error', reject);
+			response.on('end', () => complete({ status, detail: Buffer.concat(chunks).toString('utf8') }));
+			response.on('error', fail);
 		});
 		request.setTimeout(REQUEST_TIMEOUT_MS, () => request.destroy(new Error('request timed out')));
-		request.on('error', reject);
+		const deadline = setTimeout(
+			() => request.destroy(new Error('counterparty exchange request deadline exceeded')),
+			deadlineMs,
+		);
+		request.on('error', fail);
 		request.end(body);
 	});
 }
@@ -313,10 +388,17 @@ async function attempt(
 	transport: ExchangeTransportOptions,
 	deps: ExchangeClientDeps = {},
 ): Promise<ExchangeAttempt> {
+	const deadlineAt = performance.now() + (deps.attemptDeadlineMs ?? ATTEMPT_DEADLINE_MS);
+	const remainingMs = () => Math.max(0, deadlineAt - performance.now());
 	let url: URL;
 	let target: ResolvedExchangeTarget;
 	try {
-		({ url, target } = await resolveExchangeTarget(rawUrl, transport, deps.resolve));
+		({ url, target } = await resolveExchangeTarget(
+			rawUrl,
+			transport,
+			deps.resolve,
+			Math.min(deps.resolveDeadlineMs ?? RESOLVE_TIMEOUT_MS, remainingMs()),
+		));
 	} catch (error) {
 		if (createHttpError.isHttpError(error)) return { kind: 'not-sent', error };
 		throw error;
@@ -330,11 +412,20 @@ async function attempt(
 	}
 
 	let earlierMayHaveLanded = false;
+	let hasStartedSend = false;
 	try {
-		const send = deps.send ?? sendPinnedRequest;
+		const send =
+			deps.send ??
+			((url: URL, target: ResolvedExchangeTarget, body: Buffer) =>
+				sendPinnedRequest(url, target, body, Math.min(deps.requestDeadlineMs ?? REQUEST_TIMEOUT_MS, remainingMs())));
 		const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 		const payload = Buffer.from(JSON.stringify(body));
-		let result = await send(url, target, payload);
+		const sendBeforeDeadline = async () => {
+			if (remainingMs() <= 0) throw new Error(ATTEMPT_DEADLINE_ERROR);
+			hasStartedSend = true;
+			return await send(url, target, payload);
+		};
+		let result = await sendBeforeDeadline();
 		// Only a status the Host answered counts: a transport failure may have
 		// landed and spent the nonce, so it is never retried.
 		for (const delayMs of BUSY_RETRY_DELAYS_MS) {
@@ -342,8 +433,10 @@ async function attempt(
 			// A 503 that is not the Host's own may follow a redemption it stored, and
 			// then whatever the resend hears says nothing about the first send.
 			if (!readRefusal(result.detail).fromHost) earlierMayHaveLanded = true;
-			await sleep(delayMs);
-			result = await send(url, target, payload);
+			const waitMs = Math.min(delayMs, remainingMs());
+			if (waitMs <= 0) throw new Error(ATTEMPT_DEADLINE_ERROR);
+			await sleep(waitMs);
+			result = await sendBeforeDeadline();
 		}
 		if (result.status >= 200 && result.status < 300) return { kind: 'accepted' };
 		if (earlierMayHaveLanded) {
@@ -353,6 +446,12 @@ async function attempt(
 	} catch (error) {
 		const reason = (error as Error).message;
 		logger.warn(`hydra: ${what} to ${url.host} failed: ${reason}`);
+		if (!hasStartedSend) {
+			return {
+				kind: 'not-sent',
+				error: createHttpError(502, `could not reach the counterparty exchange at ${url.host}: ${reason}`),
+			};
+		}
 		const code = (error as NodeJS.ErrnoException).code;
 		if (!earlierMayHaveLanded && code !== undefined && NEVER_SENT_ERROR_CODES.has(code)) {
 			return {

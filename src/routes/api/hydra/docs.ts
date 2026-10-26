@@ -149,12 +149,13 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/invite/redeem',
 		summary: 'Redeem a counterparty invite. (admin access required)',
 		description:
-			"Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.",
+			"Requires an expected issuer wallet address, verifies the invite signature, provisions our node, sends our material to the issuer's Exchange Plane and records the head. The address comparison checks the operator's claim, not how they obtained it. Redemption spends a node and a peer port.",
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(redeemInviteSchemaInput, {}) },
 		responses: {
 			200: successResponse('Invite redeemed', redeemInviteSchemaOutput, {}),
+			400: { description: 'Expected issuer wallet address is missing or does not match the invite' },
 			409: { description: 'Wrong network, already redeemed, expired, or our own invite' },
 			502: { description: "The counterparty's exchange plane refused or could not be reached" },
 			...unauthorized,
@@ -369,13 +370,14 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 							409: {
 								description:
 									'Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, ' +
-									`or its node reports no numeric L2 maxTxSize or one above ${EXPECTED_MAX_TX_SIZE}`,
+									`or its L2 ledger parameters are invalid or unsafe for fanout on current L1 (maxTxSize above ${EXPECTED_MAX_TX_SIZE})`,
 							},
 							400: { description: 'Invalid input, or the head has no local participant' },
 							502: { description: 'The Hydra node could not be reached, or the InitTx could not be verified' },
 							503: {
 								description:
-									'The node is behind the chain and did not post Init, or independent L1 evidence is not available yet',
+									'The node is behind the chain and did not post Init, current L1 protocol parameters could not be read, ' +
+									'or independent L1 evidence is not available yet',
 							},
 							504: {
 								description:
@@ -511,7 +513,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/head/topup/recover',
 		summary: 'Recover a deposit the head never absorbed. (admin access required)',
 		description:
-			'A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.',
+			'A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed. After a prior attempt, the operator must inspect wallet, L1, and mempool and set acknowledgePendingRecoveryRisk. The server checks fresh L1 and node state, but cannot prove the earlier recovery is absent from the mempool.',
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(recoverTopupInput, { topupId: 'cuid_v2_auto_generated' }) },
@@ -560,7 +562,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/head/errors',
 		summary: 'Clear the recorded errors for a head. (admin access required)',
 		description:
-			'Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.',
+			'Acknowledges diagnostic errors recorded against a head. Close nonexecution proof rows remain while recovery needs them, then the reaper removes them. The head status and close admission do not change.',
 		tags: TAG,
 		security: secured,
 		// Body, not query: `src/app.ts` sets `delete: ['body', 'params']`, so a

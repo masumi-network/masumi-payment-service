@@ -65,6 +65,12 @@ export const EXPECTED_COST_MODEL_LENGTHS: ReadonlyMap<string, number> = new Map(
  */
 export const EXPECTED_MAX_TX_SIZE = 15_000;
 
+/** Hydra 2.4.1 fanout bytes beyond one output, measured on devnet. */
+export const FANOUT_ENVELOPE_BYTES = 917;
+
+/** Reserved for a longer change address and extra fee inputs in fanout. */
+export const FANOUT_SAFETY_MARGIN_BYTES = 467;
+
 /**
  * Independent pin from packages/hydra-host/params/preprod.json. The protocol
  * response schema requires this value before a builder can use the head's cost.

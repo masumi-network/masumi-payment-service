@@ -34,9 +34,9 @@ const LOW_BALANCE_REALERT_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Evaluate every enabled Hydra low-balance rule against its participant's OWN
- * spendable in-head balance and advance each rule's status. Returns the rules that
- * transitioned Healthy/Unknown -> Low this cycle (the once-per-edge alerts);
- * callers emit the webhook. Rules whose head is not Open or has no live snapshot
+ * spendable in-head balance and advance each rule's status. Persist each alert
+ * and its timestamp in one transaction, then return committed alerts for logging.
+ * Rules whose head is not Open or has no live snapshot
  * are skipped (balance unknown, not treated as zero) so a disconnected head never
  * produces a false low-balance alert.
  */
@@ -63,40 +63,54 @@ export async function evaluateHydraLowBalanceRules(): Promise<HydraLowBalanceAle
 			const checkedAt = new Date();
 
 			if (currentAmount < rule.thresholdAmount) {
-				// Atomic once-only guard: only the cycle that wins this write emits the
+				// Atomic once-only guard: only the cycle that wins this write queues the
 				// alert; concurrent cycles just refresh the observed amount.
 				//
 				// Won by the edge, or by the age of the last alert. Edge alone made
-				// the webhook unrecoverable if anything went wrong between this
-				// statement and the queueing that follows it, since every later cycle
-				// found the row already Low.
+				// the webhook unrecoverable if anything went wrong between separate
+				// status and queue writes, since every later cycle found the row Low.
 				const realertBefore = new Date(checkedAt.getTime() - LOW_BALANCE_REALERT_INTERVAL_MS);
-				const transitioned = await prisma.hydraLowBalanceRule.updateMany({
-					where: {
-						id: rule.id,
-						OR: [
-							{ status: { not: LowBalanceStatus.Low } },
-							{ lastAlertedAt: null },
-							{ lastAlertedAt: { lt: realertBefore } },
-						],
-					},
-					data: {
-						status: LowBalanceStatus.Low,
-						lastKnownAmount: currentAmount,
-						lastCheckedAt: checkedAt,
-						lastAlertedAt: checkedAt,
-					},
+				const alert: HydraLowBalanceAlert = {
+					ruleId: rule.id,
+					hydraLocalParticipantId: rule.hydraLocalParticipantId,
+					hydraHeadId: head.id,
+					assetUnit: rule.assetUnit,
+					thresholdAmount: rule.thresholdAmount,
+					currentAmount,
+					checkedAt,
+				};
+				const transitioned = await prisma.$transaction(async (tx) => {
+					const result = await tx.hydraLowBalanceRule.updateMany({
+						where: {
+							id: rule.id,
+							OR: [
+								{ status: { not: LowBalanceStatus.Low } },
+								{ lastAlertedAt: null },
+								{ lastAlertedAt: { lt: realertBefore } },
+							],
+						},
+						data: {
+							status: LowBalanceStatus.Low,
+							lastKnownAmount: currentAmount,
+							lastCheckedAt: checkedAt,
+							lastAlertedAt: checkedAt,
+						},
+					});
+					if (result.count === 1) {
+						await webhookEventsService.queueHydraHeadLowBalanceInTransaction(tx, {
+							ruleId: alert.ruleId,
+							hydraLocalParticipantId: alert.hydraLocalParticipantId,
+							hydraHeadId: alert.hydraHeadId,
+							assetUnit: alert.assetUnit,
+							thresholdAmount: alert.thresholdAmount.toString(),
+							currentAmount: alert.currentAmount.toString(),
+							checkedAt: alert.checkedAt.toISOString(),
+						});
+					}
+					return result;
 				});
 				if (transitioned.count === 1) {
-					alerts.push({
-						ruleId: rule.id,
-						hydraLocalParticipantId: rule.hydraLocalParticipantId,
-						hydraHeadId: head.id,
-						assetUnit: rule.assetUnit,
-						thresholdAmount: rule.thresholdAmount,
-						currentAmount,
-						checkedAt,
-					});
+					alerts.push(alert);
 				} else {
 					await prisma.hydraLowBalanceRule.update({
 						where: { id: rule.id },
@@ -129,19 +143,10 @@ export async function evaluateHydraLowBalanceRules(): Promise<HydraLowBalanceAle
 	return alerts;
 }
 
-/** Scheduler entry: evaluate rules and fan low-balance transitions to webhooks. */
+/** Scheduler entry: queue low-balance transitions, then log committed alerts. */
 export async function runHydraLowBalanceMonitoringCycle(): Promise<void> {
 	const alerts = await evaluateHydraLowBalanceRules();
 	for (const alert of alerts) {
-		await webhookEventsService.triggerHydraHeadLowBalance({
-			ruleId: alert.ruleId,
-			hydraLocalParticipantId: alert.hydraLocalParticipantId,
-			hydraHeadId: alert.hydraHeadId,
-			assetUnit: alert.assetUnit,
-			thresholdAmount: alert.thresholdAmount.toString(),
-			currentAmount: alert.currentAmount.toString(),
-			checkedAt: alert.checkedAt.toISOString(),
-		});
 		logger.warn('hydra-low-balance: participant in-head balance is low', {
 			ruleId: alert.ruleId,
 			hydraHeadId: alert.hydraHeadId,

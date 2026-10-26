@@ -6,7 +6,9 @@ const mockWebhookEndpointFindUnique = jest.fn() as jest.Mock<any>;
 const mockWebhookEndpointUpdate = jest.fn() as jest.Mock<any>;
 const mockWebhookDeliveryFindUnique = jest.fn() as jest.Mock<any>;
 const mockWebhookDeliveryUpdate = jest.fn() as jest.Mock<any>;
-const mockAssertWebhookDestinationAllowed = jest.fn() as jest.Mock<any>;
+const mockHydraHeadFindUnique = jest.fn() as jest.Mock<any>;
+const mockResolveWebhookDestinationAllowed = jest.fn() as jest.Mock<any>;
+const mockPostPinnedWebhook = jest.fn() as jest.Mock<any>;
 const loggerInfo = jest.fn() as jest.Mock<any>;
 const loggerWarn = jest.fn() as jest.Mock<any>;
 const loggerError = jest.fn() as jest.Mock<any>;
@@ -21,6 +23,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findUnique: mockWebhookDeliveryFindUnique,
 			update: mockWebhookDeliveryUpdate,
 		},
+		hydraHead: { findUnique: mockHydraHeadFindUnique },
 	},
 }));
 
@@ -51,10 +54,14 @@ jest.unstable_mockModule('@/utils/security/webhook-secrets', () => ({
 }));
 
 jest.unstable_mockModule('@/utils/security/webhook-destination-policy', () => ({
-	assertWebhookDestinationAllowed: mockAssertWebhookDestinationAllowed,
+	resolveWebhookDestinationAllowed: mockResolveWebhookDestinationAllowed,
 	isWebhookDestinationPolicyError: jest.fn((error: unknown) => error instanceof Error && error.message === 'blocked'),
 	redactWebhookDestination: jest.fn((url: string) => `redacted:${url}`),
 	WEBHOOK_DELIVERY_BLOCKED_MESSAGE: 'Delivery blocked by policy',
+}));
+
+jest.unstable_mockModule('./pinned-request', () => ({
+	postPinnedWebhook: mockPostPinnedWebhook,
 }));
 
 const { webhookSenderService } = await import('./sender.service');
@@ -62,20 +69,19 @@ const { webhookSenderService } = await import('./sender.service');
 describe('webhookSenderService.sendWebhook', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockAssertWebhookDestinationAllowed.mockResolvedValue(undefined);
+		mockResolveWebhookDestinationAllowed.mockImplementation(async (url: string) => ({
+			url: new URL(url),
+			addresses: [{ address: '93.184.216.34', family: 4 }],
+		}));
 		mockWebhookEndpointFindUnique.mockResolvedValue({
 			id: 'webhook-1',
 			consecutiveFailures: 3,
 		});
 		mockWebhookEndpointUpdate.mockResolvedValue(undefined);
-		global.fetch = jest.fn(
-			async () =>
-				({
-					ok: true,
-					status: 200,
-					statusText: 'OK',
-				}) as Response,
-		) as typeof fetch;
+		mockPostPinnedWebhook.mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+		global.fetch = jest.fn(async () => {
+			throw new Error('Unpinned fetch used');
+		}) as typeof fetch;
 	});
 
 	it('sends extended payloads with bearer auth and service_name in the JSON body', async () => {
@@ -107,10 +113,9 @@ describe('webhookSenderService.sendWebhook', () => {
 			payload,
 		);
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			'https://example.com/webhook',
+		expect(mockPostPinnedWebhook).toHaveBeenCalledWith(
+			expect.objectContaining({ url: new URL('https://example.com/webhook') }),
 			expect.objectContaining({
-				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					Authorization: 'Bearer extended-secret',
@@ -119,8 +124,8 @@ describe('webhookSenderService.sendWebhook', () => {
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
 				body: JSON.stringify(payload),
-				redirect: 'manual',
 			}),
+			expect.any(AbortSignal),
 		);
 	});
 
@@ -148,18 +153,17 @@ describe('webhookSenderService.sendWebhook', () => {
 
 		await webhookSenderService.sendWebhook('https://hooks.slack.com/services/test', WebhookFormat.SLACK, null, payload);
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			'https://hooks.slack.com/services/test',
+		expect(mockPostPinnedWebhook).toHaveBeenCalledWith(
+			expect.objectContaining({ url: new URL('https://hooks.slack.com/services/test') }),
 			expect.objectContaining({
-				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				redirect: 'manual',
 			}),
+			expect.any(AbortSignal),
 		);
-		const slackBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		const slackBody = JSON.parse(((mockPostPinnedWebhook as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(slackBody).toEqual({
 			text: [
 				'💸 Payment status updated',
@@ -205,18 +209,19 @@ describe('webhookSenderService.sendWebhook', () => {
 			payload,
 		);
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			'https://chat.googleapis.com/v1/spaces/space/messages?key=key&token=token',
+		expect(mockPostPinnedWebhook).toHaveBeenCalledWith(
 			expect.objectContaining({
-				method: 'POST',
+				url: new URL('https://chat.googleapis.com/v1/spaces/space/messages?key=key&token=token'),
+			}),
+			expect.objectContaining({
 				headers: {
 					'Content-Type': 'application/json; charset=UTF-8',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				redirect: 'manual',
 			}),
+			expect.any(AbortSignal),
 		);
-		const googleChatBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		const googleChatBody = JSON.parse(((mockPostPinnedWebhook as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(googleChatBody).toEqual({
 			text: [
 				'🚨 Purchase error',
@@ -260,18 +265,17 @@ describe('webhookSenderService.sendWebhook', () => {
 			payload,
 		);
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			'https://discord.com/api/webhooks/test/token',
+		expect(mockPostPinnedWebhook).toHaveBeenCalledWith(
+			expect.objectContaining({ url: new URL('https://discord.com/api/webhooks/test/token') }),
 			expect.objectContaining({
-				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				redirect: 'manual',
 			}),
+			expect.any(AbortSignal),
 		);
-		const discordBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		const discordBody = JSON.parse(((mockPostPinnedWebhook as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(discordBody).toEqual({
 			content: [
 				'🪫 Wallet balance low',
@@ -314,7 +318,7 @@ describe('webhookSenderService.sendWebhook', () => {
 			payload,
 		);
 
-		const discordBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		const discordBody = JSON.parse(((mockPostPinnedWebhook as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(discordBody.content).toContain('🧊 Hydra snapshot round stuck');
 		expect(discordBody.content).toContain('🧾 Transactions: tx0, tx1, tx2, tx3, tx4 (+2 more)');
 	});
@@ -344,13 +348,13 @@ describe('webhookSenderService.sendWebhook', () => {
 			payload,
 		);
 
-		const discordBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		const discordBody = JSON.parse(((mockPostPinnedWebhook as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(discordBody.content).toContain('🧾 Transaction: ContestTx');
 		expect(discordBody.content.length).toBeLessThan(2000);
 	});
 
 	it('blocks private destinations before making an outbound request and logs only the redacted destination', async () => {
-		mockAssertWebhookDestinationAllowed.mockRejectedValue(new Error('blocked'));
+		mockResolveWebhookDestinationAllowed.mockRejectedValue(new Error('blocked'));
 
 		const result = await webhookSenderService.sendWebhook(
 			'http://127.0.0.1/webhook',
@@ -372,7 +376,7 @@ describe('webhookSenderService.sendWebhook', () => {
 			errorMessage: 'Delivery blocked by policy',
 			durationMs: 0,
 		});
-		expect(global.fetch).not.toHaveBeenCalled();
+		expect(mockPostPinnedWebhook).not.toHaveBeenCalled();
 		expect(loggerWarn).toHaveBeenCalledWith(
 			'Webhook delivery blocked by policy',
 			expect.objectContaining({
@@ -380,25 +384,72 @@ describe('webhookSenderService.sendWebhook', () => {
 			}),
 		);
 	});
+
+	it('stops waiting for DNS when the delivery deadline expires', async () => {
+		const deadline = new AbortController();
+		const timeoutSpy = jest.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+		mockResolveWebhookDestinationAllowed.mockImplementation(() => new Promise(() => undefined));
+		try {
+			const resultPromise = webhookSenderService.sendWebhook(
+				'https://slow.example/webhook',
+				WebhookFormat.SLACK,
+				null,
+				{
+					event_type: WebhookEventType.PAYMENT_ON_ERROR,
+					service_name: 'masumi-test-service',
+					timestamp: '2026-04-08T10:00:00.000Z',
+					webhook_id: 'webhook-1',
+					data: {},
+				} as unknown as StoredWebhookPayload,
+			);
+			deadline.abort(Object.assign(new Error('Delivery timed out'), { name: 'TimeoutError' }));
+			const result = await resultPromise;
+			expect(result.success).toBe(false);
+			expect(result.errorMessage).toBe('Delivery timed out');
+			expect(mockPostPinnedWebhook).not.toHaveBeenCalled();
+		} finally {
+			timeoutSpy.mockRestore();
+		}
+	});
+
+	it('classifies socket connection failures as expected network errors', async () => {
+		mockPostPinnedWebhook.mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+		const result = await webhookSenderService.sendWebhook(
+			'https://example.com/webhook',
+			WebhookFormat.EXTENDED,
+			'test-token',
+			{
+				event_type: WebhookEventType.PAYMENT_ON_ERROR,
+				service_name: 'masumi-test-service',
+				timestamp: '2026-04-08T10:00:00.000Z',
+				webhook_id: 'webhook-1',
+				data: {},
+			} as unknown as StoredWebhookPayload,
+		);
+		expect(result.success).toBe(false);
+		expect(result.errorMessage).toBe('connect ECONNREFUSED');
+		expect(mockPostPinnedWebhook).toHaveBeenCalledTimes(1);
+		expect(loggerWarn).toHaveBeenCalledWith('Webhook delivery timeout/network error', expect.any(Object));
+		expect(loggerError).not.toHaveBeenCalled();
+	});
 });
 
 describe('webhookSenderService.sendTestWebhook', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockAssertWebhookDestinationAllowed.mockResolvedValue(undefined);
+		mockResolveWebhookDestinationAllowed.mockImplementation(async (url: string) => ({
+			url: new URL(url),
+			addresses: [{ address: '93.184.216.34', family: 4 }],
+		}));
 		mockWebhookEndpointFindUnique.mockResolvedValue({
 			id: 'webhook-test',
 			consecutiveFailures: 3,
 		});
 		mockWebhookEndpointUpdate.mockResolvedValue(undefined);
-		global.fetch = jest.fn(
-			async () =>
-				({
-					ok: true,
-					status: 200,
-					statusText: 'OK',
-				}) as Response,
-		) as typeof fetch;
+		mockPostPinnedWebhook.mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+		global.fetch = jest.fn(async () => {
+			throw new Error('Unpinned fetch used');
+		}) as typeof fetch;
 	});
 
 	it('sends test deliveries to extended webhooks with a dedicated WEBHOOK_TEST payload', async () => {
@@ -415,10 +466,9 @@ describe('webhookSenderService.sendTestWebhook', () => {
 			'masumi-test-service',
 		);
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			'https://example.com/webhook',
+		expect(mockPostPinnedWebhook).toHaveBeenCalledWith(
+			expect.objectContaining({ url: new URL('https://example.com/webhook') }),
 			expect.objectContaining({
-				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					Authorization: 'Bearer extended-secret',
@@ -426,10 +476,10 @@ describe('webhookSenderService.sendTestWebhook', () => {
 					'X-Masumi-Timestamp': expect.any(String),
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				redirect: 'manual',
 			}),
+			expect.any(AbortSignal),
 		);
-		const extendedRequest = (global.fetch as jest.Mock).mock.calls[0][1] as { body: string };
+		const extendedRequest = (mockPostPinnedWebhook as jest.Mock).mock.calls[0][1] as { body: string };
 		const extendedBody = JSON.parse(extendedRequest.body);
 		expect(extendedBody).toEqual({
 			event_type: 'WEBHOOK_TEST',
@@ -467,18 +517,17 @@ describe('webhookSenderService.sendTestWebhook', () => {
 			'masumi-test-service',
 		);
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			'https://hooks.slack.com/services/test',
+		expect(mockPostPinnedWebhook).toHaveBeenCalledWith(
+			expect.objectContaining({ url: new URL('https://hooks.slack.com/services/test') }),
 			expect.objectContaining({
-				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				redirect: 'manual',
 			}),
+			expect.any(AbortSignal),
 		);
-		const slackRequest = (global.fetch as jest.Mock).mock.calls[0][1] as { body: string };
+		const slackRequest = (mockPostPinnedWebhook as jest.Mock).mock.calls[0][1] as { body: string };
 		const slackBody = JSON.parse(slackRequest.body);
 		expect(slackBody.text).toContain('🧪 Test webhook delivery');
 		expect(slackBody.text).toContain('🛰️ Service: masumi-test-service');
@@ -494,21 +543,20 @@ describe('webhookSenderService.sendTestWebhook', () => {
 describe('webhookSenderService.processWebhookDelivery', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		mockAssertWebhookDestinationAllowed.mockResolvedValue(undefined);
+		mockResolveWebhookDestinationAllowed.mockImplementation(async (url: string) => ({
+			url: new URL(url),
+			addresses: [{ address: '93.184.216.34', family: 4 }],
+		}));
 		mockWebhookEndpointFindUnique.mockResolvedValue({
 			id: 'webhook-legacy',
 			consecutiveFailures: 0,
 		});
 		mockWebhookEndpointUpdate.mockResolvedValue(undefined);
 		mockWebhookDeliveryUpdate.mockResolvedValue(undefined);
-		global.fetch = jest.fn(
-			async () =>
-				({
-					ok: true,
-					status: 200,
-					statusText: 'OK',
-				}) as Response,
-		) as typeof fetch;
+		mockPostPinnedWebhook.mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+		global.fetch = jest.fn(async () => {
+			throw new Error('Unpinned fetch used');
+		}) as typeof fetch;
 	});
 
 	it('processes legacy queued deliveries that do not include service_name', async () => {
@@ -544,18 +592,17 @@ describe('webhookSenderService.processWebhookDelivery', () => {
 
 		await webhookSenderService.processWebhookDelivery('delivery-1');
 
-		expect(global.fetch).toHaveBeenCalledWith(
-			'https://hooks.slack.com/services/legacy',
+		expect(mockPostPinnedWebhook).toHaveBeenCalledWith(
+			expect.objectContaining({ url: new URL('https://hooks.slack.com/services/legacy') }),
 			expect.objectContaining({
-				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				redirect: 'manual',
 			}),
+			expect.any(AbortSignal),
 		);
-		const slackBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		const slackBody = JSON.parse(((mockPostPinnedWebhook as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(slackBody.text).toContain('🪫 Wallet balance low');
 		expect(slackBody.text).not.toContain('🛰️ Service:');
 		expect(mockWebhookEndpointUpdate).toHaveBeenCalledWith({
@@ -565,5 +612,177 @@ describe('webhookSenderService.processWebhookDelivery', () => {
 				consecutiveFailures: 0,
 			},
 		});
+	});
+
+	it('cancels an old Hydra delivery queued for a different source before sending it', async () => {
+		mockHydraHeadFindUnique.mockResolvedValue({
+			HydraRelation: { localHotWalletId: 'wallet-1', LocalHotWallet: { paymentSourceId: 'source-1' } },
+			LocalParticipant: { id: 'participant-1', walletId: 'wallet-1' },
+		});
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-wrong-source',
+			webhookEndpointId: 'webhook-source-2',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-source-2',
+				data: { hydraHeadId: 'head-1' },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-source-2',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: 'source-2',
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-wrong-source');
+
+		expect(mockPostPinnedWebhook).not.toHaveBeenCalled();
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-wrong-source' },
+			data: expect.objectContaining({ status: 'Cancelled' }),
+		});
+	});
+
+	it('sends an old Hydra delivery queued for its owning source', async () => {
+		mockHydraHeadFindUnique.mockResolvedValue({
+			HydraRelation: { localHotWalletId: 'wallet-1', LocalHotWallet: { paymentSourceId: 'source-1' } },
+			LocalParticipant: { id: 'participant-1', walletId: 'wallet-1' },
+		});
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-right-source',
+			webhookEndpointId: 'webhook-source-1',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-source-1',
+				data: { hydraHeadId: 'head-1' },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-source-1',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: 'source-1',
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-right-source');
+
+		expect(mockPostPinnedWebhook).toHaveBeenCalledTimes(1);
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-right-source' },
+			data: expect.objectContaining({ status: 'Success' }),
+		});
+	});
+
+	it('cancels an old scoped Hydra row with no Head id before sending it', async () => {
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-no-head',
+			webhookEndpointId: 'webhook-source-1',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-source-1',
+				data: { hydraHeadId: 42 },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-source-1',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: 'source-1',
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-no-head');
+
+		expect(mockPostPinnedWebhook).not.toHaveBeenCalled();
+		expect(mockHydraHeadFindUnique).not.toHaveBeenCalled();
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-no-head' },
+			data: expect.objectContaining({ status: 'Cancelled' }),
+		});
+	});
+
+	it('retries a scoped Hydra delivery when its source lookup fails', async () => {
+		mockHydraHeadFindUnique.mockRejectedValue(new Error('database unavailable'));
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-lookup-failed',
+			webhookEndpointId: 'webhook-source-1',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-source-1',
+				data: { hydraHeadId: 'head-1' },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-source-1',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: 'source-1',
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-lookup-failed');
+
+		expect(mockPostPinnedWebhook).not.toHaveBeenCalled();
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-lookup-failed' },
+			data: expect.objectContaining({ status: 'Retrying', nextRetryAt: expect.any(Date) }),
+		});
+	});
+
+	it('still sends a Hydra delivery queued for a global endpoint', async () => {
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-global',
+			webhookEndpointId: 'webhook-global',
+			eventType: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+				timestamp: '2026-10-26T00:00:00.000Z',
+				webhook_id: 'webhook-global',
+				data: { hydraHeadId: 'head-1' },
+			},
+			WebhookEndpoint: {
+				id: 'webhook-global',
+				url: 'https://example.com/webhook',
+				format: WebhookFormat.EXTENDED,
+				authToken: 'secret',
+				isActive: true,
+				paymentSourceId: null,
+			},
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-global');
+
+		expect(mockPostPinnedWebhook).toHaveBeenCalledTimes(1);
+		expect(mockHydraHeadFindUnique).not.toHaveBeenCalled();
 	});
 });

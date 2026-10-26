@@ -1795,7 +1795,7 @@ export const postHydraInvitePreview = <ThrowOnError extends boolean = false>(opt
 /**
  * Redeem a counterparty invite. (admin access required)
  *
- * Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.
+ * Requires an expected issuer wallet address, verifies the invite signature, provisions our node, sends our material to the issuer's Exchange Plane and records the head. The address comparison checks the operator's claim, not how they obtained it. Redemption spends a node and a peer port.
  */
 export const postHydraInviteRedeem = <ThrowOnError extends boolean = false>(options?: Options<PostHydraInviteRedeemData, ThrowOnError>): RequestResult<PostHydraInviteRedeemResponses, PostHydraInviteRedeemErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraInviteRedeemResponses, PostHydraInviteRedeemErrors, ThrowOnError>({
     responseType: 'json',
@@ -2261,7 +2261,7 @@ export const getHydraHeadTransactions = <ThrowOnError extends boolean = false>(o
 /**
  * Recover a deposit the head never absorbed. (admin access required)
  *
- * A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.
+ * A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed. After a prior attempt, the operator must inspect wallet, L1, and mempool and set acknowledgePendingRecoveryRisk. The server checks fresh L1 and node state, but cannot prove the earlier recovery is absent from the mempool.
  */
 export const postHydraHeadTopupRecover = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadTopupRecoverData, ThrowOnError>): RequestResult<PostHydraHeadTopupRecoverResponses, PostHydraHeadTopupRecoverErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadTopupRecoverResponses, PostHydraHeadTopupRecoverErrors, ThrowOnError>({
     responseType: 'json',
@@ -2289,7 +2289,7 @@ export const getHydraHeadConnection = <ThrowOnError extends boolean = false>(opt
 /**
  * Clear the recorded errors for a head. (admin access required)
  *
- * Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.
+ * Acknowledges diagnostic errors recorded against a head. Close nonexecution proof rows remain while recovery needs them, then the reaper removes them. The head status and close admission do not change.
  */
 export const deleteHydraHeadErrors = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraHeadErrorsData, ThrowOnError>): RequestResult<DeleteHydraHeadErrorsResponses, DeleteHydraHeadErrorsErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraHeadErrorsResponses, DeleteHydraHeadErrorsErrors, ThrowOnError>({
     responseType: 'json',

@@ -5,13 +5,15 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
 import { buildCompactSummary } from './compact-summary';
+import { findHydraHeadPaymentSourceId, isSourceScopedHydraEvent } from './hydra-source';
 import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';
 import {
-	assertWebhookDestinationAllowed,
 	isWebhookDestinationPolicyError,
 	redactWebhookDestination,
+	resolveWebhookDestinationAllowed,
 	WEBHOOK_DELIVERY_BLOCKED_MESSAGE,
 } from '@/utils/security/webhook-destination-policy';
+import { postPinnedWebhook } from './pinned-request';
 
 interface WebhookDeliveryResult {
 	success: boolean;
@@ -20,6 +22,20 @@ interface WebhookDeliveryResult {
 	durationMs: number;
 }
 
+const resolveDestinationWithSignal = async (url: string, signal: AbortSignal) => {
+	signal.throwIfAborted();
+	let abort: () => void = () => undefined;
+	try {
+		return await new Promise<Awaited<ReturnType<typeof resolveWebhookDestinationAllowed>>>((resolve, reject) => {
+			abort = () => reject(signal.reason instanceof Error ? signal.reason : new Error('Webhook request aborted'));
+			signal.addEventListener('abort', abort, { once: true });
+			void resolveWebhookDestinationAllowed(url).then(resolve, reject);
+		});
+	} finally {
+		signal.removeEventListener('abort', abort);
+	}
+};
+
 /**
  * Service for sending individual webhook HTTP requests
  */
@@ -27,6 +43,15 @@ class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
+	private static readonly NETWORK_ERROR_CODES = new Set([
+		'ECONNREFUSED',
+		'ECONNRESET',
+		'EHOSTUNREACH',
+		'ENETUNREACH',
+		'ETIMEDOUT',
+		'EPIPE',
+		'ERR_TLS_CERT_ALTNAME_INVALID',
+	]);
 
 	/**
 	 * Send a webhook to a specific URL
@@ -38,31 +63,11 @@ class WebhookSenderService {
 		payload: WebhookSendPayload,
 	): Promise<WebhookDeliveryResult> {
 		const redactedUrl = redactWebhookDestination(url);
-
-		try {
-			await assertWebhookDestinationAllowed(url);
-		} catch (error) {
-			if (isWebhookDestinationPolicyError(error)) {
-				logger.warn('Webhook delivery blocked by policy', {
-					url: redactedUrl,
-					format,
-					event_type: payload.event_type,
-					reason: error.reason,
-				});
-
-				return {
-					success: false,
-					errorMessage: WEBHOOK_DELIVERY_BLOCKED_MESSAGE,
-					durationMs: 0,
-				};
-			}
-
-			throw error;
-		}
-
 		const startTime = Date.now();
+		const signal = AbortSignal.timeout(WebhookSenderService.REQUEST_TIMEOUT);
 
 		try {
+			const destination = await resolveDestinationWithSignal(url, signal);
 			logger.info('Sending webhook', {
 				url: redactedUrl,
 				format,
@@ -70,13 +75,7 @@ class WebhookSenderService {
 			});
 
 			const request = this.buildRequest(format, authToken, payload);
-			const response = await fetch(url, {
-				method: 'POST',
-				headers: request.headers,
-				body: request.body,
-				signal: AbortSignal.timeout(WebhookSenderService.REQUEST_TIMEOUT),
-				redirect: 'manual',
-			});
+			const response = await postPinnedWebhook(destination, request, signal);
 
 			const durationMs = Date.now() - startTime;
 
@@ -114,6 +113,21 @@ class WebhookSenderService {
 				};
 			}
 		} catch (error) {
+			if (isWebhookDestinationPolicyError(error)) {
+				logger.warn('Webhook delivery blocked by policy', {
+					url: redactedUrl,
+					format,
+					event_type: payload.event_type,
+					reason: error.reason,
+				});
+
+				return {
+					success: false,
+					errorMessage: WEBHOOK_DELIVERY_BLOCKED_MESSAGE,
+					durationMs: 0,
+				};
+			}
+
 			const durationMs = Date.now() - startTime;
 			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
@@ -278,6 +292,57 @@ class WebhookSenderService {
 			return;
 		}
 
+		// Recheck older queued scoped Hydra rows before sending. They may have been
+		// persisted before source-scoped selection was enforced at enqueue time.
+		if (
+			(isSourceScopedHydraEvent(delivery.eventType) || isSourceScopedHydraEvent(delivery.payload.event_type)) &&
+			delivery.WebhookEndpoint.paymentSourceId !== null
+		) {
+			const isLowBalance = delivery.eventType === WebhookEventType.HYDRA_HEAD_LOW_BALANCE;
+			const hydraHeadId = getOwnString(delivery.payload.data, 'hydraHeadId');
+			const hydraLocalParticipantId = isLowBalance
+				? getOwnString(delivery.payload.data, 'hydraLocalParticipantId')
+				: undefined;
+			let paymentSourceId: string | null = null;
+			if (
+				delivery.eventType === delivery.payload.event_type &&
+				hydraHeadId &&
+				(!isLowBalance || hydraLocalParticipantId)
+			) {
+				try {
+					paymentSourceId = await findHydraHeadPaymentSourceId(hydraHeadId, prisma, hydraLocalParticipantId);
+				} catch (error) {
+					const isFinalAttempt = updatedDelivery.attempts >= delivery.maxAttempts;
+					await prisma.webhookDelivery.update({
+						where: { id: deliveryId },
+						data: {
+							status: isFinalAttempt ? WebhookDeliveryStatus.Failed : WebhookDeliveryStatus.Retrying,
+							errorMessage: 'Could not verify Hydra webhook source',
+							nextRetryAt: isFinalAttempt
+								? null
+								: new Date(Date.now() + this.calculateRetryDelay(updatedDelivery.attempts)),
+						},
+					});
+					logger.error('Hydra webhook source lookup failed', {
+						delivery_id: deliveryId,
+						error: error instanceof Error ? error.message : 'Unknown error',
+					});
+					return;
+				}
+			}
+			if (paymentSourceId === null || delivery.WebhookEndpoint.paymentSourceId !== paymentSourceId) {
+				await prisma.webhookDelivery.update({
+					where: { id: deliveryId },
+					data: {
+						status: WebhookDeliveryStatus.Cancelled,
+						errorMessage: 'Hydra webhook source does not match its endpoint',
+					},
+				});
+				logger.warn('Cancelled Hydra webhook delivery with unverified source', { delivery_id: deliveryId });
+				return;
+			}
+		}
+
 		const decryptedUrl = decryptWebhookUrlForDelivery(delivery.WebhookEndpoint.url);
 		if (decryptedUrl == null) {
 			await prisma.webhookDelivery.update({
@@ -386,19 +451,14 @@ class WebhookSenderService {
 		if (!(error instanceof Error)) return false;
 
 		const errorName = error.name.toLowerCase();
-		const errorMessage = error.message.toLowerCase();
 
 		// Check for timeout errors (from AbortSignal.timeout)
 		if (errorName === 'aborterror' || errorName === 'timeouterror') {
 			return true;
 		}
 
-		// Check for HTTP connection errors
-		if (errorMessage.includes('fetch failed')) {
-			return true;
-		}
-
-		return false;
+		const code = (error as NodeJS.ErrnoException).code;
+		return typeof code === 'string' && WebhookSenderService.NETWORK_ERROR_CODES.has(code);
 	}
 
 	private isStoredWebhookPayload(value: unknown): value is StoredWebhookPayload {

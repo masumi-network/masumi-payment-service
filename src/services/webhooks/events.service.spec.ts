@@ -10,10 +10,19 @@ const mockQueueWebhookInTransaction = jest.fn<
 		paymentSourceId?: string,
 	) => Promise<void>
 >(async () => undefined);
+const mockQueueWebhook = jest.fn<
+	(eventType: WebhookEventType, payload: object, entityId?: string, paymentSourceId?: string) => Promise<void>
+>(async () => undefined);
+const mockHydraHeadFindUnique = jest.fn<
+	(args: object) => Promise<{
+		HydraRelation: { localHotWalletId: string; LocalHotWallet: { paymentSourceId: string } };
+		LocalParticipant: { id: string; walletId: string } | null;
+	} | null>
+>();
 
 jest.unstable_mockModule('./queue.service', () => ({
 	webhookQueueService: {
-		queueWebhook: jest.fn(),
+		queueWebhook: mockQueueWebhook,
 		queueWebhookInTransaction: mockQueueWebhookInTransaction,
 	},
 }));
@@ -25,6 +34,9 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 		purchaseRequest: {
 			findUnique: jest.fn(),
+		},
+		hydraHead: {
+			findUnique: mockHydraHeadFindUnique,
 		},
 	},
 }));
@@ -43,6 +55,171 @@ jest.unstable_mockModule('@masumi/payment-core/blockchain-identifier', () => ({
 }));
 
 const { webhookEventsService } = await import('./events.service');
+
+describe('transactional Hydra low-balance alerts', () => {
+	it('propagates a failed delivery insert so the rule update can roll back', async () => {
+		jest.clearAllMocks();
+		mockHydraHeadFindUnique.mockResolvedValue({
+			HydraRelation: { localHotWalletId: 'wallet-1', LocalHotWallet: { paymentSourceId: 'source-1' } },
+			LocalParticipant: { id: 'participant-1', walletId: 'wallet-1' },
+		});
+		const tx = { hydraHead: { findUnique: mockHydraHeadFindUnique } };
+		const payload = {
+			ruleId: 'rule-1',
+			hydraLocalParticipantId: 'participant-1',
+			hydraHeadId: 'head-1',
+			assetUnit: 'lovelace',
+			thresholdAmount: '50000000',
+			currentAmount: '10000000',
+			checkedAt: '2026-10-26T00:00:00.000Z',
+		};
+		mockQueueWebhookInTransaction.mockRejectedValueOnce(new Error('db write failed'));
+
+		await expect(webhookEventsService.queueHydraHeadLowBalanceInTransaction(tx as never, payload)).rejects.toThrow(
+			'db write failed',
+		);
+		expect(mockQueueWebhookInTransaction).toHaveBeenCalledWith(
+			tx,
+			WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
+			payload,
+			'participant-1',
+			'source-1',
+		);
+	});
+});
+
+describe('Hydra webhook payment-source scope', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+		mockHydraHeadFindUnique.mockResolvedValue({
+			HydraRelation: { localHotWalletId: 'wallet-1', LocalHotWallet: { paymentSourceId: 'source-1' } },
+			LocalParticipant: { id: 'participant-1', walletId: 'wallet-1' },
+		});
+	});
+
+	it('passes the owning source for every Hydra event', async () => {
+		const tx = { hydraHead: { findUnique: mockHydraHeadFindUnique } };
+		const lowBalance = {
+			ruleId: 'rule-1',
+			hydraLocalParticipantId: 'participant-1',
+			hydraHeadId: 'head-1',
+			assetUnit: 'lovelace',
+			thresholdAmount: '50000000',
+			currentAmount: '10000000',
+			checkedAt: '2026-10-26T00:00:00.000Z',
+		};
+		const snapshotRound = {
+			hydraHeadId: 'head-1',
+			roundTag: 'SeenSnapshot',
+			snapshotNumber: 7,
+			signatoryCount: 1,
+			txIds: ['tx-1'],
+			stuckSince: '2026-10-26T00:00:00.000Z',
+			checkedAt: '2026-10-26T00:10:00.000Z',
+		};
+		const postTxFailed = {
+			hydraHeadId: 'head-1',
+			headStatus: 'Closed',
+			postChainTxTag: 'ContestTx',
+			reason: 'refused',
+			reportedToCaller: false,
+			failedAt: '2026-10-26T00:00:00.000Z',
+		};
+		const contestMissing = {
+			hydraHeadId: 'head-1',
+			headStatus: 'FanoutPossible',
+			closedSnapshotNumber: 6,
+			verifiedSnapshotNumber: 7,
+			gapSince: '2026-10-26T00:00:00.000Z',
+			checkedAt: '2026-10-26T00:10:00.000Z',
+		};
+
+		await webhookEventsService.triggerHydraHeadLowBalance(lowBalance);
+		await webhookEventsService.queueHydraHeadLowBalanceInTransaction(tx as never, lowBalance);
+		await webhookEventsService.queueHydraHeadSnapshotRoundStuckInTransaction(tx as never, snapshotRound);
+		await webhookEventsService.triggerHydraHeadPostTxFailed(postTxFailed);
+		await webhookEventsService.queueHydraHeadContestMissingInTransaction(tx as never, contestMissing);
+
+		expect(mockQueueWebhook).toHaveBeenCalledWith(
+			WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
+			lowBalance,
+			'participant-1',
+			'source-1',
+		);
+		expect(mockQueueWebhook).toHaveBeenCalledWith(
+			WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
+			postTxFailed,
+			'head-1',
+			'source-1',
+		);
+		for (const [eventType, payload, entityId] of [
+			[WebhookEventType.HYDRA_HEAD_LOW_BALANCE, lowBalance, 'participant-1'],
+			[WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK, snapshotRound, 'head-1'],
+			[WebhookEventType.HYDRA_HEAD_CONTEST_MISSING, contestMissing, 'head-1'],
+		] as const) {
+			expect(mockQueueWebhookInTransaction).toHaveBeenCalledWith(tx, eventType, payload, entityId, 'source-1');
+		}
+	});
+
+	it('does not queue an event when its head has no known source', async () => {
+		mockHydraHeadFindUnique.mockResolvedValue(null);
+		const tx = { hydraHead: { findUnique: mockHydraHeadFindUnique } };
+		const payload = {
+			hydraHeadId: 'missing-head',
+			roundTag: 'SeenSnapshot',
+			snapshotNumber: 7,
+			signatoryCount: 1,
+			txIds: ['tx-1'],
+			stuckSince: '2026-10-26T00:00:00.000Z',
+			checkedAt: '2026-10-26T00:10:00.000Z',
+		};
+
+		await expect(
+			webhookEventsService.queueHydraHeadSnapshotRoundStuckInTransaction(tx as never, payload),
+		).rejects.toThrow('missing-head');
+		expect(mockQueueWebhookInTransaction).not.toHaveBeenCalled();
+	});
+
+	it('does not queue a low-balance event for a participant outside the named head', async () => {
+		const tx = { hydraHead: { findUnique: mockHydraHeadFindUnique } };
+		const payload = {
+			ruleId: 'rule-1',
+			hydraLocalParticipantId: 'other-participant',
+			hydraHeadId: 'head-1',
+			assetUnit: 'lovelace',
+			thresholdAmount: '50000000',
+			currentAmount: '10000000',
+			checkedAt: '2026-10-26T00:00:00.000Z',
+		};
+
+		await expect(webhookEventsService.queueHydraHeadLowBalanceInTransaction(tx as never, payload)).rejects.toThrow(
+			'head-1',
+		);
+		expect(mockQueueWebhookInTransaction).not.toHaveBeenCalled();
+	});
+
+	it('does not route a head event through an inconsistent funding wallet', async () => {
+		mockHydraHeadFindUnique.mockResolvedValue({
+			HydraRelation: { localHotWalletId: 'wallet-1', LocalHotWallet: { paymentSourceId: 'source-1' } },
+			LocalParticipant: { id: 'participant-1', walletId: 'wallet-2' },
+		});
+		const tx = { hydraHead: { findUnique: mockHydraHeadFindUnique } };
+		const payload = {
+			hydraHeadId: 'head-1',
+			roundTag: 'SeenSnapshot',
+			snapshotNumber: 7,
+			signatoryCount: 1,
+			txIds: ['tx-1'],
+			stuckSince: '2026-10-26T00:00:00.000Z',
+			checkedAt: '2026-10-26T00:10:00.000Z',
+		};
+
+		await expect(
+			webhookEventsService.queueHydraHeadSnapshotRoundStuckInTransaction(tx as never, payload),
+		).rejects.toThrow('head-1');
+		expect(mockQueueWebhookInTransaction).not.toHaveBeenCalled();
+	});
+});
 
 describe('transactional error webhook events', () => {
 	beforeEach(() => {

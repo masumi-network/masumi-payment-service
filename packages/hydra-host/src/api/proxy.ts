@@ -27,6 +27,8 @@ import type { Duplex } from 'node:stream';
 type UpgradeSocket = Duplex & Partial<Pick<Socket, 'setTimeout' | 'setNoDelay'>>;
 
 const LOOPBACK = '127.0.0.1';
+const PRE_DISPATCH_ERROR_HEADER = 'x-hydra-host-proxy-error';
+const NODE_NOT_CONNECTED = 'node-not-connected';
 
 /** Headers that must never be forwarded upstream. */
 const STRIPPED_REQUEST_HEADERS = new Set([
@@ -94,7 +96,10 @@ export function proxyHttp(
 		(upstreamResponse) => {
 			// A same-name upstream header would beat the handler's setHeader in
 			// writeHead's merge, so strip it to keep the noindex stamp authoritative.
-			const { 'x-robots-tag': _upstreamRobots, ...headers } = upstreamResponse.headers;
+			const headers = { ...upstreamResponse.headers };
+			delete headers['x-robots-tag'];
+			// Only the Host may attest that a request never reached the node.
+			delete headers[PRE_DISPATCH_ERROR_HEADER];
 			response.writeHead(upstreamResponse.statusCode ?? 502, headers);
 			// A node that closes the connection mid-body fails only this response,
 			// and pipe() does not pass that on: the caller's response stayed open,
@@ -122,7 +127,13 @@ export function proxyHttp(
 			response.destroy();
 			return;
 		}
-		response.writeHead(502, { 'Content-Type': 'application/json' });
+		// ECONNREFUSED from the loopback connect means the node accepted no
+		// connection. A reset after connect is still ambiguous for mutations.
+		const wasNotConnected = (error as NodeJS.ErrnoException).code === 'ECONNREFUSED';
+		response.writeHead(502, {
+			'Content-Type': 'application/json',
+			...(wasNotConnected ? { [PRE_DISPATCH_ERROR_HEADER]: NODE_NOT_CONNECTED } : {}),
+		});
 		response.end(JSON.stringify({ error: 'node is not reachable' }));
 	});
 

@@ -87,9 +87,8 @@ async function verifyAgainst(hashed: string, signature: InviteSignature, expecte
  * Verify an invite against the wallet named inside it.
  *
  * Self-referential on purpose: the payload says who signed it, and this proves
- * the claim. It establishes authenticity, not authorisation — deciding whether
- * that wallet is a counterparty worth opening a Head with is the operator's
- * call, made with the registry identity shown alongside.
+ * control of that wallet. The operator must compare the wallet address with
+ * one obtained through a separate trusted channel before opening a head.
  */
 export async function verifyHydraHeadInvite(
 	input: HydraHeadInvitePayloadInput,

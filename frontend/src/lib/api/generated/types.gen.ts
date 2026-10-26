@@ -13860,7 +13860,7 @@ export type PostHydraInvitePreviewResponses = {
             signatureValid: boolean;
             alreadyKnown: boolean;
             /**
-             * Registry entries held by the issuing wallet, so an operator can recognise who this is
+             * Unverified, self-declared registry entries held by the issuing wallet
              */
             identity: {
                 policyId: string;
@@ -13880,6 +13880,10 @@ export type PostHydraInvitePreviewResponse = PostHydraInvitePreviewResponses[key
 export type PostHydraInviteRedeemData = {
     body?: {
         code: string;
+        /**
+         * Full issuer wallet address obtained through a separate trusted channel
+         */
+        expectedIssuerWalletAddress: string;
         /**
          * Wallet that will identify us on the resulting head
          */
@@ -13903,6 +13907,10 @@ export type PostHydraInviteRedeemData = {
 };
 
 export type PostHydraInviteRedeemErrors = {
+    /**
+     * Expected issuer wallet address is missing or does not match the invite
+     */
+    400: unknown;
     /**
      * Unauthorized
      */
@@ -15702,6 +15710,10 @@ export type PostHydraHeadTopupRecoverData = {
          * The deposit to recover
          */
         topupId: string;
+        /**
+         * Operator confirms wallet, L1, and mempool checks and accepts that a prior recovery may still be pending. Required to retry an earlier attempt.
+         */
+        acknowledgePendingRecoveryRisk?: true;
     };
     path?: never;
     query?: never;
@@ -15731,6 +15743,9 @@ export type PostHydraHeadTopupRecoverResponses = {
         status: 'success';
         data: {
             depositTxHash: string | null;
+            /**
+             * True when recovery was requested or its dispatch outcome is unknown
+             */
             requested: boolean;
             reason: string | null;
         };

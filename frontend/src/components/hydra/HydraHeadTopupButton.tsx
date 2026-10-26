@@ -150,15 +150,27 @@ function HydraTopupList({
     now !== null && topup.usableFrom != null && new Date(topup.usableFrom).getTime() <= now;
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
 
-  async function handleRecover(topupId: string) {
+  async function handleRecover(topupId: string, acknowledgePendingRecoveryRisk = false) {
+    if (
+      acknowledgePendingRecoveryRisk &&
+      !window.confirm(
+        'A previous recovery may still be in the L1 mempool. Check the wallet, L1, and mempool before another request. The service can check the deposit and node, but cannot prove the earlier transaction is absent. Send another recovery request?',
+      )
+    ) {
+      return;
+    }
     setRecoveringId(topupId);
     try {
-      const result = await recoverHydraTopup(apiClient, { topupId });
+      const result = await recoverHydraTopup(apiClient, {
+        topupId,
+        ...(acknowledgePendingRecoveryRisk ? { acknowledgePendingRecoveryRisk: true } : {}),
+      });
       await resync('hydra', 'wallets');
-      toast[result.requested ? 'success' : 'info'](
-        result.requested
-          ? 'Recovery posted. Funds return once it confirms.'
-          : (result.reason ?? 'Nothing to recover'),
+      toast[result.requested && result.reason === null ? 'success' : 'info'](
+        result.reason ??
+          (result.requested
+            ? 'Recovery requested. Check L1 for confirmation.'
+            : 'Nothing to recover'),
       );
       await refetch();
     } catch (error) {
@@ -337,10 +349,24 @@ function HydraTopupList({
                   topup.depositTxHash !== null &&
                   isRecoverable &&
                   (topup.recoveryRequestedAt != null ? (
-                    <span className="text-xs text-muted-foreground">
-                      Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}.
-                      Waiting for it on chain.
-                    </span>
+                    <>
+                      <span className="text-xs text-muted-foreground">
+                        Recovery attempted{' '}
+                        {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}. A prior
+                        transaction may still be in the mempool. Check wallet, L1, and mempool.
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={recoveringId === topup.id}
+                        onClick={() => void handleRecover(topup.id, true)}
+                        title="Review the previous attempt and accept the risk of another recovery request"
+                      >
+                        {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
+                        Review retry
+                      </Button>
+                    </>
                   ) : (
                     <Button
                       type="button"

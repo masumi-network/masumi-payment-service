@@ -127,6 +127,7 @@ export async function redeemHydraInvite(
   apiClient: Client,
   payload: {
     code: string;
+    expectedIssuerWalletAddress: string;
     hotWalletId: string;
     allowInsecureExchangeHttp: boolean;
     allowPrivateExchangeNetwork: boolean;

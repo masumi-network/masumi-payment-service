@@ -55,9 +55,10 @@ jest.unstable_mockModule('@/services/hydra-topup/recover', () => ({ recoverHydra
 let listTopupsGet: { handler: (args: { input: unknown }) => Promise<unknown> };
 let topupHeadPost: { handler: (args: { input: unknown }) => Promise<unknown> };
 let topupInput: { safeParse: (input: unknown) => { success: boolean } };
+let recoverTopupInput: { safeParse: (input: unknown) => { success: boolean } };
 
 beforeAll(async () => {
-	({ topupHeadPost, listTopupsGet, topupInput } = (await import('./topup')) as never);
+	({ topupHeadPost, listTopupsGet, topupInput, recoverTopupInput } = (await import('./topup')) as never);
 });
 
 beforeEach(() => {
@@ -74,6 +75,18 @@ beforeEach(() => {
 });
 
 const input = { headId: 'head-1', assetFilter: 'all', exactAmount: '50000000' };
+
+describe('recovery retry acknowledgement', () => {
+	it('accepts only an explicit true acknowledgement for an attempted retry', () => {
+		expect(recoverTopupInput.safeParse({ topupId: 'topup-1' }).success).toBe(true);
+		expect(recoverTopupInput.safeParse({ topupId: 'topup-1', acknowledgePendingRecoveryRisk: true }).success).toBe(
+			true,
+		);
+		expect(recoverTopupInput.safeParse({ topupId: 'topup-1', acknowledgePendingRecoveryRisk: false }).success).toBe(
+			false,
+		);
+	});
+});
 
 describe('topup amount limits', () => {
 	const unit = 'ab'.repeat(30);

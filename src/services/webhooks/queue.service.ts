@@ -7,6 +7,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { CONFIG } from '@masumi/payment-core/config';
 import { webhookSenderService } from './sender.service';
 import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './queue.helpers';
+import { isSourceScopedHydraEvent } from './hydra-source';
 
 class WebhookQueueService {
 	async queueWebhook<TEventType extends WebhookEventType>(
@@ -41,6 +42,9 @@ class WebhookQueueService {
 		paymentSourceId: string | undefined,
 		isStrict: boolean,
 	): Promise<void> {
+		if (isSourceScopedHydraEvent(eventType) && !paymentSourceId) {
+			throw new Error(`Hydra webhook ${eventType} requires a payment source`);
+		}
 		const webhookPayload = buildWebhookPayload(eventType, payload, undefined, CONFIG.OTEL_SERVICE_NAME);
 
 		const batchSize = 20;
