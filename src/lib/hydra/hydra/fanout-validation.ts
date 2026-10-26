@@ -512,12 +512,8 @@ export async function verifyHydraFanoutOnChain(options: {
 		normalizeHex(vkey, 56, `Hydra participant ${index}`),
 	);
 	if (new Set(participantVkeys).size !== participantVkeys.length) fail('Hydra fanout participants were not unique');
-	if (
-		!Number.isSafeInteger(options.requiredConfirmations) ||
-		options.requiredConfirmations < 0 ||
-		options.references.length === 0
-	) {
-		fail('Hydra fanout verification received invalid confirmation/reference requirements');
+	if (!Number.isSafeInteger(options.requiredConfirmations) || options.requiredConfirmations < 0) {
+		fail('Hydra fanout verification received an invalid confirmation requirement');
 	}
 	const observerTimeoutMs = options.observerTimeoutMs ?? DEFAULT_FANOUT_OBSERVER_TIMEOUT_MS;
 	if (!Number.isSafeInteger(observerTimeoutMs) || observerTimeoutMs <= 0 || observerTimeoutMs > 60_000) {

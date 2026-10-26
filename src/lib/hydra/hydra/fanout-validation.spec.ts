@@ -261,6 +261,26 @@ function verify(
 }
 
 describe('verifyHydraFanoutOnChain', () => {
+	it('verifies a fully empty final snapshot from the bound L1 token burn', async () => {
+		const terminal = buildFanout({ outputCount: 0, change: {} });
+		const value = fixture({ fanout: terminal });
+		const headStateObserver = {
+			assetsTransactions: jest.fn(async () => [{ tx_hash: terminal.txHash }]),
+			txsUtxos: jest.fn(async (txHash: string) => ({ hash: txHash, outputs: [] })),
+		};
+
+		await expect(
+			verifyHydraFanoutOnChain({
+				observer: value.observer,
+				headStateObserver,
+				headId: HEAD_ID,
+				participantVkeys: [LOCAL_PARTICIPANT, REMOTE_PARTICIPANT],
+				references: [],
+				requiredConfirmations: 5,
+			}),
+		).resolves.toEqual([expect.objectContaining({ txHash: terminal.txHash, confirmations: 8 })]);
+	});
+
 	it('accepts one fully bound, confirmed official fanout transaction', async () => {
 		const value = fixture();
 		await expect(verify(value)).resolves.toEqual([
