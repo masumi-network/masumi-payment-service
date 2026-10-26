@@ -5,7 +5,7 @@
  * unchanged; the reasoning for each step stays with the code.
  */
 
-import { HydraErrorType, HydraHeadStatus, HydraTopupStatus } from '@/generated/prisma/client';
+import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
@@ -294,6 +294,11 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			// head's L1. Promotion still requires independent Blockfrost evidence;
 			// private devnets therefore need a separately trusted L1 observer and
 			// otherwise remain fail-closed until the signed validity window expires.
+			const committedLovelace = validatedDraft.committedValue.get('lovelace') ?? 0n;
+			const committedAssets: Record<string, string> = {};
+			for (const [unit, quantity] of validatedDraft.committedValue) {
+				if (unit !== 'lovelace') committedAssets[unit] = quantity.toString();
+			}
 			let submitResult: unknown;
 			try {
 				submitResult = await reserveAndSubmitHydraCommit(
@@ -303,6 +308,8 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 						commitTxHash,
 						invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
 						walletClaimToken,
+						committedLovelace,
+						committedAssets,
 					},
 					async () => {
 						// The reservation transaction can also wait on a row lock.
@@ -322,51 +329,6 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 					throw createHttpError(409, error.message);
 				}
 				throw error;
-			}
-
-			// Record the commit as a deposit, the same way a top-up is recorded.
-			//
-			// A commit IS an incremental commit — same deposit script, same period,
-			// same deadline — but only top-ups were being written down. So the very
-			// first funding of a head was the one an operator could neither see in
-			// the deposits list nor recover when the head failed to absorb it, which
-			// is exactly the deposit most likely to expire: it is made while the node
-			// is still catching up on chain. Writing it here gives it the list entry
-			// and the Recover button every later deposit already had.
-			const committedLovelace = validatedDraft.committedValue.get('lovelace') ?? 0n;
-			const committedAssets: Record<string, string> = {};
-			for (const [unit, quantity] of validatedDraft.committedValue) {
-				if (unit !== 'lovelace') committedAssets[unit] = quantity.toString();
-			}
-			const alreadyRecorded = await prisma.hydraTopup.findFirst({
-				where: { hydraHeadId: head.id, depositTxHash: commitTxHash },
-				select: { id: true },
-			});
-			if (alreadyRecorded == null) {
-				await prisma.hydraTopup
-					.create({
-						data: {
-							hydraHeadId: head.id,
-							hydraLocalParticipantId: localParticipant.id,
-							depositTxHash: commitTxHash,
-							invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
-							// Says what this row is, so neither reconciler has to infer it from a
-							// hash the participant can later replace by retrying the commit.
-							isInitialCommit: true,
-							committedLovelace,
-							committedAssets,
-							status: HydraTopupStatus.Pending,
-						},
-					})
-					.catch((recordError: unknown) => {
-						// The commit itself is already submitted and reconciles on its own
-						// evidence; failing to write the display row must not fail it.
-						logger.warn('[HydraAPI] could not record the commit deposit for display', {
-							headId: head.id,
-							commitTxHash,
-							error: recordError instanceof Error ? recordError.message : recordError,
-						});
-					});
 			}
 
 			// hydra-node replies `{ tag: 'TransactionSubmitted' }` on success or

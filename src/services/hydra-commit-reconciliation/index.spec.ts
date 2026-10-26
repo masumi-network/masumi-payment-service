@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import type { Prisma } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -7,6 +8,13 @@ const mockLookupConfirmedChainTx = jest.fn() as AnyMock;
 const mockBlocksLatest = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
 const mockFindMany = jest.fn() as AnyMock;
+const mockCreateRecovery = jest.fn() as AnyMock;
+const mockTransaction = jest.fn() as AnyMock;
+const transactionClient = {
+	$queryRaw: (...args: any[]) => mockQueryRaw(...args),
+	hydraLocalParticipant: { findMany: mockFindMany, updateMany: mockUpdateMany },
+	hydraTopup: { create: mockCreateRecovery },
+};
 
 jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
 	lookupConfirmedChainTx: mockLookupConfirmedChainTx,
@@ -26,17 +34,9 @@ jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
 	withSerializableSlotRetry: async <T>(operation: () => Promise<T>) => await operation(),
 }));
 
-jest.unstable_mockModule('@masumi/payment-core/db', () => {
-	const prisma: Record<string, unknown> = {
-		$queryRaw: mockQueryRaw,
-		hydraLocalParticipant: {
-			findMany: mockFindMany,
-			updateMany: mockUpdateMany,
-		},
-	};
-	prisma.$transaction = async (run: (tx: unknown) => Promise<unknown>) => await run(prisma);
-	return { prisma };
-});
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
+	prisma: { ...transactionClient, $transaction: mockTransaction },
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -76,12 +76,48 @@ function candidate(
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockTransaction.mockImplementation(
+		async (run: (tx: typeof transactionClient) => Promise<unknown>) => await run(transactionClient),
+	);
+	mockCreateRecovery.mockResolvedValue({ id: 'recovery-1' });
 	mockQueryRaw.mockResolvedValue([{ status: 'Open', isEnabled: true, isClosing: false }]);
 	mockUpdateMany.mockResolvedValue({ count: 1 });
 	mockFindMany.mockResolvedValue([]);
 	mockLookupConfirmedChainTx.mockResolvedValue('confirmed-valid');
 	mockBlocksLatest.mockResolvedValue({ slot: Number(INVALID_HEREAFTER_SLOT + 10_000n) });
 });
+
+type ReservedCommit = {
+	commitTxHash: string;
+	commitInvalidHereafterSlot: bigint;
+	commitWalletClaimToken: string;
+};
+type RecoveryRecord = Prisma.HydraTopupUncheckedCreateInput;
+
+/** Only the DB boundary is modeled: failed create/commit cannot persist drafts. */
+function modelCommitTransaction(failure?: 'create' | 'commit') {
+	const committed: { reservation: ReservedCommit | null; deposit: RecoveryRecord | null } = {
+		reservation: null,
+		deposit: null,
+	};
+	mockTransaction.mockImplementation(async (run: (tx: typeof transactionClient) => Promise<unknown>) => {
+		const draft = structuredClone(committed);
+		mockUpdateMany.mockImplementation(async ({ data }: { data: ReservedCommit }) => {
+			draft.reservation = data;
+			return { count: 1 };
+		});
+		mockCreateRecovery.mockImplementation(async ({ data }: { data: RecoveryRecord }) => {
+			if (failure === 'create') throw new Error('create failed');
+			draft.deposit = data;
+			return { id: 'recovery-1' };
+		});
+		const result = await run(transactionClient);
+		if (failure === 'commit') throw new Error('commit failed');
+		Object.assign(committed, draft);
+		return result;
+	});
+	return committed;
+}
 
 describe('reserveAndSubmitHydraCommit', () => {
 	const reservation = {
@@ -90,6 +126,8 @@ describe('reserveAndSubmitHydraCommit', () => {
 		commitTxHash: COMMIT_TX_HASH,
 		invalidHereafterSlot: INVALID_HEREAFTER_SLOT,
 		walletClaimToken: 'claim-token-1',
+		committedLovelace: 9_007_199_254_740_993n,
+		committedAssets: { ['ab'.repeat(28) + '01']: '9007199254740993' },
 	};
 
 	it('retains the reservation when submission throws ambiguously', async () => {
@@ -100,6 +138,7 @@ describe('reserveAndSubmitHydraCommit', () => {
 		expect(mockUpdateMany).toHaveBeenCalledWith({
 			where: {
 				id: 'participant-1',
+				hydraHeadId: 'head-1',
 				hasCommitted: false,
 				commitTxHash: null,
 				commitInvalidHereafterSlot: null,
@@ -135,6 +174,48 @@ describe('reserveAndSubmitHydraCommit', () => {
 		mockUpdateMany.mockResolvedValue({ count: 0 });
 		const submit = jest.fn<() => Promise<unknown>>();
 
+		await expect(reserveAndSubmitHydraCommit(reservation, submit)).rejects.toBeInstanceOf(
+			HydraCommitReservationConflictError,
+		);
+		expect(submit).not.toHaveBeenCalled();
+		expect(mockCreateRecovery).not.toHaveBeenCalled();
+	});
+
+	it('persists the exact recovery record and claim before an ambiguous submission', async () => {
+		const committed = modelCommitTransaction();
+		const submit = jest.fn(async () => {
+			expect(committed.reservation?.commitTxHash).toBe(COMMIT_TX_HASH);
+			expect(committed.deposit).toMatchObject({
+				hydraHeadId: 'head-1',
+				hydraLocalParticipantId: 'participant-1',
+				depositTxHash: COMMIT_TX_HASH,
+				invalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+				committedLovelace: reservation.committedLovelace,
+				committedAssets: reservation.committedAssets,
+				walletClaimToken: 'claim-token-1',
+				isInitialCommit: true,
+				status: 'Pending',
+			});
+			throw new Error('connection reset after broadcast');
+		});
+		await expect(reserveAndSubmitHydraCommit(reservation, submit)).rejects.toThrow('connection reset after broadcast');
+		expect(committed.deposit?.depositTxHash).toBe(COMMIT_TX_HASH);
+	});
+
+	it.each(['create', 'commit'] as const)(
+		'does not submit or retain half a reservation when %s fails',
+		async (failure) => {
+			const committed = modelCommitTransaction(failure);
+			const submit = jest.fn(async () => 'submitted');
+			await expect(reserveAndSubmitHydraCommit(reservation, submit)).rejects.toThrow(`${failure} failed`);
+			expect(submit).not.toHaveBeenCalled();
+			expect(committed).toEqual({ reservation: null, deposit: null });
+		},
+	);
+
+	it('refuses a competing pending deposit before submission', async () => {
+		mockCreateRecovery.mockRejectedValue(Object.assign(new Error('pending deposit exists'), { code: 'P2002' }));
+		const submit = jest.fn(async () => 'submitted');
 		await expect(reserveAndSubmitHydraCommit(reservation, submit)).rejects.toBeInstanceOf(
 			HydraCommitReservationConflictError,
 		);

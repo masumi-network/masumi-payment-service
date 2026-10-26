@@ -6,7 +6,7 @@
  */
 import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { writePrivateFileSync } from './private-file.mts';
 import { prisma } from '@masumi/payment-core/db';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { encrypt } from '@/utils/security/encryption';
@@ -35,7 +35,7 @@ async function main() {
 	// Write before exiting: prisma keeps the event loop alive, so callers that
 	// capture stdout can hang waiting for a close that never comes.
 	const out = process.env.API_KEY_OUT;
-	if (out) writeFileSync(out, token);
+	if (out) writePrivateFileSync(out, token);
 	console.log(token);
 	await prisma.$disconnect();
 	process.exit(0);

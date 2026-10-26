@@ -11,6 +11,7 @@ function fakeClient(counts: {
 	purchases: number;
 	topups?: number;
 	pendingCommitTxHash?: string;
+	commitConfirmed?: boolean;
 	recordedCommitRows?: number;
 }) {
 	const calls: Record<string, CountArgs> = {};
@@ -44,7 +45,10 @@ function fakeClient(counts: {
 			},
 		},
 		hydraLocalParticipant: {
-			findFirst: async () => (counts.pendingCommitTxHash == null ? null : { commitTxHash: counts.pendingCommitTxHash }),
+			findFirst: async (args: { where: { hasCommitted?: boolean } }) =>
+				counts.pendingCommitTxHash == null || (counts.commitConfirmed && args.where.hasCommitted === false)
+					? null
+					: { id: 'participant-1', commitTxHash: counts.pendingCommitTxHash },
 		},
 	} as unknown as Prisma.TransactionClient;
 
@@ -110,6 +114,17 @@ describe('countHydraHeadActiveWork', () => {
 			recordedCommitRows: 1,
 		});
 		expect((await countHydraHeadActiveWork(recorded.client, 'head-1')).unrecoveredDeposits).toBe(1);
+	});
+
+	it('keeps a confirmed legacy commit active until its recovery row is restored', async () => {
+		const orphan = fakeClient({
+			transactions: 0,
+			payments: 0,
+			purchases: 0,
+			pendingCommitTxHash: 'c'.repeat(64),
+			commitConfirmed: true,
+		});
+		expect((await countHydraHeadActiveWork(orphan.client, 'head-1')).unrecoveredDeposits).toBe(1);
 	});
 
 	// `Failed` reads like the opposite of settled and is not. Both writers that

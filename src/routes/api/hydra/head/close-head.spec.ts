@@ -17,6 +17,7 @@ const mockTransactionCount = jest.fn() as AnyMock;
 const mockPaymentCount = jest.fn() as AnyMock;
 const mockPurchaseCount = jest.fn() as AnyMock;
 const mockTopupCount = jest.fn() as AnyMock;
+const mockFindCommitParticipant = jest.fn() as AnyMock;
 const mockClaimClose = jest.fn() as AnyMock;
 const mockFindHead = jest.fn() as AnyMock;
 const mockUpdateHead = jest.fn() as AnyMock;
@@ -34,7 +35,7 @@ const transactionClient = {
 	paymentRequest: { count: mockPaymentCount },
 	purchaseRequest: { count: mockPurchaseCount },
 	hydraTopup: { count: mockTopupCount },
-	hydraLocalParticipant: { findFirst: async () => null },
+	hydraLocalParticipant: { findFirst: mockFindCommitParticipant },
 	hydraHead: { updateMany: mockClaimClose },
 };
 
@@ -106,6 +107,7 @@ beforeEach(() => {
 	mockPaymentCount.mockResolvedValue(0);
 	mockPurchaseCount.mockResolvedValue(0);
 	mockTopupCount.mockResolvedValue(0);
+	mockFindCommitParticipant.mockResolvedValue(null);
 	mockClaimClose.mockResolvedValue({ count: 1 });
 	mockFindHead.mockResolvedValue(openHead);
 	mockUpdateHead.mockResolvedValue(openHead);
@@ -117,6 +119,15 @@ beforeEach(() => {
 });
 
 describe('beginHydraHeadClose', () => {
+	it('refuses an acknowledged close with a legacy commit missing its recovery record', async () => {
+		mockFindCommitParticipant.mockResolvedValue({ id: 'participant-1', commitTxHash: 'c'.repeat(64) });
+		await expect(beginHydraHeadClose('head-1', true)).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('recovery record'),
+		});
+		expect(mockClaimClose).not.toHaveBeenCalled();
+	});
+
 	it('rejects close while a Pending L2 reservation exists', async () => {
 		mockTransactionCount.mockResolvedValue(1);
 

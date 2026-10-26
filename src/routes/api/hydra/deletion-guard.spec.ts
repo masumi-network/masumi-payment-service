@@ -5,6 +5,8 @@ import { HydraHeadStatus, TransactionLayer, TransactionStatus } from '@/generate
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindMany = jest.fn() as AnyMock;
+const mockFindCommitParticipant = jest.fn() as AnyMock;
+const mockRecoveryCount = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
 const mockTransaction = jest.fn() as AnyMock;
 const mockQueryRaw = jest.fn() as AnyMock;
@@ -31,12 +33,15 @@ const cleanupHydraRelation = {
 const transactionClient = {
 	$queryRaw: mockQueryRaw,
 	hydraHead: { findMany: mockFindMany, updateMany: mockUpdateMany },
+	hydraLocalParticipant: { findFirst: mockFindCommitParticipant },
+	hydraTopup: { count: mockRecoveryCount },
 	paymentRequest: { count: mockPaymentHandoffCount, findMany: mockPaymentRequests },
 	purchaseRequest: { count: mockPurchaseHandoffCount, findMany: mockPurchaseRequests },
 };
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
+		...transactionClient,
 		$transaction: mockTransaction,
 	},
 }));
@@ -61,14 +66,18 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 }));
 
 let quiesceHydraHeadsForDeletion: typeof import('./deletion-guard').quiesceHydraHeadsForDeletion;
+let assertNoUnrecoveredHydraDeposits: typeof import('./deletion-guard').assertNoUnrecoveredHydraDeposits;
 let unsettledL2TransactionWhere: typeof import('./deletion-guard').unsettledL2TransactionWhere;
 
 beforeAll(async () => {
-	({ quiesceHydraHeadsForDeletion, unsettledL2TransactionWhere } = await import('./deletion-guard'));
+	({ quiesceHydraHeadsForDeletion, unsettledL2TransactionWhere, assertNoUnrecoveredHydraDeposits } =
+		await import('./deletion-guard'));
 });
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockFindCommitParticipant.mockResolvedValue(null);
+	mockRecoveryCount.mockResolvedValue(0);
 	mockTransaction.mockImplementation(
 		async (operation: (tx: typeof transactionClient) => Promise<unknown>) => await operation(transactionClient),
 	);
@@ -351,5 +360,26 @@ describe('quiesceHydraHeadsForDeletion', () => {
 		expect(mockFindMany.mock.invocationCallOrder[2]).toBeLessThan(
 			mockReconcileEnabledState.mock.invocationCallOrder[1],
 		);
+	});
+});
+
+describe('legacy initial commit recovery records', () => {
+	it('refuses deletion before disconnect or disable when the record is missing', async () => {
+		mockFindCommitParticipant.mockResolvedValue({ id: 'participant-1', commitTxHash: 'c'.repeat(64) });
+		await expect(quiesceHydraHeadsForDeletion(['head-1'])).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('recovery record'),
+		});
+		expect(mockDisconnect).not.toHaveBeenCalled();
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('blocks the pre-sweep deposit guard until truthful repair restores the row', async () => {
+		mockFindCommitParticipant.mockResolvedValue({ id: 'participant-1', commitTxHash: 'c'.repeat(64) });
+		await expect(assertNoUnrecoveredHydraDeposits(['head-1'])).rejects.toMatchObject({ statusCode: 409 });
+		mockRecoveryCount.mockImplementation(async ({ where }: { where: { depositTxHash?: unknown } }) =>
+			typeof where.depositTxHash === 'string' ? 1 : 0,
+		);
+		await expect(assertNoUnrecoveredHydraDeposits(['head-1'])).resolves.toBeUndefined();
 	});
 });

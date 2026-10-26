@@ -692,6 +692,24 @@ goes stale after 60 seconds, so a Host that died without releasing it blocks its
 own replacement for up to that long. That is expected; do not shorten it by
 deleting the lock directory while a Host may still be running.
 
+VERIFIED (`packages/hydra-host/src/registry/host-lock.ts:190`): startup also uses
+`/data/host.lock.takeover` as an exclusive acquisition gate. Gate age never proves
+that its creator stopped. Startup leaves an existing gate intact and fails after
+bounded retries. A crash during acquisition can therefore require manual recovery.
+
+If startup reports a held takeover gate:
+
+1. Stop every Host and startup contender that can access this volume. Disable
+   automatic restarts, including replacement containers on other machines.
+2. Verify that no Host owner or startup attempt remains. A local PID check cannot
+   establish this for a volume shared between containers or machines.
+3. Remove only `/data/host.lock.takeover`, then start one Host. Keep
+   `/data/host.lock` intact so its lease and heartbeat checks still apply.
+
+VERIFIED (`packages/hydra-host/src/registry/host-lock.spec.ts`, test
+`does not reclaim a paused contender gate and replace the successor lease`): a
+paused acquisition keeps its gate even when the directory timestamp is old.
+
 A head is pinned to its Host for life. Persistence is not relocatable, so
 placement happens once at provisioning and the head stays there. Process,
 container and droplet restarts recover on their own from the intact volume. Only

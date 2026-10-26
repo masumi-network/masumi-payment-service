@@ -53,6 +53,7 @@ import {
 import type { HydraHeadChainObserver } from '@/lib/hydra/hydra/head-init-validation';
 import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-verification';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { KEY_RELEASE_MIN_CONFIRMATIONS } from '@/services/hydra-node-funding/key-release-depth';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
 import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
@@ -403,7 +404,9 @@ async function reconcileHead(
 					headId: headIdentifier,
 					participantVkeys: [localParticipantVkey, remoteParticipantVkey],
 					references,
-					requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+					// Handoff drops the only live node session that could observe a shallow
+					// fanout rollback. Keep the same finality floor as key deletion.
+					requiredConfirmations: Math.max(CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD, KEY_RELEASE_MIN_CONFIRMATIONS),
 				});
 			fanoutChecks.set(key, check);
 			return check;

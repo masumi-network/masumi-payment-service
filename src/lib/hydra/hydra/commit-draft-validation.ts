@@ -183,6 +183,11 @@ export function validateHydraCommitDraft({
 	}
 
 	const depositOutputIndex = matchingDepositOutputs[0];
+	// Hydra 2.4.1 observes, claims, and recovers only output #0 of a deposit.
+	// A matching script output elsewhere can pass wallet signing yet never enter the head.
+	if (depositOutputIndex !== 0) {
+		fail('deposit output must be at index 0');
+	}
 	const depositOutput = outputs.get(depositOutputIndex);
 	if (!EnterpriseAddress.from_address(depositOutput.address())) {
 		fail('deposit output must use the trusted enterprise script address shape');

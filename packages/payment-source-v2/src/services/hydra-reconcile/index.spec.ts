@@ -68,6 +68,20 @@ const FANOUT_REFERENCE = {
 	snapshotNumber: 3,
 	serializedOutput: 'd87980',
 };
+const FANOUT_CHAIN_STEP = {
+	txHash: FANOUT_TX_HASH,
+	confirmations: 20,
+	fees: 200000n,
+	blockHeight: 123,
+	blockTime: 456,
+	outputAmount: '[]',
+	utxoCount: 1,
+	withdrawalCount: 0,
+	assetMintOrBurnCount: 3,
+	redeemerCount: 1,
+	validContract: true,
+};
+const mockConfig = { BLOCK_CONFIRMATIONS_THRESHOLD: 5, HYDRA_ESCROW_RECONCILE_INTERVAL: 60 };
 
 const transactionClient = {
 	$queryRaw: mockHeadLockQuery,
@@ -158,7 +172,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({
-	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 5, HYDRA_ESCROW_RECONCILE_INTERVAL: 60 },
+	CONFIG: mockConfig,
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -316,6 +330,7 @@ function settledTerminalCandidate(id: string, onChainState: OnChainState) {
 describe('Hydra live-snapshot reconciliation', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockConfig.BLOCK_CONFIRMATIONS_THRESHOLD = 5;
 		mockNode.hasVerifiedPinnedSessions = true;
 		mockNode.confirmedTransactionHistoryReady = true;
 		mockNode.status = HydraHeadStatus.Final;
@@ -379,21 +394,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockGetVerifiedFanoutReference.mockReturnValue(FANOUT_REFERENCE);
 		// A chain, terminal last. One step here; the partial-fanout cases below
 		// cover a longer one.
-		mockVerifyHydraFanout.mockResolvedValue([
-			{
-				txHash: FANOUT_TX_HASH,
-				confirmations: 8,
-				fees: 200000n,
-				blockHeight: 123,
-				blockTime: 456,
-				outputAmount: '[]',
-				utxoCount: 1,
-				withdrawalCount: 0,
-				assetMintOrBurnCount: 3,
-				redeemerCount: 1,
-				validContract: true,
-			},
-		]);
+		mockVerifyHydraFanout.mockResolvedValue([FANOUT_CHAIN_STEP]);
 		mockFlushHeadStatus.mockResolvedValue();
 		mockFetchAddressUtxos.mockResolvedValue([]);
 		mockGetConfirmedTransaction.mockImplementation((txHash) => ({
@@ -674,6 +675,30 @@ describe('Hydra live-snapshot reconciliation', () => {
 		expect(mockRecordLivePass).not.toHaveBeenCalled();
 	});
 
+	it('keeps a shallow fanout connected until the handoff finality floor is met', async () => {
+		mockVerifyHydraFanout.mockImplementation(async (options) => {
+			const { requiredConfirmations } = options as { requiredConfirmations: number };
+			if (requiredConfirmations > 8) throw new Error('Fanout has only eight confirmations');
+			return [{ ...FANOUT_CHAIN_STEP, confirmations: 8 }];
+		});
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(expect.objectContaining({ requiredConfirmations: 20 }));
+		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ reconciliationCompletedAt: expect.any(Date) }) }),
+		);
+		expect(mockDisconnect).not.toHaveBeenCalled();
+	});
+
+	it('honors a higher configured handoff depth', async () => {
+		mockConfig.BLOCK_CONFIRMATIONS_THRESHOLD = 25;
+
+		await reconcileHydraHeadEscrowStates();
+
+		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(expect.objectContaining({ requiredConfirmations: 25 }));
+	});
+
 	// A fanout over several L1 steps reports partial-step outputs under in-head
 	// keys. Completing the handoff from those would record L1 references that
 	// do not exist.
@@ -727,7 +752,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		await verifyFanoutOnChain([FANOUT_REFERENCE]);
 		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(1);
 		expect(mockVerifyHydraFanout).toHaveBeenCalledWith(
-			expect.objectContaining({ headId: HEAD_IDENTIFIER, references: [FANOUT_REFERENCE], requiredConfirmations: 5 }),
+			expect.objectContaining({ headId: HEAD_IDENTIFIER, references: [FANOUT_REFERENCE], requiredConfirmations: 20 }),
 		);
 		await verifyFanoutOnChain([{ ...FANOUT_REFERENCE, outputIndex: 1 }]);
 		expect(mockVerifyHydraFanout).toHaveBeenCalledTimes(2);
@@ -748,7 +773,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockVerifyHydraFanout.mockResolvedValue([
 			{
 				txHash: PARTIAL_TX_HASH,
-				confirmations: 8,
+				confirmations: 20,
 				fees: 100000n,
 				blockHeight: 120,
 				blockTime: 450,
@@ -761,7 +786,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 			},
 			{
 				txHash: FANOUT_TX_HASH,
-				confirmations: 8,
+				confirmations: 20,
 				fees: 200000n,
 				blockHeight: 123,
 				blockTime: 456,
@@ -817,7 +842,7 @@ describe('Hydra live-snapshot reconciliation', () => {
 				expect.objectContaining({
 					headId: HEAD_IDENTIFIER,
 					references: [FANOUT_REFERENCE],
-					requiredConfirmations: 5,
+					requiredConfirmations: 20,
 				}),
 			);
 			expect(mockTransactionCreate).toHaveBeenCalledWith({

@@ -12,7 +12,8 @@ import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
 import { acknowledgeEscrow, provisionNode, type ProvisionDeps } from './provision.js';
 import { deriveNodeToken } from './node-token.js';
-import { PeerResolverUnavailableError } from '../peer-dns.js';
+import { createBoundedPeerResolver, PeerResolverUnavailableError } from '../peer-dns.js';
+import type { PeerHostnameResolver } from './peer-allowlist.js';
 
 const PEER = {
 	advertise: 'hydra2.example.com:5001',
@@ -40,14 +41,18 @@ let baseUrl: string;
 let counter: number;
 let warnings: string[];
 let checkPeerTarget: ProvisionDeps['checkPeerTarget'];
+let resolvePeerHostname: PeerHostnameResolver;
+let exchangeStore: ExchangeStore;
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-api-'));
 	counter = 0;
 	warnings = [];
 	checkPeerTarget = async () => null;
+	resolvePeerHostname = async () => [{ address: '8.8.8.8', family: 4 }];
 	const config = { ...loadHostConfig(env), dataDir };
 	const store = new NodeRegistryStore(dataDir);
+	exchangeStore = new ExchangeStore(dataDir);
 	const ports = new PortAllocator(config.ports);
 	const provision: ProvisionDeps = {
 		store,
@@ -63,10 +68,11 @@ beforeEach(async () => {
 	server = createControlPlane({
 		config,
 		store,
-		exchange: new ExchangeStore(dataDir),
+		exchange: exchangeStore,
 		ports,
 		supervisor,
 		provision,
+		resolvePeerHostname: async (...args) => await resolvePeerHostname(...args),
 		logger: {
 			info: () => undefined,
 			warn: (message: string) => {
@@ -77,6 +83,36 @@ beforeEach(async () => {
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 	baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+describe('peer firewall refresh', () => {
+	it('bounds a stalled hostname lookup and closes the affected peer port', async () => {
+		const created = (await (await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'dns-stall' })).json()) as {
+			nodeId: string;
+		};
+		expect((await call('PATCH', `/v1/nodes/${created.nodeId}`, { token: ADMIN, body: { peers: [PEER] } })).status).toBe(
+			200,
+		);
+		let lookupCalls = 0;
+		resolvePeerHostname = createBoundedPeerResolver(
+			async () => {
+				lookupCalls += 1;
+				return await new Promise<readonly { address: string; family: number }[]>(() => undefined);
+			},
+			{ maxPending: 1, timeoutMs: 20 },
+		);
+
+		const response = await call('GET', '/v1/peer-allowlist', { token: ADMIN });
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as {
+			rules: Array<{ nodeId: string; closed: boolean; resolutionErrors: Array<{ reason: string }> }>;
+		};
+		expect(lookupCalls).toBe(1);
+		expect(body.rules.find((rule) => rule.nodeId === created.nodeId)).toMatchObject({
+			closed: true,
+			resolutionErrors: [{ reason: 'peer lookup timed out' }],
+		});
+	});
 });
 
 afterEach(async () => {
@@ -102,6 +138,39 @@ const call = (
 		body: options.body === undefined ? undefined : JSON.stringify(options.body),
 	});
 };
+
+describe('invite deletion', () => {
+	it('refuses a redeemed invite unless the operator explicitly discards it', async () => {
+		await exchangeStore.registerInvite({
+			nonce: 'raced-revoke',
+			hostNodeId: 'missing-node',
+			issuedAt: Date.now(),
+			expiresAt: Date.now() + 60_000,
+			redeemedAt: null,
+			redeemer: null,
+			redeemerSignature: null,
+			startError: null,
+		});
+		await exchangeStore.redeem(
+			'raced-revoke',
+			{
+				walletAddress: 'addr_test1them',
+				hydraVerificationKey: PEER.hydraVerificationKey,
+				cardanoVerificationKey: PEER.cardanoVerificationKey,
+				advertise: PEER.advertise,
+				exchangeUrl: 'https://them.example.com/exchange',
+			},
+			{ signature: 'sig', key: 'key' },
+		);
+
+		expect((await call('DELETE', '/v1/invites/raced-revoke', { token: ADMIN })).status).toBe(409);
+		expect((await exchangeStore.listInvites())[0]?.redeemerSignature).toEqual({ signature: 'sig', key: 'key' });
+		expect((await call('DELETE', '/v1/invites/raced-revoke?discardRedemption=true', { token: ADMIN })).status).toBe(
+			200,
+		);
+		expect(await exchangeStore.listInvites()).toEqual([]);
+	});
+});
 
 describe('control plane auth', () => {
 	it('returns 503 for a temporary peer resolver failure', async () => {
@@ -334,6 +403,23 @@ describe('lifecycle guards over HTTP', () => {
 	it('deletes an acknowledged but peerless node without force', async () => {
 		const nodeId = await provisionAndAck('idem-peerless');
 		expect((await call('DELETE', `/v1/nodes/${nodeId}`, { token: ADMIN })).status).toBe(202);
+	});
+
+	it('keeps an invite node when orphan cleanup requires it to be unclaimed', async () => {
+		const nodeId = await provisionAndAck('idem-claimed');
+		const nonce = 'nonce-claimed';
+		expect(
+			(
+				await call('POST', '/v1/invites', {
+					token: ADMIN,
+					body: { nonce, hostNodeId: nodeId, expiresAt: Date.now() + 60_000 },
+				})
+			).status,
+		).toBe(201);
+
+		expect((await call('DELETE', `/v1/nodes/${nodeId}/remove-unclaimed`, { token: ADMIN })).status).toBe(409);
+		expect((await call('DELETE', `/v1/invites/${nonce}`, { token: ADMIN })).status).toBe(200);
+		expect((await call('DELETE', `/v1/nodes/${nodeId}/remove-unclaimed`, { token: ADMIN })).status).toBe(202);
 	});
 
 	it('deletes a never-acknowledged node without force', async () => {

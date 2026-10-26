@@ -1,10 +1,11 @@
-import { type Network, Prisma } from '@/generated/prisma/client';
+import { HydraTopupStatus, type Network, Prisma } from '@/generated/prisma/client';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { CONFIG } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
+import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 import { lockOpenHydraHeadForDeposit } from '@/utils/hydra/deposit-admission';
 
@@ -44,7 +45,7 @@ export class HydraCommitReservationConflictError extends Error {
 	}
 }
 
-/** Persist the exact signed body identity before any potentially ambiguous I/O. */
+/** Persist the signed transaction identity and its recovery record before submission I/O. */
 export async function reserveAndSubmitHydraCommit<T>(
 	reservation: {
 		participantId: string;
@@ -52,33 +53,57 @@ export async function reserveAndSubmitHydraCommit<T>(
 		commitTxHash: string;
 		invalidHereafterSlot: bigint;
 		walletClaimToken: string;
+		committedLovelace: bigint;
+		committedAssets: Prisma.InputJsonValue;
 	},
 	submit: () => Promise<T>,
 ): Promise<T> {
 	// Under the close admission's row lock, so a close admitted while this commit
 	// was being prepared stops it here, and a close admitted after counts it.
-	const reserved = await withSerializableSlotRetry(() =>
-		prisma.$transaction(
-			async (tx) => {
-				await lockOpenHydraHeadForDeposit(tx, reservation.hydraHeadId);
-				return await tx.hydraLocalParticipant.updateMany({
-					where: {
-						id: reservation.participantId,
-						hasCommitted: false,
-						commitTxHash: null,
-						commitInvalidHereafterSlot: null,
-					},
-					data: {
-						commitTxHash: reservation.commitTxHash,
-						commitInvalidHereafterSlot: reservation.invalidHereafterSlot,
-						commitWalletClaimToken: reservation.walletClaimToken,
-					},
-				});
-			},
-			{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-		),
-	);
-	if (reserved.count !== 1) throw new HydraCommitReservationConflictError();
+	try {
+		await withSerializableSlotRetry(() =>
+			prisma.$transaction(
+				async (tx) => {
+					await lockOpenHydraHeadForDeposit(tx, reservation.hydraHeadId);
+					const reserved = await tx.hydraLocalParticipant.updateMany({
+						where: {
+							id: reservation.participantId,
+							hydraHeadId: reservation.hydraHeadId,
+							hasCommitted: false,
+							commitTxHash: null,
+							commitInvalidHereafterSlot: null,
+						},
+						data: {
+							commitTxHash: reservation.commitTxHash,
+							commitInvalidHereafterSlot: reservation.invalidHereafterSlot,
+							commitWalletClaimToken: reservation.walletClaimToken,
+						},
+					});
+					if (reserved.count !== 1) throw new HydraCommitReservationConflictError();
+					// Recovery needs this row even when submission throws or the process
+					// dies. A failed insert must roll back the participant reservation too.
+					await tx.hydraTopup.create({
+						data: {
+							hydraHeadId: reservation.hydraHeadId,
+							hydraLocalParticipantId: reservation.participantId,
+							depositTxHash: reservation.commitTxHash,
+							invalidHereafterSlot: reservation.invalidHereafterSlot,
+							committedLovelace: reservation.committedLovelace,
+							committedAssets: reservation.committedAssets,
+							walletClaimToken: reservation.walletClaimToken,
+							// Only the participant commit reconciler may release this claim.
+							isInitialCommit: true,
+							status: HydraTopupStatus.Pending,
+						},
+					});
+				},
+				{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+			),
+		);
+	} catch (error) {
+		if (isUniqueConstraintError(error)) throw new HydraCommitReservationConflictError();
+		throw error;
+	}
 
 	// Deliberately no catch/cleanup: a throw or explicit node rejection cannot
 	// prove the body was not relayed. Reconciliation owns every later mutation.

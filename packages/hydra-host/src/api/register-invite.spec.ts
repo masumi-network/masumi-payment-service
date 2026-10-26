@@ -46,9 +46,14 @@ function node(overrides: Partial<NodeRecord> = {}): NodeRecord {
 }
 
 function stores(record: NodeRecord | null) {
-	const register = jest.fn(async () => undefined);
+	const register = jest.fn(async (_invite: unknown) => undefined);
 	return {
-		exchange: { registerInvite: register } as unknown as ExchangeStore,
+		exchange: {
+			registerInvite: async (invite: unknown, assertNodeAvailable?: () => Promise<void>) => {
+				await assertNodeAvailable?.();
+				await register(invite);
+			},
+		} as unknown as ExchangeStore,
 		nodes: { read: async () => record } as unknown as NodeRegistryStore,
 		register,
 	};

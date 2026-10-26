@@ -144,6 +144,18 @@ describe('checkFundTransferConfirmations', () => {
 		expect(confirm?.[0]?.data?.status).toBe(TransactionStatus.Confirmed);
 	});
 
+	it.each(['found', 'not-found'])('does not write after another worker finalized a %s probe', async (chainResult) => {
+		mockTransferFindMany.mockResolvedValue([inFlight({ txHash: TX_HASH })]);
+		mockLookupChainTx.mockResolvedValue(chainResult);
+		mockTxUpdateMany.mockResolvedValue({ count: 0 });
+
+		await checkFundTransferConfirmations();
+
+		expect(mockTxUpdateMany).toHaveBeenCalled();
+		expect(mockTransferUpdateMany).not.toHaveBeenCalled();
+		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
+	});
+
 	it('does NOTHING but touch on a transient lookup error', async () => {
 		mockTransferFindMany.mockResolvedValue([inFlight({ txHash: TX_HASH })]);
 		mockLookupChainTx.mockResolvedValue('transient-error');
@@ -205,6 +217,9 @@ describe('checkFundTransferConfirmations', () => {
 		await checkFundTransferConfirmations();
 		expect(mockLookupChainTx).not.toHaveBeenCalled();
 		expect(transferStatusWrite(TransactionStatus.Confirmed)).toBeTruthy();
+		expect(transferStatusWrite(TransactionStatus.Confirmed)?.[0]?.where).toMatchObject({
+			Transaction: { is: { status: TransactionStatus.Confirmed } },
+		});
 	});
 
 	it('mirrors a RolledBack Transaction as a failed transfer without a chain call', async () => {
@@ -212,5 +227,22 @@ describe('checkFundTransferConfirmations', () => {
 		await checkFundTransferConfirmations();
 		expect(mockLookupChainTx).not.toHaveBeenCalled();
 		expect(transferStatusWrite(TransactionStatus.FailedViaTimeout)).toBeTruthy();
+		expect(transferStatusWrite(TransactionStatus.FailedViaTimeout)?.[0]?.where).toMatchObject({
+			Transaction: { is: { status: TransactionStatus.RolledBack } },
+		});
+	});
+
+	it('keeps the wallet locked when a stale terminal mirror no longer matches the Transaction', async () => {
+		mockTransferFindMany.mockResolvedValue([inFlight({ txHash: TX_HASH, status: TransactionStatus.RolledBack })]);
+		mockTransferUpdateMany.mockResolvedValue({ count: 0 });
+
+		await checkFundTransferConfirmations();
+
+		expect(mockTransferUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ Transaction: { is: { status: TransactionStatus.RolledBack } } }),
+			}),
+		);
+		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
 	});
 });

@@ -273,6 +273,7 @@ async function main(): Promise<void> {
 		ports: allocator,
 		supervisor,
 		provision: provisionDeps,
+		resolvePeerHostname,
 		logger,
 	});
 	// A second listener, not a second path. Redeeming an invite configures and

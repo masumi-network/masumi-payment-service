@@ -1,5 +1,14 @@
-import { byteString, conStr0, conStr1, integer, pubKeyAddress, serializeAddressObj } from '@meshsdk/core';
-import { decodeV2ContractDatum, newCooldownTime } from './index';
+import {
+	byteString,
+	conStr0,
+	conStr1,
+	integer,
+	pubKeyAddress,
+	scriptAddress,
+	serializeAddressObj,
+} from '@meshsdk/core';
+import { Address, PointerAddress } from '@emurgo/cardano-serialization-lib-nodejs';
+import { decodeV1ContractDatum, decodeV2ContractDatum, newCooldownTime } from './index';
 
 const BUYER_PKH = 'aa'.repeat(28);
 const SELLER_PKH = 'bb'.repeat(28);
@@ -52,6 +61,109 @@ const TOO_LARGE = 2n ** 63n;
 const CONTRACT_ADDRESS = 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g';
 
 describe('decodeV2ContractDatum', () => {
+	describe.each([
+		['buyer', 1],
+		['seller', 3],
+	] as const)('%s return address', (_side, index) => {
+		const address = pubKeyAddress(OTHER_PKH, STAKE_KH);
+		it.each([
+			['empty Some', conStr0([])],
+			['None with an address', conStr1([address])],
+			['Some with two addresses', conStr0([address, address])],
+			['unknown constructor', { constructor: 2, fields: [address] }],
+			['list instead of Option', []],
+			['missing Option', null],
+			['missing fields', { constructor: 1 }],
+			['array-like fields', { constructor: 0, fields: { 0: address, length: 1 } }],
+			['string constructor', { constructor: '0', fields: [address] }],
+		])('rejects %s', (_label, option) => {
+			const datum = v2Datum();
+			(datum.fields as unknown[])[index] = option;
+			expect(decodeV2ContractDatum(datum, 'preprod', CONTRACT_ADDRESS)).toBeNull();
+		});
+
+		it('rejects a Some address carrying fields in its staking None', () => {
+			const malformedAddress = conStr0([conStr0([byteString(OTHER_PKH)]), conStr1([byteString(STAKE_KH)])]);
+			const datum = v2Datum();
+			(datum.fields as unknown[])[index] = conStr0([malformedAddress]);
+			expect(decodeV2ContractDatum(datum, 'preprod', CONTRACT_ADDRESS)).toBeNull();
+		});
+
+		it.each([2, 2n])('rejects unknown inline staking credential constructor %s', (constructor) => {
+			const malformedAddress = conStr0([
+				conStr0([byteString(OTHER_PKH)]),
+				conStr0([conStr0([{ constructor, fields: [byteString(STAKE_KH)] }])]),
+			]);
+			const datum = v2Datum();
+			(datum.fields as unknown[])[index] = conStr0([malformedAddress]);
+			expect(decodeV2ContractDatum(datum, 'preprod', CONTRACT_ADDRESS)).toBeNull();
+		});
+
+		it('preserves canonical Some with no staking credential', () => {
+			const enterpriseAddress = pubKeyAddress(OTHER_PKH);
+			const datum = v2Datum();
+			(datum.fields as unknown[])[index] = conStr0([enterpriseAddress]);
+			const decoded = decodeV2ContractDatum(datum, 'preprod', CONTRACT_ADDRESS);
+			expect(decoded).not.toBeNull();
+			expect(index === 1 ? decoded?.buyerReturnAddress : decoded?.sellerReturnAddress).toBe(
+				serializeAddressObj(enterpriseAddress, 0),
+			);
+		});
+
+		it.each(['preprod', 'mainnet'] as const)('preserves canonical Some with script staking on %s', (network) => {
+			const scriptStakeAddress = pubKeyAddress(OTHER_PKH, STAKE_KH, true);
+			const datum = v2Datum();
+			(datum.fields as unknown[])[index] = conStr0([scriptStakeAddress]);
+			const decoded = decodeV2ContractDatum(datum, network, CONTRACT_ADDRESS);
+			expect(decoded).not.toBeNull();
+			expect(index === 1 ? decoded?.buyerReturnAddress : decoded?.sellerReturnAddress).toBe(
+				serializeAddressObj(scriptStakeAddress, network === 'mainnet' ? 1 : 0),
+			);
+		});
+
+		it.each([false, true])('preserves supported pointer return addresses with script payment %s', (scriptPayment) => {
+			const payment = scriptPayment ? conStr1([byteString(OTHER_PKH)]) : conStr0([byteString(OTHER_PKH)]);
+			const pointerAddress = conStr0([payment, conStr0([conStr1([integer(0n), integer(65_535n), integer(0n)])])]);
+			const datum = v2Datum();
+			(datum.fields as unknown[])[index] = conStr0([pointerAddress]);
+			const decoded = decodeV2ContractDatum(datum, 'preprod', CONTRACT_ADDRESS);
+			expect(decoded).not.toBeNull();
+			const address = index === 1 ? decoded?.buyerReturnAddress : decoded?.sellerReturnAddress;
+			const pointer = PointerAddress.from_address(Address.from_bech32(address!))!;
+			expect(pointer.stake_pointer().tx_index_bignum().to_str()).toBe('65535');
+			expect(pointer.stake_pointer().slot_bignum().to_str()).toBe('0');
+			expect(pointer.stake_pointer().cert_index_bignum().to_str()).toBe('0');
+			expect(
+				scriptPayment
+					? pointer.payment_cred().to_scripthash()?.to_hex()
+					: pointer.payment_cred().to_keyhash()?.to_hex(),
+			).toBe(OTHER_PKH);
+		});
+
+		it.each([
+			['enterprise', scriptAddress(OTHER_PKH)],
+			['base', scriptAddress(OTHER_PKH, STAKE_KH)],
+		] as const)('preserves script payment credentials on %s return addresses', (_shape, address) => {
+			const datum = v2Datum();
+			(datum.fields as unknown[])[index] = conStr0([address]);
+			const decoded = decodeV2ContractDatum(datum, 'preprod', CONTRACT_ADDRESS);
+			expect(decoded).not.toBeNull();
+			expect(index === 1 ? decoded?.buyerReturnAddress : decoded?.sellerReturnAddress).toBe(
+				serializeAddressObj(address, 0),
+			);
+		});
+
+		it('accepts canonical bigint Option constructors', () => {
+			const datum = v2Datum();
+			(datum.fields as unknown[])[index] = { constructor: 0n, fields: [address] };
+			expect(decodeV2ContractDatum(datum, 'preprod', CONTRACT_ADDRESS)).not.toBeNull();
+			(datum.fields as unknown[])[index] = { constructor: 1n, fields: [] };
+			const decoded = decodeV2ContractDatum(datum, 'preprod', CONTRACT_ADDRESS);
+			expect(decoded).not.toBeNull();
+			expect(index === 1 ? decoded?.buyerReturnAddress : decoded?.sellerReturnAddress).toBeNull();
+		});
+	});
+
 	it('decodes a well-formed datum', () => {
 		const decoded = decodeV2ContractDatum(v2Datum(), 'preprod', CONTRACT_ADDRESS);
 		expect(decoded).not.toBeNull();
@@ -126,6 +238,117 @@ describe('decodeV2ContractDatum', () => {
 		);
 		expect(decoded).not.toBeNull();
 	});
+});
+
+describe.each(['V1', 'V2'] as const)('%s principal address validation', (version) => {
+	function decodePrincipal(address: unknown, side: 'buyer' | 'seller', network: 'preprod' | 'mainnet' = 'preprod') {
+		const datum = v2Datum();
+		(datum.fields as unknown[])[side === 'buyer' ? 0 : 2] = address;
+		if (version === 'V2') return decodeV2ContractDatum(datum, network);
+		const { fields } = datum;
+		return decodeV1ContractDatum(conStr0([fields[0], fields[2], ...fields.slice(4, 8), ...fields.slice(9)]), network);
+	}
+
+	describe.each(['buyer', 'seller'] as const)('%s signing authority', (side) => {
+		it.each([
+			['enterprise', scriptAddress(OTHER_PKH)],
+			['base', scriptAddress(OTHER_PKH, STAKE_KH)],
+			[
+				'pointer',
+				conStr0([conStr1([byteString(OTHER_PKH)]), conStr0([conStr1([integer(0), integer(0), integer(0)])])]),
+			],
+		] as const)('rejects script payment credentials on %s principals', (_shape, address) => {
+			expect(decodePrincipal(address, side)).toBeNull();
+		});
+	});
+
+	it.each(['buyer', 'seller'] as const)('rejects an unknown inline staking credential in the %s principal', (side) => {
+		const malformedAddress = conStr0([
+			conStr0([byteString(OTHER_PKH)]),
+			conStr0([conStr0([{ constructor: 2, fields: [byteString(STAKE_KH)] }])]),
+		]);
+		expect(decodePrincipal(malformedAddress, side)).toBeNull();
+	});
+
+	it.each(['buyer', 'seller'] as const)('rejects a malformed staking None in the %s principal', (side) => {
+		const malformedAddress = conStr0([conStr0([byteString(OTHER_PKH)]), conStr1([byteString(STAKE_KH)])]);
+		expect(decodePrincipal(malformedAddress, side)).toBeNull();
+	});
+
+	it.each([
+		['unknown Address constructor', { constructor: 1, fields: [conStr0([byteString(OTHER_PKH)]), conStr1([])] }],
+		['short payment hash', conStr0([conStr0([byteString('aa')]), conStr1([])])],
+		[
+			'short stake hash',
+			conStr0([conStr0([byteString(OTHER_PKH)]), conStr0([conStr0([conStr0([byteString('aa')])])])]),
+		],
+		['wrong Inline arity', conStr0([conStr0([byteString(OTHER_PKH)]), conStr0([conStr0([])])])],
+		[
+			'unknown StakeCredential constructor',
+			conStr0([conStr0([byteString(OTHER_PKH)]), conStr0([{ constructor: 2, fields: [] }])]),
+		],
+		[
+			'lossy pointer index',
+			conStr0([conStr0([byteString(OTHER_PKH)]), conStr0([conStr1([integer(0), integer(65_536), integer(0)])])]),
+		],
+		[
+			'unsafe numeric pointer',
+			conStr0([
+				conStr0([byteString(OTHER_PKH)]),
+				conStr0([conStr1([integer(0), integer(9_007_199_254_740_993n), integer(0)])]),
+			]),
+		],
+		[
+			'negative pointer',
+			conStr0([conStr0([byteString(OTHER_PKH)]), conStr0([conStr1([integer(-1), integer(0), integer(0)])])]),
+		],
+		[
+			'overflowing pointer',
+			conStr0([conStr0([byteString(OTHER_PKH)]), conStr0([conStr1([integer(2n ** 64n), integer(0), integer(0)])])]),
+		],
+	])('rejects %s without normalizing it', (_label, address) => {
+		expect(decodePrincipal(address, 'buyer')).toBeNull();
+	});
+
+	it.each(['preprod', 'mainnet'] as const)('preserves script staking for both principals on %s', (network) => {
+		const address = pubKeyAddress(OTHER_PKH, STAKE_KH, true);
+		for (const side of ['buyer', 'seller'] as const) {
+			const decoded = decodePrincipal(address, side, network);
+			expect(decoded).not.toBeNull();
+			expect(side === 'buyer' ? decoded?.buyerAddress : decoded?.sellerAddress).toBe(
+				serializeAddressObj(address, network === 'mainnet' ? 1 : 0),
+			);
+		}
+	});
+
+	it.each(['preprod', 'mainnet'] as const)(
+		'keeps zero and maximal supported pointer indices exact on %s',
+		(network) => {
+			const pointerAddress = conStr0([
+				conStr0([byteString(OTHER_PKH)]),
+				conStr0([conStr1([integer(0n), integer(65_535n), integer(0n)])]),
+			]);
+			const decoded = decodePrincipal(pointerAddress, 'buyer', network);
+			expect(decoded).not.toBeNull();
+			const serialized = Address.from_bech32(decoded!.buyerAddress);
+			expect(serialized.network_id()).toBe(network === 'mainnet' ? 1 : 0);
+			const pointer = PointerAddress.from_address(serialized)!.stake_pointer();
+			expect([
+				pointer.slot_bignum().to_str(),
+				pointer.tx_index_bignum().to_str(),
+				pointer.cert_index_bignum().to_str(),
+			]).toEqual(['0', '65535', '0']);
+		},
+	);
+});
+
+it('preserves V1 datum decoding without optional return fields', () => {
+	const { fields } = v2Datum();
+	const datum = conStr0([fields[0], fields[2], ...fields.slice(4, 8), ...fields.slice(9)]);
+	const decoded = decodeV1ContractDatum(datum, 'preprod');
+	expect(decoded).not.toBeNull();
+	expect(decoded?.buyerAddress).toBe(serializeAddressObj(pubKeyAddress(BUYER_PKH, STAKE_KH), 0));
+	expect(decoded?.sellerAddress).toBe(serializeAddressObj(pubKeyAddress(SELLER_PKH, STAKE_KH), 0));
 });
 
 describe('newCooldownTime', () => {

@@ -12,7 +12,7 @@
  *  - redemption requires a nonce this Host issued, unspent and unexpired;
  *  - the redeemer's signature must verify against the wallet it names before
  *    the nonce is spent, so a forged or malformed body cannot burn an invite;
- *  - requests are limited per source and in total; past the total, only a
+ *  - requests are limited per source and in total; past either limit, only a
  *    redemption of an open invite is still served;
  *  - bodies are capped and connection timeouts are short.
  *
@@ -80,10 +80,8 @@ const DEFAULT_TOTAL_REQUESTS_PER_MINUTE = 2 * DEFAULT_REQUESTS_PER_MINUTE;
  * holding an IPv6 /64 can present a fresh address per connection, so an
  * uncapped map grows with the flood rather than bounding it.
  *
- * Past the cap, further sources share one bucket. A flood stays limited, and a
- * genuine counterparty arriving during one is throttled rather than refused:
- * redemption is a single POST, and the shared bucket still allows the same
- * per-minute budget.
+ * Past the cap, further sources share one bucket. A flood stays limited, while
+ * an open invite can still be redeemed after that bucket reaches its limit.
  */
 const MAX_TRACKED_SOURCES = 10_000;
 
@@ -387,17 +385,11 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		const source = rateLimitKey(rateLimitSource(remote), requestsInWindow, maxTrackedSources);
 		const seen = (requestsInWindow.get(source) ?? 0) + 1;
 		requestsInWindow.set(source, seen);
-		// Per source first, so requests one source has no budget for never spend
-		// the shared budget: one caller alone cannot exhaust it.
-		if (seen > requestsPerMinute) {
-			refuseOverBudget(response);
-			return;
-		}
-		// Past the shared budget the request is not refused yet: junk from many
-		// addresses can spend that budget, and refusing here would deny the real
-		// counterparty until the invite expires. Instead only a redemption of an
-		// open invite gets through, and the body-reader caps bound the extra reads.
-		const overBudget = admittedInWindow >= totalRequestsPerMinute;
+		// A load balancer can group several clients under one source address.
+		// Past either limit, admit only redemption of an open invite. Body-reader
+		// caps bound that extra work. A source past its own limit does not spend
+		// the shared budget, so one caller cannot exhaust it alone.
+		const overBudget = seen > requestsPerMinute || admittedInWindow >= totalRequestsPerMinute;
 		if (!overBudget) admittedInWindow += 1;
 
 		void handle(request, response, source, pathname, overBudget).catch((error: unknown) => {
@@ -484,7 +476,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		}
 		inFlight += 1;
 		try {
-			// Past the shared budget, only an open invite can reach the costly
+			// Past either budget, only an open invite can reach the costly
 			// signature check. All other nonces receive the same refusal.
 			if (overBudget && !(await isOpenInvite(body.nonce))) {
 				refuseOverBudget(response);

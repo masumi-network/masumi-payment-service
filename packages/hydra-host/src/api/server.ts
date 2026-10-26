@@ -22,7 +22,7 @@ import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRe
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
-import { PeerResolverUnavailableError } from '../peer-dns.js';
+import { createBoundedPeerResolver, PeerResolverUnavailableError } from '../peer-dns.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate, authenticateNode, type AuthResult } from './auth.js';
 import { nonceLogRef } from './nonce-log-ref.js';
@@ -33,7 +33,12 @@ import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { buildProxyQuery, isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
-import { buildPeerAllowlist, renderNftables, resolvePeerAllowlist } from './peer-allowlist.js';
+import {
+	buildPeerAllowlist,
+	renderNftables,
+	resolvePeerAllowlist,
+	type PeerHostnameResolver,
+} from './peer-allowlist.js';
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
@@ -51,6 +56,7 @@ export type ServerDeps = {
 	ports: PortAllocator;
 	supervisor: Supervisor;
 	provision: ProvisionDeps;
+	resolvePeerHostname?: PeerHostnameResolver;
 	logger: SupervisorLogger;
 };
 
@@ -156,6 +162,7 @@ function readPeers(body: unknown): PeerRecord[] {
 
 export function createControlPlane(deps: ServerDeps): Server {
 	const { config, store, exchange, ports, supervisor, provision, logger } = deps;
+	const resolvePeerHostname = deps.resolvePeerHostname ?? createBoundedPeerResolver();
 	// Bound once so every response reports the guard this host actually enforces.
 	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
@@ -420,11 +427,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'forgetInvite': {
-				// Opt-in and exact: only `true` keeps a replay, so a caller that predates the
-				// flag, or mistypes it, gets the full delete it always got.
-				const keepReplay = new URL(request.url ?? '/', 'http://host.invalid').searchParams.get('keepReplay') === 'true';
-				if (!(await exchange.forgetInvite(nonce ?? '', store, { keepReplay }))) {
-					throw new HostApiError('redemption peer setup is still pending; retry after setup completes', 409);
+				const params = new URL(request.url ?? '/', 'http://host.invalid').searchParams;
+				const keepReplay = params.get('keepReplay') === 'true';
+				const discardRedemption = params.get('discardRedemption') === 'true';
+				if (!(await exchange.forgetInvite(nonce ?? '', store, { keepReplay, discardRedemption }))) {
+					throw new HostApiError('redemption needs explicit discard or peer setup is still pending', 409);
 				}
 				send(response, 200, { forgotten: true });
 				return;
@@ -455,6 +462,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 				const allowlist = await resolvePeerAllowlist(
 					buildPeerAllowlist(await store.list(), range),
 					config.allowPrivatePeers,
+					resolvePeerHostname,
 				);
 				send(response, 200, {
 					...allowlist,
@@ -595,6 +603,18 @@ export function createControlPlane(deps: ServerDeps): Server {
 			case 'removeNode': {
 				const force = new URL(request.url ?? '/', 'http://placeholder').searchParams.get('force') === 'true';
 				const record = await requestRemoval(store, nodeId ?? '', { force });
+				closeNodeSockets(record.nodeId);
+				tickSupervisor();
+				send(response, 202, publicNode(record));
+				return;
+			}
+
+			case 'removeUnclaimedNode': {
+				const record = await exchange.removeUnclaimedNode(
+					nodeId ?? '',
+					async () => await requestRemoval(store, nodeId ?? '', { force: false }),
+				);
+				if (record === null) throw new HostApiError('an invite has claimed this node', 409);
 				closeNodeSockets(record.nodeId);
 				tickSupervisor();
 				send(response, 202, publicNode(record));

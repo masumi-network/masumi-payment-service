@@ -14,6 +14,7 @@
 
 import { HydraTopupStatus, type Prisma, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import { PREPARING_STALE_AFTER_MS } from '@/services/hydra-topup/stale';
+import createHttpError from 'http-errors';
 
 /**
  * A deposit that reached L1 and has neither been taken by the head nor sent
@@ -90,20 +91,39 @@ const activeEscrowWhere = (headId: string) => ({
 });
 
 /**
- * An initial commit is reserved on the participant before it is submitted, and
- * gets its deposit row only after. Counted from the reservation until that row
- * exists, so a close in between still sees it, and never twice.
+ * Older releases could submit an initial commit before writing its recovery
+ * row. Confirmation does not prove absorption, so a missing row stays active
+ * even after hasCommitted becomes true. New reservations create both atomically.
  */
 async function countUnrecordedInitialCommit(client: Prisma.TransactionClient, headId: string): Promise<number> {
 	const participant = await client.hydraLocalParticipant.findFirst({
-		where: { hydraHeadId: headId, hasCommitted: false, commitTxHash: { not: null } },
-		select: { commitTxHash: true },
+		where: { hydraHeadId: headId, commitTxHash: { not: null } },
+		select: { id: true, commitTxHash: true },
 	});
 	if (participant?.commitTxHash == null) return 0;
 	const recorded = await client.hydraTopup.count({
-		where: { hydraHeadId: headId, depositTxHash: participant.commitTxHash },
+		where: {
+			hydraHeadId: headId,
+			hydraLocalParticipantId: participant.id,
+			depositTxHash: participant.commitTxHash,
+			isInitialCommit: true,
+		},
 	});
 	return recorded === 0 ? 1 : 0;
+}
+
+/** A missing recovery record cannot be waived as ordinary active escrow work. */
+export async function assertHydraCommitRecoveryRecorded(
+	client: Prisma.TransactionClient,
+	headId: string,
+): Promise<void> {
+	if ((await countUnrecordedInitialCommit(client, headId)) !== 0) {
+		throw createHttpError(
+			409,
+			'Cannot close or delete: an initial Hydra commit has no recovery record. ' +
+				'Restore its recovery record from verified deposit evidence before retrying',
+		);
+	}
 }
 
 export async function countHydraHeadActiveWork(

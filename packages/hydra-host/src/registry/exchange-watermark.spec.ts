@@ -87,7 +87,7 @@ describe('redemption retention', () => {
 		const { invites } = await store.listInvitesWithWatermark();
 		expect(invites.map((invite) => invite.redeemerSignature)).toEqual([SIGNATURE]);
 
-		expect(await store.forgetInvite('nonce-one')).toBe(true);
+		expect(await store.forgetInvite('nonce-one', undefined, { discardRedemption: true })).toBe(true);
 		expect(await store.listInvites()).toEqual([]);
 	});
 

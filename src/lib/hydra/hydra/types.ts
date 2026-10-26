@@ -184,6 +184,8 @@ export interface StatusChangeData {
 	headId?: string;
 	snapshotNumber?: number;
 	contestationDeadline?: string;
+	/** Only a current live L1 close or contest may lower a persisted Closed snapshot. */
+	chainEvent?: 'HeadIsClosed' | 'HeadIsContested';
 }
 
 export enum HydraTransactionType {
