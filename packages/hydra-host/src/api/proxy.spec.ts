@@ -194,6 +194,7 @@ describe('node api proxy', () => {
 
 	it.each([
 		['GET', '/v1/nodes/node-1/api/head', { 'Transfer-Encoding': 'chunked' }, 'probe'],
+		['DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, { 'Transfer-Encoding': 'chunked' }, 'probe'],
 		['DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, { 'Content-Length': '5' }, 'probe'],
 	])('rejects a framed body on proxied %s before contacting the node', async (method, url, headers, body) => {
 		const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
