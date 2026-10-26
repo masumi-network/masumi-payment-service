@@ -41,13 +41,12 @@ describe('fetchHydraPendingDecommitRefs', () => {
 		await expect(fetchHydraPendingDecommitRefs(transportThrowing(error))).resolves.toBeUndefined();
 	});
 
-	// `/head` carries the snapshot more than once, so a large head can outgrow
-	// the byte limit for good. Refusing on that would block every withdrawal
-	// and consolidation from it.
-	it('clears the guard when the node answered with something it cannot use', async () => {
+	// An oversized `/head` response cannot prove a prior decommit settled.
+	// Returning [] would admit a split that can never snapshot-confirm.
+	it('keeps the guard unknown when the head response exceeds its byte limit', async () => {
 		const transport = transportThrowing(new HydraProtocolError('Hydra HTTP response exceeded its byte limit'));
 
-		await expect(fetchHydraPendingDecommitRefs(transport)).resolves.toEqual([]);
+		await expect(fetchHydraPendingDecommitRefs(transport)).resolves.toBeUndefined();
 	});
 });
 
