@@ -87,12 +87,36 @@ describe('expired invite with an unknown Host state', () => {
 				},
 			},
 		]);
-		fetchHostRedemptions.mockResolvedValue({ invites: [], now: Date.now() });
+		fetchHostRedemptions.mockResolvedValue({ invites: [], unreadableNonces: [], now: Date.now() });
 
 		expect(await reapExpiredInvites()).toBe(1);
 		expect(forgetHostInvite).toHaveBeenCalledTimes(1);
 		expect(removeHostNode).toHaveBeenCalledTimes(1);
 		expect(update).toHaveBeenCalledTimes(1);
 		expect(release).toHaveBeenCalledTimes(1);
+	});
+
+	// The Host lists only redeemed records and refuses to forget one without a discard.
+	it('keeps an invite whose redeemed Host record is unreadable', async () => {
+		findMany.mockResolvedValue([
+			{
+				id: 'invite',
+				nonce: 'nonce',
+				hydraHostId: 'host',
+				hostNodeId: 'node',
+				expiresAt: expiredAt,
+				HydraHost: {
+					baseUrl: 'https://host.example',
+					encryptedAdminToken: 'admin-token',
+					allowInsecureHttp: false,
+				},
+			},
+		]);
+		fetchHostRedemptions.mockResolvedValue({ invites: [], unreadableNonces: ['nonce'], now: Date.now() });
+
+		expect(await reapExpiredInvites()).toBe(0);
+		expect(forgetHostInvite).not.toHaveBeenCalled();
+		expect(removeHostNode).not.toHaveBeenCalled();
+		expect(release).not.toHaveBeenCalled();
 	});
 });

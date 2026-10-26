@@ -536,8 +536,8 @@ const HOST_INVITE_LIMITS = {
 };
 const MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
 const hostTimestampSchema = z.number().finite().nonnegative().max(MAX_DATE_TIMESTAMP_MS);
-const hostInviteRecordSchema = z.object({
-	nonce: z.string().min(1).max(HOST_INVITE_LIMITS.identifier),
+const hostInviteNonceSchema = z.object({ nonce: z.string().min(1).max(HOST_INVITE_LIMITS.identifier) });
+const hostInviteRecordSchema = hostInviteNonceSchema.extend({
 	hostNodeId: z.string().min(1).max(HOST_INVITE_LIMITS.identifier),
 	expiresAt: hostTimestampSchema,
 	redeemedAt: hostTimestampSchema.nullable(),
@@ -584,22 +584,33 @@ export async function fetchHostRedemptions(
 	adminToken: string,
 	redeemedSince: number,
 	transport: HostTransportOptions,
-): Promise<{ invites: HostInviteRecord[]; now: number }> {
+): Promise<{ invites: HostInviteRecord[]; unreadableNonces: string[]; now: number }> {
 	const body = await request(baseUrl, `/v1/invites?redeemedSince=${redeemedSince}`, adminToken, transport);
 	// Reject the whole batch before adoption or watermark updates can use it.
 	const parsed = hostInviteResponseSchema.safeParse(body);
 	if (!parsed.success) {
 		throw new HydraProtocolError('hydra host returned a malformed invite list');
 	}
-	// Stop on the first malformed record instead of accumulating an array of validation errors.
-	const invites = parsed.data.invites.map((record) => {
+	// Skip a malformed record rather than the batch. It can never be adopted, and
+	// failing the batch would also block every other adoption, revoke and expiry
+	// sweep on this Host. The Host lists only redeemed records and refuses to
+	// forget one unless told to discard it, so revoke and the sweep must still
+	// count a skipped record's nonce as held.
+	const invites: HostInviteRecord[] = [];
+	const unreadableNonces: string[] = [];
+	for (const record of parsed.data.invites) {
 		const invite = hostInviteRecordSchema.safeParse(record);
-		if (!invite.success) {
-			throw new HydraProtocolError('hydra host returned a malformed invite record');
+		if (invite.success) {
+			invites.push(invite.data);
+			continue;
 		}
-		return invite.data;
-	});
-	return { invites, now: parsed.data.now };
+		const nonce = hostInviteNonceSchema.safeParse(record);
+		if (nonce.success) unreadableNonces.push(nonce.data.nonce);
+		logger.warn(
+			`hydra host listed a malformed invite record${nonce.success ? ` ${nonceLogRef(nonce.data.nonce)}` : ''}; skipping it`,
+		);
+	}
+	return { invites, unreadableNonces, now: parsed.data.now };
 }
 
 /**
