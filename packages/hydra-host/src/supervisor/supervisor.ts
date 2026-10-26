@@ -17,6 +17,7 @@ import path from 'node:path';
 import type { HostConfig } from '../config.js';
 import { NodeClient } from '../node-client.js';
 import { PortAllocator } from '../registry/ports.js';
+import { peerKeyDirectory } from '../registry/peer-key-directory.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
@@ -415,7 +416,6 @@ export class Supervisor {
 			return;
 		}
 		const nodeDir = this.store.nodeDir(record.nodeId);
-		const peersDir = path.join(nodeDir, 'peers');
 
 		// Claimed before argv is built, not after. A peer change is refused unless
 		// the node is quiescent, and it read that from a record this start had
@@ -446,6 +446,7 @@ export class Supervisor {
 			return;
 		}
 		const starting = claimed;
+		const peersDir = peerKeyDirectory(nodeDir, starting.peerKeysGeneration);
 
 		const args = buildHydraNodeArgs({
 			nodeId: starting.nodeId,

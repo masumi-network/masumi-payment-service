@@ -26,6 +26,7 @@ import { PortAllocator } from '../registry/ports.js';
 import { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import { resolveSlotConfig } from '../slot-config.js';
+import { NodeProcessManager } from './process.js';
 import { Supervisor } from './supervisor.js';
 
 const env: EnvSource = {
@@ -274,6 +275,39 @@ describe('Supervisor observation', () => {
 		// proof no spawn was attempted.
 		expect(after?.startAttempts).toBe(0);
 		expect(after?.state).toBe('Stopped');
+	});
+
+	it.each([
+		['legacy flat keys', undefined, 'peers'],
+		['generated keys', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'peers/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+	] as const)('launches a node using its %s directory', async (_label, generation, relativeDirectory) => {
+		const record = makeRecord({
+			state: 'Stopped',
+			peers: [
+				{
+					advertise: 'hydra2.example.com:5001',
+					hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+					cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+				},
+			],
+			peerKeysGeneration: generation,
+		});
+		await store.write(record);
+		const launch = jest.spyOn(NodeProcessManager.prototype, 'start').mockImplementation(async (request) => ({
+			nodeId: request.nodeId,
+			pid: undefined,
+			startedAtMs: Date.now(),
+		}));
+
+		await supervisor.tick();
+
+		expect(launch).toHaveBeenCalledTimes(1);
+		const args = launch.mock.calls[0]?.[0].args;
+		const expectedDir = path.join(store.nodeDir(record.nodeId), relativeDirectory);
+		const hydraKeyIndex = args?.indexOf('--hydra-verification-key') ?? -1;
+		const cardanoKeyIndex = args?.indexOf('--cardano-verification-key') ?? -1;
+		expect(args?.[hydraKeyIndex + 1]).toBe(path.join(expectedDir, '0-hydra.vk'));
+		expect(args?.[cardanoKeyIndex + 1]).toBe(path.join(expectedDir, '0-cardano.vk'));
 	});
 });
 
