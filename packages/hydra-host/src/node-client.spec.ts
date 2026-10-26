@@ -17,6 +17,7 @@ import { NodeClient } from './node-client.js';
 
 /** One byte beyond the payment service's established Hydra HTTP response cap. */
 const OVERSIZED_NODE_RESPONSE_BYTES = 4 * 1024 * 1024 + 1;
+const RESPONSE_CLOSE_TIMEOUT_MS = 1_000;
 
 const servers: Server[] = [];
 
@@ -74,5 +75,31 @@ describe('NodeClient probe budget', () => {
 		});
 
 		await expect(new NodeClient(port).fetchConfirmedSnapshot()).rejects.toBeInstanceOf(NodeResponseError);
+	});
+
+	it('closes a stalled response when its declared length exceeds the limit', async () => {
+		let responseClosed!: () => void;
+		const closed = new Promise<boolean>((resolve) => {
+			responseClosed = () => resolve(true);
+		});
+		const port = await listen((_request, response) => {
+			response.once('close', responseClosed);
+			response.writeHead(200, {
+				'content-type': 'application/json',
+				'content-length': String(OVERSIZED_NODE_RESPONSE_BYTES),
+			});
+			response.write('{');
+		});
+
+		await expect(new NodeClient(port).fetchConfirmedSnapshot()).rejects.toBeInstanceOf(NodeResponseError);
+		let timer!: ReturnType<typeof setTimeout>;
+		try {
+			const timedOut = new Promise<boolean>((resolve) => {
+				timer = setTimeout(() => resolve(false), RESPONSE_CLOSE_TIMEOUT_MS);
+			});
+			expect(await Promise.race([closed, timedOut])).toBe(true);
+		} finally {
+			clearTimeout(timer);
+		}
 	});
 });
