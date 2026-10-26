@@ -499,24 +499,7 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 }
 
 /**
- * How long past its expiry an invite may sit before it is expired without the
- * Host's agreement.
- *
- * The Host round trip comes first, and a throw anywhere in it used to leave the
- * invite `Issued` — which is a live status: `withdrawNodeFunds` refuses to
- * sweep with `invite-holds`, `releaseAbandonedReservations` skips the pair, and
- * the funding cycle keeps the node in scope. So a Host that is decommissioned,
- * unreachable, or whose admin token was rotated stranded the 30 ADA the funding
- * cycle had already sent that node, permanently and with no operator path out.
- *
- * A day is long enough that every transient outage has been retried many times
- * over, and the sweep it unblocks needs nothing from the Host: the node's
- * Cardano key is held here and the balance is read from Blockfrost.
- */
-const HOST_UNREACHABLE_REAP_GRACE_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Release invites nobody redeemed.
+ * Release invites the Host confirms nobody redeemed.
  *
  * An unredeemed invite holds a node, a peer port and a persistence directory,
  * and because `--peer` is startup configuration none of it can be reused for a
@@ -530,9 +513,6 @@ export async function reapExpiredInvites(): Promise<number> {
 
 	let reaped = 0;
 	for (const invite of expired) {
-		// Set when the Host could not be told, so the local release can still go
-		// ahead once the invite is old enough to be beyond doubt.
-		let hostRefusal: string | null = null;
 		try {
 			if (invite.HydraHost.encryptedAdminToken !== null) {
 				const adminToken = decrypt(invite.HydraHost.encryptedAdminToken);
@@ -574,6 +554,9 @@ export async function reapExpiredInvites(): Promise<number> {
 						throw error;
 					}
 				}
+			} else {
+				logger.warn(`hydra: cannot reap expired invite ${nonceLogRef(invite.nonce)} without its Host admin token`);
+				continue;
 			}
 			// Expired first, released second. Releasing sweeps the node's fuel back,
 			// and the sweep refuses while an invite is still live — an unredeemed
@@ -587,37 +570,7 @@ export async function reapExpiredInvites(): Promise<number> {
 			await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
 			reaped += 1;
 		} catch (error) {
-			hostRefusal = (error as Error).message;
-		}
-
-		if (hostRefusal === null) continue;
-
-		// The Host could not be told. Retrying is right for a while — a restart or
-		// a network blip resolves itself — but not forever: `Issued` blocks the
-		// sweep, so waiting indefinitely is how the node's fuel became
-		// unrecoverable. Past the grace the invite is expired here anyway, which
-		// releases the participant and lets its balance come back through the
-		// key held in this service.
-		const expiredForMs = Date.now() - invite.expiresAt.getTime();
-		if (expiredForMs < HOST_UNREACHABLE_REAP_GRACE_MS) {
-			logger.warn(`hydra: could not reap expired invite ${nonceLogRef(invite.nonce)}: ${hostRefusal}`);
-			continue;
-		}
-
-		logger.error(
-			`hydra: expiring invite ${nonceLogRef(invite.nonce)} without its Host, which has refused for ${Math.round(
-				expiredForMs / (60 * 60 * 1000),
-			)}h: ${hostRefusal}. The node's funds are swept with the key held here; its Host-side node and peer port must be removed by hand`,
-		);
-		try {
-			await prisma.hydraHeadInvite.update({
-				where: { id: invite.id },
-				data: { status: HydraInviteStatus.Expired },
-			});
-			await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
-			reaped += 1;
-		} catch (error) {
-			logger.warn(`hydra: could not expire invite ${nonceLogRef(invite.nonce)} locally: ${(error as Error).message}`);
+			logger.warn(`hydra: could not reap expired invite ${nonceLogRef(invite.nonce)}: ${(error as Error).message}`);
 		}
 	}
 	return reaped;
