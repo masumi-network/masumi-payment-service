@@ -466,9 +466,12 @@ dialog warns until you do it.
 
 **The newest signed snapshot is kept outside the node.** Each time the service
 verifies that every party signed a snapshot, it stores the newest one for that
-head in `HydraHeadSignedSnapshot`. The row holds `ConfirmedSnapshot` JSON equal
-to what `GET /snapshot` returns. If a node loses its own persistence, this row
-is the evidence of what the head last agreed. It does not make a restored node
+head in `HydraHeadSignedSnapshot`. When the replay rejects a transition, it
+still stores the snapshot that transition reached. It stores no later snapshot,
+because the replay stops there. The row holds `ConfirmedSnapshot` JSON equivalent
+to what `GET /snapshot` returns. No API or admin page shows it, so read it with
+SQL. If a node loses its own persistence, this row is the evidence of what the
+head last agreed. It does not make a restored node
 contest by itself: in our hydra-node 2.3.0 test, a node restored after storage
 loss refused a side-load of the stored snapshot (`SideLoadSvNumberInvalid`).
 

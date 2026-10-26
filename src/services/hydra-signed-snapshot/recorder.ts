@@ -28,12 +28,22 @@ function snapshotNumberOf(payload: HydraConfirmedSnapshotPayload): bigint {
 	return BigInt(payload.snapshot.number);
 }
 
-function toRow(payload: HydraConfirmedSnapshotPayload): SignedSnapshotRow {
-	return {
-		snapshotNumber: snapshotNumberOf(payload),
-		snapshotVersion: BigInt(payload.snapshot.version),
-		confirmedSnapshot: stringifyHydraJson(payload),
-	};
+/** The row to store, or null when the payload does not serialize. No retry can fix that, so it is dropped. */
+function toRowOrDrop(hydraHeadId: string, payload: HydraConfirmedSnapshotPayload): SignedSnapshotRow | null {
+	try {
+		return {
+			snapshotNumber: snapshotNumberOf(payload),
+			snapshotVersion: BigInt(payload.snapshot.version),
+			confirmedSnapshot: stringifyHydraJson(payload),
+		};
+	} catch (error) {
+		logger.warn('[HydraSignedSnapshot] dropped a signed snapshot that cannot be serialized', {
+			hydraHeadId,
+			snapshotNumber: payload.snapshot.number,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+		return null;
+	}
 }
 
 async function readStoredNumber(database: SignedSnapshotDatabase, hydraHeadId: string): Promise<bigint> {
@@ -98,22 +108,11 @@ export function createSignedSnapshotRecorder(
 		while (pending) {
 			const payload = pending;
 			pending = null;
-			let row: SignedSnapshotRow;
-			try {
-				row = toRow(payload);
-			} catch (error) {
-				// No retry can fix a payload that does not serialize. Drop it, so it
-				// does not hold back the next one.
-				logger.warn('[HydraSignedSnapshot] dropped a signed snapshot that cannot be serialized', {
-					hydraHeadId,
-					snapshotNumber: payload.snapshot.number,
-					error: error instanceof Error ? error.message : 'Unknown error',
-				});
-				continue;
-			}
 			try {
 				storedNumber ??= await readStoredNumber(database, hydraHeadId);
-				if (row.snapshotNumber <= storedNumber) continue;
+				if (snapshotNumberOf(payload) <= storedNumber) continue;
+				const row = toRowOrDrop(hydraHeadId, payload);
+				if (row === null) continue;
 				storedNumber = await storeIfNewer(database, hydraHeadId, row);
 			} catch (error) {
 				const isHeadGone = (error as { code?: string } | null)?.code === PRISMA_FOREIGN_KEY_VIOLATION;

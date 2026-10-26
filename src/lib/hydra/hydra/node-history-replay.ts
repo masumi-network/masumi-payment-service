@@ -579,7 +579,6 @@ export class HydraHistoryReplay {
 			accumulator: parsedMessage.snapshot.accumulator,
 			signatures: JSON.stringify(parsedMessage.signatures.multiSignature),
 		};
-		this.host.onSignedSnapshotVerified?.(toConfirmedSnapshotPayload(parsedMessage));
 	}
 
 	private recordHistorySnapshot(
@@ -599,8 +598,13 @@ export class HydraHistoryReplay {
 		const signed = verifyHydraSnapshotSignatures(parsedMessage, orderedKeys);
 		const computeAccumulator = this.host.computeSnapshotAccumulator ?? computeHydraAccumulatorHash;
 		const accumulator = computeAccumulator([...signed.outputs.values()]);
-		const adopt = (computedAccumulator: string) =>
-			this.adoptHistorySnapshot(parsedMessage, completeHydraSnapshotVerification(signed, computedAccumulator));
+		const adopt = (computedAccumulator: string) => {
+			const verifiedSnapshot = completeHydraSnapshotVerification(signed, computedAccumulator);
+			// Every party signed it, so it can win a contest even when this replay
+			// rejects the transition that led to it.
+			this.host.onSignedSnapshotVerified?.(toConfirmedSnapshotPayload(parsedMessage));
+			this.adoptHistorySnapshot(parsedMessage, verifiedSnapshot);
+		};
 		if (typeof accumulator === 'string') {
 			adopt(accumulator);
 			return undefined;

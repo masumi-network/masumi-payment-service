@@ -1915,6 +1915,20 @@ describe('HydraNode', () => {
 			]);
 		});
 
+		it('stores a signed snapshot even when its transition fails the replay', async () => {
+			const onSignedSnapshotVerified = jest.fn();
+			const { node, historyConnection } = await startSignedNode({ onSignedSnapshotVerified });
+			const [first, , third] = signedHistoryChain().frames;
+
+			for (const frame of [first, third]) historyConnection.emit('message', JSON.stringify(frame));
+
+			expect(node.confirmedTransactionHistoryError).toBeDefined();
+			const storedNumbers = onSignedSnapshotVerified.mock.calls.map(
+				([payload]) => (payload as { snapshot: { number: number } }).snapshot.number,
+			);
+			expect(storedNumbers).toEqual([first.snapshot.number, third.snapshot.number]);
+		});
+
 		it('pages a large replay without trusting a partial prefix as complete', async () => {
 			const { node, historyConnection } = await startSignedNode({ maxUnreconciledTransactions: 1 });
 			const { frames, transactions } = signedHistoryChain();
