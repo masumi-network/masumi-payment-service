@@ -41,7 +41,10 @@ DEMO="${DEMO:-${HYDRA_DEMO_DIR:-$( \
     [ -d "$d" ] && { (cd "$d" && pwd); break; }; \
   done )}}"
 DB_CONTAINER="${DB_CONTAINER:-masumi-hydra-test-db}"
-export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:testpass@localhost:5433/masumi_hydra_test?schema=public}"
+TEST_DB_PORT=5433
+# shellcheck source=test-db.sh
+source "$(dirname "${BASH_SOURCE[0]}")/test-db.sh" || exit 1
+export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:testpass@localhost:${TEST_DB_PORT}/masumi_hydra_test?schema=public}"
 # 127.0.0.1, not localhost: the native hydra-node binds its API to 127.0.0.1,
 # and on macOS `localhost` resolves to IPv6 ::1 first — curl then fails to
 # connect (the node isn't listening on ::1) and the head reads as "down".
@@ -334,10 +337,11 @@ cmd_up_preprod(){
 
   c_blu "[2/5] Test DB on 5433 (dev DB on 5432 untouched)…"
   if docker ps -a --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+    assert_test_db_loopback_binding "$DB_CONTAINER" "$TEST_DB_PORT" || return 1
     docker start "$DB_CONTAINER" >/dev/null 2>&1; c_grn "  reusing existing DB"
   else
     docker run -d --name "$DB_CONTAINER" -e POSTGRES_PASSWORD=testpass \
-      -e POSTGRES_DB=masumi_hydra_test -p 5433:5432 postgres:15 >/dev/null
+      -e POSTGRES_DB=masumi_hydra_test -p "127.0.0.1:${TEST_DB_PORT}:5432" postgres:15 >/dev/null
     for i in $(seq 1 30); do docker exec "$DB_CONTAINER" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
     npx prisma migrate deploy --config prisma/prisma.config.ts
     npx prisma db seed --config prisma/prisma.config.ts
@@ -481,10 +485,11 @@ cmd_up(){
 
   c_blu "[2/5] Test DB on 5433 (dev DB on 5432 untouched)…"
   if docker ps -a --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+    assert_test_db_loopback_binding "$DB_CONTAINER" "$TEST_DB_PORT" || return 1
     docker start "$DB_CONTAINER" >/dev/null 2>&1; c_grn "  reusing existing DB"
   else
     docker run -d --name "$DB_CONTAINER" -e POSTGRES_PASSWORD=testpass \
-      -e POSTGRES_DB=masumi_hydra_test -p 5433:5432 postgres:15 >/dev/null
+      -e POSTGRES_DB=masumi_hydra_test -p "127.0.0.1:${TEST_DB_PORT}:5432" postgres:15 >/dev/null
     for i in $(seq 1 30); do docker exec "$DB_CONTAINER" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
     npx prisma migrate deploy --config prisma/prisma.config.ts
     npx prisma db seed --config prisma/prisma.config.ts
@@ -750,7 +755,7 @@ cmd_flow3(){
 
 # ── all : full lifecycle (fast refund path first, then the two cooldown flows) ─
 cmd_all(){
-  cmd_up
+  cmd_up || return 1
   cmd_evidence_reset   # clean ledger so this run's EVIDENCE.md is coherent
   c_blu "═══ FLOW 2 (refund path, no waits) ═══"; cmd_flow2 || exit 1
   cmd_fund
@@ -770,7 +775,7 @@ cmd_demo(){
   export VERBOSE=1
   : > /tmp/hydra-e2e.log
   banner "STEP 0 — Docker + hydra-node image + throwaway storage DB + open & fund a head"
-  cmd_up
+  cmd_up || return 1
   cmd_evidence_reset   # clean ledger so this run's EVIDENCE.md is coherent
 
   banner "FLOW 2 — refund path (no cooldown): lock → request-refund → authorize-refund → collect-refund"
@@ -953,6 +958,7 @@ cmd_precheck(){
   c_grn "  ✓ docker daemon"
 
   # 2. Test DB container + schema (Prisma ECONNREFUSED / missing HydraHead otherwise).
+  assert_test_db_loopback_binding "$DB_CONTAINER" "$TEST_DB_PORT" || return 1
   if ! docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
     docker start "$DB_CONTAINER" >/dev/null 2>&1 \
       || { c_red "  ✗ test DB container '$DB_CONTAINER' missing — run '$0 up' once to create+seed it"; return 1; }
