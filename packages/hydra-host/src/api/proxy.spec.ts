@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http';
 import { connect, type AddressInfo, type Socket } from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -190,6 +190,29 @@ describe('node api proxy', () => {
 		expect(response.status).toBe(200);
 		expect((await response.json()) as { ok: boolean }).toMatchObject({ ok: true });
 		expect(node.received[0]?.url).toBe('/snapshot/utxo');
+	});
+
+	it.each([
+		['GET', '/v1/nodes/node-1/api/head', { 'Transfer-Encoding': 'chunked' }, 'probe'],
+		['DELETE', `/v1/nodes/node-1/api/commits/${'a'.repeat(64)}`, { 'Content-Length': '5' }, 'probe'],
+	])('rejects a framed body on proxied %s before contacting the node', async (method, url, headers, body) => {
+		const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+			const request = httpRequest(
+				`${baseUrl}${url}`,
+				{ method, headers: { Authorization: `Bearer ${USER}`, ...headers } },
+				(reply) => {
+					let received = '';
+					reply.setEncoding('utf8');
+					reply.on('data', (chunk: string) => (received += chunk));
+					reply.on('end', () => resolve({ status: reply.statusCode ?? 0, body: received }));
+				},
+			);
+			request.on('error', reject);
+			request.end(body);
+		});
+		expect(response.status).toBe(400);
+		expect(response.body).toContain('body');
+		expect(node.received).toHaveLength(0);
 	});
 
 	// A same-name upstream header would beat the handler's setHeader in
