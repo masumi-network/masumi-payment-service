@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { WebhookEventType, WebhookFormat } from '@/generated/prisma/client';
+import { WebhookDeliveryStatus, WebhookEventType, WebhookFormat, X402EvmWalletType } from '@/generated/prisma/client';
 import type { StoredWebhookPayload } from '@/types/webhook-payloads';
 
 const mockWebhookEndpointFindUnique = jest.fn() as jest.Mock<any>;
@@ -541,6 +541,56 @@ describe('webhookSenderService.sendTestWebhook', () => {
 });
 
 describe('webhookSenderService.processWebhookDelivery', () => {
+	const x402Delivery = (eventType: WebhookEventType, paymentSourceId: string | null) => ({
+		id: 'delivery-x402',
+		webhookEndpointId: 'webhook-x402',
+		eventType,
+		attempts: 0,
+		maxAttempts: 3,
+		payload: {
+			event_type: eventType,
+			timestamp: '2026-10-26T00:00:00.000Z',
+			webhook_id: 'webhook-x402',
+			data:
+				eventType === WebhookEventType.X402_WALLET_LOW_BALANCE
+					? {
+							ruleId: 'rule-1',
+							evmWalletId: 'evm-wallet-1',
+							walletAddress: '0x1234',
+							walletType: X402EvmWalletType.Purchasing,
+							caip2Network: 'eip155:8453',
+							asset: 'native',
+							thresholdAmount: '1000000',
+							currentAmount: '500000',
+							checkedAt: '2026-10-26T00:00:00.000Z',
+						}
+					: {
+							attemptId: 'attempt-1',
+							paymentPayloadHash: null,
+							supportedPaymentSourceId: 'evm-source-1',
+							registryRequestId: 'request-1',
+							caip2Network: 'eip155:8453',
+							asset: '0x1234',
+							amount: '1000000',
+							payTo: '0x5678',
+							payer: '0x9abc',
+							txHash: '0xdef0',
+							success: eventType === WebhookEventType.X402_PAYMENT_SETTLED,
+							errorReason: null,
+							errorMessage: null,
+							settledAt: '2026-10-26T00:00:00.000Z',
+						},
+		},
+		WebhookEndpoint: {
+			id: 'webhook-x402',
+			url: 'https://example.com/webhook',
+			format: WebhookFormat.EXTENDED,
+			authToken: 'secret',
+			isActive: true,
+			paymentSourceId,
+		},
+	});
+
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockResolveWebhookDestinationAllowed.mockImplementation(async (url: string) => ({
@@ -557,6 +607,43 @@ describe('webhookSenderService.processWebhookDelivery', () => {
 		global.fetch = jest.fn(async () => {
 			throw new Error('Unpinned fetch used');
 		}) as typeof fetch;
+	});
+
+	it.each([
+		[WebhookEventType.X402_PAYMENT_SETTLED, WebhookDeliveryStatus.Pending],
+		[WebhookEventType.X402_PAYMENT_FAILED, WebhookDeliveryStatus.Retrying],
+		[WebhookEventType.X402_WALLET_LOW_BALANCE, WebhookDeliveryStatus.Pending],
+	] as const)('cancels old source-scoped %s deliveries in %s state', async (eventType, status) => {
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			...x402Delivery(eventType, 'source-1'),
+			status,
+		});
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-x402');
+
+		expect(mockPostPinnedWebhook).not.toHaveBeenCalled();
+		expect(mockWebhookEndpointUpdate).not.toHaveBeenCalled();
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-x402' },
+			data: {
+				status: WebhookDeliveryStatus.Cancelled,
+				errorMessage: 'x402 webhook requires a global endpoint',
+			},
+		});
+	});
+
+	it('still sends x402 deliveries queued for a global endpoint', async () => {
+		mockWebhookDeliveryFindUnique.mockResolvedValue(x402Delivery(WebhookEventType.X402_PAYMENT_SETTLED, null));
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-x402');
+
+		expect(mockPostPinnedWebhook).toHaveBeenCalledTimes(1);
+		expect(mockWebhookDeliveryUpdate).toHaveBeenCalledWith({
+			where: { id: 'delivery-x402' },
+			data: expect.objectContaining({ status: WebhookDeliveryStatus.Success }),
+		});
 	});
 
 	it('processes legacy queued deliveries that do not include service_name', async () => {

@@ -43,6 +43,11 @@ class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
+	private static readonly SOURCELESS_X402_EVENTS = new Set<WebhookEventType>([
+		WebhookEventType.X402_PAYMENT_SETTLED,
+		WebhookEventType.X402_PAYMENT_FAILED,
+		WebhookEventType.X402_WALLET_LOW_BALANCE,
+	]);
 	private static readonly NETWORK_ERROR_CODES = new Set([
 		'ECONNREFUSED',
 		'ECONNRESET',
@@ -289,6 +294,23 @@ class WebhookSenderService {
 					errorMessage: 'Invalid webhook payload stored in queue',
 				},
 			});
+			return;
+		}
+
+		// Cancel legacy x402 rows queued for Cardano-scoped endpoints before any network request.
+		if (
+			(WebhookSenderService.SOURCELESS_X402_EVENTS.has(delivery.eventType) ||
+				WebhookSenderService.SOURCELESS_X402_EVENTS.has(delivery.payload.event_type)) &&
+			delivery.WebhookEndpoint.paymentSourceId !== null
+		) {
+			await prisma.webhookDelivery.update({
+				where: { id: deliveryId },
+				data: {
+					status: WebhookDeliveryStatus.Cancelled,
+					errorMessage: 'x402 webhook requires a global endpoint',
+				},
+			});
+			logger.warn('Cancelled x402 webhook delivery for scoped endpoint', { delivery_id: deliveryId });
 			return;
 		}
 
