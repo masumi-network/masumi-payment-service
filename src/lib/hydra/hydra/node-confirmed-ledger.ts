@@ -11,6 +11,7 @@
  */
 
 import { resolveTxHash } from '@meshsdk/core';
+import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { CircularBuffer, setsEqual } from './node-frames';
 import { HydraProtocolError } from './errors';
 import { canonicalHydraTransactionIdSchema, historySnapshotConfirmedMessageSchema } from './schemas';
@@ -18,6 +19,17 @@ import { HydraConfirmedTransaction } from './types';
 import { type VerifiedHydraSnapshot } from './snapshot-verification';
 
 type SnapshotConfirmedMessage = ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>;
+
+/** Witnesses can change without changing the transaction body or its id. */
+function hasSameConfirmedPayload(firstCborHex: string, secondCborHex: string): boolean {
+	const first = Transaction.from_hex(firstCborHex);
+	const second = Transaction.from_hex(secondCborHex);
+	return (
+		first.body().to_hex() === second.body().to_hex() &&
+		first.is_valid() === second.is_valid() &&
+		(first.auxiliary_data()?.to_hex() ?? null) === (second.auxiliary_data()?.to_hex() ?? null)
+	);
+}
 
 export function compareConfirmedTransactions(a: HydraConfirmedTransaction, b: HydraConfirmedTransaction): number {
 	const sequenceDifference =
@@ -181,8 +193,8 @@ export class ConfirmedTransactionLedger {
 			}
 			const existing =
 				this._confirmedTransactions.get(computedTxId) ?? this._unreconciledConfirmedTransactions.get(computedTxId);
-			if (existing && existing.cborHex.toLowerCase() !== tx.cborHex.toLowerCase()) {
-				throw new HydraProtocolError('SnapshotConfirmed equivocated on the CBOR for one transaction id');
+			if (existing && !hasSameConfirmedPayload(existing.cborHex, tx.cborHex)) {
+				throw new HydraProtocolError('SnapshotConfirmed equivocated on the payload for one transaction id');
 			}
 			if (
 				existing &&

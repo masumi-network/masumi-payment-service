@@ -1,6 +1,19 @@
 import { describe, expect, it } from '@jest/globals';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
 import { HydraConfirmedTransaction, HydraTransactionType } from './types';
+import { resolveTxHash } from '@meshsdk/core';
+import {
+	BigNum,
+	Ed25519KeyHash,
+	NativeScript,
+	NativeScripts,
+	ScriptPubkey,
+	Transaction,
+	TransactionBody,
+	TransactionInputs,
+	TransactionOutputs,
+	TransactionWitnessSet,
+} from '@emurgo/cardano-serialization-lib-nodejs';
 
 function ledgerWith(transactions: HydraConfirmedTransaction[]): ConfirmedTransactionLedger {
 	const ledger = new ConfirmedTransactionLedger({
@@ -77,6 +90,41 @@ describe('ConfirmedTransactionLedger lookups', () => {
 		expect(ledger.getConfirmedTransaction('aa')).toBeNull();
 		expect(ledger.hasUnreconciled).toBe(false);
 		expect(ledger.getAllConfirmedSorted()).toEqual([]);
+	});
+});
+
+describe('ConfirmedTransactionLedger replay identity', () => {
+	it('accepts the same transaction body with different witness CBOR at the same history position', () => {
+		const body = TransactionBody.new(TransactionInputs.new(), TransactionOutputs.new(), BigNum.from_str('1'));
+		const firstCbor = Transaction.new(body, TransactionWitnessSet.new()).to_hex();
+		const otherWitnesses = TransactionWitnessSet.new();
+		const scripts = NativeScripts.new();
+		scripts.add(NativeScript.new_script_pubkey(ScriptPubkey.new(Ed25519KeyHash.from_bytes(Buffer.alloc(28, 1)))));
+		otherWitnesses.set_native_scripts(scripts);
+		const secondCbor = Transaction.new(body, otherWitnesses).to_hex();
+		const txId = String(resolveTxHash(firstCbor)).toLowerCase();
+		expect(secondCbor).not.toBe(firstCbor);
+		expect(String(resolveTxHash(secondCbor)).toLowerCase()).toBe(txId);
+
+		const ledger = new ConfirmedTransactionLedger({
+			maxUnreconciledTransactions: 100,
+			maxRetainedTransactionCborBytes: 1024 * 1024,
+		});
+		const record = (cborHex: string) =>
+			ledger.record(
+				{
+					seq: 1,
+					snapshot: { confirmed: [{ type: HydraTransactionType.TxConwayEra, cborHex, description: '', txId }] },
+				} as Parameters<typeof ledger.record>[0],
+				{ emitEvent: false, replayComplete: false, protectedProducerTxIds: new Set(), onConfirmed: () => undefined },
+			);
+
+		record(firstCbor);
+		expect(() => record(secondCbor)).not.toThrow();
+		expect(ledger.getConfirmedTransaction(txId)?.cborHex).toBe(firstCbor);
+		const invalidFlagTransaction = Transaction.from_hex(firstCbor);
+		invalidFlagTransaction.set_is_valid(false);
+		expect(() => record(invalidFlagTransaction.to_hex())).toThrow(/equivocated on the payload/);
 	});
 });
 
