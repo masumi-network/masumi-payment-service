@@ -73,6 +73,7 @@ const redeemer = {
 };
 const record = {
 	nonce: 'nonce',
+	hostNodeId: 'node',
 	redeemedAt: Date.now(),
 	redeemer,
 	redeemerSignature: { signature: 'signature', key: 'signer-key' },

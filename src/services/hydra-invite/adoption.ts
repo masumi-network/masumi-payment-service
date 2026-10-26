@@ -97,7 +97,7 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		for (const record of redemptions.invites) {
 			let result: AdoptionResult;
 			try {
-				result = await adoptRedemption(record);
+				result = await adoptRedemption(record, host.id);
 			} catch (error) {
 				if (record.redeemedAt !== null) {
 					retryFromMs = retryFromMs === null ? record.redeemedAt : Math.min(retryFromMs, record.redeemedAt);
@@ -368,7 +368,7 @@ function fundAdoptedNode(localParticipantId: string, hydraHeadId: string): void 
  * checked. If the signature does not hold, the head is never recorded and the
  * operator is left with a node to remove.
  */
-async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult> {
+async function adoptRedemption(record: HostInviteRecord, expectedHostId: string): Promise<AdoptionResult> {
 	if (record.redeemedAt === null || record.redeemer === null || record.redeemerSignature === null) {
 		return 'skipped';
 	}
@@ -377,7 +377,13 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 		where: { nonce: record.nonce },
 		include: { LocalHotWallet: true, HydraHost: true },
 	});
-	if (!invite || invite.role !== HydraInviteRole.Issuer) {
+	// Bind the report to its Host and reserved node before any state change or cleanup.
+	if (
+		!invite ||
+		invite.role !== HydraInviteRole.Issuer ||
+		invite.hydraHostId !== expectedHostId ||
+		invite.hostNodeId !== record.hostNodeId
+	) {
 		return 'skipped';
 	}
 	// Any status other than `Issued` is finished with, not just `Completed`: an
