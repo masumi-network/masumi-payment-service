@@ -225,6 +225,17 @@ describe('HydraHistoryReplay closed snapshot number', () => {
 			}),
 		);
 		expect(replay.closedSnapshotNumber).toBe(5);
+		// The contest was rolled back. The next live chain observation names the
+		// older Close again; the last observed state, not the largest number, wins.
+		replay.processMessage(
+			JSON.stringify({
+				tag: 'HeadIsClosed',
+				headId: PINNED_HEAD_ID,
+				snapshotNumber: 3,
+				contestationDeadline: deadline,
+			}),
+		);
+		expect(replay.closedSnapshotNumber).toBe(3);
 		replay.resetPass();
 		expect(replay.closedSnapshotNumber).toBeUndefined();
 	});

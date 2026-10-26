@@ -1,0 +1,196 @@
+#!/bin/bash
+# Restrict new outbound connections from the host-network Hydra container.
+# Run as root on the machine before Docker starts this container.
+set -euo pipefail
+umask 077
+
+CONFIG_FILE=${HYDRA_EGRESS_CONFIG:-/etc/default/hydra-peer-egress}
+if [[ -r "$CONFIG_FILE" ]]; then
+	# shellcheck source=/dev/null
+	source "$CONFIG_FILE"
+fi
+
+# The reviewed image pins `hydra` to 10001. This must never be a setting that
+# can verify a correct-looking ruleset for the wrong UID.
+UID_NUMBER=10001
+PEER_START=${HYDRA_HOST_PEER_PORT_START:-5001}
+API_START=${HYDRA_HOST_API_PORT_START:-4001}
+COUNT=${HYDRA_HOST_PEER_PORT_COUNT:-32}
+# Keep this in sync with ETCD_CLIENT_PORT_OFFSET in src/registry/ports.ts.
+ETCD_CLIENT_PORT_OFFSET=-2622
+DNS_IPV4=${HYDRA_EGRESS_DNS_IPV4:-}
+CONTAINER=${HYDRA_EGRESS_CONTAINER:-hydra-host}
+DEST=${HYDRA_EGRESS_RULES_FILE:-/etc/nftables.d/hydra-peer-egress.nft}
+LOCK=${HYDRA_EGRESS_LOCK_FILE:-/run/hydra-peer-egress.lock}
+READY_DIR=${HYDRA_EGRESS_READY_DIR:-/run/hydra-peer-egress}
+TABLE='inet hydra_peer_egress'
+
+fail() {
+	echo "hydra-peer-egress: $*" >&2
+	exit 1
+}
+
+for value in "$UID_NUMBER" "$PEER_START" "$API_START" "$COUNT"; do
+	[[ "$value" =~ ^[1-9][0-9]*$ ]] || fail 'UID and port settings must be positive integers without leading zeroes'
+done
+((UID_NUMBER <= 4294967295 && PEER_START <= 65535 && API_START <= 65535 && COUNT <= 65535)) ||
+	fail 'UID or port setting is out of range'
+PEER_LAST=$((PEER_START + COUNT - 1))
+API_LAST=$((API_START + COUNT - 1))
+ETCD_START=$((PEER_START + ETCD_CLIENT_PORT_OFFSET))
+ETCD_LAST=$((ETCD_START + COUNT - 1))
+((PEER_LAST <= 65535 && API_LAST <= 65535 && ETCD_START >= 1 && ETCD_LAST <= 65535)) ||
+	fail 'peer, API, or derived etcd client port range is invalid'
+
+port_range() {
+	if (($1 == $2)); then echo "$1"; else echo "$1-$2"; fi
+}
+API_RANGE=$(port_range "$API_START" "$API_LAST")
+ETCD_RANGE=$(port_range "$ETCD_START" "$ETCD_LAST")
+
+# Exactly configured DNS listeners may be reached on port 53. Counterparty
+# peer advertisements on that port are refused by the Host before node boot.
+DNS_SERVERS=()
+if [[ -n "$DNS_IPV4" ]]; then
+	IFS=',' read -r -a raw_dns <<<"$DNS_IPV4"
+	for candidate in "${raw_dns[@]}"; do
+		canonical=$(python3 -c '
+import ipaddress, sys
+try:
+    address = ipaddress.IPv4Address(sys.argv[1])
+    if address.is_multicast or address.is_unspecified or address == ipaddress.IPv4Address("169.254.169.254"):
+        raise ValueError("not a DNS listener")
+    print(address)
+except ValueError:
+    sys.exit(1)
+' "$candidate") || fail "invalid HYDRA_EGRESS_DNS_IPV4 address: $candidate"
+		DNS_SERVERS+=("$canonical")
+	done
+fi
+((${#DNS_SERVERS[@]} > 0)) || fail 'HYDRA_EGRESS_DNS_IPV4 must name the container IPv4 DNS servers'
+DNS_EXPECTED=$(IFS=,; echo "${DNS_SERVERS[*]}")
+
+# Mirror the Host's non-public peer policy. The FIB rule also closes traffic to
+# this machine's public IP, which a list of private CIDRs cannot catch.
+IPV4_BLOCKS=(
+	0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16
+	172.16.0.0/12 192.0.0.0/24 192.0.2.0/24 192.88.99.0/24
+	192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24
+	224.0.0.0/4 240.0.0.0/4
+)
+IPV6_BLOCKS=(
+	::/96 ::ffff:0.0.0.0/96 64:ff9b::/96 64:ff9b:1::/48 100::/64
+	2001::/23 2001:db8::/32 2002::/16 fc00::/7 fe80::/10 ff00::/8
+)
+
+render_rules() {
+	echo "meta skuid $UID_NUMBER ct state established ct direction reply accept"
+	echo "meta skuid $UID_NUMBER ip daddr 127.0.0.1 tcp dport $API_RANGE accept"
+	echo "meta skuid $UID_NUMBER ip daddr 127.0.0.1 tcp dport $ETCD_RANGE accept"
+	for dns in "${DNS_SERVERS[@]}"; do
+		echo "meta skuid $UID_NUMBER ip daddr $dns udp dport 53 accept"
+		echo "meta skuid $UID_NUMBER ip daddr $dns tcp dport 53 accept"
+	done
+	echo "meta skuid $UID_NUMBER fib daddr type local drop"
+	for block in "${IPV4_BLOCKS[@]}"; do echo "meta skuid $UID_NUMBER ip daddr $block drop"; done
+	for block in "${IPV6_BLOCKS[@]}"; do echo "meta skuid $UID_NUMBER ip6 daddr $block drop"; done
+}
+
+render_baseline() {
+	echo '#!/usr/sbin/nft -f'
+	echo '# Written by hydra-peer-egress. Restricts UID-scoped outbound traffic.'
+	echo "add table $TABLE"
+	echo "flush table $TABLE"
+	echo "table $TABLE {"
+	echo $'\tchain output {'
+	echo $'\t\ttype filter hook output priority filter; policy accept;'
+	while IFS= read -r rule; do printf '\t\t%s\n' "$rule"; done < <(render_rules)
+	echo $'\t}'
+	echo '}'
+}
+
+# A Docker daemon with userns-remap changes the UID seen by nft on the host.
+# Do not guess that mapping. Config.User is the reviewed image's `hydra` user,
+# which Dockerfile pins to 10001. The host network mode and explicit opt-in
+# must match the production mode this rule was designed to guard.
+check_container() {
+	local metadata security
+	metadata=$(docker inspect --format '{{json .HostConfig.NetworkMode}},{{json .HostConfig.UsernsMode}},{{json .Config.User}},{{json .HostConfig.Dns}}' "$CONTAINER") ||
+		fail "cannot inspect Docker container $CONTAINER"
+	security=$(docker info --format '{{json .SecurityOptions}}') || fail 'cannot inspect Docker user namespaces'
+	python3 -c '
+import json, sys
+network, userns, user, dns = json.loads("[" + sys.argv[1] + "]")
+security = json.loads(sys.argv[2])
+env = dict(item.split("=", 1) for item in json.load(sys.stdin) if "=" in item)
+expected = {"HYDRA_HOST_PEER_PORT_START": sys.argv[3], "HYDRA_HOST_API_PORT_START": sys.argv[4],
+            "HYDRA_HOST_PEER_PORT_COUNT": sys.argv[5]}
+defaults = {"HYDRA_HOST_PEER_PORT_START": "5001", "HYDRA_HOST_API_PORT_START": "4001",
+            "HYDRA_HOST_PEER_PORT_COUNT": "32"}
+if network != "host": sys.exit("container must use --network host")
+if dns != sys.argv[6].split(","):
+    sys.exit("container --dns servers differ from HYDRA_EGRESS_DNS_IPV4")
+if user not in ("hydra", "10001", "10001:10001"):
+    sys.exit("container must use the reviewed hydra UID 10001")
+if any("rootless" in item for item in security):
+    sys.exit("rootless Docker changes the host UID; use a rootful daemon for this policy")
+if userns not in ("", "host") or (any("userns" in item for item in security) and userns != "host"):
+    sys.exit("Docker userns-remap changes the host UID; determine the mapped UID before enabling egress")
+if env.get("HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL") != "true":
+    sys.exit("container must set HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL=true")
+if env.get("HYDRA_HOST_ALLOW_PRIVATE_PEERS", "false") != "false":
+    sys.exit("private peers are incompatible with the egress firewall")
+for key, value in expected.items():
+    if env.get(key, defaults[key]) != value:
+        sys.exit("container %s differs from the outbound firewall" % key)
+' "$metadata" "$security" "$PEER_START" "$API_START" "$COUNT" "$DNS_EXPECTED" \
+		< <(docker inspect --format '{{json .Config.Env}}' "$CONTAINER") ||
+		fail 'container settings do not match the outbound firewall'
+}
+
+verify_loaded() {
+	local chain rules expected
+	chain=$(nft list chain $TABLE output 2>/dev/null) || fail "table $TABLE has no output chain loaded"
+	grep -qE 'type filter hook output priority filter; policy accept;' <<<"$chain" ||
+		fail 'the output chain has the wrong hook or policy'
+	rules=$(grep -vE '^[[:space:]]*(table |chain |type |}|#|$)' <<<"$chain" |
+		sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/[[:space:]]+/ /g' || true)
+	expected=$(render_rules)
+	[[ "$rules" == "$expected" ]] || fail 'the loaded output rules differ from the required UID and destination policy'
+}
+
+baseline() {
+	local temporary="$DEST.new"
+	# A failed refresh must not leave a recent receipt that another launcher can
+	# mistake for a verified startup gate.
+	rm -f "$READY_DIR/ready"
+	check_container
+	# A pre-existing connection to a private address could remain conntrack
+	# established. A baseline is only meaningful after the old Host has stopped.
+	[[ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER")" == false ]] ||
+		fail 'stop the existing Hydra container before applying the outbound baseline'
+	exec 9>"$LOCK"
+	flock 9
+	mkdir -p "$(dirname "$DEST")"
+	trap 'rm -f "$DEST.new" "$READY_DIR/ready.new"' EXIT
+	render_baseline >"$temporary"
+	nft -c -f "$temporary" || fail 'nft rejected the outbound ruleset'
+	mv "$temporary" "$DEST"
+	nft -f "$DEST" || fail 'nft failed to apply the outbound ruleset'
+	verify_loaded
+	# /run is cleared at reboot. The container receives this directory read-only
+	# and refuses to boot unless this record is fresh and matches its port layout.
+	mkdir -p "$READY_DIR"
+	chmod 755 "$READY_DIR"
+	printf '{"uid":10001,"peerStart":%d,"apiStart":%d,"count":%d,"verifiedAt":%d}\n' \
+		"$PEER_START" "$API_START" "$COUNT" "$(($(date +%s) * 1000))" >"$READY_DIR/ready.new"
+	chmod 644 "$READY_DIR/ready.new"
+	mv "$READY_DIR/ready.new" "$READY_DIR/ready"
+}
+
+case "${1:-}" in
+baseline) baseline ;;
+verify) check_container; verify_loaded ;;
+*) fail 'usage: hydra-peer-egress baseline|verify' ;;
+esac
+echo verified

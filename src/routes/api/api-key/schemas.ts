@@ -103,7 +103,10 @@ export const addAPIKeySchemaInput = z.object({
 					),
 			}),
 		)
-		.describe('The credits allowed to be used by the API key. Only relevant if usageLimited is true. '),
+		.default([])
+		.describe(
+			'The credits allowed to be used by the API key when usageLimited is true. Omitted defaults to an empty array (read-only keys). Pay-enabled usage-limited keys must supply at least one entry.',
+		),
 	NetworkLimit: z
 		.array(z.nativeEnum(Network))
 		.max(3)

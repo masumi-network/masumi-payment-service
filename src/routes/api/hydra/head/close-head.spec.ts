@@ -17,6 +17,7 @@ const mockTransactionCount = jest.fn() as AnyMock;
 const mockPaymentCount = jest.fn() as AnyMock;
 const mockPurchaseCount = jest.fn() as AnyMock;
 const mockTopupCount = jest.fn() as AnyMock;
+const mockFindCommitParticipant = jest.fn() as AnyMock;
 const mockClaimClose = jest.fn() as AnyMock;
 const mockFindHead = jest.fn() as AnyMock;
 const mockUpdateHead = jest.fn() as AnyMock;
@@ -34,7 +35,7 @@ const transactionClient = {
 	paymentRequest: { count: mockPaymentCount },
 	purchaseRequest: { count: mockPurchaseCount },
 	hydraTopup: { count: mockTopupCount },
-	hydraLocalParticipant: { findFirst: async () => null },
+	hydraLocalParticipant: { findFirst: mockFindCommitParticipant },
 	hydraHead: { updateMany: mockClaimClose },
 };
 
@@ -106,6 +107,7 @@ beforeEach(() => {
 	mockPaymentCount.mockResolvedValue(0);
 	mockPurchaseCount.mockResolvedValue(0);
 	mockTopupCount.mockResolvedValue(0);
+	mockFindCommitParticipant.mockResolvedValue(null);
 	mockClaimClose.mockResolvedValue({ count: 1 });
 	mockFindHead.mockResolvedValue(openHead);
 	mockUpdateHead.mockResolvedValue(openHead);
@@ -117,6 +119,15 @@ beforeEach(() => {
 });
 
 describe('beginHydraHeadClose', () => {
+	it('refuses an acknowledged close with a legacy commit missing its recovery record', async () => {
+		mockFindCommitParticipant.mockResolvedValue({ id: 'participant-1', commitTxHash: 'c'.repeat(64) });
+		await expect(beginHydraHeadClose('head-1', true)).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('recovery record'),
+		});
+		expect(mockClaimClose).not.toHaveBeenCalled();
+	});
+
 	it('rejects close while a Pending L2 reservation exists', async () => {
 		mockTransactionCount.mockResolvedValue(1);
 
@@ -165,7 +176,10 @@ describe('beginHydraHeadClose', () => {
 		mockPaymentCount.mockResolvedValue(71);
 		mockTransactionCount.mockResolvedValue(1);
 
-		await expect(beginHydraHeadClose('head-1', true)).resolves.toBeUndefined();
+		await expect(beginHydraHeadClose('head-1', true)).resolves.toMatchObject({
+			closingSince: expect.any(Date),
+			closeAdmissionId: expect.any(String),
+		});
 		expect(mockClaimClose).toHaveBeenCalled();
 	});
 
@@ -215,7 +229,10 @@ describe('beginHydraHeadClose', () => {
 	});
 
 	it('claims the durable admission gate only after all blocking work is drained', async () => {
-		await expect(beginHydraHeadClose('head-1')).resolves.toBeUndefined();
+		await expect(beginHydraHeadClose('head-1')).resolves.toMatchObject({
+			closingSince: expect.any(Date),
+			closeAdmissionId: expect.any(String),
+		});
 
 		expect(mockTransactionCount).toHaveBeenCalledWith({
 			where: {
@@ -234,7 +251,12 @@ describe('beginHydraHeadClose', () => {
 			},
 			// `closingSince` is the latch's own timestamp. `closeRefusedAt` starts
 			// empty: a refusal from an earlier attempt must not release this one.
-			data: { isClosing: true, closingSince: expect.any(Date), closeRefusedAt: null },
+			data: {
+				isClosing: true,
+				closingSince: expect.any(Date),
+				closeAdmissionId: expect.any(String),
+				closeRefusedAt: null,
+			},
 		});
 	});
 });
@@ -266,13 +288,28 @@ describe('Hydra head state convergence', () => {
 		await expect(updateHydraHeadEnabledState('head-1', false)).resolves.toBe(disabledHead);
 
 		expect(mockReleaseClose).toHaveBeenCalledWith({
-			where: { id: 'head-1', retiredAt: null },
+			where: {
+				id: 'head-1',
+				retiredAt: null,
+				status: { notIn: [HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] },
+			},
 			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		// The disable write is the only updateMany: the close latch is untouched.
 		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
 	});
+
+	it.each([HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible])(
+		'refuses to disable a %s head while contest monitoring is required',
+		async (status) => {
+			mockFindHead.mockResolvedValue({ ...openHead, status });
+
+			await expect(updateHydraHeadEnabledState('head-1', false)).rejects.toMatchObject({ statusCode: 409 });
+			expect(mockReleaseClose).not.toHaveBeenCalled();
+			expect(mockReconcileEnabledState).not.toHaveBeenCalled();
+		},
+	);
 
 	// Disabling clears the init anchors that a recovery of a retired head
 	// restarts the node from.
@@ -457,8 +494,25 @@ describe('Hydra head state convergence', () => {
 		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportError);
 
 		expect(mockReleaseClose).toHaveBeenCalledWith({
-			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true },
-			data: { isClosing: false, closingSince: null, closeRefusedAt: null },
+			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true, closeAdmissionId: expect.any(String) },
+			data: { isClosing: false, closingSince: null, closeAdmissionId: null, closeRefusedAt: null },
+		});
+	});
+
+	it('persists recovery proof when an unsent Close cannot clear its admission', async () => {
+		mockClose.mockRejectedValue(new HydraTransportError('not sent'));
+		mockReleaseClose.mockRejectedValueOnce(new Error('head update unavailable'));
+		const handler = (
+			closeHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportError);
+		expect(mockReleaseClose).toHaveBeenCalledTimes(2);
+		expect(mockReleaseClose).toHaveBeenLastCalledWith({
+			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true, closeAdmissionId: expect.any(String) },
+			data: { closeRefusedAt: expect.any(Date) },
 		});
 	});
 
@@ -481,9 +535,55 @@ describe('Hydra head state convergence', () => {
 
 		expect(mockReleaseClose).toHaveBeenCalledTimes(1);
 		expect(mockReleaseClose).toHaveBeenCalledWith({
-			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true },
+			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true, closeAdmissionId: expect.any(String) },
 			data: { closeRefusedAt: expect.any(Date) },
 		});
+	});
+
+	it('persists refusal proof in the error log when the head update fails', async () => {
+		mockClose.mockRejectedValue(
+			new HydraTransportAmbiguousError('Hydra Close was rejected after dispatch', {
+				cause: new HydraCommandRejectedError('hydra-node refused the Close'),
+			}),
+		);
+		mockReleaseClose.mockRejectedValueOnce(new Error('head update unavailable'));
+		const handler = (
+			closeHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+		expect(mockCreateHeadError).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					hydraHeadId: 'head-1',
+					clientInput: expect.stringMatching(/^CloseNonexecution:/),
+				}),
+			}),
+		);
+	});
+
+	it('keeps the latch and reports the node refusal when both proof writes fail', async () => {
+		mockClose.mockRejectedValue(
+			new HydraTransportAmbiguousError('Hydra Close was rejected after dispatch', {
+				cause: new HydraCommandRejectedError('hydra-node refused the Close'),
+			}),
+		);
+		mockReleaseClose.mockRejectedValueOnce(new Error('head update unavailable'));
+		mockCreateHeadError.mockRejectedValueOnce(new Error('error log unavailable'));
+		const handler = (
+			closeHeadPost as unknown as {
+				handler: (args: { input: { headId: string } }) => Promise<unknown>;
+			}
+		).handler;
+
+		await expect(handler({ input: { headId: 'head-1' } })).rejects.toBeInstanceOf(HydraTransportAmbiguousError);
+		expect(mockReleaseClose).not.toHaveBeenCalledWith({
+			where: expect.anything(),
+			data: expect.objectContaining({ isClosing: false }),
+		});
+		expect(mockCreateHeadError).toHaveBeenCalledTimes(2);
 	});
 
 	// A timeout after dispatch is the parked-Close case: the node may still post

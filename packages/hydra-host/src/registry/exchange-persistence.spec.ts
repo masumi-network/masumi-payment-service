@@ -39,6 +39,35 @@ afterEach(async () => {
 });
 
 describe('exchange persistence failures', () => {
+	it('keeps the exchange log and its temporary write private under a normal umask', async () => {
+		const file = path.join(directory, 'exchange.json');
+		await fs.chmod(directory, 0o755);
+		const originalRename = fs.rename.bind(fs);
+		const originalUmask = process.umask(0o022);
+		const temporaryModes: number[] = [];
+		jest.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+			if (to === file) temporaryModes.push((await fs.stat(from)).mode & 0o777);
+			await originalRename(from, to);
+		});
+		try {
+			await store.registerInvite({ ...invite, nonce: 'nonce-two' });
+			expect(temporaryModes).toEqual([0o600]);
+			expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+		} finally {
+			process.umask(originalUmask);
+		}
+	});
+
+	it('restricts an existing exchange log before loading its open nonces', async () => {
+		const file = path.join(directory, 'exchange.json');
+		await fs.chmod(directory, 0o755);
+		await fs.chmod(file, 0o644);
+
+		await new ExchangeStore(directory).listInvites();
+
+		expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+	});
+
 	it('keeps a failed registration invisible and permits its retry', async () => {
 		const next = { ...invite, nonce: 'nonce-two' };
 		jest.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('injected rename failure'));
@@ -73,5 +102,39 @@ describe('exchange persistence failures', () => {
 		expect((await store.listInvites())[0].startError).toBeNull();
 		await store.recordStartError(invite.nonce, 'failed start');
 		expect((await new ExchangeStore(directory).listInvites())[0].startError).toBe('failed start');
+	});
+});
+
+describe('orphan removal and invite claims', () => {
+	it('refuses removal while an open invite owns the node', async () => {
+		const remove = jest.fn<() => Promise<boolean>>().mockResolvedValue(true);
+		await expect(store.removeUnclaimedNode(invite.hostNodeId, remove)).resolves.toBeNull();
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it('does not register an invite after removal wins the queue', async () => {
+		let beginRemoval!: () => void;
+		let finishRemoval!: () => void;
+		const removalStarted = new Promise<void>((resolve) => {
+			beginRemoval = resolve;
+		});
+		const mayFinishRemoval = new Promise<void>((resolve) => {
+			finishRemoval = resolve;
+		});
+		let isRemoving = false;
+		const removal = store.removeUnclaimedNode('node-2', async () => {
+			isRemoving = true;
+			beginRemoval();
+			await mayFinishRemoval;
+			return true;
+		});
+		await removalStarted;
+		const registration = store.registerInvite({ ...invite, nonce: 'nonce-two', hostNodeId: 'node-2' }, async () => {
+			if (isRemoving) throw new Error('node is being removed');
+		});
+		finishRemoval();
+		await expect(removal).resolves.toBe(true);
+		await expect(registration).rejects.toThrow('node is being removed');
+		expect(await store.listInvites()).toEqual([invite]);
 	});
 });

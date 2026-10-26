@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -46,6 +46,7 @@ async function waitUntilGone(pid: number, budgetMs = 5_000): Promise<boolean> {
 }
 
 afterEach(() => {
+	jest.restoreAllMocks();
 	for (const child of spawned.splice(0)) {
 		child.kill('SIGKILL');
 	}
@@ -215,4 +216,133 @@ describe('NodeProcessManager child environment', () => {
 			await fs.rm(nodeDir, { recursive: true, force: true });
 		}
 	});
+});
+
+describe('failed process stops retain ownership', () => {
+	const PID = 987654;
+	async function adopted() {
+		const manager = new NodeProcessManager();
+		const kill = jest.spyOn(process, 'kill').mockImplementation(() => true);
+		const read = fs.readFile.bind(fs);
+		const command = jest.spyOn(fs, 'readFile').mockImplementation(((
+			file: Parameters<typeof fs.readFile>[0],
+			options: Parameters<typeof fs.readFile>[1],
+		) => {
+			if (file === `/proc/${PID}/cmdline`)
+				return Promise.resolve(`${process.execPath} --persistence-dir ${NODE_DIR}/persistence`);
+			return read(file, options);
+		}) as typeof fs.readFile);
+		expect(await manager.adopt('node-1', PID, process.execPath, NODE_DIR)).toBe(true);
+		return { manager, kill, command };
+	}
+
+	it.each(['SIGTERM', 'SIGKILL'] as const)('retains the adopted entry when %s fails with EPERM', async (denied) => {
+		const { manager, kill } = await adopted();
+		kill.mockImplementation((_pid, signal) => {
+			if (signal === denied) throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+			return true;
+		});
+		expect(await manager.stop('node-1', 0)).toMatchObject({
+			stopped: false,
+			failureReason: expect.stringContaining('EPERM'),
+		});
+		expect(manager.get('node-1')?.pid).toBe(PID);
+		expect(manager.isRunning('node-1')).toBe(true);
+	});
+
+	it('only drops the adopted entry when a failed signal proves ESRCH', async () => {
+		const { manager, kill } = await adopted();
+		kill.mockImplementation((_pid, signal) => {
+			if (signal === 'SIGTERM') throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+			return true;
+		});
+		expect((await manager.stop('node-1', 0)).stopped).toBe(true);
+		expect(manager.get('node-1')).toBeUndefined();
+	});
+
+	it('retains an adopted entry when identity cannot be read, without signalling an unknown process', async () => {
+		const { manager, kill, command } = await adopted();
+		command.mockResolvedValue('');
+		expect(await manager.revalidateAdopted()).toEqual([]);
+		expect(manager.get('node-1')?.pid).toBe(PID);
+		expect((await manager.stop('node-1', 0)).stopped).toBe(false);
+		expect(kill.mock.calls.every(([, signal]) => signal === 0)).toBe(true);
+	});
+
+	it('does not report unknown liveness errors as process absence', () => {
+		jest.spyOn(process, 'kill').mockImplementation(() => {
+			throw Object.assign(new Error('I/O failure'), { code: 'EIO' });
+		});
+		expect(isProcessAlive(PID)).toBe(true);
+	});
+
+	it('keeps a live owned child after a failed signal emits an error', async () => {
+		const nodeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-stop-error-'));
+		const manager = new NodeProcessManager();
+		const onExit = jest.fn();
+		const entry = await manager.start(
+			{ nodeId: 'node-1', binary: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], nodeDir },
+			onExit,
+		);
+		const child = entry.child!;
+		spawned.push(child);
+		const kill = jest.spyOn(child, 'kill').mockImplementation(() => {
+			child.emit('error', Object.assign(new Error('permission denied'), { code: 'EPERM' }));
+			return false;
+		});
+		try {
+			expect((await manager.stop('node-1', 0)).stopped).toBe(false);
+			expect(manager.isRunning('node-1')).toBe(true);
+			expect(onExit).not.toHaveBeenCalled();
+		} finally {
+			kill.mockRestore();
+			child.kill('SIGKILL');
+			await fs.rm(nodeDir, { recursive: true, force: true });
+		}
+	});
+
+	it('does not treat a successfully delivered signal as proof that the child exited', async () => {
+		const nodeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-signal-pending-'));
+		const manager = new NodeProcessManager();
+		const entry = await manager.start(
+			{ nodeId: 'node-1', binary: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], nodeDir },
+			() => undefined,
+		);
+		spawned.push(entry.child!);
+		try {
+			Object.defineProperty(entry.child!, 'killed', { value: true, configurable: true });
+			expect(manager.isRunning('node-1')).toBe(true);
+		} finally {
+			entry.child!.kill('SIGKILL');
+			await fs.rm(nodeDir, { recursive: true, force: true });
+		}
+	});
+});
+
+it('removes per-stop listeners after repeated denied child signals', async () => {
+	const nodeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-stop-retry-'));
+	const manager = new NodeProcessManager();
+	const entry = await manager.start(
+		{ nodeId: 'node-1', binary: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], nodeDir },
+		() => undefined,
+	);
+	const child = entry.child!;
+	spawned.push(child);
+	const exitListeners = child.listenerCount('exit');
+	const errorListeners = child.listenerCount('error');
+	const kill = jest.spyOn(child, 'kill').mockImplementation(() => {
+		child.emit('error', Object.assign(new Error('permission denied'), { code: 'EPERM' }));
+		return false;
+	});
+	try {
+		for (let attempt = 0; attempt < 12; attempt += 1)
+			expect((await manager.stop('node-1', 30_000)).stopped).toBe(false);
+		expect(child.listenerCount('exit')).toBe(exitListeners);
+		expect(child.listenerCount('error')).toBe(errorListeners);
+		expect(manager.isRunning('node-1')).toBe(true);
+	} finally {
+		kill.mockRestore();
+		child.kill('SIGKILL');
+		await fs.rm(nodeDir, { recursive: true, force: true });
+	}
 });

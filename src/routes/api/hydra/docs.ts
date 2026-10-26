@@ -333,7 +333,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/head',
 		summary: 'Enable or disable a Hydra head. (admin access required)',
 		description:
-			'Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it; disabling quarantines it (drops its InitTx admission).',
+			'Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it. Disabling drops its InitTx admission. A Closed or FanoutPossible head cannot be disabled while contest monitoring is required.',
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(updateHeadSchemaInput, { id: HEAD_ID, isEnabled: true }) },
@@ -341,6 +341,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			200: successResponse('Hydra head updated', updateHeadSchemaOutput, { id: HEAD_ID }),
 			...unauthorized,
 			...notFound,
+			409: { description: 'The head is retired or requires contest monitoring' },
 			502: { description: 'On-chain verification failed' },
 			503: { description: 'Independent L1 evidence not yet available' },
 		},

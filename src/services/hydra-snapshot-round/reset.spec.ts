@@ -98,7 +98,7 @@ let node: { get: AnyMock; post: AnyMock; verifiedSnapshotNumber: bigint | undefi
 beforeEach(() => {
 	jest.clearAllMocks();
 	node = {
-		get: jest.fn(async () => confirmedSnapshot()) as AnyMock,
+		get: jest.fn(async (path: string) => (path === '/head' ? headHolding(null, 52) : confirmedSnapshot())) as AnyMock,
 		post: jest.fn(async () => ({})) as AnyMock,
 		verifiedSnapshotNumber: 313n,
 		expectedHeadId: HEAD_IDENTIFIER,
@@ -209,9 +209,9 @@ describe('resetSnapshotRound', () => {
 	});
 
 	it('refuses when the verified snapshot moved during the checks', async () => {
-		node.get.mockImplementation(async () => {
+		node.get.mockImplementation(async (path: string) => {
 			node.verifiedSnapshotNumber = 314n;
-			return confirmedSnapshot();
+			return path === '/head' ? headHolding(null, 52) : confirmedSnapshot();
 		});
 		await expectRefused(409);
 	});
@@ -342,14 +342,16 @@ describe('resetSnapshotRound', () => {
 			await expectRefused(502);
 		});
 
-		// A large head's answer can outgrow the byte limit for good, and refusing
-		// on it would block the only live recovery for that head.
-		it('resets when the head state is too large to read', async () => {
+		it('refuses when the head state is too large to check for an unsettled deposit', async () => {
 			answeringHead(async () => {
 				throw new HydraProtocolError('Hydra HTTP response exceeded its byte limit');
 			});
-			await expect(reset()).resolves.toMatchObject({ confirmedSnapshotNumber: 313 });
-			expect(node.post).toHaveBeenCalledWith('/snapshot', confirmedSnapshot());
+			await expectRefused(502);
+		});
+
+		it('refuses a malformed head state that cannot show whether a deposit remains', async () => {
+			answeringHead(async () => ({ tag: 'Open' }));
+			await expectRefused(502);
 		});
 	});
 

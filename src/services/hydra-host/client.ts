@@ -383,7 +383,9 @@ export type HostNodeHealth = {
 	restartRequested: boolean;
 	usable: boolean;
 	responsive: boolean;
-	chainSynced: boolean;
+	chainSynced: boolean | null;
+	/** False when the Host has no recent supervisor observation, including older Hosts that omit the field. */
+	observationFresh: boolean;
 	/** How far behind the chain the node is, in seconds. Null when unknown. */
 	driftSeconds: number | null;
 };
@@ -412,7 +414,9 @@ export async function fetchHostNodeHealth(
 		restartRequested: getOwnValue(body, 'restartRequested') === true,
 		usable: getOwnValue(body, 'usable') === true,
 		responsive: getOwnValue(body, 'responsive') === true,
-		chainSynced: getOwnValue(body, 'chainSynced') === true,
+		chainSynced:
+			typeof getOwnValue(body, 'chainSynced') === 'boolean' ? (getOwnValue(body, 'chainSynced') as boolean) : null,
+		observationFresh: getOwnValue(body, 'observationFresh') === true,
 		driftSeconds:
 			typeof getOwnValue(body, 'driftSeconds') === 'number' ? (getOwnValue(body, 'driftSeconds') as number) : null,
 	};
@@ -450,6 +454,34 @@ export async function removeHostNode(
 ): Promise<void> {
 	const query = options.force ? '?force=true' : '';
 	await request(baseUrl, `/v1/nodes/${nodeId}${query}`, adminToken, options, { method: 'DELETE' });
+}
+
+/** An old Host returns 404 for this route. Verify whether its node still exists before treating that as removal. */
+export async function removeUnclaimedHostNode(
+	baseUrl: string,
+	adminToken: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): Promise<void> {
+	try {
+		await request(baseUrl, `/v1/nodes/${nodeId}/remove-unclaimed`, adminToken, transport, { method: 'DELETE' });
+	} catch (error) {
+		if (!(error instanceof HydraHostRequestError) || error.status !== 404) throw error;
+		try {
+			await request(baseUrl, `/v1/nodes/${nodeId}`, adminToken, transport);
+		} catch (readError) {
+			// A wrong proxy prefix can make both routes return 404. Require the
+			// Host's node-specific answer before treating the node as gone.
+			if (
+				readError instanceof HydraHostRequestError &&
+				readError.status === 404 &&
+				readError.message.endsWith(': no such node')
+			)
+				return;
+			throw readError;
+		}
+		throw error;
+	}
 }
 
 /**
@@ -535,25 +567,26 @@ export async function fetchHostRedemptions(
  * `keepReplay` is for a redemption this service adopted: the Host keeps the
  * redeemer's public material for seven days so an identical replay is still
  * answered, which is how a redeemer whose answer was lost learns it succeeded.
- * Anything else being forgotten, a cancelled redemption above all, must not set
- * it. An older Host ignores the flag and forgets everything.
+ * A cancelled redemption must set `discardRedemption`. Ordinary revocation
+ * leaves both flags unset, so the Host refuses to erase a raced redemption.
+ * An older Host ignores these flags and must be upgraded before this guard works.
  */
 export async function forgetHostInvite(
 	baseUrl: string,
 	adminToken: string,
 	nonce: string,
 	transport: HostTransportOptions,
-	options: { keepReplay?: boolean } = {},
+	options: { keepReplay?: boolean; discardRedemption?: boolean } = {},
 ): Promise<void> {
 	// The error message ends up in logs while the nonce may still be redeemable.
-	await request(
-		baseUrl,
-		`/v1/invites/${nonce}${options.keepReplay === true ? '?keepReplay=true' : ''}`,
-		adminToken,
-		transport,
-		{
-			method: 'DELETE',
-			logPath: `/v1/invites/${nonceLogRef(nonce)}`,
-		},
-	);
+	const query =
+		options.keepReplay === true
+			? '?keepReplay=true'
+			: options.discardRedemption === true
+				? '?discardRedemption=true'
+				: '';
+	await request(baseUrl, `/v1/invites/${nonce}${query}`, adminToken, transport, {
+		method: 'DELETE',
+		logPath: `/v1/invites/${nonceLogRef(nonce)}`,
+	});
 }

@@ -88,6 +88,13 @@ jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
 
 const { HydraConnectionManager } = await import('./hydra-connection-manager.service');
 const { failClosedAfterStatusPersistenceFailure } = await import('./head-status-persistence');
+const { resolveNodeAuthToken } = await import('./head-configuration');
+
+it('derives the Host credential for one node before runtime transport uses it', () => {
+	const host = { encryptedUserToken: encrypt('u'.repeat(40)) };
+	expect(resolveNodeAuthToken(host, 'node-1')).toBe('b90d56dadfb3e960e97f4dc4de836a46402b7b44f0d396f269e3464189ac8179');
+	expect(resolveNodeAuthToken(host, 'node-2')).not.toBe(resolveNodeAuthToken(host, 'node-1'));
+});
 
 function confirmedTransaction(txId: string): HydraConfirmedTransaction {
 	return {
@@ -114,6 +121,7 @@ function connectableConfiguredHead(id = 'head-1') {
 		lastReconciledSnapshotTransactionIndex: null,
 		LocalParticipant: {
 			walletId: 'local-wallet',
+			hostNodeId: 'node-1',
 			nodeHttpUrl: 'http://127.0.0.1:4001',
 			nodeUrl: 'ws://127.0.0.1:4001',
 			HydraSecretKey: { hydraSK: encrypt(localSigningKey) },
@@ -262,6 +270,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			initTxHash: null,
 			LocalParticipant: {
 				walletId: 'local-wallet',
+				hostNodeId: 'node-1',
 				nodeHttpUrl: 'http://127.0.0.1:4001',
 				nodeUrl: 'ws://127.0.0.1:4001',
 				HydraSecretKey: { hydraSK: 'not-reached' },
@@ -293,6 +302,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			initTxHash: null,
 			LocalParticipant: {
 				walletId: 'local-wallet',
+				hostNodeId: 'node-1',
 				nodeHttpUrl: 'http://127.0.0.1:4001',
 				nodeUrl: 'ws://127.0.0.1:4001',
 				HydraSecretKey: { hydraSK: 'not-reached' },
@@ -748,6 +758,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			lastReconciledSnapshotTransactionIndex: null,
 			LocalParticipant: {
 				walletId: 'local-wallet',
+				hostNodeId: 'node-1',
 				nodeHttpUrl: 'http://127.0.0.1:4001',
 				nodeUrl: 'ws://127.0.0.1:4001',
 				HydraSecretKey: { hydraSK: encrypt(localSigningKey) },

@@ -53,6 +53,7 @@ import {
 import type { HydraHeadChainObserver } from '@/lib/hydra/hydra/head-init-validation';
 import type { VerifiedHydraFanoutReference } from '@/lib/hydra/hydra/snapshot-verification';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { KEY_RELEASE_MIN_CONFIRMATIONS } from '@/services/hydra-node-funding/key-release-depth';
 import { reportExpiredL2Reservations } from './l2-reservation-recovery';
 import { markFinalHeadReconciliationComplete, prepareFinalHandoff } from './final-handoff';
 import { releaseFinalHeadL2Reservations } from './final-l2-reservation-release';
@@ -83,12 +84,13 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	const heads = await prisma.hydraHead.findMany({
 		where: { isEnabled: true, initTxHash: { not: null } },
 		include: {
+			LocalParticipant: { select: { cardanoVkey: true } },
+			RemoteParticipants: { select: { cardanoVkey: true } },
 			HydraRelation: {
 				include: {
 					LocalHotWallet: {
 						include: { PaymentSource: { include: { PaymentSourceConfig: true } } },
 					},
-					RemoteWallet: true,
 				},
 			},
 		},
@@ -103,6 +105,10 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 	const connectionManager = getHydraConnectionManager();
 	for (const head of heads) {
 		try {
+			if (head.LocalParticipant == null || head.RemoteParticipants.length !== 1) {
+				logger.warn('[HydraReconcile] Cannot verify head participant token identities', { hydraHeadId: head.id });
+				continue;
+			}
 			await reconcileHead(
 				head.id,
 				head.finalizedAt,
@@ -110,8 +116,8 @@ export async function reconcileHydraHeadEscrowStates(): Promise<void> {
 				head.latestSnapshotNumber,
 				head.hydraRelationId,
 				head.headIdentifier,
-				head.HydraRelation.LocalHotWallet.walletVkey,
-				head.HydraRelation.RemoteWallet.walletVkey,
+				head.LocalParticipant.cardanoVkey,
+				head.RemoteParticipants[0].cardanoVkey,
 				head.HydraRelation.LocalHotWallet.PaymentSource,
 				connectionManager,
 				head.reconciliationStalledTxId,
@@ -403,7 +409,9 @@ async function reconcileHead(
 					headId: headIdentifier,
 					participantVkeys: [localParticipantVkey, remoteParticipantVkey],
 					references,
-					requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+					// Handoff drops the only live node session that could observe a shallow
+					// fanout rollback. Keep the same finality floor as key deletion.
+					requiredConfirmations: Math.max(CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD, KEY_RELEASE_MIN_CONFIRMATIONS),
 				});
 			fanoutChecks.set(key, check);
 			return check;

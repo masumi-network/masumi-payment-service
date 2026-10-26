@@ -40,6 +40,32 @@ import { KEY_RELEASE_MIN_CONFIRMATIONS } from './key-release-depth';
  */
 export const MINIMUM_WITHDRAWABLE_LOVELACE = 2_000_000n;
 
+const NODE_UTXO_PAGE_SIZE = 100;
+
+/** Mesh returns an empty inventory on any error, which cannot authorize signer deletion. */
+async function readNodeUtxos(chain: ReturnType<typeof getBlockfrostInstance>, address: string): Promise<UTxO[]> {
+	const utxos: UTxO[] = [];
+	for (let page = 1; ; page += 1) {
+		let outputs: Awaited<ReturnType<typeof chain.addressesUtxos>>;
+		try {
+			outputs = await chain.addressesUtxos(address, { count: NODE_UTXO_PAGE_SIZE, page, order: 'asc' });
+		} catch (error) {
+			// Only the first page can establish an empty address. A later-page 404
+			// cannot discard inputs already found. Empty results still need the
+			// address-history and confirmation checks below before releasing a key.
+			if (page === 1 && getChainErrorStatus(error) === 404) return [];
+			throw error;
+		}
+		for (const output of outputs) {
+			utxos.push({
+				input: { txHash: output.tx_hash, outputIndex: output.output_index },
+				output: { address: output.address, amount: output.amount },
+			});
+		}
+		if (outputs.length < NODE_UTXO_PAGE_SIZE) return utxos;
+	}
+}
+
 /** Depth the latest node address transaction needs before `dust` lets a caller delete the node's key. */
 export { KEY_RELEASE_MIN_CONFIRMATIONS } from './key-release-depth';
 
@@ -173,7 +199,10 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 
 	let utxos: UTxO[];
 	try {
-		utxos = await provider.fetchAddressUTxOs(address);
+		utxos = await readNodeUtxos(
+			getBlockfrostInstance(network, participant.Wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey),
+			address,
+		);
 	} catch (error) {
 		// An address that has never been used is empty, not broken.
 		logger.warn(`hydra: could not read node address ${address}: ${(error as Error).message}`);

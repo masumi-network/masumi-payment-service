@@ -84,6 +84,62 @@ describe('recordReplayedCloseSnapshot', () => {
 		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalled();
 	});
 
+	it('restores a lower replayed Closed snapshot after an offline contest rollback', async () => {
+		await expect(recordReplayedCloseSnapshot('head-1', 5n, nodeWith(HydraHeadStatus.Closed, 3n))).resolves.toBe(true);
+
+		expect(mockFetchClosedHeadFacts).toHaveBeenCalledTimes(1);
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: 'head-1',
+					status: HydraHeadStatus.Closed,
+					latestSnapshotNumber: 5n,
+				}),
+				data: { latestSnapshotNumber: 3n, contestationDeadline: new Date(CONTEST_DEADLINE) },
+			}),
+		);
+	});
+
+	it('holds an offline rollback until the node returns a valid deadline', async () => {
+		mockFetchClosedHeadFacts.mockResolvedValue(undefined);
+		await expect(recordReplayedCloseSnapshot('head-1', 5n, nodeWith(HydraHeadStatus.Closed, 3n))).resolves.toBe(false);
+		mockFetchClosedHeadFacts.mockResolvedValue({ contestationDeadline: 'invalid' });
+		await expect(recordReplayedCloseSnapshot('head-1', 5n, nodeWith(HydraHeadStatus.Closed, 3n))).resolves.toBe(false);
+		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('does not restore a replay that fell behind the live head during the deadline read', async () => {
+		let currentClosedSnapshot = 3n;
+		const node = {
+			status: HydraHeadStatus.Closed,
+			get closedSnapshotNumber() {
+				return currentClosedSnapshot;
+			},
+			fetchClosedHeadFacts: mockFetchClosedHeadFacts,
+		};
+		mockFetchClosedHeadFacts.mockImplementation(async () => {
+			currentClosedSnapshot = 5n;
+			return { contestationDeadline: CONTEST_DEADLINE };
+		});
+
+		await expect(recordReplayedCloseSnapshot('head-1', 5n, node)).resolves.toBe(false);
+		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it.each([HydraHeadStatus.FanoutPossible, HydraHeadStatus.FanningOut, HydraHeadStatus.Final])(
+		'restores a lower replayed snapshot for a %s head before handoff',
+		async (status) => {
+			await expect(recordReplayedCloseSnapshot('head-1', 5n, nodeWith(status, 3n))).resolves.toBe(true);
+			expect(mockFetchClosedHeadFacts).not.toHaveBeenCalled();
+			expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({ status, latestSnapshotNumber: 5n, reconciliationCompletedAt: null }),
+					data: { latestSnapshotNumber: 3n },
+				}),
+			);
+		},
+	);
+
 	it('warns once when a closed head has no close in its replayed history', async () => {
 		// The row then keeps its number and the handoff waits, so the warning is the only clue.
 		const node = nodeWith(HydraHeadStatus.FanoutPossible, undefined);

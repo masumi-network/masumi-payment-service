@@ -22,6 +22,7 @@ import {
 } from './index';
 import { processTransactionData } from '../service';
 import { getChainErrorStatus } from '@/services/shared/chain-tx-lookup';
+import { PendingFanoutHandoffError } from '../tx/pending-fanout-handoff';
 
 /** How many quarantined transactions one tick will attempt. */
 const MAX_PER_TICK = 25;
@@ -232,6 +233,10 @@ async function retryQuarantinedTransaction(entry: QuarantineEntry, claim: Quaran
 		});
 	} catch (error) {
 		if (isQuarantineLeaseLostError(error)) throw error;
+		if (error instanceof PendingFanoutHandoffError) {
+			await deferClaimedQuarantine(claim, new Date(Date.now() + CONFIRMATION_WAIT_MS));
+			return 'retry';
+		}
 		return await handleRetryFailure(entry, claim, error);
 	}
 

@@ -127,6 +127,10 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 		expect(insideTransaction).toBe(false);
 		await duringHostRemoval();
 	},
+	removeUnclaimedHostNode: async () => {
+		expect(insideTransaction).toBe(false);
+		await duringHostRemoval();
+	},
 	HydraHostRequestError: class extends Error {},
 }));
 const { fundHydraNodeNow, runHydraNodeFundingCycle } = await import('./service');

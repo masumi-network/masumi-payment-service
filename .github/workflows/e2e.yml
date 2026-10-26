@@ -51,7 +51,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3.9.1
         with:
-          node-version: '20'
+          node-version: '24.22.1'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -385,6 +385,7 @@ jobs:
           # must be funded. Default 1 = one agent per source, shared by all flows.
           E2E_AGENTS_PER_SOURCE: 1
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
 
       - name: Stop API server for log flush

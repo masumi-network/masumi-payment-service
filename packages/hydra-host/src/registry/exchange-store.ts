@@ -21,6 +21,7 @@ import type { ExchangeMaterial, ExchangeSignature, InviteRecord } from './exchan
 import type { NodeRegistryStore } from './store.js';
 
 const EXCHANGE_FILE = 'exchange.json';
+const EXCHANGE_FILE_MODE = 0o600;
 /**
  * How long an unredeemed invite is kept after it expires.
  *
@@ -108,6 +109,8 @@ export class ExchangeStore {
 			return { invites: this.state.invites.map(copyInvite) };
 		}
 		try {
+			// Older native Host runs could leave open invite nonces in a 0644 file.
+			await fs.chmod(this.file, EXCHANGE_FILE_MODE);
 			this.state = parseState(await fs.readFile(this.file, 'utf8'));
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -120,8 +123,8 @@ export class ExchangeStore {
 	}
 
 	private async write(state: ExchangeState): Promise<void> {
-		await fs.mkdir(path.dirname(this.file), { recursive: true });
-		await writeFileAtomic(this.file, `${JSON.stringify(state, null, 2)}\n`);
+		await fs.mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
+		await writeFileAtomic(this.file, `${JSON.stringify(state, null, 2)}\n`, { mode: EXCHANGE_FILE_MODE });
 		// Publish only durable changes. Copies also keep caller-owned records
 		// and redemption results from changing the cache after the write.
 		this.state = { invites: state.invites.map(copyInvite) };
@@ -162,10 +165,13 @@ export class ExchangeStore {
 	}
 
 	/** Register an invite the Host must honour. Idempotent on nonce. */
-	async registerInvite(record: InviteRecord): Promise<void> {
+	async registerInvite(record: InviteRecord, assertNodeAvailable?: () => Promise<void>): Promise<void> {
 		await this.enqueue(async () => {
 			const state = await this.read();
 			pruneRetainedInvites(state, Date.now());
+			// Orphan cleanup uses this same queue. Recheck the node here, after any
+			// removal that won the queue and before this invite becomes redeemable.
+			if (assertNodeAvailable) await assertNodeAvailable();
 			const existing = state.invites.findIndex((invite) => invite.nonce === record.nonce);
 			if (existing === -1) {
 				state.invites.push(record);
@@ -175,6 +181,25 @@ export class ExchangeStore {
 				state.invites[existing] = { ...record, ...pickRedemption(state.invites[existing]) };
 			}
 			await this.write(state);
+		});
+	}
+
+	/** Hold the invite queue through a node removal so register and redeem cannot claim it meanwhile. */
+	async removeUnclaimedNode<T>(nodeId: string, remove: () => Promise<T>): Promise<T | null> {
+		return await this.enqueue(async () => {
+			const state = await this.read();
+			const now = Date.now();
+			if (
+				state.invites.some(
+					(invite) =>
+						invite.hostNodeId === nodeId &&
+						invite.forgottenAt === undefined &&
+						(invite.redeemedAt !== null || invite.expiresAt > now),
+				)
+			) {
+				return null;
+			}
+			return await remove();
 		});
 	}
 
@@ -246,19 +271,22 @@ export class ExchangeStore {
 	 *
 	 * `keepReplay` is for a redemption the service adopted: the record is reduced
 	 * to the redeemer's public material, so an identical replay is still answered
-	 * after the service no longer needs the signed redemption. Without it, or for
-	 * an invite nobody redeemed, the record is removed, which is what a cancelled
-	 * or revoked invite needs.
+	 * after the service no longer needs the signed redemption. An unredeemed
+	 * invite can be revoked. A redeemed one needs explicit discard, checked in
+	 * this queue so a redemption between listing and revocation is not lost.
 	 */
 	async forgetInvite(
 		nonce: string,
 		nodes?: NodeRegistryStore,
-		options: { keepReplay?: boolean } = {},
+		options: { keepReplay?: boolean; discardRedemption?: boolean } = {},
 	): Promise<boolean> {
 		return await this.enqueue(async () => {
 			const state = await this.read();
 			const invite = state.invites.find((candidate) => candidate.nonce === nonce);
 			const keepReplay = options.keepReplay === true;
+			if (invite !== undefined && invite.redeemedAt !== null && !keepReplay && options.discardRedemption !== true) {
+				return false;
+			}
 			if (keepReplay && invite?.forgottenAt !== undefined) {
 				return true;
 			}

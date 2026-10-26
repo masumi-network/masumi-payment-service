@@ -21,8 +21,8 @@ export const PREPARING_STALE_AFTER_MS = 10 * 60 * 1000;
  *
  * A withdrawal request whose transport answer was ambiguous stays Pending on
  * purpose — only the head can say whether it took it. But nothing else could
- * ever move that row: `Pending` and `Approved` are written only by the head's
- * own events, so a request the node provably never saw (a Host-proxy 502 while
+ * ever move that row without another withdrawal request: `Approved` is written
+ * only by the head's events, so a request the node provably never saw (a Host-proxy 502 while
  * the node restarts is enough) left the row Pending for good, and every later
  * withdrawal from that head was refused. The only way out was to close the head.
  *
@@ -31,7 +31,7 @@ export const PREPARING_STALE_AFTER_MS = 10 * 60 * 1000;
  * past this age the node is asked first, and the row is expired only when the
  * node answers that it holds no withdrawal at all. Even then the row is marked
  * with `PENDING_EXPIRED_REASON` rather than as an ordinary failure, so that a
- * late outcome from the head for the same transaction still settles it.
+ * late approval or finalization from the head still settles it.
  *
  * `Approved` is deliberately NOT aged out. The head approved it, so the funds
  * are on their way to L1, and only the settlement can close that row.
@@ -41,8 +41,8 @@ export const PENDING_STALE_AFTER_MS = 60 * 60 * 1000;
 /**
  * The failure reason of an expired Pending row.
  *
- * Also its marker: settlement matches on it to let a late authentic outcome
- * replace it, which a genuine refusal must never allow.
+ * Also its marker: settlement matches on it to let a late approval or
+ * finalization replace it. A direct refusal remains a final failure.
  */
 export const PENDING_EXPIRED_REASON =
 	'expired: the head held no withdrawal an hour after this request, so the outcome is unknown; ' +

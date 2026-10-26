@@ -15,6 +15,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { formatDriftBehind, hasNoChainPoint } from '@/utils/hydra/drift-wording';
 import { decrypt } from '@/utils/security/encryption';
 import { fetchHostNodeHealth } from './client';
+import { deriveHostNodeToken } from './node-token';
 
 export type ParticipantNodeState = {
 	state: string;
@@ -32,6 +33,8 @@ export type ParticipantNodeState = {
 	 */
 	chainSynced: boolean | null;
 	driftSeconds: number | null;
+	/** The Host checked chain sync recently enough to authorize an L1 deposit. */
+	observationFresh: boolean;
 };
 
 /**
@@ -47,18 +50,39 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 		include: { HydraHost: true },
 	});
 	if (!participant) {
-		return { state: 'Unknown', isReady: true, reason: null, chainSynced: null, driftSeconds: null };
+		return {
+			state: 'Unknown',
+			isReady: true,
+			reason: null,
+			chainSynced: null,
+			driftSeconds: null,
+			observationFresh: false,
+		};
 	}
 
 	try {
 		const health = await fetchHostNodeHealth(
 			participant.HydraHost.baseUrl,
-			decrypt(participant.HydraHost.encryptedUserToken),
+			deriveHostNodeToken(decrypt(participant.HydraHost.encryptedUserToken), participant.hostNodeId),
 			participant.hostNodeId,
 			{ allowInsecureHttp: participant.HydraHost.allowInsecureHttp },
 		);
-		const chain = { chainSynced: health.chainSynced, driftSeconds: health.driftSeconds };
-		if (health.usable) {
+		const chain = {
+			// Keep the last reading for the parked-Init guard. Deposit admission
+			// requires `observationFresh` separately.
+			chainSynced: health.chainSynced,
+			driftSeconds: health.driftSeconds,
+			observationFresh: health.observationFresh,
+		};
+		if (!health.observationFresh && health.state === 'Running') {
+			return {
+				state: health.state,
+				isReady: false,
+				reason: 'The Hydra Host has not checked this node recently. Retry before depositing.',
+				...chain,
+			};
+		}
+		if (health.usable && health.observationFresh) {
 			return { state: health.state, isReady: true, reason: null, ...chain };
 		}
 		if (health.state !== 'Running') {
@@ -98,7 +122,14 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 		}
 		return { state: health.state, isReady: false, reason: 'The node is not answering its own API.', ...chain };
 	} catch {
-		return { state: 'Unknown', isReady: true, reason: null, chainSynced: null, driftSeconds: null };
+		return {
+			state: 'Unknown',
+			isReady: true,
+			reason: null,
+			chainSynced: null,
+			driftSeconds: null,
+			observationFresh: false,
+		};
 	}
 }
 

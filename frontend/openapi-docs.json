@@ -9243,7 +9243,8 @@
                                                 "amount"
                                             ]
                                         },
-                                        "description": "The credits allowed to be used by the API key. Only relevant if usageLimited is true. "
+                                        "default": [],
+                                        "description": "The credits allowed to be used by the API key when usageLimited is true. Omitted defaults to an empty array (read-only keys). Pay-enabled usage-limited keys must supply at least one entry."
                                     },
                                     "NetworkLimit": {
                                         "type": "array",
@@ -9344,9 +9345,6 @@
                                         "description": "Managed EVM wallet IDs to scope this API key to. Only applied when x402WalletScopeEnabled is true; the key also always reaches wallets it created itself."
                                     }
                                 },
-                                "required": [
-                                    "UsageCredits"
-                                ],
                                 "example": {
                                     "usageLimited": "true",
                                     "UsageCredits": [
@@ -32475,6 +32473,17 @@
                         },
                         "required": false,
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Resume at this invite ID, inclusive"
+                        },
+                        "required": false,
+                        "description": "Resume at this invite ID, inclusive",
+                        "name": "cursorId",
                         "in": "query"
                     },
                     {

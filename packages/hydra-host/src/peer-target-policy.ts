@@ -20,6 +20,8 @@
 import { BlockList, isIP } from 'node:net';
 import { parsePeerAdvertise } from './peer-address.js';
 import type { PeerHostnameResolver } from './api/peer-allowlist.js';
+import { PeerResolverUnavailableError } from './peer-dns.js';
+import { derivedEtcdClientPort, type PortLayout } from './registry/ports.js';
 
 /** IANA special-purpose ranges that are not globally reachable. */
 const NON_PUBLIC_IPV4: Array<[string, number]> = [
@@ -69,7 +71,57 @@ export function isPublicPeerIp(address: string): boolean {
 	return family === 4 ? !nonPublicIpv4.check(address, 'ipv4') : !nonPublicIpv6.check(address, 'ipv6');
 }
 
-export type PeerTargetCheck = (advertise: string) => Promise<string | null>;
+export type PeerTargetCheck = (advertise: string, signal?: AbortSignal, owner?: string) => Promise<string | null>;
+
+/** Every local egress exception must be unusable as a counterparty peer port. */
+export function peerEgressPortRejection(advertise: string, ports: PortLayout): string | null {
+	const parsed = parsePeerAdvertise(advertise);
+	if (parsed === null) {
+		return `invalid peer advertise address: ${JSON.stringify(advertise)}`;
+	}
+	const { port } = parsed;
+	const apiEnd = ports.apiStart + ports.capacity - 1;
+	const etcdStart = derivedEtcdClientPort(ports.peerStart);
+	const etcdEnd = etcdStart + ports.capacity - 1;
+	if (port === 53 || (port >= ports.apiStart && port <= apiEnd) || (port >= etcdStart && port <= etcdEnd)) {
+		return `peer port ${port} overlaps a local outbound firewall exception; use another peer port`;
+	}
+	return null;
+}
+
+/** Refuse a restart that would cut off a stored node or dial peers through a local exception. */
+export function assertStoredPeerEgressCompatibility(
+	records: ReadonlyArray<{
+		nodeId: string;
+		apiPort: number;
+		peerPort: number;
+		peers: ReadonlyArray<{ advertise: string }>;
+	}>,
+	ports: PortLayout,
+): void {
+	const apiEnd = ports.apiStart + ports.capacity - 1;
+	const etcdStart = derivedEtcdClientPort(ports.peerStart);
+	const etcdEnd = etcdStart + ports.capacity - 1;
+	for (const record of records) {
+		if (record.apiPort < ports.apiStart || record.apiPort > apiEnd) {
+			throw new Error(
+				`stored node ${record.nodeId} uses API port ${record.apiPort} outside outbound exception ${ports.apiStart}-${apiEnd}; keep its original port layout`,
+			);
+		}
+		const etcdPort = derivedEtcdClientPort(record.peerPort);
+		if (etcdPort < etcdStart || etcdPort > etcdEnd) {
+			throw new Error(
+				`stored node ${record.nodeId} uses etcd client port ${etcdPort} outside outbound exception ${etcdStart}-${etcdEnd}; keep its original port layout`,
+			);
+		}
+		for (const peer of record.peers) {
+			const rejection = peerEgressPortRejection(peer.advertise, ports);
+			if (rejection !== null) {
+				throw new Error(`stored node ${record.nodeId} has ${rejection}; inspect existing heads before enabling egress`);
+			}
+		}
+	}
+}
 
 /**
  * Returns why `advertise` may not be dialled, or `null` when it may.
@@ -79,11 +131,21 @@ export type PeerTargetCheck = (advertise: string) => Promise<string | null>;
  */
 export async function peerTargetRejection(
 	advertise: string,
-	options: { allowPrivate: boolean; resolve: PeerHostnameResolver },
+	options: {
+		allowPrivate: boolean;
+		resolve: PeerHostnameResolver;
+		egressPortLayout?: PortLayout;
+		signal?: AbortSignal;
+		owner?: string;
+	},
 ): Promise<string | null> {
 	const parsed = parsePeerAdvertise(advertise);
 	if (parsed === null) {
 		return `invalid peer advertise address: ${JSON.stringify(advertise)}`;
+	}
+	if (options.egressPortLayout !== undefined) {
+		const rejection = peerEgressPortRejection(advertise, options.egressPortLayout);
+		if (rejection !== null) return rejection;
 	}
 	if (options.allowPrivate) {
 		return null;
@@ -91,8 +153,9 @@ export async function peerTargetRejection(
 
 	let addresses: ReadonlyArray<{ address: string }>;
 	try {
-		addresses = await options.resolve(parsed.host);
+		addresses = await options.resolve(parsed.host, options.signal, options.owner);
 	} catch (error) {
+		if (error instanceof PeerResolverUnavailableError) throw error;
 		return `peer host ${parsed.host} does not resolve: ${(error as Error).message}`;
 	}
 	if (addresses.length === 0) {

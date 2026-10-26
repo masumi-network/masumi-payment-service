@@ -22,6 +22,7 @@ import { acceptsCommands, isUsable, restartCountOf, type NodeRecord, type PeerRe
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
+import { createBoundedPeerResolver, PeerResolverUnavailableError } from '../peer-dns.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate, authenticateNode, type AuthResult } from './auth.js';
 import { nonceLogRef } from './nonce-log-ref.js';
@@ -32,13 +33,21 @@ import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { buildProxyQuery, isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
-import { buildPeerAllowlist, renderNftables, resolvePeerAllowlist } from './peer-allowlist.js';
+import {
+	buildPeerAllowlist,
+	renderNftables,
+	resolvePeerAllowlist,
+	type PeerHostnameResolver,
+} from './peer-allowlist.js';
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
 import { toPublicNode, type PublicNode } from './serialize.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
+// The supervisor checks every 15 seconds. Four missed ticks make a cached
+// chain observation too old to authorize a deposit with an on-chain deadline.
+const MAX_HEALTH_OBSERVATION_AGE_MS = 60_000;
 
 export type ServerDeps = {
 	config: HostConfig;
@@ -47,6 +56,7 @@ export type ServerDeps = {
 	ports: PortAllocator;
 	supervisor: Supervisor;
 	provision: ProvisionDeps;
+	resolvePeerHostname?: PeerHostnameResolver;
 	logger: SupervisorLogger;
 };
 
@@ -152,6 +162,7 @@ function readPeers(body: unknown): PeerRecord[] {
 
 export function createControlPlane(deps: ServerDeps): Server {
 	const { config, store, exchange, ports, supervisor, provision, logger } = deps;
+	const resolvePeerHostname = deps.resolvePeerHostname ?? createBoundedPeerResolver();
 	// Bound once so every response reports the guard this host actually enforces.
 	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
@@ -275,6 +286,12 @@ export function createControlPlane(deps: ServerDeps): Server {
 			try {
 				await handle(route.kind, route.nodeId, route.nonce, request, response);
 			} catch (error) {
+				if (error instanceof PeerResolverUnavailableError) {
+					logger.warn(`[api] ${method} ${logPath} refused: ${error.message}`);
+					response.setHeader('Retry-After', '1');
+					send(response, 503, { error: 'peer resolver is temporarily unavailable' });
+					return;
+				}
 				if (isHostApiError(error)) {
 					send(response, error.status, { error: error.message });
 					return;
@@ -410,11 +427,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'forgetInvite': {
-				// Opt-in and exact: only `true` keeps a replay, so a caller that predates the
-				// flag, or mistypes it, gets the full delete it always got.
-				const keepReplay = new URL(request.url ?? '/', 'http://host.invalid').searchParams.get('keepReplay') === 'true';
-				if (!(await exchange.forgetInvite(nonce ?? '', store, { keepReplay }))) {
-					throw new HostApiError('redemption peer setup is still pending; retry after setup completes', 409);
+				const params = new URL(request.url ?? '/', 'http://host.invalid').searchParams;
+				const keepReplay = params.get('keepReplay') === 'true';
+				const discardRedemption = params.get('discardRedemption') === 'true';
+				if (!(await exchange.forgetInvite(nonce ?? '', store, { keepReplay, discardRedemption }))) {
+					throw new HostApiError('redemption needs explicit discard or peer setup is still pending', 409);
 				}
 				send(response, 200, { forgotten: true });
 				return;
@@ -442,7 +459,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 				// Taken before the registry is read, never after: see
 				// `PortAllocator.peerFirewallGeneration`.
 				const generation = ports.peerFirewallGeneration();
-				const allowlist = await resolvePeerAllowlist(buildPeerAllowlist(await store.list(), range));
+				const allowlist = await resolvePeerAllowlist(
+					buildPeerAllowlist(await store.list(), range),
+					config.allowPrivatePeers,
+					resolvePeerHostname,
+				);
 				send(response, 200, {
 					...allowlist,
 					peerRange: range,
@@ -588,21 +609,40 @@ export function createControlPlane(deps: ServerDeps): Server {
 				return;
 			}
 
+			case 'removeUnclaimedNode': {
+				const record = await exchange.removeUnclaimedNode(
+					nodeId ?? '',
+					async () => await requestRemoval(store, nodeId ?? '', { force: false }),
+				);
+				if (record === null) throw new HostApiError('an invite has claimed this node', 409);
+				closeNodeSockets(record.nodeId);
+				tickSupervisor();
+				send(response, 202, publicNode(record));
+				return;
+			}
+
 			case 'nodeHealth': {
 				const record = await store.read(nodeId ?? '');
 				if (record === null) {
 					send(response, 404, { error: 'no such node' });
 					return;
 				}
+				const checkedAt = record.lastObservation?.checkedAt;
+				const observationAgeMs = checkedAt === undefined ? Number.NaN : Date.now() - Date.parse(checkedAt);
+				const observationFresh =
+					Number.isFinite(observationAgeMs) &&
+					observationAgeMs >= 0 &&
+					observationAgeMs <= MAX_HEALTH_OBSERVATION_AGE_MS;
 				// `usable` is the question this endpoint exists to answer, and the
 				// state alone cannot answer it: the supervisor's last probe is what
-				// knows whether the node is still responding. `lastCheckedAt` lets a
-				// caller distinguish "not usable" from "nobody has looked lately".
+				// knows whether the node is still responding. A stale observation
+				// cannot establish current readiness for an L1 deposit.
 				send(response, 200, {
 					nodeId: record.nodeId,
 					state: record.state,
 					desired: record.desired,
-					usable: isUsable(record),
+					usable: observationFresh && isUsable(record),
+					observationFresh,
 					responsive: record.lastObservation?.responsive ?? null,
 					chainSynced: record.lastObservation?.chainSynced ?? null,
 					driftSeconds: record.lastObservation?.driftSeconds ?? null,

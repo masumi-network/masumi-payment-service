@@ -9,15 +9,21 @@
  * admin UI look like it linked to a chain explorer and then 404.
  *
  * So the L1 transaction has to be observed rather than read off the event. The
- * search is narrow on purpose: the decrement pays the participant's own address
- * an output whose value the head has already told us exactly, within a couple of
- * blocks of the approval. Matching on that value rather than on timing alone
- * means an unrelated payment arriving in the same block cannot be mistaken for
- * the withdrawal.
+ * search is narrow on purpose: the decrement moves this head's state token,
+ * leaves the head Open and pays the participant's own address an output whose
+ * value the head has already told us exactly. Value and timing alone cannot
+ * distinguish an unrelated payment of the same amount.
  */
 
 import type { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import { Address, RedeemerTagKind, Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { resolveTxHash } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
+import {
+	HYDRA_HEAD_V2_ASSET_NAME_HEX,
+	hasOpenHydraHeadStateTransition,
+	knownHydraHeadScriptHashes,
+} from '@/lib/hydra/hydra/head-init-validation';
 
 /** What the head says landed on L1, as unit to quantity. Lovelace under ''. */
 export type DistributedValue = { lovelace: bigint; assets: Record<string, string> };
@@ -83,6 +89,8 @@ export function decommitPayoutSearchBounds(
  */
 const MAX_PAGES = 2;
 const PAGE_SIZE = 20;
+/** Hydra HeadState.Input: Increment = 0, Decrement = 1. */
+const HYDRA_DECREMENT_REDEEMER_CONSTRUCTOR = 1n;
 
 /** Native assets only, keyed by lower-cased unit, with lovelace pulled out. */
 function normalizeAssets(amount: ReadonlyArray<{ unit: string; quantity: string }>): {
@@ -126,6 +134,60 @@ function valuesMatch(
 	return true;
 }
 
+type IndexedTransaction = Awaited<ReturnType<BlockFrostAPI['txsUtxos']>>;
+
+/** Match this head's indexed state input to its actual L1 spending redeemer. */
+function isDecrementOfHead(cbor: string, txHash: string, utxos: IndexedTransaction, headId: string): boolean {
+	if (utxos.hash.toLowerCase() !== txHash.toLowerCase()) return false;
+	let transaction: Transaction;
+	try {
+		transaction = Transaction.from_hex(cbor);
+		if (!transaction.is_valid() || String(resolveTxHash(cbor)).toLowerCase() !== txHash.toLowerCase()) return false;
+	} catch {
+		return false;
+	}
+	const stateUnit = `${headId.toLowerCase()}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
+	const acceptedHashes = knownHydraHeadScriptHashes();
+	const headInputs = utxos.inputs.filter((input) => {
+		if (input.collateral || input.reference) return false;
+		try {
+			const hash = Address.from_bech32(input.address).payment_cred()?.to_scripthash()?.to_hex().toLowerCase();
+			return (
+				acceptedHashes.has(hash ?? '') &&
+				input.amount.some(({ unit, quantity }) => unit.toLowerCase() === stateUnit && quantity === '1')
+			);
+		} catch {
+			return false;
+		}
+	});
+	if (headInputs.length !== 1) return false;
+	const headInput = headInputs[0];
+	const bodyInputs = transaction.body().inputs();
+	let inputIndex = -1;
+	for (let index = 0; index < bodyInputs.len(); index++) {
+		const input = bodyInputs.get(index);
+		if (
+			input.transaction_id().to_hex().toLowerCase() === headInput.tx_hash.toLowerCase() &&
+			input.index() === headInput.output_index
+		) {
+			inputIndex = index;
+			break;
+		}
+	}
+	if (inputIndex < 0) return false;
+	const redeemers = transaction.witness_set().redeemers();
+	if (!redeemers) return false;
+	for (let index = 0; index < redeemers.len(); index++) {
+		const redeemer = redeemers.get(index);
+		if (redeemer.tag().kind() !== RedeemerTagKind.Spend || BigInt(redeemer.index().to_str()) !== BigInt(inputIndex)) {
+			continue;
+		}
+		const input = redeemer.data().as_constr_plutus_data();
+		return input !== undefined && BigInt(input.alternative().to_str()) === HYDRA_DECREMENT_REDEEMER_CONSTRUCTOR;
+	}
+	return false;
+}
+
 /**
  * The transaction that paid `expected` to `address`, or null if it is not on
  * chain yet.
@@ -135,9 +197,8 @@ function valuesMatch(
  * transaction not identified" than lose the settlement itself.
  *
  * `notBefore` and `exclude` exist because several identical-amount withdrawals
- * can land minutes apart: matching on value alone, as above, would happily
- * return someone else's payout. `notBefore` discards history from before this
- * withdrawal's own creation, and `exclude` discards hashes already attributed
+ * can land minutes apart. `notBefore` discards history through the whole block
+ * second containing this withdrawal's creation, and `exclude` discards hashes already attributed
  * to another row. Among what is left, the OLDEST match wins — the payout
  * closest after creation — not the newest, which is what an unbounded
  * newest-first walk would otherwise hand back. That promise holds only while
@@ -148,12 +209,13 @@ function valuesMatch(
  */
 export async function findDecommitPayoutTx(params: {
 	blockfrost: BlockFrostAPI;
+	headId: string;
 	address: string;
 	expected: DistributedValue;
 	notBefore?: Date;
 	exclude?: ReadonlySet<string>;
 }): Promise<string | null> {
-	const { blockfrost, address, expected, notBefore, exclude } = params;
+	const { blockfrost, headId, address, expected, notBefore, exclude } = params;
 	const notBeforeSeconds = notBefore ? Math.floor(notBefore.getTime() / 1000) : undefined;
 
 	let oldestMatch: { tx_hash: string; block_time: number } | null = null;
@@ -170,13 +232,24 @@ export async function findDecommitPayoutTx(params: {
 
 		for (const entry of history) {
 			if (exclude?.has(entry.tx_hash)) continue;
-			if (notBeforeSeconds !== undefined && entry.block_time < notBeforeSeconds) continue;
+			// Blockfrost reports whole-second slot times. A previous decrement can be
+			// observed and a new withdrawal created within that same second; admitting
+			// the equal slot would let the previous payout win the oldest-match rule.
+			// An equal-second candidate might be genuine, but this timestamp cannot
+			// distinguish it from the prior payout. Leave the link unknown instead.
+			if (notBeforeSeconds !== undefined && entry.block_time <= notBeforeSeconds) continue;
 			try {
 				const utxos = await blockfrost.txsUtxos(entry.tx_hash);
+				// An exact-value transfer to this wallet is insufficient. A decrement
+				// spends this head's official state output and leaves a new Open one.
+				if (!hasOpenHydraHeadStateTransition(utxos, headId)) continue;
 				const match = utxos.outputs.some(
 					(output) => output.address === address && valuesMatch(output.amount, expected),
 				);
-				if (match && (oldestMatch === null || entry.block_time < oldestMatch.block_time)) {
+				if (!match) continue;
+				const { cbor } = await blockfrost.txsCbor(entry.tx_hash);
+				if (!isDecrementOfHead(cbor, entry.tx_hash, utxos, headId)) continue;
+				if (oldestMatch === null || entry.block_time < oldestMatch.block_time) {
 					oldestMatch = entry;
 				}
 			} catch (error) {

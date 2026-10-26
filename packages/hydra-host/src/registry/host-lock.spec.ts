@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -30,6 +30,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	jest.restoreAllMocks();
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
 
@@ -148,5 +149,70 @@ describe('HostLock', () => {
 
 	it('is safe to release when not held', async () => {
 		await expect(new HostLock(dataDir, 'host-a').release()).resolves.toBeUndefined();
+	});
+});
+
+describe('takeover gate exclusion', () => {
+	it('does not reclaim a paused contender gate and replace the successor lease', async () => {
+		const lockPath = path.join(dataDir, 'host.lock');
+		const gatePath = path.join(dataDir, 'host.lock.takeover');
+		await fs.writeFile(
+			lockPath,
+			JSON.stringify(holder({ heartbeatAt: new Date(NOW - HEARTBEAT_STALE_AFTER_MS - 1).toISOString() })),
+		);
+		let entered!: () => void;
+		let resume!: () => void;
+		const paused = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const resumed = new Promise<void>((resolve) => {
+			resume = resolve;
+		});
+		const rename = fs.rename.bind(fs);
+		let didPause = false;
+		jest.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+			if (!didPause && source === lockPath && String(destination).startsWith(lockPath + '.stale.')) {
+				didPause = true;
+				entered();
+				await resumed;
+			}
+			await rename(source, destination);
+		});
+		const first = new HostLock(dataDir, 'paused-host', () => NOW);
+		const second = new HostLock(dataDir, 'contender-host', () => NOW);
+		const firstAcquisition = first.acquire();
+		try {
+			await paused;
+			const old = new Date(Date.now() - 60_000);
+			await fs.utimes(gatePath, old, old);
+			const secondOutcome = await second.acquire().then(
+				() => 'acquired',
+				(error: unknown) => error,
+			);
+			resume();
+			await firstAcquisition;
+			expect(secondOutcome).toBeInstanceOf(HostLockError);
+			expect((await currentHolder())?.hostId).toBe('paused-host');
+		} finally {
+			resume();
+			await firstAcquisition.catch(() => undefined);
+			await first.release();
+			await second.release();
+		}
+	});
+
+	it('fails closed for a crash-left gate and names the manual recovery precondition', async () => {
+		const gatePath = path.join(dataDir, 'host.lock.takeover');
+		await fs.mkdir(gatePath);
+		const old = new Date(Date.now() - 60_000);
+		await fs.utimes(gatePath, old, old);
+		const lock = new HostLock(dataDir, 'host-a');
+		try {
+			await expect(lock.acquire()).rejects.toThrow(/stop all.*Host.*contender/i);
+			expect((await fs.stat(gatePath)).isDirectory()).toBe(true);
+			expect(await fs.readdir(dataDir)).toEqual(['host.lock.takeover']);
+		} finally {
+			await lock.release();
+		}
 	});
 });

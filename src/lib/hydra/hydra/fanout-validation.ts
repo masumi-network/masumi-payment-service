@@ -10,7 +10,7 @@ import {
 import { serializeCardanoTransactionOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
 import { MAX_HYDRA_SNAPSHOT_OUTPUTS } from './schemas';
 
-type FanoutChainInput = {
+export type FanoutChainInput = {
 	tx_hash: string;
 	output_index: number;
 	address: string;
@@ -74,13 +74,10 @@ const DEFAULT_FANOUT_OBSERVER_TIMEOUT_MS = 15_000;
  * more than it looks: this runs inside the reconcile pass, on a timer, and is
  * retried every pass until it succeeds.
  *
- * The head's own ceiling bounds the references. The step count is bounded far
- * more tightly, because a step distributes as many outputs as fit in a 16 KB
- * transaction: even outputs carrying large datums run to tens of steps, not
- * thousands, so anything beyond this is not a chain we could have produced.
+ * The head's own ceiling bounds the references. The total observer deadline
+ * bounds chain traversal without rejecting valid fanouts with many small steps.
  */
 const MAX_FANOUT_REFERENCES = MAX_HYDRA_SNAPSHOT_OUTPUTS;
-const MAX_FANOUT_STEPS = 64;
 
 /**
  * Total observer budget for one chain, across every step.
@@ -97,7 +94,7 @@ const MAX_FANOUT_CHAIN_OBSERVER_MS = 120_000;
  * solely in the transaction body — there is no indexed UTxO row for it yet, so
  * its tokens cannot be read the way an input's are.
  */
-function serializeCardanoOutputAmounts(output: TransactionOutput): Array<{ unit: string; quantity: string }> {
+export function serializeCardanoOutputAmounts(output: TransactionOutput): Array<{ unit: string; quantity: string }> {
 	const amounts: Array<{ unit: string; quantity: string }> = [];
 	const value = output.amount();
 	amounts.push({ unit: 'lovelace', quantity: value.coin().to_str() });
@@ -150,7 +147,7 @@ function normalizeHex(value: string, length: number, label: string): string {
 	return normalized;
 }
 
-function paymentScriptHash(address: string): string | null {
+export function paymentScriptHash(address: string): string | null {
 	try {
 		return Address.from_bech32(address).payment_cred()?.to_scripthash()?.to_hex().toLowerCase() ?? null;
 	} catch {
@@ -158,7 +155,7 @@ function paymentScriptHash(address: string): string | null {
 	}
 }
 
-function headPolicyAmounts(
+export function headPolicyAmounts(
 	amounts: ReadonlyArray<{ unit: string; quantity: string }>,
 	headId: string,
 ): Map<string, bigint> {
@@ -177,7 +174,7 @@ function headPolicyAmounts(
 	return result;
 }
 
-function mintPolicyAmounts(transaction: Transaction, headId: string): Map<string, bigint> {
+export function mintPolicyAmounts(transaction: Transaction, headId: string): Map<string, bigint> {
 	const mint = transaction.body().mint();
 	if (!mint) return new Map();
 	const result = new Map<string, bigint>();
@@ -206,7 +203,7 @@ function mintPolicyAmounts(transaction: Transaction, headId: string): Map<string
 	return result;
 }
 
-function hasExactTokenSet(
+export function hasExactTokenSet(
 	actual: ReadonlyMap<string, bigint>,
 	expectedUnits: ReadonlySet<string>,
 	expectedQuantity: bigint,
@@ -218,6 +215,21 @@ function hasExactTokenSet(
 	);
 }
 
+export function boundHeadInputs(
+	inputs: readonly FanoutChainInput[],
+	headId: string,
+	expectedUnits: ReadonlySet<string>,
+	acceptedHeadScriptHashes: ReadonlySet<string>,
+): FanoutChainInput[] {
+	return inputs.filter(
+		(input) =>
+			input.collateral !== true &&
+			input.reference !== true &&
+			acceptedHeadScriptHashes.has(paymentScriptHash(input.address) ?? '') &&
+			hasExactTokenSet(headPolicyAmounts(input.amount, headId), expectedUnits, 1n),
+	);
+}
+
 /** The one spending input that is the bound head output, carrying the exact head token set. */
 function findBoundHeadInput(
 	inputs: readonly FanoutChainInput[],
@@ -225,18 +237,12 @@ function findBoundHeadInput(
 	expectedUnits: ReadonlySet<string>,
 	acceptedHeadScriptHashes: ReadonlySet<string>,
 ): FanoutChainInput {
-	const headInputs = inputs.filter(
-		(input) =>
-			input.collateral !== true &&
-			input.reference !== true &&
-			acceptedHeadScriptHashes.has(paymentScriptHash(input.address) ?? '') &&
-			hasExactTokenSet(headPolicyAmounts(input.amount, headId), expectedUnits, 1n),
-	);
+	const headInputs = boundHeadInputs(inputs, headId, expectedUnits, acceptedHeadScriptHashes);
 	if (headInputs.length !== 1) fail('Hydra fanout did not consume exactly one bound official vHead token output');
 	return headInputs[0];
 }
 
-function expectedHeadUnits(headId: string, participantVkeys: readonly string[]): Set<string> {
+export function expectedHeadUnits(headId: string, participantVkeys: readonly string[]): Set<string> {
 	return new Set([`${headId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`, ...participantVkeys.map((vkey) => `${headId}${vkey}`)]);
 }
 
@@ -503,12 +509,8 @@ export async function verifyHydraFanoutOnChain(options: {
 		normalizeHex(vkey, 56, `Hydra participant ${index}`),
 	);
 	if (new Set(participantVkeys).size !== participantVkeys.length) fail('Hydra fanout participants were not unique');
-	if (
-		!Number.isSafeInteger(options.requiredConfirmations) ||
-		options.requiredConfirmations < 0 ||
-		options.references.length === 0
-	) {
-		fail('Hydra fanout verification received invalid confirmation/reference requirements');
+	if (!Number.isSafeInteger(options.requiredConfirmations) || options.requiredConfirmations < 0) {
+		fail('Hydra fanout verification received an invalid confirmation requirement');
 	}
 	const observerTimeoutMs = options.observerTimeoutMs ?? DEFAULT_FANOUT_OBSERVER_TIMEOUT_MS;
 	if (!Number.isSafeInteger(observerTimeoutMs) || observerTimeoutMs <= 0 || observerTimeoutMs > 60_000) {
@@ -525,8 +527,6 @@ export async function verifyHydraFanoutOnChain(options: {
 		if (group) group.push(reference);
 		else byTxHash.set(txHash, [reference]);
 	}
-	if (byTxHash.size > MAX_FANOUT_STEPS) fail('Hydra fanout spanned more L1 transactions than a head can produce');
-
 	const expectedUnits = expectedHeadUnits(headId, participantVkeys);
 	// Observation, not creation: a fanout being re-verified here may belong to a
 	// head opened under an earlier hydra-node script pin, so any known (current
@@ -681,8 +681,10 @@ export async function bindFinalizedFanoutToL1Chain(options: {
 		return Math.min(observerTimeoutMs, remaining);
 	};
 	let cursor = normalizeHex([...terminalTxHashes][0], 64, 'Hydra fanout tx hash');
-	for (let step = 0; unboundCount > 0; step += 1) {
-		if (step >= MAX_FANOUT_STEPS) fail('Hydra fanout spanned more L1 transactions than a head can produce');
+	const seen = new Set<string>();
+	while (unboundCount > 0) {
+		if (seen.has(cursor)) fail('Hydra fanout binding revisited an L1 transaction');
+		seen.add(cursor);
 		const utxos = await withObserverTimeout(options.observer.txsUtxos(cursor), remainingMs());
 		const headInput = findBoundHeadInput(utxos.inputs, headId, expectedUnits, acceptedHeadScriptHashes);
 		const previousTxHash = normalizeHex(headInput.tx_hash, 64, 'Hydra vHead input tx hash');

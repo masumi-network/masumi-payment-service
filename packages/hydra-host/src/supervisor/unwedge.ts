@@ -84,21 +84,36 @@ export type UnwedgeOptions = {
  * snapshot's (hydra-node 2.4.1 `HeadLogic`, `waitForDeposit`). The payment
  * service reads the same condition in `extractCommitNotSettled`
  * (`src/lib/hydra/hydra/head-output-tx.ts`), which this package cannot import.
- * False for any state that cannot show it.
+ * Null when the head state does not prove whether the commit has settled.
  */
-export function holdsUnsettledCommit(headState: unknown): boolean {
-	if (!isPlainObject(headState)) return false;
+export function holdsUnsettledCommit(headState: unknown): boolean | null {
+	if (!isPlainObject(headState) || getOwnValue(headState, 'tag') !== 'Open') return null;
 	const contents = getOwnValue(headState, 'contents');
+	if (contents !== undefined && !isPlainObject(contents)) return null;
 	const state = isPlainObject(contents) ? contents : headState;
 	const coordinated = getOwnValue(state, 'coordinatedHeadState');
-	if (!isPlainObject(coordinated)) return false;
-	const confirmed = getOwnValue(coordinated, 'confirmedSnapshot');
-	const snapshot = isPlainObject(confirmed) ? getOwnValue(confirmed, 'snapshot') : undefined;
-	if (!isPlainObject(snapshot)) return false;
-	const utxoToCommit = getOwnValue(snapshot, 'utxoToCommit');
-	if (!isPlainObject(utxoToCommit)) return false;
+	if (!isPlainObject(coordinated)) return null;
 	const version = getOwnValue(coordinated, 'version');
-	return typeof version === 'number' && version === getOwnValue(snapshot, 'version');
+	if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 0) return null;
+	const confirmed = getOwnValue(coordinated, 'confirmedSnapshot');
+	if (!isPlainObject(confirmed)) return null;
+	const confirmedTag = getOwnValue(confirmed, 'tag');
+	if (confirmedTag === 'InitialSnapshot') return version === 0 ? false : null;
+	if (confirmedTag !== 'ConfirmedSnapshot') return null;
+	const snapshot = getOwnValue(confirmed, 'snapshot');
+	if (!isPlainObject(snapshot)) return null;
+	const snapshotVersion = getOwnValue(snapshot, 'version');
+	if (
+		typeof snapshotVersion !== 'number' ||
+		!Number.isSafeInteger(snapshotVersion) ||
+		snapshotVersion < 0 ||
+		snapshotVersion > version
+	)
+		return null;
+	const utxoToCommit = getOwnValue(snapshot, 'utxoToCommit');
+	if (utxoToCommit === null) return false;
+	if (!isPlainObject(utxoToCommit)) return null;
+	return version === snapshotVersion;
 }
 
 /**
@@ -241,7 +256,16 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 			reason: `could not read the head state before side-loading, so the stranded round is left for an operator: ${(error as Error).message}`,
 		};
 	}
-	if (holdsUnsettledCommit(headState)) {
+	if (aborted()) return { kind: 'Deferred' };
+	const hasUnsettledCommit = holdsUnsettledCommit(headState);
+	if (hasUnsettledCommit === null) {
+		return {
+			kind: 'Held',
+			tag,
+			reason: 'could not verify the head state before side-loading, so the stranded round is left for an operator',
+		};
+	}
+	if (hasUnsettledCommit) {
 		return {
 			kind: 'Held',
 			tag,

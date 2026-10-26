@@ -506,7 +506,13 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
  */
 async function recordHostProbe(id: string, probeSucceeded: boolean, data: Omit<Prisma.HydraHostUpdateInput, 'status'>) {
 	return await prisma.$transaction(async (tx) => {
-		const current = await tx.hydraHost.findUniqueOrThrow({ where: { id }, select: { status: true } });
+		// Lock the status read against an operator PATCH. A plain read can see Active,
+		// then overwrite a concurrent Disabled or Draining update with Active.
+		const rows = await tx.$queryRaw<Array<{ status: HydraHostStatus }>>(
+			Prisma.sql`SELECT "status" FROM "HydraHost" WHERE "id" = ${id} FOR UPDATE`,
+		);
+		const current = rows[0];
+		if (!current) throw createHttpError(404, 'hydra host not found');
 		return await tx.hydraHost.update({
 			where: { id },
 			data: { ...data, status: nextHostStatus(current.status, probeSucceeded) },

@@ -9,6 +9,11 @@ describe('matchRoute', () => {
 		expect(matchRoute('GET', '/v1/nodes/abc')).toEqual({ kind: 'getNode', tier: 'admin', nodeId: 'abc' });
 		expect(matchRoute('PATCH', '/v1/nodes/abc')).toEqual({ kind: 'setPeers', tier: 'admin', nodeId: 'abc' });
 		expect(matchRoute('DELETE', '/v1/nodes/abc')).toEqual({ kind: 'removeNode', tier: 'admin', nodeId: 'abc' });
+		expect(matchRoute('DELETE', '/v1/nodes/abc/remove-unclaimed')).toEqual({
+			kind: 'removeUnclaimedNode',
+			tier: 'admin',
+			nodeId: 'abc',
+		});
 	});
 
 	it('routes the lifecycle actions to admin', () => {

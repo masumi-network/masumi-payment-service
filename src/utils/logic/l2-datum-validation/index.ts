@@ -22,7 +22,7 @@
  */
 import { OnChainState } from '@/generated/prisma/client';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
-import { checkPaymentAmountsMatch } from '@masumi/payment-core/payment-amounts';
+import { canonicalPaymentUnit, checkPaymentAmountsMatch } from '@masumi/payment-core/payment-amounts';
 import type { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 
 /**
@@ -126,8 +126,7 @@ export interface L2InitialLockResult {
  * (payment → RequestedFunds, purchase → PaidFunds). On failure the caller must
  * advance the row to `FundsOrDatumInvalid` rather than `FundsLocked`.
  *
- * `expectedFunds`/`outputAmounts` are defensively copied before the (mutating)
- * amount check, so callers may pass their live arrays.
+ * The amount check leaves `expectedFunds` and `outputAmounts` unchanged.
  */
 export function validateL2InitialLock(
 	decoded: DecodedV1ContractDatum,
@@ -152,19 +151,16 @@ export function validateL2InitialLock(
 		errors.push('Hydra lock was confirmed after payByTime.');
 	}
 
-	const isNonLovelace = (unit: string) => unit !== '' && unit.toLowerCase() !== 'lovelace';
-	const expectedTokenCount = expectedFunds.filter((x) => isNonLovelace(x.unit)).length;
-	const actualTokenCount = outputAmounts.filter((x) => isNonLovelace(x.unit)).length;
+	const expectedTokenCount = new Set(
+		expectedFunds.map((x) => canonicalPaymentUnit(x.unit)).filter((unit) => unit !== ''),
+	).size;
+	const actualTokenCount = new Set(outputAmounts.map((x) => canonicalPaymentUnit(x.unit)).filter((unit) => unit !== ''))
+		.size;
 	if (expectedTokenCount !== actualTokenCount) {
 		errors.push('Token counts do not match. This likely is a spoofing attempt.');
 	}
 
-	// checkPaymentAmountsMatch mutates unit fields in place — pass copies.
-	const amountsMatch = checkPaymentAmountsMatch(
-		expectedFunds.map((x) => ({ ...x })),
-		outputAmounts.map((y) => ({ ...y })),
-		decoded.collateralReturnLovelace,
-	);
+	const amountsMatch = checkPaymentAmountsMatch(expectedFunds, outputAmounts, decoded.collateralReturnLovelace);
 	if (!amountsMatch) {
 		errors.push('Payment amounts do not match. This likely is a spoofing attempt.');
 	}

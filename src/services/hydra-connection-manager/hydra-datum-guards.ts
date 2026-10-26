@@ -15,6 +15,7 @@ import { OnChainState, Prisma, TransactionLayer, TransactionStatus } from '@/gen
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { checkPaymentAmountsMatch } from '@masumi/payment-core/payment-amounts';
+import type { L2MintCheck } from '@/lib/hydra/hydra/l2-mint-tally';
 import { type DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { validateL2InitialLock } from '@/utils/logic/l2-datum-validation';
 import {
@@ -143,6 +144,19 @@ export function canonicalExpectedFunds(expectedFunds: Array<{ unit: string; amou
 			quantity: amount.toString(),
 		})),
 	);
+}
+
+/** Require a completed replay with no positive net L2 mint for each requested token. */
+export function requestedHydraTokensAreBacked(
+	expectedFunds: Array<{ unit: string; amount: bigint }>,
+	l2MintCheck: L2MintCheck | undefined,
+): boolean {
+	for (const { unit } of expectedFunds) {
+		const normalizedUnit = unit.toLowerCase();
+		if (normalizedUnit === '' || normalizedUnit === 'lovelace') continue;
+		if (l2MintCheck === undefined || l2MintCheck.unburnedUnits.has(normalizedUnit)) return false;
+	}
+	return true;
 }
 
 export function parsePersistedHydraValue(value: unknown): HydraAmount[] | null {
@@ -390,19 +404,14 @@ export function observationHasValidLineage(params: {
 		);
 	}
 
-	// A TxValid response can be followed by a DB failure before txHash is copied
-	// from the pre-submit reservation. Permit that one exact pending intended hash;
-	// the caller already bound evidence.txHash/output to txId, and the continuation
-	// check below still requires the CBOR body to consume the persisted escrow UTxO.
-	const hasExactIntendedPendingReservation =
-		currentTransaction?.status === TransactionStatus.Pending &&
-		currentTransaction.txHash == null &&
-		currentTransaction.intendedTxHash === txId;
+	// A pending local reservation may have no posted hash when a peer's signed
+	// transaction consumes the escrow first. The exact-input check below and
+	// the caller's actor/economic checks prove that continuation independently.
 	if (
 		requestLayer !== TransactionLayer.L2 ||
 		currentTransaction?.layer !== TransactionLayer.L2 ||
 		currentTransaction.hydraHeadId !== hydraHeadId ||
-		(currentTransaction.txHash == null && !hasExactIntendedPendingReservation)
+		(currentTransaction.txHash == null && currentTransaction.status !== TransactionStatus.Pending)
 	) {
 		return false;
 	}
@@ -490,6 +499,7 @@ export function canAdvanceLegacyHydraReference(params: {
 	newOnChainState: OnChainState;
 	decoded: DecodedV1ContractDatum;
 	expectedFunds: Array<{ unit: string; amount: bigint }>;
+	l2MintCheck: L2MintCheck | undefined;
 	outputAmounts: Array<{ unit: string; quantity: string }>;
 	transactionEvidence: HydraTransactionEvidence | null;
 	confirmationTimeMs: number | null;
@@ -501,6 +511,7 @@ export function canAdvanceLegacyHydraReference(params: {
 		newOnChainState,
 		decoded,
 		expectedFunds,
+		l2MintCheck,
 		outputAmounts,
 		transactionEvidence,
 		confirmationTimeMs,
@@ -509,6 +520,7 @@ export function canAdvanceLegacyHydraReference(params: {
 	if (currentHydraUtxoTxHash == null && currentHydraUtxoOutputIndex == null) {
 		return (
 			newOnChainState === OnChainState.FundsLocked &&
+			requestedHydraTokensAreBacked(expectedFunds, l2MintCheck) &&
 			confirmationTimeMs != null &&
 			signedValidityUpperBoundTimeMs != null &&
 			signedValidityUpperBoundTimeMs <= BigInt(decoded.payByTime) &&

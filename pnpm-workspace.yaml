@@ -26,17 +26,17 @@ overrides:
   ajv@>=8 <9: 8.18.0
   baseline-browser-mapping: 2.11.0
   bn.js: 5.2.3
-  body-parser: 2.3.0
+  body-parser: 2.4.0
   brace-expansion@>=1 <2: 1.1.21
   brace-expansion@>=2 <3: 2.1.7
   brace-expansion@>=5 <6: 5.0.12
   browserslist: 4.28.7
-  dompurify: 3.4.16
+  dompurify: 3.4.17
   esbuild@>=0.28 <0.29: 0.28.1
   # Hold the transitive react-hooks lint plugin at the version main uses; 7.1.x
   # enables stricter React-Compiler rules that flag pre-existing valid code.
   eslint-plugin-react-hooks: 7.0.1
-  fast-uri: 3.1.8
+  fast-uri: 3.1.9
   flatted: 3.4.4
   follow-redirects: 1.16.1
   form-data: 4.0.6
@@ -57,6 +57,7 @@ overrides:
   picomatch@>=2 <3: 2.3.2
   picomatch@>=4 <5: 4.0.7
   postcss: 8.5.23
+  postman-collection>@faker-js/faker: 10.5.0
   postman-collection>uuid: 11.1.1
   protobufjs: 7.6.5
   proxy-addr: 2.0.8
@@ -64,12 +65,16 @@ overrides:
   sharp: 0.35.5
   smol-toml: 1.9.1
   source-map-js: 1.2.2
-  undici: 6.28.1
+  undici: 6.29.1
   valibot: 1.4.2
   ws@>=7 <8: 7.5.11
   ws@>=8 <9: 8.21.1
   yaml: 2.8.3
+  zod@>=4 <5: 4.6.6
 
 patchedDependencies:
   '@sundaeswap/core': patches/@sundaeswap__core.patch
   http-cache-semantics@4.3.0: patches/http-cache-semantics@4.3.0.patch
+  postman-collection@5.2.0: patches/postman-collection@5.2.0.patch
+  zod@3.25.76: patches/zod@3.25.76.patch
+  zod@4.6.6: patches/zod@4.6.6.patch

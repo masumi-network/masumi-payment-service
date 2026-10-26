@@ -333,7 +333,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(() => {
-    setApiKey(null);
+    updateApiKey(null);
     setAuthorized(false);
     setCapabilities(DEFAULT_CAPABILITIES);
     setNetwork('Preprod');
@@ -355,7 +355,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('masumi_new_transactions_count');
     localStorage.removeItem('masumi_network');
     localStorage.removeItem('masumi_acknowledged_wallet_alerts');
-  }, [setIsSetupMode, setNetwork, setActiveRail, setSelectedX402ChainId]);
+  }, [setIsSetupMode, setNetwork, setActiveRail, setSelectedX402ChainId, updateApiKey]);
 
   // Memoized so consumers only re-render when a value they read actually
   // changes; all setters above have stable identities.

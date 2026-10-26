@@ -156,6 +156,50 @@ function isOpenStateDatum(datum: PlutusData): boolean {
 	return open != null && BigInt(open.alternative().to_str()) === 0n;
 }
 
+/**
+ * A candidate L1 withdrawal must move this head's state token while leaving
+ * the head Open. An ordinary transfer to the same address and value cannot do
+ * that. A Close or fanout cannot leave an Open head output either.
+ */
+export function hasOpenHydraHeadStateTransition(
+	transaction: {
+		inputs: ReadonlyArray<{
+			address: string;
+			amount: ReadonlyArray<{ unit: string; quantity: string }>;
+			collateral?: boolean;
+			reference?: boolean;
+		}>;
+		outputs: readonly HydraHeadChainOutput[];
+	},
+	headId: string,
+): boolean {
+	if (!/^[0-9a-fA-F]{56}$/.test(headId)) return false;
+	const normalizedHeadId = headId.toLowerCase();
+	const stateToken = `${normalizedHeadId}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
+	const acceptedHashes = knownHydraHeadScriptHashes();
+	const scriptHash = (address: string) => paymentScriptHash(address) ?? '';
+	const carriesStateToken = (amounts: ReadonlyArray<{ unit: string; quantity: string }>) =>
+		amounts.some(({ unit, quantity }) => unit.toLowerCase() === stateToken && quantity === '1');
+	const headInputs = transaction.inputs.filter(
+		(input) =>
+			input.collateral !== true &&
+			input.reference !== true &&
+			acceptedHashes.has(scriptHash(input.address)) &&
+			carriesStateToken(input.amount),
+	);
+	if (headInputs.length !== 1) return false;
+	const inputHash = scriptHash(headInputs[0].address);
+	const headOutputs = transaction.outputs.filter(
+		(output) => scriptHash(output.address) === inputHash && carriesStateToken(output.amount),
+	);
+	if (headOutputs.length !== 1 || !headOutputs[0].inline_datum) return false;
+	try {
+		return isOpenStateDatum(PlutusData.from_hex(headOutputs[0].inline_datum));
+	} catch {
+		return false;
+	}
+}
+
 export function resolveHydraHeadScriptHash(configuredHash = process.env.HYDRA_HEAD_SCRIPT_HASH): string {
 	return normalizeHex(configuredHash?.trim() || DEFAULT_HYDRA_HEAD_SCRIPT_HASH, 56, 'Hydra head script hash');
 }

@@ -57,6 +57,20 @@ export function isAwaitingPostChainTx(connection: Connection, failure: PostTxFai
 	return (awaitedCommands.get(connection) ?? []).some((ownsPostTxFailure) => ownsPostTxFailure(failure));
 }
 
+export function sendVerifiedHydraCommand(
+	connection: Connection,
+	expectedHeadId: string | undefined,
+	options: HydraCommandOptions,
+	rotationError: Error | undefined,
+	isLiveSessionReady: boolean,
+): Promise<void> {
+	if (rotationError) return Promise.reject(rotationError);
+	if (!isLiveSessionReady) {
+		return Promise.reject(new HydraTransportError('Hydra live session identity has not been verified'));
+	}
+	return sendHydraCommandAndWait(connection, expectedHeadId, options);
+}
+
 export function sendHydraCommandAndWait(
 	connection: Connection,
 	expectedHeadId: string | undefined,

@@ -195,6 +195,74 @@ describe('persistHeadStatus under the ownership fence', () => {
 // The fanout handoff checks the fanout against the persisted snapshot number.
 // A contest keeps the status, so a write skipped as "no change" strands it.
 describe('persistHeadStatus for a contested head', () => {
+	it('replaces a rolled-back contest snapshot from an authenticated live Close frame', async () => {
+		mockFindUnique.mockResolvedValue(
+			durableRow({
+				status: HydraHeadStatus.Closed,
+				closedAt: new Date('2026-08-01T11:00:00Z'),
+				contestationDeadline: new Date('2026-08-01T12:00:00Z'),
+				latestSnapshotNumber: 5n,
+			}),
+		);
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, {
+			status: HydraHeadStatus.Closed,
+			headId: 'a'.repeat(56),
+			snapshotNumber: 3,
+			contestationDeadline: '2026-08-01T11:30:00Z',
+			chainEvent: 'HeadIsClosed',
+		});
+
+		expect(mockUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					latestSnapshotNumber: 3n,
+					contestationDeadline: new Date('2026-08-01T11:30:00Z'),
+				}),
+			}),
+		);
+	});
+
+	it('does not lower a Closed snapshot from a status-only greeting', async () => {
+		mockFindUnique.mockResolvedValue(durableRow({ status: HydraHeadStatus.Closed, latestSnapshotNumber: 5n }));
+
+		await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, {
+			status: HydraHeadStatus.Closed,
+			headId: 'a'.repeat(56),
+			snapshotNumber: 3,
+		});
+
+		expect(mockUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.not.objectContaining({ latestSnapshotNumber: expect.anything() }) }),
+		);
+	});
+
+	it.each([undefined, 'invalid'])(
+		'keeps the persisted Closed snapshot when a rollback deadline is %s',
+		async (contestationDeadline) => {
+			mockFindUnique.mockResolvedValue(
+				durableRow({
+					status: HydraHeadStatus.Closed,
+					latestSnapshotNumber: 5n,
+					contestationDeadline: new Date('2026-08-01T12:00:00Z'),
+				}),
+			);
+
+			await persistHeadStatus(host(), 'head-1', fakeHead(), 1n, {
+				status: HydraHeadStatus.Closed,
+				headId: 'a'.repeat(56),
+				snapshotNumber: 3,
+				contestationDeadline,
+				chainEvent: 'HeadIsClosed',
+			});
+
+			expect(mockUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.not.objectContaining({ latestSnapshotNumber: expect.anything() }),
+				}),
+			);
+		},
+	);
 	it('raises the snapshot number on a contest that keeps the head Closed', async () => {
 		const closedAt = new Date('2026-08-01T11:00:00Z');
 		// A real HeadIsContested carries a deadline, so the missed-close read does not run.

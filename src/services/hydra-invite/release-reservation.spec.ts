@@ -16,7 +16,7 @@ const mockParticipantDeleteMany = jest.fn() as AnyMock;
 const mockSecretDeleteMany = jest.fn() as AnyMock;
 const mockInviteFindMany = jest.fn() as AnyMock;
 const mockHostFindUnique = jest.fn() as AnyMock;
-const mockRemoveHostNode = jest.fn() as AnyMock;
+const mockRemoveUnclaimedHostNode = jest.fn() as AnyMock;
 const mockWithdrawNodeFunds = jest.fn() as AnyMock;
 
 const tx = {
@@ -46,7 +46,7 @@ jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
 jest.unstable_mockModule('@/services/hydra-node-funding/node-address', () => ({ nodeCardanoAddress: () => 'addr' }));
 
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
-	removeHostNode: mockRemoveHostNode,
+	removeUnclaimedHostNode: mockRemoveUnclaimedHostNode,
 	HydraHostRequestError: class HydraHostRequestError extends Error {
 		constructor(
 			message: string,
@@ -97,7 +97,7 @@ beforeEach(() => {
 	mockInviteFindMany.mockResolvedValue([]);
 	mockWithdrawNodeFunds.mockResolvedValue(sweep('dust'));
 	mockHostFindUnique.mockResolvedValue(HOST);
-	mockRemoveHostNode.mockResolvedValue(undefined);
+	mockRemoveUnclaimedHostNode.mockResolvedValue(undefined);
 });
 
 describe('releaseReservedParticipants', () => {
@@ -128,7 +128,7 @@ describe('releaseReservedParticipants', () => {
 	it('keeps a node whose Cardano key is only on the Host', async () => {
 		mockWithdrawNodeFunds.mockResolvedValue(sweep('no-key'));
 		expect(await releaseReservedParticipants(RESERVATION)).toEqual({ released: 0, retained: 1 });
-		expect(mockRemoveHostNode).not.toHaveBeenCalled();
+		expect(mockRemoveUnclaimedHostNode).not.toHaveBeenCalled();
 		expect(mockSecretDeleteMany).not.toHaveBeenCalled();
 	});
 
@@ -241,15 +241,14 @@ describe('the Host node behind a reservation', () => {
 	it('is removed before the rows that name it are deleted', async () => {
 		await releaseReservedParticipants(RESERVATION);
 
-		expect(mockRemoveHostNode).toHaveBeenCalledWith('https://host.example', 'token', 'node-1', {
-			force: false,
+		expect(mockRemoveUnclaimedHostNode).toHaveBeenCalledWith('https://host.example', 'token', 'node-1', {
 			allowInsecureHttp: false,
 		});
 		expect(mockParticipantDeleteMany).toHaveBeenCalled();
 	});
 
 	it('keeps the participant when the Host will not give the node up', async () => {
-		mockRemoveHostNode.mockRejectedValue(new Error('host unreachable'));
+		mockRemoveUnclaimedHostNode.mockRejectedValue(new Error('host unreachable'));
 
 		// `hostNodeId` is recorded nowhere else, so deleting the rows here would
 		// leave a running node nobody can name, with the only keys to its funds
@@ -260,10 +259,8 @@ describe('the Host node behind a reservation', () => {
 	});
 
 	it('treats a node the Host no longer has as removed', async () => {
-		const { HydraHostRequestError } = await import('@/services/hydra-host/client');
-		mockRemoveHostNode.mockRejectedValue(
-			new HydraHostRequestError('DELETE /v1/nodes/node-1 on the hydra host failed (404): no such node: node-1', 404),
-		);
+		// The client verifies a 404 with GET /v1/nodes/node-1 before returning.
+		mockRemoveUnclaimedHostNode.mockResolvedValue(undefined);
 
 		await expect(releaseReservedParticipants(RESERVATION)).resolves.toEqual({ released: 1, retained: 0 });
 		expect(mockParticipantDeleteMany).toHaveBeenCalled();
@@ -273,7 +270,7 @@ describe('the Host node behind a reservation', () => {
 	// that as removed would delete the only rows that name the node.
 	it('keeps the reservation when the 404 is for an unknown route, not the node', async () => {
 		const { HydraHostRequestError } = await import('@/services/hydra-host/client');
-		mockRemoveHostNode.mockRejectedValue(
+		mockRemoveUnclaimedHostNode.mockRejectedValue(
 			new HydraHostRequestError('DELETE /v1/nodes/node-1 on the hydra host failed (404): not found', 404),
 		);
 

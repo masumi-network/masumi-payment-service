@@ -13,6 +13,8 @@ import {
 	rateLimitSource,
 } from './exchange-server.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
+import { createBoundedPeerResolver } from '../peer-dns.js';
+import { peerTargetRejection } from '../peer-target-policy.js';
 
 // The keys are the real shape a `.vk` envelope carries — `5820` and 32 bytes —
 // because that is what the redemption is checked against: they are written
@@ -167,6 +169,175 @@ describe('search-engine exclusion', () => {
 });
 
 describe('redeeming an invite', () => {
+	it('times out a stalled peer check and admits a later redemption of the same open invite', async () => {
+		await issue('nonce-dns-stall');
+		checkPeerTarget.mockImplementationOnce(async () => await new Promise<string | null>(() => undefined));
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			isNodeStopped,
+			limits: { maxInFlight: 1, peerCheckTimeoutMs: 50 },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const limitedBase = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+		const redemption = { nonce: 'nonce-dns-stall', redeemer: MATERIAL, signature: SIGNATURE };
+		try {
+			const stalled = await fetch(`${limitedBase}/exchange/redeem`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Connection: 'close' },
+				body: JSON.stringify(redemption),
+				signal: AbortSignal.timeout(1_000),
+			});
+			expect(stalled.status).toBe(503);
+			expect(await stalled.json()).toEqual({
+				error: 'peer address check timed out; retry later',
+				code: 'host-unavailable',
+			});
+			expect((await store.listInvites())[0]?.redeemedAt).toBeNull();
+
+			const retry = await fetch(`${limitedBase}/exchange/redeem`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Connection: 'close' },
+				body: JSON.stringify(redemption),
+			});
+			expect(retry.status).toBe(200);
+			expect(checkPeerTarget).toHaveBeenCalledTimes(2);
+		} finally {
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
+	});
+
+	it('admits other invites during one stalled peer check and releases the slot on client abort', async () => {
+		await issue('nonce-dns-abort');
+		await issue('nonce-dns-other');
+		let allowOriginal = false;
+		checkPeerTarget.mockImplementation(async (advertise) => {
+			if (advertise === MATERIAL.advertise && !allowOriginal) return await new Promise<string | null>(() => undefined);
+			return null;
+		});
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			isNodeStopped,
+			limits: { maxInFlight: 16, maxBodyReadersPerSource: 16, peerCheckTimeoutMs: 1_000 },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const limitedBase = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+		const controller = new AbortController();
+		const redeem = async (nonce: string, redeemer = MATERIAL) =>
+			await fetch(`${limitedBase}/exchange/redeem`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Connection: 'close' },
+				body: JSON.stringify({ nonce, redeemer, signature: SIGNATURE }),
+				signal: AbortSignal.timeout(1_500),
+			});
+		try {
+			const stalled = fetch(`${limitedBase}/exchange/redeem`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Connection: 'close' },
+				body: JSON.stringify({ nonce: 'nonce-dns-abort', redeemer: MATERIAL, signature: SIGNATURE }),
+				signal: controller.signal,
+			}).catch((error: unknown) => error);
+			expect(await eventually(async () => (checkPeerTarget.mock.calls.length === 1 ? true : null))).toBe(true);
+			const duplicates = await Promise.all(Array.from({ length: 15 }, async () => await redeem('nonce-dns-abort')));
+			expect(duplicates.map((response) => response.status)).toEqual(Array(15).fill(503));
+			expect(checkPeerTarget).toHaveBeenCalledTimes(1);
+			expect((await redeem('nonce-dns-other', { ...OTHER_MATERIAL, advertise: 'other.example.com:5101' })).status).toBe(
+				200,
+			);
+
+			controller.abort();
+			await stalled;
+			allowOriginal = true;
+			const retry = await eventually(async () => {
+				const response = await redeem('nonce-dns-abort');
+				return response.status === 200 ? response.status : null;
+			}, 1_000);
+			expect(retry).toBe(200);
+		} finally {
+			controller.abort();
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
+	});
+
+	it('keeps one invite on one pending OS lookup when its signer changes hostnames after a deadline', async () => {
+		await issue('nonce-dns-rotate');
+		await issue('nonce-dns-independent');
+		let releaseFirst: ((addresses: readonly { address: string; family: number }[]) => void) | undefined;
+		const lookupHost = jest.fn(async (hostname: string) => {
+			if (hostname === 'first.example.com') {
+				return await new Promise<readonly { address: string; family: number }[]>((resolve) => (releaseFirst = resolve));
+			}
+			return [{ address: '8.8.8.8', family: 4 }];
+		});
+		const resolve = createBoundedPeerResolver(lookupHost, { maxPending: 2, timeoutMs: 500 });
+		checkPeerTarget.mockImplementation(
+			async (advertise, signal, owner) =>
+				await peerTargetRejection(advertise, { allowPrivate: false, resolve, signal, owner }),
+		);
+		const limited = createExchangePlane({
+			store,
+			logger,
+			onRedeemed,
+			verifyRedemption,
+			checkPeerTarget,
+			isNodeStopped,
+			limits: { peerCheckTimeoutMs: 50 },
+		});
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const limitedBase = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+		const redeem = async (nonce: string, advertise: string) =>
+			await fetch(`${limitedBase}/exchange/redeem`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Connection: 'close' },
+				body: JSON.stringify({ nonce, redeemer: { ...MATERIAL, advertise }, signature: SIGNATURE }),
+				signal: AbortSignal.timeout(1_000),
+			});
+		try {
+			expect((await redeem('nonce-dns-rotate', 'first.example.com:5101')).status).toBe(503);
+			expect((await redeem('nonce-dns-rotate', 'second.example.com:5101')).status).toBe(503);
+			expect(lookupHost).toHaveBeenCalledTimes(1);
+			expect((await redeem('nonce-dns-independent', 'other.example.com:5101')).status).toBe(200);
+			expect(lookupHost).toHaveBeenCalledTimes(2);
+
+			releaseFirst?.([{ address: '8.8.8.8', family: 4 }]);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect((await redeem('nonce-dns-rotate', 'second.example.com:5101')).status).toBe(200);
+			expect(lookupHost).toHaveBeenCalledTimes(3);
+		} finally {
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
+	});
+
+	it('returns retryable 503 after EAI_AGAIN and leaves the invite open for a later success', async () => {
+		await issue('nonce-dns-again');
+		let attempts = 0;
+		const resolve = createBoundedPeerResolver(async () => {
+			if (attempts++ === 0) throw Object.assign(new Error('getaddrinfo EAI_AGAIN'), { code: 'EAI_AGAIN' });
+			return [{ address: '8.8.8.8', family: 4 }];
+		});
+		checkPeerTarget.mockImplementation(
+			async (advertise, signal, owner) =>
+				await peerTargetRejection(advertise, { allowPrivate: false, resolve, signal, owner }),
+		);
+		const redemption = { nonce: 'nonce-dns-again', redeemer: MATERIAL, signature: SIGNATURE };
+
+		const first = await post('/exchange/redeem', redemption);
+		expect(first.status).toBe(503);
+		expect(first.body).toEqual({
+			error: 'peer address check temporarily unavailable; retry later',
+			code: 'host-unavailable',
+		});
+		expect((await store.listInvites())[0]?.redeemedAt).toBeNull();
+		expect((await post('/exchange/redeem', redemption)).status).toBe(200);
+	});
+
 	it('accepts a redemption for an invite this host issued', async () => {
 		await issue('nonce-aaaaaaaa');
 
@@ -294,7 +465,7 @@ describe('redeeming an invite', () => {
 
 		expect(result.status).toBe(400);
 		expect(result.body).toEqual({ error: 'peer address is not allowed' });
-		expect(checkPeerTarget).toHaveBeenCalledWith('127.0.0.1:8443');
+		expect(checkPeerTarget).toHaveBeenCalledWith('127.0.0.1:8443', expect.any(AbortSignal), 'nonce-private-peer');
 		expect(onRedeemed).not.toHaveBeenCalled();
 		expect((await store.listInvites())[0].redeemedAt).toBeNull();
 	});
@@ -552,12 +723,22 @@ describe('total request budget', () => {
 		await new Promise<void>((resolve) => limited.close(() => resolve()));
 	});
 
-	const from = (source: string, body = '{}') =>
-		fetch(url, { method: 'POST', headers: { Connection: 'close', 'X-Forwarded-For': source }, body }).then(
-			(response) => response.status,
-		);
-	const redeem = (source: string, nonce: string) =>
-		from(source, JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }));
+	const fromResponse = (source: string, body = '{}') =>
+		fetch(url, { method: 'POST', headers: { Connection: 'close', 'X-Forwarded-For': source }, body });
+	const from = (source: string, body = '{}') => fromResponse(source, body).then((response) => response.status);
+	const redeemResponse = (source: string, nonce: string) =>
+		fromResponse(source, JSON.stringify({ nonce, redeemer: MATERIAL, signature: SIGNATURE }));
+	const redeem = (source: string, nonce: string) => redeemResponse(source, nonce).then((response) => response.status);
+
+	it('serves an open invite after a shared proxy address reaches its source limit', async () => {
+		const source = '198.51.100.10';
+		expect(await from(source)).toBe(400);
+		expect(await from(source)).toBe(400);
+		await issue('nonce-shared-proxy');
+
+		expect(await redeem(source, 'nonce-shared-proxy')).toBe(200);
+		expect(await redeem(source, 'nonce-unknown')).toBe(429);
+	});
 
 	it('stops a flood from many distinct addresses, then still serves a redemption', async () => {
 		const statuses: number[] = [];
@@ -608,12 +789,33 @@ describe('total request budget', () => {
 		expect(await from('198.51.100.30', '{}')).toBe(429);
 	});
 
-	it('past the budget, still refuses a bad signature with 401 whatever the nonce', async () => {
+	it('past the budget, skips signature checks for unknown nonces but redeems an open invite', async () => {
 		for (let index = 1; index <= 5; index += 1) {
 			await from(`198.51.100.${index}`);
 		}
+		await issue('nonce-open');
+		verifyRedemption.mockClear();
+
+		const unknown = await redeemResponse('203.0.113.9', 'nonce-unknown');
+		const unknownRefusal = {
+			status: unknown.status,
+			body: await unknown.text(),
+			retryAfter: unknown.headers.get('retry-after'),
+		};
+		expect(unknownRefusal.status).toBe(429);
+		expect(verifyRedemption).not.toHaveBeenCalled();
+
 		verifyRedemption.mockResolvedValueOnce(false);
-		expect(await redeem('203.0.113.9', 'nonce-unknown')).toBe(401);
+		const badSignature = await redeemResponse('203.0.113.10', 'nonce-open');
+		expect({
+			status: badSignature.status,
+			body: await badSignature.text(),
+			retryAfter: badSignature.headers.get('retry-after'),
+		}).toEqual(unknownRefusal);
+		expect(verifyRedemption).toHaveBeenCalledTimes(1);
+
+		expect(await redeem('203.0.113.11', 'nonce-open')).toBe(200);
+		expect(verifyRedemption).toHaveBeenCalledTimes(2);
 	});
 
 	it('does not let one source spend the shared budget', async () => {

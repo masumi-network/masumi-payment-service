@@ -25,13 +25,14 @@ import { assertL2TxWithinMaxSize } from './l2-tx-size';
 import { awaitChainSyncedForInit, initCommand } from './node-chain-sync';
 import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
 import { isVerifiedPendingCommitOutput, readFinalSnapshot, readVerifiedCurrentOutput } from './node-current-output';
+import { readCurrentClosedSnapshot } from './node-current-output';
 import {
 	HydraCommandOptions,
 	assertTxConfirmationPolling,
 	awaitHydraTxConfirmation,
 	isAwaitingPostChainTx,
 	newTxCommand,
-	sendHydraCommandAndWait,
+	sendVerifiedHydraCommand,
 } from './node-command-channel';
 import type { ClosedHeadFacts } from './head-output-tx';
 import {
@@ -446,8 +447,11 @@ export class HydraNode extends EventEmitter {
 
 	/** Newest snapshot a close or contest put on chain, on the same trust as `verifiedSnapshotNumber`. */
 	get closedSnapshotNumber(): bigint | undefined {
-		const closed = this._replay.closedSnapshotNumber;
-		return this.hasVerifiedPinnedSessions && closed !== undefined ? BigInt(closed) : undefined;
+		return readCurrentClosedSnapshot(
+			this.hasVerifiedPinnedSessions,
+			this._replay.closedSnapshotNumber,
+			this._live.lastClosedSnapshotNumber,
+		);
 	}
 
 	/** Both evidence sockets have authenticated the same pinned head; never while a headless Idle is held. */
@@ -523,13 +527,13 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private sendCommandAndWait(options: HydraCommandOptions): Promise<void> {
-		if (this._unsupportedPersistenceRotationError) {
-			return Promise.reject(this._unsupportedPersistenceRotationError);
-		}
-		if (!this._live.isLiveSessionReady()) {
-			return Promise.reject(new HydraTransportError('Hydra live session identity has not been verified'));
-		}
-		return sendHydraCommandAndWait(this._connection, this._expectedHeadId, options);
+		return sendVerifiedHydraCommand(
+			this._connection,
+			this._expectedHeadId,
+			options,
+			this._unsupportedPersistenceRotationError,
+			this._live.isLiveSessionReady(),
+		);
 	}
 
 	async init(timeoutMs: number = HydraNode.INIT_OBSERVE_TIMEOUT_MS) {
@@ -572,7 +576,8 @@ export class HydraNode extends EventEmitter {
 	 * Every output leaves — there is no change staying behind — so a partial
 	 * withdrawal has to split the amount off inside the head first. A 200 here
 	 * means the node accepted the request, not that the head agreed: that arrives
-	 * later as DecommitApproved, or does not, as DecommitInvalid.
+	 * later as DecommitApproved. DecommitInvalid is also broadcast for peer
+	 * submissions, so it cannot identify the outcome of this request.
 	 */
 	async decommit(transaction: HydraTransaction) {
 		assertL2TxWithinMaxSize(transaction.cborHex);
@@ -616,10 +621,7 @@ export class HydraNode extends EventEmitter {
 		return txHash;
 	}
 
-	/**
-	 * Whether the node says it is caught up with its chain, or `undefined` if
-	 * it has not said. See `LiveFrameProcessor.chainSynced`.
-	 */
+	/** Node chain sync status, or `undefined` before its first report. */
 	isChainSynced(): boolean | undefined {
 		return this._live.chainSynced;
 	}

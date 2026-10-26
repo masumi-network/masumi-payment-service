@@ -5,15 +5,68 @@ jest.unstable_mockModule('./transport', () => ({ fetchHydraHost: transportMock }
 
 let HydraHostRequestError: typeof import('./client').HydraHostRequestError;
 let fetchHostCapabilities: typeof import('./client').fetchHostCapabilities;
+let fetchHostNodeHealth: typeof import('./client').fetchHostNodeHealth;
 let forgetHostInvite: typeof import('./client').forgetHostInvite;
 let provisionNodeOnHost: typeof import('./client').provisionNodeOnHost;
+let removeUnclaimedHostNode: typeof import('./client').removeUnclaimedHostNode;
 
 beforeAll(async () => {
-	({ HydraHostRequestError, fetchHostCapabilities, forgetHostInvite, provisionNodeOnHost } = await import('./client'));
+	({
+		HydraHostRequestError,
+		fetchHostCapabilities,
+		fetchHostNodeHealth,
+		forgetHostInvite,
+		provisionNodeOnHost,
+		removeUnclaimedHostNode,
+	} = await import('./client'));
+});
+
+describe('Hydra Host node health freshness', () => {
+	it('treats a Host without the freshness field as unverified', async () => {
+		transportMock.mockResolvedValueOnce(
+			new Response(JSON.stringify({ state: 'Running', usable: true, chainSynced: true }), { status: 200 }),
+		);
+
+		await expect(
+			fetchHostNodeHealth('https://hydra.example.com', 'user-token', 'node-1', { allowInsecureHttp: false }),
+		).resolves.toMatchObject({ usable: true, chainSynced: true, observationFresh: false });
+	});
 });
 
 afterEach(() => {
 	transportMock.mockReset();
+});
+
+describe('removing an unclaimed Host node', () => {
+	const options = { allowInsecureHttp: false };
+	const remove = () => removeUnclaimedHostNode('https://hydra.example.com', 'admin-token', 'node-1', options);
+
+	it('keeps the node when an old Host lacks the guarded route', async () => {
+		transportMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		transportMock.mockResolvedValueOnce(new Response(JSON.stringify({ nodeId: 'node-1' }), { status: 200 }));
+		await expect(remove()).rejects.toMatchObject({ status: 404 });
+		expect(transportMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('accepts a missing node only after the Host confirms it is gone', async () => {
+		transportMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		transportMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'no such node' }), { status: 404 }));
+		await expect(remove()).resolves.toBeUndefined();
+		expect(transportMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps the node when both paths miss a proxy prefix', async () => {
+		transportMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		transportMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+		await expect(remove()).rejects.toMatchObject({ status: 404 });
+		expect(transportMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps a node claimed by an invite', async () => {
+		transportMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'node is claimed' }), { status: 409 }));
+		await expect(remove()).rejects.toMatchObject({ status: 409 });
+		expect(transportMock).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe('Hydra Host transport security', () => {
@@ -153,6 +206,24 @@ describe('provisioning against a Host that overrides the deposit activation', ()
 });
 
 describe('forgetting an invite on the Host', () => {
+	it('marks an intentional redemption discard in the Host request', async () => {
+		const fetchMock = jest
+			.fn<(input: string | URL | Request) => Promise<Response>>()
+			.mockResolvedValue(new Response(JSON.stringify({ forgotten: true }), { status: 200 }));
+		transportMock.mockImplementation(fetchMock);
+
+		await forgetHostInvite(
+			'https://hydra.example.com',
+			'admin-token',
+			'nonce123456',
+			{ allowInsecureHttp: false },
+			{ discardRedemption: true },
+		);
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+			'https://hydra.example.com/v1/invites/nonce123456?discardRedemption=true',
+		);
+	});
+
 	it('keeps the still-redeemable nonce out of the error message', async () => {
 		const fetchMock = jest
 			.fn<(input: string | URL | Request) => Promise<Response>>()

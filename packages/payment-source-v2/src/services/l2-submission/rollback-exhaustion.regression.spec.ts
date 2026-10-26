@@ -307,7 +307,7 @@ describe.each(cases)('%s %s L2 safe rollback', (kind, retryAction, initiatedActi
 		state = structuredClone(state);
 		await expect(submitReservedL2Action(submission)).rejects.toThrow(/not exclusively available/);
 		expect(submitTx).toHaveBeenCalledTimes(1);
-		const accepts = (txId: string) =>
+		const accepts = (txId: string, inputTxHash = 'escrow-tx') =>
 			observationHasValidLineage({
 				hydraHeadId: 'head-1',
 				txId,
@@ -330,7 +330,7 @@ describe.each(cases)('%s %s L2 safe rollback', (kind, retryAction, initiatedActi
 					txHash: txId,
 					validityLowerSlot: 0n,
 					validityUpperSlot: 123n,
-					inputs: [{ txHash: 'escrow-tx', outputIndex: 0, bodyIndex: 0 }],
+					inputs: [{ txHash: inputTxHash, outputIndex: 0, bodyIndex: 0 }],
 					spends: [],
 					outputs: [],
 					signerVkeys: [],
@@ -338,7 +338,10 @@ describe.each(cases)('%s %s L2 safe rollback', (kind, retryAction, initiatedActi
 				},
 			});
 		expect(accepts(intendedTxHash)).toBe(true);
-		expect(accepts('b'.repeat(64))).toBe(false);
+		// The observation path separately checks the actor and economics before
+		// accepting a peer continuation over the local reservation.
+		expect(accepts('b'.repeat(64))).toBe(true);
+		expect(accepts('b'.repeat(64), 'sibling-tx')).toBe(false);
 	});
 
 	it('restores action state through the release helper with an explicit operator override', async () => {

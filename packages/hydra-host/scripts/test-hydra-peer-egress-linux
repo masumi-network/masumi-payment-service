@@ -1,0 +1,153 @@
+#!/bin/bash
+# Privileged Linux integration test. Uses a temporary network namespace only.
+set -euo pipefail
+
+[[ "$(uname -s)" == Linux ]] || { echo 'requires Linux' >&2; exit 77; }
+[[ "$EUID" -eq 0 ]] || { echo 'requires root or equivalent network namespace privileges' >&2; exit 77; }
+for binary in unshare nsenter nft ip python3 flock; do
+	command -v "$binary" >/dev/null || { echo "requires $binary" >&2; exit 77; }
+done
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_DIR"' EXIT
+mkdir -p "$TEST_DIR/bin"
+cat >"$TEST_DIR/bin/docker" <<'DOCKER'
+#!/bin/bash
+set -euo pipefail
+if [[ "$1" == info ]]; then
+	echo '["name=seccomp"]'
+elif [[ "$1" == inspect ]]; then
+	case "$3" in
+	*HostConfig.NetworkMode*) echo '"host","","hydra",["127.0.0.53"]' ;;
+	*Config.Env*) echo '["HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL=true"]' ;;
+	*State.Running*) echo false ;;
+	esac
+fi
+DOCKER
+chmod 755 "$TEST_DIR/bin/docker"
+
+export PATH="$TEST_DIR/bin:$PATH"
+export HYDRA_EGRESS_CONFIG="$TEST_DIR/absent"
+export HYDRA_EGRESS_DNS_IPV4=127.0.0.53
+export HYDRA_EGRESS_RULES_FILE="$TEST_DIR/hydra-peer-egress.nft"
+export HYDRA_EGRESS_READY_DIR="$TEST_DIR/ready"
+export HYDRA_EGRESS_LOCK_FILE="$TEST_DIR/lock"
+export HYDRA_EGRESS_SCRIPT="$SCRIPT_DIR/hydra-peer-egress"
+
+unshare --net -- bash -c '
+	set -euo pipefail
+	ip link set lo up
+	ip addr add 203.0.114.8/32 dev lo
+	# Put RFC1918, link-local and IPv6 targets in a second namespace so the
+	# kernel routes to them over veth instead of treating them as FIB-local.
+	unshare --net -- sleep 120 &
+	REMOTE_PID=$!
+	trap '\''kill "$REMOTE_PID" 2>/dev/null || true'\'' EXIT
+	ip link add veth-hydra type veth peer name veth-remote
+	ip link set veth-remote netns "$REMOTE_PID"
+	ip addr add 10.77.0.1/24 dev veth-hydra
+	ip addr add 169.254.77.1/24 dev veth-hydra
+	ip -6 addr add fd77::1/64 dev veth-hydra nodad
+	ip link set veth-hydra up
+	nsenter -t "$REMOTE_PID" -n ip link set lo up
+	nsenter -t "$REMOTE_PID" -n ip addr add 10.77.0.2/24 dev veth-remote
+	nsenter -t "$REMOTE_PID" -n ip addr add 169.254.77.2/24 dev veth-remote
+	nsenter -t "$REMOTE_PID" -n ip -6 addr add fd77::2/64 dev veth-remote nodad
+	nsenter -t "$REMOTE_PID" -n ip link set veth-remote up
+	export REMOTE_PID
+	if ! bash "$HYDRA_EGRESS_SCRIPT" baseline; then
+		nft list chain inet hydra_peer_egress output >&2 || true
+		cat "$HYDRA_EGRESS_RULES_FILE" >&2 || true
+		exit 1
+	fi
+	bash "$HYDRA_EGRESS_SCRIPT" baseline
+	bash "$HYDRA_EGRESS_SCRIPT" verify
+	python3 - <<'"'"'PY'"'"'
+import os
+import socket
+import subprocess
+import sys
+
+listeners = []
+for host, port in [
+    ("127.0.0.1", 4001),
+    ("127.0.0.1", 2379),
+    ("127.0.0.53", 53),
+    ("127.0.0.1", 8443),
+    ("203.0.114.8", 5001),
+]:
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind((host, port))
+    listener.listen(8)
+    listeners.append(listener)
+
+probe = """
+import socket, sys
+try:
+    socket.create_connection((sys.argv[1], int(sys.argv[2])), timeout=0.4)
+except OSError:
+    sys.exit(1)
+"""
+def connects(host, port, uid):
+    child = subprocess.run(
+        [sys.executable, "-c", probe, host, str(port)],
+        preexec_fn=(lambda: os.setuid(uid)) if uid is not None else None,
+        check=False,
+    )
+    return child.returncode == 0
+
+remote_code = """
+import socket
+listeners = []
+for host, port in [("10.77.0.2", 5001), ("169.254.77.2", 5002), ("fd77::2", 5003)]:
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    listener = socket.socket(family)
+    listener.bind((host, port))
+    listener.listen(8)
+    listeners.append(listener)
+print("READY", flush=True)
+import time; time.sleep(30)
+"""
+remote = subprocess.Popen(
+    ["nsenter", "-t", os.environ["REMOTE_PID"], "-n", sys.executable, "-u", "-c", remote_code],
+    stdout=subprocess.PIPE,
+    text=True,
+)
+assert remote.stdout is not None and remote.stdout.readline().strip() == "READY"
+
+for host, port in [("127.0.0.1", 4001), ("127.0.0.1", 2379), ("127.0.0.53", 53)]:
+    assert connects(host, port, 10001), (host, port, "expected local exception")
+for host, port in [
+    ("127.0.0.1", 8443),
+    ("203.0.114.8", 5001),
+    ("10.77.0.2", 5001),
+    ("169.254.77.2", 5002),
+    ("fd77::2", 5003),
+]:
+    assert connects(host, port, None), (host, port, "listener is not reachable")
+    assert not connects(host, port, 10001), (host, port, "UID 10001 reached a denied destination")
+
+# Inbound control replies are established traffic and must still work.
+server = subprocess.Popen(
+    [sys.executable, "-u", "-c", "import socket; s=socket.socket(); s.bind((\"127.0.0.1\", 8444)); s.listen(); print(\"READY\", flush=True); c,_=s.accept(); c.sendall(b\"ok\")"],
+    preexec_fn=lambda: os.setuid(10001),
+    stdout=subprocess.PIPE,
+    text=True,
+)
+try:
+    assert server.stdout is not None and server.stdout.readline().strip() == "READY"
+    client = socket.create_connection(("127.0.0.1", 8444), timeout=1)
+    assert client.recv(2) == b"ok"
+finally:
+    if server.poll() is None:
+        server.kill()
+    server.wait(timeout=3)
+    if remote.poll() is None:
+        remote.kill()
+    remote.wait(timeout=3)
+
+print("Linux egress packet tests passed")
+PY
+'

@@ -135,13 +135,29 @@ proxies and caps how many heads one Host can carry. Under host networking the
 `hydra-node` API range stays shut anyway, because it is pinned to `127.0.0.1` in
 code ([args.ts:27](../packages/hydra-host/src/supervisor/args.ts:27)).
 
+The `--dns 127.0.0.53` value below is an example. Use a reachable IPv4 DNS
+server on the target host, then put the same address in
+`HYDRA_EGRESS_DNS_IPV4` in section 4. Repeat `--dns` for each server and keep
+the same order in that comma-separated setting.
+
+VERIFIED (`packages/hydra-host/Dockerfile`, `USER hydra` and uid `10001`):
+the outbound peer rule matches host uid `10001`. Before `docker create`, make
+the root-owned receipt directory that the container will read. Keep it on
+`/run`, which is cleared at boot.
+
+```bash
+install -d -o root -g root -m 755 /run/hydra-peer-egress
+```
+
 ```bash
 docker create --name hydra-host \
   --network host \
+  --dns 127.0.0.53 \
   --restart no \
   --stop-timeout 250 \
   --memory 4g \
   -v /mnt/hydra_data:/data \
+  -v /run/hydra-peer-egress:/run/hydra-peer-egress:ro \
   -v /srv/hydra/blockfrost.txt:/run/secrets/blockfrost.txt:ro \
   -e HYDRA_HOST_PUBLIC_HOST=hydra1.example.com \
   -e HYDRA_HOST_PUBLIC_EXCHANGE_URL=https://hydra-exchange.example.com:8444/exchange \
@@ -151,8 +167,10 @@ docker create --name hydra-host \
   -e BLOCKFROST_PROJECT_FILE=/run/secrets/blockfrost.txt \
   -e HYDRA_HOST_SCRIPTS_TX_IDS="<txid,txid from publish-scripts>" \
   -e HYDRA_HOST_PEER_PORT_START=5001 \
+  -e HYDRA_HOST_API_PORT_START=4001 \
   -e HYDRA_HOST_PEER_PORT_COUNT=32 \
   -e HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true \
+  -e HYDRA_HOST_REQUIRE_PEER_EGRESS_FIREWALL=true \
   -e HYDRA_HOST_MONITORING_ENABLED=false \
   ghcr.io/example/hydra-host@sha256:...
 ```
@@ -233,6 +251,7 @@ Restart=always
 RestartSec=10
 TimeoutStopSec=270
 ExecStartPre=/usr/local/sbin/hydra-peer-firewall baseline
+ExecStartPre=/usr/local/sbin/hydra-peer-egress baseline
 ExecStart=/usr/bin/docker start --attach hydra-host
 ExecStop=/usr/bin/docker stop --timeout 250 hydra-host
 
@@ -254,6 +273,13 @@ The refresh timer in [section 4](#4-the-firewall) opens each peered port again
 after the Host answers. Install the script and the timer before you enable this
 unit.
 
+VERIFIED (`packages/hydra-host/scripts/hydra-peer-egress:176`): the
+second prestart check loads and reads back a separate outbound nftables table.
+It writes a root-owned receipt only after verification. The Host checks that
+receipt before it adopts or starts any node (`packages/hydra-host/src/index.ts`).
+If Docker needs more than 30 seconds to start, the Host refuses boot. The
+systemd restart runs both prestart checks again.
+
 `After=nftables.service` matters at boot. A distribution `nftables.conf` that
 starts with `flush ruleset` would otherwise delete the baseline after it loads.
 
@@ -264,9 +290,9 @@ systemctl enable --now hydra-host
 
 ## 4. The firewall
 
-Two layers, and both are needed. The cloud firewall keeps strangers off the
-machine. The nftables ruleset keeps a peer port open only to the counterparty
-that head actually peers with.
+The cloud firewall restricts inbound traffic. The inbound nftables table keeps
+each peer port open only to its counterparty. The separate outbound table
+restricts connections from the Hydra uid (section 4, below).
 
 ### The five ranges
 
@@ -441,6 +467,131 @@ ruleset. Include that one file by name, not a glob over the directory. Run
 `hydra-peer-firewall baseline` once before you add the include: nft refuses the
 whole `nftables.conf` when an included file does not exist.
 
+### Outbound peer connections
+
+VERIFIED (`packages/hydra-host/src/peer-target-policy.ts:149`): the Host checks
+a peer name once at admission. REPORTED (`docs/hydra-operations.md:143`):
+`hydra-node` resolves it again on reconnect. A peer
+that changes its DNS after admission can make a new connection to an internal
+address. The separate `hydra_peer_egress` table drops those destinations for
+uid `10001` on the host-network deployment. It does not change the inbound peer
+table (`packages/hydra-host/scripts/hydra-peer-firewall:10`).
+
+VERIFIED (`packages/hydra-host/docker-compose.yml:112`): the local bridge-network
+Compose rig opts out of this gate. This outbound rule covers the documented
+production host-network launch only. A bridge-network deployment needs its own
+outbound control.
+
+VERIFIED (`packages/hydra-host/scripts/hydra-peer-egress:86`): the script renders
+an output rule for uid `10001`. It allows replies to inbound connections and
+permits the configured loopback node API, derived etcd client ports, and exact
+Docker DNS servers on TCP and UDP port `53`. It then drops host-local and
+non-public IPv4 and IPv6 destinations. Other public destinations follow the
+base accept policy. It has no exception for the control plane on `8443`.
+The Host refuses peer advertisements on DNS port `53` and on the local
+API and etcd client ranges (`packages/hydra-host/src/peer-target-policy.ts:76`).
+The `fib daddr type local` rule covers addresses assigned to this machine.
+INFERRED: a floating IP or external load balancer may route back to the machine
+without being a local FIB address. Check that routing separately before rollout.
+
+Install the script and configure the same port layout as the container:
+
+```bash
+install -o root -g root -m 755 packages/hydra-host/scripts/hydra-peer-egress /usr/local/sbin/hydra-peer-egress
+install -o root -g root -m 600 /dev/null /etc/default/hydra-peer-egress
+cat > /etc/default/hydra-peer-egress <<'EOF'
+HYDRA_HOST_PEER_PORT_START=5001
+HYDRA_HOST_API_PORT_START=4001
+HYDRA_HOST_PEER_PORT_COUNT=32
+HYDRA_EGRESS_DNS_IPV4=127.0.0.53
+EOF
+```
+
+VERIFIED (`packages/hydra-host/scripts/hydra-peer-egress:130`): `baseline` refuses a
+non-host-network container, a changed port layout, a private-peer opt-in, a
+missing firewall opt-in, user namespace remapping, or rootless Docker. It also
+requires the created container's `--dns` list to match
+`HYDRA_EGRESS_DNS_IPV4` exactly. Inspect both before starting:
+
+```bash
+cat /etc/resolv.conf
+docker inspect --format '{{json .HostConfig.Dns}}' hydra-host
+```
+
+VERIFIED (local `docker create --network host --dns 127.0.0.53` and
+`docker inspect --format '{{json .HostConfig.Dns}}'`: `["127.0.0.53"]`):
+Docker records explicit DNS servers before start. On the tested Docker host,
+`/etc/resolv.conf` was empty before first start and then contained
+`nameserver 127.0.0.53`. INFERRED: another Docker host may populate that file
+differently. After first start, compare
+`docker exec hydra-host cat /etc/resolv.conf` with the configured list. If a
+private resolver differs, DNS may fail on that first boot because the firewall
+drops unlisted private DNS traffic. Stop the Host, correct `--dns` and the
+exception list, recreate the stopped container, then restart through systemd.
+A private IPv6 resolver needs a reachable IPv4 replacement.
+
+INFERRED: changing the host uid mapping would make a uid-scoped rule miss all
+Hydra sockets. Keep the reviewed image user and check the Docker namespace
+setting on the target host. The script checks both before it applies a rule.
+It does not change Docker's existing namespace mode.
+
+INFERRED: the uid rule also affects unrelated host processes that use uid
+`10001`. Use a dedicated droplet. Before rollout, inspect the host account and
+current process inventory:
+
+```bash
+getent passwd 10001 || true
+ps -eo uid,pid,comm | awk '$1 == 10001 { print }'
+```
+
+An empty process list does not prove that no scheduled job uses this uid.
+
+VERIFIED (`packages/hydra-host/src/api/server.ts:475`): before the first rollout,
+list every stored peer advertisement through the authenticated `GET /v1/nodes`.
+Check for port `53`, the configured node API
+range, the derived etcd client range, private peers, and peers on this same
+machine. Such heads need an operator plan before this gate is enabled. Do not
+change an open head's peer identity in place. The Host refuses stored records
+using exception ports before it starts any node. INFERRED: stored peers that
+resolve to private or same-machine addresses lose connectivity under the new
+rule, so resolve them before rollout. The Host also refuses stored nodes whose
+API or derived etcd client port is outside the configured exception ranges
+(`packages/hydra-host/src/peer-target-policy.ts:92`). The API omits `apiPort`
+(`packages/hydra-host/src/api/serialize.ts:60`), so inspect the protected
+`/data/nodes/<nodeId>/node.json` records if the port layout has changed.
+
+VERIFIED (`packages/hydra-host/scripts/hydra-peer-egress:170`): `baseline`
+requires a stopped container. Use this rollout order for an existing Host:
+
+1. Run `systemctl stop hydra-host`. Confirm
+   `docker inspect --format '{{.State.Running}}' hydra-host` prints `false`.
+2. Rename the stopped container with
+   `docker rename hydra-host hydra-host-before-egress`. Recreate `hydra-host`
+   with the `docker create` command in section 2. Keep its `/data` bind mount,
+   image digest, identity, tokens and port layout. Add the read-only
+   `/run/hydra-peer-egress` mount, explicit `--dns`, and egress setting shown
+   there.
+3. Install the root-owned script and `/etc/default/hydra-peer-egress` settings
+   above. Check the host's resolver addresses and configured exceptions.
+4. Run `hydra-peer-egress baseline` and `hydra-peer-egress verify`. Add the
+   persisted nft file to `/etc/nftables.conf` as described below.
+5. Run `systemctl start hydra-host`. The service repeats `baseline` before
+   Docker starts the replacement container.
+
+VERIFIED (`packages/hydra-host/scripts/hydra-peer-egress:178`, `:185`): the script persists
+`/etc/nftables.d/hydra-peer-egress.nft` and writes a fresh receipt under
+`/run/hydra-peer-egress`. Include that one nft file by name in
+`/etc/nftables.conf`, after `flush ruleset`, beside `hydra-peer.nft`. This keeps
+the outbound table present after a firewall reload. Run `baseline` once before
+adding the include, because nft rejects a missing included file. The Host
+service runs `baseline` again before every Docker start.
+
+Run `packages/hydra-host/scripts/test-hydra-peer-egress-linux` as root on an
+isolated Linux test host. It creates a temporary network namespace, loads the
+real nft rule, and checks local exceptions, denied connections, and inbound
+replies. A macOS unit test checks rendered rules and startup errors, but cannot
+execute Linux nftables.
+
 `HYDRA_HOST_REQUIRE_PEER_FIREWALL_REFRESH=true` closes the last window. Without
 it, a new node can take the port of a removed node. The old counterparty's
 address then reaches the new node until the next successful refresh. With it,
@@ -540,6 +691,24 @@ volume refuses to start and reports that another Host already holds it. The leas
 goes stale after 60 seconds, so a Host that died without releasing it blocks its
 own replacement for up to that long. That is expected; do not shorten it by
 deleting the lock directory while a Host may still be running.
+
+VERIFIED (`packages/hydra-host/src/registry/host-lock.ts:190`): startup also uses
+`/data/host.lock.takeover` as an exclusive acquisition gate. Gate age never proves
+that its creator stopped. Startup leaves an existing gate intact and fails after
+bounded retries. A crash during acquisition can therefore require manual recovery.
+
+If startup reports a held takeover gate:
+
+1. Stop every Host and startup contender that can access this volume. Disable
+   automatic restarts, including replacement containers on other machines.
+2. Verify that no Host owner or startup attempt remains. A local PID check cannot
+   establish this for a volume shared between containers or machines.
+3. Remove only `/data/host.lock.takeover`, then start one Host. Keep
+   `/data/host.lock` intact so its lease and heartbeat checks still apply.
+
+VERIFIED (`packages/hydra-host/src/registry/host-lock.spec.ts`, test
+`does not reclaim a paused contender gate and replace the successor lease`): a
+paused acquisition keeps its gate even when the directory timestamp is old.
 
 A head is pinned to its Host for life. Persistence is not relocatable, so
 placement happens once at provisioning and the head stays there. Process,

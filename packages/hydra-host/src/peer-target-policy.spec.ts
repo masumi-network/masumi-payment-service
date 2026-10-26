@@ -1,5 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
-import { isPublicPeerIp, peerTargetRejection } from './peer-target-policy.js';
+import {
+	assertStoredPeerEgressCompatibility,
+	isPublicPeerIp,
+	peerEgressPortRejection,
+	peerTargetRejection,
+} from './peer-target-policy.js';
+
+const PORTS = { peerStart: 5100, apiStart: 4100, monitoringStart: 6100, capacity: 4 };
 
 const resolvesTo =
 	(...addresses: string[]) =>
@@ -35,6 +42,45 @@ describe('isPublicPeerIp', () => {
 });
 
 describe('peerTargetRejection', () => {
+	it('rejects local outbound exceptions before DNS, including a private-peer opt-in', async () => {
+		const resolve = async () => {
+			throw new Error('DNS must not run');
+		};
+		for (const port of [53, 4100, 4103, 2478, 2481]) {
+			expect(peerEgressPortRejection(`peer.example.com:${port}`, PORTS)).toMatch(/local outbound firewall exception/);
+			expect(
+				await peerTargetRejection(`peer.example.com:${port}`, {
+					allowPrivate: true,
+					resolve,
+					egressPortLayout: PORTS,
+				}),
+			).toMatch(/local outbound firewall exception/);
+		}
+		expect(peerEgressPortRejection('peer.example.com:5001', PORTS)).toBeNull();
+	});
+
+	it('refuses stored heads using a local exception before the supervisor boots', () => {
+		const records = [
+			{ nodeId: 'old-head', apiPort: 4100, peerPort: 5100, peers: [{ advertise: 'peer.example.com:4101' }] },
+		];
+		expect(() => assertStoredPeerEgressCompatibility(records, PORTS)).toThrow(/stored node old-head.*4101/);
+		expect(() =>
+			assertStoredPeerEgressCompatibility(
+				[{ nodeId: 'safe-head', apiPort: 4100, peerPort: 5100, peers: [{ advertise: 'peer.example.com:5001' }] }],
+				PORTS,
+			),
+		).not.toThrow();
+	});
+
+	it('refuses a stored node whose original local ports are outside the egress exceptions', () => {
+		const record = { nodeId: 'old-layout', apiPort: 4100, peerPort: 5100, peers: [] };
+		expect(() => assertStoredPeerEgressCompatibility([{ ...record, apiPort: 4001 }], PORTS)).toThrow(
+			/stored node old-layout uses API port 4001 outside outbound exception/,
+		);
+		expect(() => assertStoredPeerEgressCompatibility([{ ...record, peerPort: 5001 }], PORTS)).toThrow(
+			/stored node old-layout uses etcd client port 2379 outside outbound exception/,
+		);
+	});
 	it('rejects loopback and metadata literals', async () => {
 		for (const [advertise, address] of [
 			['127.0.0.1:8443', '127.0.0.1'],
