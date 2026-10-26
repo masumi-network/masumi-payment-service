@@ -413,6 +413,53 @@ describe('applyDatumStateToLocalRequests', () => {
 		);
 	});
 
+	it.each(['payment', 'purchase'] as const)('does not accept an L2-minted token as a %s payment', async (side) => {
+		const unit = `${'a'.repeat(56)}01`;
+		const txId = 'minted-token-lock';
+		const amounts = [
+			{ unit: 'lovelace', quantity: '2000000' },
+			{ unit, quantity: '5' },
+		];
+		const requestedFunds = [{ unit, amount: 5n }];
+		mockPaymentFindUnique.mockResolvedValue(
+			side === 'payment' ? { ...makePaymentRequest(), RequestedFunds: requestedFunds } : null,
+		);
+		mockPurchaseFindUnique.mockResolvedValue(
+			side === 'purchase' ? { ...makePurchaseRequest(null), PaidFunds: requestedFunds } : null,
+		);
+		const observation = {
+			hydraHeadId: 'head-1',
+			txId,
+			paymentSourceId: 'source-1',
+			decoded: decodedInitialLock,
+			newOnChainState: OnChainState.FundsLocked,
+			outputAmounts: amounts,
+			outputReference: { txHash: txId, outputIndex: 0 },
+			transactionEvidence: makeEvidence({
+				txHash: txId,
+				signerVkeys: ['buyer-vkey'],
+				outputs: [{ outputIndex: 0, address: 'addr-contract', amount: amounts, plutusData: null }],
+			}),
+			confirmationTimeMs: 49,
+			targetSide: side,
+		};
+		for (const l2MintCheck of [
+			undefined,
+			{ unburnedUnits: new Set([unit]), verifiedOutputs: new Map<string, string>() },
+		]) {
+			expect(await applyDatumStateToLocalRequests({ ...observation, l2MintCheck })).toBe('retry');
+			expect(mockPaymentUpdate).not.toHaveBeenCalled();
+			expect(mockPurchaseUpdate).not.toHaveBeenCalled();
+			expect(mockTransactionCreate).not.toHaveBeenCalled();
+		}
+		expect(
+			await applyDatumStateToLocalRequests({
+				...observation,
+				l2MintCheck: { unburnedUnits: new Set(), verifiedOutputs: new Map<string, string>() },
+			}),
+		).toBe('applied');
+	});
+
 	it('does not reuse a tx-hash row whose scalar transition belongs to another escrow output', async () => {
 		mockPaymentFindUnique.mockResolvedValue(makePaymentRequest());
 		mockTransactionFindFirst.mockResolvedValue({
@@ -1355,6 +1402,54 @@ describe('applyDatumStateToLocalRequests', () => {
 			}),
 		);
 		expect(mockTransactionUpdate).not.toHaveBeenCalled();
+	});
+
+	it('does not backfill a legacy lock while its requested token has an outstanding L2 mint', async () => {
+		const unit = `${'a'.repeat(56)}01`;
+		const txId = 'legacy-token-lock';
+		const amounts = [
+			{ unit: 'lovelace', quantity: '2000000' },
+			{ unit, quantity: '5' },
+		];
+		mockPaymentFindUnique.mockResolvedValue({
+			...makePaymentRequest(),
+			RequestedFunds: [{ unit, amount: 5n }],
+			onChainState: OnChainState.ResultSubmitted,
+			layer: TransactionLayer.L2,
+			currentTransactionId: 'pending-terminal-id',
+			CurrentTransaction: {
+				id: 'pending-terminal-id',
+				txHash: 'terminal-tx',
+				intendedTxHash: 'terminal-tx',
+				status: TransactionStatus.Pending,
+				layer: TransactionLayer.L2,
+				hydraHeadId: 'head-1',
+				BlocksWallet: null,
+			},
+			BuyerWallet: { walletVkey: 'buyer-vkey', walletAddress: 'addr-buyer' },
+			TransactionHistory: [{ txHash: txId }],
+		});
+
+		expect(
+			await applyDatumStateToLocalRequests({
+				hydraHeadId: 'head-1',
+				txId,
+				paymentSourceId: 'source-1',
+				decoded: decodedInitialLock,
+				newOnChainState: OnChainState.FundsLocked,
+				outputAmounts: amounts,
+				outputReference: { txHash: txId, outputIndex: 0 },
+				transactionEvidence: makeEvidence({
+					txHash: txId,
+					signerVkeys: ['buyer-vkey'],
+					outputs: [{ outputIndex: 0, address: 'addr-contract', amount: amounts, plutusData: null }],
+				}),
+				confirmationTimeMs: 49,
+				l2MintCheck: { unburnedUnits: new Set([unit]), verifiedOutputs: new Map() },
+				targetSide: 'payment',
+			}),
+		).toBe('retry');
+		expect(mockPaymentUpdate).not.toHaveBeenCalled();
 	});
 
 	it('promotes an intended-only pending continuation when verified CBOR consumes the current output', async () => {

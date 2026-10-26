@@ -13,6 +13,7 @@ import {
 	WalletType,
 } from '@/generated/prisma/client';
 import { type DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
+import type { L2MintCheck } from '@/lib/hydra/hydra/l2-mint-tally';
 import { datumMatchesRequest } from '@/utils/logic/l2-datum-validation';
 import { convertSyncedPaymentAction } from '@/utils/logic/result-on-chain';
 import { convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
@@ -34,6 +35,7 @@ import {
 	parsePersistedHydraValue,
 	persistedHydraValue,
 	resolveInitialLockState,
+	requestedHydraTokensAreBacked,
 	type HydraDatumApplyOutcome,
 	type HydraOutputReference,
 } from './hydra-datum-guards';
@@ -67,6 +69,7 @@ export async function applyDatumStateToLocalRequests(params: {
 	outputReference: HydraOutputReference;
 	transactionEvidence: HydraTransactionEvidence | null;
 	confirmationTimeMs: number | null;
+	l2MintCheck?: L2MintCheck;
 	targetSide?: 'payment' | 'purchase';
 	skipPendingCurrentTransaction?: boolean;
 }): Promise<HydraDatumApplyOutcome> {
@@ -81,6 +84,7 @@ export async function applyDatumStateToLocalRequests(params: {
 		outputReference,
 		transactionEvidence,
 		confirmationTimeMs,
+		l2MintCheck,
 		targetSide,
 		skipPendingCurrentTransaction = false,
 	} = params;
@@ -302,6 +306,8 @@ export async function applyDatumStateToLocalRequests(params: {
 							}));
 			const purchaseIsTrusted =
 				shouldApplyPurchase &&
+				purchaseRequest != null &&
+				requestedHydraTokensAreBacked(purchaseRequest.PaidFunds, l2MintCheck) &&
 				purchaseParticipantsAreValid &&
 				purchaseDatumIsValid &&
 				purchaseLineageIsValid &&
@@ -338,6 +344,7 @@ export async function applyDatumStateToLocalRequests(params: {
 						newOnChainState,
 						decoded,
 						expectedFunds: purchaseRequest.PaidFunds,
+						l2MintCheck,
 						outputAmounts,
 						transactionEvidence,
 						confirmationTimeMs,
@@ -369,6 +376,7 @@ export async function applyDatumStateToLocalRequests(params: {
 						newOnChainState,
 						decoded,
 						expectedFunds: paymentRequest.RequestedFunds,
+						l2MintCheck,
 						outputAmounts,
 						transactionEvidence,
 						confirmationTimeMs,
@@ -439,6 +447,8 @@ export async function applyDatumStateToLocalRequests(params: {
 							}));
 			const paymentIsTrusted =
 				shouldApplyPayment &&
+				paymentRequest != null &&
+				requestedHydraTokensAreBacked(paymentRequest.RequestedFunds, l2MintCheck) &&
 				paymentParticipantsAreValid &&
 				paymentDatumIsValid &&
 				paymentLineageIsValid &&
