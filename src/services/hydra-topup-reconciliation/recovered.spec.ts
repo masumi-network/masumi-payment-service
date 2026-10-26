@@ -1,9 +1,38 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
+import {
+	Address,
+	BigInt as CardanoBigInt,
+	BigNum,
+	ConstrPlutusData,
+	Credential,
+	Ed25519KeyHash,
+	EnterpriseAddress,
+	ExUnits,
+	FixedTransaction,
+	PlutusData,
+	PlutusList,
+	Redeemer,
+	Redeemers,
+	RedeemerTag,
+	ScriptHash,
+	Transaction,
+	TransactionBody,
+	TransactionHash,
+	TransactionInput,
+	TransactionInputs,
+	TransactionOutput,
+	TransactionOutputs,
+	TransactionWitnessSet,
+	Value,
+} from '@emurgo/cardano-serialization-lib-nodejs';
+import { resolveHydraDepositScriptHash } from '@/lib/hydra/hydra/commit-draft-validation';
+import { findHydraDepositReference } from './deposit-evidence';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockTxsUtxos = jest.fn() as AnyMock;
+const mockTxsCbor = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
 const mockLookupConfirmedChainTx = jest.fn() as AnyMock;
 
@@ -13,7 +42,7 @@ jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
 const mockFindMany = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
-	getBlockfrostInstance: () => ({ txsUtxos: mockTxsUtxos }),
+	getBlockfrostInstance: () => ({ txsUtxos: mockTxsUtxos, txsCbor: mockTxsCbor }),
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
@@ -27,10 +56,30 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 const { HydraTopupStatus } = await import('@/generated/prisma/client');
 const { reconcileRecoveredHydraTopups } = await import('./recovered');
 
-const DEPOSIT_TX = 'a'.repeat(64);
+const HEAD_ID = 'aa'.repeat(28);
 const SPENDER_TX = 'b'.repeat(64);
-const SCRIPT_ADDRESS = 'addr_test1wq2b91a7e6';
-const WALLET_ADDRESS = 'addr_test1vz9k3n';
+const SCRIPT_ADDRESS = EnterpriseAddress.new(0, Credential.from_scripthash(ScriptHash.from_hex('cc'.repeat(28))))
+	.to_address()
+	.to_bech32();
+const WALLET = EnterpriseAddress.new(0, Credential.from_keyhash(Ed25519KeyHash.from_hex('dd'.repeat(28)))).to_address();
+const WALLET_ADDRESS = WALLET.to_bech32();
+const depositOutputs = TransactionOutputs.new();
+const depositAddress = EnterpriseAddress.new(
+	0,
+	Credential.from_scripthash(ScriptHash.from_hex(resolveHydraDepositScriptHash())),
+).to_address();
+const depositOutput = TransactionOutput.new(depositAddress, Value.new(BigNum.from_str('3000000')));
+const depositFields = PlutusList.new();
+depositFields.add(PlutusData.new_bytes(Buffer.from(HEAD_ID, 'hex')));
+depositFields.add(PlutusData.new_integer(CardanoBigInt.from_str('1')));
+depositFields.add(PlutusData.new_list(PlutusList.new()));
+depositOutput.set_plutus_data(PlutusData.new_constr_plutus_data(ConstrPlutusData.new(BigNum.zero(), depositFields)));
+depositOutputs.add(depositOutput);
+const DEPOSIT_CBOR = Transaction.new(
+	TransactionBody.new(TransactionInputs.new(), depositOutputs, BigNum.zero()),
+	TransactionWitnessSet.new(),
+).to_hex();
+const DEPOSIT_TX = FixedTransaction.from_hex(DEPOSIT_CBOR).transaction_hash().to_hex();
 
 /** A row as the reconciler loads it, at whatever status the caller is testing. */
 function topupRow(status: (typeof HydraTopupStatus)[keyof typeof HydraTopupStatus]) {
@@ -38,6 +87,7 @@ function topupRow(status: (typeof HydraTopupStatus)[keyof typeof HydraTopupStatu
 		id: 'topup-1',
 		status,
 		depositTxHash: DEPOSIT_TX,
+		HydraHead: { headIdentifier: HEAD_ID },
 		LocalParticipant: {
 			Wallet: { PaymentSource: { network: 'Preprod', PaymentSourceConfig: { rpcProviderApiKey: 'preprodkey' } } },
 		},
@@ -45,25 +95,63 @@ function topupRow(status: (typeof HydraTopupStatus)[keyof typeof HydraTopupStatu
 }
 
 /** The deposit's script output, and what the spending transaction paid to. */
-function chain(consumedBy: string | null, spenderPaysTo: string[]) {
+function chain(
+	consumedBy: string | null,
+	spenderPaysTo: string[],
+	options: { redeemer?: string; redeemerIndex?: number; unrelatedInput?: boolean; reportedSpender?: string } = {},
+) {
+	const inputs = TransactionInputs.new();
+	inputs.add(TransactionInput.new(TransactionHash.from_hex(options.unrelatedInput ? 'ee'.repeat(32) : DEPOSIT_TX), 0));
+	// Serialized first above, but canonically after this fuel input. Spend index 1
+	// belongs to the deposit; a raw-body-index lookup would inspect the fuel.
+	inputs.add(TransactionInput.new(TransactionHash.from_hex('00'.repeat(32)), 1));
+	const outputs = TransactionOutputs.new();
+	for (const address of spenderPaysTo) {
+		outputs.add(TransactionOutput.new(Address.from_bech32(address), Value.new(BigNum.from_str('1'))));
+	}
+	const redeemers = Redeemers.new();
+	redeemers.add(
+		Redeemer.new(
+			RedeemerTag.new_spend(),
+			BigNum.from_str(String(options.redeemerIndex ?? 1)),
+			PlutusData.from_hex(options.redeemer ?? (spenderPaysTo.includes(SCRIPT_ADDRESS) ? 'd87980' : 'd87a9f01ff')),
+			ExUnits.new(BigNum.zero(), BigNum.zero()),
+		),
+	);
+	const witnesses = TransactionWitnessSet.new();
+	witnesses.set_redeemers(redeemers);
+	const spenderCbor = Transaction.new(TransactionBody.new(inputs, outputs, BigNum.zero()), witnesses).to_hex();
+	const spenderHash = FixedTransaction.from_hex(spenderCbor).transaction_hash().to_hex();
 	mockTxsUtxos.mockImplementation(async (hash: string) => {
 		if (hash === DEPOSIT_TX) {
-			return { outputs: [{ address: SCRIPT_ADDRESS, consumed_by_tx: consumedBy }] };
+			return {
+				outputs: [
+					{
+						address: depositOutput.address().to_bech32(),
+						output_index: 0,
+						consumed_by_tx: consumedBy === null ? null : (options.reportedSpender ?? spenderHash),
+					},
+				],
+			};
 		}
 		return { outputs: spenderPaysTo.map((address) => ({ address })) };
 	});
+	mockTxsCbor.mockImplementation(async (hash: string) => ({ cbor: hash === DEPOSIT_TX ? DEPOSIT_CBOR : spenderCbor }));
 }
 
 /**
- * The reconciler now runs two queries — Pending on its own, Confirmed and
- * Failed together — so each row is handed only to the query whose status filter
- * it matches, exactly as the database would.
+ * Separate Pending, terminal and Confirmed/Failed pools. Each row reaches only
+ * the query whose status filter it matches, as it would in the database.
  */
 function stageRows(rows: ReturnType<typeof topupRow>[]) {
 	mockFindMany.mockImplementation(async (args: { where?: { status?: unknown } }) => {
 		const status = args?.where?.status;
 		if (status === HydraTopupStatus.Pending) {
 			return rows.filter((row) => row.status === HydraTopupStatus.Pending);
+		}
+		if (typeof status === 'object' && status !== null && 'in' in status && Array.isArray(status.in)) {
+			const statuses = status.in;
+			return rows.filter((row) => statuses.includes(row.status));
 		}
 		return rows.filter((row) => row.status === HydraTopupStatus.Confirmed || row.status === HydraTopupStatus.Failed);
 	});
@@ -76,6 +164,128 @@ beforeEach(() => {
 });
 
 describe('reconcileRecoveredHydraTopups', () => {
+	it('recognizes Recover(1) despite unrelated trailing script change and a lower-sorting fuel input', async () => {
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
+		chain(SPENDER_TX, [WALLET_ADDRESS, SCRIPT_ADDRESS], { redeemer: 'd87a9f01ff' });
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
+			data: { status: HydraTopupStatus.Recovered },
+		});
+	});
+
+	it.each([
+		['an unbound CBOR hash', { reportedSpender: 'ff'.repeat(32) }],
+		['an unknown deposit redeemer', { redeemer: 'd87b80' }],
+		['a Claim carrying a field', { redeemer: 'd8799f01ff' }],
+		['a Recover missing its integer', { redeemer: 'd87a80' }],
+		['a Recover carrying bytes', { redeemer: 'd87a814100' }],
+		['a Recover carrying extra fields', { redeemer: 'd87a820102' }],
+		['a redeemer for the fuel input', { redeemerIndex: 0 }],
+		['a spender with no deposit input', { unrelatedInput: true }],
+	])('does not settle from %s', async (_label, options) => {
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
+		chain(SPENDER_TX, [WALLET_ADDRESS], options);
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
+			data: { updatedAt: expect.any(Date) },
+		});
+	});
+
+	it('corrects a historical Absorbed label when the exact deposit was recovered', async () => {
+		stageRows([topupRow(HydraTopupStatus.Absorbed)]);
+		chain(SPENDER_TX, [WALLET_ADDRESS, SCRIPT_ADDRESS], { redeemer: 'd87a9f01ff' });
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Absorbed },
+			data: { status: HydraTopupStatus.Recovered },
+		});
+	});
+
+	it('starts Pending lookups before historical terminal rechecks', async () => {
+		const terminal = { ...topupRow(HydraTopupStatus.Absorbed), depositTxHash: 'ff'.repeat(32) };
+		stageRows([terminal, topupRow(HydraTopupStatus.Pending)]);
+		chain(SPENDER_TX, [WALLET_ADDRESS]);
+		await reconcileRecoveredHydraTopups();
+		expect(mockTxsCbor.mock.calls[0][0]).toBe(DEPOSIT_TX);
+	});
+
+	it('corrects a historical Recovered label from the exact Claim rather than output addresses', async () => {
+		stageRows([topupRow(HydraTopupStatus.Recovered)]);
+		chain(SPENDER_TX, [WALLET_ADDRESS], { redeemer: 'd87980' });
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Recovered },
+			data: { status: HydraTopupStatus.Absorbed },
+		});
+	});
+
+	it.each([HydraTopupStatus.Absorbed, HydraTopupStatus.Recovered])(
+		'reopens a disproven %s label only after the exact deposit is confirmed unspent',
+		async (status) => {
+			stageRows([topupRow(status)]);
+			chain(null, []);
+			await reconcileRecoveredHydraTopups();
+			expect(mockUpdateMany).toHaveBeenCalledWith({
+				where: { id: 'topup-1', status },
+				data: { status: HydraTopupStatus.Confirmed },
+			});
+		},
+	);
+
+	it('retains an old terminal label on transient evidence failure and rotates it for retry', async () => {
+		stageRows([topupRow(HydraTopupStatus.Absorbed)]);
+		mockTxsCbor.mockRejectedValueOnce(new Error('unavailable'));
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Absorbed },
+			data: { updatedAt: expect.any(Date) },
+		});
+	});
+
+	it('does not settle a deposit bound to another head', async () => {
+		const row = topupRow(HydraTopupStatus.Pending);
+		row.HydraHead.headIdentifier = 'ff'.repeat(28);
+		stageRows([row]);
+		chain(SPENDER_TX, [WALLET_ADDRESS]);
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
+			data: { updatedAt: expect.any(Date) },
+		});
+	});
+
+	it('requires the original deposit CBOR to match the recorded transaction hash', async () => {
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
+		chain(SPENDER_TX, [WALLET_ADDRESS]);
+		const differentBody = TransactionBody.new(TransactionInputs.new(), depositOutputs, BigNum.from_str('1'));
+		mockTxsCbor.mockResolvedValueOnce({ cbor: Transaction.new(differentBody, TransactionWitnessSet.new()).to_hex() });
+		await reconcileRecoveredHydraTopups();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
+			data: { updatedAt: expect.any(Date) },
+		});
+	});
+
+	it('rejects an unrelated script credential even when its datum names this head', () => {
+		const output = TransactionOutput.new(Address.from_bech32(SCRIPT_ADDRESS), Value.new(BigNum.from_str('3000000')));
+		output.set_plutus_data(depositOutput.plutus_data()!);
+		const outputs = TransactionOutputs.new();
+		outputs.add(output);
+		const cborHex = Transaction.new(
+			TransactionBody.new(TransactionInputs.new(), outputs, BigNum.zero()),
+			TransactionWitnessSet.new(),
+		).to_hex();
+		expect(
+			findHydraDepositReference({
+				cborHex,
+				txHash: FixedTransaction.from_hex(cborHex).transaction_hash().to_hex(),
+				headIdentifier: HEAD_ID,
+				networkId: 0,
+			}),
+		).toBeNull();
+	});
 	/**
 	 * The head folds a deposit in on its own schedule, without waiting for the
 	 * confirmation threshold that promotes a row to Confirmed. Considering only
