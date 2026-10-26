@@ -203,12 +203,16 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
 		const hydra = generateHydraKeyPair();
 		const cardano = generateCardanoKeyPair();
 
-		await Promise.all([
+		// All writers must finish before rollback removes the directory. Promise.all
+		// rejects on the first failure while its other writes are still in flight.
+		const keyWrites = await Promise.allSettled([
 			writeFileAtomic(path.join(keysDir, 'hydra.sk'), serializeEnvelope(hydra.signingKey), { mode: 0o600 }),
 			writeFileAtomic(path.join(keysDir, 'hydra.vk'), serializeEnvelope(hydra.verificationKey), { mode: 0o600 }),
 			writeFileAtomic(path.join(keysDir, 'cardano.sk'), serializeEnvelope(cardano.signingKey), { mode: 0o600 }),
 			writeFileAtomic(path.join(keysDir, 'cardano.vk'), serializeEnvelope(cardano.verificationKey), { mode: 0o600 }),
 		]);
+		const failedKeyWrite = keyWrites.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+		if (failedKeyWrite) throw failedKeyWrite.reason;
 
 		const createdAt = deps.now().toISOString();
 		const record: NodeRecord = {
@@ -248,19 +252,33 @@ async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Pro
 		// Never leave key material behind for a node that does not exist, and
 		// never leak the port. Cleanup order matters: remove the directory (which
 		// holds hydra.sk / cardano.sk) before releasing the slot.
-		// A failed cleanup is exactly the case the comment above promises cannot
-		// happen, so it must not be silent: hydra.sk and cardano.sk would survive
-		// for a node that does not exist. Reported and then dropped, because the
-		// original failure is the one the caller needs to see.
-		await deps.store.remove(nodeId).catch((cleanupError: unknown) => {
+		let keyCleanupError: unknown;
+		let directoryCleanupError: unknown;
+		try {
+			await deps.store.remove(nodeId);
+		} catch (cleanupError) {
+			directoryCleanupError = cleanupError;
+			// If registry cleanup fails, remove the signing-key directory on its
+			// own. Plain unlink is not secure erasure; the volume must be encrypted.
+			try {
+				await fs.rm(path.join(deps.store.nodeDir(nodeId), 'keys'), { recursive: true, force: true });
+			} catch (errorRemovingKeys) {
+				keyCleanupError = errorRemovingKeys;
+			}
 			deps.logger?.error(
-				`[provision] could not remove node ${nodeId} after a failed provision; key material may remain on disk: ${
+				`[provision] could not remove node ${nodeId} after a failed provision: ${
 					cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-				}`,
+				}; signing keys ${keyCleanupError === undefined ? 'removed by fallback' : 'may remain on disk'}`,
 			);
-		});
+		}
 		// The record never had peers, so no ruleset opened this port.
 		deps.ports.releaseUnpeered(triple.peerPort);
+		if (keyCleanupError !== undefined) {
+			throw new AggregateError(
+				[error, directoryCleanupError, keyCleanupError],
+				`failed to provision node ${nodeId} and remove its signing keys; key material may remain on disk`,
+			);
+		}
 		throw error;
 	}
 }

@@ -25,7 +25,7 @@ exactly the head state whose loss is unrecoverable. See
 | Requirement                           | Why                                                                                                                                                                             |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **amd64 CPU**                         | The image bakes `hydra-node`, and upstream publishes no `aarch64-linux` build. An arm64 droplet has nothing to run. See [hydra-host-native-mode.md](hydra-host-native-mode.md). |
-| **A block-storage volume**            | Not the droplet's own disk if you want the head to survive rebuilding the droplet. Never a network filesystem.                                                                  |
+| **An encrypted block-storage volume** | Keep head state across droplet rebuilds. The volume holds plaintext node signing-key files while mounted. Use local block storage with LUKS2; never a network filesystem.       |
 | **A stable public hostname or IP**    | It becomes each node's advertise identity and must not change for a head's lifetime.                                                                                            |
 | **A Blockfrost project id in a file** | Every node follows the chain through it.                                                                                                                                        |
 | **A cloud firewall**                  | The peer plane cannot authenticate its callers.                                                                                                                                 |
@@ -53,31 +53,58 @@ unverified.
 
 Losing this volume loses the heads. Recovering one needs the escrowed keys plus
 a snapshot, so treat the volume as the primary copy of something irreplaceable.
+VERIFIED (`packages/hydra-host/src/api/provision.ts`): the Host writes node
+signing keys as mode 0600 files under `keys/`. File permissions do not protect
+an offline copy of the volume. Encrypt the block device before putting a Host
+on it, and keep the unlock secret outside the droplet and its snapshots. LUKS2
+protects an unmounted volume; the running Host can still read its keys.
 
-### Attach, format, mount
+### Attach, encrypt, format, mount
 
 DigitalOcean's control panel prints the exact device path and commands when you
 attach a volume. The device follows the pattern
 `/dev/disk/by-id/scsi-0DO_Volume_<volume-name>`.
+These commands are for a **new, empty volume only**. `luksFormat` and `mkfs.ext4`
+destroy existing data. Do not run them on a volume that holds a live head. For
+an existing plaintext Host, keep the volume and snapshots protected until its
+heads are finalised and an encrypted replacement can be built.
 
 ```bash
 VOLUME=/dev/disk/by-id/scsi-0DO_Volume_hydra-data
-mkfs.ext4 -F "$VOLUME"
+cryptsetup luksFormat --type luks2 "$VOLUME"
+cryptsetup open "$VOLUME" hydra_data
+mkfs.ext4 /dev/mapper/hydra_data
 mkdir -p /mnt/hydra_data
-mount -o defaults,discard,noatime "$VOLUME" /mnt/hydra_data
+mount -o defaults,noatime /dev/mapper/hydra_data /mnt/hydra_data
+cryptsetup status hydra_data
+findmnt -no SOURCE /mnt/hydra_data
 ```
 
-Persist it in `/etc/fstab`:
+The status check must show an active LUKS2 mapping. The mount source must be
+`/dev/mapper/hydra_data`. Store the passphrase in an operator secret store.
+Configure an unlock method that survives droplet rebuilds before enabling the
+Host. A manual unlock requires an operator at each boot; an unattended unlock
+requires an external key service. Do not put the unlock key on the same droplet
+or in a snapshot of it.
+
+Add this entry to `/etc/crypttab` so systemd knows the mapping:
 
 ```
-/dev/disk/by-id/scsi-0DO_Volume_hydra-data /mnt/hydra_data ext4 defaults,nofail,discard,noatime 0 0
+hydra_data /dev/disk/by-id/scsi-0DO_Volume_hydra-data none luks
 ```
 
-`nofail` lets the droplet finish booting when the volume is missing. That is
-safe here **only because the systemd unit below refuses to start without the
-mount**. Without that guard, `nofail` plus a Docker restart policy is how a Host
-boots on an empty directory, finds no node records, and supervises nothing while
-every head sits unattended.
+Persist the mapped filesystem in `/etc/fstab`:
+
+```
+/dev/mapper/hydra_data /mnt/hydra_data ext4 defaults,nofail,noatime 0 0
+```
+
+`nofail` lets the droplet finish booting when the encrypted volume is locked or
+missing. That is safe here **only because the systemd unit below refuses to
+start without the mount**. After every reboot, confirm `cryptsetup status
+hydra_data`, `findmnt -no SOURCE /mnt/hydra_data`, and the Host service state.
+Without that guard, `nofail` plus a Docker restart policy is how a Host boots
+on an empty directory while every head sits unattended.
 
 ### Ownership
 
@@ -723,6 +750,10 @@ advertise identity, and a counterparty dials it.
 ## 8. Backups
 
 Take DigitalOcean volume snapshots on a schedule.
+Keep the LUKS unlock secret outside both the droplet and its snapshots. Test a
+restore by unlocking a snapshot on an isolated machine before relying on it.
+Deleting a key file is not secure erasure on block storage or in old snapshots;
+retain and retire snapshots under the same secret-handling policy as the volume.
 
 A snapshot of a mounted volume is a crash-consistent image, not a clean copy: it
 catches the event store and the raft WAL mid-write. That is the same class of
@@ -763,8 +794,8 @@ the admin UI and re-pin `HYDRA_EXPECTED_VERSION` and
 
 ## Checklist
 
-1. amd64 droplet, block-storage volume mounted at `/mnt/hydra_data`, owned by
-   `10001:10001`.
+1. amd64 droplet, LUKS2 block-storage volume unlocked and mounted at
+   `/mnt/hydra_data`, owned by `10001:10001`; unlock secret stored separately.
 2. Blockfrost project id in a file, mode 600, owned by `10001:10001`. Host
    tokens in `/srv/hydra/host.env`, mode 600, owned by root.
 3. Container run with `--network host`, `--stop-timeout 250`, `--restart no`.
@@ -774,7 +805,8 @@ the admin UI and re-pin `HYDRA_EXPECTED_VERSION` and
 6. `/usr/local/sbin/hydra-peer-rules` installed, run once, and re-run on every
    membership or DNS change.
 7. Load balancer terminating TLS in front of 8443, health check expecting 401.
-8. Volume snapshots scheduled; escrowed keys stored separately.
+8. Volume snapshots scheduled and restore tested; unlock secret and escrowed keys
+   stored separately.
 
 ## Related
 
