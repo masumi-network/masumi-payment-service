@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PREPROD_USDM_CONFIG, USDM_CONFIG, USDCX_CONFIG } from '../../lib/constants/defaultWallets';
-import { hydraAssetDecimals, parseHydraAssetAmount } from './asset-amount';
+import { hydraAssetDecimals, parseHydraAssetAmount, retryTopupAdaAmount } from './asset-amount';
+
+test('retry amount preserves every lovelace above the safe Number range', () => {
+  const committed = '9007199254740993';
+  const retryAmount = retryTopupAdaAmount(committed);
+  assert.equal(retryAmount, '9007199254.740993');
+  assert.equal(parseHydraAssetAmount(retryAmount!, 'lovelace'), committed);
+  assert.equal(retryTopupAdaAmount('0'), null);
+  assert.equal(retryTopupAdaAmount(undefined), null);
+  assert.equal(retryTopupAdaAmount('1e6'), null);
+});
 
 for (const [label, unit] of [
   ['ADA', ''],
