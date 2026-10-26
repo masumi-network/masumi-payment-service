@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
 	HEARTBEAT_STALE_AFTER_MS,
+	HEARTBEAT_INTERVAL_MS,
 	HostLock,
 	HostLockError,
 	assessHolder,
@@ -17,7 +18,7 @@ function holder(overrides: Partial<LockHolder> = {}): LockHolder {
 	return {
 		pid: 1,
 		hostId: 'container-a',
-		acquiredAt: new Date(NOW - 60_000).toISOString(),
+		acquiredAt: new Date(NOW - 180_000).toISOString(),
 		heartbeatAt: new Date(NOW - 1_000).toISOString(),
 		...overrides,
 	};
@@ -31,6 +32,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
 	jest.restoreAllMocks();
+	jest.useRealTimers();
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
 
@@ -124,10 +126,10 @@ describe('HostLock', () => {
 		expect(holder?.hostId).not.toBe('host-a');
 	});
 
-	it('migrates a corrupted legacy file without overwriting a live directory lease', async () => {
+	it('refuses a corrupted legacy file instead of assuming its owner is dead', async () => {
 		await fs.writeFile(path.join(dataDir, 'host.lock'), 'garbage', 'utf8');
-		await expect(new HostLock(dataDir, 'host-b').acquire()).resolves.toBeUndefined();
-		expect((await currentHolder())?.hostId).toBe('host-b');
+		await expect(new HostLock(dataDir, 'host-b').acquire()).rejects.toThrow(HostLockError);
+		expect(await fs.readFile(path.join(dataDir, 'host.lock'), 'utf8')).toBe('garbage');
 	});
 
 	it('an old holder cannot release a replacement lease', async () => {
@@ -215,4 +217,184 @@ describe('takeover gate exclusion', () => {
 			await lock.release();
 		}
 	});
+});
+
+describe('unreadable lease evidence', () => {
+	const TOKEN = 'existing-owner';
+	async function directoryLease() {
+		const directory = path.join(dataDir, 'host.lock');
+		await fs.mkdir(directory);
+		const ownerPath = path.join(directory, 'owner.json');
+		const heartbeatPath = path.join(directory, `heartbeat.${TOKEN}`);
+		await fs.writeFile(
+			ownerPath,
+			JSON.stringify(holder({ ownerToken: TOKEN, acquiredAt: new Date(NOW - 120_000).toISOString() })),
+		);
+		await fs.writeFile(heartbeatPath, new Date(NOW).toISOString());
+		return { directory, ownerPath, heartbeatPath };
+	}
+
+	it.each(['ownerPath', 'heartbeatPath'] as const)(
+		'retains an existing owner when %s fails with real EACCES',
+		async (file) => {
+			const fixture = await directoryLease();
+			await fs.chmod(fixture[file], 0);
+			try {
+				await expect(fs.readFile(fixture[file], 'utf8')).rejects.toMatchObject({ code: 'EACCES' });
+				await expect(new HostLock(dataDir, 'contender', () => NOW).acquire()).rejects.toThrow(HostLockError);
+			} finally {
+				await fs.chmod(fixture[file], 0o600).catch(() => undefined);
+			}
+			expect(parseLockHolder(await fs.readFile(fixture.ownerPath, 'utf8'))?.hostId).toBe('container-a');
+		},
+	);
+
+	it.each(['owner', 'heartbeat', 'release-marker'] as const)(
+		'blocks takeover on an injected %s EIO without moving the lease',
+		async (file) => {
+			const fixture = await directoryLease();
+			const read = fs.readFile.bind(fs);
+			const access = fs.access.bind(fs);
+			if (file === 'release-marker') {
+				await fs.writeFile(fixture.heartbeatPath, new Date(NOW - 120_000).toISOString());
+				jest.spyOn(fs, 'access').mockImplementation(async (target, mode) => {
+					if (target === path.join(fixture.directory, `released.${TOKEN}`))
+						throw Object.assign(new Error('I/O failure'), { code: 'EIO' });
+					await access(target, mode);
+				});
+			} else {
+				const targetPath = file === 'owner' ? fixture.ownerPath : fixture.heartbeatPath;
+				jest.spyOn(fs, 'readFile').mockImplementation(((
+					target: Parameters<typeof fs.readFile>[0],
+					options: Parameters<typeof fs.readFile>[1],
+				) => {
+					if (target === targetPath) return Promise.reject(Object.assign(new Error('I/O failure'), { code: 'EIO' }));
+					return read(target, options);
+				}) as typeof fs.readFile);
+			}
+			await expect(new HostLock(dataDir, 'contender', () => NOW).acquire()).rejects.toThrow(HostLockError);
+			expect(JSON.parse(await read(fixture.ownerPath, 'utf8')).hostId).toBe('container-a');
+		},
+	);
+
+	it.each([
+		'missing owner',
+		'malformed owner',
+		'missing heartbeat',
+		'empty heartbeat',
+		'malformed heartbeat',
+		'truncated heartbeat',
+	])('blocks takeover with %s', async (scenario) => {
+		const fixture = await directoryLease();
+		if (scenario === 'missing owner') await fs.rm(fixture.ownerPath);
+		if (scenario === 'malformed owner') await fs.writeFile(fixture.ownerPath, '{');
+		if (scenario === 'missing heartbeat') await fs.rm(fixture.heartbeatPath);
+		if (scenario === 'empty heartbeat') await fs.writeFile(fixture.heartbeatPath, '');
+		if (scenario === 'malformed heartbeat') await fs.writeFile(fixture.heartbeatPath, 'not a date');
+		if (scenario === 'truncated heartbeat') await fs.writeFile(fixture.heartbeatPath, '2026');
+		await expect(new HostLock(dataDir, 'contender', () => NOW).acquire()).rejects.toThrow(HostLockError);
+		expect(await fs.readdir(dataDir)).toEqual(['host.lock']);
+	});
+
+	it('rejects malformed legacy dates but preserves valid stale legacy takeover', async () => {
+		const lockPath = path.join(dataDir, 'host.lock');
+		await fs.writeFile(lockPath, JSON.stringify(holder({ acquiredAt: 'invalid', heartbeatAt: 'invalid' })));
+		await expect(new HostLock(dataDir, 'contender', () => NOW).acquire()).rejects.toThrow(HostLockError);
+		await fs.writeFile(lockPath, JSON.stringify(holder({ heartbeatAt: new Date(NOW - 120_000).toISOString() })));
+		const replacement = new HostLock(dataDir, 'contender', () => NOW);
+		try {
+			await replacement.acquire();
+			expect((await currentHolder())?.hostId).toBe('contender');
+		} finally {
+			await replacement.release();
+		}
+	});
+
+	it('does not treat future acquisition time with an older heartbeat as a stale lease', async () => {
+		await fs.writeFile(
+			path.join(dataDir, 'host.lock'),
+			JSON.stringify(
+				holder({
+					acquiredAt: new Date(NOW + 120_000).toISOString(),
+					heartbeatAt: new Date(NOW - 120_000).toISOString(),
+				}),
+			),
+		);
+		await expect(new HostLock(dataDir, 'contender', () => NOW).acquire()).rejects.toThrow(HostLockError);
+	});
+});
+
+it('does not confuse an I/O failure during the second lease stat with disappearance', async () => {
+	const lockPath = path.join(dataDir, 'host.lock');
+	await fs.writeFile(lockPath, JSON.stringify(holder()));
+	const lstat = fs.lstat.bind(fs);
+	let reads = 0;
+	jest.spyOn(fs, 'lstat').mockImplementation(((
+		target: Parameters<typeof fs.lstat>[0],
+		options: Parameters<typeof fs.lstat>[1],
+	) => {
+		if (target === lockPath && ++reads === 2)
+			return Promise.reject(Object.assign(new Error('I/O failure'), { code: 'EIO' }));
+		return lstat(target, options);
+	}) as typeof fs.lstat);
+	await expect(new HostLock(dataDir, 'contender', () => NOW).acquire()).rejects.toThrow(HostLockError);
+	expect(parseLockHolder(await fs.readFile(lockPath, 'utf8'))?.hostId).toBe('container-a');
+});
+
+it('fences the holder when its ownership evidence becomes unreadable', async () => {
+	jest.useFakeTimers();
+	let signalLost!: () => void;
+	const lost = new Promise<void>((resolve) => {
+		signalLost = resolve;
+	});
+	const onLeaseLost = jest.fn(() => signalLost());
+	const lock = new HostLock(dataDir, 'host-a', () => NOW, onLeaseLost);
+	await lock.acquire();
+	const ownerPath = path.join(dataDir, 'host.lock', 'owner.json');
+	await fs.chmod(ownerPath, 0);
+	try {
+		await jest.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+		await lost;
+		expect(onLeaseLost).toHaveBeenCalledTimes(1);
+	} finally {
+		await fs.chmod(ownerPath, 0o600);
+		await lock.release();
+	}
+});
+
+it.each([
+	['heartbeatAt', 42],
+	['heartbeatAt', null],
+	['heartbeatAt', {}],
+	['heartbeatAt', []],
+	['heartbeatAt', false],
+	['ownerToken', 42],
+	['ownerToken', null],
+	['ownerToken', {}],
+	['ownerToken', ''],
+	['ownerToken', '..'],
+	['ownerToken', 'bad/token'],
+])('refuses a legacy lease with a present malformed %s value %p', async (field, value) => {
+	const lockPath = path.join(dataDir, 'host.lock');
+	const raw = JSON.stringify({
+		...holder({ heartbeatAt: new Date(NOW - 120_000).toISOString() }),
+		[field as string]: value,
+	});
+	await fs.writeFile(lockPath, raw);
+	await expect(new HostLock(dataDir, 'contender', () => NOW).acquire()).rejects.toThrow(HostLockError);
+	expect(await fs.readFile(lockPath, 'utf8')).toBe(raw);
+});
+
+it('accepts a valid stale legacy lease with genuinely absent optional fields', async () => {
+	await fs.writeFile(
+		path.join(dataDir, 'host.lock'),
+		JSON.stringify({ pid: 1, hostId: 'legacy', acquiredAt: new Date(NOW - 180_000).toISOString() }),
+	);
+	const lock = new HostLock(dataDir, 'contender', () => NOW);
+	try {
+		await lock.acquire();
+		expect((await currentHolder())?.hostId).toBe('contender');
+	} finally {
+		await lock.release();
+	}
 });

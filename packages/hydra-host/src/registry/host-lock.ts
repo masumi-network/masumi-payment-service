@@ -52,6 +52,11 @@ export type LockHolder = {
 
 type LeaseOwner = LockHolder & { ownerToken: string };
 
+function leaseTimestamp(value: string): number | null {
+	const timestamp = Date.parse(value);
+	return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value ? timestamp : null;
+}
+
 export function parseLockHolder(raw: string): LockHolder | null {
 	let parsed: unknown;
 	try {
@@ -65,22 +70,33 @@ export function parseLockHolder(raw: string): LockHolder | null {
 	const pid = getOwnInteger(parsed, 'pid');
 	const hostId = getOwnString(parsed, 'hostId');
 	const acquiredAt = getOwnString(parsed, 'acquiredAt');
-	if (pid === undefined || hostId === undefined || acquiredAt === undefined) {
+	if (pid === undefined || pid <= 0 || hostId === undefined || hostId.length === 0 || acquiredAt === undefined) {
 		return null;
 	}
-	const heartbeatAt = getOwnString(parsed, 'heartbeatAt') ?? acquiredAt;
+	const storedHeartbeat = getOwnString(parsed, 'heartbeatAt');
+	if (Object.prototype.hasOwnProperty.call(parsed, 'heartbeatAt') && storedHeartbeat === undefined) return null;
+	const heartbeatAt = storedHeartbeat ?? acquiredAt;
 	const ownerToken = getOwnString(parsed, 'ownerToken');
+	if (
+		Object.prototype.hasOwnProperty.call(parsed, 'ownerToken') &&
+		(ownerToken === undefined || !/^[a-zA-Z0-9_-]+$/.test(ownerToken))
+	)
+		return null;
+	if (leaseTimestamp(acquiredAt) === null || leaseTimestamp(heartbeatAt) === null) return null;
 	return { pid, hostId, acquiredAt, heartbeatAt, ...(ownerToken === undefined ? {} : { ownerToken }) };
 }
 
 export type LockLiveness = { live: true } | { live: false; reason: string };
 
 export function assessHolder(holder: LockHolder, _ourHostId: string, nowMs: number): LockLiveness {
-	const heartbeat = Date.parse(holder.heartbeatAt);
-	if (!Number.isFinite(heartbeat)) {
-		return { live: false, reason: 'the lock has no usable heartbeat' };
+	if (holder.heartbeatAt === 'released') return { live: false, reason: 'the holder explicitly released its lease' };
+	const heartbeat = leaseTimestamp(holder.heartbeatAt);
+	const acquired = leaseTimestamp(holder.acquiredAt);
+	if (heartbeat === null || acquired === null) {
+		throw new HostLockError('the existing lease has malformed acquisition or heartbeat dates');
 	}
-	const age = nowMs - heartbeat;
+	// A future timestamp can reflect clock skew. It cannot establish a dead owner.
+	const age = nowMs - Math.max(acquired, heartbeat);
 	if (age > HEARTBEAT_STALE_AFTER_MS) {
 		return { live: false, reason: `the holder's heartbeat is ${Math.round(age / 1000)}s stale` };
 	}
@@ -132,32 +148,47 @@ export class HostLock {
 		return candidate;
 	}
 
-	private async readHolder(directory = this.lockPath): Promise<LockHolder | null> {
-		const stat = await fs.lstat(directory).catch(() => null);
-		if (stat === null) {
-			return null;
+	private async leaseStat() {
+		try {
+			return await fs.lstat(this.lockPath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+			throw new HostLockError(
+				`cannot inspect existing lease ${this.lockPath}; repair its filesystem access before retrying`,
+			);
 		}
-		if (!stat.isDirectory()) {
-			// Compatibility with the earlier single-file lock format.
-			return parseLockHolder(await fs.readFile(directory, 'utf8').catch(() => ''));
-		}
+	}
 
-		const owner = parseLockHolder(await fs.readFile(path.join(directory, OWNER_FILE), 'utf8').catch(() => ''));
-		if (owner?.ownerToken === undefined) {
-			return null;
+	private async readHolder(): Promise<LockHolder | null> {
+		const stat = await this.leaseStat();
+		if (stat === null) return null;
+		try {
+			if (stat.isFile()) {
+				// A valid earlier single-file lease can still expire by heartbeat age.
+				const legacy = parseLockHolder(await fs.readFile(this.lockPath, 'utf8'));
+				if (legacy === null) throw new HostLockError('existing legacy lease metadata is malformed');
+				return legacy;
+			}
+			if (!stat.isDirectory()) throw new HostLockError('existing lease is neither a file nor a directory');
+			const owner = parseLockHolder(await fs.readFile(path.join(this.lockPath, OWNER_FILE), 'utf8'));
+			if (owner?.ownerToken === undefined) {
+				throw new HostLockError('existing lease owner metadata is malformed');
+			}
+			try {
+				await fs.access(path.join(this.lockPath, `released.${owner.ownerToken}`));
+				return { ...owner, heartbeatAt: 'released' };
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+			}
+			const heartbeat = (await fs.readFile(path.join(this.lockPath, `heartbeat.${owner.ownerToken}`), 'utf8')).trim();
+			if (leaseTimestamp(heartbeat) === null) throw new HostLockError('existing lease heartbeat is malformed');
+			return { ...owner, heartbeatAt: heartbeat };
+		} catch {
+			throw new HostLockError(
+				`cannot verify existing lease ${this.lockPath}; its owner, heartbeat, or release marker is unreadable or malformed. ` +
+					'Stop all Hosts using this volume and repair the lease evidence before retrying',
+			);
 		}
-		if (
-			await fs.access(path.join(directory, `released.${owner.ownerToken}`)).then(
-				() => true,
-				() => false,
-			)
-		) {
-			return { ...owner, heartbeatAt: 'released' };
-		}
-		const heartbeat = (
-			await fs.readFile(path.join(directory, `heartbeat.${owner.ownerToken}`), 'utf8').catch(() => '')
-		).trim();
-		return { ...owner, heartbeatAt: heartbeat || owner.acquiredAt };
 	}
 
 	private async ownsCurrentLease(): Promise<boolean> {
@@ -208,7 +239,7 @@ export class HostLock {
 		try {
 			for (let attempt = 0; attempt < 8; attempt += 1) {
 				const installed = await this.withTakeover(async () => {
-					const stat = await fs.lstat(this.lockPath).catch(() => null);
+					const stat = await this.leaseStat();
 					if (stat !== null) {
 						const existing = await this.readHolder();
 						if (existing !== null) {
@@ -220,8 +251,8 @@ export class HostLock {
 								);
 							}
 						}
-						// Dead, or unreadable — which includes the earlier single-file
-						// format. Moved aside rather than deleted in place, so nothing
+						// Proven stale or explicitly released. Unreadable evidence above
+						// refuses takeover. Moved aside rather than deleted in place, so nothing
 						// half-removed can be mistaken for a lease, and dropped only once
 						// it is out of the way.
 						const quarantine = `${this.lockPath}.stale.${randomUUID()}`;
