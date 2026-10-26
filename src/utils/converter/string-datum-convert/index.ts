@@ -155,13 +155,18 @@ export function decodeV1ContractDatum(
   buyer_cooldown_time: POSIXTime,
   state: State,
 */
-		if (datum == null) {
+		if (
+			typeof datum !== 'object' ||
+			datum === null ||
+			Array.isArray(datum) ||
+			(datum.constructor !== 0 && datum.constructor !== 0n)
+		) {
 			//invalid transaction
 			return null;
 		}
 		const fields = datum.fields;
 
-		if (fields?.length != 16) {
+		if (!Array.isArray(fields) || fields.length !== 16) {
 			//invalid transaction
 			return null;
 		}
@@ -316,12 +321,17 @@ export function decodeV2ContractDatum(
 ): DecodedV1ContractDatum | null {
 	const datum = decodedDatum as PlutusDatum | null;
 	try {
-		if (datum == null) {
+		if (
+			typeof datum !== 'object' ||
+			datum === null ||
+			Array.isArray(datum) ||
+			(datum.constructor !== 0 && datum.constructor !== 0n)
+		) {
 			return null;
 		}
 		const fields = datum.fields;
 
-		if (fields?.length != 19) {
+		if (!Array.isArray(fields) || fields.length !== 19) {
 			return null;
 		}
 		const networkId = network == 'mainnet' ? 1 : 0;

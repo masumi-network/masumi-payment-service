@@ -60,6 +60,32 @@ const TOO_LARGE = 2n ** 63n;
 
 const CONTRACT_ADDRESS = 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g';
 
+describe.each(['V1', 'V2'] as const)('%s top-level datum shape', (version) => {
+	function fixture() {
+		const datum = v2Datum();
+		return version === 'V2'
+			? datum
+			: conStr0([datum.fields[0], datum.fields[2], ...datum.fields.slice(4, 8), ...datum.fields.slice(9)]);
+	}
+	const decode = version === 'V2' ? decodeV2ContractDatum : decodeV1ContractDatum;
+	it.each([0, 0n])('preserves canonical constructor %s', (constructor) => {
+		expect(decode({ ...fixture(), constructor }, 'preprod')).not.toBeNull();
+	});
+	it.each([99, 1, -1, 99n, undefined, '0', null, 0.5, {}, false])(
+		'rejects a non-Datum constructor %s',
+		(constructor) => {
+			expect(decode({ ...fixture(), constructor }, 'preprod')).toBeNull();
+		},
+	);
+	it('rejects an array carrying datum properties', () => {
+		expect(decode(Object.assign([], fixture()), 'preprod')).toBeNull();
+	});
+	it('rejects array-like fields', () => {
+		const datum = fixture();
+		expect(decode({ ...datum, fields: { ...datum.fields, length: datum.fields.length } }, 'preprod')).toBeNull();
+	});
+});
+
 describe('decodeV2ContractDatum', () => {
 	describe.each([
 		['buyer', 1],
