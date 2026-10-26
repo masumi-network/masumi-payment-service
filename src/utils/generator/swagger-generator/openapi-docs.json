@@ -24087,11 +24087,25 @@
                         "schema": {
                             "type": "string",
                             "maxLength": 250,
-                            "description": "Used to paginate through the payment sources"
+                            "description": "Used to paginate through the payment sources. Omit whenever filterNetwork changes so pagination restarts for the new filter."
                         },
                         "required": false,
-                        "description": "Used to paginate through the payment sources",
+                        "description": "Used to paginate through the payment sources. Omit whenever filterNetwork changes so pagination restarts for the new filter.",
                         "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks. Changing this value requires omitting cursorId on the next request."
+                        },
+                        "required": false,
+                        "description": "When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks. Changing this value requires omitting cursorId on the next request.",
+                        "name": "filterNetwork",
                         "in": "query"
                     }
                 ],

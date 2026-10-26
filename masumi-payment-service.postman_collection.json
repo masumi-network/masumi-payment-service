@@ -18391,11 +18391,20 @@
                                 {
                                     "disabled": false,
                                     "description": {
-                                        "content": "Used to paginate through the payment sources",
+                                        "content": "Used to paginate through the payment sources. Omit whenever filterNetwork changes so pagination restarts for the new filter.",
                                         "type": "text/plain"
                                     },
                                     "key": "cursorId",
                                     "value": "string"
+                                },
+                                {
+                                    "disabled": false,
+                                    "description": {
+                                        "content": "When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks. Changing this value requires omitting cursorId on the next request. (This can only be one of Preprod,Mainnet)",
+                                        "type": "text/plain"
+                                    },
+                                    "key": "filterNetwork",
+                                    "value": "Mainnet"
                                 }
                             ],
                             "variable": []
@@ -18451,11 +18460,20 @@
                                         {
                                             "disabled": false,
                                             "description": {
-                                                "content": "Used to paginate through the payment sources",
+                                                "content": "Used to paginate through the payment sources. Omit whenever filterNetwork changes so pagination restarts for the new filter.",
                                                 "type": "text/plain"
                                             },
                                             "key": "cursorId",
                                             "value": "string"
+                                        },
+                                        {
+                                            "disabled": false,
+                                            "description": {
+                                                "content": "When set, return only payment sources on this network. Must be allowed by the API key network limit; omitted keeps all permitted networks. Changing this value requires omitting cursorId on the next request. (This can only be one of Preprod,Mainnet)",
+                                                "type": "text/plain"
+                                            },
+                                            "key": "filterNetwork",
+                                            "value": "Mainnet"
                                         }
                                     ],
                                     "variable": []
