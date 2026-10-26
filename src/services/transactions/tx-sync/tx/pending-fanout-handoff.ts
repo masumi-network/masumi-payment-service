@@ -28,21 +28,18 @@ export async function deferSpendUntilFanoutHandoff(
 		where: { id: hydraHeadId },
 		select: {
 			headIdentifier: true,
-			HydraRelation: {
-				select: {
-					LocalHotWallet: { select: { walletVkey: true } },
-					RemoteWallet: { select: { walletVkey: true } },
-				},
-			},
+			LocalParticipant: { select: { cardanoVkey: true } },
+			RemoteParticipants: { select: { cardanoVkey: true } },
 		},
 	});
 	// The service's status can lag the first partial fanout block. The producer
 	// proof, rather than that status, decides whether this L1 spend must wait.
-	if (head?.headIdentifier == null) throw new PendingFanoutHandoffError(hydraHeadId);
+	if (head?.headIdentifier == null || head.LocalParticipant == null || head.RemoteParticipants.length !== 1)
+		throw new PendingFanoutHandoffError(hydraHeadId);
 	const isBound = await isBoundFanoutOutputOrigin({
 		observer: blockfrost as unknown as HydraFanoutChainObserver,
 		headId: head.headIdentifier,
-		participantVkeys: [head.HydraRelation.LocalHotWallet.walletVkey, head.HydraRelation.RemoteWallet.walletVkey],
+		participantVkeys: [head.LocalParticipant.cardanoVkey, head.RemoteParticipants[0].cardanoVkey],
 		producerTxHash: input.tx_hash,
 		outputIndex: input.output_index,
 		indexedAmounts: input.amount,

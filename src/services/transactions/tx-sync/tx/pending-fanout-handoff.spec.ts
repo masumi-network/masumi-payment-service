@@ -5,7 +5,8 @@ const mockFindHead = jest.fn<
 	(_query: unknown) => Promise<{
 		status: HydraHeadStatus;
 		headIdentifier: string;
-		HydraRelation: { LocalHotWallet: { walletVkey: string }; RemoteWallet: { walletVkey: string } };
+		LocalParticipant: { cardanoVkey: string } | null;
+		RemoteParticipants: Array<{ cardanoVkey: string }>;
 	} | null>
 >();
 const mockIsBoundOrigin = jest.fn<(_options: unknown) => Promise<boolean>>();
@@ -32,16 +33,32 @@ beforeEach(() => {
 });
 
 describe('a confirmed L1 spend before final fanout handoff', () => {
+	it.each([
+		{ LocalParticipant: null, RemoteParticipants: [{ cardanoVkey: 'd'.repeat(56) }] },
+		{ LocalParticipant: { cardanoVkey: 'c'.repeat(56) }, RemoteParticipants: [] },
+		{
+			LocalParticipant: { cardanoVkey: 'c'.repeat(56) },
+			RemoteParticipants: [{ cardanoVkey: 'd'.repeat(56) }, { cardanoVkey: 'e'.repeat(56) }],
+		},
+	])('defers when participant identity is incomplete: %j', async (participants) => {
+		mockFindHead.mockResolvedValue({
+			status: HydraHeadStatus.FanningOut,
+			headIdentifier: 'b'.repeat(56),
+			...participants,
+		});
+		mockIsBoundOrigin.mockResolvedValue(false);
+		await expect(run(l2Request)).rejects.toBeInstanceOf(PendingFanoutHandoffError);
+		expect(mockIsBoundOrigin).not.toHaveBeenCalled();
+	});
+
 	it.each([HydraHeadStatus.Open, HydraHeadStatus.FanningOut, HydraHeadStatus.Final])(
 		'holds a proven fanout spend even when the stored head status is %s',
 		async (status) => {
 			mockFindHead.mockResolvedValue({
 				status,
 				headIdentifier: 'b'.repeat(56),
-				HydraRelation: {
-					LocalHotWallet: { walletVkey: 'c'.repeat(56) },
-					RemoteWallet: { walletVkey: 'd'.repeat(56) },
-				},
+				LocalParticipant: { cardanoVkey: 'c'.repeat(56) },
+				RemoteParticipants: [{ cardanoVkey: 'd'.repeat(56) }],
 			});
 			await expect(run(l2Request)).rejects.toBeInstanceOf(PendingFanoutHandoffError);
 			expect(mockFindHead).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'head-1' } }));
@@ -53,10 +70,8 @@ describe('a confirmed L1 spend before final fanout handoff', () => {
 		mockFindHead.mockResolvedValue({
 			status: HydraHeadStatus.Open,
 			headIdentifier: 'b'.repeat(56),
-			HydraRelation: {
-				LocalHotWallet: { walletVkey: 'c'.repeat(56) },
-				RemoteWallet: { walletVkey: 'd'.repeat(56) },
-			},
+			LocalParticipant: { cardanoVkey: 'c'.repeat(56) },
+			RemoteParticipants: [{ cardanoVkey: 'd'.repeat(56) }],
 		});
 		mockIsBoundOrigin.mockResolvedValue(false);
 		await expect(run(l2Request)).resolves.toBeUndefined();
@@ -72,10 +87,8 @@ describe('a confirmed L1 spend before final fanout handoff', () => {
 		mockFindHead.mockResolvedValue({
 			status: HydraHeadStatus.FanningOut,
 			headIdentifier: 'b'.repeat(56),
-			HydraRelation: {
-				LocalHotWallet: { walletVkey: 'c'.repeat(56) },
-				RemoteWallet: { walletVkey: 'd'.repeat(56) },
-			},
+			LocalParticipant: { cardanoVkey: 'c'.repeat(56) },
+			RemoteParticipants: [{ cardanoVkey: 'd'.repeat(56) }],
 		});
 		mockIsBoundOrigin.mockResolvedValue(false);
 		await expect(run(l2Request)).resolves.toBeUndefined();

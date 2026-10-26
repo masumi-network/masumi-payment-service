@@ -12,10 +12,8 @@ const mockFindPurchase = jest.fn(async () => null);
 const mockFindHead = jest.fn(async (_query: unknown) => ({
 	status: HydraHeadStatus.FanningOut,
 	headIdentifier: 'b'.repeat(56),
-	HydraRelation: {
-		LocalHotWallet: { walletVkey: 'c'.repeat(56) },
-		RemoteWallet: { walletVkey: 'd'.repeat(56) },
-	},
+	LocalParticipant: { cardanoVkey: 'c'.repeat(56) },
+	RemoteParticipants: [{ cardanoVkey: 'd'.repeat(56) }],
 }));
 const mockCheckHistory = jest.fn(async () => false);
 const mockIsBoundOrigin = jest.fn(async () => true);
