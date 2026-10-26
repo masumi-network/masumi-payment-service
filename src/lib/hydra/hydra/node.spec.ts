@@ -593,6 +593,42 @@ describe('HydraNode', () => {
 			expect(node.status).toBe(HydraHeadStatus.Closed);
 		});
 
+		it('emits the lower Close snapshot when a contest rolls back without changing status', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			const changes: unknown[] = [];
+			node.on(HydraNodeEvent.StatusChange, (data) => changes.push(data));
+
+			for (const [tag, snapshotNumber] of [
+				['HeadIsClosed', 3],
+				['HeadIsContested', 5],
+				['HeadIsClosed', 3],
+			] as const) {
+				mockConnectionInstance.emit('message', JSON.stringify({ tag, headId: HEAD_ID_A, snapshotNumber }));
+			}
+
+			expect(changes).toEqual([
+				expect.objectContaining({ status: HydraHeadStatus.Closed, snapshotNumber: 3, chainEvent: 'HeadIsClosed' }),
+				expect.objectContaining({ status: HydraHeadStatus.Closed, snapshotNumber: 5, chainEvent: 'HeadIsContested' }),
+				expect.objectContaining({ status: HydraHeadStatus.Closed, snapshotNumber: 3, chainEvent: 'HeadIsClosed' }),
+			]);
+		});
+
+		it('hides a replayed close while a newer live contest has not reached history', async () => {
+			const { node, historyConnection, liveConnection } = await startSignedNode();
+			for (const frame of signedHistoryChain().frames) historyConnection.emit('message', JSON.stringify(frame));
+			const close = { tag: 'HeadIsClosed', headId: HEAD_ID_A, snapshotNumber: 3 };
+			historyConnection.emit('message', JSON.stringify(close));
+			finishHistoryReplay(historyConnection);
+			expect(node.closedSnapshotNumber).toBe(3n);
+
+			const contest = { tag: 'HeadIsContested', headId: HEAD_ID_A, snapshotNumber: 5 };
+			liveConnection.emit('message', JSON.stringify(contest));
+			expect(node.closedSnapshotNumber).toBeUndefined();
+			historyConnection.emit('message', JSON.stringify(contest));
+			expect(node.closedSnapshotNumber).toBe(5n);
+		});
+
 		it('emits StatusChange with FanoutPossible when ReadyToFanout received', () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();

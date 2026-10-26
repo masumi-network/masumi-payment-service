@@ -465,6 +465,9 @@ export function extractStatusChangeData(rawMessage: string, expectedHeadId?: str
 			headId: suppliedHeadId,
 			snapshotNumber: parsedMessage.snapshotNumber,
 			contestationDeadline: parsedMessage.contestationDeadline,
+			...(parsedMessage.tag === 'HeadIsClosed' || parsedMessage.tag === 'HeadIsContested'
+				? { chainEvent: parsedMessage.tag }
+				: {}),
 		};
 	} catch (error) {
 		logger.error('[HydraNode] Rejected status frame', { error: protocolErrorToString(error) });
