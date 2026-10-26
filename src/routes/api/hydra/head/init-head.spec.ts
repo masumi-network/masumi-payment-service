@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
-import { HydraHeadStatus, HydraInviteRole } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraInviteRole, Network } from '@/generated/prisma/client';
 import {
 	HydraCommandRefusedUnsyncedError,
 	HydraCommandRejectedError,
@@ -15,6 +15,7 @@ const mockFindHead = jest.fn() as AnyMock;
 const mockConnect = jest.fn() as AnyMock;
 const mockInit = jest.fn() as AnyMock;
 const mockNodeGet = jest.fn() as AnyMock;
+const mockLatestChainParameters = jest.fn() as AnyMock;
 const mockFlush = jest.fn() as AnyMock;
 const mockWarn = jest.fn() as AnyMock;
 const mockReadNodeState = jest.fn() as AnyMock;
@@ -50,6 +51,10 @@ jest.unstable_mockModule('@/services/hydra-host/node-state', () => ({
 	readParticipantNodeState: mockReadNodeState,
 }));
 
+jest.unstable_mockModule('@/utils/blockfrost', () => ({
+	getBlockfrostInstance: () => ({ epochsLatestParameters: mockLatestChainParameters }),
+}));
+
 jest.unstable_mockModule('@/services/hydra-head-error/record', () => ({
 	recordHeadError: mockRecordHeadError,
 }));
@@ -77,6 +82,10 @@ const idleHead = {
 	status: HydraHeadStatus.Idle,
 	isEnabled: true,
 	LocalParticipant: { id: 'participant-1' },
+	HydraRelation: {
+		network: Network.Preprod,
+		LocalHotWallet: { PaymentSource: { PaymentSourceConfig: { rpcProviderApiKey: 'preprod-test-key' } } },
+	},
 	Invite: { role: HydraInviteRole.Redeemer },
 };
 
@@ -97,7 +106,12 @@ beforeEach(() => {
 	});
 	mockConnect.mockResolvedValue(undefined);
 	mockInit.mockResolvedValue(undefined);
-	mockNodeGet.mockResolvedValue({ maxTxSize: 15_000 });
+	mockNodeGet.mockResolvedValue({ maxTxSize: 15_000, maxValueSize: 5000, utxoCostPerByte: 4310 });
+	mockLatestChainParameters.mockResolvedValue({
+		max_tx_size: 16_384,
+		max_val_size: '5000',
+		coins_per_utxo_size: '4310',
+	});
 	mockFlush.mockResolvedValue(undefined);
 	// Caught up by default, so a timeout with nothing else set is a real failure.
 	mockReadNodeState.mockResolvedValue({
@@ -148,6 +162,99 @@ describe('initHeadPost, on a node with unsafe L2 params', () => {
 			message: expect.stringContaining('L2 maxTxSize of 16384, above 15000'),
 		});
 		expect(mockNodeGet).toHaveBeenCalledWith('/protocol-parameters');
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	it('refuses an L2 value limit above the current L1 limit', async () => {
+		mockNodeGet.mockResolvedValue({ maxTxSize: 15_000, maxValueSize: 9000, utxoCostPerByte: 4310 });
+
+		const result = await initHeadPost.handler({ input: { headId: 'head-1' } }).catch((error: unknown) => error);
+		expect(mockInit).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('maxValueSize'),
+		});
+	});
+
+	it('refuses an L2 minimum-ADA cost below the current L1 cost', async () => {
+		mockNodeGet.mockResolvedValue({ maxTxSize: 15_000, maxValueSize: 5000, utxoCostPerByte: 1000 });
+
+		const result = await initHeadPost.handler({ input: { headId: 'head-1' } }).catch((error: unknown) => error);
+		expect(mockInit).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('utxoCostPerByte'),
+		});
+	});
+
+	it('refuses when the current L1 transaction limit leaves no fanout room', async () => {
+		mockLatestChainParameters.mockResolvedValue({ max_tx_size: 16_383, max_val_size: 5000, coins_per_utxo_size: 4310 });
+
+		const result = await initHeadPost.handler({ input: { headId: 'head-1' } }).catch((error: unknown) => error);
+		expect(mockInit).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('fanout'),
+		});
+	});
+
+	it('accepts the documented fanout margin at the current L1 limit', async () => {
+		await initHeadPost.handler({ input: { headId: 'head-1' } }).catch(() => undefined);
+		expect(mockLatestChainParameters).toHaveBeenCalledTimes(1);
+		expect(mockInit).toHaveBeenCalledTimes(1);
+	});
+
+	it('fails closed when current L1 parameters cannot be read', async () => {
+		mockLatestChainParameters.mockRejectedValue(new Error('chain lookup failed'));
+
+		const result = await initHeadPost.handler({ input: { headId: 'head-1' } }).catch((error: unknown) => error);
+		expect(mockInit).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			statusCode: 503,
+		});
+	});
+
+	it('refuses Init without an independent L1 observer key', async () => {
+		mockFindHead.mockResolvedValue({
+			...idleHead,
+			HydraRelation: {
+				...idleHead.HydraRelation,
+				LocalHotWallet: { PaymentSource: { PaymentSourceConfig: { rpcProviderApiKey: '' } } },
+			},
+		});
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockLatestChainParameters).not.toHaveBeenCalled();
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	it('fails closed when a comparison value is malformed', async () => {
+		mockLatestChainParameters.mockResolvedValue({
+			max_tx_size: 16_384,
+			max_val_size: 'unknown',
+			coins_per_utxo_size: 4310,
+		});
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 503,
+		});
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	it('fails closed on a non-finite L2 maxTxSize', async () => {
+		mockNodeGet.mockResolvedValue({ maxTxSize: Number.NaN, maxValueSize: 5000, utxoCostPerByte: 4310 });
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(mockLatestChainParameters).not.toHaveBeenCalled();
+		expect(mockInit).not.toHaveBeenCalled();
+	});
+
+	it('refuses a string L2 maxTxSize even when it looks numeric', async () => {
+		mockNodeGet.mockResolvedValue({ maxTxSize: '15000', maxValueSize: 5000, utxoCostPerByte: 4310 });
+
+		await expect(initHeadPost.handler({ input: { headId: 'head-1' } })).rejects.toMatchObject({ statusCode: 409 });
 		expect(mockInit).not.toHaveBeenCalled();
 	});
 

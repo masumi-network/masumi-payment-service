@@ -369,13 +369,14 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 							409: {
 								description:
 									'Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, ' +
-									`or its node reports no numeric L2 maxTxSize or one above ${EXPECTED_MAX_TX_SIZE}`,
+									`or its L2 ledger parameters are invalid or unsafe for fanout on current L1 (maxTxSize above ${EXPECTED_MAX_TX_SIZE})`,
 							},
 							400: { description: 'Invalid input, or the head has no local participant' },
 							502: { description: 'The Hydra node could not be reached, or the InitTx could not be verified' },
 							503: {
 								description:
-									'The node is behind the chain and did not post Init, or independent L1 evidence is not available yet',
+									'The node is behind the chain and did not post Init, current L1 protocol parameters could not be read, ' +
+									'or independent L1 evidence is not available yet',
 							},
 							504: {
 								description:

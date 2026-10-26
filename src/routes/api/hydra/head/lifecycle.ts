@@ -28,7 +28,7 @@ import {
 	HydraTransportAmbiguousError,
 	HydraTransportError,
 } from '@/lib/hydra';
-import { EXPECTED_MAX_TX_SIZE } from '@/lib/hydra/hydra/params-drift';
+import { assertSafeInitLedgerParams } from '@/services/hydra-host/init-ledger-admission';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
@@ -58,7 +58,18 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
-			include: { LocalParticipant: true, Invite: { select: { role: true } } },
+			include: {
+				LocalParticipant: true,
+				Invite: { select: { role: true } },
+				HydraRelation: {
+					select: {
+						network: true,
+						LocalHotWallet: {
+							select: { PaymentSource: { select: { PaymentSourceConfig: { select: { rpcProviderApiKey: true } } } } },
+						},
+					},
+				},
+			},
 		});
 
 		if (!head) {
@@ -127,29 +138,22 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				logger.warn('[HydraAPI] no live session after connect before Init', { hydraHeadId: head.id });
 				throw createHttpError(502, 'Failed to connect to Hydra node', { expose: true });
 			}
-			// The last point before a head exists. A node on L2 ledger params above
-			// the shipped maxTxSize, from a Host on unsafe params or an older Host
-			// build, opens a head that can hold an output no fanout can move to L1.
-			// Read raw: the parsed parameters are capped at the shipped value.
-			let maxTxSize: unknown;
+			// The last point before a head exists. Compare the node's raw L2
+			// parameters with current L1 values before it can create outputs that
+			// fanout cannot move. The parsed provider response pins some fields.
+			let ledgerParams: unknown;
 			try {
-				({ maxTxSize } = await hydraHead.mainNode.get<{ maxTxSize?: unknown }>('/protocol-parameters'));
+				ledgerParams = await hydraHead.mainNode.get<unknown>('/protocol-parameters');
 			} catch (error) {
 				// A non-JSON answer or a rotation latch needs a fix, not a retry, so the head error records it.
 				if (error instanceof HydraProtocolError) throw error;
-				throw nodeFailedBeforeInit(head.id, "Could not read the L2 maxTxSize from this head's node", error);
+				throw nodeFailedBeforeInit(head.id, "Could not read the L2 ledger parameters from this head's node", error);
 			}
-			if (typeof maxTxSize !== 'number') {
-				throw createHttpError(409, "This head's node reports no numeric L2 maxTxSize, so it cannot be checked");
-			}
-			if (maxTxSize > EXPECTED_MAX_TX_SIZE) {
-				throw createHttpError(
-					409,
-					`This head's node runs an L2 maxTxSize of ${maxTxSize}, above ${EXPECTED_MAX_TX_SIZE}. ` +
-						'A head on it can hold an output no fanout can move to L1. Start the node on ledger params ' +
-						`with maxTxSize ${EXPECTED_MAX_TX_SIZE} or less, then retry`,
-				);
-			}
+			await assertSafeInitLedgerParams({
+				ledgerParams,
+				network: head.HydraRelation.network,
+				rpcProviderApiKey: head.HydraRelation.LocalHotWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey,
+			});
 
 			// True on the normal path and cleared when the timeout diagnosis has
 			// already drained frames, so the drain below runs exactly once per path.
