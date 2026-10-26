@@ -567,25 +567,26 @@ export async function fetchHostRedemptions(
  * `keepReplay` is for a redemption this service adopted: the Host keeps the
  * redeemer's public material for seven days so an identical replay is still
  * answered, which is how a redeemer whose answer was lost learns it succeeded.
- * Anything else being forgotten, a cancelled redemption above all, must not set
- * it. An older Host ignores the flag and forgets everything.
+ * A cancelled redemption must set `discardRedemption`. Ordinary revocation
+ * leaves both flags unset, so the Host refuses to erase a raced redemption.
+ * An older Host ignores these flags and must be upgraded before this guard works.
  */
 export async function forgetHostInvite(
 	baseUrl: string,
 	adminToken: string,
 	nonce: string,
 	transport: HostTransportOptions,
-	options: { keepReplay?: boolean } = {},
+	options: { keepReplay?: boolean; discardRedemption?: boolean } = {},
 ): Promise<void> {
 	// The error message ends up in logs while the nonce may still be redeemable.
-	await request(
-		baseUrl,
-		`/v1/invites/${nonce}${options.keepReplay === true ? '?keepReplay=true' : ''}`,
-		adminToken,
-		transport,
-		{
-			method: 'DELETE',
-			logPath: `/v1/invites/${nonceLogRef(nonce)}`,
-		},
-	);
+	const query =
+		options.keepReplay === true
+			? '?keepReplay=true'
+			: options.discardRedemption === true
+				? '?discardRedemption=true'
+				: '';
+	await request(baseUrl, `/v1/invites/${nonce}${query}`, adminToken, transport, {
+		method: 'DELETE',
+		logPath: `/v1/invites/${nonceLogRef(nonce)}`,
+	});
 }

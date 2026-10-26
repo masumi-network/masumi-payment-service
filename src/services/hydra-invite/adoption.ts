@@ -245,7 +245,9 @@ export async function discardUnadoptableRedemption(
 			}
 		}
 		// Cancellation stops setup retries before discarding their durable material.
-		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
+		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport, {
+			discardRedemption: true,
+		});
 	} catch (error) {
 		// Never rethrown. The invite is already terminal, so the operator is
 		// unblocked either way, and a throw here would be reported as an adoption

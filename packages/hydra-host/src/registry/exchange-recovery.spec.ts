@@ -38,6 +38,21 @@ afterEach(async () => {
 });
 
 describe('redemption setup retention', () => {
+	it('keeps a signed redemption when it arrives after the revoke read', async () => {
+		const listed = await exchange.listInvites();
+		expect(listed[0]?.redeemedAt).toBeNull();
+		await exchange.redeem('nonce-pending', material, { signature: 'sig', key: 'key' });
+		jest
+			.spyOn(nodes, 'read')
+			.mockResolvedValue({ peers: [{ advertise: material.advertise }] } as unknown as NodeRecord);
+
+		expect(await exchange.forgetInvite('nonce-pending', nodes)).toBe(false);
+		expect((await new ExchangeStore(dataDir).listInvites())[0]?.redeemerSignature).toEqual({
+			signature: 'sig',
+			key: 'key',
+		});
+	});
+
 	it('retains a redemption until peer setup completes, even when adoption forgets it', async () => {
 		await exchange.redeem('nonce-pending', material, { signature: 'sig', key: 'key' });
 		jest.spyOn(nodes, 'read').mockResolvedValue({ peers: [] } as unknown as NodeRecord);
@@ -52,12 +67,12 @@ describe('redemption setup retention', () => {
 	it('allows forgetting a redeemed invite after removal is requested', async () => {
 		await exchange.redeem('nonce-pending', material, { signature: 'sig', key: 'key' });
 		jest.spyOn(nodes, 'read').mockResolvedValue({ peers: [], removalRequested: true } as unknown as NodeRecord);
-		expect(await exchange.forgetInvite('nonce-pending', nodes)).toBe(true);
+		expect(await exchange.forgetInvite('nonce-pending', nodes, { discardRedemption: true })).toBe(true);
 	});
 
 	it('allows forgetting a redeemed invite after its node is missing', async () => {
 		await exchange.redeem('nonce-pending', material, { signature: 'sig', key: 'key' });
-		expect(await exchange.forgetInvite('nonce-pending', nodes)).toBe(true);
+		expect(await exchange.forgetInvite('nonce-pending', nodes, { discardRedemption: true })).toBe(true);
 	});
 
 	it('allows revoking an outstanding reservation', async () => {

@@ -427,11 +427,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			case 'forgetInvite': {
-				// Opt-in and exact: only `true` keeps a replay, so a caller that predates the
-				// flag, or mistypes it, gets the full delete it always got.
-				const keepReplay = new URL(request.url ?? '/', 'http://host.invalid').searchParams.get('keepReplay') === 'true';
-				if (!(await exchange.forgetInvite(nonce ?? '', store, { keepReplay }))) {
-					throw new HostApiError('redemption peer setup is still pending; retry after setup completes', 409);
+				const params = new URL(request.url ?? '/', 'http://host.invalid').searchParams;
+				const keepReplay = params.get('keepReplay') === 'true';
+				const discardRedemption = params.get('discardRedemption') === 'true';
+				if (!(await exchange.forgetInvite(nonce ?? '', store, { keepReplay, discardRedemption }))) {
+					throw new HostApiError('redemption needs explicit discard or peer setup is still pending', 409);
 				}
 				send(response, 200, { forgotten: true });
 				return;

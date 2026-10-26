@@ -42,6 +42,7 @@ let counter: number;
 let warnings: string[];
 let checkPeerTarget: ProvisionDeps['checkPeerTarget'];
 let resolvePeerHostname: PeerHostnameResolver;
+let exchangeStore: ExchangeStore;
 
 beforeEach(async () => {
 	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-api-'));
@@ -51,6 +52,7 @@ beforeEach(async () => {
 	resolvePeerHostname = async () => [{ address: '8.8.8.8', family: 4 }];
 	const config = { ...loadHostConfig(env), dataDir };
 	const store = new NodeRegistryStore(dataDir);
+	exchangeStore = new ExchangeStore(dataDir);
 	const ports = new PortAllocator(config.ports);
 	const provision: ProvisionDeps = {
 		store,
@@ -66,7 +68,7 @@ beforeEach(async () => {
 	server = createControlPlane({
 		config,
 		store,
-		exchange: new ExchangeStore(dataDir),
+		exchange: exchangeStore,
 		ports,
 		supervisor,
 		provision,
@@ -136,6 +138,39 @@ const call = (
 		body: options.body === undefined ? undefined : JSON.stringify(options.body),
 	});
 };
+
+describe('invite deletion', () => {
+	it('refuses a redeemed invite unless the operator explicitly discards it', async () => {
+		await exchangeStore.registerInvite({
+			nonce: 'raced-revoke',
+			hostNodeId: 'missing-node',
+			issuedAt: Date.now(),
+			expiresAt: Date.now() + 60_000,
+			redeemedAt: null,
+			redeemer: null,
+			redeemerSignature: null,
+			startError: null,
+		});
+		await exchangeStore.redeem(
+			'raced-revoke',
+			{
+				walletAddress: 'addr_test1them',
+				hydraVerificationKey: PEER.hydraVerificationKey,
+				cardanoVerificationKey: PEER.cardanoVerificationKey,
+				advertise: PEER.advertise,
+				exchangeUrl: 'https://them.example.com/exchange',
+			},
+			{ signature: 'sig', key: 'key' },
+		);
+
+		expect((await call('DELETE', '/v1/invites/raced-revoke', { token: ADMIN })).status).toBe(409);
+		expect((await exchangeStore.listInvites())[0]?.redeemerSignature).toEqual({ signature: 'sig', key: 'key' });
+		expect((await call('DELETE', '/v1/invites/raced-revoke?discardRedemption=true', { token: ADMIN })).status).toBe(
+			200,
+		);
+		expect(await exchangeStore.listInvites()).toEqual([]);
+	});
+});
 
 describe('control plane auth', () => {
 	it('returns 503 for a temporary peer resolver failure', async () => {
