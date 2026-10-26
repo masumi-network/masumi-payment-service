@@ -756,9 +756,9 @@ docker create --name hydra-host ... <new digest>   # same flags, same volume
 systemctl start hydra-host
 ```
 
-After any change to the running version or scripts, press **Check** on the node in
-the admin UI and re-pin `HYDRA_EXPECTED_VERSION` and
-`HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH` in your payment service. See
+After any change to the running version or scripts, review the binary and
+update `src/services/hydra-host/reviewed-catalogue.ts` before placement. Press
+**Check** on the node and confirm that its values match the reviewed record. See
 [hydra-operations.md §2b](hydra-operations.md).
 
 ## Checklist

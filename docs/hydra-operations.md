@@ -287,18 +287,20 @@ the check fails, and the readings appear under **Details → Version and hashes*
 
 | Variable                                      | Where the value comes from                                                                                                       |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `HYDRA_EXPECTED_VERSION`                      | **Details → Version**, copied exactly. Official `hydra-node` builds report `2.4.1-<git sha>`; a bare `2.4.1` does not match one. |
-| `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH`        | **Details → Scripts**, via the copy button.                                                                                      |
+| `HYDRA_EXPECTED_VERSION`                      | Reviewed binary version in `src/services/hydra-host/reviewed-catalogue.ts`. It is already the service default.                    |
+| `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH`        | Reviewed catalogue hash in the same source file. It is already the service default. Never copy this pin from a Host.              |
 | `HYDRA_EXPECTED_LEDGER_PARAMS_HASH_<NETWORK>` | Already set for preprod. Do not copy this one from the Host: point the Host at the reviewed file instead (below).                |
 
 Restart the service and press **Check** again. The node goes Active.
 
 Two things that look like the same problem and are not:
 
-- **The Scripts fingerprint cannot be computed from the CLI.** It is taken over
-  the parsed catalogue document as this service re-serialises it, so
-  `hydra-node --hydra-script-catalogue | sha256sum` yields a different digest.
-  Copy it from the node details.
+- **The Scripts fingerprint comes from reviewed release code.**
+  `src/services/hydra-host/reviewed-catalogue.ts` records the full catalogue,
+  the source image digest, and its fingerprint. The fingerprint hashes
+  `JSON.stringify` of the parsed CLI document. A direct `sha256sum` of the
+  pretty printed CLI output differs. If a Host reports another value, stop
+  placement and review the image and binary before changing the release record.
 - **A ledger parameters mismatch is a Host misconfiguration, not a pin to
   update.** The Host must serve the reviewed file that ships in the repository.
   The image already does: it copies `packages/hydra-host/params` to
