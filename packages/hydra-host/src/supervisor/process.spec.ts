@@ -94,6 +94,26 @@ describe('NodeProcessManager adoption', () => {
 		expect(manager.isRunning('node-1')).toBe(true);
 	});
 
+	it('retains a live node when its diagnostic log cannot be rotated', async () => {
+		const nodeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-adopt-log-'));
+		const logDir = path.join(nodeDir, 'logs');
+		await fs.mkdir(logDir);
+		await fs.writeFile(path.join(logDir, 'node.log'), Buffer.alloc(NODE_LOG_MAX_BYTES + 1, 65));
+		const child = spawnIdleProcess(nodeDir);
+		const onLogError = jest.fn();
+		const manager = new NodeProcessManager(onLogError);
+		const diskError = Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+		const backupWrite = jest.spyOn(fs, 'writeFile').mockRejectedValueOnce(diskError);
+		try {
+			expect(await manager.adopt('node-1', child.pid as number, process.execPath, nodeDir)).toBe(true);
+			expect(manager.isRunning('node-1')).toBe(true);
+			expect(onLogError).toHaveBeenCalledWith('node-1', diskError);
+		} finally {
+			backupWrite.mockRestore();
+			await fs.rm(nodeDir, { recursive: true, force: true });
+		}
+	});
+
 	it('refuses to adopt a pid that is not running the node binary', async () => {
 		const manager = new NodeProcessManager();
 		const child = spawnIdleProcess();

@@ -1956,7 +1956,7 @@ export const getHydraHead = <ThrowOnError extends boolean = false>(options?: Opt
 /**
  * Enable or disable a Hydra head. (admin access required)
  *
- * Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it; disabling quarantines it (drops its InitTx admission).
+ * Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it. Disabling drops its InitTx admission. A Closed or FanoutPossible head cannot be disabled while contest monitoring is required.
  */
 export const patchHydraHead = <ThrowOnError extends boolean = false>(options?: Options<PatchHydraHeadData, ThrowOnError>): RequestResult<PatchHydraHeadResponses, PatchHydraHeadErrors, ThrowOnError> => (options?.client ?? client).patch<PatchHydraHeadResponses, PatchHydraHeadErrors, ThrowOnError>({
     responseType: 'json',

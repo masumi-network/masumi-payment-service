@@ -53,6 +53,7 @@ describe('read-only contest observer', () => {
 				guardHostDestination: true,
 				authToken: 'user-token',
 				snapshotVerificationKeys: ['local', 'remote'],
+				retainConfirmedTransactions: false,
 			}),
 		);
 		await releaseUnusedContestObservers(new Set());

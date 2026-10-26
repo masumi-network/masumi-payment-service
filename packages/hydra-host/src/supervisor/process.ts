@@ -342,7 +342,12 @@ export class NodeProcessManager {
 			return false;
 		}
 		const logDir = path.join(nodeDir, 'logs');
-		await rotateNodeLog(logDir);
+		try {
+			await rotateNodeLog(logDir);
+		} catch (error) {
+			// Diagnostic backup failures must not abandon a surviving node.
+			this.onLogError(nodeId, error);
+		}
 		this.running.set(nodeId, { nodeId, pid, startedAtMs: Date.now(), identity: { binary, nodeDir } });
 		this.watchLog(nodeId, logDir);
 		return true;

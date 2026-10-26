@@ -107,6 +107,8 @@ export interface HydraNodeClientConfig {
 	 * `snapshot.confirmed` metadata. Hydra signatures commit only TxOut values.
 	 */
 	trustLocalNodeSnapshotMetadata?: boolean;
+	/** Evidence-only observers verify history without queuing or retaining payment reconciliation CBOR. Defaults to true. */
+	retainConfirmedTransactions?: boolean;
 	/** Bearer token when the node sits behind a Hydra Host; omitted on loopback. */
 	authToken?: string;
 	/** Enforce the operator's Hydra Host destination policy on every connection. */

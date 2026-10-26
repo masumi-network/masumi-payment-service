@@ -1873,6 +1873,30 @@ describe('HydraNode', () => {
 			);
 		});
 
+		it.each([{ maxUnreconciledTransactions: 1 }, { maxRetainedTransactionCborBytes: 1 }])(
+			'keeps contest evidence current without retaining confirmations: %j',
+			async (limits) => {
+				const { node, historyConnection, liveConnection } = await startSignedNode({
+					retainConfirmedTransactions: false,
+					...limits,
+				});
+				const { frames, transactions } = signedHistoryChain();
+				for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
+				const close = { tag: 'HeadIsClosed', headId: HEAD_ID_A, snapshotNumber: 2 };
+				liveConnection.emit('message', JSON.stringify(close));
+				historyConnection.emit('message', JSON.stringify(close));
+				historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), headStatus: 'Closed' }));
+
+				expect(node.confirmedTransactionHistoryReady).toBe(true);
+				expect(node.verifiedSnapshotNumber).toBe(3n);
+				expect(node.closedSnapshotNumber).toBe(2n);
+				expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+				for (const transaction of transactions) expect(node.getConfirmedTransaction(transaction.txId)).toBeNull();
+				expect(historyConnection.restart).not.toHaveBeenCalled();
+				expect(historyConnection.invalidate).not.toHaveBeenCalled();
+			},
+		);
+
 		it('pages a large replay without trusting a partial prefix as complete', async () => {
 			const { node, historyConnection } = await startSignedNode({ maxUnreconciledTransactions: 1 });
 			const { frames, transactions } = signedHistoryChain();

@@ -80,14 +80,7 @@ export function decommitPayoutSearchBounds(
 	};
 }
 
-/**
- * How many pages of address history to walk back.
- *
- * The decrement lands within a block or two of the approval, so one page is
- * almost always enough. The second exists for the case where the node was down
- * across the settlement and other payments have landed since.
- */
-const MAX_PAGES = 2;
+/** Page size limits individual reads; the creation time bounds the full search. */
 const PAGE_SIZE = 20;
 /** Hydra HeadState.Input: Increment = 0, Decrement = 1. */
 const HYDRA_DECREMENT_REDEEMER_CONSTRUCTOR = 1n;
@@ -192,20 +185,17 @@ function isDecrementOfHead(cbor: string, txHash: string, utxos: IndexedTransacti
  * The transaction that paid `expected` to `address`, or null if it is not on
  * chain yet.
  *
- * Null rather than throwing: a withdrawal whose L1 transaction has not been seen
- * is still a settled withdrawal, and the admin UI would rather say "settled,
- * transaction not identified" than lose the settlement itself.
+ * Null rather than throwing: an incomplete independent proof leaves the
+ * withdrawal Approved so the reconciliation pass can retry it.
  *
  * `notBefore` and `exclude` exist because several identical-amount withdrawals
  * can land minutes apart. `notBefore` discards history through the whole block
  * second containing this withdrawal's creation, and `exclude` discards hashes already attributed
  * to another row. Among what is left, the OLDEST match wins — the payout
  * closest after creation — not the newest, which is what an unbounded
- * newest-first walk would otherwise hand back. That promise holds only while
- * every page loads: a page read failing partway through the walk (below)
- * returns whatever match was already found rather than throwing away a real
- * answer, so what comes back in that case is the best match seen so far, not
- * necessarily the oldest one that exists.
+ * newest-first walk would otherwise hand back. Every eligible page must load
+ * before a match can authorize finality. Returning a newer match after a read
+ * failure could assign a later same-value withdrawal to this row.
  */
 export async function findDecommitPayoutTx(params: {
 	blockfrost: BlockFrostAPI;
@@ -220,13 +210,13 @@ export async function findDecommitPayoutTx(params: {
 
 	let oldestMatch: { tx_hash: string; block_time: number } | null = null;
 
-	for (let page = 1; page <= MAX_PAGES; page++) {
+	for (let page = 1; ; page++) {
 		let history: Array<{ tx_hash: string; block_time: number }>;
 		try {
 			history = await blockfrost.addressesTransactions(address, { page, count: PAGE_SIZE, order: 'desc' });
 		} catch (error) {
 			logger.warn(`[HydraDecommit] could not read address history while identifying a payout: ${String(error)}`);
-			break;
+			return null;
 		}
 		if (history.length === 0) break;
 
@@ -249,14 +239,17 @@ export async function findDecommitPayoutTx(params: {
 				if (!match) continue;
 				const { cbor } = await blockfrost.txsCbor(entry.tx_hash);
 				if (!isDecrementOfHead(cbor, entry.tx_hash, utxos, headId)) continue;
-				if (oldestMatch === null || entry.block_time < oldestMatch.block_time) {
+				if (oldestMatch === null || entry.block_time <= oldestMatch.block_time) {
 					oldestMatch = entry;
 				}
 			} catch (error) {
-				// One unreadable transaction is not a reason to abandon the search.
 				logger.warn(`[HydraDecommit] could not read ${entry.tx_hash} while identifying a payout: ${String(error)}`);
+				return null;
 			}
 		}
+		// Blockfrost orders by blockchain position, so no later page can contain
+		// an eligible payout after reaching this withdrawal's creation second.
+		if (notBeforeSeconds !== undefined && history.some((entry) => entry.block_time <= notBeforeSeconds)) break;
 	}
 	return oldestMatch?.tx_hash ?? null;
 }

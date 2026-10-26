@@ -20,8 +20,8 @@ const PAYOUT_LOOKUP_BATCH = 10;
  * How often the retry pass runs.
  *
  * Deliberately not the shared Hydra interval. Each row costs up to
- * MAX_PAGES * PAGE_SIZE address-history lookups, so a full batch on a ten-second
- * schedule sustains roughly forty requests a second. The row remains Approved
+ * several pages of address-history lookups back to its creation time. A short
+ * schedule would repeatedly rescan busy wallets. The row remains Approved
  * during this retry interval; the node's event cannot grant spendability.
  */
 export const PAYOUT_LOOKUP_INTERVAL_MS = 5 * 60 * 1000;
@@ -149,7 +149,7 @@ export async function reconcileUnidentifiedDecommitPayouts(): Promise<void> {
 		// Oldest first. An unordered slice would hand back whichever rows the
 		// planner happened to reach, so with more stuck rows than fit in a batch
 		// the same few could be retried forever while the rest were never tried.
-		orderBy: { l1CheckedAt: 'asc' },
+		orderBy: { l1CheckedAt: { sort: 'asc', nulls: 'first' } },
 		take: PAYOUT_LOOKUP_BATCH,
 	});
 
@@ -193,22 +193,16 @@ export async function reconcileUnidentifiedDecommitPayouts(): Promise<void> {
 				},
 			},
 		},
-		orderBy: { l1CheckedAt: 'asc' },
+		orderBy: { l1CheckedAt: { sort: 'asc', nulls: 'first' } },
 		take: PAYOUT_LOOKUP_BATCH,
 	});
 	for (const row of finalized) {
 		if (!row.l1TxId) continue;
-		const paymentSource = row.LocalParticipant?.Wallet?.PaymentSource;
-		const apiKey = paymentSource?.PaymentSourceConfig?.rpcProviderApiKey;
-		if (!paymentSource || !apiKey) continue;
 		try {
-			if ((await payoutDepth(getBlockfrostInstance(paymentSource.network, apiKey), row.l1TxId)) === 'deep') {
-				await prisma.hydraDecommit.updateMany({
-					where: { id: row.id, status: HydraDecommitStatus.Finalized, l1TxId: row.l1TxId },
-					data: { l1CheckedAt: new Date() },
-				});
-				continue;
-			}
+			const paymentSource = row.LocalParticipant?.Wallet?.PaymentSource;
+			const apiKey = paymentSource?.PaymentSourceConfig?.rpcProviderApiKey;
+			if (!paymentSource || !apiKey) continue;
+			if ((await payoutDepth(getBlockfrostInstance(paymentSource.network, apiKey), row.l1TxId)) === 'deep') continue;
 			await prisma.hydraDecommit.updateMany({
 				where: { id: row.id, status: HydraDecommitStatus.Finalized, l1TxId: row.l1TxId },
 				data: { status: HydraDecommitStatus.Approved, finalizedAt: null, l1TxId: null, l1CheckedAt: new Date() },
@@ -218,6 +212,12 @@ export async function reconcileUnidentifiedDecommitPayouts(): Promise<void> {
 			);
 		} catch (error) {
 			logger.warn(`[HydraDecommit] could not recheck payout ${row.l1TxId}: ${String(error)}`);
+		} finally {
+			// Failed reads and missing credentials must also yield their batch slot.
+			await prisma.hydraDecommit.updateMany({
+				where: { id: row.id, status: HydraDecommitStatus.Finalized, l1TxId: row.l1TxId },
+				data: { l1CheckedAt: new Date() },
+			});
 		}
 	}
 }

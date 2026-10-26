@@ -25,6 +25,8 @@ const row = {
 };
 
 const mockFindMany = jest.fn() as AnyMock;
+const mockFindUnique = jest.fn() as AnyMock;
+const mockUpdateMany = jest.fn() as AnyMock;
 const mockFindPayout = jest.fn() as AnyMock;
 const mockTxs = jest.fn() as AnyMock;
 const mockBlocks = jest.fn() as AnyMock;
@@ -33,15 +35,9 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({ CONFIG: { BLOCK
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraDecommit: {
-			findUnique: async () => row,
+			findUnique: mockFindUnique,
 			findMany: mockFindMany,
-			updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
-				if (where.id !== row.id || (where.status && where.status !== row.status)) return { count: 0 };
-				if (typeof where.l1TxId === 'string' && where.l1TxId !== row.l1TxId) return { count: 0 };
-				if (where.l1TxId === null && row.l1TxId !== null) return { count: 0 };
-				Object.assign(row, data);
-				return { count: 1 };
-			},
+			updateMany: mockUpdateMany,
 		},
 	},
 }));
@@ -66,6 +62,16 @@ beforeEach(() => {
 	row.l1CheckedAt = null;
 	row.finalizedAt = null;
 	row.l1TxId = null;
+	mockFindUnique.mockResolvedValue(row);
+	mockUpdateMany.mockImplementation(
+		({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+			if (where.id !== row.id || (where.status && where.status !== row.status)) return Promise.resolve({ count: 0 });
+			if (typeof where.l1TxId === 'string' && where.l1TxId !== row.l1TxId) return Promise.resolve({ count: 0 });
+			if (where.l1TxId === null && row.l1TxId !== null) return Promise.resolve({ count: 0 });
+			Object.assign(row, data);
+			return Promise.resolve({ count: 1 });
+		},
+	);
 	mockFindMany.mockImplementation(({ where }: { where: Record<string, unknown> }) => {
 		if (where.status === 'Approved') return Promise.resolve(row.status === 'Approved' ? [row] : []);
 		if (where.status === 'Finalized') return Promise.resolve(row.status === 'Finalized' ? [row] : []);
@@ -74,6 +80,91 @@ beforeEach(() => {
 	mockFindPayout.mockResolvedValue(TX);
 	mockTxs.mockResolvedValue({ hash: TX, block: 'block-1', valid_contract: true });
 	mockBlocks.mockResolvedValue({ confirmations: DECOMMIT_MIN_CONFIRMATIONS - 1 });
+});
+
+type PayoutRow = typeof row;
+type RetryQuery = {
+	where: { status: string };
+	orderBy: { l1CheckedAt: 'asc' | { sort: 'asc'; nulls: 'first' | 'last' } };
+	take: number;
+};
+
+/** Model PostgreSQL's NULLS LAST default for ascending timestamps at the DB boundary. */
+function useRetryRows(rows: PayoutRow[]): void {
+	mockFindUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+		Promise.resolve(rows.find((candidate) => candidate.id === where.id)),
+	);
+	mockFindMany.mockImplementation(({ where, orderBy, take }: RetryQuery) => {
+		if (!where.status) return Promise.resolve([]);
+		const nullsFirst = typeof orderBy.l1CheckedAt === 'object' && orderBy.l1CheckedAt.nulls === 'first';
+		return Promise.resolve(
+			rows
+				.filter((candidate) => candidate.status === where.status)
+				.sort((left, right) => {
+					if (left.l1CheckedAt === null && right.l1CheckedAt === null) return 0;
+					if (left.l1CheckedAt === null) return nullsFirst ? -1 : 1;
+					if (right.l1CheckedAt === null) return nullsFirst ? 1 : -1;
+					return left.l1CheckedAt.getTime() - right.l1CheckedAt.getTime();
+				})
+				.slice(0, take),
+		);
+	});
+	mockUpdateMany.mockImplementation(
+		({ where, data }: { where: { id: string; status?: string; l1TxId?: string }; data: Partial<PayoutRow> }) => {
+			const target = rows.find(
+				(candidate) =>
+					candidate.id === where.id &&
+					(where.status === undefined || candidate.status === where.status) &&
+					(where.l1TxId === undefined || candidate.l1TxId === where.l1TxId),
+			);
+			if (!target) return Promise.resolve({ count: 0 });
+			Object.assign(target, data);
+			return Promise.resolve({ count: 1 });
+		},
+	);
+}
+
+describe('payout retry fairness', () => {
+	it('checks never-attempted Approved payouts before retrying a full batch of stuck rows', async () => {
+		const rows = Array.from({ length: 11 }, (_, index) => ({ ...row, id: `withdrawal-${index}` }));
+		useRetryRows(rows);
+		mockFindPayout.mockResolvedValue(null);
+
+		await reconcileUnidentifiedDecommitPayouts();
+		await reconcileUnidentifiedDecommitPayouts();
+
+		expect(rows.every((candidate) => candidate.l1CheckedAt !== null)).toBe(true);
+	});
+
+	it.each(['unavailable observer', 'missing observer configuration'])(
+		'continues past a full batch of Finalized payouts with %s',
+		async (failure) => {
+			const rows = Array.from({ length: 11 }, (_, index) => ({
+				...row,
+				id: `withdrawal-${index}`,
+				status: 'Finalized',
+				l1TxId: TX,
+				finalizedAt: new Date(),
+				l1CheckedAt: new Date(index),
+				LocalParticipant: {
+					Wallet: {
+						PaymentSource: {
+							...row.LocalParticipant.Wallet.PaymentSource,
+							PaymentSourceConfig: { rpcProviderApiKey: failure === 'missing observer configuration' ? '' : 'key' },
+						},
+					},
+				},
+			}));
+			useRetryRows(rows);
+			mockTxs.mockRejectedValue({ status_code: 503 });
+
+			await reconcileUnidentifiedDecommitPayouts();
+			await reconcileUnidentifiedDecommitPayouts();
+
+			expect(rows.every((candidate) => candidate.l1CheckedAt!.getTime() > rows.length)).toBe(true);
+			expect(rows.every((candidate) => candidate.status === 'Finalized')).toBe(true);
+		},
+	);
 });
 
 const distributed = { lovelace: 9_000_000n, assets: {} };
