@@ -61,11 +61,33 @@ const mockFindMany = jest.fn((args: { where: Record<string, unknown> }) =>
 	),
 );
 const mockHeadErrorFindFirst = jest.fn() as AnyMock;
+const mockExecuteRaw = jest.fn(async (query: { sql: string; values: unknown[] }) => {
+	const scopedHeadId = query.values.includes(row.id) ? row.id : null;
+	const limit = query.values.find((value) => typeof value === 'number') as number | undefined;
+	let deleted = 0;
+	errorRows = errorRows.filter((error) => {
+		if (scopedHeadId !== null && error.hydraHeadId !== scopedHeadId) return true;
+		if (error.errorType !== HydraErrorType.CommandFailed || !error.clientInput?.startsWith('CloseNonexecution:'))
+			return true;
+		const isActive =
+			row.status === HydraHeadStatus.Open &&
+			row.isClosing &&
+			error.hydraHeadId === row.id &&
+			error.clientInput === `CloseNonexecution:${row.closeAdmissionId}`;
+		if (isActive || (limit !== undefined && deleted >= limit)) return true;
+		deleted += 1;
+		return false;
+	});
+	return deleted;
+});
 const mockHeadErrorDeleteMany = jest.fn(
 	(args: {
 		where: {
 			hydraHeadId: string;
-			OR?: Array<{ clientInput: null | { not: { startsWith: string } } }>;
+			OR?: Array<{
+				clientInput?: null | { not: { startsWith: string } };
+				errorType?: { not: HydraErrorType };
+			}>;
 			errorType?: HydraErrorType;
 			clientInput?: string;
 		};
@@ -76,11 +98,12 @@ const mockHeadErrorDeleteMany = jest.fn(
 			if (args.where.errorType !== undefined && error.errorType !== args.where.errorType) return true;
 			if (args.where.clientInput !== undefined) return error.clientInput !== args.where.clientInput;
 			if (!args.where.OR) return false;
-			const matchesClearFilter = args.where.OR.some(({ clientInput }) =>
-				clientInput === null
-					? error.clientInput === null
-					: error.clientInput !== null && !error.clientInput.startsWith(clientInput.not.startsWith),
-			);
+			const matchesClearFilter = args.where.OR.some(({ clientInput, errorType }) => {
+				if (errorType !== undefined) return error.errorType !== errorType.not;
+				if (clientInput === null) return error.clientInput === null;
+				if (clientInput === undefined) return false;
+				return error.clientInput !== null && !error.clientInput.startsWith(clientInput.not.startsWith);
+			});
 			return !matchesClearFilter;
 		});
 		return Promise.resolve({ count: before - errorRows.length });
@@ -97,6 +120,7 @@ const mockReadHeadChainState = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
+		$executeRaw: mockExecuteRaw,
 		hydraHead: { findMany: mockFindMany, findUnique: async () => row, updateMany: mockUpdateMany },
 		hydraHeadError: { findFirst: mockHeadErrorFindFirst, deleteMany: mockHeadErrorDeleteMany },
 	},
@@ -170,6 +194,7 @@ describe('releaseStalledCloseAdmissions', () => {
 			refusal,
 			{ ...refusal, id: 'visible-error', clientInput: 'Close' },
 			{ ...refusal, id: 'null-input-error', clientInput: null },
+			{ ...refusal, id: 'other-error-type', errorType: HydraErrorType.InvalidInput },
 		);
 		mockHeadErrorFindFirst.mockImplementation(({ where }: { where: { clientInput: string; errorAt: { lt: Date } } }) =>
 			Promise.resolve(
@@ -180,11 +205,99 @@ describe('releaseStalledCloseAdmissions', () => {
 		const clear = clearHeadErrorsDelete as unknown as {
 			handler: (params: { input: { headId: string } }) => Promise<{ cleared: number }>;
 		};
-		await expect(clear.handler({ input: { headId: row.id } })).resolves.toEqual({ cleared: 2 });
+		await expect(clear.handler({ input: { headId: row.id } })).resolves.toEqual({ cleared: 3 });
 		expect(errorRows.map((error) => error.id)).toEqual(['refusal-1']);
 		await expect(releaseStalledCloseAdmissions()).resolves.toBe(1);
 		expect(row.isClosing).toBe(false);
 		expect(errorRows).toEqual([]);
+	});
+
+	it('clears a consumed fallback proof after a peer closes the head', async () => {
+		row.status = HydraHeadStatus.Closed;
+		errorRows.push({
+			id: 'peer-close-proof',
+			hydraHeadId: row.id,
+			errorType: HydraErrorType.CommandFailed,
+			clientInput: `CloseNonexecution:${row.closeAdmissionId}`,
+			errorAt: new Date(),
+		});
+		const clear = clearHeadErrorsDelete as unknown as {
+			handler: (params: { input: { headId: string } }) => Promise<{ cleared: number }>;
+		};
+
+		await expect(clear.handler({ input: { headId: row.id } })).resolves.toEqual({ cleared: 1 });
+		expect(errorRows).toEqual([]);
+		expect(row.isClosing).toBe(true);
+	});
+
+	it('keeps an active proof while disabled, then cleans it after its admission ends', async () => {
+		row.isEnabled = false;
+		errorRows.push({
+			id: 'disabled-proof',
+			hydraHeadId: row.id,
+			errorType: HydraErrorType.CommandFailed,
+			clientInput: `CloseNonexecution:${row.closeAdmissionId}`,
+			errorAt: new Date(),
+		});
+		const clear = clearHeadErrorsDelete as unknown as {
+			handler: (params: { input: { headId: string } }) => Promise<{ cleared: number }>;
+		};
+
+		await expect(clear.handler({ input: { headId: row.id } })).resolves.toEqual({ cleared: 0 });
+		expect(errorRows).toHaveLength(1);
+		row.isClosing = false;
+		row.closeAdmissionId = null;
+		await expect(releaseStalledCloseAdmissions()).resolves.toBe(0);
+		expect(errorRows).toEqual([]);
+	});
+
+	it('retries a stale proof delete after the latch was released', async () => {
+		errorRows.push({
+			id: 'retry-proof',
+			hydraHeadId: row.id,
+			errorType: HydraErrorType.CommandFailed,
+			clientInput: `CloseNonexecution:${row.closeAdmissionId}`,
+			errorAt: new Date(Date.now() - ELEVEN_MINUTES_MS),
+		});
+		mockHeadErrorFindFirst.mockResolvedValue({ id: 'retry-proof' });
+		mockHeadErrorDeleteMany.mockRejectedValueOnce(new Error('delete failed'));
+
+		await expect(releaseStalledCloseAdmissions()).resolves.toBe(1);
+		expect(errorRows.map((error) => error.id)).toEqual(['retry-proof']);
+		await expect(releaseStalledCloseAdmissions()).resolves.toBe(0);
+		expect(errorRows).toEqual([]);
+	});
+
+	it('removes an older admission marker without erasing the current proof', async () => {
+		errorRows.push(
+			{
+				id: 'old-proof',
+				hydraHeadId: row.id,
+				errorType: HydraErrorType.CommandFailed,
+				clientInput: 'CloseNonexecution:attempt-0',
+				errorAt: new Date(),
+			},
+			{
+				id: 'active-proof',
+				hydraHeadId: row.id,
+				errorType: HydraErrorType.CommandFailed,
+				clientInput: `CloseNonexecution:${row.closeAdmissionId}`,
+				errorAt: new Date(),
+			},
+		);
+		const clear = clearHeadErrorsDelete as unknown as {
+			handler: (params: { input: { headId: string } }) => Promise<{ cleared: number }>;
+		};
+
+		await expect(clear.handler({ input: { headId: row.id } })).resolves.toEqual({ cleared: 1 });
+		expect(errorRows.map((error) => error.id)).toEqual(['active-proof']);
+		const query = mockExecuteRaw.mock.calls[mockExecuteRaw.mock.calls.length - 1]?.[0];
+		expect(query?.sql).toContain('NOT EXISTS');
+		expect(query?.sql).toContain('"closeAdmissionId"');
+		expect(query?.sql).toContain('"isClosing"');
+		expect(query?.sql).toContain('"status"');
+		expect(query?.sql).toContain('"errorType"');
+		expect(query?.values).toContain(HydraErrorType.CommandFailed);
 	});
 	// The parked-Close case: dispatched, never refused, node still says Open.
 	it('keeps a Close queued for more than ten minutes latched, and L2 reservations blocked', async () => {

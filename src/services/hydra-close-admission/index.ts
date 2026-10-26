@@ -34,6 +34,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { readHeadChainState } from '@/routes/api/hydra/head/chain-check';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { closeNonexecutionClientInput } from './nonexecution-evidence';
+import { deleteStaleCloseNonexecutionEvidence } from './stale-evidence';
 
 /**
  * How long nonexecution proof must stand before L1 is asked.
@@ -53,6 +54,11 @@ export const CLOSE_REFUSAL_SETTLE_MS = 10 * 60 * 1000;
  * Returns how many were released.
  */
 export async function releaseStalledCloseAdmissions(): Promise<number> {
+	try {
+		await deleteStaleCloseNonexecutionEvidence();
+	} catch (error) {
+		logger.warn('[HydraCloseAdmission] Could not clean stale Close proof; will retry on the next pass', { error });
+	}
 	const settledBefore = new Date(Date.now() - CLOSE_REFUSAL_SETTLE_MS);
 	const refused = await prisma.hydraHead.findMany({
 		where: {
