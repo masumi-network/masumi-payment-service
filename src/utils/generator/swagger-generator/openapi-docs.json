@@ -34467,13 +34467,13 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, or its node reports no numeric L2 maxTxSize or one above 15000"
+                        "description": "Head is disabled, is not Idle, has its Hydra Host paused, is opened by the counterparty, or its L2 ledger parameters are invalid or unsafe for fanout on current L1 (maxTxSize above 15000)"
                     },
                     "502": {
                         "description": "The Hydra node could not be reached, or the InitTx could not be verified"
                     },
                     "503": {
-                        "description": "The node is behind the chain and did not post Init, or independent L1 evidence is not available yet"
+                        "description": "The node is behind the chain and did not post Init, current L1 protocol parameters could not be read, or independent L1 evidence is not available yet"
                     },
                     "504": {
                         "description": "The node failed to post the InitTx, Init did not confirm in time, or its outcome waits on the node catching up"
@@ -37049,7 +37049,7 @@
         "/hydra/head/topup/recover": {
             "post": {
                 "summary": "Recover a deposit the head never absorbed. (admin access required)",
-                "description": "A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.",
+                "description": "A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed. After a prior attempt, the operator must inspect wallet, L1, and mempool and set acknowledgePendingRecoveryRisk. The server checks fresh L1 and node state, but cannot prove the earlier recovery is absent from the mempool.",
                 "tags": [
                     "hydra"
                 ],
@@ -37068,6 +37068,13 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "description": "The deposit to recover"
+                                    },
+                                    "acknowledgePendingRecoveryRisk": {
+                                        "type": "boolean",
+                                        "enum": [
+                                            true
+                                        ],
+                                        "description": "Operator confirms wallet, L1, and mempool checks and accepts that a prior recovery may still be pending. Required to retry an earlier attempt."
                                     }
                                 },
                                 "required": [
@@ -37102,7 +37109,8 @@
                                                     "nullable": true
                                                 },
                                                 "requested": {
-                                                    "type": "boolean"
+                                                    "type": "boolean",
+                                                    "description": "True when recovery was requested or its dispatch outcome is unknown"
                                                 },
                                                 "reason": {
                                                     "type": "string",
@@ -37453,7 +37461,7 @@
             },
             "delete": {
                 "summary": "Clear the recorded errors for a head. (admin access required)",
-                "description": "Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.",
+                "description": "Acknowledges diagnostic errors recorded against a head. Close nonexecution proof rows remain while recovery needs them, then the reaper removes them. The head status and close admission do not change.",
                 "tags": [
                     "hydra"
                 ],
