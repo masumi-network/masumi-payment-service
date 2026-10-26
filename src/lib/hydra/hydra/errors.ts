@@ -87,3 +87,9 @@ export class HydraProtocolError extends Error {
 		this.name = 'HydraProtocolError';
 	}
 }
+
+/**
+ * hydra-node rotated its event log. This service cannot replay a rotated log,
+ * so the fix is on this side, not the node's.
+ */
+export class HydraPersistenceRotationError extends HydraProtocolError {}

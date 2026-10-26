@@ -17,7 +17,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { webhookEventsService } from '@/services/webhooks/events.service';
-import { HydraTransportError } from '@/lib/hydra/hydra/errors';
+import { HydraPersistenceRotationError, HydraProtocolError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { applyObservationGap, nodeUnobservedCause, type UnobservedCause } from './observation-gap';
 import { readOnlyContestNode, releaseUnusedContestObservers } from './read-only-observer';
@@ -184,6 +184,21 @@ export async function applyContestGapObservation(
 }
 
 /** Compare authenticated node history even while the payment session is quarantined. */
+/**
+ * Why a read-only observer session failed. A node that cannot be reached, or
+ * that answers for another head or party, may not contest. A rotated event log
+ * or a bad stored configuration is this service's to fix.
+ */
+function connectFailureCause(error: unknown, message: string): UnobservedCause {
+	if (error instanceof HydraTransportError) {
+		return { reason: `this service could not reach the node (${message})`, isNodeSide: true };
+	}
+	if (error instanceof HydraProtocolError && !(error instanceof HydraPersistenceRotationError)) {
+		return { reason: `the node did not prove it serves this head (${message})`, isNodeSide: true };
+	}
+	return { reason: `this service could not observe the node (${message})`, isNodeSide: false };
+}
+
 export async function runHydraContestWatch(): Promise<void> {
 	const heads = await prisma.hydraHead.findMany({
 		where: {
@@ -221,12 +236,7 @@ export async function runHydraContestWatch(): Promise<void> {
 				unobservedCause = nodeUnobservedCause(node);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : 'Unknown error';
-				// Only a transport failure points at the node. A configuration or
-				// protocol error, such as a rotated event log, is this service's to fix.
-				unobservedCause =
-					error instanceof HydraTransportError
-						? { reason: `this service could not reach the node (${message})`, isNodeSide: true }
-						: { reason: `this service could not observe the node (${message})`, isNodeSide: false };
+				unobservedCause = connectFailureCause(error, message);
 				logger.warn('[HydraContestWatch] could not reach the head node', { hydraHeadId: head.id, error: message });
 			}
 			try {

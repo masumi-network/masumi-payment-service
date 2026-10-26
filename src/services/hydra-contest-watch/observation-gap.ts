@@ -11,6 +11,7 @@
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { HydraPersistenceRotationError } from '@/lib/hydra/hydra/errors';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { webhookEventsService } from '@/services/webhooks/events.service';
 
@@ -63,6 +64,11 @@ export type UnobservedCause = { reason: string; isNodeSide: boolean };
  * apart from a node that is down.
  */
 export function nodeUnobservedCause(node: ObservableNode): UnobservedCause | null {
+	const replayError = node.confirmedTransactionHistoryError;
+	// A rotated event log also drops the live session, but the node is fine.
+	if (replayError instanceof HydraPersistenceRotationError) {
+		return { reason: `this service cannot replay the node history (${replayError.message})`, isNodeSide: false };
+	}
 	// A node that greets with no head after a fanout is held, not down.
 	if (node.isAwaitingReplayVerdict) {
 		return { reason: "this service's replay of the node history has not decided the head state", isNodeSide: false };
@@ -73,7 +79,6 @@ export function nodeUnobservedCause(node: ObservableNode): UnobservedCause | nul
 		return { reason: `the node reports the head as ${node.status}`, isNodeSide: true };
 	}
 	if (node.isChainSynced() === false) return { reason: 'the node does not follow the chain', isNodeSide: true };
-	const replayError = node.confirmedTransactionHistoryError;
 	if (replayError) {
 		return { reason: `this service's replay of the node history failed (${replayError.message})`, isNodeSide: false };
 	}

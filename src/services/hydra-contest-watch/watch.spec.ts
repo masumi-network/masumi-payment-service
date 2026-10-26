@@ -1,7 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
-import { HydraTransportError } from '@/lib/hydra/hydra/errors';
+import { HydraProtocolError, HydraTransportError } from '@/lib/hydra/hydra/errors';
+import { createUnsupportedPersistenceRotationError } from '@/lib/hydra/hydra/node-frames';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -362,8 +363,18 @@ describe('runHydraContestWatch', () => {
 		expect(mockQueue).not.toHaveBeenCalled();
 	});
 
-	// A bad stored configuration or a protocol error is this service's problem, not a node outage.
-	it('blames this service, not the node, when a non-transport error stops the observer', async () => {
+	// A bad stored configuration or a rotated event log is this service's to
+	// fix. A node that answers for another head may not contest this one.
+	it.each([
+		['a bad stored configuration', new Error('no pinned identifier'), 'no pinned identifier', false],
+		[
+			'a rotated event log',
+			createUnsupportedPersistenceRotationError(),
+			createUnsupportedPersistenceRotationError().message,
+			false,
+		],
+		['a node that serves another head', new HydraProtocolError('foreign head'), 'foreign head', true],
+	])('classifies an observer stopped by %s', async (_label, error, reasonPart, isNodeSide) => {
 		const unobservedSince = new Date(Date.now() - 6 * 60_000);
 		mockFindMany.mockResolvedValue([
 			{
@@ -375,11 +386,11 @@ describe('runHydraContestWatch', () => {
 				observationCheckedAt: new Date(Date.now() - 60_000),
 			},
 		] as never);
-		mockReadOnlyNode.mockRejectedValue(new Error('no pinned identifier') as never);
+		mockReadOnlyNode.mockRejectedValue(error as never);
 		await watch.runHydraContestWatch();
 		expect(mockUnobservedQueue).toHaveBeenCalledWith(
 			expect.anything(),
-			expect.objectContaining({ reason: expect.stringContaining('no pinned identifier'), isNodeSide: false }),
+			expect.objectContaining({ reason: expect.stringContaining(reasonPart), isNodeSide }),
 		);
 	});
 

@@ -17,6 +17,7 @@ import { logger } from '@masumi/payment-core/logger';
 import {
 	HydraCommandRefusedUnsyncedError,
 	HydraCommandRejectedError,
+	HydraPersistenceRotationError,
 	HydraPostTxRejectedError,
 	HydraProtocolError,
 	HydraTransactionRejectedError,
@@ -180,8 +181,8 @@ export function isEventLogRotatedFrame(value: unknown): boolean {
 	return typeof value === 'object' && value !== null && 'tag' in value && value.tag === 'EventLogRotated';
 }
 
-export function createUnsupportedPersistenceRotationError(): HydraProtocolError {
-	return new HydraProtocolError(UNSUPPORTED_PERSISTENCE_ROTATION_MESSAGE);
+export function createUnsupportedPersistenceRotationError(): HydraPersistenceRotationError {
+	return new HydraPersistenceRotationError(UNSUPPORTED_PERSISTENCE_ROTATION_MESSAGE);
 }
 
 export function isHeadScopedServerOutputTag(tag: unknown): tag is string {

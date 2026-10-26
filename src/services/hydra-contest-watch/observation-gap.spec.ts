@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraPersistenceRotationError } from '@/lib/hydra/hydra/errors';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -147,6 +148,19 @@ describe('nodeUnobservedCause', () => {
 			node({ hasVerifiedPinnedSessions: false, confirmedTransactionHistoryError: new Error('log rotated') }),
 		);
 		expect(failed).toEqual({ reason: expect.stringContaining('failed (log rotated)'), isNodeSide: false });
+	});
+
+	// A rotated event log drops the live session too, but the node is fine.
+	it('blames this service, not the node, for an event log it cannot replay', () => {
+		const rotated = node({
+			hasVerifiedLiveSession: false,
+			hasVerifiedPinnedSessions: false,
+			confirmedTransactionHistoryError: new HydraPersistenceRotationError('event log rotated'),
+		});
+		expect(gap.nodeUnobservedCause(rotated)).toEqual({
+			reason: expect.stringContaining('cannot replay the node history (event log rotated)'),
+			isNodeSide: false,
+		});
 	});
 
 	// After a fanout the node greets with no head, and the session is held for the replay.
