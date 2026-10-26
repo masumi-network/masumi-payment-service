@@ -111,6 +111,13 @@ These behaviours are intended. Reviewers do not need to report them again.
    - Partial mitigation: hydra-nodes start with a minimal environment (`nodeEnvironment` in `packages/hydra-host/src/supervisor/process.ts`). They get `PATH`, `LANG`, `LC_ALL`, `TZ` and the `ETCD_*` overrides, and not the Host tokens. The `hydra-node --version` and `--hydra-script-catalogue` probes in `packages/hydra-host/src/capabilities.ts` use the same environment. This stops passive leaks, such as a node that logs or dumps its environment. It does not stop an attacker with code execution in a node
    - When to revisit: if one Host serves more than one operator, or if a hydra-node exploit becomes known. Then run each head as its own user, or in its own container
 
+6. **Generated wallet mnemonics are printed during seeding**
+   - VERIFIED: `printGeneratedMnemonics` in `prisma/seed.validation.ts` writes each newly generated phrase to stderr. `prisma/seed.ts` calls it after successful preprod and mainnet seed transactions. Supplied phrases are not printed
+   - INFERRED: a terminal recorder, CI system, or container log collector can retain a generated recovery phrase. Anyone who can read that output can control the wallet after it is funded
+   - REPORTED: the operator accepted this risk on 27 October 2026. Printing the phrase gives the operator a way to back up a wallet created during seeding
+   - Operator action: supply mnemonics through a private secret source for unattended seeds. Treat captured seed output as wallet secret material and restrict access to it
+   - When to revisit: if unattended mainnet seeding generates phrases or seed logs become visible beyond the wallet operators. Then require a private output channel or a supplied mnemonic
+
 ### Maintenance
 
 1. **Updates**
