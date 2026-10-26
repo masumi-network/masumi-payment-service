@@ -293,6 +293,20 @@ describe('setPeers', () => {
 		);
 	});
 
+	it('replaces a peer key symlink without overwriting its target', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		const peersDir = path.join(deps.store.nodeDir(record.nodeId), 'peers');
+		const target = path.join(dataDir, 'outside-peer-key.txt');
+		await fs.writeFile(target, 'unchanged');
+		await fs.symlink(target, path.join(peersDir, '0-hydra.vk'));
+
+		await setPeers(record.nodeId, [peer], deps);
+
+		await expect(fs.readFile(target, 'utf8')).resolves.toBe('unchanged');
+		await expect(fs.readFile(path.join(peersDir, '0-hydra.vk'), 'utf8')).resolves.toContain(peer.hydraVerificationKey);
+		expect((await fs.lstat(path.join(peersDir, '0-hydra.vk'))).isSymbolicLink()).toBe(false);
+	});
+
 	it('refuses an empty peer set, self-peering and duplicates', async () => {
 		const { record } = await provisionNode(REQUEST, deps);
 
