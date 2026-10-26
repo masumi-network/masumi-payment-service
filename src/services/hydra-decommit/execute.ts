@@ -271,8 +271,6 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 							);
 						}
 
-						if (await isHydraHeadOnPausedHostLocked(tx, head.id)) throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
-
 						// Taking the collateral is only safe once nothing is left to spend
 						// with it. The dialog explains the consequence, but a dialog is not a
 						// guard: an escrow still live in the head becomes unspendable the
@@ -282,6 +280,11 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 						// respect to them: no escrow can enter after the count.
 						if (params.drain === true) {
 							await tx.$queryRaw`SELECT 1 FROM "HydraHead" WHERE "id" = ${head.id} FOR UPDATE`;
+						}
+						// Every path that needs both locks takes Head before Host. Top-ups
+						// use that order too, so a drain cannot deadlock their claims.
+						if (await isHydraHeadOnPausedHostLocked(tx, head.id)) throw createHttpError(409, HYDRA_HOST_PAUSED_MESSAGE);
+						if (params.drain === true) {
 							const liveEscrows = await countLiveInHeadEscrows(tx, head.id);
 							if (liveEscrows > 0) return { claimed: false as const, liveEscrows };
 						}
