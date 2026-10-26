@@ -17,6 +17,7 @@ import { HydraHeadStatus, HydraInviteRole, HydraInviteStatus } from '@/generated
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from './nonce-log-ref';
+import { revealInviteNonce } from './invite-secrets';
 import { createHeadFromExchange } from './orchestrator';
 import { advanceRedemption } from './redemption';
 import { buildRedemptionPorts, toRedemptionState, type RedeemerRecord } from './redemption-ports';
@@ -90,13 +91,11 @@ async function failStaleUnconfirmed(now: number, outcome: ResumeOutcome): Promis
 			if (!(await ports.claim()) || !(await ports.fail())) continue;
 			outcome.expired += 1;
 			logger.warn(
-				`hydra: redemption ${nonceLogRef(record.nonce)} was never acknowledged and its invite expired more than eight days ago; ` +
+				`hydra: redemption ${nonceLogRef(revealInviteNonce(record))} was never acknowledged and its invite expired more than eight days ago; ` +
 					'it is failed and its node will be released. Ask the issuer for a new invite',
 			);
 		} catch (error) {
-			logger.warn(
-				`hydra: could not fail the stale redemption ${nonceLogRef(record.nonce)}: ${(error as Error).message}`,
-			);
+			logger.warn(`hydra: could not fail the stale redemption ${record.id}: ${(error as Error).message}`);
 		}
 	}
 }
@@ -185,12 +184,14 @@ export async function resumeHydraRedemptions(
 			});
 			const result = await advanceRedemption(toRedemptionState(current), ports, { rowIsNew: false });
 			outcome.resumed += 1;
-			logger.info(`hydra: finished redemption ${nonceLogRef(record.nonce)}; head ${result.hydraHeadId} recorded`);
+			logger.info(
+				`hydra: finished redemption ${nonceLogRef(revealInviteNonce(record))}; head ${result.hydraHeadId} recorded`,
+			);
 		} catch (error) {
 			outcome.failed += 1;
 			// Kept and retried on a later pass, unless the attempt proved the nonce
 			// is someone else's, in which case advanceRedemption already failed it.
-			logger.warn(`hydra: could not yet finish redemption ${nonceLogRef(record.nonce)}: ${(error as Error).message}`);
+			logger.warn(`hydra: could not yet finish redemption ${record.id}: ${(error as Error).message}`);
 		}
 	}
 	return outcome;

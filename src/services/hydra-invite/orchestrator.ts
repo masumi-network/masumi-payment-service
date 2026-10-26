@@ -27,6 +27,13 @@ import { createBoundHydraHead } from '@/routes/api/hydra/head/create-head';
 import { registerInviteOnHost } from '@/services/hydra-host/client';
 import { deriveNodeCardanoVkey } from './node-keys';
 import { INVITE_TTL_MS, checkInviteFreshness, type HydraHeadInvitePayloadInput } from './invite-payload';
+import {
+	hashInviteNonce,
+	revealInviteNonce,
+	revealInviteSignature,
+	sealInviteNonce,
+	sealInviteSignature,
+} from './invite-secrets';
 import { encodeInviteCode, type DecodedInvite } from './invite-code';
 import { signHydraHeadInvite, signHydraRedemption, verifyHydraHeadInvite } from './invite-signing';
 import {
@@ -228,7 +235,7 @@ export async function mintHeadInvite(input: {
 			network: wallet.network,
 			role: HydraInviteRole.Issuer,
 			status: HydraInviteStatus.Issued,
-			nonce,
+			...sealInviteNonce(nonce),
 			expiresAt,
 			LocalHotWallet: { connect: { id: wallet.id } },
 			HydraHost: { connect: { id: node.hostId } },
@@ -238,7 +245,7 @@ export async function mintHeadInvite(input: {
 			issuerCardanoVerificationKey: node.cardanoVerificationKey,
 			issuerAdvertise: node.advertise,
 			issuerExchangeUrl: exchangeUrl,
-			issuerSignature: signature.signature,
+			issuerSignature: sealInviteSignature(signature.signature),
 			issuerSignerKey: signature.key,
 			// Explicit for the same reason as the signed payload above: `periods`
 			// also carries the LOCAL-only `depositActivationSeconds`, and
@@ -274,7 +281,7 @@ type RedeemerContext = {
 
 async function findRedeemerRecord(nonce: string): Promise<RedeemerRecord | null> {
 	return await prisma.hydraHeadInvite.findUnique({
-		where: { nonce },
+		where: { nonceHash: hashInviteNonce(nonce) },
 		include: { LocalHotWallet: true, HydraHost: true },
 	});
 }
@@ -286,7 +293,7 @@ async function finishRedemption(
 ): Promise<RedeemedInvite> {
 	const ports = buildRedemptionPorts({ record, transport: options.transport, createHead: createHeadFromExchange });
 	const result = await advanceRedemption(toRedemptionState(record), ports, { rowIsNew: options.rowIsNew });
-	logger.info(`hydra: redeemed invite ${nonceLogRef(record.nonce)} from ${record.issuerWalletAddress}`);
+	logger.info(`hydra: redeemed invite ${nonceLogRef(revealInviteNonce(record))} from ${record.issuerWalletAddress}`);
 	return { inviteId: record.id, hydraHeadId: result.hydraHeadId, issuerWalletAddress: record.issuerWalletAddress };
 }
 
@@ -303,7 +310,7 @@ async function resumeRedemption(earlier: RedeemerRecord, context: RedeemerContex
 	const isSameRedemption =
 		earlier.role === HydraInviteRole.Redeemer &&
 		earlier.localHotWalletId === context.wallet.id &&
-		earlier.issuerSignature === context.issuerSignature;
+		revealInviteSignature(earlier) === context.issuerSignature;
 	if (!isSameRedemption) {
 		throw createHttpError(409, 'this invite has already been redeemed here');
 	}
@@ -441,7 +448,7 @@ export async function redeemHeadInvite(input: {
 		network: wallet.network,
 		role: HydraInviteRole.Redeemer,
 		status: HydraInviteStatus.Redeemed,
-		nonce: payload.nonce,
+		...sealInviteNonce(payload.nonce),
 		expiresAt: new Date(Number(payload.expiresAt)),
 		LocalHotWallet: { connect: { id: wallet.id } },
 		HydraHost: { connect: { id: node.hostId } },
@@ -451,7 +458,7 @@ export async function redeemHeadInvite(input: {
 		issuerCardanoVerificationKey: payload.cardanoVerificationKey,
 		issuerAdvertise: payload.advertise,
 		issuerExchangeUrl: payload.exchangeUrl,
-		issuerSignature: signature.signature,
+		issuerSignature: sealInviteSignature(signature.signature),
 		issuerSignerKey: signature.key,
 		// Set when the issuer's Host acknowledges the redemption, not before.
 		redeemedAt: null,

@@ -7,11 +7,13 @@
  * The retry is the next poll, which the watermark offers the same redemption.
  */
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { createHash } from 'node:crypto';
 import createHttpError from 'http-errors';
 
 type InviteRow = {
 	id: string;
 	nonce: string;
+	nonceHash: string;
 	role: string;
 	status: string;
 	network: string;
@@ -90,6 +92,7 @@ function freshState(): State {
 		invite: {
 			id: 'invite',
 			nonce: 'nonce',
+			nonceHash: createHash('sha256').update('nonce').digest('hex'),
 			role: 'Issuer',
 			status: 'Issued',
 			network: 'Preprod',
@@ -137,8 +140,8 @@ const tables = {
 			where.pausedAt === null && hostPausedAt !== null ? [] : [host],
 	},
 	hydraHeadInvite: {
-		findUnique: async ({ where }: { where: { nonce: string } }) =>
-			state.invite.nonce === where.nonce
+		findUnique: async ({ where }: { where: { nonceHash: string } }) =>
+			state.invite.nonceHash === where.nonceHash
 				? { ...state.invite, LocalHotWallet: { paymentSourceId: 'payment-source' }, HydraHost: host }
 				: null,
 		updateMany: async ({
@@ -332,7 +335,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({ prisma: db }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
-jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value: string) => value }));
+jest.unstable_mockModule('@/utils/security/encryption', () => ({
+	encrypt: (value: string) => value,
+	decrypt: (value: string) => value,
+}));
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	fetchHostRedemptions: async () => ({ now: Date.now(), invites: [record], unreadableNonces: [] }),
 	forgetHostInvite: forget,

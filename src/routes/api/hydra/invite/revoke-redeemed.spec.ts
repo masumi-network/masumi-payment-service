@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, jest } from '@jest/globals';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import { testEndpoint } from 'express-zod-api';
 import { ApiKeyStatus } from '@/generated/prisma/client';
 
@@ -8,6 +9,7 @@ const host = { baseUrl: 'https://host.example', encryptedAdminToken: 'token', al
 const invite = {
 	id: 'invite',
 	nonce: 'nonce',
+	nonceHash: null as string | null,
 	role: 'Issuer',
 	status: 'Issued',
 	hydraHostId: 'host',
@@ -59,7 +61,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 const actualEncryption = await import('@/utils/security/encryption');
 jest.unstable_mockModule('@/utils/security/encryption', () => ({
 	...actualEncryption,
-	decrypt: (value: string) => value,
+	decrypt: (value: string) => (value === 'sealed-nonce' ? 'nonce' : value),
 }));
 const READABLE = {
 	invites: [{ nonce: 'nonce', redeemedAt: 1, redeemer: {}, redeemerSignature: {} }],
@@ -101,6 +103,8 @@ const revoke = (body: Record<string, unknown>) =>
 beforeEach(() => {
 	jest.clearAllMocks();
 	invite.status = 'Issued';
+	invite.nonce = 'nonce';
+	invite.nonceHash = null;
 	heldByHost = READABLE;
 	updateMany.mockResolvedValue({ count: 1 });
 	remove.mockResolvedValue(undefined);
@@ -138,6 +142,17 @@ it.each([
 	expect(responseMock.statusCode).toBe(409);
 	expect(updateMany).not.toHaveBeenCalled();
 	expect(remove).not.toHaveBeenCalled();
+	expect(forget).not.toHaveBeenCalled();
+});
+
+it('keeps an encrypted invite when the Host redemption is unreadable', async () => {
+	invite.nonce = 'sealed-nonce';
+	invite.nonceHash = createHash('sha256').update('nonce').digest('hex');
+	heldByHost = UNREADABLE;
+
+	const { responseMock } = await revoke({});
+	expect(responseMock.statusCode).toBe(409);
+	expect(updateMany).not.toHaveBeenCalled();
 	expect(forget).not.toHaveBeenCalled();
 });
 

@@ -13,6 +13,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
 import { removeHostNode } from '@/services/hydra-host/client';
 import { nonceLogRef } from './nonce-log-ref';
+import { revealInviteNonce } from './invite-secrets';
 import { canRemoveReservedHostNode, releaseReservedParticipants } from './release-reservation';
 import { LIVE_REDEEMER_STATUSES } from './redemption-store';
 import { isHostNodeGone } from '@/services/hydra-host/node-gone';
@@ -27,6 +28,7 @@ export type AbandonOutcome = 'abandoned' | 'raced' | 'host-refused';
 export async function abandonRedemption(invite: {
 	id: string;
 	nonce: string;
+	nonceHash?: string | null;
 	hydraHostId: string;
 	hostNodeId: string;
 	HydraHost: { baseUrl: string; encryptedAdminToken: string | null; allowInsecureHttp: boolean };
@@ -47,7 +49,7 @@ export async function abandonRedemption(invite: {
 
 	if (invite.HydraHost.encryptedAdminToken === null) {
 		logger.error(
-			`hydra: abandoned redemption ${nonceLogRef(invite.nonce)}, but its host has no admin token; ` +
+			`hydra: abandoned redemption ${nonceLogRef(revealInviteNonce(invite))}, but its host has no admin token; ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
 		return 'host-refused';
@@ -60,7 +62,7 @@ export async function abandonRedemption(invite: {
 	});
 	if (boundToHead > 0) {
 		logger.warn(
-			`hydra: abandoned redemption ${nonceLogRef(invite.nonce)}; node ${invite.hostNodeId} is kept for its head`,
+			`hydra: abandoned redemption ${nonceLogRef(revealInviteNonce(invite))}; node ${invite.hostNodeId} is kept for its head`,
 		);
 		return 'abandoned';
 	}
@@ -84,7 +86,7 @@ export async function abandonRedemption(invite: {
 		}
 	} catch (error) {
 		logger.error(
-			`hydra: abandoned redemption ${nonceLogRef(invite.nonce)} locally, but its host refused (${(error as Error).message}); ` +
+			`hydra: abandoned redemption ${nonceLogRef(revealInviteNonce(invite))} locally, but its host refused (${(error as Error).message}); ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
 		return 'host-refused';
@@ -95,7 +97,7 @@ export async function abandonRedemption(invite: {
 	} catch (error) {
 		// The record is already failed, so the abandoned-reservation sweep takes this up.
 		logger.warn(
-			`hydra: could not release the node of abandoned redemption ${nonceLogRef(invite.nonce)}: ${(error as Error).message}`,
+			`hydra: could not release the node of abandoned redemption ${nonceLogRef(revealInviteNonce(invite))}: ${(error as Error).message}`,
 		);
 	}
 	return 'abandoned';

@@ -69,6 +69,22 @@ provided at container runtime, and frontend `NEXT_PUBLIC_*` values must be passe
 
 Otherwise you can run the project locally by following the Quickstart guide in the [README](../README.md)
 
+## Hydra invite encryption upgrade
+
+VERIFIED: Migration `20261027000000_hydra_invite_nonce_encryption` adds `nonceHash` and removes the old nonce index
+(`prisma/migrations/20261027000000_hydra_invite_nonce_encryption/migration.sql`). Startup encrypts existing invite
+nonces and issuer signatures before it starts jobs or API routes (`src/app.ts`,
+`src/utils/startup-migrations/hydra-invite-encryption/index.ts`).
+
+1. Stop every old payment service instance before applying this migration. Old code can still write plaintext invites.
+2. Keep the existing `ENCRYPTION_KEY`. Back up the database and key separately before the upgrade.
+3. Apply the migration, then start the new service. Startup fails if any invite still lacks `nonceHash`.
+4. Check that `SELECT count(*) FROM "HydraHeadInvite" WHERE "nonceHash" IS NULL` returns zero.
+
+INFERRED: A database backup made before this upgrade still contains plaintext invites. Restrict access to such backups
+until their normal retention period ends. Encrypting live rows does not rewrite backup copies. If an old backup was
+exposed, revoke open invites from that backup and issue new ones.
+
 ## When a migration deploy fails
 
 `prisma migrate deploy` records a failed migration and then refuses to apply

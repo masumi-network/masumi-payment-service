@@ -18,6 +18,7 @@ import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { usesPublicEncryptionKey } from '@/utils/security/public-encryption-key';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
+import { migrateHydraInviteEncryption } from '@/utils/startup-migrations/hydra-invite-encryption';
 import { backfillTransactionAgentIdentifiers } from '@/utils/startup-migrations/backfill-transaction-agent-identifiers';
 import { backfillTransactionAgentNames } from '@/utils/startup-migrations/backfill-transaction-agent-names';
 import { warnOutOfSyncV2PaymentSources } from '@/utils/startup-migrations/warn-out-of-sync-v2-sources';
@@ -35,6 +36,7 @@ async function initialize() {
 
 	await migrateApiKeyEncryption();
 	await migrateWebhookEncryption();
+	await migrateHydraInviteEncryption();
 	await backfillTransactionAgentIdentifiers();
 	await backfillTransactionAgentNames();
 	await warnOutOfSyncV2PaymentSources();

@@ -39,7 +39,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
-jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value: string) => value }));
+jest.unstable_mockModule('@/utils/security/encryption', () => ({
+	encrypt: (value: string) => value,
+	decrypt: (value: string) => value,
+}));
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	fetchHostRedemptions: fetchRedemptions,
 	forgetHostInvite: forget,

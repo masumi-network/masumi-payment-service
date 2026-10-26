@@ -21,6 +21,7 @@ import {
 	type HostPeer,
 } from '@/services/hydra-host/client';
 import { attemptRedemption, type ExchangeTransportOptions } from './exchange-client';
+import { revealInviteNonce } from './invite-secrets';
 import type { createHeadFromExchange } from './orchestrator';
 import type { RedemptionPorts, RedemptionState } from './redemption';
 import {
@@ -176,7 +177,7 @@ export function buildRedemptionPorts(input: {
 			return await attemptRedemption(
 				record.issuerExchangeUrl,
 				{
-					nonce: record.nonce,
+					nonce: revealInviteNonce(record),
 					redeemer: {
 						walletAddress: redeemerWalletAddress,
 						hydraVerificationKey: redeemerHydraVerificationKey,

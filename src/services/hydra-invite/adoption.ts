@@ -17,6 +17,7 @@ import { HydraHeadStatus, HydraInviteRole, HydraInviteStatus, Network, Prisma } 
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { nonceLogRef } from './nonce-log-ref';
+import { hashInviteNonce, revealInviteNonce } from './invite-secrets';
 import { decrypt } from '@/utils/security/encryption';
 import { fetchHostRedemptions, forgetHostInvite, type HostInviteRecord } from '@/services/hydra-host/client';
 import { verifyHydraRedemption } from './invite-signing';
@@ -211,6 +212,7 @@ export async function discardUnadoptableRedemption(
 	invite: {
 		id: string;
 		nonce: string;
+		nonceHash?: string | null;
 		hydraHostId: string;
 		hostNodeId: string;
 		HydraHost: { baseUrl: string; encryptedAdminToken: string | null; allowInsecureHttp: boolean };
@@ -226,7 +228,7 @@ export async function discardUnadoptableRedemption(
 
 	if (invite.HydraHost.encryptedAdminToken === null) {
 		logger.error(
-			`hydra: discarded invite ${nonceLogRef(invite.nonce)}, but its host has no admin token; ` +
+			`hydra: discarded invite ${nonceLogRef(revealInviteNonce(invite))}, but its host has no admin token; ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
 		return 'host-refused';
@@ -249,7 +251,7 @@ export async function discardUnadoptableRedemption(
 			}
 		}
 		// Cancellation stops setup retries before discarding their durable material.
-		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport, {
+		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, revealInviteNonce(invite), transport, {
 			discardRedemption: true,
 		});
 	} catch (error) {
@@ -258,7 +260,7 @@ export async function discardUnadoptableRedemption(
 		// failure and hold the watermark back on a redemption that can never be
 		// adopted.
 		logger.error(
-			`hydra: discarded invite ${nonceLogRef(invite.nonce)} locally, but its host refused (${(error as Error).message}); ` +
+			`hydra: discarded invite ${nonceLogRef(revealInviteNonce(invite))} locally, but its host refused (${(error as Error).message}); ` +
 				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
 		);
 		return 'host-refused';
@@ -378,7 +380,7 @@ async function adoptRedemption(record: HostInviteRecord, expectedHostId: string)
 	}
 
 	const invite = await prisma.hydraHeadInvite.findUnique({
-		where: { nonce: record.nonce },
+		where: { nonceHash: hashInviteNonce(record.nonce) },
 		include: { LocalHotWallet: true, HydraHost: true },
 	});
 	// Bind the report to its Host and reserved node before any state change or cleanup.
@@ -541,20 +543,19 @@ export async function reapExpiredInvites(): Promise<number> {
 				// afterwards, when the invite is Completed or still unredeemed. A
 				// redemption the Host lists unreadably waits for a discarding revoke.
 				const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
+				const nonce = revealInviteNonce(invite);
 				if (
-					held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null) ||
-					held.unreadableNonces.includes(invite.nonce)
+					held.invites.some((record) => record.nonce === nonce && record.redeemedAt !== null) ||
+					held.unreadableNonces.includes(nonce)
 				) {
-					logger.info(
-						`hydra: not reaping expired invite ${nonceLogRef(invite.nonce)}; the Host is holding its redemption`,
-					);
+					logger.info(`hydra: not reaping expired invite ${nonceLogRef(nonce)}; the Host is holding its redemption`);
 					continue;
 				}
 
 				// The Host stops honouring the nonce before the node goes, so a
 				// redemption arriving mid-sweep cannot start something we are about
 				// to delete.
-				await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
+				await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, nonce, transport);
 				try {
 					if (await canRemoveReservedHostNode(invite.hydraHostId, invite.hostNodeId))
 						await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
@@ -571,7 +572,9 @@ export async function reapExpiredInvites(): Promise<number> {
 					}
 				}
 			} else {
-				logger.warn(`hydra: cannot reap expired invite ${nonceLogRef(invite.nonce)} without its Host admin token`);
+				logger.warn(
+					`hydra: cannot reap expired invite ${nonceLogRef(revealInviteNonce(invite))} without its Host admin token`,
+				);
 				continue;
 			}
 			// Expired first, released second. Releasing sweeps the node's fuel back,
@@ -586,7 +589,7 @@ export async function reapExpiredInvites(): Promise<number> {
 			await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
 			reaped += 1;
 		} catch (error) {
-			logger.warn(`hydra: could not reap expired invite ${nonceLogRef(invite.nonce)}: ${(error as Error).message}`);
+			logger.warn(`hydra: could not reap expired invite ${invite.id}: ${(error as Error).message}`);
 		}
 	}
 	return reaped;

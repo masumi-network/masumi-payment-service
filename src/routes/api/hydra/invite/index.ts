@@ -27,6 +27,7 @@ import {
 	MIN_UNSYNCED_PERIOD_SECONDS,
 } from '@/services/hydra-invite/provisioning';
 import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
+import { hashInviteNonce, revealInviteNonce } from '@/services/hydra-invite/invite-secrets';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
 import { canRemoveReservedHostNode, releaseReservedParticipants } from '@/services/hydra-invite/release-reservation';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
@@ -89,6 +90,7 @@ const inviteSchema = z.object({
 type InviteRow = {
 	id: string;
 	nonce: string;
+	nonceHash?: string | null;
 	network: Network;
 	role: HydraInviteRole;
 	status: HydraInviteStatus;
@@ -106,7 +108,7 @@ type InviteRow = {
 function toPublicInvite(row: InviteRow) {
 	return {
 		id: row.id,
-		nonce: row.nonce,
+		nonce: revealInviteNonce(row),
 		network: row.network,
 		role: row.role,
 		status: row.status,
@@ -343,7 +345,9 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 			signatureValid = false;
 		}
 
-		const existing = await prisma.hydraHeadInvite.findUnique({ where: { nonce: decoded.payload.nonce } });
+		const existing = await prisma.hydraHeadInvite.findUnique({
+			where: { nonceHash: hashInviteNonce(decoded.payload.nonce) },
+		});
 		const network = decoded.payload.network as Network;
 		const identity = await resolveIssuerIdentity(decoded.payload.issuerWalletAddress, network);
 		let exchangeUsesPrivateNetwork: boolean | null = null;
@@ -483,7 +487,7 @@ async function abandonStuckRedemption(
 			{ expose: true },
 		);
 	}
-	logger.info(`hydra: abandoned redemption ${nonceLogRef(invite.nonce)}`);
+	logger.info(`hydra: abandoned redemption ${nonceLogRef(revealInviteNonce(invite))}`);
 	return { id: current.id, status: current.status };
 }
 
@@ -535,8 +539,9 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		// remove a node it has set peers on — and leave them with a live head
 		// whose peer can never join and us with nothing to reconstruct it from.
 		const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
-		const isUnreadable = held.unreadableNonces.includes(invite.nonce);
-		if (isUnreadable || held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
+		const nonce = revealInviteNonce(invite);
+		const isUnreadable = held.unreadableNonces.includes(nonce);
+		if (isUnreadable || held.invites.some((record) => record.nonce === nonce && record.redeemedAt !== null)) {
 			if (input.discardRedemption !== true) {
 				throw createHttpError(
 					409,
@@ -571,13 +576,13 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 					{ expose: true },
 				);
 			}
-			logger.info(`hydra: revoked redeemed invite ${nonceLogRef(invite.nonce)} and discarded its redemption`);
+			logger.info(`hydra: revoked redeemed invite ${nonceLogRef(nonce)} and discarded its redemption`);
 			return { id: current.id, status: current.status };
 		}
 
 		// Host first: while it still honours the nonce, a redemption in flight
 		// could start the node we are about to delete.
-		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
+		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, nonce, transport);
 		try {
 			if (await canRemoveReservedHostNode(invite.hydraHostId, invite.hostNodeId))
 				await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
@@ -624,11 +629,11 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		});
 		if (release.retained > 0) {
 			logger.warn(
-				`hydra: invite ${nonceLogRef(invite.nonce)} was revoked but ${release.retained} node reservation(s) still hold funds; ` +
+				`hydra: invite ${nonceLogRef(nonce)} was revoked but ${release.retained} node reservation(s) still hold funds; ` +
 					'they are kept until a later sweep settles them',
 			);
 		}
-		logger.info(`hydra: revoked invite ${nonceLogRef(invite.nonce)}`);
+		logger.info(`hydra: revoked invite ${nonceLogRef(nonce)}`);
 		return { id: updated.id, status: updated.status };
 	},
 });

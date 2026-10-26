@@ -2126,9 +2126,11 @@ model HydraHeadInvite {
   role   HydraInviteRole
   status HydraInviteStatus @default(Issued)
 
-  /// Single-use value covered by the signature. Redeeming it is what lets the
-  /// pre-allocated node boot, so a replay would open an unwanted head.
-  nonce String @unique
+  /// Encrypted single-use value. The hash supports equality lookup without
+  /// exposing the bearer nonce in a database copy. Legacy rows are backfilled
+  /// at startup before any invite endpoint runs.
+  nonce     String
+  nonceHash String? @unique
 
   /// Far longer than a wire timeout: an invite is read by a human, out of band.
   /// Until it passes, the node and peer port it reserved stay reserved.

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { createHash } from 'node:crypto';
 
 const expiredAt = new Date('2026-01-01T00:00:00.000Z');
 const findMany = jest.fn<() => Promise<object[]>>();
@@ -15,7 +16,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
-jest.unstable_mockModule('@/utils/security/encryption', () => ({ decrypt: (value: string) => value }));
+jest.unstable_mockModule('@/utils/security/encryption', () => ({
+	encrypt: (value: string) => value,
+	decrypt: (value: string) => (value === 'sealed-nonce' ? 'nonce' : value),
+}));
 jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 	fetchHostRedemptions,
 	forgetHostInvite,
@@ -102,6 +106,30 @@ describe('expired invite with an unknown Host state', () => {
 			{
 				id: 'invite',
 				nonce: 'nonce',
+				hydraHostId: 'host',
+				hostNodeId: 'node',
+				expiresAt: expiredAt,
+				HydraHost: {
+					baseUrl: 'https://host.example',
+					encryptedAdminToken: 'admin-token',
+					allowInsecureHttp: false,
+				},
+			},
+		]);
+		fetchHostRedemptions.mockResolvedValue({ invites: [], unreadableNonces: ['nonce'], now: Date.now() });
+
+		expect(await reapExpiredInvites()).toBe(0);
+		expect(forgetHostInvite).not.toHaveBeenCalled();
+		expect(removeHostNode).not.toHaveBeenCalled();
+		expect(release).not.toHaveBeenCalled();
+	});
+
+	it('keeps an encrypted invite whose Host redemption is unreadable', async () => {
+		findMany.mockResolvedValue([
+			{
+				id: 'invite',
+				nonce: 'sealed-nonce',
+				nonceHash: createHash('sha256').update('nonce').digest('hex'),
 				hydraHostId: 'host',
 				hostNodeId: 'node',
 				expiresAt: expiredAt,

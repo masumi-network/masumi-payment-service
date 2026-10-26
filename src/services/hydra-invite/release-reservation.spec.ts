@@ -58,6 +58,7 @@ jest.unstable_mockModule('@/services/hydra-host/client', () => ({
 }));
 
 jest.unstable_mockModule('@/utils/security/encryption', () => ({
+	encrypt: (value: string) => value,
 	decrypt: (value: string) => value,
 }));
 
