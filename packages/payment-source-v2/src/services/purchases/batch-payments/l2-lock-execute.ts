@@ -211,7 +211,7 @@ export async function executeL2Lock(
 	// deposit has to wait, and that falls out of selection below.
 	const pendingIncrementRefs = hydraProvider.getPendingIncrementUtxoRefs?.() ?? new Set<string>();
 	const tFetchUtxos = Date.now();
-	const allWalletUtxos = hydraProvider.spendableUTxOs(await wallet.getUtxos());
+	const allWalletUtxos = await hydraProvider.spendableUTxOs(await wallet.getUtxos());
 	const fetchUtxosMs = Date.now() - tFetchUtxos;
 	const walletUtxos = allWalletUtxos.filter(
 		(utxo) => !pendingIncrementRefs.has(`${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase()),
