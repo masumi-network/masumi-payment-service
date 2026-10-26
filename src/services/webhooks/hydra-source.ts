@@ -7,6 +7,7 @@ const SOURCE_SCOPED_HYDRA_EVENTS = new Set<WebhookEventType>([
 	WebhookEventType.HYDRA_HEAD_SNAPSHOT_ROUND_STUCK,
 	WebhookEventType.HYDRA_HEAD_POST_TX_FAILED,
 	WebhookEventType.HYDRA_HEAD_CONTEST_MISSING,
+	WebhookEventType.HYDRA_HEAD_UNOBSERVED,
 ]);
 
 export function isSourceScopedHydraEvent(eventType: WebhookEventType): boolean {

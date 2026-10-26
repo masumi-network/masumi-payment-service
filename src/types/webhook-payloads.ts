@@ -233,6 +233,22 @@ const hydraHeadContestMissingPayloadSchema = createWebhookPayloadSchema(
 	'Emitted once per gap when a closed Hydra head holds an older snapshot on chain than one every party signed, and no contest closed the gap within the grace period. A fanout from that state pays out the older snapshot.',
 );
 
+const hydraHeadUnobservedPayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_UNOBSERVED'),
+	z.object({
+		hydraHeadId: z.string().describe('The head whose node this service cannot see'),
+		headStatus: z.string().describe('The head status this service last stored'),
+		contestationDeadline: z
+			.string()
+			.datetime()
+			.nullable()
+			.describe('The stored contestation deadline when the head is already closed, otherwise null'),
+		unobservedSince: z.string().datetime().describe('When this service last saw the node report the head'),
+		checkedAt: z.string().datetime().describe('Timestamp when the gap was evaluated'),
+	}),
+	'Emitted once per gap when the node of an open or closed Hydra head has reported no head state for the grace period. hydra-node contests a close on an older snapshot only while it runs, so restore the node before any contestation deadline passes.',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -250,6 +266,7 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	hydraHeadSnapshotRoundStuckPayloadSchema,
 	hydraHeadPostTxFailedPayloadSchema,
 	hydraHeadContestMissingPayloadSchema,
+	hydraHeadUnobservedPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;

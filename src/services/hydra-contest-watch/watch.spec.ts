@@ -11,6 +11,7 @@ const mockErrorCreate = jest.fn() as AnyMock;
 const mockGetNode = jest.fn() as AnyMock;
 const mockReadOnlyNode = jest.fn() as AnyMock;
 const mockReleaseObservers = jest.fn() as AnyMock;
+const mockUnobservedQueue = jest.fn() as AnyMock;
 
 type StoredGap = { contestGapSignature: string | null; contestGapAlertedAt: Date | null };
 /** Head columns a test persists across ticks; a failed transaction restores them. */
@@ -38,7 +39,10 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 jest.unstable_mockModule('@/services/webhooks/events.service', () => ({
-	webhookEventsService: { queueHydraHeadContestMissingInTransaction: mockQueue },
+	webhookEventsService: {
+		queueHydraHeadContestMissingInTransaction: mockQueue,
+		queueHydraHeadUnobservedInTransaction: mockUnobservedQueue,
+	},
 }));
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({ getNode: mockGetNode }),
@@ -63,7 +67,14 @@ beforeEach(() => {
 
 const NOW = new Date('2026-10-22T12:00:00.000Z');
 const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000);
-const empty = { contestGapSignature: null, contestGapSince: null, contestGapAlertedAt: null };
+const empty = {
+	contestGapSignature: null,
+	contestGapSince: null,
+	contestGapAlertedAt: null,
+	contestationDeadline: null,
+	observationGapSince: null,
+	observationGapAlertedAt: null,
+};
 const closedOnThree = {
 	status: HydraHeadStatus.Closed,
 	closedSnapshotNumber: 3n,
@@ -295,5 +306,38 @@ describe('runHydraContestWatch', () => {
 		expect(mockUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ contestGapSignature: '3<5' }) }),
 		);
+	});
+
+	// HYD-01: the node is the only party that contests, so a node this service
+	// cannot reach must not leave the watch silent.
+	it('alerts when the node of an open head stays unreachable past the grace period', async () => {
+		const unobservedSince = minutesAgo(6);
+		mockFindMany.mockResolvedValue([
+			{ id: 'head-1', status: HydraHeadStatus.Open, isEnabled: false, ...empty, observationGapSince: unobservedSince },
+		] as never);
+		mockReadOnlyNode.mockRejectedValue(new Error('connect ECONNREFUSED') as never);
+		await watch.runHydraContestWatch();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', observationGapSince: unobservedSince, observationGapAlertedAt: null },
+			data: { observationGapAlertedAt: expect.any(Date) },
+		});
+		expect(mockUnobservedQueue).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ hydraHeadId: 'head-1', unobservedSince: unobservedSince.toISOString() }),
+		);
+		expect(mockQueue).not.toHaveBeenCalled();
+	});
+
+	it('starts the clock when the node reports no head state', async () => {
+		mockFindMany.mockResolvedValue([
+			{ id: 'head-1', status: HydraHeadStatus.Closed, isEnabled: true, ...empty },
+		] as never);
+		mockGetNode.mockReturnValue({ status: HydraHeadStatus.Disconnected });
+		await watch.runHydraContestWatch();
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', observationGapSince: null },
+			data: { observationGapSince: expect.any(Date), observationGapAlertedAt: null },
+		});
+		expect(mockUnobservedQueue).not.toHaveBeenCalled();
 	});
 });

@@ -151,6 +151,16 @@ export function buildCompactSummary(payload: WebhookSendPayload): string {
 		return lines.join('\n');
 	}
 
+	if (payload.event_type === WebhookEventType.HYDRA_HEAD_UNOBSERVED) {
+		lines.push('');
+		appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
+		appendDetailLine(lines, '📍', 'Head status', payload.data.headStatus);
+		appendDetailLine(lines, '⏳', 'Contestation deadline', payload.data.contestationDeadline ?? 'none stored');
+		appendDetailLine(lines, '🕒', 'Unobserved since', payload.data.unobservedSince);
+		appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+		return lines.join('\n');
+	}
+
 	lines.push('');
 	appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
 	appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);

@@ -56,6 +56,7 @@ const HYDRA_ERROR_TYPE_LABELS: Record<string, string> = {
   TxInvalid: 'Invalid transaction',
   InvalidInput: 'Invalid input',
   ContestMissing: 'No contest on chain',
+  HeadUnobserved: 'Node not observed',
 };
 
 export function formatHydraErrorType(errorType: string): string {

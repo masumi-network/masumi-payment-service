@@ -17,6 +17,8 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { webhookEventsService } from '@/services/webhooks/events.service';
+import type { HydraNode } from '@/lib/hydra/hydra/node';
+import { applyObservationGap, isHeadObserved } from './observation-gap';
 import { readOnlyContestNode, releaseUnusedContestObservers } from './read-only-observer';
 
 /** A contest is posted and seen on chain within a few blocks. Two minutes without one is not a slow chain. */
@@ -195,6 +197,9 @@ export async function runHydraContestWatch(): Promise<void> {
 			contestGapSignature: true,
 			contestGapSince: true,
 			contestGapAlertedAt: true,
+			contestationDeadline: true,
+			observationGapSince: true,
+			observationGapAlertedAt: true,
 		},
 	});
 	const connectionManager = getHydraConnectionManager();
@@ -202,12 +207,29 @@ export async function runHydraContestWatch(): Promise<void> {
 	// An unavailable observer must not delay alerts for another head's deadline.
 	await Promise.allSettled(
 		heads.map(async (head) => {
+			let node: HydraNode | null = null;
 			try {
-				let node = head.isEnabled ? connectionManager.getNode(head.id) : null;
+				node = head.isEnabled ? connectionManager.getNode(head.id) : null;
 				if (!node) {
 					needsReadOnlyObserver.add(head.id);
 					node = await readOnlyContestNode(head.id);
 				}
+			} catch (error) {
+				logger.warn('[HydraContestWatch] could not reach the head node', {
+					hydraHeadId: head.id,
+					error: error instanceof Error ? error.message : 'Unknown error',
+				});
+			}
+			try {
+				await applyObservationGap(head, isHeadObserved(node?.status), new Date());
+			} catch (error) {
+				logger.warn('[HydraContestWatch] could not record whether the head node is observed', {
+					hydraHeadId: head.id,
+					error: error instanceof Error ? error.message : 'Unknown error',
+				});
+			}
+			if (!node) return;
+			try {
 				// Durable status may still say Open after a lifecycle write failed.
 				// Use the pinned node's observed close status, never that stale row.
 				if (node.status !== HydraHeadStatus.Closed && node.status !== HydraHeadStatus.FanoutPossible) return;
