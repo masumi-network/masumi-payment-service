@@ -65,7 +65,7 @@ class WebhookQueueService {
 						? {
 								OR: [{ paymentSourceId: paymentSourceId }, { paymentSourceId: null }],
 							}
-						: {}),
+						: { paymentSourceId: null }),
 				},
 				orderBy: { id: 'asc' },
 				take: batchSize,

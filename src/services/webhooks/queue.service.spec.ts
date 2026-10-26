@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
-import { Network, WebhookEventType } from '@/generated/prisma/client';
+import { Network, WebhookEventType, X402EvmWalletType } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -45,7 +45,67 @@ const sentPayload = {
 	],
 };
 
+const x402PaymentPayload = {
+	attemptId: 'attempt-1',
+	paymentPayloadHash: 'payload-hash',
+	supportedPaymentSourceId: 'evm-source-1',
+	registryRequestId: 'request-1',
+	caip2Network: 'eip155:8453',
+	asset: '0x1234',
+	amount: '1000000',
+	payTo: '0x5678',
+	payer: '0x9abc',
+	txHash: '0xdef0',
+	success: true,
+	errorReason: null,
+	errorMessage: null,
+	settledAt: '2026-10-26T00:00:00.000Z',
+};
+
+const x402LowBalancePayload = {
+	ruleId: 'rule-1',
+	evmWalletId: 'evm-wallet-1',
+	walletAddress: '0x1234',
+	walletType: X402EvmWalletType.Purchasing,
+	caip2Network: 'eip155:8453',
+	asset: 'native',
+	thresholdAmount: '1000000',
+	currentAmount: '500000',
+	checkedAt: '2026-10-26T00:00:00.000Z',
+};
+
+describe('webhookQueueService.queueWebhook', () => {
+	it.each([
+		[WebhookEventType.X402_PAYMENT_SETTLED, x402PaymentPayload],
+		[WebhookEventType.X402_PAYMENT_FAILED, { ...x402PaymentPayload, success: false }],
+		[WebhookEventType.X402_WALLET_LOW_BALANCE, x402LowBalancePayload],
+	] as const)('queues %s only for global endpoints', async (eventType, payload) => {
+		const endpoints = [
+			{ id: 'scoped-source-1', paymentSourceId: 'source-1' },
+			{ id: 'scoped-source-2', paymentSourceId: 'source-2' },
+			{ id: 'global', paymentSourceId: null },
+		];
+		mockGlobalEndpointFindMany.mockReset();
+		mockGlobalDeliveryCreate.mockReset();
+		mockGlobalEndpointFindMany.mockImplementation(async ({ where }: { where: { paymentSourceId?: string | null } }) =>
+			where.paymentSourceId === null ? endpoints.filter((endpoint) => endpoint.paymentSourceId === null) : endpoints,
+		);
+		mockGlobalDeliveryCreate.mockResolvedValue({});
+
+		await webhookQueueService.queueWebhook(eventType, payload, 'entity-1');
+
+		expect(mockGlobalEndpointFindMany).toHaveBeenCalledWith(
+			expect.objectContaining({ where: expect.objectContaining({ paymentSourceId: null }) }),
+		);
+		expect(mockGlobalDeliveryCreate.mock.calls.map(([call]) => call.data.webhookEndpointId)).toEqual(['global']);
+	});
+});
+
 describe('webhookQueueService.queueWebhookInTransaction', () => {
+	beforeEach(() => {
+		mockGlobalDeliveryCreate.mockClear();
+	});
+
 	it('rejects when a delivery cannot be persisted so the caller transaction can roll back', async () => {
 		const endpointFindMany = jest.fn<(...args: any[]) => any>().mockResolvedValue([{ id: 'webhook-1' }]);
 		const deliveryCreate = jest.fn<(...args: any[]) => any>().mockRejectedValue(new Error('db write failed'));

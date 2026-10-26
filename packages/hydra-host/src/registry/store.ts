@@ -11,7 +11,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fsyncDir, writeFileAtomic } from './atomic-write.js';
-import { getOwnInteger, getOwnString, isPlainObject } from './json.js';
+import { getOwnInteger, getOwnString, getOwnValue, isPlainObject } from './json.js';
+import { isPeerKeyGeneration } from './peer-key-directory.js';
 import type { NodeRecord } from './types.js';
 
 const NODE_FILE = 'node.json';
@@ -40,6 +41,10 @@ function parseNodeRecord(raw: string, source: string): NodeRecord {
 	}
 	if (peerPort === undefined) {
 		throw new RegistryError(`${source} is missing a usable peerPort`);
+	}
+	const peerKeysGeneration = getOwnValue(parsed, 'peerKeysGeneration');
+	if (peerKeysGeneration !== undefined && !isPeerKeyGeneration(peerKeysGeneration)) {
+		throw new RegistryError(`${source} has an invalid peerKeysGeneration`);
 	}
 
 	const record = parsed as unknown as NodeRecord;
@@ -142,19 +147,9 @@ export class NodeRegistryStore {
 	/**
 	 * `update`, for a mutator that has work of its own to do first.
 	 *
-	 * The queue is the only thing serialising a node's writers, and it used to
-	 * cover the record write alone — so a caller that had to touch the node's
-	 * directory as well did that outside any lock. `setPeers` is the case: it
-	 * checked the node was stopped, wrote every peer key file, pruned the
-	 * leftovers, and only then updated the record. A start claiming the node
-	 * inside that window read the OLD peer list and launched against the NEW key
-	 * files, naming one peer's address with another's key — a one-member cluster
-	 * that never reaches quorum, never opens its API, and is planned `Idle`
-	 * forever because an unresponsive node is exactly what the plan waits on.
-	 *
-	 * Holding the queue across the whole sequence closes it: a claim lands either
-	 * wholly before (the mutator reads `Starting` and refuses) or wholly after
-	 * (the files it launches against are the ones the record names).
+	 * The queue covers both the mutator's file work and the record write. Peer
+	 * key staging and the generation switch in node.json therefore happen before
+	 * a start claim or another peer update can use the record.
 	 *
 	 * The mutator runs with the node's queue HELD: it must not call back into
 	 * `update`/`updateAsync` for the same node, which would wait on itself.

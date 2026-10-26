@@ -87,6 +87,15 @@ describe('remote HTTP facilitator', () => {
 		);
 	});
 
+	it('accepts a UTF-8 byte order mark as response.text did', async () => {
+		globalThis.fetch = jest
+			.fn<typeof fetch>()
+			.mockResolvedValue(new Response(`\uFEFF${JSON.stringify({ isValid: true })}`, { status: 200 }));
+		const facilitator = new RemoteHTTPFacilitatorClient({ url: 'https://facilitator.example' });
+
+		await expect(facilitator.verify(paymentPayload, paymentRequirements)).resolves.toMatchObject({ isValid: true });
+	});
+
 	it('accepts a successful settlement only for the requested network with an EVM transaction hash', async () => {
 		const transaction = `0x${'a'.repeat(64)}`;
 		globalThis.fetch = jest.fn<typeof fetch>().mockResolvedValue(
@@ -142,6 +151,33 @@ describe('remote HTTP facilitator', () => {
 		await expect(facilitator.settle(paymentPayload, paymentRequirements)).rejects.toThrow(
 			'Facilitator settle returned an invalid transaction hash',
 		);
+	});
+
+	it.each([200, 500])('stops reading an oversized %i response', async (status) => {
+		const totalChunks = 16;
+		let chunksSent = 0;
+		let wasCanceled = false;
+		const body = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (chunksSent === totalChunks) {
+					controller.close();
+					return;
+				}
+				chunksSent += 1;
+				controller.enqueue(new Uint8Array(16 * 1024));
+			},
+			cancel() {
+				wasCanceled = true;
+			},
+		});
+		globalThis.fetch = jest.fn<typeof fetch>().mockResolvedValue(new Response(body, { status }));
+		const facilitator = new RemoteHTTPFacilitatorClient({ url: 'https://facilitator.example' });
+
+		await expect(facilitator.verify(paymentPayload, paymentRequirements)).rejects.toThrow(
+			'Facilitator verify response exceeded the size limit',
+		);
+		expect(wasCanceled).toBe(true);
+		expect(chunksSent).toBeLessThan(totalChunks);
 	});
 
 	it('aborts a stalled facilitator request before the settlement stale window', async () => {

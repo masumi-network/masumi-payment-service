@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { isPeerKeyGeneration, peerKeyDirectory } from '../registry/peer-key-directory.js';
 import { PortAllocator } from '../registry/ports.js';
 import { NodeRegistryStore } from '../registry/store.js';
 import { peerTargetRejection } from '../peer-target-policy.js';
@@ -284,7 +285,7 @@ describe('setPeers', () => {
 		const updated = await setPeers(record.nodeId, [peer], deps);
 
 		expect(updated.peers).toEqual([peer]);
-		const peersDir = path.join(deps.store.nodeDir(record.nodeId), 'peers');
+		const peersDir = peerKeyDirectory(deps.store.nodeDir(record.nodeId), updated.peerKeysGeneration);
 		await expect(fs.readFile(path.join(peersDir, '0-hydra.vk'), 'utf8')).resolves.toContain(
 			'HydraVerificationKey_ed25519',
 		);
@@ -293,18 +294,168 @@ describe('setPeers', () => {
 		);
 	});
 
-	it('replaces a peer key symlink without overwriting its target', async () => {
+	it('preserves the recorded peer keys when the node record write fails', async () => {
 		const { record } = await provisionNode(REQUEST, deps);
-		const peersDir = path.join(deps.store.nodeDir(record.nodeId), 'peers');
+		await setPeers(record.nodeId, [peer], deps);
+		const previous = await deps.store.read(record.nodeId);
+		const peersDir = peerKeyDirectory(deps.store.nodeDir(record.nodeId), previous?.peerKeysGeneration);
+		const hydraKeyFile = path.join(peersDir, '0-hydra.vk');
+		const cardanoKeyFile = path.join(peersDir, '0-cardano.vk');
+		const oldHydraKey = await fs.readFile(hydraKeyFile, 'utf8');
+		const oldCardanoKey = await fs.readFile(cardanoKeyFile, 'utf8');
+		const replacement = {
+			advertise: 'hydra3.example.com:5001',
+			hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+			cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+		};
+
+		const rename = fs.rename;
+		let rejected = false;
+		jest.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+			if (!rejected && String(to).endsWith('/node.json')) {
+				rejected = true;
+				throw new Error('injected node record write failure');
+			}
+			await rename(from, to);
+		});
+
+		await expect(setPeers(record.nodeId, [replacement], deps)).rejects.toThrow('injected node record write failure');
+		expect(rejected).toBe(true);
+		const persisted = await deps.store.read(record.nodeId);
+		expect(persisted?.peers).toEqual([peer]);
+		expect(persisted?.peerKeysGeneration).toBe(previous?.peerKeysGeneration);
+		await expect(fs.readFile(hydraKeyFile, 'utf8')).resolves.toBe(oldHydraKey);
+		await expect(fs.readFile(cardanoKeyFile, 'utf8')).resolves.toBe(oldCardanoKey);
+		const generationNames = (await fs.readdir(path.join(deps.store.nodeDir(record.nodeId), 'peers'))).filter(
+			isPeerKeyGeneration,
+		);
+		const failedGeneration = generationNames.find((name) => name !== previous?.peerKeysGeneration);
+		expect(failedGeneration).toBeDefined();
+		jest.restoreAllMocks();
+		await setPeers(record.nodeId, [replacement], deps);
+		const remaining = (await fs.readdir(path.join(deps.store.nodeDir(record.nodeId), 'peers'))).filter(
+			isPeerKeyGeneration,
+		);
+		expect(remaining).not.toContain(failedGeneration);
+		expect(remaining).toHaveLength(2);
+	});
+
+	it('waits for every peer key write to finish when one peer key write fails', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		await setPeers(record.nodeId, [peer], deps);
+		const replacement = { ...peer, advertise: 'hydra3.example.com:5001' };
+		const second = {
+			advertise: 'hydra4.example.com:5001',
+			hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+			cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+		};
+		let releaseBlockedRename: () => void = () => undefined;
+		let announceBlockedRename: () => void = () => undefined;
+		let announceFailedRename: () => void = () => undefined;
+		const blockedRename = new Promise<void>((resolve) => {
+			releaseBlockedRename = resolve;
+		});
+		const blockedRenameStarted = new Promise<void>((resolve) => {
+			announceBlockedRename = resolve;
+		});
+		const failedRenameStarted = new Promise<void>((resolve) => {
+			announceFailedRename = resolve;
+		});
+		let announceAllKeyRenames: () => void = () => undefined;
+		const allKeyRenamesStarted = new Promise<void>((resolve) => {
+			announceAllKeyRenames = resolve;
+		});
+		let keyRenameCount = 0;
+		const pendingKeyRenames: Promise<void>[] = [];
+		const rename = fs.rename;
+		jest.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+			const destination = String(to);
+			if (/[01]-(hydra|cardano)\.vk$/.test(destination)) {
+				keyRenameCount += 1;
+				if (keyRenameCount === 4) announceAllKeyRenames();
+			}
+			const operation = (async () => {
+				if (destination.endsWith('/0-hydra.vk')) {
+					announceBlockedRename();
+					await blockedRename;
+				}
+				if (destination.endsWith('/1-hydra.vk')) {
+					await blockedRenameStarted;
+					announceFailedRename();
+					throw new Error('injected peer key write failure');
+				}
+				await rename(from, to);
+			})();
+			if (/[01]-(hydra|cardano)\.vk$/.test(destination)) pendingKeyRenames.push(operation);
+			await operation;
+		});
+
+		let hasSettled = false;
+		const result = setPeers(record.nodeId, [replacement, second], deps).then(
+			() => new Error('peer update unexpectedly succeeded'),
+			(error: unknown) => error,
+		);
+		void result.then(() => {
+			hasSettled = true;
+		});
+		try {
+			await blockedRenameStarted;
+			await failedRenameStarted;
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(hasSettled).toBe(false);
+		} finally {
+			releaseBlockedRename();
+			await allKeyRenamesStarted;
+			await Promise.allSettled(pendingKeyRenames);
+		}
+		expect(await result).toMatchObject({ message: 'injected peer key write failure' });
+		expect((await deps.store.read(record.nodeId))?.peers).toEqual([peer]);
+	});
+
+	it('does not follow a legacy peer key symlink when writing a new generation', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		const legacyPeersDir = path.join(deps.store.nodeDir(record.nodeId), 'peers');
 		const target = path.join(dataDir, 'outside-peer-key.txt');
 		await fs.writeFile(target, 'unchanged');
-		await fs.symlink(target, path.join(peersDir, '0-hydra.vk'));
+		await fs.symlink(target, path.join(legacyPeersDir, '0-hydra.vk'));
 
-		await setPeers(record.nodeId, [peer], deps);
+		const updated = await setPeers(record.nodeId, [peer], deps);
+		const peersDir = peerKeyDirectory(deps.store.nodeDir(record.nodeId), updated.peerKeysGeneration);
 
 		await expect(fs.readFile(target, 'utf8')).resolves.toBe('unchanged');
 		await expect(fs.readFile(path.join(peersDir, '0-hydra.vk'), 'utf8')).resolves.toContain(peer.hydraVerificationKey);
 		expect((await fs.lstat(path.join(peersDir, '0-hydra.vk'))).isSymbolicLink()).toBe(false);
+	});
+
+	it('rejects a symlinked parent peer directory before writing keys', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		const peersDir = path.join(deps.store.nodeDir(record.nodeId), 'peers');
+		const outside = path.join(dataDir, 'outside');
+		await fs.mkdir(outside);
+		await fs.rmdir(peersDir);
+		await fs.symlink(outside, peersDir);
+
+		await expect(setPeers(record.nodeId, [peer], deps)).rejects.toThrow(/symlink/);
+		expect((await deps.store.read(record.nodeId))?.peers).toEqual([]);
+		expect(await fs.readdir(outside)).toEqual([]);
+	});
+
+	it('bounds retained peer key generations across repeated updates', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		const peersDir = path.join(deps.store.nodeDir(record.nodeId), 'peers');
+		let firstGeneration: string | undefined;
+		for (let index = 0; index < 4; index++) {
+			const updated = await setPeers(
+				record.nodeId,
+				[{ ...peer, advertise: `hydra${index + 2}.example.com:5001` }],
+				deps,
+			);
+			if (index === 0) firstGeneration = updated.peerKeysGeneration;
+			const generations = (await fs.readdir(peersDir)).filter(isPeerKeyGeneration);
+			expect(generations).toContain(updated.peerKeysGeneration);
+			expect(generations).toHaveLength(Math.min(index + 1, 2));
+		}
+		expect((await fs.readdir(peersDir)).filter(isPeerKeyGeneration)).not.toContain(firstGeneration);
 	});
 
 	it('refuses an empty peer set, self-peering and duplicates', async () => {
@@ -329,12 +480,8 @@ describe('setPeers', () => {
 		await expect(setPeers('missing', [peer], deps)).rejects.toMatchObject({ status: 404 });
 	});
 
-	// Two writers over one directory. A writes indices 0 and 1; B writes 0 and
-	// prunes 1. Interleaved, the record ends up naming two peers whose second key
-	// file does not exist, and the launcher passes a missing path in argv — the
-	// exact failure the write-then-prune ordering exists to prevent. Serialising
-	// the whole sequence on the node's write queue is what makes the last record
-	// written describe the directory that is actually there.
+	// Two peer changes can overlap. The node queue must publish one complete
+	// generation at a time, so the final record selects files from one update.
 	it('leaves the directory agreeing with the record when two peer changes overlap', async () => {
 		const { record } = await provisionNode(REQUEST, deps);
 		const second = {
@@ -349,7 +496,7 @@ describe('setPeers', () => {
 		]);
 
 		const stored = await deps.store.read(record.nodeId);
-		const peersDir = path.join(deps.store.nodeDir(record.nodeId), 'peers');
+		const peersDir = peerKeyDirectory(deps.store.nodeDir(record.nodeId), stored?.peerKeysGeneration);
 		const files = (await fs.readdir(peersDir)).sort();
 		// Whichever landed last, the files present are exactly the ones its peer
 		// list names — no orphan index, no missing one.

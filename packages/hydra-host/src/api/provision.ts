@@ -18,7 +18,9 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { writeFileAtomic } from '../registry/atomic-write.js';
+import { randomUUID } from 'node:crypto';
+import { fsyncDir, writeFileAtomic } from '../registry/atomic-write.js';
+import { isPeerKeyGeneration, peerKeyDirectory } from '../registry/peer-key-directory.js';
 import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
 import type { PeerTargetCheck } from '../peer-target-policy.js';
@@ -289,6 +291,14 @@ export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Pr
 	return updated;
 }
 
+/** Remove only inactive generation directories made by this implementation. */
+async function pruneUnusedPeerKeyGenerations(peersDir: string, activeGeneration?: string): Promise<void> {
+	for (const entry of await fs.readdir(peersDir, { withFileTypes: true })) {
+		if (!entry.isDirectory() || !isPeerKeyGeneration(entry.name) || entry.name === activeGeneration) continue;
+		await fs.rm(path.join(peersDir, entry.name), { recursive: true, force: true });
+	}
+}
+
 /**
  * Set the counterparty's peers. Only permitted while the node is stopped: the
  * peer set becomes etcd's `--initial-cluster`, which is fixed at process start.
@@ -318,19 +328,9 @@ export async function setPeers(
 	const nodeDir = deps.store.nodeDir(nodeId);
 	const peersDir = path.join(nodeDir, 'peers');
 
-	// Every write below happens with this node's write queue held, and the checks
-	// that authorise them are made inside it too. Taken outside, they answered
-	// about a node that could be claimed and launched before the first key file
-	// landed: the launcher fixes `--initial-cluster` at process start, so a start
-	// reading the OLD peer list against the NEW key files boots a cluster naming
-	// one peer's address with another's key. It never reaches quorum, never opens
-	// its API, and an unresponsive node is precisely what the plan idles on — so
-	// it is never restarted and never failed, while the record shows the peer set
-	// the operator asked for the whole time.
-	//
-	// Two `setPeers` in flight were the other half: A writes indices 0 and 1, B
-	// writes 0 and prunes 1, and whichever record write lands last leaves the
-	// directory disagreeing with it.
+	// The queue keeps peer changes and start claims in order. Key files for each
+	// change go into a new directory; node.json selects it only after every file
+	// is durable. A failed write cannot alter the keys selected by the old record.
 	const updated = await deps.store.updateAsync(nodeId, async (current) => {
 		// Recovery must not replace a peer change or removal that won this queue.
 		if (
@@ -352,51 +352,45 @@ export async function setPeers(
 			throw new ProvisionError('a node cannot list its own advertise address as a peer', 400);
 		}
 		await fs.mkdir(peersDir, { recursive: true });
-		// Written first, pruned second. Emptying the directory before refilling it
-		// left a window in which the files the launcher names in argv did not exist:
-		// a start landing inside it passed `--hydra-verification-key <peers>/0-hydra.vk`
-		// for a file that was not there, and the node died on it. Overwriting in
-		// place has no such window — every index a peer set uses is written before
-		// anything is removed.
-		const written = new Set<string>();
-		await Promise.all(
-			peers.flatMap((peer, index) => {
-				const hydraKeyFile = `${index}-hydra.vk`;
-				const cardanoKeyFile = `${index}-cardano.vk`;
-				written.add(hydraKeyFile);
-				written.add(cardanoKeyFile);
-				return [
-					writeFileAtomic(
-						path.join(peersDir, hydraKeyFile),
-						serializeEnvelope({
-							type: 'HydraVerificationKey_ed25519',
-							description: '',
-							cborHex: peer.hydraVerificationKey,
-						}),
-						{ mode: 0o600 },
-					),
-					writeFileAtomic(
-						path.join(peersDir, cardanoKeyFile),
-						serializeEnvelope({
-							type: 'PaymentVerificationKeyShelley_ed25519',
-							description: 'Payment Verification Key',
-							cborHex: peer.cardanoVerificationKey,
-						}),
-						{ mode: 0o600 },
-					),
-				];
-			}),
-		);
-
-		// Whatever a previous, larger peer set left behind. Unreferenced — the
-		// launcher only reads indices below the peer count — but stale verification
-		// keys on disk are misleading during an incident.
-		for (const entry of await fs.readdir(peersDir).catch(() => [])) {
-			if (written.has(entry)) continue;
-			await fs.rm(path.join(peersDir, entry), { force: true });
+		if ((await fs.lstat(peersDir)).isSymbolicLink()) {
+			throw new ProvisionError('peer key directory cannot be a symlink', 409);
 		}
+		// Only UUID directories made by this code are removable. Keep the
+		// generation selected by node.json and any older flat legacy keys.
+		await pruneUnusedPeerKeyGenerations(peersDir, current.peerKeysGeneration);
+		const generation = randomUUID();
+		const generationDir = peerKeyDirectory(nodeDir, generation);
+		const keyFiles = peers.flatMap((peer, index) => [
+			{
+				fileName: `${index}-hydra.vk`,
+				contents: serializeEnvelope({
+					type: 'HydraVerificationKey_ed25519',
+					description: '',
+					cborHex: peer.hydraVerificationKey,
+				}),
+			},
+			{
+				fileName: `${index}-cardano.vk`,
+				contents: serializeEnvelope({
+					type: 'PaymentVerificationKeyShelley_ed25519',
+					description: 'Payment Verification Key',
+					cborHex: peer.cardanoVerificationKey,
+				}),
+			},
+		]);
+		// A non-recursive leaf create rejects an existing directory or symlink.
+		await fs.mkdir(generationDir, { mode: 0o700 });
+		const writes = keyFiles.map(({ fileName, contents }) =>
+			writeFileAtomic(path.join(generationDir, fileName), contents, { mode: 0o600 }),
+		);
+		// Promise.all rejects before sibling writes finish. Keep the queue held
+		// until every write settles, even if one has failed.
+		const results = await Promise.allSettled(writes);
+		const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+		if (failure) throw failure.reason;
+		await fsyncDir(peersDir);
 
-		return { ...current, peers };
+		return { ...current, peers, peerKeysGeneration: generation };
 	});
 	if (updated === null) {
 		throw new ProvisionError(`no such node: ${nodeId}`, 404);
