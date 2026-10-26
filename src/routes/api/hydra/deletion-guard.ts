@@ -13,7 +13,7 @@ import {
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { KEY_RELEASE_MIN_CONFIRMATIONS } from '@/services/hydra-node-funding/key-release-depth';
-import { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
+import { assertHydraCommitRecoveryRecorded, unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
 import { forgetHeadFailedClosed } from '@/services/hydra-connection-manager/head-auto-disable-recovery';
 
 const settledTerminalStates = [OnChainState.Withdrawn, OnChainState.RefundWithdrawn] as const;
@@ -139,6 +139,8 @@ async function assertHydraHeadsCleanupEligible(
 					if (lockedHeads.length !== uniqueHeadIds.length) {
 						throw createHttpError(409, 'Cannot delete missing Hydra configuration');
 					}
+
+					for (const headId of uniqueHeadIds) await assertHydraCommitRecoveryRecorded(tx, headId);
 
 					const heads = await tx.hydraHead.findMany({
 						where: { id: { in: [...uniqueHeadIds] } },
@@ -342,6 +344,7 @@ export { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
  */
 export async function assertNoUnrecoveredHydraDeposits(headIds: readonly string[]): Promise<void> {
 	if (headIds.length === 0) return;
+	for (const headId of headIds) await assertHydraCommitRecoveryRecorded(prisma, headId);
 	const unrecovered = await prisma.hydraTopup.count({
 		where: { hydraHeadId: { in: [...headIds] }, ...unrecoveredHydraTopupWhere },
 	});
