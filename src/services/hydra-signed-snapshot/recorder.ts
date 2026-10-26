@@ -16,20 +16,35 @@ export const SIGNED_SNAPSHOT_RETRY_MS = 30_000;
 
 type SignedSnapshotDatabase = Pick<typeof prisma, 'hydraHeadSignedSnapshot'>;
 
+/** No row yet: every snapshot number is higher. */
+const NO_STORED_SNAPSHOT = -1n;
+
+/** Prisma's foreign-key violation: the head row is gone, so no write can succeed. */
+const PRISMA_FOREIGN_KEY_VIOLATION = 'P2003';
+
 function snapshotNumberOf(payload: HydraConfirmedSnapshotPayload): bigint {
 	return BigInt(payload.snapshot.number);
 }
 
+async function readStoredNumber(database: SignedSnapshotDatabase, hydraHeadId: string): Promise<bigint> {
+	const row = await database.hydraHeadSignedSnapshot.findUnique({
+		where: { hydraHeadId },
+		select: { snapshotNumber: true },
+	});
+	return row?.snapshotNumber ?? NO_STORED_SNAPSHOT;
+}
+
 /**
- * Store `payload` unless the stored snapshot is already as new. Every write is
- * conditioned on a lower stored number, so two instances or two nodes of one
- * head can never replace a newer snapshot with an older one.
+ * Store `payload` unless the stored snapshot is already as new, and return the
+ * stored number. Every write is conditioned on a lower stored number, so two
+ * instances or two nodes of one head can never replace a newer snapshot with
+ * an older one.
  */
 async function storeIfNewer(
 	database: SignedSnapshotDatabase,
 	hydraHeadId: string,
 	payload: HydraConfirmedSnapshotPayload,
-): Promise<void> {
+): Promise<bigint> {
 	const snapshotNumber = snapshotNumberOf(payload);
 	const data = {
 		snapshotNumber,
@@ -41,30 +56,37 @@ async function storeIfNewer(
 			where: { hydraHeadId, snapshotNumber: { lt: snapshotNumber } },
 			data,
 		});
-	if ((await replaceOlder()).count === 1) return;
+	if ((await replaceOlder()).count === 1) return snapshotNumber;
 	const created = await database.hydraHeadSignedSnapshot.createMany({
 		data: [{ hydraHeadId, ...data }],
 		skipDuplicates: true,
 	});
+	if (created.count === 1) return snapshotNumber;
 	// Another writer created the row between our update and our create. Its
 	// snapshot may be older than ours.
-	if (created.count === 0) await replaceOlder();
+	if ((await replaceOlder()).count === 1) return snapshotNumber;
+	// Another writer stored a newer snapshot. Learn its number, so the rest of a
+	// replay does not write each older snapshot again.
+	return readStoredNumber(database, hydraHeadId);
 }
 
 /**
  * Returns the callback a HydraNode calls for each verified snapshot. It never
  * throws and never blocks replay: one write runs at a time, and only the newest
- * snapshot that arrives meanwhile is written next.
+ * snapshot that arrives meanwhile is written next. A replay re-delivers every
+ * snapshot from the start, so the stored number is read before the first write
+ * and anything at or below it is skipped.
  */
 export function createSignedSnapshotRecorder(
 	hydraHeadId: string,
 	database: SignedSnapshotDatabase = prisma,
 	retryDelayMs = SIGNED_SNAPSHOT_RETRY_MS,
 ): (payload: HydraConfirmedSnapshotPayload) => void {
-	let storedNumber = -1n;
+	let storedNumber: bigint | null = null;
 	let pending: HydraConfirmedSnapshotPayload | null = null;
 	let isWriting = false;
 	let retryTimer: NodeJS.Timeout | null = null;
+	let isHeadDeleted = false;
 
 	const flush = async (): Promise<void> => {
 		isWriting = true;
@@ -72,14 +94,22 @@ export function createSignedSnapshotRecorder(
 			const payload = pending;
 			pending = null;
 			try {
-				await storeIfNewer(database, hydraHeadId, payload);
-				storedNumber = snapshotNumberOf(payload);
+				storedNumber ??= await readStoredNumber(database, hydraHeadId);
+				if (snapshotNumberOf(payload) <= storedNumber) continue;
+				storedNumber = await storeIfNewer(database, hydraHeadId, payload);
 			} catch (error) {
+				const isHeadGone = (error as { code?: string } | null)?.code === PRISMA_FOREIGN_KEY_VIOLATION;
 				logger.warn('[HydraSignedSnapshot] could not store the signed snapshot', {
 					hydraHeadId,
 					snapshotNumber: payload.snapshot.number,
+					isHeadGone,
 					error: error instanceof Error ? error.message : 'Unknown error',
 				});
+				if (isHeadGone) {
+					isHeadDeleted = true;
+					pending = null;
+					break;
+				}
 				const newer: HydraConfirmedSnapshotPayload | null = pending;
 				if (newer === null || snapshotNumberOf(newer) < snapshotNumberOf(payload)) pending = payload;
 				retryTimer = setTimeout(() => {
@@ -94,8 +124,9 @@ export function createSignedSnapshotRecorder(
 	};
 
 	return (payload) => {
+		if (isHeadDeleted) return;
 		const snapshotNumber = snapshotNumberOf(payload);
-		if (snapshotNumber <= storedNumber) return;
+		if (storedNumber !== null && snapshotNumber <= storedNumber) return;
 		if (pending && snapshotNumber <= snapshotNumberOf(pending)) return;
 		pending = payload;
 		if (!isWriting && !retryTimer) void flush();

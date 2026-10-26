@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { parseHydraJson } from '@/lib/hydra/hydra/json';
 import type { HydraConfirmedSnapshotPayload } from '@/lib/hydra/hydra/signed-snapshot';
 
 const mockWarn = jest.fn();
@@ -34,10 +35,14 @@ function createDatabase() {
 		writes.push(row.snapshotNumber);
 		return { count: 1 };
 	});
-	const database = { hydraHeadSignedSnapshot: { updateMany, createMany } } as unknown as Parameters<
+	const findUnique = jest.fn(async (args: { where: { hydraHeadId: string } }) => {
+		const row = rows.get(args.where.hydraHeadId);
+		return row ? { snapshotNumber: row.snapshotNumber } : null;
+	});
+	const database = { hydraHeadSignedSnapshot: { updateMany, createMany, findUnique } } as unknown as Parameters<
 		typeof createSignedSnapshotRecorder
 	>[1];
-	return { database, rows, writes, updateMany, createMany };
+	return { database, rows, writes, updateMany, createMany, findUnique };
 }
 
 function payload(number: number): HydraConfirmedSnapshotPayload {
@@ -107,6 +112,76 @@ describe('createSignedSnapshotRecorder', () => {
 		await settle();
 
 		expect(rows.get(HEAD_ID)).toEqual(expect.objectContaining({ snapshotNumber: 9n, confirmedSnapshot: 'x' }));
+	});
+
+	// Every reconnect replays the history from the start.
+	it('writes nothing while a replay re-delivers snapshots already stored', async () => {
+		const { database, rows, updateMany, createMany } = createDatabase();
+		rows.set(HEAD_ID, { hydraHeadId: HEAD_ID, snapshotNumber: 9n, snapshotVersion: 0n, confirmedSnapshot: 'x' });
+		const record = createSignedSnapshotRecorder(HEAD_ID, database);
+
+		for (let number = 1; number <= 9; number += 1) {
+			record(payload(number));
+			await settle();
+		}
+
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(createMany).not.toHaveBeenCalled();
+		record(payload(10));
+		await settle();
+		expect(rows.get(HEAD_ID)?.snapshotNumber).toBe(10n);
+	});
+
+	it('learns a newer stored number instead of writing each older snapshot', async () => {
+		const { database, rows, createMany, updateMany } = createDatabase();
+		createMany.mockImplementationOnce(async () => {
+			rows.set(HEAD_ID, { hydraHeadId: HEAD_ID, snapshotNumber: 9n, snapshotVersion: 0n, confirmedSnapshot: 'x' });
+			return { count: 0 };
+		});
+		const record = createSignedSnapshotRecorder(HEAD_ID, database);
+
+		record(payload(5));
+		await settle();
+		const callsAfterFirst = updateMany.mock.calls.length;
+		record(payload(7));
+		await settle();
+
+		expect(updateMany).toHaveBeenCalledTimes(callsAfterFirst);
+		expect(rows.get(HEAD_ID)?.snapshotNumber).toBe(9n);
+	});
+
+	// Parsed quantities are bigint; plain JSON.stringify throws on them.
+	it('keeps every digit of a quantity above 2^53 - 1', async () => {
+		const { database, rows } = createDatabase();
+		const record = createSignedSnapshotRecorder(HEAD_ID, database);
+		const lovelace = 18_446_744_073_709_551_615n;
+		const withLargeOutput = {
+			...payload(1),
+			snapshot: { ...payload(1).snapshot, utxo: { [`${'1'.repeat(64)}#0`]: { value: { lovelace } } } },
+		} as unknown as HydraConfirmedSnapshotPayload;
+
+		record(withLargeOutput);
+		await settle();
+
+		const stored = rows.get(HEAD_ID)?.confirmedSnapshot ?? '';
+		expect(stored).toContain('18446744073709551615');
+		expect(parseHydraJson(stored)).toEqual(withLargeOutput);
+	});
+
+	it('stops for good once the head row is gone', async () => {
+		jest.useFakeTimers();
+		const { database, createMany } = createDatabase();
+		createMany.mockRejectedValue(Object.assign(new Error('foreign key'), { code: 'P2003' }));
+		const record = createSignedSnapshotRecorder(HEAD_ID, database);
+
+		record(payload(1));
+		await settle();
+		jest.advanceTimersByTime(SIGNED_SNAPSHOT_RETRY_MS);
+		record(payload(2));
+		await settle();
+
+		expect(createMany).toHaveBeenCalledTimes(1);
+		expect(jest.getTimerCount()).toBe(0);
 	});
 
 	it('replaces an older row another writer created between our update and create', async () => {
