@@ -131,10 +131,10 @@ export const listTopupsOutput = z.object({
 			 */
 			absorbBy: z.string().nullable(),
 			/**
-			 * When a recovery request was sent or may have reached the node.
+			 * When the latest recovery request was sent or may have reached the node.
 			 *
 			 * This timestamp is not proof that the node posted a transaction. A reload
-			 * keeps the button hidden until the outcome is checked against L1.
+			 * requires a guarded L1 and node check before an explicit retry.
 			 */
 			recoveryRequestedAt: z.string().nullable(),
 		}),
@@ -143,6 +143,12 @@ export const listTopupsOutput = z.object({
 
 export const recoverTopupInput = z.object({
 	topupId: z.string().min(1).describe('The deposit to recover'),
+	acknowledgePendingRecoveryRisk: z
+		.literal(true)
+		.optional()
+		.describe(
+			'Operator confirms wallet, L1, and mempool checks and accepts that a prior recovery may still be pending. Required to retry an earlier attempt.',
+		),
 });
 
 export const recoverTopupOutput = z.object({
@@ -162,7 +168,7 @@ export const recoverTopupPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: recoverTopupInput,
 	output: recoverTopupOutput,
-	handler: async ({ input }) => await recoverHydraDeposit(input.topupId),
+	handler: async ({ input }) => await recoverHydraDeposit(input.topupId, input.acknowledgePendingRecoveryRisk === true),
 });
 
 /**

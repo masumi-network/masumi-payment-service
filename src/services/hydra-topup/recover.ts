@@ -15,15 +15,23 @@
  */
 
 import createHttpError from 'http-errors';
-import { HydraHeadStatus, HydraTopupStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraTopupStatus, type Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { HYDRA_HEAD_STATUS_RANK } from '@/services/hydra-connection-manager/head-status-rank';
 import { HydraTransportAmbiguousError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import type { HydraNode } from '@/lib/hydra/hydra/node';
-import { fetchHydraAcknowledgedDeposits, type HydraAcknowledgedDeposit } from '@/lib/hydra/hydra/node-control-queries';
+import {
+	fetchHydraAcknowledgedDeposits,
+	fetchHydraSnapshotRound,
+	type HydraAcknowledgedDeposit,
+} from '@/lib/hydra/hydra/node-control-queries';
 import { assertHydraHeadHostNotPaused, assertHydraHeadHostNotStopping } from '@/services/hydra-host/pause';
+import { lookupHydraDepositOutcome } from '@/services/hydra-topup-reconciliation/recovered';
+
+/** Spacing for an opt-in retry, not proof that a prior L1 transaction expired. */
+const RECOVERY_RETRY_WAIT_MS = 5 * 60 * 1000;
 
 export type DepositRecovery = {
 	/** Null while the top-up is still being prepared and has no deposit yet. */
@@ -40,7 +48,10 @@ export type DepositRecovery = {
  * by a recover transaction it builds, and only after the deadline written into
  * the deposit's own datum.
  */
-export async function recoverHydraDeposit(topupId: string): Promise<DepositRecovery> {
+export async function recoverHydraDeposit(
+	topupId: string,
+	hasAcknowledgedPendingRecoveryRisk = false,
+): Promise<DepositRecovery> {
 	// `findUnique` and an explicit 404: the throwing variant raises a Prisma
 	// P2025 that nothing on this path maps, so an id that does not exist came
 	// back as a 500 while every neighbouring Hydra endpoint answered 404.
@@ -52,7 +63,19 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			status: true,
 			hydraHeadId: true,
 			nodeDeadline: true,
-			HydraHead: { select: { status: true } },
+			recoveryRequestedAt: true,
+			HydraHead: { select: { status: true, headIdentifier: true } },
+			LocalParticipant: {
+				select: {
+					Wallet: {
+						select: {
+							PaymentSource: {
+								select: { network: true, PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
+							},
+						},
+					},
+				},
+			},
 		},
 	});
 	if (topup === null) {
@@ -79,6 +102,13 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			reason: 'the head has already taken this deposit in, so there is nothing at the deposit script to return',
 		};
 	}
+	if (topup.status === HydraTopupStatus.Recovered) {
+		return {
+			depositTxHash: topup.depositTxHash,
+			requested: false,
+			reason: 'this deposit has already returned to the wallet',
+		};
+	}
 
 	if (topup.status === HydraTopupStatus.Pending) {
 		// Still in flight. Recovering now would race the increment it is waiting
@@ -87,6 +117,15 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			depositTxHash: topup.depositTxHash,
 			requested: false,
 			reason: 'this deposit has not settled yet, so there is nothing to recover',
+		};
+	}
+	const previousAttemptAt = topup.recoveryRequestedAt ?? null;
+	if (previousAttemptAt !== null && !hasAcknowledgedPendingRecoveryRisk) {
+		return {
+			depositTxHash: topup.depositTxHash,
+			requested: false,
+			reason:
+				'an earlier recovery may still be in flight or in the mempool. Check wallet, L1, and mempool before explicitly accepting a retry',
 		};
 	}
 
@@ -119,42 +158,71 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	const isHeadClosed = HYDRA_HEAD_STATUS_RANK[topup.HydraHead.status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed];
 	const refusal = isHeadClosed ? null : await refuseAcknowledgedDeposit(node, topup.depositTxHash, topup.nodeDeadline);
 	if (refusal !== null) return refusal;
+	if (previousAttemptAt !== null) {
+		const retryRefusal = await refuseUnsafeRecoveryRetry({
+			node,
+			depositTxHash: topup.depositTxHash,
+			previousAttemptAt,
+			headIdentifier: topup.HydraHead.headIdentifier,
+			network: topup.LocalParticipant.Wallet.PaymentSource.network,
+			rpcProviderApiKey: topup.LocalParticipant.Wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey ?? null,
+		});
+		if (retryRefusal !== null) return retryRefusal;
+	}
+	const claimAt = new Date();
+	const claimed = await prisma.hydraTopup.updateMany({
+		where: {
+			id: topup.id,
+			status: topup.status,
+			depositTxHash: topup.depositTxHash,
+			recoveryRequestedAt: previousAttemptAt,
+		},
+		data: { recoveryRequestedAt: claimAt },
+	});
+	if (claimed.count !== 1) {
+		return {
+			depositTxHash: topup.depositTxHash,
+			requested: false,
+			reason: 'this deposit changed while recovery was checked. Refresh it before trying again',
+		};
+	}
 
 	try {
 		await node.delete(`/commits/${topup.depositTxHash}`);
 	} catch (error) {
 		if (error instanceof HydraTransportError) {
 			logger.warn(`hydra: recovery of deposit ${topup.depositTxHash} did not reach the node`);
+			const restored = await restoreRecoveryClaim(topup.id, claimAt, previousAttemptAt);
 			return {
 				depositTxHash: topup.depositTxHash,
 				requested: false,
-				reason:
-					'the Host could not connect to the node, so recovery was not requested. Check the connection and try again',
+				reason: restored
+					? 'the Host could not connect to the node, so recovery was not requested. Check the connection and try again'
+					: 'the Host could not connect to the node, but the attempt could not be cleared. Refresh and check L1 before retrying',
 			};
 		}
 		// Building and submitting the recover transaction takes longer than the
 		// HTTP client waits, so a lost response is the normal case rather than a
-		// refusal. Keep the attempt timestamp to prevent a blind second request,
-		// but do not claim that the node posted a transaction.
+		// refusal. The claim above retains the attempt timestamp, but does not
+		// claim that the node posted a transaction.
 		if (error instanceof HydraTransportAmbiguousError) {
 			logger.info(`hydra: recovery outcome for deposit ${topup.depositTxHash} is unknown; the node did not answer`);
-			await markRecoveryRequested(topup.id);
 			return {
 				depositTxHash: topup.depositTxHash,
 				requested: true,
 				reason:
-					'the node did not confirm the request. The recovery outcome is unknown; check the wallet and L1 before retrying',
+					'the node did not confirm the request. The outcome is unknown; inspect wallet, L1, and mempool before accepting another request',
 			};
 		}
 		// A genuine refusal. Before the deadline this is what stops a recovery
 		// racing an increment.
 		const message = error instanceof Error ? error.message : 'the node refused the recovery';
 		logger.warn(`hydra: recovery of deposit ${topup.depositTxHash} was refused: ${message}`);
+		await restoreRecoveryClaim(topup.id, claimAt, previousAttemptAt);
 		throw createHttpError(409, `the node would not recover this deposit yet: ${message}`);
 	}
 
 	logger.info(`hydra: requested recovery of deposit ${topup.depositTxHash} for head ${topup.hydraHeadId}`);
-	await markRecoveryRequested(topup.id);
 	return { depositTxHash: topup.depositTxHash, requested: true, reason: null };
 }
 
@@ -224,26 +292,73 @@ async function refuseAcknowledgedDeposit(
 	};
 }
 
-/**
- * Record that this deposit's recovery was asked for.
- *
- * Recovery leaves no other trace on the row: the status describes what the head
- * did with the deposit, and the head did nothing. Without this the row reads as
- * untouched after a recovery — the button comes back on the next page load and
- * invites a second press at funds already on their way home.
- *
- * Only ever set once, so a repeat press cannot move the timestamp forward and
- * make an old recovery look new.
- */
-async function markRecoveryRequested(topupId: string): Promise<void> {
+/** Refuse a retry unless fresh chain and node reads still leave this deposit recoverable. */
+async function refuseUnsafeRecoveryRetry(params: {
+	node: HydraNode;
+	depositTxHash: string;
+	previousAttemptAt: Date;
+	headIdentifier: string | null;
+	network: Network;
+	rpcProviderApiKey: string | null;
+}): Promise<DepositRecovery | null> {
+	const refuse = (reason: string): DepositRecovery => ({
+		depositTxHash: params.depositTxHash,
+		requested: false,
+		reason,
+	});
+	if (Date.now() - params.previousAttemptAt.getTime() < RECOVERY_RETRY_WAIT_MS) {
+		return refuse('an earlier recovery may still be in flight. Wait five minutes before checking it again');
+	}
+	if (params.rpcProviderApiKey === null || params.headIdentifier === null) {
+		return refuse('the L1 deposit cannot be verified from this head, so recovery was not retried');
+	}
+	const outcome = await lookupHydraDepositOutcome({
+		network: params.network,
+		rpcProviderApiKey: params.rpcProviderApiKey,
+		depositTxHash: params.depositTxHash,
+		headIdentifier: params.headIdentifier,
+	});
+	if (outcome !== 'unspent') {
+		return refuse(
+			outcome === 'unknown'
+				? 'L1 could not prove that the deposit is still unspent, so recovery was not retried'
+				: 'L1 shows this deposit was already spent, so recovery was not retried. Refresh its status',
+		);
+	}
 	try {
-		await prisma.hydraTopup.updateMany({
-			where: { id: topupId, recoveryRequestedAt: null },
-			data: { recoveryRequestedAt: new Date() },
-		});
+		const round = await fetchHydraSnapshotRound(params.node);
+		if (round.inFlight) {
+			return refuse('the node has a snapshot round in flight, so recovery was not retried. Wait for it to settle');
+		}
+		const pending: unknown = await params.node.get('/commits');
+		if (
+			!Array.isArray(pending) ||
+			!pending.every((txId: unknown) => typeof txId === 'string' && /^[0-9a-fA-F]{64}$/.test(txId))
+		) {
+			return refuse('the node did not return a valid pending-deposit list, so recovery was not retried');
+		}
+		if (!pending.some((txId: string) => txId.toLowerCase() === params.depositTxHash.toLowerCase())) {
+			return refuse('the node no longer lists this deposit as pending, so recovery was not retried');
+		}
 	} catch (error) {
-		// The request may already have reached the node. Failing to note it must
-		// not turn the attempt into an error that invites a blind retry.
-		logger.warn(`hydra: could not record the recovery request for ${topupId}`, { error });
+		logger.warn(`hydra: could not check node state before retrying recovery of ${params.depositTxHash}`, { error });
+		return refuse('the node state could not be checked, so recovery was not retried');
+	}
+	// These reads do not prove that an earlier recoverTx is absent from the L1
+	// mempool. A retry is explicit, spaced, and fenced by the row's DB claim.
+	return null;
+}
+
+/** Undo only this claim after a definite pre-dispatch failure or node refusal. */
+async function restoreRecoveryClaim(topupId: string, claimAt: Date, previousAttemptAt: Date | null): Promise<boolean> {
+	try {
+		const restored = await prisma.hydraTopup.updateMany({
+			where: { id: topupId, recoveryRequestedAt: claimAt },
+			data: { recoveryRequestedAt: previousAttemptAt },
+		});
+		return restored.count === 1;
+	} catch (error) {
+		logger.warn(`hydra: could not restore the recovery attempt marker for ${topupId}`, { error });
+		return false;
 	}
 }

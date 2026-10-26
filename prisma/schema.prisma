@@ -1956,7 +1956,7 @@ model HydraTopup {
 
   status HydraTopupStatus @default(Pending)
 
-  /// When a recovery request was sent or may have reached the node.
+  /// When the latest recovery request was sent or may have reached the node.
   ///
   /// Recovery leaves no other trace: the deposit keeps its status, because what
   /// it records is what the head did with it, and the head did nothing. Without
@@ -1966,6 +1966,8 @@ model HydraTopup {
   ///
   /// Attempted, not completed: a lost response may leave dispatch unknown, and
   /// even an accepted request needs independent L1 evidence of a posted spend.
+  /// Written before dispatch as a compare-and-swap claim, then restored to its
+  /// prior value only when the node definitely did not receive the request.
   recoveryRequestedAt DateTime?
 
   @@index([hydraLocalParticipantId, status])

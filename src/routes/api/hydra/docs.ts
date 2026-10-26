@@ -511,7 +511,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/head/topup/recover',
 		summary: 'Recover a deposit the head never absorbed. (admin access required)',
 		description:
-			'A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.',
+			'A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed. After a prior attempt, the operator must inspect wallet, L1, and mempool and set acknowledgePendingRecoveryRisk. The server checks fresh L1 and node state, but cannot prove the earlier recovery is absent from the mempool.',
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(recoverTopupInput, { topupId: 'cuid_v2_auto_generated' }) },

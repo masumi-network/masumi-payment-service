@@ -383,7 +383,7 @@ export type HydraTopup = {
   /** After this the head will no longer absorb it, and recovery is not yet open. */
   absorbBy?: string | null;
   /**
-   * Set once the node has been asked to send this deposit back to the wallet.
+   * When the latest recovery request was sent or may have reached the node.
    *
    * Read from the record rather than remembered by the page: a recovery leaves
    * no other mark on the deposit, so without this a reload offered the button
