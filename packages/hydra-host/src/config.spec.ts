@@ -203,6 +203,14 @@ describe('loadHostConfig', () => {
 				.defaultContestationPeriodSeconds,
 		).toBe(43_200);
 	});
+
+	it.each([
+		['HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', /deposit period must be at least 300 seconds/],
+		['HYDRA_HOST_DEPOSIT_ACTIVATION_SECONDS', /deposit activation must be at least 300 seconds/],
+	])('refuses a mainnet %s below the deposit floor at boot', (key, message) => {
+		expect(() => loadHostConfig(env({ HYDRA_HOST_NETWORK: 'mainnet', [key]: '299' }))).toThrow(message);
+		expect(() => loadHostConfig(env({ HYDRA_HOST_NETWORK: 'preprod', [key]: '299' }))).not.toThrow();
+	});
 });
 
 describe('advertiseAddress', () => {

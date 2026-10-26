@@ -123,6 +123,17 @@ describe('provisionNode', () => {
 		expect(deps.ports.used).toBe(0);
 	});
 
+	it.each([
+		['deposit period', { depositPeriodSeconds: 299 }, /deposit period must be at least 300 seconds/],
+		['deposit activation', { depositActivationSeconds: 299 }, /deposit activation must be at least 300 seconds/],
+	])('refuses a mainnet %s below the floor before reserving a node', async (_name, periods, message) => {
+		await expect(
+			provisionNode({ ...REQUEST, network: 'mainnet', contestationPeriodSeconds: 43_200, ...periods }, deps),
+		).rejects.toThrow(message);
+		expect(await deps.store.list()).toEqual([]);
+		expect(deps.ports.used).toBe(0);
+	});
+
 	it('does not leak a port when provisioning fails', async () => {
 		const failing: ProvisionDeps = {
 			...deps,
