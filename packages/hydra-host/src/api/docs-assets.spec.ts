@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import type { ServerResponse } from 'node:http';
-import { createDocsAssetServer } from './docs-assets';
+import { createDocsAssetServer } from './docs-assets.js';
 
 const ASSET = { filePath: '/assets/bundle.js', contentType: 'text/javascript' };
 
