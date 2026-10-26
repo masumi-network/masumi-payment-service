@@ -5,27 +5,35 @@
  * beside the head hooks rather than in a module of its own concept.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import type { Client } from '@/lib/api/generated/client';
 import { ensureData } from './api';
 import type { ApiEnvelope } from './api';
 import type { HydraInvite, HydraInvitePreview, HydraNodeKeys } from './types';
+import { joinInclusivePages, nextInclusiveCursor } from './inclusive-pages';
+
+const INVITE_PAGE_SIZE = 100;
 
 /** Invites on one network, scoped like the heads they become. */
 export function useHydraInvites(network?: string) {
   const { apiClient } = useAppContext();
 
-  const query = useQuery<HydraInvite[]>({
+  const query = useInfiniteQuery({
     queryKey: ['hydra-invites', network ?? 'all'],
-    queryFn: async () => {
+    queryFn: async ({ pageParam }) => {
       const response = await handleApiCall(
         () =>
           apiClient.get<{ 200: ApiEnvelope<{ invites: HydraInvite[] }> }>({
             responseType: 'json',
             url: '/hydra/invite',
-            query: { limit: 100, ...(network ? { network } : {}) },
+            query: {
+              limit: INVITE_PAGE_SIZE,
+              cursorId: pageParam,
+              ...(network ? { network } : {}),
+            },
           }),
         { errorMessage: 'Failed to load Hydra invites' },
       );
@@ -39,11 +47,25 @@ export function useHydraInvites(network?: string) {
       }
       return response.data.data.invites;
     },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage: HydraInvite[]) => nextInclusiveCursor(lastPage, INVITE_PAGE_SIZE),
     enabled: !!apiClient,
     staleTime: 10000,
   });
 
-  return { ...query, invites: query.data ?? [] };
+  const invites = useMemo(() => joinInclusivePages(query.data?.pages ?? []), [query.data]);
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  return {
+    ...query,
+    invites,
+    hasMore: hasNextPage,
+    isLoadingMore: isFetchingNextPage,
+    loadMore,
+  };
 }
 
 /**

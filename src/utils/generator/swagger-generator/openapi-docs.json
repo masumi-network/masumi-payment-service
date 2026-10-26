@@ -32466,6 +32466,17 @@
                     {
                         "schema": {
                             "type": "string",
+                            "minLength": 1,
+                            "description": "Resume at this invite ID, inclusive"
+                        },
+                        "required": false,
+                        "description": "Resume at this invite ID, inclusive",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "enum": [
                                 "Issued",
                                 "Redeemed",

@@ -26,6 +26,7 @@ const remove =
 	>();
 const forget = jest.fn<() => Promise<void>>();
 const release = jest.fn<() => Promise<{ retained: number }>>();
+const findMany = jest.fn<(...args: any[]) => Promise<any[]>>();
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -43,6 +44,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			}),
 		},
 		hydraHeadInvite: {
+			findMany,
 			findUnique: async () => invite,
 			findUniqueOrThrow: async () => invite,
 			updateMany: async (args: { data: { status: string } }) => {
@@ -81,7 +83,7 @@ jest.unstable_mockModule('@/services/hydra-invite/orchestrator', () => ({
 }));
 jest.unstable_mockModule('@/services/hydra-node-funding/service', () => ({ fundHydraNodeNow: jest.fn() }));
 
-const { deleteInviteDelete } = await import('./index');
+const { deleteInviteDelete, queryInviteGet } = await import('./index');
 
 const revoke = (body: Record<string, unknown>) =>
 	testEndpoint({
@@ -99,6 +101,27 @@ beforeEach(() => {
 	remove.mockResolvedValue(undefined);
 	forget.mockResolvedValue(undefined);
 	release.mockResolvedValue({ retained: 0 });
+	findMany.mockResolvedValue([]);
+});
+
+it('resumes the invite list from an inclusive cursor in stable newest-first order', async () => {
+	const { responseMock } = await testEndpoint({
+		endpoint: queryInviteGet,
+		requestProps: {
+			method: 'GET',
+			headers: { token: 'admin-key' },
+			query: { limit: '2', cursorId: 'older-invite', network: 'Preprod' },
+		},
+		responseOptions: { eventEmitter: EventEmitter },
+	});
+
+	expect(responseMock.statusCode).toBe(200);
+	expect(findMany).toHaveBeenCalledWith({
+		where: { network: 'Preprod' },
+		orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+		take: 2,
+		cursor: { id: 'older-invite' },
+	});
 });
 
 it('refuses a redeemed invite unless the operator asks to discard the redemption', async () => {
