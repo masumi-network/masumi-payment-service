@@ -252,8 +252,10 @@ describe('the landing page and browser 404', () => {
 
 		const bundle = await fetch(`${baseUrl}/docs/assets/swagger-ui-bundle.js`);
 		expect(bundle.status).toBe(200);
+		await bundle.arrayBuffer();
 		const theme = await fetch(`${baseUrl}/docs/assets/swagger-custom.css`);
 		expect(theme.status).toBe(200);
+		await theme.text();
 		// The allow-list is exact names only: no traversal out of the asset dirs.
 		expect((await fetch(`${baseUrl}/docs/assets/..%2Fpackage.json`)).status).toBe(404);
 		// Inherited Object.prototype names must not slip past the allow-list
@@ -261,6 +263,19 @@ describe('the landing page and browser 404', () => {
 		for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
 			expect((await fetch(`${baseUrl}/docs/assets/${name}`)).status).toBe(404);
 		}
+	});
+
+	// Guards against a streamed answer that drops the length.
+	it('serves the large public documentation bundle whole, with its length', async () => {
+		const bundle = await fetch(`${baseUrl}/docs/assets/swagger-ui-bundle.js`);
+		expect(bundle.status).toBe(200);
+		const body = await bundle.arrayBuffer();
+		expect(body.byteLength).toBeGreaterThan(1_000_000);
+		expect(Number(bundle.headers.get('content-length'))).toBe(body.byteLength);
+
+		const head = await fetch(`${baseUrl}/docs/assets/swagger-ui-bundle.js`, { method: 'HEAD' });
+		expect(head.status).toBe(200);
+		expect(Number(head.headers.get('content-length'))).toBeGreaterThan(1_000_000);
 	});
 
 	it('sends hardening headers on the unauthenticated pages', async () => {

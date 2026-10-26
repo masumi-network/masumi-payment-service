@@ -11,7 +11,6 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
 import type { Duplex } from 'node:stream';
 import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
@@ -29,6 +28,7 @@ import { nonceLogRef } from './nonce-log-ref.js';
 import { isHostApiError, HostApiError } from './http-error.js';
 import { renderHostLandingPage, renderNotFoundPage, wantsHtmlDocument } from './landing.js';
 import { renderSwaggerDocsPage, resolveDocsAsset } from './docs-page.js';
+import { createDocsAssetServer } from './docs-assets.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
@@ -166,6 +166,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 	// Bound once so every response reports the guard this host actually enforces.
 	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
+	const serveDocsAsset = createDocsAssetServer();
 	// Said once, not on every call: the proxy sees one for each request a service
 	// makes. It is the signal that a service is still on the credential that
 	// reaches every node on this Host.
@@ -251,14 +252,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 						sendNotFound(request, response);
 						return;
 					}
-					const body = await readFile(asset.filePath);
-					response.writeHead(200, {
-						'Content-Type': asset.contentType,
-						'Content-Length': body.byteLength,
-						'Cache-Control': 'public, max-age=300',
-						'X-Content-Type-Options': 'nosniff',
-					});
-					response.end(method === 'HEAD' ? undefined : body);
+					await serveDocsAsset(response, asset, method === 'HEAD');
 					return;
 				}
 			}
