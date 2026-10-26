@@ -31,9 +31,11 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 
 let handler: (args: { input: Record<string, unknown> }) => Promise<Record<string, unknown>>;
 let remainingHandler: typeof handler;
+let fanoutsInFlight: Set<string>;
 
 beforeAll(async () => {
 	const { partialFanoutHeadPost, fanoutRemainingGet } = await import('./partial-fanout');
+	({ fanoutsInFlight } = await import('./fanout-in-flight'));
 	handler = (partialFanoutHeadPost as unknown as { handler: typeof handler }).handler;
 	remainingHandler = (fanoutRemainingGet as unknown as { handler: typeof handler }).handler;
 });
@@ -70,6 +72,7 @@ const fanningOutNodeState = (remainingOutputs: Record<string, unknown>, mode: st
 
 beforeEach(() => {
 	jest.resetAllMocks();
+	fanoutsInFlight.clear();
 	mockFindHead.mockResolvedValueOnce(closedHead).mockResolvedValue({ status: HydraHeadStatus.FanningOut });
 	mockNodeGet.mockResolvedValue(closedNodeState({ [A]: OUTPUT, [B]: OUTPUT, [C]: OUTPUT }));
 });
@@ -91,6 +94,15 @@ describe('fanoutRemainingGet', () => {
 });
 
 describe('partialFanoutHeadPost', () => {
+	it('reserves the head before the asynchronous node read', async () => {
+		mockNodeGet.mockImplementation(async () => {
+			expect(fanoutsInFlight.has('head-1')).toBe(true);
+			return closedNodeState({ [A]: OUTPUT });
+		});
+		await handler({ input: { headId: 'head-1', outputRefs: [A] } });
+		expect(fanoutsInFlight.has('head-1')).toBe(false);
+	});
+
 	it('sends the selected outputs from the closed head state before the first step', async () => {
 		await expect(handler({ input: { headId: 'head-1', outputRefs: [A, B.toUpperCase()] } })).resolves.toEqual({
 			headId: 'head-1',
